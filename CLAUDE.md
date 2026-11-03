@@ -92,73 +92,11 @@ Run `./opentr.sh` with no arguments for full usage. The ones you'll reach for:
 
 ### Fresh / isolated deployments (data-safety guardrails)
 
-**Use `--fresh` for any throwaway or experimental stack — never develop against the live NAS data again.** A fresh deployment runs in its own `otfresh-<name>` compose project (separate containers AND named volumes) and the NAS/bind overlay is **never** loaded, so the real dataset can't be touched.
+**Use `--fresh` for any throwaway or experimental stack — never develop against the live NAS data.** `./opentr.sh start dev --fresh <name> [--port-offset N]` runs in its own `otfresh-<name>` compose project (separate containers AND named volumes) and never loads the NAS/bind overlay; `./opentr.sh fresh-list`, `fresh-destroy <name>` (the ONLY destructive fresh op) and `data-paths` (check before deleting anything) round it out. If you see a `.opentranscribe-live-data` marker, you are looking at live data: do not delete. Port offsetting, `--with-*` overlay isolation (issue #347, policed by `backend/tests/unit/test_opentr_fresh_aux_isolation.py`), the exemptions and the NAS overlay: `scripts/notes/fresh-deployments.md` (root-`CLAUDE.md` text moved intact to its end) and `docs-site/docs/operations/fresh-deployments.md`.
 
-```bash
-./opentr.sh start dev --fresh test1 [--port-offset 100] [--seed-benchmark]
-./opentr.sh stop|status --fresh test1        # stop keeps volumes
-./opentr.sh fresh-list                       # list fresh deployments + volumes
-./opentr.sh fresh-destroy test1              # containers+volumes (y/N; the ONLY destructive fresh op)
-./opentr.sh data-paths                       # resolved LIVE data paths — CHECK before deleting anything
-./opentr.sh start dev --dry-run              # print compose files + command, start nothing
-```
+### Test overlays (auth IdPs, mock LLM, mock ASR)
 
-`--fresh` refuses to start when any port it needs is already bound (it offers `--port-offset N`) and generates a gitignored `.fresh/<name>.yml` overlay that re-pins every service to `otfresh-<name>-*`. `--port-offset` works by exporting the `*_PORT` vars the compose files already read — never by overlaying a second `ports:` list, which compose would append (issue #343). The offset is remembered in `.fresh/<name>.offset`. **Every** `--with-*` overlay is isolated too (issue #347) — names, ports, and volumes all move — and the overlays used are recorded in `.fresh/<name>.aux`. Do not maintain the list here by hand: it was stale for four overlays at once, and `--with-llm-test` was missing from `opentr.sh`'s dispatch itself, so a fresh stack collided with the main one on `opentranscribe-llm-test-vllm`/5195 and `fresh-destroy` left a multi-GB vLLM holding a GPU. `backend/tests/unit/test_opentr_fresh_aux_isolation.py` now enumerates the flags and fails on any that is neither isolated nor **explicitly exempt with a written reason**. The three exemptions are `--with-watch` / `--with-backup` (they bind live host directories and declare no `container_name` or ports, so there is nothing project-scoped to re-pin — `opentr.sh` warns instead) and `--with-scratch-tmpfs` (it only changes the driver of the already project-namespaced `pipeline_scratch` volume). `--with-pki` is **not** exempt: its overlay publishes `PKI_HTTPS_PORT`, so it is isolated like the rest. ⚠️ `LLM_TEST_GPU_DEVICE_ID` is deliberately **not** offset: a port offset must never renumber a physical card. Details: `scripts/CLAUDE.md`.
-
-**NAS overlay** (non-fresh `start`): auto-detected from `.env`, announced with a `💾 NAS overlay AUTO-LOADED` banner; `--no-nas` suppresses, `--nas` opts in explicitly. When active it writes a `.opentranscribe-live-data` marker into each bind dir — **if you see that marker, you are looking at live data; do not delete.** Full map: `docs-site/docs/operations/fresh-deployments.md`.
-
-### Auth method overlays
-
-Configure auth via Admin UI (Settings → Authentication); DB config takes precedence over `.env`. Pass test-container flags to spin up local IdPs:
-
-```bash
-./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
-./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
-                                             # first start builds a pre-augmented image once; ~25 s to healthy after — see below
-./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)
-./opentr.sh start prod --build --with-pki    # PKI/mTLS at https://localhost:5182 (prod-only — Vite can't do mTLS)
-```
-
-### Mock LLM (chat / AI features without a model)
-
-```bash
-./opentr.sh start dev --with-mock-llm        # OpenAI-compatible mock at http://mock-llm:5199/v1
-```
-
-Runs `scripts/mock-llm-server.py` on the app network so chat, summarization and
-topic extraction work with **no GPU, API key, or internet**. Only token generation
-is canned — retrieval, redaction masking, citations, SSE and usage recording all
-take their real paths. Scenario models drive the app's real error handling:
-`mock-gpt` (normal), `mock-echo` (returns the prompt it was given — assert what the
-app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
-(streams a "thinking" phase before the answer — exercises the collapsible reasoning display.
-⚠️ It separates reasoning **only when the request activated thinking** via
-`chat_template_kwargs={"enable_thinking": true}`; unasked, it reproduces the real server's
-#439 behaviour and leaks the thoughts into the answer, so the app's handling of that is
-testable). Never start it as a
-bare host process: it binds 5199 and then blocks the container. Fixtures and the
-full table: `backend/tests/CLAUDE.md`.
-`--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at
-`http://mock-asr:5198`, so `--lite`-mode ASR can be exercised with no vendor account either;
-same fixture/table location.
-⚠️ **Keycloak used to take ~10 minutes to start; it is now pre-built (`docker/keycloak/Dockerfile`).**
-The stock image's `start-dev` re-ran Quarkus augmentation on **every** start (the output lands in
-`/opt/keycloak/lib/quarkus`, which is not on the volume, so nothing was reused), and its
-`JarResultBuildStep` walks the built tree calling `File.setReadable` per entry. Measured 2026-09-06
-on this host: **~600 s** before it listened, then Quarkus started in ~16 s. That marked a perfectly
-healthy Keycloak unhealthy at the old 210 s budget, failed `up --wait`, and aborted
-`run-dev-tests.sh --full` **before a single test ran**. A container sitting at 0.2% CPU there was
-doing I/O-bound work, not deadlocked; check the thread dump before concluding otherwise.
-The real fix is **done**: `kc.sh build` runs once in a small custom image and the container starts
-`--optimized` (~19 s to "Listening on", ~25 s to healthy), so `docker-compose.keycloak.yml`'s
-`start_period` is `120s`, not the old `900s` — do not raise it without re-measuring. The image is
-**pinned** (`26.7.3` in both the Dockerfile `FROM` and the compose tag, whose suffix is a hash of
-the build context and is policed by `backend/tests/unit/test_keycloak_image_tag_tracks_dockerfile.py`),
-not `:latest` as it once was. `smallstep/step-ca` is still `:latest` and wants the same treatment.
-
-Combine flags as needed. PKI client certs: `scripts/pki/test-certs/clients/*.p12`.
-Details: `backend/app/auth/CLAUDE.md`, `docs/PKI_SETUP.md`, `docs/LDAP_AUTH.md`, `docs/OIDC_SETUP.md`.
-
+`./opentr.sh start dev --with-ldap-test | --with-keycloak-test | --with-authentik-test | --with-mock-llm | --with-mock-asr`, and `start prod --build --with-pki` for PKI/mTLS. Never start `mock-llm-server.py` as a bare host process. Flags, credentials and ports, the Keycloak pre-built-image story (do not raise its `start_period` without re-measuring) and the mock scenario models: `scripts/notes/test-overlays.md`.
 ### Multi-GPU worker scaling (optional)
 
 Run with `./opentr.sh start dev --gpu-scale` — **the flag is what enables scaling**, not `GPU_SCALE_ENABLED` (see `backend/app/tasks/CLAUDE.md`). It sets `COMPOSE_PROFILES=gpu-scale` and loads `docker-compose.gpu-scale.yml`, running N parallel Celery workers in one container against `GPU_SCALE_DEVICE_ID`. Tune `GPU_SCALE_WORKERS` to your VRAM. Whether the default single-GPU worker also stays up depends on `GPU_SCALE_DEFAULT_WORKER` — `0` in compose, but `1` in `.env.example`.
@@ -175,74 +113,11 @@ from. **`PLATFORMS` is an explicit override, not a default** — the old both-ar
 CPU-only arm64 backend got published under the CUDA image's tag. Never transcribe the platform
 set into a doc or a script: ask `./scripts/docker-build-push.sh list-platforms`
 (`component<TAB>capability<TAB>platforms`), which is the single home for it. Full table and the
-reason `cuda-arm64` is reserved-but-unbuilt: `scripts/CLAUDE.md`.
+reason `cuda-arm64` is reserved-but-unbuilt: `scripts/notes/docker-build-push.md`.
 
 ### Cutting a release — `./scripts/release.sh`, never by hand
 
-**Do not hand-run git tag / docker push / gh release.** Everything mechanical is a
-stage in `scripts/release/NN-<stage>.sh`; `scripts/release.sh` owns arg parsing,
-the ledger, and dispatch.
-
-```bash
-./scripts/release.sh status                 # where am I? (ledger table)
-./scripts/release.sh explain publish        # preconditions, side effects, reversibility
-./scripts/release.sh reset 0.5.0            # clear rehearsal history before a REAL run
-./scripts/release.sh preflight 0.5.0        # seconds — fails fast
-./scripts/release.sh run 0.5.0              # the whole sequence
-./scripts/release.sh run 0.5.0 --dry-run    # print every command, execute nothing
-./scripts/release.sh scan 0.5.0 --force-scan "reason"   # override, recorded
-```
-
-Stage order (each independently runnable, skippable with `--skip`, resumable with
-`--from`):
-
-```
-preflight → bump → verify → test → build → scan → rehearse
-          → tag → publish → smoke → promote → finish
-```
-
-- **`tag` / `publish` / `promote` / `finish` reach outside this repo.** Each needs
-  `--yes` **and** its `ask` rule in `.claude/settings.json`. They are the only
-  stages that touch Docker Hub or GitHub.
-- **Exit codes are stable** — `0` pass, `1` gate failed, `2` misuse, `3`
-  precondition unmet (live stack up, builder unreachable), `4` operator abort.
-  `--json` on any stage emits a `criteria[]` and a `next[]` of legal moves.
-- **Gates are overridable, never silently.** `--force-<stage> "reason"` requires a
-  reason (there is no bare `--force`) and records `overridden` + operator in the
-  ledger — not a pass.
-- **Ledger** lives in `.release/<version>/steps/` (gitignored). Rehearsal history
-  reads as current until you `reset`, so reset before a real run.
-- `rehearse` runs **four** scenarios: **D** the model downloader from an empty cache, CPU-only,
-  in the built image (the only gate that runs `download-models.py`; v0.6.0 shipped a pyannote
-  group that failed for every user while A-C passed, `scripts/CLAUDE.md`), then fresh install,
-  upgrade, lite. It **requires the live
-  stack stopped**: without approval it refuses (exit 3) and prints the command; with `--yes` or
-  `RELEASE_AUTO_STOP_STACK=true` it runs `./opentr.sh stop`, rehearses, and restarts dev from a
-  trap. It also needs the release branch pushed to origin. `smoke` needs the stack stopped too,
-  and `test` needs the dev stack UP (`docs/design/v060_release_runbook.md` has the sequence).
-  `test-upgrade.sh` now runs to completion across all 18 phases, including the
-  backup/rollback tail — previously masked by a `set -e` harness bug that
-  silently truncated the script at the first non-fatal-by-design digest mismatch
-  (`scripts/CLAUDE.md`'s rehearsal gotchas). That is not a claim the rehearsal
-  always passes. The gap this used to name (#619) was **closed** 2026-08-28, but
-  its fix is a **best-effort settle, not a guarantee**: phases 15/17 wait for each
-  table's content digest to stop moving rather than tracking every async writer by
-  name, so a slow enough write can still land after the synchronization point. See
-  `full-test-matrix.md`'s coverage table for what each leg does and does not prove.
-- Running `test-upgrade.sh`/`test-fresh-install.sh` directly (not through
-  `rehearse`) in a backgrounded or non-interactive shell needs `--yes` — the
-  `I UNDERSTAND` confirmation prompt has no tty to read from and fails with
-  `No such device or address` otherwise.
-
-Full guide: `docs-site/docs/developer-guide/releasing.md` (Developer Guide →
-Releasing). Agent interface: `.claude/skills/release/SKILL.md`. Gate definitions:
-`scripts/release/release-criteria.yaml`.
-
-**Version facts are DERIVED, never recorded.** The Alembic head comes from the
-`down_revision` graph (`scripts/release-tests/lib/alembic-head.py`), and FROM/TO
-from the `VERSION` file + Docker Hub. Never add a checked-in table of versions —
-the last one (`expected-schemas.tsv`) went stale because it was hand-maintained
-and read by nothing.
+**Do not hand-run git tag / docker push / gh release.** `./scripts/release.sh status | explain <stage> | preflight <v> | run <v> [--dry-run]`; stages are `preflight, bump, verify, test, build, scan, rehearse, tag, publish, smoke, promote, finish`, and `tag` / `publish` / `promote` / `finish` reach outside the repo (they need `--yes` and their `ask` rule in `.claude/settings.json`). Gates are overridable only with `--force-<stage> "reason"`, recorded in the ledger. `rehearse` requires the live stack stopped. Stage contracts, exit codes, the four rehearsal scenarios and the version-facts rule: `scripts/release/CLAUDE.md` (root-`CLAUDE.md` text moved intact to its end), `docs-site/docs/developer-guide/releasing.md`, `.claude/skills/release/SKILL.md`.
 
 ### Backend / venv
 
@@ -305,64 +180,8 @@ an arbitrary unstaged edit elsewhere in the tree safe** — only those two speci
 >
 > Only the last row is forbidden — but it is the one that keeps happening, because each writer
 > individually looks safe to itself.
->
-> This paragraph used to recommend `--files` or "just commit" as the safe alternative. **That
-> advice was wrong and caused the incident below.** There is no safe alternative for a tree with
-> unrelated unstaged work in progress; there is only waiting for a quiet tree. The wrapper above
-> catches the two overlaps that have actually bitten this repo — a second pre-commit run, and a
-> mutation `--verify` mutation left live — it is not a general fix for the hazard in this box.
->
-> **"Anything else" includes background subagents you yourself just dispatched in this same
-> turn.** An agent fanned out 8 parallel background subagents to edit disjoint files on one
-> branch, then ran `git commit -- <2 files it had already verified itself>` while the other 7
-> were still mid-edit — reasoning that an explicit pathspec made it safe. It does not: `git
-> commit` stashes the whole tree regardless of pathspec, which would have stashed all 7
-> in-flight agents' work the moment it ran. There is no "but these are my own subagents and I'm
-> scoping the commit" exception. Wait for every dispatched writer to report done, review, THEN
-> run one clean commit/precommit pass.
->
-> ⚠️ **A test run is a writer's victim too, and the damage is silent.** Never start a gate, a
-> suite, or a timing measurement while any writer is active. An e2e phase run against a mutating
-> tree produced 20 meaningless failures — 17 of them fixture `ERROR`s, the signature of a
-> `conftest.py` changing mid-suite — and they were nearly filed as real defects. Contention also
-> invalidates *timings*: two agents running `pytest --collect-only` at once on this 48-core host
-> makes both numbers unusable, and comparing a loaded "before" against a quiet "after"
-> manufactures an improvement out of nothing. Confirm zero writers **and** a clean `git status`
-> before any run whose output you intend to treat as evidence.
->
-> Three failure modes, all observed here:
->
-> 1. **Another writer's work is stashed mid-edit.** An agent's `Edit` failed with "file has been
->    modified", it re-read and re-applied, and the restore then reinstated the *earlier* draft,
->    silently discarding the newer one. Caught only by an unrelated `git diff`. Earlier the same
->    day, a different agent's `conftest.py` was stashed during a failing commit and restored with
->    `Stashed changes conflicted with hook auto-fixes... Rolling back fixes` — recovered, but by
->    luck. If a hook crashes in that window the only copy is
->    `~/.cache/pre-commit/patch<timestamp>-<pid>`.
-> 2. **A whole-tree hook fails against a tree that never existed.** `frontend-check` scans all of
->    `frontend/src`, so with an unstaged type change stashed away and an untracked test file left
->    behind, svelte-check failed with 5 errors about a property that *does* exist. Nothing was
->    wrong. The natural response — "fixing" correct code — makes it worse.
-> 3. **Spurious `files were modified by this hook`** with no findings at all (bandit printing
->    "No issues identified", frontend-check printing "All frontend checks passed"). The
->    stash/restore moved the files, not the hook.
->
-> A related trap that is *not* about concurrency: pre-commit's hooks see the **staged** snapshot.
-> If you `git add` a file and then edit it further, mypy/ruff check the stale staged copy and
-> report errors you have already fixed. Re-`git add` before committing.
->
-> `--all-files` is always correct in CI, where nothing else is writing.
 
-Hook inventory is in `.pre-commit-config.yaml`. **The mypy hook runs in its own isolated environment, so it only
-sees the packages listed in its `additional_dependencies`** — a `py.typed` package missing from that list is `Any`
-there and the hook goes green on code `backend/venv/bin/mypy` rejects (#1271: 0 findings from the hook, 55 from the
-venv, same 2,269 files, found only by comparing them). Its `rev` and every dependency are therefore exact pins that
-must equal `backend/requirements*.txt`, and `backend/tests/unit/test_precommit_mypy_env_parity.py` derives the rest
-(every typed import under `backend/` must be a hook dependency or sit in that test's `EXEMPT` table with a reason:
-torch, transformers and friends are checked by the venv only). Bumping a package means changing it in
-`backend/requirements*.txt` **and** the hook in the same commit. `scripts/mypy-hook-negative-control.sh [--ref REF]`
-runs the real hook on deliberately mistyped code in a throwaway repo and must report `caught 3/3`; CI runs it. The
-frontend hooks (`frontend-check` at commit stage, `frontend-build` at push stage) only fire when `frontend/src/**/*.{svelte,ts,js,css,html}` is staged. Note that `prettier` **rewrites files** and then reports failure — re-stage and re-run, don't "fix" anything by hand.
+The incident write-ups (background subagents you just dispatched count as writers, a test run is a writer's victim, the three observed failure modes, the staged-snapshot trap) and the multi-writer conventions are in `docs/agent-workflow/pre-commit-and-concurrent-writers.md`. **Read it before dispatching more than one writer into a checkout.**
 
 ### ⚠️ Fix the finding, never silence it
 
@@ -411,7 +230,7 @@ For a quick "does my current branch work" check during normal development — ba
 single phase; mode flags compose). It auto-starts/stops whatever auth/LLM test overlays the
 requested phase needs (mock-LLM, Keycloak, LDAP) and reconciles the DB config it flips back on
 exit — `--all-overlays`/`--with-gpu-scale`/`--no-overlays`/`--list-overlays`/`--dry-run` control
-this; see `scripts/CLAUDE.md` for the full flag table. This is **not** the same job as
+this; see `scripts/notes/dev-test-gate.md` for the full flag table. This is **not** the same job as
 `scripts/test-matrix.sh` (the exhaustive deployment-mode rehearsal across
 dev/prod/lite/PKI/GPU-scale/fresh-install/upgrade, run before cutting a release, not during
 ordinary development).
@@ -420,84 +239,11 @@ MinIO/OpenSearch-backed tests **auto-enable** when the dev stack is reachable (c
 
 ### Four tools that keep the suite honest (issue #431)
 
-A test that cannot fail is worse than no test: it buys false confidence and hides the defect it
-was written to catch. These exist because this repo had shipped all four failure modes — an
-assertion that passed against an empty index, a `gpu` marker that selected nothing, 240 security
-tests gated off behind stale env vars, and a progress endpoint returning a hardcoded value that
-no test referenced.
-
-```bash
-python3 scripts/audit-tests.py backend/tests        # 21 AST detectors, exits 1 on new offenders
-cd frontend && npm run test:audit                   # the vitest sibling, 10 detectors
-npm run test:audit:selftest                         #   ...and ITS self-test (prints its case count; 32 when last counted)
-python3 scripts/analyze-test-timing.py <junit.xml> [--baseline baseline.xml]
-./scripts/run-mutation-tests.sh --module spans      # opt-in, never in the gate or CI
-```
-
-- **The auditors are allowlist-gated**, keyed `<file>::<test>::<category>` with a mandatory
-  written reason. The category is part of the key on purpose: an entry keyed by test alone once
-  exempted a test from all six detectors at once.
-- **`--selftest` is not optional ceremony.** It caught two detectors in each auditor that matched
-  *nothing* — silently reporting 0 findings, which is indistinguishable from a clean suite. Any
-  new detector needs a must-fire case and a must-stay-clean case.
-- **`analyze-test-timing.py` finds barriers, not just slow tests.** Unrelated tests from many
-  files sharing a sub-second duration band is a released lock queue, not a coincidence; that is
-  how one worker was found owning 81% of the wall clock.
-- **Coverage says a line RAN; mutation testing says the suite would NOTICE if it were wrong.**
-  Scoped to six security-critical modules. A surviving mutant is a finding — add the missing
-  assertion, or conclude the line is dead and delete it. Never loosen a test to kill one.
-- **Profile before theorising about test speed.** Two plausible hypotheses cost two full
-  measurement cycles on the Redis-retry bug; `python -m cProfile -o out.prof -m pytest <test>`
-  found it in one.
-
-Current (measured 2026-09-12 via `./scripts/run-integration-tests.sh`'s unit/API phase, under
-load — quote the command, not the number, if you are unsure): backend
-**14,746 passed / 79 skipped** in that phase. A prior entry here read 12,882/148 (2026-09-05);
-that is not this run under-reporting, it is the same rot this section warns about — re-derive,
-don't diff against a remembered number. (Re-checked 2026-10-27: `cd backend && pytest tests --collect-only -q -n0`
-lists ~20,200 test ids across all markers, so the 14,746 above predates ~6 weeks of growth; the passed
-count of the unit/API phase itself was not re-run.)
-
-**These numbers rot — re-derive rather than trust them.** Prior values in this file have been
-wrong by over a thousand tests when checked. `./scripts/run-backend-tests.sh --summary` and
-`cd frontend && npm run test` answer in seconds. The root `baseline.xml` referenced by
-`analyze-test-timing.py --baseline` is gitignored and untracked: a fresh worktree has none, and
-the main checkout may hold a stale local copy (an Aug-11, 5,473-test artifact was still there on
-2026-10-28). Regenerate it from a current junit run before trusting any `--baseline` comparison.
-
-**The DDL/`ddl_exclusive` barrier claim in earlier versions of this file was measured and
-refuted (2026-09-05).** Actual cost: DDL modules were **262 s of 2,031 s (12.9%)** and
-**239 s of 1,580 s (15.1%)** summed CPU across two runs — not the previously claimed
-418/1,197. Zero `v3xx_migration_consistency` tests appear above 3.5 s. The 43
-`ddl_exclusive`-marked tests sum to 59.5-68.8 s (3.4-3.8% of total), with the slowest single
-test at 2.91 s and none in the slowest 30 overall. An A/B run with all `ddl_exclusive` tests
-deselected showed the barrier costs only **+12.9 s to +5.8 s** — smaller than the
-**21.0-28.1 s of same-config run-to-run noise** observed between otherwise-identical runs.
-Tellingly, the timing-cluster detector still fires with **zero** DDL tests selected: its
-"barrier suspects" at 13k tests are not the advisory-lock queue, they're the CPU-bound tail
-under 48-way worker contention. The detector's underlying premise — that unrelated tests
-sharing a duration band can't be coincidence — held at 5k tests and does not at 13k.
-
-**The real cost is collection, not any barrier.** `pytest tests/ -k
-"zzz_no_such_test_zzz" -n auto` — matching zero tests — still took **96.3 s wall** (48
-workers each collecting the entire tree); `-n 16` dropped that to 78.3 s, and
-`--collect-only -n0` (single worker) took 44.5 s. That means roughly **96 s of a ~154 s
-suite is spent before a single test runs** — 6-10x the DDL barrier's cost, and the actual
-place to look for a speedup.
+A test that cannot fail is worse than no test. `python3 scripts/audit-tests.py backend/tests` (21 AST detectors, exits 1 on new offenders), `cd frontend && npm run test:audit`, `python3 scripts/analyze-test-timing.py <junit.xml>`, and the opt-in `./scripts/run-mutation-tests.sh --module <m>`. Allowlists are keyed `<file>::<test>::<category>` with a written reason; never loosen a test to kill a mutant. Detail and the measured lessons: `scripts/audit_tests/CLAUDE.md` (root text moved intact to its end).
 
 ### E2E (pytest + Playwright)
 
-Tests in `backend/tests/e2e/` (auth, gallery, upload, search, settings, transcript editing, visual). Requires dev environment running (`./opentr.sh start dev`).
-
-```bash
-./scripts/e2e/run-e2e.sh                                        # full suite, headless
-./scripts/e2e/run-e2e-smoke.sh                                  # quick subset
-./scripts/e2e/run-e2e.sh -m upload                              # by marker (upload/search/settings/transcription/gallery/auth/visual)
-DISPLAY=:11 pytest backend/tests/e2e/ -v --headed               # visible on XRDP
-```
-Fixtures, markers, and the `RUN_*` gates: `backend/tests/CLAUDE.md`. Test creds `admin@example.com` / `password`. **E2E suites must never persist changes to dev data** — upload tests delete what they create; edit tests use the cancel path.
-
-Auth-vs-testing rules: the **dev stack relaxes auth security limits** (`docker-compose.override.yml`: rate limit 120/min, lockout threshold 100 — `DEV_*` tunable in `.env`; prod keeps the strict `.env` values since the override is never loaded there). Negative login tests must use a **nonexistent account**, never wrong passwords for `admin@example.com` (progressive per-account lockout poisons the whole suite). Frontend auth is **httpOnly-cookie based** — no JS-readable token; in-page API calls use `fetch(..., {credentials: 'same-origin'})`. `GET /api/auth/session` is the SPA's session probe (200 for anonymous, never 401).
+`./scripts/e2e/run-e2e.sh` (full, headless), `run-e2e-smoke.sh`, `DISPLAY=:11 pytest backend/tests/e2e/ -v --headed`. **E2E suites must never persist changes to dev data**; negative login tests use a nonexistent account, never wrong passwords for `admin@example.com`. Fixtures, markers, auth-vs-testing rules and the `RUN_*` gates: `backend/tests/CLAUDE.md`, `backend/tests/e2e/CLAUDE.md` (root text moved intact to its end).
 
 ### Browser automation (interactive debugging)
 
@@ -541,7 +287,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Watch sources (local / S3 / SMB auto-import) | `backend/app/services/watch_sources/CLAUDE.md` |
 | Word / PDF transcript documents with numbered lines | `backend/app/services/transcript_document/CLAUDE.md` |
 | Test suite: markers, gates, E2E fixtures | `backend/tests/CLAUDE.md` |
-| Repo scripts + destructive-op warnings | `scripts/CLAUDE.md` |
+| Repo scripts + destructive-op warnings (detail moved down: `scripts/{audit_tests,e2e,pki,release,release-tests}/CLAUDE.md`, `scripts/notes/`) | `scripts/CLAUDE.md` |
 | Release pipeline (12 stages, ledger, gates) | `docs-site/docs/developer-guide/releasing.md` |
 | Full local test matrix (4 stages, overlay sub-matrix) | `docs-site/docs/developer-guide/full-test-matrix.md` |
 | Frontend SPA (+ one file per folder under `frontend/src/`: `git ls-files 'frontend/src/**/CLAUDE.md'`) | `frontend/CLAUDE.md` |
@@ -556,8 +302,8 @@ subsystem, and put new subsystem detail **there**, not in this file.
 > still gets masked text (sending unredacted PII to a third party is a data-egress event). Key that
 > off the **provider**, never a global setting.
 >
-> ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/service.py._prepare_context`
-> resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn (via `chat/masking.py`'s
+> ✅ **The provider keying is BUILT and shipped**, not just decided. `chat/context_prep.py`'s `_mask_evidence`
+> (called from `_prepare_context`) resolves `redaction.llm_guard.is_local_provider(llm.config)` once per turn (via `chat/masking.py`'s
 > `_build_mask_kwargs` / `_build_digest_mask_kwargs`) and threads it as
 > `unmask_for_local` to all three masking call sites (`mask_chunks`, and both `mask_digests` calls).
 > A **local** model (a `vllm`/`ollama`/`custom` config whose `base_url` resolves to
@@ -585,69 +331,13 @@ subsystem, and put new subsystem detail **there**, not in this file.
 
 ## Conventions
 
-- **`gh issue create` bypasses issue-form validation** — the required "Area" dropdown in
-  `.github/ISSUE_TEMPLATE/{bug_report,feature_request,task}.yml` only gets enforced by the GitHub
-  web UI, not the API/CLI. When creating an issue with `gh issue create`, always pass `--label`
-  with a type label (`bug` | `enhancement` | `task` | `documentation`) plus every applicable area
-  label from the bank: `backend`, `frontend`, `asr`, `search`, `rag-chat`, `llm-provider`, `gpu`,
-  `docker`, `security`, `performance`, `testing`. Check `gh label list` for the current bank
-  before inventing a new one — five topic labels (`asr`/`search`/`rag-chat`/`llm-provider`/`gpu`)
-  already exist for grouping the ASR/RAG/search issue clusters. An issue with none of these gets
-  auto-tagged `needs-triage` by `.github/workflows/label-from-template.yml` — don't rely on that
-  as the normal path, it's the fallback for issues that skip the form.
-- **A labeled issue is not a tracked issue — it also needs to be on the org Roadmap project.**
-  `gh issue create` does not add the issue to a project or set its milestone; that's a second,
-  separate step. `.github/workflows/label-from-template.yml` only applies labels, it does not
-  touch the project board. After creating (or materially re-scoping) an issue:
-  1. Add it to the board: `gh project item-add 1 --owner attevon-llc --url <issue-url>`.
-  2. Set `Status` (`Backlog`/`Ready`/`In Progress`/`In Review`/`Done`), `Priority`
-     (`P0`–`P3`), and `Epic` (single-select matching the `epic:*` label if one applies, else the
-     closest topic) via `gh project item-edit --id <item-id> --field-id <field-id> --project-id
-     PVT_kwDOEFrMRc4Bge4t --single-select-option-id <option-id>`. Look up current field/option IDs
-     with `gh project field-list 1 --owner attevon-llc --format json` — they are not hardcoded
-     here because options get added/renamed over time.
-  3. Set `Target` (date field, same `item-edit` pattern with `--date YYYY-MM-DD`) using real
-     prerequisites, not a guess — check what the issue's own body says it depends on (`#NNN`
-     references) and never date it before an issue it depends on. Two issues that reference each
-     other are a dependency chain, not just "related": tag both with a shared `epic:<name>` label
-     (`gh label create epic:<name> ...` if one doesn't already exist) so the chain is visible in
-     search, not just in the roadmap's date ordering.
-  4. If the work is part of an actual release push (not just "eventually"), assign the matching
-     `gh issue edit <n> --milestone "vX.Y.Z"` — create the milestone first with `gh api
-     repos/attevon-llc/OpenTranscribe/milestones` if it doesn't exist yet. Don't backdate a
-     milestone-scoped issue's target ahead of issues it depends on that aren't in that milestone.
-  5. **Priority is not the same as sequence.** Every issue in an active build chain can legitimately
-     be `P1` — priority says "does this matter for the current push", the `Target` date and the
-     `epic:*` label are what encode order and dependency. Don't set `Target` dates by copying a
-     sibling issue's date; derive them from the actual `#NNN` cross-references in each issue body.
-  The org project is `https://github.com/orgs/attevon-llc/projects/1` ("OpenTranscribe Roadmap"),
-  project ID `PVT_kwDOEFrMRc4Bge4t`.
+- **Issues**: `gh issue create` bypasses form validation, so pass `--label` (a type label plus every applicable area label); then add the issue to the org Roadmap project and set Status/Priority/Epic/Target/milestone (`gh project item-add 1 --owner attevon-llc --url <issue-url>`). Full procedure, project ID and field handling: `.github/CLAUDE.md`.
 - **Docker compose layering**: base `docker-compose.yml` + auto-loaded `docker-compose.override.yml` (dev) OR explicit `-f` flags for prod / nginx / pki / offline / gpu-scale / local. Mixing dev + prod requires explicit flags (override is NOT auto-loaded then).
 - Always `docker compose` (with space), never the legacy `docker-compose`.
 - Conventional commits: `<type>(<scope>): <summary>`.
 - `.env` is never overwritten without confirmation; `.env.example` is the editable template — keep new vars in sync.
 - Keep code files under ~300 lines; Google-style Python docstrings; light/dark mode parity for any frontend change.
-- **i18n is a requirement of EVERY release, not a task in one of them.** Any change that adds or
-  edits user-facing copy must land the string in all **12** locales
-  (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh), and `ar` is RTL — check
-  it renders, don't assume. Two traps:
-  - **`npm run check:i18n` enforces key PARITY, not translation.** A key copied into all 12 files
-    with English text passes the gate and ships untranslated. Parity is the floor, not the goal.
-  - **It runs in three places, and one of them has a gap.** (1) CI runs it explicitly
-    (`.github/workflows/pre-commit.yml`, step "Check i18n key parity"). (2) It also runs
-    **locally** — `scripts/frontend-check.sh` (the "i18n parity check" step) calls `npm run check:i18n`, and that script
-    body **is** the `frontend-check` pre-commit hook (`.pre-commit-config.yaml`, `--check-only`
-    at commit stage), so a local `git commit` touching frontend code does run it. (3) The
-    residual gap: that hook's `files: ^frontend/src/` + `types_or: [svelte, ts, javascript,
-    css, html]` does not match `.json`, and locale files
-    (`frontend/src/lib/i18n/locales/*.json`) are tagged `json` by `identify` — so **a commit
-    that touches only locale JSON files does not fire the hook at all**, and a parity break
-    introduced purely in translation files looks clean locally and fails only in CI. Run it
-    yourself when in doubt: `cd frontend && npm run check:i18n`.
-
-  This bites hardest on releases that touch a lot of copy at once, and on any long-lived branch:
-  every locale file is a shared edit surface, so a branch that sits unmerged collects conflicts in
-  all 12 at the same time.
+- **i18n is a requirement of EVERY release.** Any user-facing copy lands in all **12** locales (`frontend/src/lib/i18n/locales`: ar de en es fr it ja ko nl pt ru zh; `ar` is RTL). `npm run check:i18n` enforces key PARITY, not translation, and a commit touching only locale JSON does not fire the pre-commit hook: run `cd frontend && npm run check:i18n` yourself. The two traps in full: `frontend/CLAUDE.md` ("i18n").
 - No mocking in production code paths — mocks belong in test fixtures only.
 - Real integration testing: if a test depends on Redis/Postgres/OpenSearch, run against the real service or document the dependency. Don't silently skip.
 - **LLM speaker-ID suggestions are never auto-applied** — they are surfaced with confidence scores for manual verification only.
@@ -663,63 +353,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
   merged"). Only once the branch is fully green does a PR go open from it into `master`; `master`
   changes **only** via that merged PR, never via a local `git merge <branch>` on `master` pushed
   directly — that bypasses review and produces a merge commit nobody chose the message for.
-- **More than one writer in a checkout? ONE of them commits.** Everyone else hands over exact
-  paths plus a commit message. This is not style — pre-commit **stashes the entire worktree** on
-  every run (issue #434), so N writers each running their own commit-retry loop means each one's
-  hook run is what makes the other N−1 fail with `files were modified by this hook` while the
-  hook itself reports no findings. Four agents in one checkout produced four destroyed work
-  sets, ~25-minute commit blocks, and a patch file in `~/.cache/pre-commit/` every two minutes
-  before this rule was adopted. Serialising cost nothing and every lane landed within the hour.
-- **Inside a stash window, your uncommitted work is simply GONE from disk — and the failure can
-  present as your own code having never been written.** Three symptoms of the same cause, all
-  observed here: the phantom `files were modified by this hook`; the E2E backend flapping; and
-  a module reverting to its last-committed version, so a test that passed sixty seconds ago
-  fails with `ImportError: cannot import name '<the thing you just wrote>'`. Someone nearly
-  spent an afternoon on a non-existent import cycle. **Before debugging a sudden impossible
-  failure, check whether another writer is running pre-commit.**
-  ⚠️ **And do NOT back up your files during that window — you will back up the stash.** Copying
-  to a safe directory mid-stash captures the *reverted* content, and "restoring" from it
-  destroys the work for real. Wait for the restore, verify the file actually contains your
-  change, and only then copy. This was caught once by diffing the backup against the live file
-  instead of trusting the copy.
-  ☠️ **The worst variant is a GREEN run: a test suite can pass having tested the OLD code.**
-  Observed — a suite reported `13 passed` while the tree was stashed, having imported the
-  committed versions of both the source and the test file. A minute later the same command
-  reported `2 failed, 11 passed`, because that run caught the app file restored and the test
-  file not. **Neither number meant anything**, and the only tell was that the *test names* in
-  the output did not match the names just written. A red run makes you look; a green one gets
-  recorded as evidence and you move on. So: **when a run is your evidence, check it ran YOUR
-  code** — new test names present, a marker string in the output, or a deliberate failure you
-  expect to see. A pass you cannot attribute is not a measurement.
-- **To watch a test fail against the OLD code, use a `git archive HEAD` tree — never swap files
-  in the shared checkout.** The repo's standard is that a test you have not seen red is not
-  evidence, so this is done often. Reverting a file in place and putting it back costs two
-  backend hot-reloads (each dispatching `search_index_maintenance`), leaves the fix off disk in
-  a window where a stash can capture the reverted state, and races every other writer:
-
-  ```bash
-  RED="$(mktemp -d -t ot-redcheck.XXXXXX)" && git archive HEAD | tar -x -C "$RED"
-  cp backend/tests/.../test_the_new_one.py "$RED/backend/tests/.../"   # new tests, old source
-  cd "$RED/backend" && <run them; expect red>
-  ```
-
-  Immune to stash windows, costs no reloads, disturbs nobody, and the tree you are testing is
-  provably HEAD rather than "what I think I reverted". Use that `ot-redcheck.` name: hand-named
-  `/tmp/redcheck*` trees reached **4.1 GB** on this host, and `scripts/cleanup-test-data.py`'s
-  tmp plane (`./opentr.sh test-cleanup`) removes only registered shapes (issue #1195).
-- **`audit-tests` is a WHOLE-TREE gate, so an unfinished test file blocks everyone.** One
-  in-progress test anywhere under `backend/tests` with an open finding refuses **every** commit
-  in the worktree, including commits that do not touch it — twice in one day a lane's own
-  next-unit test file was refusing its own finished work. Before reporting a unit ready, run
-  `cd backend && python3 ../scripts/audit-tests.py tests` and get to 0 open findings. And do not
-  assume a hook failure is the stash bug: **read the finding first.** Roughly half of the ones
-  blamed on contention were real.
-- **Commit with an explicit pathspec, and remember staging is not protection.**
-  `git commit -- <paths>` takes **worktree** content for those paths and leaves everyone else's
-  staged work alone; a bare `git commit` in a shared index sweeps up whatever others have staged.
-  Pass files, not a directory — a directory pathspec silently swept in two untested modules that
-  happened to live beside the finished ones. Note `git commit -- <path>` fails on an **untracked**
-  file: `git add` it first, then commit with the pathspec.
+- **More than one writer in a checkout? ONE of them commits**, everyone else hands over exact paths plus a commit message. Inside a stash window your uncommitted work is GONE from disk and a green test run can have tested the OLD code: check the run used YOUR code. To watch a test fail against old code use a `git archive HEAD` tree (`ot-redcheck.` prefix), never swap files in the shared checkout. `audit-tests` is a whole-tree gate; commit with an explicit pathspec (and `git add` untracked files first). The reasoning and incidents: `docs/agent-workflow/pre-commit-and-concurrent-writers.md`.
 - **Every `.py` edit under `backend/app/` restarts the hot-reloading dev backend, and startup
   dispatches `search_index_maintenance`.** That corrupted three reindexes in one day. Batch app-file
   edits, and announce a measurement or reindex window before starting one. ⚠️ Until 2026-09-07 this

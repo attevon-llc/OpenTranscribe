@@ -1,24 +1,14 @@
-CLAUDE.md	731	v0.6.1 merge: release growth; split by concern planned
-backend/app/api/CLAUDE.md	598	v0.6.1 merge: release growth; split by concern planned
 backend/app/api/endpoints/files/management.py	1400	v0.6.1 merge: release growth; split by concern planned
-backend/app/auth/CLAUDE.md	511	oversize: split by concern planned
 backend/app/core/celery.py	1467	v0.6.1 merge: release growth; split by concern planned
 backend/app/core/config.py	1647	v0.6.1 merge: release growth; split by concern planned
-backend/app/services/CLAUDE.md	1091	v0.6.1 merge: release growth; split by concern planned
-backend/app/services/chat/CLAUDE.md	958	oversize: split by concern planned
 backend/app/services/llm_service.py	1251	v0.6.1 merge: release growth; split by concern planned
-backend/app/services/search/CLAUDE.md	910	oversize: split by concern planned
-backend/app/tasks/CLAUDE.md	534	v0.6.1 merge: release growth; split by concern planned
-backend/tests/CLAUDE.md	957	oversize: split by concern planned
 frontend/src/components/FileUploader.svelte::script	827	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FilterSidebar.svelte::script	756	oversize: split by concern planned
 frontend/src/components/SettingsModal.svelte::script	998	oversize: split by concern planned
-frontend/src/components/settings/CLAUDE.md	408	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1400	v0.6.1 merge: release growth; split by concern planned
 frontend/src/routes/+page.svelte::script	1464	v0.6.1 merge: release growth; split by concern planned
 opentr.sh	4905	v0.6.1 merge: release growth; split by concern planned
 opentranscribe.sh	2597	v0.6.1 merge: release growth; split by concern planned
-scripts/CLAUDE.md	1254	v0.6.1 merge: release growth; split by concern planned
 scripts/cleanup-test-data.py	1158	cohesive: one signature-scoped sweep (cutoff, shapes, finders, API deletes, planes) sharing one safety model
 scripts/common.sh	1932	v0.6.1 merge: release growth; split by concern planned
 scripts/docker-build-push.sh	1562	oversize: split by concern planned

@@ -7,6 +7,12 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
 
 ## Key files
 
+- `ClustersSection.svelte` — everything the Clusters tab does (list, merge / split / unassign /
+  promote / delete, reclustering and its websocket progress); stays mounted across tab switches so
+  search / page / expanded-card state survives, rendering the tab only while `active`.
+  `ProfilesSection.svelte` — the profile edit / delete / avatar / gender flows (the page owns the
+  profile loading). `SpeakerPromoteModal.svelte` — the inline-name promote dialog. Their rules are
+  in `$lib/speakers/` (see `src/lib/speakers/CLAUDE.md`).
 - `ClustersTab.svelte` — clusters view (identified/unidentified split); hosts cards + members.
 - `SpeakerClusterCard.svelte` — one cluster card (expand, gender-conflict badge, actions).
 - `ClusterMemberList.svelte` — members of a cluster; outlier analysis, split/unassign selection.
@@ -35,7 +41,7 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
 ## Conventions / patterns
 
 - Import via `$components`; types from `$lib/types/speakerCluster`; i18n via `$t`.
-- Children take props + `createEventDispatcher`; the page owns all loading, API calls, and state.
+- Children take props + `createEventDispatcher`. The page owns the tab bar and the loading of the lists it hands down; `ClustersSection` and `ProfilesSection` own their own mutation API calls and flow state.
 - Skeletons/empties come from `ui/` (ListRowSkeleton, CardGridSkeleton, EmptyState).
 
 ## How it connects

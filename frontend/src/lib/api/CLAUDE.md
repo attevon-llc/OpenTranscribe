@@ -10,6 +10,13 @@ call these functions, not `axios` directly.
 
 - `mediaUrl.ts` — presigned media stream URLs + caching/refresh (`getMediaStreamUrl`, `createUrlRefresher`).
 - `speakerClusters.ts` — clusters/profiles (server-paginated: `listClusters(page, perPage, …)`).
+- `reprocess.ts` — `reprocessFile` / `reprocessFiles` (re-run pipeline stages; the body is built by
+  `buildReprocessBody` in `$lib/fileDetail/reprocessStages`; both routes 409 with a reason when the
+  re-run cannot run).
+- `adminSettings.ts` — note `AdminSettingsApi.setSystemAiSummary(enabled)`: on
+  `PUT /admin/system/ai-summary` `enabled` is a **query** param, not a body field (a JSON body gets
+  a 422). `userSettings.ts` carries the per-user ai-summary preference
+  (`GET`/`PUT /user-settings/ai-summary`).
 - `transcriptionSettings.ts`, `asrSettings.ts`, `llmSettings.ts`, `prompts.ts`, `userSettings.ts`,
   `redactionSettings.ts`, `downloadSettings.ts`, `audioExtractionSettings.ts`,
   `organizationContext.ts`, `speakerAttributeSettings.ts`, `mediaSourcesApi.ts`, `suggestions.ts`,
@@ -40,8 +47,8 @@ call these functions, not `axios` directly.
 ## Conventions / patterns
 
 - Use the shared `axiosInstance` from `$lib/axios` (handles CSRF + 401 refresh + cancellation).
-  Never create a separate axios instance or hardcode the API base URL (it comes from
-  `$lib/utils/url` / `VITE_API_BASE_URL`).
+  Never create a separate axios instance or hardcode the API base URL (`$lib/axios` sets
+  `baseURL: '/api'`; the dev proxy and nginx route it).
 - Error handling: surface backend errors via `$lib/utils/apiError` (`handleApiError`/`withAsync`)
   in callers; ignore cancelled requests (`isRequestCancelled`).
 - **Push filtering/sorting/pagination to the server** as query params — don't fetch-all-then-filter

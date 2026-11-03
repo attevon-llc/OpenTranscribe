@@ -9,7 +9,7 @@ caches of API responses.
 ## Key stores
 
 - `auth.ts` — session state, login/logout, 401 auto-refresh, and the **account-lifecycle
-  classifier**. Auth is httpOnly-cookie based, so there is no JS-readable token to hold.
+  hold** (the classifier and its code contract live in `$lib/auth/accountLifecycle.ts`). Auth is httpOnly-cookie based, so there is no JS-readable token to hold.
   The classifier is deliberately narrow: it recognises only the `detail.code` values the
   backend documents (`password_change_required`, `account_expired`,
   `banner_acknowledgment_required`, `account_pending_approval`, `account_rejected`) and lets
@@ -19,7 +19,10 @@ caches of API responses.
   because the endpoint that clears each gate needs it. Add a code here **and** to
   `api/endpoints/auth/lifecycle_gates.py` (`external_token.py` for `proxy_identity_mismatch`) —
   a client that string-matches an English message breaks on rewording.
-- `websocket.ts` — real-time file/task status updates (large; split candidate).
+- `websocket.ts` — the socket lifecycle (connect, reconnect, close codes; policy in
+  `$lib/websocket/connectionPolicy.ts`) and frame dispatch. `websocketNotifications.ts` — the
+  notification list it holds (persistence, retention, panel/client actions, folds of inbound frames
+  into cards); it only touches `state.notifications`.
 - `toast.ts` — `toastStore.success/error(...)` notifications.
 - `transcriptStore.ts` — transcript segments + processed cache (used by transcript views/analytics).
 - `notificationRetention.ts` — the "Keep notifications for" preference and the "N cleared" notice
@@ -39,7 +42,8 @@ caches of API responses.
 ## Gotchas
 
 - `websocket.ts` dispatches custom events some pages listen for (e.g. clustering progress);
-  keep event names stable when refactoring. `local_model_download` (#1246, sent only to the admin who started the
+  the event names and `apiCache` scopes per frame type are the `FRAME_ROUTES` table in
+  `$lib/websocket/frameRouting.ts`. Keep event names stable when refactoring. `local_model_download` (#1246, sent only to the admin who started the
   download) becomes the `local-model-download` window event and creates NO notification: the model library toasts on a
   finish itself.
 - `llmStatus.ts` (`isLLMAvailable`, every AI button) is kept current by a poll, a re-check on

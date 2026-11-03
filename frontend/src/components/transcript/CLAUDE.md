@@ -46,6 +46,11 @@ viewing/editing/export UI and dispatch intent back up.
   second page-level pager) and classifies them against a server-supplied `occurrences` prop.
   Both modes render through `TranscriptSegmentList` with `editable={false}`.
 
+- `SegmentSpeakerDropdown.svelte` (in `components/`, not this folder) — the per-segment speaker menu.
+  Its rules are `$lib/speakers/speakerMenu` (trigger label, name validity, suggestions, ordering) and
+  the portal DOM builders `$lib/speakers/speakerMenuDom`; `SegmentNewSpeakerModal.svelte` is the
+  create-speaker step. See `src/lib/speakers/CLAUDE.md`.
+
 ## Conventions / patterns
 
 - Import via `$components`, i18n via `$t` from `$stores/locale`; speaker labels through

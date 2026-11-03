@@ -34,7 +34,7 @@ reports `tenancy_mode === 'multi'`.
   upload/search/chat/export/download/copy; `readOnly` also hides every edit control. Hiding is UX
   only; the backend refuses with `support_grant_write_required` / `_action_not_permitted`, which
   `axios.ts` turns into toasts.
-- **WebSocket gap.** `support_access_*` events are routed by `stores/websocket.ts` to
+- **WebSocket gap.** `support_access_*` events are routed by `$lib/websocket/frameRouting.ts` (called from `stores/websocket.ts`) to
   `$lib/supportAccess/wsHandlers.ts` and re-emitted as the window event `support-access-event`.
   They are unit-tested only; the dev proxy in the browser harness could not carry the socket.
 

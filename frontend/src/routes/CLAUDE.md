@@ -50,8 +50,8 @@ there is no server-side rendering of app data.
   its 4 s timeout. Measured on a prod build, Search/Chat click-to-content 160 -> 125 / 164 -> 115 ms.
 - **The file page's first `GET /files/{id}` joins the gallery's hover prefetch** (`apiCache`,
   `cacheKey.fileDetail`) and consumes the entry; the prefetch used to write a cache nothing read, so
-  hover + click fetched the file twice. Only the first load does this (`fetchFileDetails(id, true)`);
-  reprocess/retry always hit the server. Likewise `setupVideoUrl(id, keepCached)` keeps the prefetched
+  hover + click fetched the file twice. Only the first load does this (`getFileDetail(id, { fromPrefetch: true, ... })` in `$lib/fileDetail/fileDetailData`);
+  reprocess/retry always hit the server. Likewise `mediaStream.open(id, keepCached)` (`$lib/fileDetail/mediaStream`) keeps the prefetched
   stream URL on first load instead of clearing it and re-requesting.
 
 - **Don't paint a page against placeholder config and then correct it — gate the render on the

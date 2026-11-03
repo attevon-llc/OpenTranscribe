@@ -124,10 +124,19 @@ def _validate_ldap_settings(settings: "Settings") -> None:
         )
 
     if settings.LDAP_USE_SSL and settings.LDAP_USE_TLS:
-        _config_logger.warning(
-            "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive. Using LDAPS (LDAP_USE_SSL); "
-            "StartTLS is not negotiated."
-        )
+        # ldap3 lets the URL scheme override use_ssl, so the effective transport follows the
+        # server address: an explicit ldap:// URL is never LDAPS, and StartTLS then applies.
+        if settings.LDAP_SERVER.lower().startswith("ldap://"):
+            _config_logger.warning(
+                "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive, and LDAP_SERVER is an "
+                "ldap:// URL, which is never LDAPS. Using StartTLS (LDAP_USE_TLS); "
+                "LDAP_USE_SSL is ignored."
+            )
+        else:
+            _config_logger.warning(
+                "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive. Using LDAPS "
+                "(LDAP_USE_SSL); StartTLS is not negotiated."
+            )
 
 
 def _validate_oidc_settings(settings: "Settings") -> None:

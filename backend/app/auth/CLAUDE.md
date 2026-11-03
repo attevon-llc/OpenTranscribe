@@ -54,96 +54,14 @@ with a password / still self-register?":
 
 ## Admission control — who gets an account at all (`v381`)
 
-Authentication answers "are you who you say you are". Admission answers "does this deployment
-want you". They were the same question for OIDC, which is how JIT provisioning ended up
-minting an account for **every identity in a corporate tenant** on first login.
-
-| Control | Applies to | Empty/off means |
-|---|---|---|
-| `ldap_user_groups` → `ldap_directory._check_group_access` | LDAP | no group requirement |
-| `oidc_allowed_groups` / `oidc_blocked_groups` → `oidc/admission.py` | OIDC | admit everyone |
-| `require_account_approval` → `auth/approval.py` | self-registration **and** every JIT path | accounts are usable immediately. If the stored setting cannot be read (DB error), `approval_required` returns `None`: new accounts are created `pending` and a pending user gets 503 `auth_config_unavailable` until reads recover |
-
-- **Semicolons delimit both group lists**, matching `ldap_directory._parse_group_list`: a group value
-  brokered from a directory is a DN and contains commas. Matching is case-insensitive exact.
-- **An empty allow-list admits everyone.** Reading it as "admit nobody" would lock out every
-  existing OIDC deployment on upgrade. Only a non-empty list restricts.
-- **Blocked means denied**, not "exempt from the allow-list", and is evaluated first.
-- The check runs at the **top of `sync_oidc_user_to_db`** — before the create branch and before
-  the email-match link. Creating first would leave a row behind for a refused identity;
-  linking first would hand one a foothold on an existing account. It re-runs on **every** login,
-  so removing someone from the group locks them out rather than only affecting new users.
-- Refusals return the **same generic 401** an unusable token gets
-  (`provisioning.LINK_REFUSED_DETAIL`) — a distinct message is an account-existence oracle. The
-  reason goes to the audit log as `AUTH_LOGIN_FAILURE` / `OIDC_ADMISSION_REFUSED`.
-- `approval_status` ∈ `pending`/`approved`/`rejected` is **not** `is_active`: deactivation
-  revokes an account that was once usable, approval gates one that never has been. Enforcement
-  is a lifecycle gate in `api/endpoints/auth/dependencies.py` (`detail.code ==
-  "account_pending_approval"` / `"account_rejected"`), not a second mechanism. Turning the
-  setting off releases pending accounts; **rejected stays rejected**, and rejection never
-  deletes the row. Admin queue: `GET/POST /api/admin/user-approvals` (**admin** tier — managing
-  users; the switch that creates the queue is auth config, hence super_admin).
-- **The bootstrap super_admin is never pending** (`initial_data._ensure_admin_user` writes it
-  explicitly). Only a signed-in administrator can clear the queue.
+Group allow/block lists decide admission: an empty allow-list admits everyone, blocked means denied and is evaluated first, semicolons delimit both lists, and the bootstrap super_admin is never pending. Rules and the migration contract: `backend/app/auth/notes/admission-control.md`.
 
 ## Trusted-header auth (`auth_type='proxy'`) — one trust check, two callers
 
-An authenticating reverse proxy (oauth2-proxy, Authelia, Cloudflare Access, an SSO gateway)
-asserts the identity in a header. `auth/header_trust.py` is **the** answer to "may this peer
-assert an identity?", and `pki_mode='header'` is now a specialisation of it — a proxy vouching
-for a subject DN instead of an email. `pki_auth`'s `_pki_*` names are bindings onto those
-functions; there is no second copy, and `test_proxy_header_auth.py` fails if one reappears.
-
-| Rule | Where |
-|---|---|
-| Empty allowlist **refuses every assertion** (not "warn and continue") | `header_trust.header_assertion_permitted` |
-| `main.py` refuses to boot hardened with `PROXY_ENABLED` and no allowlist | same shape as the PKI guard |
-| The **immediate peer** decides — never `X-Forwarded-For` | `header_trust.immediate_peer_ip` |
-| Optional shared secret, constant-time (`X-OpenTranscribe-Proxy-Secret`) | `header_trust.shared_secret_matches` |
-| Role header **opt-in and capped at `admin`** | `proxy/assertion._role_from_header` |
-| `proxy_allowed_domains`: empty admits everyone | `proxy/assertion.domain_admitted` |
-| Every refusal audited, including from an untrusted peer | `proxy/assertion._audit_refusal` |
-
-- **The header is read at sign-in only.** `POST /api/auth/proxy/authenticate` mints a normal
-  session (a `refresh_token` row), so idle/absolute timeout, the concurrent cap, the revocation
-  epoch and the sessions UI apply unchanged.
-- **Per-request consistency**: `dependencies._enforce_proxy_identity_consistency` **revokes**
-  (not just 401s) when a trusted peer asserts a different address than the session's user. Three
-  narrowings, each of which would otherwise be a DoS: only `auth_type='proxy'` accounts, only a
-  header from a trusted peer, and **absence is not an assertion**.
-- **Groups: absent ≠ empty.** An absent groups header means "I do not manage your groups" and
-  skips membership reconciliation entirely; an empty one reconciles to empty. That is
-  `reconcile_user(..., reconcile_memberships=...)`, and `apply_role=False` when neither a role
-  header nor a group assertion is present — so a deployment that never opted into header-driven
-  privilege cannot have an existing `admin` silently demoted by a login.
-- `PROXY_ASSERTS_EMAIL_VERIFIED = True`, unlike PKI's `False`. Here the address **is** the
-  assertion (there is no second identifier to bind on), so reading it as unverified would refuse
-  every pre-existing account forever. `account_linking`'s super_admin rule still applies
-  unconditionally.
-
+The header is read at sign-in only; per-request consistency revokes on mismatch; absent groups header is not empty groups. Rules: `backend/app/auth/proxy/CLAUDE.md`.
 ## SCIM 2.0 provisioning (`/scim/v2`, RFC 7643/7644)
 
-Mounted at **root**, not under `/api`: RFC 7644 §3.1 fixes the base path and every connector
-appends `/Users` to it. Bearer-token authenticated against a hashed `scim_token` row (`v382`)
-that a super_admin issues at `/api/admin/scim-tokens` and can revoke.
-
-- Writes go through `services/scim_service.py` → `account_security_service` /
-  `idp_group_mapping_service`, never straight to the ORM. `active: false` and `DELETE` both
-  **disable and revoke sessions**; `DELETE` is a soft-disable, because a connector dropping
-  someone from its assignment scope must not erase their transcripts.
-- **No SCIM call writes a role**, and none may touch a `super_admin` (mirrors `directory_sync`
-  rule 2). Group membership is written `source='scim'`, which
-  `MEMBERSHIP_SOURCES_PROTECTED` shields from directory reconciliation and vice versa.
-- **Not rate limited, deliberately** — the credential is 256 random bits, an IdP bursts
-  hundreds of requests from a small egress pool, and a per-IP limit would throttle the tenant.
-  No handler there carries `@limiter.limit`, hence none declares `response: Response`.
-- **Supported filter**: exactly `<attribute> eq "<value>"` on `userName`/`externalId` (Users)
-  and `displayName` (Groups). Anything else is `400 invalidFilter` — a partial filter
-  implementation returns wrong answers a client acts on.
-- **The `PATCH` surface is closed and documented** in `api/endpoints/scim/patch_ops.py`, with
-  the unsupported half named there. Unsupported paths are `400 invalidPath`, never a 200 for a
-  change that did not happen.
-
+No SCIM call writes a role or touches a `super_admin`; the endpoint is deliberately not rate limited; the filter and PATCH surfaces are closed. Rules: `backend/app/api/endpoints/scim/CLAUDE.md`.
 ## Privilege tiers
 
 `role` ∈ {`user`, `admin`, `super_admin`}. The dividing rule:
@@ -325,26 +243,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
 
 ## The OIDC surface is named `oidc_*`, and a test enforces it
 
-A user in the field reported that "Keycloak" support looked hardcoded to Keycloak.
-Discovery (#353) made a generic provider work; the rename (`v379`/`v380`) made that
-*visible*, because every field an Authentik admin typed into was still named for
-someone else's product.
-
-- Config keys, schema, service, routes (`/api/auth/oidc/*`), admin panel and i18n are
-  all `oidc_*`. The IdP redirect URI points at the SPA's `/login`, never at these
-  routes, so the rename needed no identity-provider reconfiguration.
-- **`KEYCLOAK_*` environment variables keep working forever**, translated onto the
-  canonical `OIDC_*` names by `core/legacy_auth_env.py` before `Settings` is built. The
-  legacy spelling **wins** when both are set. That module is an *input adapter*, not a
-  second implementation — nothing downstream, including
-  `auth_config_keys.ENV_TO_CONFIG_MAPPING`, ever sees the old name.
-- `tests/unit/test_oidc_naming_invariant.py` fails the build if the retired noun
-  appears in any Python file under `backend/app/` outside a three-entry allow-list,
-  each carrying a written reason: the env adapter, `db/migrations.py` (historical
-  schema fingerprints for pre-`v380` databases), and the deprecated
-  `AuthMethodsResponse.keycloak_enabled` computed field, which is emitted for one
-  minor release so a cached SPA bundle keeps rendering the SSO button.
-
+`KEYCLOAK_*` environment variables keep working forever (translated onto the `oidc_*` names). The naming rule, the ID-token and subject gotchas: `backend/app/auth/oidc/CLAUDE.md`.
 ## Gotchas
 
 - **`cookies.py`'s `_SECURE` module constant is computed once at import time from
@@ -391,6 +290,15 @@ someone else's product.
   `users.py` / `admin.py` / `password_reset.py`. Access tokens are stateless, so revocation
   reaches them via a **per-user epoch** (`token_service.stamp_user_revocation_epoch`), not a
   JTI list.
+  **The WebSocket handshake applies the same verdict** (`websockets.py` calls
+  `token_service.access_token_revoked(payload, db)`, one function shared with the HTTP
+  dependencies, plus the lifecycle gate `admitted_on_optional_auth`); a copy that dropped `iat`
+  once let logout-all miss the handshake. Sockets already open are closed with code 4004
+  (`SESSION_REVOKED_CLOSE`) when the epoch is stamped (`ConnectionManager.close_revoked`, fed by
+  `publish_session_revocation`). The token store re-probes Redis after a degraded fall-back
+  (`REDIS_REPROBE_SECONDS`, at most one probe per interval); revocations recorded while degraded
+  never reached Redis, so tokens issued before recovery keep the database verdict until expiry
+  (`_predates_recovery`).
 - **`absolute_expires_at` is carried forward, never recomputed.** It is the only thing that
   caps a client which refreshes forever; `expires_at` moves with each rotation and therefore
   caps nothing. `last_activity_at` is the half that does move. Both are **nullable and
@@ -425,44 +333,8 @@ someone else's product.
   `/auth/banner/acknowledge` and both logout routes reachable. Deliberately **not** audited
   per request — it would fire on every request of every pre-acknowledgment session; the
   acknowledgment itself is the audit artefact.
-- **Only the ID token authenticates an OIDC login.** `validate_token` used to try the
-  ID token and then fall back to the access token, accepting whichever verified — so an
-  ID token failing `aud`/`iss` silently downgraded to a credential RFC 9068 §6 forbids
-  the client from inspecting, whose `aud` means something else entirely, and which is
-  opaque on Okta/Google/Entra. The fallback is deleted; a missing or invalid ID token is
-  a hard 401. `openid` is forced into the requested scopes for the same reason.
-  The access token is still used — as a **bearer credential** against `userinfo`, which
-  is what it is for.
-- **The OIDC ID token lives on the session row, never in a cookie**
-  (`refresh_token.oidc_id_token`, `v380`, encrypted at rest). RP-Initiated Logout needs
-  it as `id_token_hint`, so it has to outlive the callback; a cookie would expose the
-  full identity claim set to anything that reaches the cookie jar and outlive the
-  session that justified it. On the session row, rotation/revocation/the concurrent
-  cap already delete it.
-- **`user.oidc_subject` is a `sub`, unique only per ISSUER.** The UNIQUE index on it is
-  sound only while exactly one provider is configured; multi-provider means keying on
-  `(iss, sub)`. The old column name asserted a global identifier, which is why it was
-  renamed rather than left alone.
-- **Registry-based providers and the `auth_type` CHECK (#866).** `external_sync` writes
-  `identity.provider` into the CHECK-constrained `user.auth_type`, so a provider registered under
-  a string outside `DB_ADMITTED_AUTH_TYPES` needs the REGISTERING EDITION to widen
-  `ck_user_auth_type_valid` and `ck_user_invitation_auth_type_valid` in its own **additive**
-  migration. Core cannot do it for them. `register_verifier` logs a WARNING for such a type, and
-  `auth_type_admission.assert_auth_type_admitted` (called first in `sync_external_user_to_db`)
-  checks the live constraint and raises `ExternalProviderNotAdmittedError` naming the fix instead
-  of a bare CheckViolation at commit (only positive answers are cached, so applying the migration
-  needs no restart). **No core migration may rewrite unlisted values to `'local'`** (the
-  v377/v380 `UPDATE ... WHERE auth_type NOT IN (...)` repair): replayed after an edition widened
-  the CHECK, it silently turns delegated-auth accounts into password logins with no password. The
-  test file above fails on any post-v380 migration containing that pattern. A catch-all
-  `'external'` value (real provider kept in a metadata column) would remove the need for edition
-  migrations entirely; it is a schema decision not taken here.
-- **`user.auth_type` had TWO CHECK constraints** — `ck_user_auth_type_valid` (v377) and
-  a legacy `users_auth_type_check` (v200, re-asserted by v367/v371, still in
-  `database/init_db.sql`). Swapping only the first would not have failed the migration;
-  it would have failed every OIDC login afterwards with a CheckViolation on JIT
-  provisioning. `v380` drops the duplicate — one rule, one owner — and
-  `test_v380_migration_consistency.py` pins that exactly one remains.
+- **OIDC gotchas**: only the ID token authenticates a login; the ID token lives on the session row, never in a cookie; `user.oidc_subject` is a `sub` unique only per ISSUER. Full text: `backend/app/auth/oidc/CLAUDE.md`.
+- **Registry-based providers and the `auth_type` CHECK (#866).** `external_sync` writes `identity.provider` into the CHECK-constrained `user.auth_type`; a provider outside `DB_ADMITTED_AUTH_TYPES` needs the registering edition to widen `ck_user_auth_type_valid` and `ck_user_invitation_auth_type_valid` in its own additive migration, and `user.auth_type` had TWO CHECK constraints. Rules and the pinning test: `backend/app/auth/notes/auth-type-checks.md`.
 - **Secrets never leave the auth-config API.** `config_value` is `None` for a sensitive key and
   `is_set` carries the signal. Do not reintroduce a placeholder: returning `***REDACTED***`
   meant the admin panel bound it into the password field and the next Save encrypted it over

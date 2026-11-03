@@ -37,7 +37,10 @@ def _members() -> frozenset[str]:
 
 
 _MEMBERS = _members()
-_memo: dict[int, tuple[set[str], list[Any]]] = {}
+# Keyed by the function OBJECT, never ``id(fn)``: a Celery task's ``.run`` is a bound method built
+# fresh on every access, so its id is recycled the moment the walk lets go of it and an unrelated
+# task would inherit its events and callees. The dict holds the key, so it cannot be recycled.
+_memo: dict[Any, tuple[set[str], list[Any]]] = {}
 
 
 def _resolve(node: ast.AST, names: dict[str, Any]) -> Any:
@@ -83,7 +86,7 @@ def _target(fn: Any) -> Callable[..., Any] | None:
 
 
 def _scan(fn: Callable[..., Any]) -> tuple[set[str], list[Any]]:
-    key = id(fn)
+    key = getattr(fn, "__func__", fn)
     if key in _memo:
         return _memo[key]
     try:
@@ -124,15 +127,18 @@ def _scan(fn: Callable[..., Any]) -> tuple[set[str], list[Any]]:
 
 def reachable_events(start: Any, *, depth: int = 7) -> set[str]:
     """Every ``AuditEventType`` member named in code reachable from ``start``."""
-    seen: set[int] = set()
+    seen: set[Any] = set()
     found: set[str] = set()
     stack: list[tuple[Any, int]] = [(start, 0)]
     while stack:
         obj, level = stack.pop()
         fn = _target(obj)
-        if fn is None or id(fn) in seen:
+        if fn is None:
             continue
-        seen.add(id(fn))
+        key = getattr(fn, "__func__", fn)
+        if key in seen:
+            continue
+        seen.add(key)
         events, callees = _scan(fn)
         found |= events
         if level < depth:

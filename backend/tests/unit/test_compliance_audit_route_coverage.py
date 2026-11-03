@@ -178,3 +178,32 @@ def test_the_walk_sees_an_emitter_two_calls_deep_and_ignores_signatures():
 
     assert "ADMIN_USER_DELETE" in reachable_events(admin.admin_erase_user)
     assert not reachable_events(lambda: None)
+
+
+class _FakeTasks:
+    """Stand-ins for a Celery task's ``.run``: a bound method, built fresh on every access."""
+
+    def first(self):
+        return AuditEventType.ADMIN_USER_DELETE
+
+    def second(self):
+        return AuditEventType.CONTENT_EXPORT
+
+
+for _fn in (_FakeTasks.first, _FakeTasks.second):
+    _fn.__module__ = "app.fake_task_module"  # the walk only follows ``app.*`` code
+
+
+def test_the_walk_does_not_confuse_two_bound_methods_that_reuse_an_address():
+    """A bound method is garbage the moment its walk ends, and the next one can take its address.
+
+    The walk memoised by ``id(fn)``, and a Celery task's ``.run`` is exactly that kind of
+    short-lived bound method, so one task's callees and events were handed to an unrelated
+    task whenever the allocator recycled the address. Whether that happened depended on what
+    the process had allocated before: the same tree passed alone and failed in CI with
+    ``POST /api/files/waveforms/generate`` "reaching" a compliance event it cannot reach.
+    """
+    tasks = _FakeTasks()
+    for _ in range(300):
+        assert reachable_events(tasks.first) == {"ADMIN_USER_DELETE"}
+        assert reachable_events(tasks.second) == {"CONTENT_EXPORT"}

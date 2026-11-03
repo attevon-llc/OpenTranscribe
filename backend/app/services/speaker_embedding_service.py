@@ -10,6 +10,8 @@ from typing import cast
 import numpy as np
 
 if TYPE_CHECKING:
+    import threading
+
     # Annotations only. `from __future__ import annotations` above makes every annotation a
     # string, so `torch.Tensor` in a signature no longer needs torch at import time — while
     # type checkers still resolve it. torch itself is imported inside each function that
@@ -210,7 +212,7 @@ class SpeakerEmbeddingService:
             self.device = torch.device(self.hardware_config.get_pyannote_config()["device"])
             self._initialize_model()
 
-    def _initialize_model(self):
+    def _initialize_model(self) -> None:
         """Initialize the pyannote embedding model."""
         try:
             # Lazy import: pyannote is GPU-worker-only; keeping it out of the
@@ -562,7 +564,7 @@ class SpeakerEmbeddingService:
         """Get the dimension of the embeddings produced by the model."""
         return EmbeddingModeService.get_embedding_dimension(self.mode)
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         """
         Explicitly cleanup the embedding model and free GPU memory.
 
@@ -603,7 +605,7 @@ _cached_embedding_service: SpeakerEmbeddingService | None = None
 _cache_lock = None  # Lazy-initialized threading lock (reentrant)
 
 
-def _get_cache_lock():
+def _get_cache_lock() -> threading.RLock:
     """Get or create the cache lock (lazy initialization for fork safety).
 
     Uses RLock (reentrant) because get_cached_embedding_service() calls

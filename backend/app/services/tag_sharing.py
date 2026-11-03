@@ -13,6 +13,7 @@ no permission column — a tag share grants *vocabulary*, not administration.
 """
 
 import logging
+from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -195,7 +196,7 @@ def share_tag(
     return share
 
 
-def revoke_share(db: Session, tag_id: int, share_uuid) -> bool:
+def revoke_share(db: Session, tag_id: int, share_uuid: UUID) -> bool:
     """Remove one grant. Returns False when it was already gone.
 
     Revoking does not touch the tag or any association: a recipient who applied

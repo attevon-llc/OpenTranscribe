@@ -4,6 +4,7 @@ Split out of ``task_recovery_service``.
 """
 
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC
 from datetime import datetime
@@ -65,7 +66,7 @@ class TaskRecoveryRetryMixin:
 
     @staticmethod
     @contextmanager
-    def _session_scope():
+    def _session_scope() -> Iterator[Session]:
         """Provide a transactional scope around a series of operations."""
         from app.db.base import SessionLocal
 

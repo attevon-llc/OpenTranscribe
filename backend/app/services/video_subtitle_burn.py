@@ -45,7 +45,7 @@ def _get_video_codecs(output_format: str) -> tuple[str, str, str]:
     return "copy", "mov_text", "mp4"
 
 
-def _validate_ffmpeg_paths(original_video_path, subtitle_path) -> str:
+def _validate_ffmpeg_paths(original_video_path: str | Path, subtitle_path: Path) -> str:
     """
     Validate paths and return ffmpeg executable path.
 
@@ -76,7 +76,7 @@ def _validate_ffmpeg_paths(original_video_path, subtitle_path) -> str:
 
 def _build_ffmpeg_command(
     ffmpeg_path: str,
-    video_path: str,
+    video_path: str | Path,
     subtitle_path: str,
     output_path: str,
     video_codec: str,
@@ -154,7 +154,7 @@ class VideoSubtitleBurnMixin(VideoProcessingHost):
         status: str,
         progress: int | None = None,
         error: str | None = None,
-    ):
+    ) -> None:
         """Send progress notification if user_id is provided."""
         if user_id:
             self._send_download_progress_sync(user_id, file_id, status, progress, error)
@@ -222,7 +222,7 @@ class VideoSubtitleBurnMixin(VideoProcessingHost):
     def _process_video_in_temp_dir(
         self,
         file_id: int,
-        original_video_path,
+        original_video_path: str | Path,
         user_id: int | None,
         include_speakers: bool,
         output_format: str,
@@ -270,7 +270,7 @@ class VideoSubtitleBurnMixin(VideoProcessingHost):
     def embed_subtitles_in_video(
         self,
         file_id: int,
-        original_video_path,
+        original_video_path: str | Path,
         user_id: int | None = None,
         include_speakers: bool = True,
         output_format: str = "mp4",

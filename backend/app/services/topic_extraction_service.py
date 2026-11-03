@@ -36,6 +36,7 @@ from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMProvider
+from app.services.redaction.config import EffectiveRedactionConfig
 from app.utils.llm_log_safety import describe_llm_text
 from app.utils.llm_log_safety import log_llm_text_excerpt
 
@@ -252,7 +253,7 @@ IMPORTANT GUIDELINES:
         self,
         media_file_id: int,
         force_regenerate: bool,
-        redaction_cfg,
+        redaction_cfg: EffectiveRedactionConfig | None,
     ) -> dict[str, Any] | None:
         """Phase 1 — read (short session, Postgres only).
 
@@ -333,7 +334,7 @@ IMPORTANT GUIDELINES:
         media_file_id: int,
         force_regenerate: bool = False,
         progress_callback: Callable[[str], None] | None = None,
-        redaction_cfg=None,
+        redaction_cfg: EffectiveRedactionConfig | None = None,
     ) -> TopicExtractionResult | None:
         """
         Extract tag and collection suggestions from a transcript using LLM
@@ -471,7 +472,11 @@ IMPORTANT GUIDELINES:
             return False
 
     def _get_transcript_text(
-        self, media_file: MediaFile, redaction_cfg=None, *, db: Session | None = None
+        self,
+        media_file: MediaFile,
+        redaction_cfg: EffectiveRedactionConfig | None = None,
+        *,
+        db: Session | None = None,
     ) -> str | None:
         """Extract transcript text from media file, masked per the owner's LLM policy.
 

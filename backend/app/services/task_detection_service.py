@@ -9,6 +9,7 @@ this class composes them and stays the public face (``TaskDetectionService`` and
 ``task_detection_service`` singleton).
 """
 
+from app.core.task_config import TaskRecoveryConfig
 from app.core.task_config import task_recovery_config
 from app.services.task_detection_errors import TaskDetectionErrorsMixin
 from app.services.task_detection_post_transcription import TaskDetectionPostTranscriptionMixin
@@ -20,7 +21,7 @@ class TaskDetectionService(
 ):
     """Service for detecting task and file issues."""
 
-    def __init__(self, config=None):
+    def __init__(self, config: TaskRecoveryConfig | None = None) -> None:
         """Initialize with optional configuration override."""
         self.config = config or task_recovery_config
 

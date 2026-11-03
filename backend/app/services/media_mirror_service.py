@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -30,6 +31,9 @@ from app.services.scheduled_job_settings import json_value
 from app.services.scheduled_job_settings import read_encrypted_secret
 from app.services.scheduled_job_settings import session_scope
 from app.services.scheduled_job_settings import store_encrypted_secret
+
+if TYPE_CHECKING:
+    from botocore.client import BaseClient
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +200,9 @@ def _s3_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_s3_client(cfg: dict[str, Any], db: Session | None = None, secret: str | None = None):
+def build_s3_client(
+    cfg: dict[str, Any], db: Session | None = None, secret: str | None = None
+) -> BaseClient:
     """Boto3 client for the mirror destination bucket (reuses the backup builder)."""
     return backup_s3._build_s3_client(
         _s3_cfg(cfg), secret if secret is not None else get_s3_secret_key(db)

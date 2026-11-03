@@ -7,6 +7,7 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
+from sqlalchemy import ColumnElement
 from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -116,7 +117,7 @@ def to_out(db: Session, grant: SupportAccessGrant) -> SupportGrantOut:
     return to_outs(db, [grant])[0]
 
 
-def _status_clause(state: str, now: datetime):
+def _status_clause(state: str, now: datetime) -> ColumnElement[bool]:
     """SQL twin of ``compute_status``; the list filter runs in the database."""
     g = SupportAccessGrant
     approved_like = or_(g.decision == "approved", g.grant_mode == "break_glass")

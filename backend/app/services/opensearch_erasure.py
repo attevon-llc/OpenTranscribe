@@ -11,19 +11,26 @@ runs the per-file set for ``file_cleanup_service.purge_media_file``;
 speaker-family erasers directly.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 from typing import Any
+
+if TYPE_CHECKING:
+    from opensearchpy import OpenSearch
 
 logger = logging.getLogger(__name__)
 
 
-def _opensearch_client():
+def _opensearch_client() -> OpenSearch | None:
     """Return the OpenSearch client, or ``None`` when it is disabled/unbuilt."""
     from app.services.opensearch_service import opensearch_client
 
-    return opensearch_client
+    client: OpenSearch | None = opensearch_client
+    return client
 
 
 def _count_surviving(index: str, query: dict[str, Any]) -> int:

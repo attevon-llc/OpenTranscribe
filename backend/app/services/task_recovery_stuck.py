@@ -357,7 +357,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
 
         return stats
 
-    def _update_media_file_if_no_active_tasks(self, db: Session, media_file: MediaFile):
+    def _update_media_file_if_no_active_tasks(self, db: Session, media_file: MediaFile) -> None:
         """Update media file status if no active tasks remain."""
         active_tasks = (
             db.query(Task)

@@ -36,6 +36,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from app.core.enums import TranscriptionStage
 from app.core.task_config import task_recovery_config
@@ -56,6 +57,9 @@ from app.utils.error_classification import transient_retry_delay
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 logger = logging.getLogger(__name__)
 
 #: What a worker-loss recovery stores on the run's Task row.
@@ -70,7 +74,7 @@ class RunOutcome(StrEnum):
     CANCELLED = "cancelled"  # its cancel was requested: recorded as cancelled (issue #1163)
 
 
-def _error_budget_allows(db, media_file: MediaFile, category: ErrorCategory) -> bool:
+def _error_budget_allows(db: Session, media_file: MediaFile, category: ErrorCategory) -> bool:
     if not is_transient(category):
         return False
     retry_count = int(media_file.retry_count or 0)
@@ -79,7 +83,7 @@ def _error_budget_allows(db, media_file: MediaFile, category: ErrorCategory) -> 
     return system_settings_service.should_retry_file(db, retry_count)
 
 
-def _retire_run(db, task_id: str, file_uuid: str, message: str) -> None:
+def _retire_run(db: Session, task_id: str, file_uuid: str, message: str) -> None:
     """Mark the run's Task row failed WITHOUT re-deriving the file's status from it.
 
     ``update_task_status`` would run the file-status aggregate, which turns a PROCESSING file
@@ -121,7 +125,7 @@ def _release_reservation(media_file: MediaFile, task_id: str) -> None:
 
 
 def _fail_file(
-    db,
+    db: Session,
     media_file: MediaFile,
     task_id: str,
     category: ErrorCategory,
@@ -155,7 +159,7 @@ def _dispatch_retry(media_file_id: int, countdown: int | None) -> bool:
 
 
 def _retry_file(
-    db,
+    db: Session,
     media_file: MediaFile,
     task_id: str,
     category: ErrorCategory,
@@ -274,7 +278,7 @@ def run_cancel_requested(task_id: str, file_id: int | None) -> bool:
 
 
 def _finish(
-    db, media_file: MediaFile, task_id: str, category: ErrorCategory, user_message: str
+    db: Session, media_file: MediaFile, task_id: str, category: ErrorCategory, user_message: str
 ) -> RunOutcome:
     if not is_transient(category):
         return _fail_file(db, media_file, task_id, category, user_message)
@@ -306,7 +310,7 @@ def _finish(
     )
 
 
-def recover_overrun_run(db, task: Task) -> RunOutcome | None:
+def recover_overrun_run(db: Session, task: Task) -> RunOutcome | None:
     """A run still heartbeating past its duration budget: a hung stage, treated as transient.
 
     Spends the error budget (with backoff) rather than the infrastructure one: the worker is
@@ -450,7 +454,7 @@ def _within_reclaim_grace(task: Task) -> bool:
     return created_at > _reclaim_cutoff()
 
 
-def recover_lost_run(db, task: Task) -> RunOutcome | None:
+def recover_lost_run(db: Session, task: Task) -> RunOutcome | None:
     """A run whose worker died and whose broker message is gone: re-dispatch or fail it.
 
     The health check's fallback for a transcription with no lease and no queued marker. The

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -14,6 +15,9 @@ from app.services.backup_retention import _TS_RE
 from app.services.backup_retention import _backup_timestamp
 from app.services.backup_retention import select_backups_to_delete
 
+if TYPE_CHECKING:
+    from botocore.client import BaseClient
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +28,7 @@ _S3_READ_TIMEOUT = 60
 # =============================================================================
 # S3-compatible destination (boto3 — AWS S3 / MinIO / Backblaze / Wasabi / etc.)
 # =============================================================================
-def _build_s3_client(cfg: dict[str, Any], secret_key: str | None):
+def _build_s3_client(cfg: dict[str, Any], secret_key: str | None) -> BaseClient:
     """Construct a boto3 S3 client for the configured endpoint (path-style for non-AWS).
 
     Mirrors ``watch_sources/s3_client.py``: explicit ``endpoint_url`` for S3-compatible
@@ -83,7 +87,7 @@ def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str
     return result
 
 
-def _s3_list_keys(client, bucket: str, prefix: str) -> list[str]:
+def _s3_list_keys(client: BaseClient, bucket: str, prefix: str) -> list[str]:
     """List object keys under ``prefix`` that match our backup-filename pattern."""
     paginator = client.get_paginator("list_objects_v2")
     keys: list[str] = []
@@ -127,7 +131,9 @@ def list_backups_s3(cfg: dict[str, Any], db: Session | None = None) -> list[dict
         return []
 
 
-def prune_backups_s3(cfg: dict[str, Any], client=None, db: Session | None = None) -> list[str]:
+def prune_backups_s3(
+    cfg: dict[str, Any], client: BaseClient | None = None, db: Session | None = None
+) -> list[str]:
     """Delete GFS-excess backup objects in the bucket. Returns deleted object keys."""
     bucket = (cfg.get("s3_bucket") or "").strip()
     if not bucket:

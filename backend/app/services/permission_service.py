@@ -8,6 +8,8 @@ and resolves access via direct ownership, direct user shares, and group shares.
 import logging
 from typing import Any
 
+from sqlalchemy import ColumnElement
+from sqlalchemy import Subquery
 from sqlalchemy import and_
 from sqlalchemy import case
 from sqlalchemy import func
@@ -64,7 +66,7 @@ class PermissionService:
     """Centralized permission checking for collections and files."""
 
     @staticmethod
-    def collection_tenant_pred(user_id: int, organization_id: int | None):
+    def collection_tenant_pred(user_id: int, organization_id: int | None) -> ColumnElement[bool]:
         """The collections that are the caller's own in one tenant (issue #1051).
 
         In an organization that is every collection of the organization — they
@@ -246,7 +248,7 @@ class PermissionService:
     @staticmethod
     def get_accessible_file_ids_subquery(
         db: Session, user_id: int, *, organization_id: OrgScope = UNSCOPED
-    ):
+    ) -> Subquery:
         """Return a subquery of file IDs the user can access.
 
         Union of:

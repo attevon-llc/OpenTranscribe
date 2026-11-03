@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core import chat_defaults
@@ -12,6 +13,7 @@ from app.services.chat.aggregation import AggregationResult
 from app.services.chat.aggregation import subject_clause
 from app.services.chat.aggregation_queries import _MENTION_FIELDS
 from app.services.chat.aggregation_queries import _TITLE_FIELDS
+from app.services.chat.aggregation_queries import SearchClient
 from app.services.chat.aggregation_queries import SessionFactory
 from app.services.chat.aggregation_queries import _accessible_scoped_files
 from app.services.chat.aggregation_queries import _flag_enabled
@@ -19,6 +21,9 @@ from app.services.chat.aggregation_queries import _quarantined_among
 from app.services.chat.aggregation_queries import _speaker_tally
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +39,7 @@ _SETTING_SPEAKER_STATS_ENABLED = "chat.aggregate.speaker_stats_enabled"
 
 
 def _run_speaker_facet(
-    client,
+    client: SearchClient,
     index: str,
     filters: list[dict[str, Any]],
     question: str,
@@ -114,7 +119,7 @@ def _run_speaker_facet(
 
 
 def _run_speaker_stats(
-    db,
+    db: Session,
     user_id: int,
     organization_id: int | None,
     file_uuids: list[str] | None,

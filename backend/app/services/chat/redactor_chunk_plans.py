@@ -12,12 +12,17 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core import redaction_defaults
 from app.services.search.chunk_retrieval import ChunkHit
+
+if TYPE_CHECKING:
+    from app.models.media import TranscriptSegment
+    from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +145,7 @@ def _effective_cfg_for_owner(
 # --------------------------------------------------------------------------- #
 
 
-def _segment_spans(row) -> _SegmentSpans:
+def _segment_spans(row: TranscriptSegment) -> _SegmentSpans:
     """Copy one segment row's masking inputs out of the ORM."""
     return _SegmentSpans(
         text=str(row.text or ""),
@@ -153,7 +158,7 @@ def _gather_chunk_segments(
     db: Session,
     chunk: ChunkHit,
     requester_user_id: int,
-    requester_cfg,
+    requester_cfg: EffectiveRedactionConfig,
     owner_cache: dict[Any, Any],
 ) -> tuple[list[_SegmentSpans] | None, Any]:
     """Read the segments backing one chunk, or None to mean "mask inline".
@@ -251,7 +256,10 @@ def _gather_chunk_segments(
 
 
 def _gather_chunk_plans(
-    db: Session, chunks: list[ChunkHit], requester_user_id: int, requester_cfg
+    db: Session,
+    chunks: list[ChunkHit],
+    requester_user_id: int,
+    requester_cfg: EffectiveRedactionConfig,
 ) -> list[_ChunkPlan]:
     """Phase A for :func:`mask_chunks`. One failed read withholds one chunk."""
     owner_cache: dict[Any, Any] = {}

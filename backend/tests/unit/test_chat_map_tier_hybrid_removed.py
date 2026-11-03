@@ -134,8 +134,15 @@ def test_digest_and_summary_entries_render_as_one_unlabelled_line():
         assert "Closing discussion" not in block
 
 
+class _NoCallLLM:
+    def chat_completion(self, messages, **_kwargs):
+        raise AssertionError("_plain() must not call the model")
+
+
 def test_batch_reducer_plain_carries_the_summary_text():
-    plain = BatchReducer(llm=None)._plain([FileSummary(file_uuid="u", llm_summary="Paragraph.")])
+    plain = BatchReducer(llm=_NoCallLLM())._plain(
+        [FileSummary(file_uuid="u", llm_summary="Paragraph.")]
+    )
     assert "Paragraph." in plain
 
 

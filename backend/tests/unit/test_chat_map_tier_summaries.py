@@ -30,6 +30,8 @@ from unittest.mock import patch
 
 import pytest
 
+from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
 from app.services.chat.citations import KIND_DIGEST
 from app.services.chat.citations import KIND_SUMMARY
 from app.services.chat.citations import build_overview_citations
@@ -308,28 +310,20 @@ def test_d6_the_map_tier_composes_without_an_llm():
 # --------------------------------------------------------------------------- #
 
 
-class _StubSpeaker:
-    def __init__(self, name: str):
-        self.name = name
-        self.display_name = name
-        self.suggested_name = None
-        self.confidence = None
+def _stub_segments() -> list[TranscriptSegment]:
+    def _segment(seg_id: int, text: str, start: float, end: float, name: str) -> TranscriptSegment:
+        return TranscriptSegment(
+            id=seg_id,
+            text=text,
+            start_time=start,
+            end_time=end,
+            speaker=Speaker(name=name, display_name=name, suggested_name=None, confidence=None),
+        )
 
-
-class _StubSegment:
-    def __init__(self, seg_id: int, text: str, start: float, end: float, speaker_name: str | None):
-        self.id = seg_id
-        self.text = text
-        self.start_time = start
-        self.end_time = end
-        self.speaker = _StubSpeaker(speaker_name) if speaker_name else None
-
-
-def _stub_segments() -> list[_StubSegment]:
     return [
-        _StubSegment(1, "Hello there.", 0.0, 2.0, "Dana"),
-        _StubSegment(2, "General Kenobi.", 2.0, 4.5, "Bo"),
-        _StubSegment(3, "You are a bold one.", 4.5, 6.0, "Dana"),
+        _segment(1, "Hello there.", 0.0, 2.0, "Dana"),
+        _segment(2, "General Kenobi.", 2.0, 4.5, "Bo"),
+        _segment(3, "You are a bold one.", 4.5, 6.0, "Dana"),
     ]
 
 

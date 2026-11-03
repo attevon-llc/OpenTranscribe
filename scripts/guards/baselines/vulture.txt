@@ -119,7 +119,6 @@ backend/app/transcription/engine/backends/diarizers/native_backend.py::method::w
 backend/app/transcription/engine/backends/diarizers/pyannote_backend.py::class::PyAnnoteBackend	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/diarizers/pyannote_backend.py::method::warmup	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/protocols.py::class::DiarizerBackend	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/transcription/engine/backends/protocols.py::class::TranscriberBackend	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/protocols.py::method::warmup	2	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/transcribers/cloud_backend.py::class::CloudBackend	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/transcribers/cloud_backend.py::method::warmup	1	residual after the dead-code pass; delete or whitelist when touched

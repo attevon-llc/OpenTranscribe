@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class FileCleanupService:
     """Service for automated file cleanup and recovery operations."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.stuck_threshold_hours = 2
         self.orphan_threshold_hours = 12
         self.max_recovery_attempts = 3

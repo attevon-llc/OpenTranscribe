@@ -21,10 +21,14 @@ from __future__ import annotations
 from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
 from typing import Literal
 
 from app.core.queues import CeleryQueues
 from app.core.queues import gpu_preferred_queue
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 TranscriptionEngine = Literal["local_gpu", "local_cpu", "cloud"]
 DiarizationEngine = Literal["asr", "local", "pyannote_ai", "asr_config", "off"]
@@ -40,6 +44,8 @@ Where = Literal["server", "cloud"]
 Timing = Literal["word", "segment", "none"]
 Severity = Literal["error", "warning", "info"]
 Step = Literal["transcription", "diarization", "speaker_id"]
+
+
 SpeakerHint = Literal["min", "max", "num"]
 
 ALL_HINTS: frozenset[SpeakerHint] = frozenset({"min", "max", "num"})
@@ -283,7 +289,9 @@ def _local_hints(diarizer_backend: str) -> frozenset[SpeakerHint]:
     return ALL_HINTS if diarizer_backend == "pyannote" else frozenset()
 
 
-def _diarization_engine(i: PlanInputs, local_asr: bool, add) -> DiarizationEngine:
+def _diarization_engine(
+    i: PlanInputs, local_asr: bool, add: Callable[[str, Severity], None]
+) -> DiarizationEngine:
     """Which detector runs for the stored source, recording why when it is not usable."""
     lite = i.deployment_mode == "lite"
     source = i.diarization_source

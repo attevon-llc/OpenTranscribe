@@ -29,6 +29,7 @@ from typing import Any
 
 import pytest
 
+from app.core.enums import LLMProvider
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.chat import service as chat_service
 from app.services.chat.redactor import MaskedChunk
@@ -81,7 +82,7 @@ def _chunk(index: int, content: str) -> MaskedChunk:
 
 
 class _FakeConfig:
-    provider = "vllm"
+    provider = LLMProvider.VLLM
     model = "gemma-4-e4b"
 
 
@@ -94,6 +95,9 @@ class _ReasoningLLM:
         self.response_tokens = 4000
         self._reasoning = reasoning
         self._deltas = deltas
+
+    def chat_completion(self, messages, **_kwargs):
+        raise NotImplementedError("the turn under test makes no non-streaming call")
 
     def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         for text in self._reasoning:

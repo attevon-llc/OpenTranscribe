@@ -24,6 +24,11 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.chat.router import Route
+    from app.services.llm_types import SupportsChatCompletion
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +220,7 @@ def _is_multi_part(text: str) -> bool:
 def needs_plan(
     *,
     question: str,
-    route,
+    route: Route,
     ambiguous_speaker: bool = False,
     non_english_locale: bool = False,
 ) -> bool:
@@ -292,7 +297,9 @@ _PLANNER_SYSTEM = (
 _PLANNER_MAX_TOKENS = 100
 
 
-def build_plan(llm, question: str, *, max_tokens: int = _PLANNER_MAX_TOKENS) -> tuple[Plan, int]:
+def build_plan(
+    llm: SupportsChatCompletion | None, question: str, *, max_tokens: int = _PLANNER_MAX_TOKENS
+) -> tuple[Plan, int]:
     """Turn-1 standalone planner call.
 
     Only reached when :func:`needs_plan` fired — never a routing-only call

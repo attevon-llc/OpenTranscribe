@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -398,7 +399,7 @@ def parse_ollama_ndjson(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
     yield LLMStreamEvent(type="done", finish_reason=finish_reason)
 
 
-def get_stream_parser(provider: str):
+def get_stream_parser(provider: str) -> Callable[[Iterable[str]], Iterator[LLMStreamEvent]]:
     """Return the line parser for ``provider``.
 
     Args:

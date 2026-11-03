@@ -12,7 +12,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +110,11 @@ def _speaker_in_roster(facts: dict[str, Any], speaker_name: str) -> bool:
 
 
 def build_file_summaries(
-    db, digests, *, masked_text: dict[int, str], speaker_focus: str | None = None
+    db: Session | None,
+    digests: list[ChunkHit],
+    *,
+    masked_text: dict[int, str],
+    speaker_focus: str | None = None,
 ) -> list[FileSummary]:
     """Group masked digest hits by file and attach each file's stored facts.
 
@@ -217,7 +227,7 @@ def _summary_highlight_text(summary_data: dict[str, Any]) -> str:
 
 
 def scope_digest_hits(
-    db,
+    db: Session,
     file_uuids: list[str],
     *,
     sections_per_file: int = 1,
@@ -431,7 +441,7 @@ def scope_digest_hits(
     return DigestScopeHits(hits, coverage)
 
 
-def _load_facts(db, file_ids: list[int]) -> dict[str, dict[str, Any]]:
+def _load_facts(db: Session, file_ids: list[int]) -> dict[str, dict[str, Any]]:
     """`str(file_id) -> {facts, keyphrases}` for the files in scope. One query."""
     try:
         from app.models.file_facts import FileFacts

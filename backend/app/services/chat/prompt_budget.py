@@ -9,6 +9,7 @@ recorded on the turn and reported as the trace's last two stages.
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat.prompting import build_messages
@@ -19,6 +20,9 @@ from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.chat.turn import ChatTurn
+
+if TYPE_CHECKING:
+    from app.services.llm_types import ChatLLM
 
 # Floor for a reply budget. Small enough to honour "keep answers short", large
 # enough that a clamped request still returns a usable answer rather than a
@@ -65,7 +69,7 @@ def resolve_answer_tokens(
 def _assemble_prompt(
     turn: ChatTurn,
     *,
-    llm,
+    llm: ChatLLM,
     settings: ChatSettings,
     system_prompt: str,
     masked: list[MaskedChunk],

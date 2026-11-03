@@ -6,9 +6,13 @@ word-level timestamps (95% speaker accuracy). WhisperX hardcodes
 word_timestamps off in its batched pipeline.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import time
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 from typing import Any
 
 import numpy as np
@@ -18,6 +22,9 @@ from app.core.pipeline_constants import MAX_WORD_DURATION
 from app.transcription import cuda_health
 from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
+
+if TYPE_CHECKING:
+    from faster_whisper.transcribe import Segment
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +182,9 @@ def _max_oom_halvings() -> int:
         return 2
 
 
-def _collect_segments(segments_gen, audio_duration: float) -> tuple[list[dict], int]:
+def _collect_segments(
+    segments_gen: Iterable[Segment], audio_duration: float
+) -> tuple[list[dict], int]:
     """Consume faster-whisper's segment generator (this is where decoding runs).
 
     Converts each segment to a dict with validated word timestamps. ``audio_duration`` is

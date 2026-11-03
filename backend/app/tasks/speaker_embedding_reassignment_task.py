@@ -7,7 +7,10 @@ exact inverse, and every profile / cluster centroid averaging either one is rebu
 The voiceprint extraction run after transcription lives in ``speaker_embedding_task``.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.celery import celery_app
@@ -17,6 +20,9 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.services.privacy.gates import voiceprints_allowed
+
+if TYPE_CHECKING:
+    import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +164,7 @@ def _remove_segment_from_voiceprint(
     speaker_uuid: str,
     source: dict,
     document: dict,
-    segment_embedding,
+    segment_embedding: np.ndarray,
     user_id: int,
     *,
     organization_id: int | None,
@@ -318,7 +324,7 @@ def _load_reassignment_plan(
         }
 
 
-def _extract_segment_embedding(plan: dict):
+def _extract_segment_embedding(plan: dict) -> np.ndarray | None:
     """Download the media, convert it, and extract one segment embedding.
 
     Runs with **no** DB session open — this is the multi-minute phase (a full

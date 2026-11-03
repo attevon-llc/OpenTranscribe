@@ -19,6 +19,8 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
 
@@ -36,6 +38,10 @@ from app.tasks.speaker_embedding_consistency import _REDIS_LAST_RUN_KEY
 from app.tasks.speaker_embedding_consistency import _REDIS_LOCK_KEY
 from app.tasks.speaker_embedding_consistency import _REDIS_PROGRESS_KEY
 from app.utils.websocket_notify import send_ws_event
+
+if TYPE_CHECKING:
+    from app.services.speaker_analysis_models import SegmentResult
+    from app.tasks.migration_pipeline import PreparedFile
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +69,8 @@ def _voiceprints_allowed(media_file_id: int) -> bool:
 
 
 def _v3_result_writer(
-    prepared,
-    results_by_model: dict,
+    prepared: PreparedFile,
+    results_by_model: dict[str, list[SegmentResult]],
     target_uuids: set[str],
 ) -> int:
     """Write extracted embeddings to the v3 concrete speaker index.
@@ -138,8 +144,8 @@ def _v3_result_writer(
 
 
 def _v4_result_writer(
-    prepared,
-    results_by_model: dict,
+    prepared: PreparedFile,
+    results_by_model: dict[str, list[SegmentResult]],
     target_uuids: set[str],
 ) -> int:
     """Write extracted embeddings to the v4 staging index."""
@@ -310,13 +316,13 @@ def _update_repair_progress(
 def _run_repair_phase(
     mode: Literal["v3", "v4"],
     target_uuids: set[str],
-    result_writer_fn,
+    result_writer_fn: Callable[[PreparedFile, dict[str, list[SegmentResult]], set[str]], int],
     files_with_speakers: list,
     file_written: dict[str, int],
-    is_running_check,
+    is_running_check: Callable[[], bool],
     batch_index: int,
-    on_file_done=None,
-    on_file_fail=None,
+    on_file_done: Callable[[str], None] | None = None,
+    on_file_fail: Callable[[str], None] | None = None,
 ) -> int:
     """Run a single repair phase (v3 or v4) using the migration pipeline."""
     from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
@@ -334,7 +340,7 @@ def _run_repair_phase(
         # writer runs, then on_success, before moving to the next file.
         last_write_count = 0
 
-        def writer(prep, results):
+        def writer(prep: PreparedFile, results: dict[str, list[SegmentResult]]) -> int:
             nonlocal last_write_count
             count = result_writer_fn(prep, results, target_uuids)
             last_write_count = count
@@ -345,7 +351,7 @@ def _run_repair_phase(
             if on_file_done:
                 on_file_done(fuuid)
 
-        def on_failure(fuuid: str, _err) -> None:
+        def on_failure(fuuid: str, _err: Exception | None) -> None:
             if on_file_fail:
                 on_file_fail(fuuid)
 
@@ -444,7 +450,7 @@ def speaker_embedding_consistency_repair_batch_task(
     # Track which files have already had progress emitted (avoid double-counting)
     progress_emitted: set[str] = set()
 
-    def is_running():
+    def is_running() -> bool:
         return bool(r.exists(_REDIS_LOCK_KEY))
 
     def _on_file_complete(fuuid: str) -> None:

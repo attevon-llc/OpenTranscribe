@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+from typing import Any
 
 from fastapi import Request
 
@@ -240,6 +241,6 @@ def load_plan_inputs(
     )
 
 
-def plan_for_user(db: Session, user_id: int, **kwargs) -> PipelinePlan:
+def plan_for_user(db: Session, user_id: int, **kwargs: Any) -> PipelinePlan:
     """``resolve_pipeline_plan(load_plan_inputs(...))``."""
     return resolve_pipeline_plan(load_plan_inputs(db, user_id, **kwargs))

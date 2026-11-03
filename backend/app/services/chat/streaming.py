@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 
 from starlette.concurrency import run_in_threadpool
@@ -20,10 +21,15 @@ from starlette.concurrency import run_in_threadpool
 from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.turn import ChatTurn
 
+if TYPE_CHECKING:
+    from app.services.redaction.config import EffectiveRedactionConfig
+
 logger = logging.getLogger(__name__)
 
 
-def _resolve_output_policy(user_id: int, organization_id: int | None = None):
+def _resolve_output_policy(
+    user_id: int, organization_id: int | None = None
+) -> EffectiveRedactionConfig | None:
     """The requesting user's effective redaction config, or None if unresolvable.
 
     Its own short-lived session: this runs on every turn including

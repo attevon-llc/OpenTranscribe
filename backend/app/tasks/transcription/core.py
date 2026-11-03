@@ -12,11 +12,14 @@ Where the rest of the pipeline now lives: :mod:`context`,
 :mod:`diarize_task`, :mod:`cpu_task`.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import os
 import tempfile
 import time
+from typing import TYPE_CHECKING
 from typing import Any
 
 from celery import chain
@@ -66,6 +69,10 @@ from .pipelines import _run_transcription_pipeline
 from .queue_consumers import _gpu_diarize_consumer_present
 from .run_ownership import superseded_or_none as _superseded_or_none
 from .user_settings import _get_user_transcription_settings
+
+if TYPE_CHECKING:
+    from app.services.asr.base import ASRProvider
+    from app.services.pipeline_plan import PipelinePlan
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +232,7 @@ class CloudASRUnusableError(RuntimeError):
         super().__init__(CLOUD_ASR_UNUSABLE_MESSAGE)
 
 
-def _cloud_asr_provider_or_none(user_id: int, plan):
+def _cloud_asr_provider_or_none(user_id: int, plan: PipelinePlan) -> ASRProvider | None:
     """The cloud ASR provider the plan transcribes with; ``None`` only for a local plan.
 
     A cloud plan whose provider cannot be built FAILS the run (#1236). It used to fall
@@ -315,7 +322,7 @@ def _cleanup_wav_quietly(local_wav_path: str) -> None:
 
 
 def _finish_failed_or_aborted(
-    ctx, task_id: str, file_uuid: str, local_wav_path: str, exc: Exception
+    ctx: TranscriptionContext, task_id: str, file_uuid: str, local_wav_path: str, exc: Exception
 ) -> dict:
     """Terminal handler for ``transcribe_gpu_task``: distinguish ABORT from FAILURE (#809).
 

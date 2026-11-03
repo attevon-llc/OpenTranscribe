@@ -319,7 +319,7 @@ def get_garbage_cleanup_config(db: Session) -> dict:
     }
 
 
-def get_effective_garbage_cleanup_config(db, user_id: int) -> dict:
+def get_effective_garbage_cleanup_config(db: Session, user_id: int) -> dict:
     """Effective garbage-cleanup config for one user: user pref > system default > constant.
 
     The system value (``transcription.garbage_cleanup_enabled`` / ``.max_word_length``,

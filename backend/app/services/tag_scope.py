@@ -22,6 +22,7 @@ from typing import Literal
 
 from sqlalchemy import ColumnElement
 from sqlalchemy import Select
+from sqlalchemy import Subquery
 from sqlalchemy import and_
 from sqlalchemy import or_
 from sqlalchemy import select
@@ -167,7 +168,9 @@ def tenant_bound_or_system(organization_id: int | None) -> ColumnElement[bool]:
     return or_(_tenant_bound(organization_id), system_tag())
 
 
-def accessible_file_ids_subquery(db: Session, user_id: int, organization_id: OrgScope = UNSCOPED):
+def accessible_file_ids_subquery(
+    db: Session, user_id: int, organization_id: OrgScope = UNSCOPED
+) -> Subquery:
     """Subquery of the file ids ``user_id`` may open in ``organization_id``.
 
     Covers ownership, collection shares, group shares and the tenant gate, but

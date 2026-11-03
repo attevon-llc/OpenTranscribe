@@ -367,7 +367,9 @@ def merge_tags(
     return TagMutationOutcome(impact=impact, tag=target, merged=True, deleted_uuids=deleted_uuids)
 
 
-def _rename_collision(db: Session, tag: Tag, normalized: str, cleaned: str, user_id: int):
+def _rename_collision(
+    db: Session, tag: Tag, normalized: str, cleaned: str, user_id: int
+) -> Tag | None:
     """The row the new name already belongs to, looked up in the renamed tag's tenant."""
     if is_system_tag(tag):
         return (

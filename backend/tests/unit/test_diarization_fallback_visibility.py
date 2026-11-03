@@ -23,10 +23,13 @@ import pytest
 from prometheus_client import REGISTRY
 
 import app.transcription.diar_sidecar_status as diar_sidecar_status
+from app.transcription.config import TranscriptionConfig
 from app.transcription.diar_sidecar_status import DiarSidecarUnavailableError
 from app.transcription.diarization_runs import record_diarization_run
 from app.transcription.diarization_runs import run_outcome
+from app.transcription.diarize_result import DiarizeResult
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
+from app.transcription.engine.config import EngineConfig
 from app.transcription.engine.diarization_overlap import _run_diarize
 from app.transcription.model_manager import ModelManager
 
@@ -107,14 +110,19 @@ def test_recording_never_raises_into_a_transcription(
 def test_run_diarize_records_the_engine_that_actually_served():
     """The shared call site for the sequential path, the overlapped thread and rediarize."""
     fake = MagicMock()
-    fake.diarize.return_value = ("df", {}, {})
+    canned: tuple[DiarizeResult, dict, dict[str, np.ndarray] | None] = (
+        DiarizeResult(start=np.zeros(0), end=np.zeros(0), speaker=np.zeros(0, dtype=object)),
+        {},
+        None,
+    )
+    fake.diarize.return_value = canned
     fake.last_provider = "pyannote"
     fake.last_fallback_reason = "timeout"
     before = _count("pyannote", "timeout")
 
     result = _run_diarize(fake, np.zeros(16, dtype=np.float32), None)
 
-    assert result == ("df", {}, {})
+    assert result is canned
     assert _count("pyannote", "timeout") == before + 1
 
 
@@ -367,14 +375,14 @@ def test_a_dropped_sidecar_cannot_fail_a_job_whose_acoustic_recheck_is_non_fatal
         "app.transcription.speaker_assigner.assign_speakers",
         lambda df, transcript: {"segments": [], "language": "en"},
     )
-    config = SimpleNamespace(boundary_acoustic_recheck_enabled=True)
+    config = EngineConfig(boundary_acoustic_recheck_enabled=True)
 
     result, df = stages_mod._GpuStage()._run_diarization(
         np.zeros(16, dtype=np.float32),
         {"segments": []},
         MagicMock(name="profiler"),
         MagicMock(name="hw"),
-        SimpleNamespace(enable_dedup=False),
+        TranscriptionConfig(model_name="tiny", device="cpu", enable_dedup=False),
         manager,
         None,
         config=config,

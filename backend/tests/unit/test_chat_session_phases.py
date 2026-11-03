@@ -105,6 +105,9 @@ class _FakeLLM:
         self.user_context_window = 32000
         self.response_tokens = 1000
 
+    def chat_completion(self, messages, **_kwargs):
+        raise NotImplementedError("the turn under test makes no non-streaming call")
+
     def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):  # noqa: ARG002
         yield LLMStreamEvent(type="delta", text="An answer.")
         yield LLMStreamEvent(type="done", finish_reason="stop")
@@ -333,7 +336,7 @@ class _FakeLLMWithPlan:
         self.user_context_window = 32000
         self.response_tokens = 1000
 
-    def chat_completion(self, _messages, **_kwargs):
+    def chat_completion(self, messages, **_kwargs):
         return SimpleNamespace(
             content='{"subquestions": ["sub one", "sub two"], "speakers": [], '
             '"time": {}, "wants": []}'

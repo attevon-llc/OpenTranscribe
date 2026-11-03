@@ -8,6 +8,7 @@ import gc
 import logging
 import os
 import time
+from collections.abc import Callable
 from typing import Any
 from typing import ClassVar
 from typing import NoReturn
@@ -299,7 +300,7 @@ class SpeakerDiarizer:
         # Sub-stage timing via hook callback
         stage_timing: dict[str, dict[str, float]] = {}
 
-        def timing_hook(step_name, step_artefact, **kwargs: Any) -> None:
+        def timing_hook(step_name: str, step_artefact: Any, **kwargs: Any) -> None:
             now = time.perf_counter()
             if step_name not in stage_timing:
                 stage_timing[step_name] = {"start": now, "last": now}
@@ -432,8 +433,8 @@ class SpeakerDiarizer:
             return None
 
     def _run_pipeline_with_oom_retry(
-        self: Any, audio_input: dict, pipeline_kwargs: dict, hook=None
-    ):
+        self: Any, audio_input: dict, pipeline_kwargs: dict, hook: Callable[..., Any] | None = None
+    ) -> Any:
         """Run the diarization pipeline with automatic batch_size reduction on OOM.
 
         If the segmentation model hits an OOM error due to batch_size being too
@@ -495,7 +496,7 @@ class SpeakerDiarizer:
             self._pipeline = None
         logger.info("Diarizer model unloaded")
 
-    def _extract_diarization(self: Any, output, prefer_exclusive: bool = True):
+    def _extract_diarization(self: Any, output: Any, prefer_exclusive: bool = True) -> Any:
         """Extract diarization annotation from PyAnnote output."""
         if prefer_exclusive and hasattr(output, "exclusive_speaker_diarization"):
             return output.exclusive_speaker_diarization

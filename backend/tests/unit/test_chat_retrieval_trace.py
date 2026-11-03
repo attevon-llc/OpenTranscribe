@@ -18,14 +18,20 @@ the same *answer*:
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
-from types import SimpleNamespace
+from collections.abc import Iterator
 
 import pytest
 
+from app.core.config import settings as app_settings
 from app.services.chat import retrieval as retrieval_mod
 from app.services.chat.retrieval import RetrievalResult
 from app.services.chat.retrieval import retrieve_context
+from app.services.chat.router import INTENT_AGGREGATE
+from app.services.chat.router import TIER_AGGREGATE
+from app.services.chat.router import TIER_CHUNK
+from app.services.chat.router import Route
 from app.services.chat.settings import ChatSettings
 from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
@@ -47,6 +53,12 @@ def _hit(index: int, file_index: int = 0) -> ChunkHit:
         start_time=float(index),
         end_time=float(index) + 5.0,
     )
+
+
+@contextlib.contextmanager
+def _no_session() -> Iterator[None]:
+    """A session factory for paths where the collaborator that would open one is stubbed."""
+    yield None
 
 
 def _settings(**overrides) -> ChatSettings:
@@ -306,7 +318,7 @@ def _resolve_names(monkeypatch, resolution, *, enabled=True):
         question="what did Alice Chen say about layoffs",
         user_id=1,
         organization_id=None,
-        session_scope=None,
+        session_scope=_no_session,
         meta={},
         recorder=recorder,
     )
@@ -408,9 +420,7 @@ def _run_counted(monkeypatch, counted):
         "app.services.chat.aggregation_service.answer_aggregation", lambda *a, **k: counted
     )
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: object())
-    decision = SimpleNamespace(
-        wants_aggregate=True, wants_digest=False, wants_recurrence=False, intent="aggregate"
-    )
+    decision = Route(intent=INTENT_AGGREGATE, tiers=(TIER_CHUNK, TIER_AGGREGATE))
     context_prep._run_serial_pipeline(
         question="how many meetings discussed the migration",
         effective_query="how many meetings discussed the migration",
@@ -422,8 +432,10 @@ def _run_counted(monkeypatch, counted):
         speaker_focus_names=[],
         settings=_settings(),
         search_mode="hybrid",
-        session_scope=None,
-        settings_config=SimpleNamespace(OPENSEARCH_CHUNKS_INDEX="transcript_chunks"),
+        session_scope=_no_session,
+        settings_config=app_settings.model_copy(
+            update={"OPENSEARCH_CHUNKS_INDEX": "transcript_chunks"}
+        ),
         meta={},
         recorder=recorder,
     )

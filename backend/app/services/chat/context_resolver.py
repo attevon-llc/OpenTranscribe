@@ -24,6 +24,7 @@ all, needed a second gate.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy import select
@@ -40,10 +41,13 @@ from app.schemas.chat import ChatScope
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Query
+
 logger = logging.getLogger(__name__)
 
 
-def _visible_files_query(db: Session, ctx: RequestContext):
+def _visible_files_query(db: Session, ctx: RequestContext) -> Query[Any]:
     """Base query over files the caller may read, in their tenant scope.
 
     Every caller still joins through, or filters by, an already-authorized

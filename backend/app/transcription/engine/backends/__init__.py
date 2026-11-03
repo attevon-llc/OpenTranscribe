@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from app.transcription.engine.backends.protocols import TranscriberBackend
     from app.transcription.engine.config import EngineConfig
 
 #: RESERVED extension point (E5, issue #366) — dynamic dispatch is exercised by
@@ -61,19 +62,21 @@ VALID_DIARIZER_BACKENDS: tuple[str, ...] = tuple(_DIARIZER_REGISTRY)
 VALID_TRANSCRIBER_BACKENDS: tuple[str, ...] = tuple(_TRANSCRIBER_REGISTRY)
 
 
-def _import_class(dotted_path: str):
+def _import_class(dotted_path: str) -> type:
     module_path, class_name = dotted_path.rsplit(".", 1)
     import importlib
 
     module = importlib.import_module(module_path)
-    return getattr(module, class_name)
+    cls: type = getattr(module, class_name)
+    return cls
 
 
-def get_transcriber_backend(name: str):
+def get_transcriber_backend(name: str) -> TranscriberBackend:
     """Instantiate and return the named transcriber backend."""
     if name not in _TRANSCRIBER_REGISTRY:
         raise ValueError(
             f"Unknown transcriber backend '{name}'. Available: {list(_TRANSCRIBER_REGISTRY)}"
         )
     cls = _import_class(_TRANSCRIBER_REGISTRY[name])
-    return cls()
+    backend: TranscriberBackend = cls()
+    return backend

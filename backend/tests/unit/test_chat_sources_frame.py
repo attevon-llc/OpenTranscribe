@@ -58,6 +58,9 @@ class _FakeLLM:
         self.response_tokens = response_tokens
         self.sent_messages: list[dict[str, str]] | None = None
 
+    def chat_completion(self, messages, **_kwargs):
+        raise NotImplementedError("the turn under test makes no non-streaming call")
+
     def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         self.sent_messages = messages
         yield LLMStreamEvent(type="delta", text="An answer citing [1].")

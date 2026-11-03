@@ -45,6 +45,8 @@ from .run_ownership import SUPERSEDED
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+    from app.services.pipeline_plan import PipelinePlan
+
 # How long to wait before folding the enrichment tail into the timing row. Long enough for
 # indexing, clustering, summary and redaction to finish on a normal file; the upsert merges,
 # so an early flush simply records less rather than corrupting anything.
@@ -352,7 +354,7 @@ def _finalize(gpu_result: dict) -> dict:
     }
 
 
-def _dispatch_post_stage(gpu_result: dict, plan) -> bool:
+def _dispatch_post_stage(gpu_result: dict, plan: PipelinePlan) -> bool:
     """Queue the plan's post stage (speaker detection after the transcript is saved).
 
     ``rediarize_task`` with the plan's engine and merge granularity, on the plan's queue:

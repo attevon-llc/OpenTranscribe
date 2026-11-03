@@ -23,16 +23,29 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.enums import LLMProvider
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
 from app.services.chat.persistence import _persist_reply
 from app.services.chat.turn import ChatTurn
 
 
-def _fake_llm() -> SimpleNamespace:
-    return SimpleNamespace(
-        config=SimpleNamespace(provider=SimpleNamespace(value="openai"), model="test-model")
-    )
+class _FakeConfig:
+    provider = LLMProvider.OPENAI
+    model = "test-model"
+
+
+class _FakeLLM:
+    """Carries only what ``_persist_reply`` reads: the audit identity and a token estimate."""
+
+    config = _FakeConfig()
+
+    def estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
+
+
+def _fake_llm() -> _FakeLLM:
+    return _FakeLLM()
 
 
 def _turn(answer: str = "the answer") -> ChatTurn:

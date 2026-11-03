@@ -9,13 +9,19 @@ Provides anti-bot detection measures for YouTube downloads:
 All features degrade gracefully if Redis is unavailable.
 """
 
+from __future__ import annotations
+
 import logging
 import random
 from datetime import UTC
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.redis import redis_tls_kwargs
+
+if TYPE_CHECKING:
+    from redis import Redis
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +75,11 @@ def calculate_playlist_delays(video_count: int) -> list[int]:
 class YouTubeRateLimiter:
     """Redis-based rate limiter for YouTube downloads."""
 
-    def __init__(self):
-        self._redis = None
+    def __init__(self) -> None:
+        self._redis: Redis | None = None
 
     @property
-    def redis(self):
+    def redis(self) -> Redis | None:
         """Lazy Redis connection."""
         if self._redis is None:
             try:
@@ -160,7 +166,7 @@ class YouTubeRateLimiter:
 
     @staticmethod
     def _seconds_until_oldest_expires(
-        client, key: str, window_seconds: int, now: float
+        client: Redis, key: str, window_seconds: int, now: float
     ) -> int | None:
         """Seconds until the OLDEST entry still counted in ``key`` ages out of
         the window — the moment the count drops back under the limit.
@@ -179,7 +185,7 @@ class YouTubeRateLimiter:
             oldest = client.zrange(key, 0, 0, withscores=True)
             if not oldest:
                 return None
-            _member, oldest_ts = oldest[0]
+            oldest_ts = oldest[0][1]
             return max(1, int(float(oldest_ts) + window_seconds - now))
         except Exception as e:
             logger.warning(f"Failed to compute retry-after for {key}: {e}")

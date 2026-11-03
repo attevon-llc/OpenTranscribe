@@ -7,6 +7,7 @@ opened here closes before the provider round trip and only plain data leaves.
 """
 
 import logging
+from collections.abc import Iterable
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -25,7 +26,9 @@ from app.utils.user_settings_helpers import get_user_llm_output_language
 logger = logging.getLogger(__name__)
 
 
-def fingerprint_transcript_segments(transcript_segments, *, voiceprint_names: bool) -> str:
+def fingerprint_transcript_segments(
+    transcript_segments: Iterable[TranscriptSegment], *, voiceprint_names: bool
+) -> str:
     """The #464 staleness key: identical shape to ``file_facts.source_fingerprint``.
 
     ``ingest_artifacts.service.source_fingerprint`` hashes id/timings/resolved

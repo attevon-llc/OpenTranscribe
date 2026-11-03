@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import numpy as np
 
     from app.transcription.config import TranscriptionConfig
+    from app.transcription.diarize_result import DiarizeResult
     from app.transcription.engine.progress import ProgressCallback
     from app.transcription.model_manager import ModelManager
     from app.utils.hardware_detection import HardwareConfig
@@ -131,7 +132,7 @@ def _run_diarize(
     allow_local_fallback: bool = True,
     skip_sidecar: bool = False,
     tc: TranscriptionConfig | None = None,
-):
+) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
     """Call diarizer.diarize(), handing NativeSpeakerDiarizer a pre-existing WAV when we have one.
 
     ``tc`` is THIS job's ``TranscriptionConfig``. Its ``enable_native_embeddings`` and
@@ -183,7 +184,7 @@ def _collect_diarization(
     callback: ProgressCallback | None,
     async_diarization: _AsyncDiarization | None,
     wav_path: str | None = None,
-):
+) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None, str | None, str | None]:
     """Diarize, taking the overlapped result when one is in flight.
 
     Returns ``(diarize_df, overlap_info, native_embeddings, provider, model)``, where

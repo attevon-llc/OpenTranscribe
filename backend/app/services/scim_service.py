@@ -31,6 +31,7 @@ the shared helpers from here; the two split only because one file was outgrowing
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -64,7 +65,7 @@ def _audit(
     actor: str,
     target: str,
     target_user_id: int | None = None,
-    **details,
+    **details: Any,
 ) -> None:
     """Record a provisioning mutation with the token as the actor.
 

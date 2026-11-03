@@ -45,7 +45,7 @@ class MetricsCollector:
         self._redis: Redis | None = None
         self._stage_times: list[tuple[str, float]] = []
 
-    def _get_redis(self: Any):
+    def _get_redis(self: Any) -> Redis | None:
         if self._redis is None:
             try:
                 from app.core.redis import get_redis
@@ -55,7 +55,7 @@ class MetricsCollector:
                 logger.debug(f"MetricsCollector: Redis unavailable: {e}")
         return self._redis
 
-    def _hset(self: Any, field_name: str, value) -> None:
+    def _hset(self: Any, field_name: str, value: object) -> None:
         r = self._get_redis()
         if r is None:
             return
@@ -115,15 +115,16 @@ class MetricsCollector:
             return EngineMetrics()
         try:
             raw = r.hgetall(self._key)
+            durations: dict[str, float] = {}
+            for k, v in raw.items():
+                field = k.decode() if isinstance(k, bytes) else k
+                if field.startswith("last_") and field.endswith("_s"):
+                    durations[field.replace("last_", "").replace("_s", "")] = float(v)
             return EngineMetrics(
                 gpu_ready_queue_depth=int(raw.get(b"gpu_ready_queue_depth", 0) or 0),
                 gpu_in_flight=int(raw.get(b"gpu_in_flight", 0) or 0),
                 gpu_idle_seconds=float(raw.get(b"gpu_idle_seconds", 0.0) or 0.0),
-                last_stage_durations={
-                    k.decode().replace("last_", "").replace("_s", ""): float(v)
-                    for k, v in raw.items()
-                    if k.startswith(b"last_") and k.endswith(b"_s")
-                },
+                last_stage_durations=durations,
             )
         except Exception as e:
             logger.debug(f"MetricsCollector: get_snapshot failed: {e}")

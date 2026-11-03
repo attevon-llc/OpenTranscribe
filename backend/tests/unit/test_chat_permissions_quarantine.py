@@ -46,6 +46,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from app.core.enums import LLMProvider
 from app.services.chat import context_prep
 from app.services.chat import evidence as chat_evidence
 from app.services.chat.retrieval import RetrievalResult
@@ -158,12 +159,19 @@ class _FakeLLMConfig:
     `.base_url` only). A remote provider — the masking-locality decision is
     orthogonal to the quarantine gate under test here, so any fixed answer does."""
 
-    provider = "openai"
+    provider = LLMProvider.OPENAI
     base_url = None
+    model = "test-model"
 
 
 class _FakeLLM:
     config = _FakeLLMConfig()
+
+    def estimate_tokens(self, text: str) -> int:
+        return len(text) // 4
+
+    def chat_completion(self, messages, **_kwargs):
+        raise NotImplementedError("the turn under test makes no model call")
 
 
 def _run_prepare_context(monkeypatch, db_session, user, *, chunks, digests):

@@ -8,6 +8,7 @@ only evidence that has already been through ``mask_chunks``/``mask_digests``.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat import legs
@@ -22,13 +23,21 @@ from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.chat.turn import _check_cancelled
 
+if TYPE_CHECKING:
+    from app.services.chat.aggregation import AggregationResult
+    from app.services.chat.aggregation_queries import SessionFactory
+    from app.services.chat.recurrence import RecurrenceResult
+    from app.services.chat.retrieval import RetrievalResult
+    from app.services.chat.router import Route
+    from app.services.llm_types import ChatPrepLLM
+
 logger = logging.getLogger(__name__)
 
 
 def _run_plan_fanout(
     *,
     plan: planner.Plan,
-    decision,
+    decision: Route,
     effective_query: str,
     question: str,
     user_id: int,
@@ -37,11 +46,11 @@ def _run_plan_fanout(
     speakers: list[str] | None,
     settings: ChatSettings,
     search_mode: str,
-    session_scope,
+    session_scope: SessionFactory,
     assistant_message_uuid: str,
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
-):
+) -> tuple[RetrievalResult, AggregationResult | None, RecurrenceResult | None]:
     """Build and run one turn's parallel leg fan-out (#403).
 
     Returns a :class:`~app.services.chat.retrieval.RetrievalResult`-shaped
@@ -270,7 +279,7 @@ def _run_plan_fanout(
 
 
 def _run_enrichment(
-    llm, question: str, masked_chunks: list[MaskedChunk]
+    llm: ChatPrepLLM, question: str, masked_chunks: list[MaskedChunk]
 ) -> tuple[str, int, int, int]:
     """One bounded non-streaming call reconciling merged evidence (#403).
 
@@ -325,10 +334,10 @@ def _run_enrichment(
 def _maybe_run_enrichment(
     *,
     settings: ChatSettings,
-    llm,
+    llm: ChatPrepLLM | None,
     question: str,
     masked: list[MaskedChunk],
-    recurrence_result,
+    recurrence_result: RecurrenceResult | None,
     assistant_message_uuid: str,
     meta: dict[str, Any],
     recorder: TraceRecorder | None = None,
@@ -389,7 +398,7 @@ def _maybe_run_enrichment(
     return block, calls
 
 
-def _render_recurrence(recurrence_result, meta: dict[str, Any]) -> str:
+def _render_recurrence(recurrence_result: RecurrenceResult | None, meta: dict[str, Any]) -> str:
     """Phase 5 of ``_prepare_context``: the ``<recurrence>`` block, ``""`` when none."""
     recurrence_block = ""
     if recurrence_result is not None:

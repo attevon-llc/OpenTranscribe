@@ -14,10 +14,14 @@ host (an over-limit task re-queues itself), and a CPU worker drops the model onc
 detection finishes.
 """
 
+from __future__ import annotations
+
 import contextlib
 import datetime
 import logging
 import random
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.celery import celery_app
@@ -39,6 +43,11 @@ from app.tasks.speaker_attribute_inference import _model_in_use
 from app.tasks.speaker_attribute_inference import _run_gender_inference_parallel
 from app.utils.host_slots import host_slot
 from app.utils.websocket_notify import send_ws_event_for_file
+
+if TYPE_CHECKING:
+    from redis import Redis
+
+    from app.models.speaker import Speaker
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +257,7 @@ def _dispatch_llm_speaker_identification(
 
 
 def _store_gender_results(
-    speakers,
+    speakers: Sequence[Speaker],
     speaker_probs: dict[int, dict[str, float]],
     speaker_clip_counts: dict[int, int],
 ) -> int:
@@ -365,7 +374,7 @@ def detect_speaker_attributes_task(self: Any, file_uuid: str, user_id: int) -> d
                 _guard.delete(_guard_key)
 
 
-def _take_over_guard(client, key: str, task_id: str) -> bool:
+def _take_over_guard(client: Redis, key: str, task_id: str) -> bool:
     """Claim a dedupe guard another run holds, if that run is this one or is dead.
 
     The guard holds its owner's task id (issue #1067). A replay after a worker loss runs

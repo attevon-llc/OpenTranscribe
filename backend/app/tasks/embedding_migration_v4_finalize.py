@@ -3,7 +3,10 @@
 Backfills v4 profile documents, validates counts and swaps the speaker alias.
 """
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.celery import celery_app
@@ -21,6 +24,9 @@ from app.tasks.embedding_migration_v4_scope import _scopes_off_by_policy
 from app.tasks.embedding_migration_v4_scope import _take_skipped_by_policy
 from app.utils.websocket_notify import send_ws_event
 
+if TYPE_CHECKING:
+    from opensearchpy import OpenSearch
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,7 +37,7 @@ logger = logging.getLogger(__name__)
 _PROFILE_DOC_QUERY = {"query": {"term": {"document_type": "profile"}}}
 
 
-def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
+def migrate_profile_documents_to_v4(client: OpenSearch, v4_index: str) -> int:
     """Backfill v4 profile-voiceprint documents from already-migrated v4 speakers.
 
     Defect 1 of issue #657: the streaming per-file writer (
@@ -199,7 +205,7 @@ def migrate_profile_documents_to_v4(client, v4_index: str) -> int:
 
 
 def _count_profile_docs(
-    client, index: str, *, exclude: list[dict[str, Any]] | None = None
+    client: OpenSearch, index: str, *, exclude: list[dict[str, Any]] | None = None
 ) -> int | None:
     """Count `document_type: "profile"` docs in an index.
 

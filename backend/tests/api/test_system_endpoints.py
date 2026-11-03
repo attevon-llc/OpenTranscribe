@@ -168,6 +168,37 @@ def test_stats_files_and_speakers_blocks_typed(client, user_token_headers):
     assert "total_segments" in body["transcripts"]
 
 
+def test_stats_degrades_when_the_host_probes_fail(client, user_token_headers, monkeypatch):
+    """A failing host probe yields placeholder system stats, not a 500.
+
+    The fallback block is the endpoint's own answer to a probe failure, so it must carry the
+    same keys the success path reads; one spelled differently turned the fallback into a 500.
+    """
+    from app.api.endpoints import system as system_endpoints
+
+    def _probe_fails() -> dict[str, object]:
+        raise RuntimeError("psutil unavailable")
+
+    monkeypatch.setattr(system_endpoints, "get_cpu_usage", _probe_fails)
+
+    response = client.get("/api/system/stats", headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    system_block = response.json()["system"]
+    assert system_block["cpu"]["total_percent"] == "Unknown"
+    assert system_block["gpus"] == [
+        {
+            "available": False,
+            "name": "Error",
+            "memory_total": "Unknown",
+            "memory_used": "Unknown",
+            "memory_free": "Unknown",
+            "memory_percent": "Unknown",
+        }
+    ]
+    assert system_block["device_mode"] in ("cpu", "cuda")
+
+
 # ---------------------------------------------------------------------------
 # GET /api/system/config/protected-media-auth  (authenticated)
 # ---------------------------------------------------------------------------

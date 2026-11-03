@@ -24,7 +24,7 @@ import dataclasses
 
 import pytest
 
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.search import hybrid_search_service as hss
 from app.services.search import search_cache
 from app.services.search.search_cache import _make_cache_key

@@ -20,6 +20,10 @@ backend/app/core/tenant_limits.py::function::set_chat_limits_resolver	1	residual
 backend/app/core/tenant_limits.py::function::set_redaction_floor_resolver	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/tenant_limits.py::function::set_retention_resolver	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/core/tenant_limits.py::function::set_upload_limits_resolver	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/db/audit_protection.py::function::generic_guard_tables	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
+backend/app/db/audit_protection.py::function::register_protected_table	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
+backend/app/db/audit_protection.py::function::trigger_arguments	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
+backend/app/db/audit_protection.py::function::truncate_trigger_name	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
 backend/app/legal/registry.py::function::set_document_provider	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/models/mixins.py::class::TimestampMixin	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/models/mixins.py::class::UUIDMixin	1	residual after the dead-code pass; delete or whitelist when touched
@@ -64,6 +68,7 @@ backend/app/services/diarization/pyannote_provider.py::method::supports_speaker_
 backend/app/services/embedding_mode_service.py::method::is_v3_mode	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/embedding_mode_service.py::method::is_v4_mode	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/embedding_mode_service.py::method::validate_embedding_dimension	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/services/erasure_receipt/inventory.py::function::register_erasure_store	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
 backend/app/services/error_categorization_service.py::method::should_show_enhanced_notification	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/formatting_service.py::method::calculate_percentage	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/hold_guard.py::function::assert_not_held	1	residual after the dead-code pass; delete or whitelist when touched
@@ -97,6 +102,7 @@ backend/app/services/speaker_attribute_service.py::method::_load_audio_ffmpeg	1	
 backend/app/services/speaker_embedding_service.py::method::extract_embedding_from_segment	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/speaker_status_service.py::method::compute_status_for_speakers	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/speaker_status_service.py::method::refresh_all_speaker_statuses	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/services/storage_presign_identity.py::function::bucket_policy_denies_quarantined_reads	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
 backend/app/services/task_detection_errors.py::method::identify_retriable_error_files	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/video_processing_service.py::method::check_ffmpeg_availability	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/video_processing_service.py::method::get_cached_video_stream	1	residual after the dead-code pass; delete or whitelist when touched
@@ -104,6 +110,7 @@ backend/app/tasks/reindex_index_ops.py::function::_periodic_refresh	1	residual a
 backend/app/tasks/transcription/hooks.py::function::clear_hooks	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/tasks/transcription/hooks.py::function::register_before_dispatch	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/tasks/transcription/hooks.py::function::register_transcription_complete	1	residual after the dead-code pass; delete or whitelist when touched
+backend/app/tasks/voiceprint_retention.py::function::stale_profile_count	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
 backend/app/transcription/cuda_health.py::function::reset_for_tests	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/diar_sidecar_status.py::function::reset_readiness_cache	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/transcription/engine/backends/__init__.py::function::get_transcriber_backend	1	residual after the dead-code pass; delete or whitelist when touched
@@ -149,7 +156,6 @@ backend/app/utils/diarization_metrics.py::function::map_hyp_to_ref	1	residual af
 backend/app/utils/diarization_metrics.py::function::paired_bootstrap_wser	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/diarization_metrics.py::function::speaker_count_match	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/diarization_metrics.py::function::wser	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/encryption.py::function::decrypt_value	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/encryption.py::function::generate_encryption_key	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/api/error_handlers.py::function::handle_not_found	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/api/error_handlers.py::method::database_error	1	residual after the dead-code pass; delete or whitelist when touched

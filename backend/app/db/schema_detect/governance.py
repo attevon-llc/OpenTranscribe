@@ -1,10 +1,12 @@
-"""Schema detection, v434-v449: data-only resets, provenance, takedowns, policy, holds.
+"""Schema detection, v434-v457: data-only resets, provenance, takedowns, policy, holds, legal
+acceptance, erasure receipts, audit-row guards, voiceprint consent and unique object keys.
 
 The data-only revisions (v434, v436, v439) key on the ABSENCE of the rows they rewrite, read
 through each revision's own ``DETECT_SQL`` so detection and rewrite cannot drift apart. Then
 processing provenance, correction carry-over, the password-age column, legal acceptance, the
 takedown origin/notice/notification tables, organization policy, collection visibility,
-content holds, the one-active-task guard and speaker identity source.
+content holds, the one-active-task guard, speaker identity source, and the v0.6.1 compliance
+revisions (v450-v457).
 
 ``probe()`` issues this era's queries in the order the ladder always has; ``ARMS`` is this
 era's slice of the newest-first ladder (``ladder.py``), and its first arm is the top of it.
@@ -24,6 +26,8 @@ from app.db.schema_detect.ingest_tenancy import matches_v433
 from app.db.schema_detect.probe import check_exists
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.engine import Connection
 
     from app.db.schema_detect.ladder import Arm
@@ -93,7 +97,7 @@ def _has_unstamped_voiceprint_suggestion(conn: Connection, tables: list[str]) ->
 
 @dataclass(frozen=True)
 class GovernanceFacts:
-    """Probe answers for v434-v449."""
+    """Probe answers for v434-v457."""
 
     has_unusable_pyannote_source: bool
     has_lite_local_source: bool
@@ -110,6 +114,14 @@ class GovernanceFacts:
     has_content_hold: bool
     has_task_active_unique: bool
     has_identity_source: bool
+    has_legal_acceptance_context: bool
+    has_voiceprint_consent: bool
+    has_legal_acceptance_survival: bool
+    has_erasure_receipt: bool
+    has_audit_row_guard: bool
+    has_self_service_erasure: bool
+    has_unique_object_keys: bool
+    has_audit_guard_followups: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
@@ -193,6 +205,68 @@ def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
             "SELECT EXISTS(SELECT 1 FROM pg_constraint "
             "WHERE conname = 'speaker_identity_source_user_id_fkey')"
         ),
+        # v450: legal acceptance context + speaker_profile.last_interaction_at. Keyed on the CHECK
+        # the revision creates last, and on the profile column (same transaction, but both are
+        # cheap).
+        has_legal_acceptance_context=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_legal_acceptance_scope')"
+        )
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'speaker_profile' AND column_name = 'last_interaction_at')"
+        ),
+        # v454: per-file voiceprint consent (issue #1356). Keyed on the partial index, created
+        # last.
+        has_voiceprint_consent=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'ix_media_file_voiceprint_declined')"
+        ),
+        # v451: legal acceptance survives user deletion. Keyed on the guard trigger (created
+        # last), the SET NULL rule of the user FK, and the subject CHECK: a column without its
+        # trigger could keep an IP after erasure, so such a database re-runs the revision.
+        has_legal_acceptance_survival=(
+            _check_exists(
+                "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_legal_acceptance_guard')"
+            )
+            and _check_exists(
+                "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE contype = 'f' "
+                "AND conrelid = 'legal_acceptance'::regclass AND confrelid = '\"user\"'::regclass "
+                "AND confdeltype = 'n')"
+            )
+            and _check_exists(
+                "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+                "WHERE conname = 'ck_legal_acceptance_subject')"
+            )
+        ),
+        # v452: the erasure receipt (issue #1353). Keyed on the LAST CHECK the revision creates.
+        has_erasure_receipt=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_erasure_receipt_digest')"
+        ),
+        # v453: audit row immutability. Keyed on the erasure_ledger guard trigger, created last.
+        has_audit_row_guard=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger')"
+        )
+        and _check_exists("SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'audit_prune')"),
+        # v455: self-service erasure requests (issues #1354/#1355). Keyed on the LAST object the
+        # revision creates, the unique open-request index.
+        has_self_service_erasure=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+            "WHERE indexname = 'uq_erasure_ledger_open_self_request')"
+        ),
+        # v456: unique object keys (issue #1357). Keyed on the LAST index the revision builds,
+        # the playback one; the storage_path index can legitimately be absent (duplicates found).
+        has_unique_object_keys=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_media_file_playback_path')"
+        ),
+        # v457: audit guard follow-ups. Keyed on the LAST trigger the revision creates (the
+        # legal_acceptance TRUNCATE guard) plus the widened erasure_ledger lifecycle list.
+        has_audit_guard_followups=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_trigger "
+            "WHERE tgname = 'trg_audit_guard_truncate_legal_acceptance')"
+        )
+        and _check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname = 'trg_audit_guard_erasure_ledger' "
+            "AND pg_get_triggerdef(oid) LIKE '%index_checked_at%')"
+        ),
     )
 
 
@@ -211,22 +285,58 @@ def matches_v442(f: SchemaFacts) -> bool:
     )
 
 
+# Bound to a name: v450 onward are each v449's fingerprint plus one more probe.
+def matches_v449(f: SchemaFacts) -> bool:
+    return (
+        matches_v442(f)
+        and f.governance.has_takedown_notice
+        and f.governance.has_takedown_notification
+        and f.governance.has_organization_policy
+        and f.governance.has_collection_visibility
+        and f.governance.has_content_hold
+        and f.governance.has_task_active_unique
+        and f.governance.has_identity_source
+    )
+
+
+def _matches_v451(f: SchemaFacts) -> bool:
+    return (
+        matches_v449(f)
+        and f.governance.has_legal_acceptance_context
+        and f.governance.has_legal_acceptance_survival
+    )
+
+
+# v452-v457 each add one probe to the previous rung: the step's revision, then its probe.
+_V452_ONWARD: tuple[tuple[str, str], ...] = (
+    ("v452_add_erasure_receipt", "has_erasure_receipt"),
+    ("v453_audit_row_immutability", "has_audit_row_guard"),
+    ("v454_add_media_file_voiceprint_consent", "has_voiceprint_consent"),
+    ("v455_add_self_service_erasure_request", "has_self_service_erasure"),
+    ("v456_unique_object_keys", "has_unique_object_keys"),
+    ("v457_audit_guard_followups", "has_audit_guard_followups"),
+)
+
+
+def _rung(probes: tuple[str, ...]) -> Callable[[SchemaFacts], bool]:
+    return lambda f: _matches_v451(f) and all(getattr(f.governance, p) for p in probes)
+
+
 ARMS: tuple[Arm, ...] = (
-    # v449: same as v448 plus speaker.identity_source. The newest revision on this chain, so
-    # this is the top of the ladder.
-    (
-        lambda f: (
-            matches_v442(f)
-            and f.governance.has_takedown_notice
-            and f.governance.has_takedown_notification
-            and f.governance.has_organization_policy
-            and f.governance.has_collection_visibility
-            and f.governance.has_content_hold
-            and f.governance.has_task_active_unique
-            and f.governance.has_identity_source
-        ),
-        "v449_add_speaker_identity_source",
+    # v457 (the top of the ladder) down to v452, newest first.
+    *(
+        (_rung(tuple(p for _, p in _V452_ONWARD[: i + 1])), revision)
+        for i, (revision, _) in reversed(list(enumerate(_V452_ONWARD)))
     ),
+    # v451: same as v450 plus the survival trigger.
+    (_matches_v451, "v451_legal_acceptance_survives_user_deletion"),
+    # v450: same as v449 plus the legal acceptance context.
+    (
+        lambda f: matches_v449(f) and f.governance.has_legal_acceptance_context,
+        "v450_legal_acceptance_context_and_profile_interaction",
+    ),
+    # v449: same as v448 plus speaker.identity_source.
+    (matches_v449, "v449_add_speaker_identity_source"),
     # v448: same as v447 plus the one-active-row-per-file-step guard.
     (
         lambda f: (

@@ -30,7 +30,9 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
 from app.services.request_context import RequestContext
 from app.services.speaker_matching_service import SpeakerMatchingService
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_resource_owner
@@ -406,6 +408,7 @@ def update_speaker_profile(
         if description is not None:
             profile.description = description  # type: ignore[assignment]
 
+        touch_profile_interaction(db, int(profile.id), "human_edit")
         db.commit()
         db.refresh(profile)
 
@@ -462,7 +465,7 @@ def get_speaker_profile_occurrences(
         occurrences = matching_service.find_speaker_occurrences(
             int(profile_id),
             current_user.id,
-            include_quarantined=ctx.bypass.user_is_admin,
+            include_quarantined=quarantine_list_exempt(ctx.bypass),
             organization_id=ctx.org_id,
         )
 

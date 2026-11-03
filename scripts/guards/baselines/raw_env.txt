@@ -18,6 +18,7 @@ backend/app/core/worker_metrics.py	3	env: single reader planned
 backend/app/core/worker_shutdown.py	1	env: single reader planned
 backend/app/db/migrations.py	1	env: single reader planned
 backend/app/core/startup_validation.py	1	env: single reader planned
+backend/app/legal/processing_gate.py	1	v0.6.1 merge: release env read; single reader planned
 backend/app/main.py	2	env: single reader planned
 backend/app/scripts/benchmark_reranker_threads.py	1	env: single reader planned
 backend/app/scripts/build_password_blocklist.py	1	env: single reader planned
@@ -34,7 +35,7 @@ backend/app/services/chat/reranker_threads.py	2	env: single reader planned
 backend/app/services/huggingface_token.py	5	env: single reader planned
 backend/app/services/local_models/runner.py	1	env: single reader planned
 backend/app/services/local_models/supervisor.py	1	env: single reader planned
-backend/app/services/minio_service.py	1	env: single reader planned
+backend/app/services/minio_service.py	2	v0.6.1 merge: release env read; single reader planned
 backend/app/services/platform_access.py	1	env: single reader planned
 backend/app/services/playback_rendition.py	1	env: single reader planned
 backend/app/services/protected_media_plugins/mediacms.py	3	env: single reader planned

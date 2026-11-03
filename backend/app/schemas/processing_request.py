@@ -167,6 +167,14 @@ class PrepareUploadRequest(BaseModel):
             "Skip speaker diarization entirely; all segments assigned to a single speaker"
         ),
     )
+    voiceprint_consent: Literal["granted", "declined"] | None = Field(
+        None,
+        description=(
+            "The uploader's statement about voice identification for this recording: "
+            "'granted' = the speakers agreed (the uploader's claim, recorded and not verified), "
+            "'declined' = no voiceprints for this file. Omit for 'unspecified'."
+        ),
+    )
     collection_ids: list[UUID] | None = Field(
         None, description="Collection UUIDs to add the file to after creation"
     )

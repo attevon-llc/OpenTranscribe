@@ -31,7 +31,7 @@ from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 if TYPE_CHECKING:
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 

@@ -45,7 +45,16 @@ function createToastStore() {
       const id = `${Date.now()}-${++toastCounter}`;
       const toast: ToastMessage = { id, message, type, duration, ...options };
 
-      update((toasts) => [...toasts, toast]);
+      // The same sentence twice at once (an interceptor and a call site reporting one failure)
+      // is one toast, not a stack.
+      let duplicate = false;
+      update((toasts) => {
+        duplicate = toasts.some(
+          (existing) => existing.message === message && existing.type === type
+        );
+        return duplicate ? toasts : [...toasts, toast];
+      });
+      if (duplicate) return;
 
       // Auto-remove after duration
       if (duration > 0) {

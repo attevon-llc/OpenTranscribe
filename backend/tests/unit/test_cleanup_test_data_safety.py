@@ -256,6 +256,16 @@ _NOT_A_DATA_PREFIX = {
     "backend/tests/integration/test_lite_mode_mocked_providers.py::_LITE_MODE_USER_PREFIX": (
         "litemode-"
     ),
+    # Throwaway MinIO BUCKET names, not DB rows. A leaked bucket is swept by the store
+    # plane (scripts/lib/test_artifact_sweep.py TEST_BUCKET_SPECS 'quarantine-iam' and
+    # 'legacy-audio-reclaim', enforced by unit/test_test_artifact_sweep.py), which is where
+    # bucket shapes are registered; cleanup-test-data.py's record plane owns no buckets.
+    "backend/tests/integration/test_quarantine_tag_permissions_live.py::BUCKET_PREFIX": (
+        "e2e-quarantine-iam-"
+    ),
+    "backend/tests/integration/test_legacy_audio_cache_reclaim_live.py::BUCKET_PREFIX": (
+        "e2e-legacy-audio-"
+    ),
 }
 
 

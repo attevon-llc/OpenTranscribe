@@ -62,6 +62,10 @@ class HoldRequestError(Exception):
         self.message = message
 
 
+#: Same cap as a collection membership event (``collection.membership.change``).
+MAX_AUDITED_FILE_UUIDS = 100
+
+
 @dataclass
 class HoldChange:
     """What a hold write changed, for :func:`finish_hold_change` to do after the commit."""
@@ -72,6 +76,8 @@ class HoldChange:
     lock_paths: list[str] = field(default_factory=list)
     unlock_paths: list[str] = field(default_factory=list)
     unheld_files: list[MediaFile] = field(default_factory=list)
+    #: The files the hold covers, for the audit event (ids only, capped like a membership event).
+    file_uuids: list[str] = field(default_factory=list)
 
 
 def clean_reason(reason: str | None, *, what: str = "reason") -> str:
@@ -126,6 +132,7 @@ def place_file_hold(
         event=AuditEventType.CONTENT_HOLD_PLACE,
         file_count=len(unique),
         lock_paths=_paths(unique.values()),
+        file_uuids=[str(f.uuid) for f in unique.values()],
     )
 
 
@@ -166,6 +173,7 @@ def place_collection_hold(
         event=AuditEventType.CONTENT_HOLD_PLACE,
         file_count=len(members),
         lock_paths=_paths(members),
+        file_uuids=[str(f.uuid) for f in members],
     )
 
 
@@ -207,6 +215,12 @@ def release_hold(
         file_count=len(covered),
         unlock_paths=_paths(freed),
         unheld_files=freed,
+        file_uuids=[
+            str(u)
+            for u in db.execute(select(MediaFile.uuid).where(MediaFile.id.in_(covered))).scalars()
+        ]
+        if covered
+        else [],
     )
 
 
@@ -231,6 +245,10 @@ def finish_hold_change(
         for freed in change.unheld_files:
             notify_hold_released(freed)
     details: dict[str, Any] = {"scope": change.hold.scope, "file_count": change.file_count}
+    # Name the files: the hold's file links cascade away with a deleted file, so once a held file
+    # is gone this event is the only record of what the hold covered. Ids only, never a name.
+    if change.file_uuids:
+        details["file_uuids"] = sorted(change.file_uuids)[:MAX_AUDITED_FILE_UUIDS]
     if change.hold.collection_id is not None and change.hold.collection is not None:
         details["collection_uuid"] = str(change.hold.collection.uuid)
     record_content_event(

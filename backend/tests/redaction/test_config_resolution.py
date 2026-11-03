@@ -11,11 +11,11 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.core.tenant_limits import RedactionFloor
 from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import set_redaction_floor_resolver
 from app.services.redaction import config as cfgmod
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 
 # The DB loaders are monkeypatched in every test, so the session is never used.

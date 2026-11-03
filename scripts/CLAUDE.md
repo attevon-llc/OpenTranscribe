@@ -444,8 +444,18 @@ this file is for.
   not in the shell wrapper); anything else, e.g. `distil-large-v3` or an arbitrary `org/repo`, is
   refused with `unknown_local_model`. A downloader image that predates the catalog fails the group
   with an instruction to use the image matching the script's release (`OT_IMAGE_TAG`); there is no
-  whisperx fallback. The `pyannote` group still loads `WHISPER_MODEL` through whisperx once, as its
-  diarization warm-up.
+  whisperx fallback. The `pyannote` group runs **no inference**: it `snapshot_download`s every
+  repo of `pyannote_repo_plan()` (derived from `diarizer.PYANNOTE_V4_MODEL`/`PYANNOTE_V3_FALLBACK` and
+  `EmbeddingModeService.get_embedding_model_name`; v3/3.1 are optional, reported when gated) plus
+  the repos a pipeline `config.yaml` names, then loads community-1 with `Pipeline.from_pretrained`,
+  the backend's own call. `tests/unit/test_download_models_pyannote_plan.py` (CI-runnable) fails on
+  a new in-process `from_pretrained` site. It used to transcribe synthetic sine waves through whisperx first; whisperx's VAD
+  found no speech and transformers 5.x raised `IndexError` on the empty batch, failing every CPU
+  run of v0.6.0. Nothing in `backend/app` imports whisperx (`Transcriber` is faster-whisper's
+  `BatchedInferencePipeline`, which returns no segments for silence; pinned by
+  `tests/integration/test_transcriber_no_speech_real_model.py`). The `nltk` group gives each
+  multiply-linked file in `nltk_data` its own inode before downloading (nltk >= 3.10 pathsec
+  refuses `st_nlink > 1`) and fails once, with the host fix, when it cannot.
 - **Fixtures** — `seed-fresh-deployment.sh`, `setup-watch-source-test-data.sh`, `test-watch-e2e.sh`.
   ⚠️ `seed-fresh-deployment.sh` is **idempotent per file** (#1238): it lists the deployment and
   uploads only absent files, matching on the stored `title` + extension (the stored `filename` is
@@ -462,6 +472,28 @@ this file is for.
   FROM/TO to detect — always rehearses the CURRENT `VERSION`'s `--lite` deployment shape
   against mocked cloud ASR + mocked LLM), with `lib/guardrails.sh` as the
   safety firewall and `lib/{compose-patch,api-client,assertions,versions,model-cache}.sh`.
+
+  ⚠️ **Scenario D, `test-cold-model-download.sh`, is the ONLY thing that runs
+  `download-models.py` from an empty cache, and `rehearse` runs it first.** v0.6.0 shipped a
+  pyannote group that exits 1 for every user (CPU and GPU: synthetic warm-up audio, VAD finds no
+  speech, transformers 5.10.4 indexes an empty batch) while A-C passed, because they install with
+  `OPENTRANSCRIBE_UNATTENDED=1` (the installer then skips `download_ai_models`) and seed a warm
+  cache. D runs every `DOWNLOAD_GROUPS` group (derived by AST, `lib/cold-model-download.py groups`)
+  in its own container, CPU-only, against the image under test with this checkout's script
+  mounted; `lib/cold-model-download.py verify` checks the weights independently (the downloader
+  calls `partial`/`skipped` success), and a `cp -al` nltk leg requires a loud failure or a
+  loadable corpus. A passing D exports `OT_COLD_CACHE_SEED` and Scenario A seeds from it. Needs
+  `HUGGINGFACE_TOKEN` (env, or `OT_RELEASE_TEST_SECRETS`/`.env.test-secrets` — a worktree has no
+  copy of that gitignored file, so point `OT_RELEASE_TEST_SECRETS` at the main checkout's);
+  without it, or with `DOWNLOADER_IMAGE=`/`OT_RELEASE_TEST_ALLOW_STALE_IMAGE=`, it can fail but
+  never pass. It replaced `scripts/test-model-download.sh` (`:latest`, `--gpus all`, wired into
+  nothing), which was deleted. Tests: `backend/tests/unit/test_release_cold_model_download.py`.
+  Do not "speed it up" by seeding the cache: an empty cache is the whole measurement. It
+  refuses a non-empty root, bounds every container (`OT_COLD_CACHE_{GROUP,PROBE}_TIMEOUT_S`,
+  `OT_COLD_CACHE_DEADLINE_S`; a deadline is rc 124 or missing, never a pass), hardlinks a COPY
+  of nltk_data (never the cache A seeds from), and `--purge-cache` removes the weights with the
+  image under test by ID. `rehearse` runs it BEFORE stopping the live stack and seeds A only when
+  all three D criteria pass. CPU-only: a GPU-only downloader regression is not covered.
 
   **Where the rehearsal's wall clock actually goes, and why it is near its floor.** Measured on
   a green run: **~30 min total — fresh ~2 min, upgrade ~24 min, lite ~3 min.** So the upgrade
@@ -623,6 +655,14 @@ this file is for.
   because publishing a release can break the invariant with no commit at all. The hermetic half
   (no network, so it runs in the fast suite and CI) is
   `backend/tests/unit/test_install_upgrade_scripts.py`'s install-path section.
+- **Image hygiene** — `check-image-hygiene.sh <image>...` (exit 0 clean / 1 found / 2 could not
+  check). Reads the image via `docker create --pull never` + `docker export | tar -t` (never runs
+  it, removes only the container it created, never pulls or removes images) and matches the
+  `--list-patterns` denylist at any depth under `/app` or `/usr/share/nginx/html`. The release
+  `scan` stage runs it per leg tag (`images-carry-no-dev-artifacts`). Its denylist is also what
+  `backend/.dockerignore` must exclude with `**/` rules: `unit/test_image_hygiene.py` checks every
+  depth and fails on a redundant rule, and `integration/test_image_hygiene_real_docker.py`
+  cross-checks the ignore file against a real BuildKit context.
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).
@@ -1192,7 +1232,6 @@ an empty string too, so discarding rc turns "could not check" into "CPU-only con
   hard isolation with 6173+/6273+ ports until #303 — it never worked that way.)
 - `run_benchmark.py` — `docker compose down -v` on `-p otbench`, plus a legacy cleanup pass aimed at the
   **`transcribe-app` dev project** (suppress with `--no-cleanup-legacy`).
-- `test-model-download.sh` — `rm -rf ./test-model-cache`, **relative to cwd**.
 - `frontend-check.sh` on failure shells out to the `claude` CLI and then `git add`s every modified file
   under `frontend/` — pass `--no-claude` if you don't want your index touched.
 - Everything else writes to the **live dev stack**: benchmarks upload files and never delete them;

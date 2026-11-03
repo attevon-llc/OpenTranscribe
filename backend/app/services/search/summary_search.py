@@ -49,7 +49,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import _UNMASKED_TOP_LEVEL_KEYS
 from app.services.redaction.summary_redaction import mask_summary_leaf
 

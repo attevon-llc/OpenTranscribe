@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any
+from typing import Literal
 from typing import Optional
 from uuid import UUID
 
@@ -235,6 +236,10 @@ class MediaFileDetail(MediaFile):
     quarantine_reason: str | None = None
     quarantined_at: datetime | None = None
     legal_hold: bool = False
+
+    #: Per-file voiceprint consent (issue #1356): the uploader's recorded claim, not verified.
+    voiceprint_consent: Literal["unspecified", "granted", "declined"] = "unspecified"
+    voiceprint_consent_at: datetime | None = None
 
     transcript_segments: list[TranscriptSegment] = []
     # Pre-grouped view of transcript_segments (overlap groups kept together).

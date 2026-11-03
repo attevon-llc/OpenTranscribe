@@ -125,10 +125,10 @@ def _kept_by_every_caller(session: MagicMock, *file_uuids: str) -> dict[str, lis
     evidence = _drop_quarantined_hits(session, [_chunk(u) for u in file_uuids])
     search = _drop_quarantined_search_hits(session, _search_response(*file_uuids))
     citations = drop_quarantined_citations(
-        session, [_citation(u) for u in file_uuids], is_admin=False
+        session, [_citation(u) for u in file_uuids], include_quarantined=False
     )
     bulk = drop_quarantined_citations_bulk(
-        session, [[_citation(u) for u in file_uuids]], is_admin=False
+        session, [[_citation(u) for u in file_uuids]], include_quarantined=False
     )
     dropped = _quarantined_among(_factory(session), file_uuids)
     return {
@@ -165,8 +165,10 @@ def test_no_caller_queries_for_an_input_without_uuids(file_uuids):
     response = _search_response(*file_uuids)
     assert _drop_quarantined_search_hits(session, response) is response
     citations = [_citation(u) for u in file_uuids]
-    assert drop_quarantined_citations(session, citations, is_admin=False) is citations
-    assert drop_quarantined_citations_bulk(session, [citations], is_admin=False) == [citations]
+    assert drop_quarantined_citations(session, citations, include_quarantined=False) is citations
+    assert drop_quarantined_citations_bulk(session, [citations], include_quarantined=False) == [
+        citations
+    ]
     assert _quarantined_among(_factory(session), file_uuids) == frozenset()
     assert quarantined_among(session, file_uuids) == set()
     assert session.query.call_count == 0
@@ -188,9 +190,11 @@ def test_a_query_error_fails_the_search_drop():
 
 def test_a_query_error_fails_the_citation_drop():
     with pytest.raises(OperationalError):
-        drop_quarantined_citations(_broken(), [_citation(BLOCKED)], is_admin=False)
+        drop_quarantined_citations(_broken(), [_citation(BLOCKED)], include_quarantined=False)
     with pytest.raises(OperationalError):
-        drop_quarantined_citations_bulk(_broken(), [[_citation(BLOCKED)]], is_admin=False)
+        drop_quarantined_citations_bulk(
+            _broken(), [[_citation(BLOCKED)]], include_quarantined=False
+        )
 
 
 def test_a_query_error_fails_the_aggregation_post_filter():

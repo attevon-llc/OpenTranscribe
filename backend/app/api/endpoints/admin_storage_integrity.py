@@ -97,6 +97,24 @@ def get_storage_orphan_counts(
     return scan()
 
 
+@router.get("/data-integrity/storage/keys")
+def get_storage_key_uniqueness(
+    current_user: User = Depends(get_current_admin_user),
+) -> dict:
+    """Whether every stored object key has exactly one owning row.
+
+    Reports, per object-key column of ``media_file``, whether its unique index exists and how
+    many keys and rows still share a value (counts only). ``healthy`` is false while any index
+    is missing, which happens when the v456 revision found duplicate ``storage_path`` rows and
+    skipped that index; ``python -m app.scripts.split_shared_storage_paths`` resolves them.
+    """
+    from app.db import object_key_indexes
+    from app.db.session_utils import session_scope
+
+    with session_scope() as db:
+        return object_key_indexes.status(db.connection())
+
+
 @router.get("/data-integrity/storage/status", response_model=StorageSweepStatus)
 def get_storage_sweep_status(
     current_user: User = Depends(get_current_admin_user),

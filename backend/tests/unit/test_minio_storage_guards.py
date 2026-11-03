@@ -36,6 +36,7 @@ class _FakeClient:
 
     def set_object_tags(self, bucket, name, tags):
         self.written = dict(tags.items())
+        self.tags = dict(self.written)
 
     def presigned_get_object(self, bucket_name, object_name, expires, **_kw):
         self.presigned.append(expires)
@@ -58,7 +59,7 @@ def presign(monkeypatch):
 
 def test_quarantine_tag_is_set_and_other_tags_are_kept(root):
     root.tags = {"keep": "me"}
-    assert minio_service.set_object_quarantine_tag("obj", True) is True
+    assert minio_service.write_object_quarantine_tag("obj", True).outcome == "applied"
     assert root.written == {
         "keep": "me",
         STORAGE_QUARANTINE_TAG_KEY: storage_presign_identity.QUARANTINE_TAG_VALUE,
@@ -67,16 +68,19 @@ def test_quarantine_tag_is_set_and_other_tags_are_kept(root):
 
 def test_quarantine_tag_is_cleared_and_other_tags_are_kept(root):
     root.tags = {"keep": "me", STORAGE_QUARANTINE_TAG_KEY: "true"}
-    assert minio_service.set_object_quarantine_tag("obj", False) is True
+    assert minio_service.write_object_quarantine_tag("obj", False).outcome == "applied"
     assert root.written == {"keep": "me"}
 
 
-def test_quarantine_tag_failure_is_best_effort_false(root, monkeypatch):
+def test_quarantine_tag_failure_is_reported_not_raised(root, monkeypatch):
     def boom(*_a, **_k):
         raise RuntimeError("storage down")
 
     monkeypatch.setattr(root, "get_object_tags", boom)
-    assert minio_service.set_object_quarantine_tag("obj", True) is False
+    result = minio_service.write_object_quarantine_tag("obj", True)
+    assert result.outcome == "failed"
+    assert result.error_code == "RuntimeError"
+    assert result.failed_action == minio_service.TAG_READ_ACTION
 
 
 def test_get_file_url_clamps_expiry_and_signs_with_presign_identity(root, presign):

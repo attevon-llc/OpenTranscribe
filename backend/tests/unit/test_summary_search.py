@@ -19,7 +19,7 @@ from typing import cast
 import pytest
 from sqlalchemy.orm import Session
 
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
 from app.services.search import summary_search
 from app.services.search.summary_search import SummarySectionMatch

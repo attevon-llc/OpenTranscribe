@@ -21,7 +21,7 @@ from app.services.chat.aggregation_queries import _short_session
 from app.services.chat.router import Route
 
 if TYPE_CHECKING:
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 

@@ -11,6 +11,7 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerProfile
 from app.services.clustering.thresholds import CLUSTER_ASSIGNMENT_THRESHOLD
+from app.services.privacy.policy import declined_file_ids
 from app.services.speaker_identity_moves import unlink_from_profile
 from app.services.speaker_identity_rules import blacklisted_profile_ids
 from app.services.speaker_identity_rules import identity_conflicts_with_cluster
@@ -103,6 +104,9 @@ def group_by_profile(
             MediaFile, MediaFile.id == Speaker.media_file_id
         ).filter(self._scope_not_in(MediaFile.organization_id, off_scopes))
     profile_speakers = profile_speakers_query.all()
+    # Per-file consent (#1356): speakers of opted-out files take no part in clustering.
+    _declined = declined_file_ids(self.db, (s.media_file_id for s in profile_speakers))
+    profile_speakers = [s for s in profile_speakers if s.media_file_id not in _declined]
 
     _unlink_stale_profile_links(self, profile_speakers)
     self._assigned.owner_ids.add(user_id)

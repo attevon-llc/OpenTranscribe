@@ -21,6 +21,21 @@ afterEach(() => {
 });
 
 describe('show', () => {
+  it('shows one toast when the same message is raised twice while it is still on screen', () => {
+    toastStore.show('same refusal', 'error');
+    toastStore.show('same refusal', 'error');
+
+    expect(get(toastStore)).toHaveLength(1);
+  });
+
+  it('keeps toasts that differ in message or type', () => {
+    toastStore.show('one', 'error');
+    toastStore.show('two', 'error');
+    toastStore.show('one', 'success');
+
+    expect(get(toastStore)).toHaveLength(3);
+  });
+
   it('assigns a unique, monotonically increasing id per toast (Date.now-counter)', () => {
     toastStore.show('first');
     toastStore.show('second');

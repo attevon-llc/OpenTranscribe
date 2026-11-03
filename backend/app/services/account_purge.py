@@ -19,6 +19,7 @@ from app.services.file_cleanup_service import _purge_external_copies
 from app.services.opensearch_erasure import _erase_cluster_docs
 from app.services.opensearch_erasure import _erase_profile_docs
 from app.services.opensearch_erasure import _erase_speaker_docs
+from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,14 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
         try:
             from app.services.minio_service import delete_file
 
-            delete_file(avatar_path)
+            if getattr(delete_file(avatar_path), "unverified", False):
+                residual.append(
+                    {
+                        "stage": "storage_unverified",
+                        "avatar_path": avatar_path,
+                        "error": UNVERIFIED_VERSIONS_ERROR,
+                    }
+                )
         except Exception as e:  # noqa: BLE001 — one avatar must never block the rest
             residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
 

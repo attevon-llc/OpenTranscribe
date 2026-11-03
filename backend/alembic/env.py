@@ -10,8 +10,9 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context  # type: ignore[attr-defined]
-from app.core.config import settings
 from app.db.base import Base
+from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import migration_database_url
 
 # NOTE: Alembic is the sole authority for database schema creation and upgrades.
 
@@ -23,16 +24,9 @@ config = context.config
 
 load_dotenv()
 
-DB_USER = settings.POSTGRES_USER
-DB_PASSWORD = settings.POSTGRES_PASSWORD
-DB_HOST = settings.POSTGRES_HOST
-DB_PORT = settings.POSTGRES_PORT
-DB_NAME = settings.POSTGRES_DB
-
-config.set_main_option(
-    "sqlalchemy.url",
-    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
-)
+# One migration URL for Alembic and the runner (owner role, honours DATABASE_URL and
+# POSTGRES_SSLMODE); a literal % must be doubled for configparser interpolation.
+config.set_main_option("sqlalchemy.url", migration_database_url().replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -113,6 +107,7 @@ def run_migrations_online():
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=migration_connect_args(),
     )
 
     with connectable.connect() as connection:

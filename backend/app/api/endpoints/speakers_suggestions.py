@@ -29,6 +29,7 @@ from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_identity_moves import detach_from_cluster
 from app.services.speaker_identity_rules import lift_profile_blacklist
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_speaker_access
 from app.utils.db_helpers import org_stamp_is
@@ -202,6 +203,7 @@ def _accept_speaker_profile_match(
     # Assign speaker to profile - cast to int for assignment
     speaker.profile_id = profile_id
     speaker.verified = True
+    touch_profile_interaction(db, [profile_id, old_profile_id], "suggestion_decision")
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_ACCEPTED_SUGGESTION)
     db.commit()
 
@@ -325,10 +327,12 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
                 db, cluster, [speaker], blacklist=True, tracker=superseded
             )
         unlink_from_profile(db, [speaker], old_profile_id, superseded)
-    for profile_id in sorted(_rejected_profile_ids(db, speaker, old_profile_id)):
+    rejected_ids = sorted(_rejected_profile_ids(db, speaker, old_profile_id))
+    for profile_id in rejected_ids:
         record_unassignment(
             db, [speaker_id], against_speaker_ids=[], profile_id=profile_id, reason=REASON_REJECTED
         )
+    touch_profile_interaction(db, [old_profile_id, *rejected_ids], "suggestion_decision")
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None
@@ -394,6 +398,7 @@ def _create_new_speaker_profile(
     # Assign speaker to new profile - use setattr for proper type handling
     speaker.profile_id = new_profile.id
     speaker.verified = True
+    touch_profile_interaction(db, [new_profile.id, old_profile_id], "human_link")
     record_human_identity(speaker, user_id=current_user.id, origin=ORIGIN_PROFILE_CREATED)
     db.commit()
 

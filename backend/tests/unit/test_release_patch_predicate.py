@@ -195,6 +195,12 @@ _TRIGGER_SAMPLE_PATHS: dict[str, str] = {
     "setup-opentranscribe.sh": "setup-opentranscribe.sh",
     "opentranscribe.sh": "opentranscribe.sh",
     "release-manifest.txt": "release-manifest.txt",
+    "download-models": "scripts/download-models.py",
+    "backend/app/core/local_whisper_catalog.py": "backend/app/core/local_whisper_catalog.py",
+    "backend/app/services/local_models/": "backend/app/services/local_models/downloader.py",
+    "backend/app/utils/nltk_offline.py": "backend/app/utils/nltk_offline.py",
+    "backend/app/transcription/native_provision.py": "backend/app/transcription/native_provision.py",
+    "backend/app/services/huggingface_token.py": "backend/app/services/huggingface_token.py",
 }
 
 

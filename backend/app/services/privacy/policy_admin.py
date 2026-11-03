@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 _INSTANCE_DESCRIPTIONS = {
     constants.PRIVACY_VOICEPRINT_MATCHING_KEY: "Allow speaker voiceprints to be created and matched",
     constants.PRIVACY_GENDER_INFERENCE_KEY: "Allow speaker gender to be inferred from voice or names",
+    constants.PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY: (
+        "Treat a file as opted out of voice identification unless its uploader recorded consent"
+    ),
 }
 
 #: ``RedactionFloorIn`` field -> ``organization_policy`` column.
@@ -89,6 +92,11 @@ def read_instance_policy(db: Session) -> InstancePrivacyPolicy:
             constants.PRIVACY_GENDER_INFERENCE_KEY,
             constants.DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED,
         ),
+        voiceprint_upload_consent_required=_instance_value(
+            db,
+            constants.PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY,
+            constants.DEFAULT_PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED,
+        ),
     )
 
 
@@ -98,6 +106,7 @@ def update_instance_policy(
     voiceprint_matching: bool | None,
     gender_inference: bool | None,
     actor_user_id: int | None = None,
+    voiceprint_upload_consent_required: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Write the switches that were given. Returns one ``{setting, from, to}`` per change.
 
@@ -112,6 +121,11 @@ def update_instance_policy(
             voiceprint_matching,
         ),
         (constants.PRIVACY_GENDER_INFERENCE_KEY, before.gender_inference_enabled, gender_inference),
+        (
+            constants.PRIVACY_VOICEPRINT_UPLOAD_CONSENT_REQUIRED_KEY,
+            before.voiceprint_upload_consent_required,
+            voiceprint_upload_consent_required,
+        ),
     )
     changes: list[dict[str, Any]] = []
     for key, current, new in wanted:
@@ -323,8 +337,12 @@ def start_purge(
     actor_username: str | None,
     source_ip: str | None = None,
     user_agent: str | None = None,
+    purge_reason: str | None = None,
 ) -> str:
     """Check, record and queue a purge. Returns the task id.
+
+    ``purge_reason`` is ``purge.OPT_OUT`` for an owner's per-file opt-out (a ``files`` scope);
+    it is exempt from the "switch must be off" check and recorded in the audit event.
 
     The route has already verified authority and the typed confirmation. Here: refuse while a
     target is still on (:class:`PurgeStillEnabledError`, fail closed), create the task row, audit
@@ -339,7 +357,7 @@ def start_purge(
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
 
-    blocked = targets_still_enabled(db, scope, targets)
+    blocked = targets_still_enabled(db, scope, targets, purge_reason=purge_reason)
     if blocked:
         raise PurgeStillEnabledError(blocked)
 
@@ -357,6 +375,7 @@ def start_purge(
             outcome=outcome,
             source_ip=source_ip,
             user_agent=user_agent,
+            purge_reason=purge_reason,
         )
 
     try:
@@ -366,6 +385,7 @@ def start_purge(
                 "targets": targets,
                 "actor_user_id": actor_user_id,
                 "phase": 1,
+                "purge_reason": purge_reason,
             },
             task_id=task_id,
         )

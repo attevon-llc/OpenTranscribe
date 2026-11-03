@@ -36,7 +36,18 @@ _FORMULA = ("=", "+", "-", "@", "\t", "\r", "\n")
 @pytest.fixture(autouse=True)
 def _no_side_effects(monkeypatch):
     monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", MagicMock())
-    monkeypatch.setattr("app.services.minio_service.set_object_quarantine_tag", MagicMock())
+    from app.services.minio_service import QuarantineTagWrite
+
+    monkeypatch.setattr(
+        "app.services.minio_service.write_object_quarantine_tag",
+        MagicMock(return_value=QuarantineTagWrite("applied")),
+    )
+    monkeypatch.setattr(
+        "app.services.storage_presign_identity.presign_identity_available", lambda: True
+    )
+    monkeypatch.setattr(
+        "app.services.media_revocation_cache.remove_cache_copies", lambda *_a, **_k: []
+    )
     monkeypatch.setattr("app.services.minio_service.set_object_legal_hold", MagicMock())
 
 

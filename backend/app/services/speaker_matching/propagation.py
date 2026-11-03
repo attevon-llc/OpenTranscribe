@@ -8,6 +8,7 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services import embedding_mode_service
 from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_PROPAGATION
 from app.utils.speaker_identity_detail import voiceprint_detail
 from app.utils.speaker_identity_source import record_machine_link
@@ -174,6 +175,7 @@ def propagate_profile_assignment(
 
             similarity = match_by_id[int(speaker.id)]
             speaker.profile_id = profile_id
+            touch_profile_interaction(self.db, profile_id, "auto_link")
             speaker.verified = True
             # the name was already there; only the link is new
             record_machine_link(

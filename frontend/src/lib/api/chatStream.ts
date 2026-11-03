@@ -171,9 +171,17 @@ async function readStream(
 
 async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
   let message = `Request failed (${response.status})`;
+  let detailCode: string | null = null;
   try {
     const body = await response.json();
-    if (body?.detail) message = String(body.detail);
+    const detail = body?.detail;
+    if (detail && typeof detail === 'object') {
+      // Coded errors carry `{code, message}`; String(detail) would be "[object Object]".
+      if (typeof detail.code === 'string') detailCode = detail.code;
+      if (typeof detail.message === 'string') message = detail.message;
+    } else if (detail) {
+      message = String(detail);
+    }
   } catch {
     // Non-JSON error body — keep the status-based message.
   }
@@ -187,6 +195,9 @@ async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
       message,
       ...(retryAfter !== null && { retryAfter }),
     };
+  }
+  if (response.status === 400 && detailCode === 'llm_config_unusable') {
+    return { type: 'error', code: 'llm_config_unusable', message };
   }
   if (response.status === 400 && /llm/i.test(message)) {
     return { type: 'error', code: 'llm_unconfigured', message };

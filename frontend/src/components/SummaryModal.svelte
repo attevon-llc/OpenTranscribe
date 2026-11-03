@@ -490,6 +490,7 @@
               on:generateSummary={generateSummary}
               on:retrySummary={retryFailedSummary}
               on:regenerateWithPrompt={regenerateWithPrompt}
+              on:openSettings={handleClose}
             />
           </div>
         {:else}
@@ -502,6 +503,7 @@
             on:generateSummary={generateSummary}
             on:retrySummary={retryFailedSummary}
             on:regenerateWithPrompt={regenerateWithPrompt}
+            on:openSettings={handleClose}
           />
         {/if}
       {/if}

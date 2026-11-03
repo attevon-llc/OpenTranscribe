@@ -11,6 +11,7 @@ from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
+from app.services.privacy.policy import declined_file_ids
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -73,7 +74,9 @@ def analyze_gender_outliers(
     minority_gender = sorted_genders[1][0]
 
     # Batch-fetch all embeddings in one mget call
-    speaker_uuids = [str(s.uuid) for s in speakers]
+    # Per-file consent (#1356): an opted-out file's voice is not part of any average.
+    _declined_here = declined_file_ids(self.db, (s.media_file_id for s in speakers))
+    speaker_uuids = [str(s.uuid) for s in speakers if s.media_file_id not in _declined_here]
     raw_embeddings = get_speaker_embeddings_batch(speaker_uuids)
 
     embeddings: dict[int, np.ndarray] = {}

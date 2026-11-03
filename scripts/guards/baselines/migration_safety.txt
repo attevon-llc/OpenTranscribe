@@ -135,3 +135,22 @@ backend/alembic/versions/v446_add_collection_visibility.py::R5	1	applied history
 backend/alembic/versions/v446_add_collection_visibility.py::R6	1	applied history; revisions are never edited
 backend/alembic/versions/v449_add_speaker_identity_source.py::DYNAMIC-SQL	3	applied history; revisions are never edited
 backend/alembic/versions/v449_add_speaker_identity_source.py::R5	2	applied history; revisions are never edited
+backend/alembic/versions/v450_legal_acceptance_context_and_profile_interaction.py::R1	4	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v450_legal_acceptance_context_and_profile_interaction.py::R5	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v450_legal_acceptance_context_and_profile_interaction.py::R6	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v451_legal_acceptance_survives_user_deletion.py::DYNAMIC-SQL	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v451_legal_acceptance_survives_user_deletion.py::R1	2	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v451_legal_acceptance_survives_user_deletion.py::R5	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v451_legal_acceptance_survives_user_deletion.py::R6	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v452_add_erasure_receipt.py::DYNAMIC-SQL	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v452_add_erasure_receipt.py::R5	2	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v452_add_erasure_receipt.py::R6	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v453_audit_row_immutability.py::DYNAMIC-SQL	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v454_add_media_file_voiceprint_consent.py::DYNAMIC-SQL	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v454_add_media_file_voiceprint_consent.py::R1	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v454_add_media_file_voiceprint_consent.py::R5	2	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v454_add_media_file_voiceprint_consent.py::R6	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v455_add_self_service_erasure_request.py::R1	2	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v455_add_self_service_erasure_request.py::R5	3	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v455_add_self_service_erasure_request.py::R6	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v457_audit_guard_followups.py::DYNAMIC-SQL	1	applied history (v0.6.1 release revision); revisions are never edited

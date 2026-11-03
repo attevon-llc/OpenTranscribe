@@ -7,7 +7,12 @@
  * change to it is deliberate.
  */
 import { describe, it, expect } from 'vitest';
-import { closeAction, uiConnectionStatus, websocketUrl } from './connectionPolicy';
+import {
+  TERMINAL_CLOSE_CODES,
+  closeAction,
+  uiConnectionStatus,
+  websocketUrl,
+} from './connectionPolicy';
 
 describe('websocketUrl', () => {
   it('uses wss on https and ws otherwise, on the page host', () => {
@@ -37,8 +42,19 @@ describe('closeAction', () => {
     expect(closeAction(1006, true)).toBe('stay-closed');
   });
 
-  it('treats a 4003 handshake refusal like any abnormal close', () => {
-    expect(closeAction(4003, false)).toBe('reconnect');
+  it.each([4001, 4002, 4003])('probes the session once after a %i refusal', (code) => {
+    expect(closeAction(code, false)).toBe('probe-session');
+    expect(closeAction(code, true)).toBe('probe-session');
+    expect(closeAction(code, false, true)).toBe('refused');
+  });
+
+  it('never probes after an origin refusal (4403)', () => {
+    expect(closeAction(4403, false)).toBe('refused');
+    expect(closeAction(4403, false, true)).toBe('refused');
+  });
+
+  it('lists exactly the server refusal codes as terminal', () => {
+    expect([...TERMINAL_CLOSE_CODES].sort()).toEqual([4001, 4002, 4003, 4403]);
   });
 });
 

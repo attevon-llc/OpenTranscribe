@@ -132,7 +132,7 @@ def _cfg(*, enabled: bool, redact_before_llm: bool, categories=("pii", "profanit
     so the test passed without ever exercising that forcing — and the local
     duplicate masker it was written against skipped it entirely.
     """
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
     return EffectiveRedactionConfig(
         enabled=enabled,

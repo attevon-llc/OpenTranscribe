@@ -134,6 +134,9 @@ class _FakeQuery:
     def update(self, *args, **kwargs) -> int:
         return 0
 
+    def scalar(self) -> int:
+        return 0
+
 
 class _FakeSession:
     """Minimal Session stand-in. ``delete`` raises; everything else is inert.
@@ -194,6 +197,12 @@ def test_erase_user_row_delete_failure_does_not_echo_the_sql(caplog):
         mock.patch.object(gdpr, "_erase_speaker_voiceprints", return_value=0),
         mock.patch.object(gdpr.ledger, "record_outcome"),
         mock.patch.object(gdpr.audit_logger, "log"),
+        # The receipt reads real stores in a fresh session; this fake session cannot back it.
+        # Its own behavior is covered by integration/test_erasure_receipt_e2e.py.
+        mock.patch.object(
+            gdpr, "receipt_flow", mock.Mock(begin=mock.Mock(return_value=(mock.Mock(), {})))
+        ),
+        mock.patch.object(gdpr, "erase_extras"),
         caplog.at_level(logging.ERROR),
     ):
         summary = gdpr.erase_user(
@@ -232,6 +241,12 @@ def test_erase_organization_row_delete_failure_does_not_echo_the_sql(caplog):
         mock.patch.object(gdpr, "_erase_speaker_voiceprints", return_value=0),
         mock.patch.object(gdpr.ledger, "record_outcome"),
         mock.patch.object(gdpr.audit_logger, "log"),
+        # The receipt reads real stores in a fresh session; this fake session cannot back it.
+        # Its own behavior is covered by integration/test_erasure_receipt_e2e.py.
+        mock.patch.object(
+            gdpr, "receipt_flow", mock.Mock(begin=mock.Mock(return_value=(mock.Mock(), {})))
+        ),
+        mock.patch.object(gdpr, "erase_extras"),
         caplog.at_level(logging.ERROR),
     ):
         summary = gdpr.erase_organization(

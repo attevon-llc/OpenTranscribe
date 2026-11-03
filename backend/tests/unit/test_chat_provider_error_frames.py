@@ -18,12 +18,12 @@ from typing import Any
 
 import pytest
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.chat import frames as chat_frames
 from app.services.chat import service as chat_service
 from app.services.chat.redactor import MaskedChunk
 from app.services.chat.settings import ChatSettings
 from app.services.llm_stream import LLMStreamEvent
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.search.chunk_retrieval import ChunkHit
 
 #: The verbatim provider text from the issue. None of it may reach the user.

@@ -41,6 +41,11 @@ class ErrorCategory(Enum):
     # chosen with no API key saved, issue #1204). Running it again unchanged fails the same
     # way, so it is never retried automatically; the manual Retry works once it is fixed.
     CONFIGURATION_REQUIRED = "configuration_required"
+    # The legal processing gate refused the file (``app.legal.processing_gate``): its owner has
+    # not accepted a required document, or the gate could not decide. Retrying unchanged is
+    # refused the same way, so recovery never re-selects it; the manual Retry works once the
+    # document is accepted.
+    LEGAL_ACCEPTANCE_REQUIRED = "legal_acceptance_required"
 
     # Auth/Rate limit hybrid - retry with very long backoff
     AUTH_OR_RATE_LIMIT = "auth_or_rate_limit"

@@ -18,9 +18,11 @@ from sqlalchemy import create_engine
 from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import SQLAlchemyError
 
 from alembic import command  # type: ignore[attr-defined]
-from app.core.config import settings
+from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import migration_database_url
 from app.db.schema_detect.ladder import LADDER
 from app.db.schema_detect.ladder import collect_facts
 
@@ -34,7 +36,8 @@ def get_alembic_config() -> Config:
     alembic_ini = backend_dir / "alembic.ini"
 
     config = Config(str(alembic_ini))
-    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    # configparser interpolation: a literal % (percent-encoded password) must be doubled.
+    config.set_main_option("sqlalchemy.url", migration_database_url().replace("%", "%%"))
     return config
 
 
@@ -77,7 +80,7 @@ def _repair_skipped_v230(config) -> None:
     chain was linearised. All SQL is idempotent (IF NOT EXISTS).
     """
 
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
     try:
         with engine.connect() as conn:
             missing = not _check_column_exists(conn, "media_file", "upload_batch_id")
@@ -228,6 +231,37 @@ def _repair_skipped_v230(config) -> None:
         engine.dispose()
 
 
+#: The retry below runs at most once per process. A dev hot reload starts a new process, but
+#: the common case (all three indexes valid) is one catalog query, so that costs nothing.
+_object_key_retry_done = False
+
+
+def _retry_object_key_indexes() -> None:
+    """Build any object-key unique index v456 had to skip, without blocking writers.
+
+    Uses ``CREATE UNIQUE INDEX CONCURRENTLY`` on an autocommit connection and first drops an
+    INVALID index a failed build left behind. v456 itself builds inside its transaction (and so
+    locks writes while it runs); this retry exists for the indexes it skipped or could not build.
+
+    Never raises: a database problem here is logged and must not stop the backend.
+    """
+    global _object_key_retry_done
+    if _object_key_retry_done:
+        return
+    _object_key_retry_done = True
+    from app.db import object_key_indexes
+
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            if inspect(conn).has_table("media_file"):
+                object_key_indexes.ensure_indexes_concurrently(conn)
+    except SQLAlchemyError:
+        logger.error("Could not check the media_file object-key indexes", exc_info=True)
+    finally:
+        engine.dispose()
+
+
 def _check_column_exists(conn, table: str, column: str) -> bool:
     """Check if a column exists in a table."""
     result = conn.execute(
@@ -283,7 +317,7 @@ def _await_database_available(budget_s: float | None = None) -> None:
     attempt = 0
     while True:
         attempt += 1
-        probe = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        probe = create_engine(migration_database_url(), pool_pre_ping=True)
         try:
             with probe.connect() as conn:
                 conn.execute(text("SELECT 1"))
@@ -330,7 +364,7 @@ def run_migrations() -> None:
 
     _await_database_available()
 
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
 
     # Acquire the advisory lock on a DEDICATED connection held open for the whole
     # upgrade (issue #284 A1.4).
@@ -344,7 +378,7 @@ def run_migrations() -> None:
     #
     # A separate engine is used so the engine.dispose() further down (which exists to
     # free pooled connections before Alembic opens its own) cannot close this one.
-    lock_engine = create_engine(settings.DATABASE_URL)
+    lock_engine = create_engine(migration_database_url())
     lock_conn = lock_engine.connect()
     lock_conn.execute(text("SELECT pg_advisory_lock(42)"))
     lock_conn.commit()
@@ -396,6 +430,14 @@ def run_migrations() -> None:
         # Post-migration repair: apply any idempotent schema changes from v230
         # that may have been skipped due to a branch merge ordering issue.
         _repair_skipped_v230(config)
+
+        _retry_object_key_indexes()
+
+        # Layer 2 of audit protection: re-apply the app role's grants on EVERY start (this
+        # also repairs a `--no-acl` restore). No-op unless the role split was requested.
+        from app.db.roles import reconcile_from_settings
+
+        reconcile_from_settings()
 
         logger.info("Database migrations complete")
     finally:

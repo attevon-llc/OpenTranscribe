@@ -67,7 +67,7 @@ So the production MinIO at `/mnt/nas/opentranscribe-minio` and Postgres at `/mnt
 
 Do not follow a hand checklist: `./scripts/release.sh run X.Y.Z --yes` drives the whole
 sequence (bump, verify, test, build, scan, **rehearse**, tag, publish, smoke, promote, finish),
-and `./scripts/release.sh rehearse` is the stage that runs the three scenarios below. See
+and `./scripts/release.sh rehearse` is the stage that runs the four scenarios below. See
 [`docs-site/docs/developer-guide/releasing.md`](../../docs-site/docs/developer-guide/releasing.md)
 and `.claude/skills/release/SKILL.md`. Things that matter when running the scenarios themselves:
 
@@ -140,6 +140,11 @@ OPENAI_MODEL_NAME=
 ## Running the scenarios
 
 ```bash
+# Scenario D — download-models.py from an EMPTY cache, CPU-only, in the image under test.
+# Binds nothing and needs no stopped stack; rehearse runs it first and seeds A from it.
+./scripts/release-tests/test-cold-model-download.sh
+./scripts/release-tests/test-cold-model-download.sh --list-groups   # derived from DOWNLOAD_GROUPS
+
 # Scenario A — fresh install via the one-liner
 ./scripts/release-tests/test-fresh-install.sh
 

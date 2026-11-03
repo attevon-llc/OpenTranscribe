@@ -38,23 +38,16 @@ ENV/
 env.bak/
 
 # IDE and editors
-.vscode/
-.idea/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Testing
-.coverage
-.pytest_cache/
 .tox/
 .cache
 nosetests.xml
-coverage.xml
 *.cover
 *.py,cover
-.hypothesis/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -63,19 +56,12 @@ coverage.xml
 .python-version
 
 # Environments
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # mypy
-.mypy_cache/
 .dmypy.json
 dmypy.json
 
 # Linting and formatting
-.ruff_cache/
 .black/
 .flake8
 .pylint.d/
@@ -86,9 +72,7 @@ docs/_build/
 
 # Runtime files and data
 temp/
-*.log
-*.pid
-flower.db
+**/*.pid
 
 # Model cache (handled by volume mounts)
 model_cache/
@@ -96,8 +80,6 @@ models/cache/
 models/
 
 # Git
-.git/
-.gitignore
 
 # Docker
 Dockerfile*
@@ -116,10 +98,52 @@ scripts/
 pyproject.toml
 
 # OS generated files
-.DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Developer-machine artifacts that are gitignored but sit in backend/ on a build host.
+# `COPY . .` ships whatever is on disk, and v0.6.0 published several of these (mutmut's
+# mutated source, a SQLite test DB, celery beat state, the import-linter cache).
+# scripts/check-image-hygiene.sh fails an image containing any name on its denylist AT ANY
+# DEPTH, so each one is excluded here with `**/` (which also matches at the context root).
+# One rule per name: backend/tests/unit/test_image_hygiene.py fails on a redundant rule, so
+# deleting the only one that covers a name is caught.
+**/mutants
+**/mutmut-stats.json
+**/.mutmut-cache
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.sqlite3
+**/celerybeat-schedule*
+**/.import_linter_cache
+**/.env
+**/.env.*
+**/.git
+**/.gitignore
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.hypothesis
+**/.coverage
+**/coverage.xml
+**/htmlcov
+**/node_modules
+**/*.pem
+**/*.key
+**/*.p12
+**/id_rsa*
+**/id_ed25519*
+**/.claude
+**/.vscode
+**/.idea
+**/.DS_Store
+**/*.bak
+**/*.orig
+**/backups
+**/*.log

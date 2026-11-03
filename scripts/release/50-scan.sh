@@ -151,6 +151,45 @@ else
     record every-published-repo-scanned fail "unscanned: ${could_not_scan[*]}"
 fi
 
+# Developer-machine artifacts (v0.6.0 shipped /app/mutants, test.db, celerybeat-schedule*):
+# check every per-leg local tag, iterated exactly like the report loop below. Never :latest.
+# check-image-hygiene.sh exits 0 clean, 1 found, 2 could not check; 2 is not-measured, which
+# blocks like a failure but is never reported as one.
+hygiene_dirty=()
+hygiene_unchecked=()
+hygiene_clean=0
+while IFS=$'\t' read -r comp capability platforms; do
+    [[ "$comp" == "blackwell" ]] && continue
+    [[ -n "${REPO_FOR_COMPONENT[$comp]:-}" ]] || continue
+    IFS=',' read -r -a plats <<< "$platforms"
+    for platform in "${plats[@]}"; do
+        [[ -n "$platform" ]] || continue
+        leg="${REPO_FOR_COMPONENT[$comp]}:${VERSION}-${capability}-${platform#linux/}"
+        h_rc=0
+        h_out=$(./scripts/check-image-hygiene.sh "$leg" 2>&1) || h_rc=$?
+        case "$h_rc" in
+            0) hygiene_clean=$((hygiene_clean + 1)) ;;
+            1) echo "$h_out" >&2
+               hygiene_dirty+=("$leg: $(awk '/^  \//{ if (++n <= 5) printf "%s ", $1 }' <<<"$h_out")") ;;
+            *) echo "$h_out" >&2
+               hygiene_unchecked+=("$leg") ;;
+        esac
+    done
+done < <(./scripts/docker-build-push.sh list-platforms)
+
+if (( ${#hygiene_dirty[@]} > 0 )); then
+    record images-carry-no-dev-artifacts fail "${hygiene_dirty[*]}" \
+        "exclude the paths in the component's .dockerignore, rebuild, re-run: ./scripts/release.sh scan $VERSION"
+    rc=1
+elif (( ${#hygiene_unchecked[@]} > 0 || hygiene_clean == 0 )); then
+    record images-carry-no-dev-artifacts not-measured \
+        "could not inspect: ${hygiene_unchecked[*]:-no legs derived}" \
+        "./scripts/check-image-hygiene.sh <leg tag>"
+    rc=1
+else
+    record images-carry-no-dev-artifacts pass "${hygiene_clean} leg(s) clean"
+fi
+
 if (( rc >= 2 )); then
     echo -e "${RED}scan could NOT RUN (security-scan.sh exit ${rc}) — this is not 'no findings'${NC}" >&2
     rc=1

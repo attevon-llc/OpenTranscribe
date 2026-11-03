@@ -142,6 +142,8 @@ def _dispatch_manual_rediarize(
     """
     from app.core.config import settings
     from app.db.session_utils import session_scope
+    from app.legal.processing_gate import require_processing_allowed_for_file
+    from app.models.media import MediaFile
     from app.services.pipeline_plan import post_stage_engine
     from app.services.pipeline_plan import post_stage_queue
     from app.services.pipeline_plan_inputs import plan_for_user
@@ -149,6 +151,11 @@ def _dispatch_manual_rediarize(
 
     # The file OWNER's choice and credential: the task detects speakers with them.
     with session_scope() as db:
+        # This publish does not go through dispatch_transcription_pipeline, so it does not
+        # reach _run_pre_dispatch_gate: the legal processing gate is checked here explicitly.
+        media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+        if media_file is not None:
+            require_processing_allowed_for_file(db, media_file)
         plan = plan_for_user(db, owner_id)
     engine = post_stage_engine(plan.diarization.engine)
     rediarize_task.apply_async(

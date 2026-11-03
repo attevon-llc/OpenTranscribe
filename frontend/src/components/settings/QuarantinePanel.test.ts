@@ -7,7 +7,7 @@ vi.mock('$lib/axios', () => {
 });
 
 vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn() },
+  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
 
 vi.mock('$stores/locale', () => ({
@@ -106,6 +106,38 @@ describe('QuarantinePanel, organization scope (issue #1253)', () => {
     expect(post.mock.calls[0][0]).toBe('/org-admin/files/file-own/release');
     await waitFor(() => expect(toastStore.success).toHaveBeenCalled());
     expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('warns instead of reporting success when storage kept the media blocked', async () => {
+    get.mockResolvedValue({ data: { files: [orgRow()], total: 1 } } as never);
+    post.mockResolvedValue({
+      data: {
+        uuid: 'file-own',
+        is_quarantined: false,
+        presign_tag_cleared: false,
+        media_revocation: {
+          action: 'restore',
+          complete: false,
+          reason: 'tag_clear_failed',
+          enforcement: null,
+          missing_permissions: ['s3:PutObjectTagging'],
+          exposure_seconds: null,
+          objects: [],
+        },
+      },
+    } as never);
+
+    render(QuarantinePanel, { scope: 'organization' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'settings.quarantine.release' })
+    );
+
+    await waitFor(() =>
+      expect(toastStore.warning).toHaveBeenCalledWith(
+        'settings.quarantine.releaseRestoreIncomplete'
+      )
+    );
+    expect(toastStore.success).not.toHaveBeenCalled();
   });
 
   it('refetches, and does not retry, when the release is refused', async () => {

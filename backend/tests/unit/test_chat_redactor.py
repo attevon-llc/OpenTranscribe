@@ -417,8 +417,8 @@ def _real_cfg(categories, entities=None):
     The tests below run the real detector layer and the real masker, so the
     config has to carry every field both of them read.
     """
+    from app.core.redaction_config import EffectiveRedactionConfig
     from app.core.redaction_defaults import REDACTION_PII_ENTITIES
-    from app.services.redaction.config import EffectiveRedactionConfig
 
     return EffectiveRedactionConfig(
         enabled=True,

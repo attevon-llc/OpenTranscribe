@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 if TYPE_CHECKING:
-    from app.services.redaction.config import EffectiveRedactionConfig
+    from app.core.redaction_config import EffectiveRedactionConfig
 
 from app.models.media import Comment
 from app.models.media import TranscriptSegment

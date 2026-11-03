@@ -45,6 +45,7 @@ from app.services.formatting_service import FormattingService
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
 from app.services.takedown_service import exclude_quarantined
+from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 from app.services.uuid_helpers import validate_uuids
@@ -349,10 +350,12 @@ def get_collection_media(
     # Abuse/DMCA: quarantined files are hidden from every read surface for
     # non-admins — the paginated collection-media list included (matches the
     # collection detail's is_hidden_for gate and the visible member counts).
-    base_query = exclude_quarantined(base_query, include_quarantined=ctx.bypass.user_is_admin)
+    base_query = exclude_quarantined(
+        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    )
 
     # Prepare filters dictionary
-    filters = {
+    filters: dict[str, Any] = {
         "search": search,
         "tag": tag,
         "speaker": speaker,

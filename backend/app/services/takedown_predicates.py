@@ -31,6 +31,7 @@ import logging
 import uuid as uuid_pkg
 from collections.abc import Iterable
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy.orm import Query
@@ -39,6 +40,9 @@ from sqlalchemy.orm import Session
 from app.models.media import MediaFile
 from app.models.user import User
 from app.utils.uuid_parse import parse_uuid_or_none
+
+if TYPE_CHECKING:
+    from app.services.platform_bypass import PlatformBypass
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +113,47 @@ def quarantined_among(db: Session, file_uuids: Iterable[str | uuid_pkg.UUID | No
         .all()
     )
     return {str(row[0]) for row in rows}
+
+
+def quarantine_exempt(bypass: "PlatformBypass", file: MediaFile) -> bool:
+    """The ONE quarantine read rule: exempt only where the platform role reached this row.
+
+    ``bypass.allows`` decides against the row's own tenant (single mode: any admin;
+    multi-tenant mode: only under a support-access grant covering that tenant). A bare
+    admin role (``bypass.user_is_admin``) is not the test: it says nothing about whether
+    the platform role may act on this row.
+
+    Args:
+        bypass: The request's platform bypass.
+        file: The loaded media file.
+
+    Returns:
+        True if the platform role may read ``file`` for review.
+    """
+    return bypass.allows(
+        org_id=file.organization_id,
+        owner_id=file.user_id,
+        need="read",
+        resource_type="media_file",
+        resource_uuid=str(file.uuid),
+    )
+
+
+def is_quarantine_hidden(bypass: "PlatformBypass", file: MediaFile) -> bool:
+    """Whether ``file`` is quarantined and this request is not exempt under :func:`quarantine_exempt`."""
+    if not bool(getattr(file, "is_quarantined", False)):
+        return False
+    return not quarantine_exempt(bypass, file)
+
+
+def quarantine_list_exempt(bypass: "PlatformBypass") -> bool:
+    """List/query form of the rule: ``include_quarantined`` for ``exclude_quarantined``.
+
+    A list has no single row to ask ``allows`` about, so it uses the bypass's own
+    list-reach (``sees_all_in_scope``): every admin in single mode, only an organization
+    grant in multi-tenant mode.
+    """
+    return bypass.sees_all_in_scope
 
 
 def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
@@ -287,13 +332,21 @@ def filter_suppressed_file_uuids(
 
 
 def is_review_admin(db: Session, user_id: int | None) -> bool:
-    """Whether user_id holds the admin review visibility every predicate here is relative to.
+    """Whether user_id holds the review visibility every predicate here is relative to.
 
     Public because the ASYNC plane needs it: a Celery task holds a user id, never a
     User, and must re-resolve the role at RUN time rather than trust a flag captured
     at dispatch. None is never an admin.
+
+    A background task has no request, so no support-access grant can reach it. The
+    only deployment where an admin's role alone reaches every row is single-tenant mode
+    (the same rule as ``PlatformBypass.allows`` there); in multi-tenant mode this is
+    False for everyone, which keeps the async plane fail-closed.
     """
     if user_id is None:
         return False
+    from app.services.platform_access import TenancyMode
+    from app.services.platform_access import tenancy_mode
+
     recipient = db.query(User).filter(User.id == int(user_id)).first()
-    return bool(recipient and recipient.is_admin)
+    return bool(recipient and recipient.is_admin and tenancy_mode(db) is TenancyMode.SINGLE)

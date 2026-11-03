@@ -230,7 +230,19 @@ def process_youtube_playlist_task(
     Raises:
         Exception: Any error during processing will be caught and returned in result dict.
     """
+    from app.legal.processing_gate import check_processing_allowed
+
     logger.info(f"Starting YouTube playlist processing task for URL: {url}")
+    # The legal processing gate, before any placeholder is created or anything downloaded.
+    # The requester owns every file this import creates, in the originating tenant.
+    with session_scope() as db:
+        refusal = check_processing_allowed(
+            db, owner_user_id=user_id, organization_id=organization_id
+        )
+    if refusal is not None:
+        logger.info(f"Playlist import for user {user_id} refused: {refusal.message}")
+        _send_playlist_notification(user_id, "error", refusal.message, 0)
+        return _create_playlist_error_result(refusal.message)
     _send_playlist_notification(user_id, "processing", "Extracting playlist information...", 5)
 
     try:

@@ -38,7 +38,7 @@ the one in the next section, which rots.
 
 - `versions/` — `v010_baseline` … the current head (count: `ls backend/alembic/versions/*.py | wc -l`;
   head: `python3 scripts/release-tests/lib/alembic-head.py backend`).
-- `env.py` — builds the URL from `POSTGRES_*` env (`load_dotenv()`), `target_metadata =
+- `env.py` — takes its URL from `migration_database_url()` (owner role, honours `DATABASE_URL` and `POSTGRES_SSLMODE`), `target_metadata =
   Base.metadata`. No `compare_type`, no naming convention.
 - `script.py.mako` — **stock alembic template**: it emits neither the `v###` id nor idempotent
   SQL. `alembic.ini`'s `script_location = alembic` is **cwd-relative** (run from `backend/`).
@@ -87,6 +87,14 @@ the one in the next section, which rots.
   behaviour is. These docstrings are the change log for the schema.
 - Core stays vendor-neutral: the CI seam guard greps for `clerk|stripe`. A migration mentioning
   them fails the build (`tests/unit/test_v373_migration_consistency.py` asserts this).
+
+## Data migrations on protected audit tables
+
+A migration that rewrites or deletes rows of a table in `app.db.audit_protection.PROTECTED_TABLES`
+(v379 did, on `auth_config_audit`) runs under the maintenance setting
+`opentranscribe.audit_maintenance`, which the runner and `alembic/env.py` set on every migration
+connection (`app/db/migration_connection.py`) and which only the table owner may use. An idempotent
+re-run that touches no rows needs nothing. Revisions before v453 predate the trigger.
 
 ## How it connects
 

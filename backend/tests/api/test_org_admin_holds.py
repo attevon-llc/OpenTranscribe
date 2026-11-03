@@ -382,7 +382,11 @@ def test_placing_and_releasing_are_audited_without_the_reason_or_matter(
         assert event["resource_type"] == "content_hold"
         assert event["resource_uuid"] == hold_uuid
         assert event["user_id"] == gov.admin.id
-        assert event["details"] == {"scope": "file", "file_count": 1}
+        assert event["details"] == {
+            "scope": "file",
+            "file_count": 1,
+            "file_uuids": [str(f.uuid)],
+        }
     blob = json.dumps(events, default=str)
     assert REASON not in blob and MATTER not in blob
 

@@ -17,6 +17,7 @@ from ldap3 import Connection
 from ldap3 import Server
 from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
+from ldap3.core.exceptions import LDAPSocketReceiveError
 
 if TYPE_CHECKING:
     from ldap3 import Entry
@@ -93,6 +94,15 @@ def _connect_and_bind(
             return None
         return conn
     except LDAPBindError:
+        return None
+    except LDAPSocketReceiveError:
+        # A directory that accepted the socket and then stayed silent past ldap_timeout:
+        # refuse the bind, and say why, instead of reporting it as bad credentials.
+        logger.error(
+            "LDAP directory did not answer within %s s (ldap_timeout); refusing the bind",
+            cfg.timeout,
+        )
+        _close_connection(conn, "timed-out")
         return None
 
 

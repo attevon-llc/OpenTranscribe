@@ -60,6 +60,7 @@ beforeEach(() => {
   api.getInstance.mockResolvedValue({
     voiceprint_matching_enabled: true,
     gender_inference_enabled: true,
+    voiceprint_upload_consent_required: false,
   });
   api.getPurgeStatus.mockResolvedValue({
     task_id: 't',
@@ -114,10 +115,29 @@ describe('InstancePrivacyCard', () => {
     expect(sw('instance-voiceprints').checked).toBe(true);
   });
 
+  it('sends only the consent-required field when that switch changes', async () => {
+    api.updateInstance.mockResolvedValue({
+      voiceprint_matching_enabled: true,
+      gender_inference_enabled: true,
+      voiceprint_upload_consent_required: true,
+    });
+    render(InstancePrivacyCard);
+    await screen.findByTestId('instance-voiceprints-switch');
+    expect(sw('instance-consent-required').checked).toBe(false);
+
+    await fireEvent.click(sw('instance-consent-required'));
+
+    await waitFor(() =>
+      expect(api.updateInstance).toHaveBeenCalledWith({ voiceprint_upload_consent_required: true })
+    );
+    expect(sw('instance-consent-required').checked).toBe(true);
+  });
+
   it('disables deletion while a switch is on and enables it once off', async () => {
     api.getInstance.mockResolvedValue({
       voiceprint_matching_enabled: false,
       gender_inference_enabled: true,
+      voiceprint_upload_consent_required: false,
     });
     render(InstancePrivacyCard);
     await screen.findByTestId('instance-voiceprints-switch');
@@ -129,6 +149,7 @@ describe('InstancePrivacyCard', () => {
     api.getInstance.mockResolvedValue({
       voiceprint_matching_enabled: false,
       gender_inference_enabled: true,
+      voiceprint_upload_consent_required: false,
     });
     api.purgeInstance.mockResolvedValue({ task_id: 't' });
     render(InstancePrivacyCard);
@@ -183,6 +204,7 @@ describe('InstancePrivacyCard', () => {
     api.getInstance.mockResolvedValue({
       voiceprint_matching_enabled: false,
       gender_inference_enabled: true,
+      voiceprint_upload_consent_required: false,
     });
     api.purgeInstance.mockRejectedValue({
       response: { status: 403, data: { detail: { code: 'purge_scope_not_allowed' } } },

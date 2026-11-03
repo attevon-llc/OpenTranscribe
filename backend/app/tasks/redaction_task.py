@@ -89,6 +89,8 @@ def redaction_detect_task(
     """
     from app.core.enums import FileStatus
     from app.db.session_utils import session_scope
+    from app.legal.processing_gate import check_processing_allowed_for_file
+    from app.legal.processing_gate import skipped_result
     from app.models.media import MediaFile
     from app.services.redaction.service import RedactionService
     from app.utils.task_utils import create_task_record
@@ -110,6 +112,9 @@ def redaction_detect_task(
             media = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             if media is None:
                 return {"status": "skipped", "reason": "file_not_found"}
+            refusal = check_processing_allowed_for_file(db, media)
+            if refusal is not None:
+                return skipped_result(refusal)
             owner_id = int(media.user_id)
             effective_user_id = user_id or owner_id
 

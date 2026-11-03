@@ -92,3 +92,24 @@ def test_an_account_expiring_later_connects(db_session, client):
 def test_an_account_owing_a_password_change_connects(db_session, client):
     """Control: a remedy-screen hold is not an admission refusal."""
     assert _connects(client, make_user(db_session, must_change_password=True)) is True
+
+
+def test_a_rejected_account_is_refused_on_the_first_message_path(db_session, client):
+    """No cookie: the token arrives in the authenticate frame, the other handshake branch."""
+    rejected = make_user(db_session, approval_status="rejected")
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_text(authenticate_frame(access_token(rejected)))
+        with pytest.raises(WebSocketDisconnect) as closed:
+            socket.receive_text()
+
+    assert closed.value.code == INVALID_TOKEN_CLOSE
+
+
+def test_an_approved_account_connects_on_the_first_message_path(db_session, client):
+    """Control for the frame branch."""
+    approved = make_user(db_session, approval_status="approved")
+
+    with client.websocket_connect("/ws") as socket:
+        socket.send_text(authenticate_frame(access_token(approved)))
+        assert json.loads(socket.receive_text())["type"] == "connection_established"

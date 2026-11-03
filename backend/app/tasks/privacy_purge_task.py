@@ -31,6 +31,10 @@ from app.db.base import SessionLocal
 from app.db.session_utils import session_scope
 from app.models.user import User
 from app.services.privacy import purge
+from app.services.privacy.measure import GroupedCounts
+from app.services.privacy.measure import merge_grouped
+from app.services.privacy.purge_file_guard import PROTECTION_COUNT_KEYS
+from app.services.privacy.purge_file_guard import guard_files_scope
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
@@ -56,9 +60,10 @@ def privacy_purge_task(
     self: Any,
     scope: dict[str, Any],
     targets: list[str],
-    actor_user_id: int,
+    actor_user_id: int | None,
     phase: int = 1,
     carried_cluster_uuids: list[str] | None = None,
+    purge_reason: str | None = None,
 ) -> dict[str, Any]:
     """Purge ``targets`` ("voiceprints", "inferred_gender") for ``scope``. Both passes.
 
@@ -67,10 +72,13 @@ def privacy_purge_task(
             can never name a tenant the caller does not administer.
         targets: Subset of ``purge.PURGE_TARGETS``.
         actor_user_id: Who asked. Only the id travels through the broker; the audit username is
-            looked up here.
+            looked up here. ``None`` for a scheduled destruction (no person asked).
         phase: 1 for the first pass; the task schedules phase 2 itself.
         carried_cluster_uuids: Cluster centroid documents the previous pass could not confirm
             deleted. Their Postgres rows are gone, so only the previous pass knows the ids.
+        purge_reason: ``purge.RETENTION`` for a destruction a retention schedule decided (the
+            ``files`` scope): allowed whatever the privacy switches say, and recorded in the
+            audit event as ``purge_reason``. ``None`` for a privacy purge.
 
     Returns:
         ``{"status": "completed" | "aborted" | "failed", ...}`` with this pass's counts.
@@ -80,8 +88,10 @@ def privacy_purge_task(
     wanted = [t for t in dict.fromkeys(targets) if t in purge.PURGE_TARGETS]
 
     with session_scope() as db:
-        blocked = purge.targets_still_enabled(db, purge_scope, wanted)
-        actor = db.get(User, actor_user_id)
+        blocked = purge.targets_still_enabled(db, purge_scope, wanted, purge_reason=purge_reason)
+        # Re-checked here, not only at request time: a hold can be placed while the task waits.
+        guarded_scope = guard_files_scope(db, purge_scope)
+        actor = db.get(User, actor_user_id) if actor_user_id is not None else None
         username = str(actor.email) if actor is not None else None
 
     def audit(
@@ -100,7 +110,17 @@ def privacy_purge_task(
             task_id=task_id,
             outcomes=outcomes,
             reason=reason,
+            purge_reason=purge_reason,
         )
+
+    if guarded_scope is None and wanted and not blocked:
+        logger.warning("privacy purge %s aborted: every file is held or quarantined", task_id)
+        audit(f"pass_{phase}_aborted", AuditOutcome.FAILURE, reason="files_protected")
+        purge.write_record(task_id, actor_user_id, {}, targets=wanted, reason="files_protected")
+        _set_status(task_id, TASK_STATUS_FAILED, completed=True)
+        return {"status": "aborted", "reason": "files_protected"}
+    if guarded_scope is not None:
+        purge_scope = guarded_scope
 
     if not wanted or blocked:
         reason = "no_targets" if not wanted else "policy_enabled"
@@ -124,12 +144,16 @@ def privacy_purge_task(
         return {"status": "failed", "reason": "error"}
 
     counts = result.counts()
+    if phase > 1:
+        # The second pass sees the same protected files; the total must not count them twice.
+        for key in PROTECTION_COUNT_KEYS:
+            counts[purge.POSTGRES].pop(key, None)
     residual = result.residual()
     previous = purge.read_record(task_id) if phase > 1 else None
-    total: purge.GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}
+    total: GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}
     if previous and isinstance(previous.get("counts"), dict):
-        purge.merge_grouped(total, previous["counts"])
-    purge.merge_grouped(total, counts)
+        merge_grouped(total, previous["counts"])
+    merge_grouped(total, counts)
     purge.write_record(
         task_id,
         actor_user_id,
@@ -161,6 +185,7 @@ def privacy_purge_task(
                     "actor_user_id": actor_user_id,
                     "phase": 2,
                     "carried_cluster_uuids": result.unfinished_cluster_uuids,
+                    "purge_reason": purge_reason,
                 },
                 task_id=task_id,
                 countdown=purge.SECOND_PASS_DELAY_SECONDS,

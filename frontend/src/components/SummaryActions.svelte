@@ -4,6 +4,7 @@
   import type { SummaryData } from '$lib/types/summary';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
+  import { settingsModalStore } from '$stores/settingsModalStore';
   import Spinner from './ui/Spinner.svelte';
 
   export let summary: SummaryData | null;
@@ -18,7 +19,14 @@
     generateSummary: void;
     retrySummary: void;
     regenerateWithPrompt: { promptUuid: string | null };
+    openSettings: void;
   }>();
+
+  // The summary dialog sits above Settings, so it has to be closed for the page to be seen.
+  function openAiSettings() {
+    settingsModalStore.open('llm-provider');
+    dispatch('openSettings');
+  }
 
   let availablePrompts: any[] = [];
   let selectedPromptUuid: string | null = null;
@@ -88,6 +96,15 @@
     </button>
   {:else if !summary && !llmAvailable && summaryStatus === 'pending'}
     <span class="admin-hint">{$t('llm.featuresUnavailable')}</span>
+    <!-- The status probe cannot tell "none configured" from "configured but unusable"; the link fixes both. -->
+    <button
+      type="button"
+      class="hint-link"
+      data-testid="open-ai-settings"
+      on:click={openAiSettings}
+    >
+      {$t('chat.setup.openSettings')}
+    </button>
   {:else if !summary && canRetry && (summaryStatus === 'failed' || summaryStatus === 'error')}
     <button
       class="action-button warning"
@@ -239,6 +256,17 @@
     font-size: 0.8rem;
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  .hint-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--primary-on-surface);
+    text-decoration: underline;
+    cursor: pointer;
   }
 
   @media (max-width: 768px) {

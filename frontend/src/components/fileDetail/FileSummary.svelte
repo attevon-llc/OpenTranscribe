@@ -12,12 +12,19 @@
   import type { SummarizeOptions } from '$lib/api/summarize';
   import { opensSummaryView } from '$lib/fileDetail/deepLinks';
   import { fetchSummaryData, startSummary } from '$lib/fileDetail/summaryActions';
+  import { restoreAfterFailedRegenerate, saveSummaryState } from '$lib/summary/regenerateFailure';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { isLLMAvailable } from '$stores/llmStatus';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
 
-  export let file: { uuid: string; filename?: string; [key: string]: unknown };
+  export let file: {
+    uuid: string;
+    filename?: string;
+    has_summary?: boolean | null;
+    summary_opensearch_id?: string | null;
+    [key: string]: unknown;
+  };
   /** The page is (re)loading the file; the deep link waits for it. */
   export let isLoading = false;
   export let summaryGenerating = false;
@@ -51,6 +58,7 @@
     showSummaryModal = false;
     // Spinner on the button, and no summary on the file, until the websocket says otherwise.
     summaryGenerating = true;
+    const savedSummary = saveSummaryState(file ?? {});
     if (file) {
       file = { ...file, has_summary: false, summary_opensearch_id: null };
     }
@@ -59,7 +67,8 @@
       await startSummary(file.uuid, options);
     } catch (error) {
       console.error(failureLog, error);
-      toastStore.error($t('fileDetail.failedToStartSummaryReprocess'), 5000);
+      toastStore.error(getErrorMessage(error, $t('fileDetail.failedToStartSummaryReprocess')), 5000);
+      if (file) file = restoreAfterFailedRegenerate(file, savedSummary);
       summaryGenerating = false;
     }
   }

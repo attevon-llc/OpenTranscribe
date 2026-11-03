@@ -68,6 +68,7 @@ export const CHAT_STATE_ERROR_KEYS: Record<
   string
 > = {
   llm_unconfigured: 'chat.errors.llm_unconfigured',
+  llm_config_unusable: 'chat.errors.llm_config_unusable',
   quota_exceeded: 'chat.errors.quota_exceeded',
   rate_limited: 'chat.errors.rate_limited',
   provider_error: 'chat.errors.provider_error',
@@ -331,3 +332,10 @@ export const HOLD_BADGE_TITLE_KEYS: Record<string, string> = {
 /** The key a `held_by` list selects in :data:`HOLD_REFUSAL_KEYS` / :data:`HOLD_BADGE_TITLE_KEYS`. */
 export const holdAuthorityKey = (heldBy: readonly string[] | null | undefined): string =>
   [...(heldBy ?? [])].sort().join(',');
+
+/** What a refusal by the legal processing gate says, by its stable ``detail.code``. */
+export const LEGAL_REFUSAL_KEYS: Record<string, string> = {
+  legal_acceptance_required: 'legal.errors.acceptanceRequired',
+  legal_document_unavailable: 'legal.errors.documentUnavailable',
+  legal_gate_unavailable: 'legal.errors.gateUnavailable',
+};

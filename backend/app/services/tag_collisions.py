@@ -340,11 +340,12 @@ def files_for_tag(
     user_id: int,
     organization_id: OrgScope = UNSCOPED,
     limit: int = 50,
-    is_admin: bool = False,
+    include_quarantined: bool = False,
 ) -> tuple[list[MediaFile], int]:
     """The accessible files carrying a tag, newest first, and their true total.
 
-    Quarantined files are left out unless ``is_admin``.
+    Quarantined files are left out unless ``include_quarantined``: the caller's review
+    visibility, ``quarantine_list_exempt(bypass)``, never the bare admin role.
 
     Returns:
         At most ``limit`` files, and the count of all matching files.
@@ -353,7 +354,7 @@ def files_for_tag(
     carrying = select(FileTag.media_file_id).where(FileTag.tag_id == tag_id)
     query = exclude_quarantined(
         db.query(MediaFile).filter(MediaFile.id.in_(carrying), MediaFile.id.in_(accessible)),
-        include_quarantined=is_admin,
+        include_quarantined=include_quarantined,
     )
     total = query.count()
     files = (

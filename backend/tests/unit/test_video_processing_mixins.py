@@ -15,11 +15,11 @@ from typing import cast
 
 import pytest
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services import audio_extraction
 from app.services.audio_extraction import AudioExtractionMixin
 from app.services.audio_extraction import NoAudioTrackError
 from app.services.minio_bucket_admin import MinIOService
-from app.services.redaction.config import EffectiveRedactionConfig
 from app.services.video_processing_service import VideoProcessingService
 from app.services.video_subtitle_burn import VideoSubtitleBurnMixin
 
@@ -118,7 +118,7 @@ def test_extract_audio_mp3_uploads_an_encoded_file_then_hits_the_cache(av_file, 
 
     key, ext, content_type = svc.extract_audio(5, "media/talk.mkv", "mp3")
 
-    assert (key, ext, content_type) == ("derived/talk_audio_mp3.mp3", "mp3", "audio/mpeg")
+    assert (key, ext, content_type) == ("derived/5_talk_audio_mp3.mp3", "mp3", "audio/mpeg")
     assert len(storage.uploads) == 1
     assert storage.uploads[0]["key"] == key and storage.uploads[0]["size"] > 0
     assert storage.uploads[0]["suffix"] == ".mp3"
@@ -137,9 +137,9 @@ def test_extract_audio_original_stream_copies_aac_into_m4a(av_file, monkeypatch)
 
     key, ext, content_type = svc.extract_audio(5, "media/talk.mkv", "original")
 
-    assert (key, ext, content_type) == ("derived/talk_audio_original", "m4a", "audio/mp4")
+    assert (key, ext, content_type) == ("derived/5_talk_audio_original", "m4a", "audio/mp4")
     # A cached "original" recovers its extension from the stored content type.
-    assert svc.peek_cached_audio("talk.mkv", "original") == (key, "m4a", "audio/mp4")
+    assert svc.peek_cached_audio(5, "talk.mkv", "original") == (key, "m4a", "audio/mp4")
 
 
 def test_extract_audio_without_an_audio_stream_raises_no_audio_track(silent_file, monkeypatch):
@@ -157,11 +157,11 @@ def test_extract_audio_without_an_audio_stream_raises_no_audio_track(silent_file
 
 
 def test_peek_cached_audio_reports_a_miss_and_a_preset_hit():
-    svc = _service(_Storage(Path("unused"), cached={"derived/talk_audio_wav.wav": "audio/wav"}))
+    svc = _service(_Storage(Path("unused"), cached={"derived/7_talk_audio_wav.wav": "audio/wav"}))
 
-    assert svc.peek_cached_audio("talk.mkv", "mp3") is None
-    assert svc.peek_cached_audio("talk.mkv", "WAV") == (
-        "derived/talk_audio_wav.wav",
+    assert svc.peek_cached_audio(7, "talk.mkv", "mp3") is None
+    assert svc.peek_cached_audio(7, "talk.mkv", "WAV") == (
+        "derived/7_talk_audio_wav.wav",
         "wav",
         "audio/wav",
     )

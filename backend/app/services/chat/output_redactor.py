@@ -45,7 +45,7 @@ import re
 import time
 
 from app.core import redaction_defaults
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import blocking_detector_failures
 
 logger = logging.getLogger(__name__)

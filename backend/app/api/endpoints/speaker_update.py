@@ -30,6 +30,7 @@ from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy import policy as privacy_policy
 from app.services.speaker_match_errors import SuggestionSyncIncompleteError
+from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_rename_tracker import SpeakerRenameTracker
 from app.utils.speaker_identity_detail import ORIGIN_VOICE_MATCH
 from app.utils.speaker_identity_detail import voiceprint_detail
@@ -167,6 +168,7 @@ def _apply_high_confidence_match(
     if trigger["profile_id"]:
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
         speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
+        touch_profile_interaction(db, [int(trigger["profile_id"]), old_profile_id], "auto_link")
         _update_profile_embedding(db, speaker.id, old_profile_id, int(trigger["profile_id"]))
 
     tracker.record(int(speaker.media_file_id), before, canonical_speaker_label_for_row(speaker))

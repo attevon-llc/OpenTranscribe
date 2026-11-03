@@ -4,6 +4,7 @@ import logging
 import os
 import platform
 from typing import Any
+from typing import TypedDict
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -87,6 +88,16 @@ def get_system_capabilities(
     }
 
 
+class _HostStats(TypedDict):
+    """Host probe readings; the fallback after a probe failure must carry the same keys."""
+
+    cpu: dict[str, Any]
+    memory: dict[str, Any]
+    disk: dict[str, Any]
+    gpu: list[dict[str, Any]]
+    uptime: str
+
+
 def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute the CPU/GPU device-mode summary surfaced by /system/stats.
 
@@ -145,6 +156,7 @@ def get_system_stats(
 
     try:
         # System statistics
+        system_stats: _HostStats
         try:
             system_stats = {
                 "cpu": get_cpu_usage(),
@@ -162,7 +174,7 @@ def get_system_stats(
                     "logical_cores": 0,
                     "physical_cores": 0,
                 },
-                "gpus": [
+                "gpu": [
                     {
                         "available": False,
                         "name": "Error",

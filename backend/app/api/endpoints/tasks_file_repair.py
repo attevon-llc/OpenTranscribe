@@ -22,6 +22,7 @@ from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.db.base import get_db
+from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import Task as TaskModel
 from app.models.user import User
@@ -148,6 +149,7 @@ def retry_file_processing(
         )
 
         file_id = media_file.id
+        require_processing_allowed_for_file(db, media_file)
 
         # Check if the file is in a state where retry makes sense. A NULL status fails this
         # membership test and lands here, where `.status.value` would raise AttributeError

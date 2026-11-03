@@ -40,7 +40,7 @@ above it turned off. Any layer that is off turns the feature off.
 | **User** | Each person | Voiceprint switch: Settings, Speaker Identification, "Recognize speakers across my recordings". Gender switch: the same page, Voice Attributes, "Predict gender from voice" | Both on |
 
 The first layer that is off is reported as `locked_by` (`platform`, `instance`, `organization`,
-`user`, or `consent`), so the interface can say who to ask. A user whose organization turned a
+`user`, `consent` or `file`), so the interface can say who to ask. A user whose organization turned a
 feature off sees their switch disabled with the reason, and the API refuses to change it
 (409 `policy_locked`).
 
@@ -52,6 +52,49 @@ fails, a recording that cannot be found, or a consent hook that raises or return
 approve creating a voiceprint, and approve letting someone other than the owner match against a
 saved profile. With no hook registered, consent allows. A denial by a hook is reported as
 `locked_by: "consent"` for voiceprints. Consent records and their user interface are part of #1132.
+
+## Per-recording voice identification (a fifth, narrower control)
+
+Each recording carries its own voice identification state, set when it is uploaded and changeable by
+its owner later. It is **restrict-only** like the layers above: it can turn voiceprints **off** for
+one recording and can never turn on what the platform, the deployment, the organization or the
+person has turned off. It is checked after those layers and before any consent hook, and is
+reported as `locked_by: "file"`.
+
+| State | Meaning |
+|---|---|
+| `unspecified` | Nothing was stated. This is every existing recording, and changes nothing |
+| `granted` | The uploader stated that the speakers agreed. It is a recorded **claim**: OpenTranscribe stores the statement, when it was made and who made it, and does not verify it. It enables nothing by itself |
+| `declined` | No voiceprints are created for this recording |
+
+**At upload.** The wizard's Speakers step has an unchecked box, "I state that the speakers in this
+recording agreed to voice identification". Checking it records `granted`; leaving it unchecked
+records nothing. It is not shown while voiceprints are off for you. A batch upload applies the one
+choice to every file. Uploads that skip the presigned flow (URL imports, watch sources, the in-browser
+recorder) record `unspecified`.
+
+**Opting a recording out later.** The owner (nobody else, not even an organization administrator)
+can turn voice identification off for a recording from its speaker panel. That first records
+`declined`, which stops new voiceprints at once (the OpenSearch write guard re-reads the state on
+every write), and then queues the file-scoped voiceprint purge with the reason `opt_out`. The purge
+deletes the recording's voiceprint documents, recomputes each profile and cluster average from the
+voices that remain, and is measured like every other purge. Names and links a person set themselves
+are kept. Opting back in records `granted` but restores nothing: reprocess the speakers to create new
+voiceprints.
+
+**Averages.** A profile or cluster centroid never includes a voice from a `declined` recording, even
+while that recording's document is still readable (an opt-out whose purge has not run, or failed).
+
+**Requiring a statement.** The system setting `privacy.voiceprint_upload_consent_required`
+(Settings, Privacy & Redaction, Redaction Policy tab, "Require a statement before voiceprints are
+created") is off by default. When on, a recording is treated as `declined` unless it is `granted`.
+Every existing recording is `unspecified`, so turning it on **hides the voiceprints of all existing
+recordings**. It deletes nothing, and there is deliberately no automatic purge behind a settings
+toggle.
+
+**Rolling back.** The migration refuses to downgrade while any recording is `declined`, because an
+older build ignores the column and would create voiceprints for opted-out recordings. List them with
+the partial index `ix_media_file_voiceprint_declined`, or set `OT_ALLOW_CONSENT_DOWNGRADE=1` knowingly.
 
 ## What "off" does
 
@@ -299,6 +342,25 @@ purged voiceprints back. After restoring a backup, run the purge again.
 | Personal workspaces | A super admin | `POST /api/admin/privacy-policy/purge` with `"scope": "personal"` | Every user's personal-workspace data, never an organization's |
 | Everything | A super admin, **single-tenant deployments only** | The same route with `"scope": "all"` | Literally all speaker data on the instance. In a multi-tenant deployment (any active organization, or `TENANCY_MODE=multi`) this answers **403** `purge_scope_not_allowed`: a platform administrator must not destroy tenant data, and each organization purges its own |
 
+### Destroying the voiceprints of specific files
+
+There is one more scope, `files`, with no route of its own: it is what a retention schedule uses
+to destroy the voiceprints of named recordings, whoever owns them. It runs through the same two
+passes, residual check and audit event as every other purge, with three differences:
+
+- **It never deletes a profile.** Each profile one of those speakers was linked to keeps its row,
+  its name and its links. Its embedding is **recomputed** from the speakers it still has, once
+  the purged speakers' voiceprint documents are confirmed gone; a profile left with no voiceprint
+  has its embedding document erased (it is rebuilt when a voiceprint links to it again). If the
+  deletion could not be confirmed, the embedding is erased rather than recomputed, so it can
+  never average a deleted voice back in.
+- **Every voiceprint of those files goes**, including one on a speaker a person linked to a
+  profile; the speaker row, its name and its link stay. Those speakers leave the promoted
+  clusters whose centroid averaged them in, and the centroids are rebuilt.
+- **It does not depend on a privacy switch.** It is a retention destruction, recorded in the
+  audit event as `purge_reason: "retention"` with `purge_scope.kind: "files"` and a
+  `purge_scope.file_count` (never file names). Without that reason a `files` purge is refused.
+
 **What a purge selects, and what it never touches.** Speakers belong to their recording's
 organization (or personal workspace), profiles to the organization they are stamped with, and a
 cluster to its members. A purge deletes voiceprint documents by the ids of those rows, because a
@@ -350,6 +412,29 @@ source IP and user agent. Events hold counts and ids only, never a name.
 
 Every purge writes audit events (see below) and records counts only, never a name.
 
+## Voiceprint retention (opt-in)
+
+An operator can have voiceprints destroyed once nobody has used them for a set time. It is off by
+default: the system setting `privacy.voiceprint_retention_months` is `0`. A value such as `24`
+turns on a daily task (`privacy.voiceprint_retention_sweep`, 05:25).
+
+A voiceprint is **used** when a person links or unlinks a speaker to a profile, edits the profile,
+accepts or rejects a suggestion for it, or when an automatic voiceprint match writes a link. Viewing
+a profile, computing a suggestion and maintenance (re-embedding, cluster rebuilds, migrations,
+purges) do not count. The time is `speaker_profile.last_interaction_at`. Because automatic matches
+count, a voice that keeps being recognised stays in use.
+
+A file is due when it was uploaded before the cutoff, **every** profile linked to one of its
+speakers was last used before the cutoff (an unlinked speaker counts as due), nobody holds the file
+(legal or organization hold), and it still has voiceprints. Due files go to the file-scoped
+voiceprint purge (at most 200 per day). That purge removes the files' speaker voiceprints and
+recomputes each affected profile from its remaining speakers; it never deletes a profile. A stale
+profile left with no speakers is **listed** in the task result for review, not deleted: deleting a
+named person record is a human decision.
+
+The file-scoped purge ships separately; until it is installed the task logs that nothing was
+destroyed and returns `unavailable`.
+
 ## API reference
 
 All routes are under `/api`. Request and response shapes are in `backend/openapi.json`.
@@ -370,6 +455,29 @@ recording's owner and organization. A recording you cannot see, or one that does
 ```
 
 `organization_uuid` is `null` for personal scope. `locked_by` is `null` exactly when `enabled` is true.
+
+### A recording's voice identification
+
+`PATCH /files/{file_uuid}/voiceprint-consent` with `{"state": "granted" | "declined"}` (the owner only;
+anyone else, or an unknown file, is a 404; refused under a support grant). Answer:
+
+```json
+{
+  "state": "declined",
+  "previous_state": "granted",
+  "changed": true,
+  "purge_task_id": "0b2c...",
+  "reprocess_to_create_voiceprints": false
+}
+```
+
+`declined` always queues the purge (a repeated `declined` is how a lost purge is retried; poll
+`GET /privacy/purge/{purge_task_id}`). If the purge cannot be queued the state is saved and the answer
+is 503. `POST /files/prepare` accepts `voiceprint_consent` (`granted` or `declined`; 422 otherwise) and
+`POST /files/complete` accepts the same field but **only restricts**: `declined` is applied, `granted`
+never widens what prepare recorded and is ignored, not refused, because clients retry complete. The file
+detail response carries `voiceprint_consent` and `voiceprint_consent_at`. `GET|PUT /admin/privacy-policy`
+gain `voiceprint_upload_consent_required`.
 
 ### Your own voiceprint switch
 
@@ -558,6 +666,7 @@ voiceprints" and "Deleted inferred gender data".
 | `admin.settings.change` | An instance switch changed (setting name, old and new value) |
 | `org.policy.change` | An organization policy `PATCH` (field names only; stamped with the organization) |
 | `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. The completed passes carry the `purge_scope`, the exact counts per store and the residual check (see [Read a purge back from the audit log](#purging-stored-data)). Counts and ids only; stamped with the organization when there is one |
+| `privacy.file_consent.change` | A recording's voice identification state changed (file id, old and new state, `via`). Never a file name |
 | `privacy.labels.resync` | A voiceprint switch changed and the speaker labels in the search index are being rebuilt. Written when the rebuild is requested and again when it finishes. `details` hold the switch, its previous and new value, the scope, and the counts of files selected, queued, already pending and failed. An unfinished rebuild is marked incomplete and retried by the periodic search maintenance. Never names a person or a file |
 
 ## Data inventory
@@ -599,3 +708,21 @@ What the two features store, and what each purge target removes. This is the sta
 - [Speaker diarization](./speaker-diarization.md) for how speakers are detected.
 - [Content redaction](./content-redaction.md) for the redaction floor an organization can add to.
 - [Support access](../operations/support-access.md) for `TENANCY_MODE` and support-access grants.
+
+## Self-service account erasure
+
+Separate from the voiceprint and gender switches, a super administrator can let people erase their
+own account (**Settings > Privacy & Redaction > policy tab**). It is **off by default**, because on an
+employer-run deployment erasure is the controller's process.
+
+| Setting | Key | Default | Range |
+|---|---|---|---|
+| Self-service account erasure | `gdpr.self_erasure_enabled` | off | on/off |
+| Waiting period (days) | `gdpr.self_erasure_grace_days` | 14 | 0 to 21 |
+
+The cap exists because the one-month deadline for handling the request (GDPR Art. 12(3)) starts at
+the request, not at the end of the waiting period. A request is an entry in the erasure ledger, so it
+has one deadline clock and survives a database restore (the on-disk journal re-opens it as a request,
+or as cancelled, never as an immediate erasure). The person gets a request receipt (ledger ID plus a
+sha256 digest); the erasure receipt is the separate, measured record that follows. Both settings are
+audited as `admin.settings.change`. User-facing steps: [Erase my account](../user-guide/erase-my-account.md).

@@ -34,7 +34,7 @@ import logging
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.services.redaction.config import EffectiveRedactionConfig
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import resolve_effective_config
 from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
 from app.services.redaction.summary_redaction import mask_summary_leaf

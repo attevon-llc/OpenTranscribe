@@ -10,8 +10,9 @@ against Postgres immediately before anything is removed.
 What counts as an orphan: an object whose key matches ``user_<uid>/file_<fid>/...``
 (original, thumbnails, playback rendition, derived/masked caches, waveform — all of them
 live under that prefix) and whose ``<fid>`` is not a ``media_file.id``. Everything else
-is out of scope and never listed: ``media/...`` and ``user_<uid>/youtube_<id>/...`` keys,
-bulk exports, avatars, backups and every other bucket.
+is out of scope and never listed: ``media/...`` keys, legacy ``user_<uid>/<extractor>_<id>/...``
+URL-import thumbnails (new ones are per file and so are covered above), bulk exports,
+avatars, backups and every other bucket.
 
 Refusals, same semantics as the index sweep:
 
@@ -137,15 +138,23 @@ def _is_recent(group: dict[str, Any], now: datetime) -> bool:
 
 
 def _remove_group(client: Any, bucket: str, names: list[str]) -> int:
-    """Remove ``names``; return how many failed. Never raises on a per-object error."""
-    from minio.deleteobjects import DeleteObject
+    """Remove ``names``, every version of each; return how many survived.
+
+    Per-object failures are collected, not raised, so one locked object does not stop the
+    sweep; each survivor is counted in the run's ``failed`` counter and named in the log. On a
+    versioned bucket a plain delete used to leave every orphan's bytes behind as old versions.
+    """
+    from app.services.storage_versions import StorageDeleteIncompleteError
+    from app.services.storage_versions import remove_completely
 
     failed = 0
     for i in range(0, len(names), _DELETE_BATCH):
         batch = names[i : i + _DELETE_BATCH]
-        for err in client.remove_objects(bucket, (DeleteObject(n) for n in batch)):
-            failed += 1
-            logger.warning("Storage orphan sweep: could not remove an object: %s", err.code)
+        try:
+            remove_completely(client, bucket, names=batch)
+        except StorageDeleteIncompleteError as e:
+            failed += len({entry.split("@", 1)[0].split(":", 1)[0] for entry in e.remaining})
+            logger.warning("Storage orphan sweep: %s", e)
     return failed
 
 

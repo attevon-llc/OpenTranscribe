@@ -13,8 +13,8 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from app.core.redaction_config import EffectiveRedactionConfig
     from app.services.captions import CaptionTrack
-    from app.services.redaction.config import EffectiveRedactionConfig
 
 from sqlalchemy.orm import Session
 

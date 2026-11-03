@@ -72,7 +72,10 @@ the Silo image (`docker.io/pgsty/silo`, pinned by digest) and recreates the `min
 - Upload a new file and let it process. Try one larger than `MULTIPART_THRESHOLD_MB` (default 512)
   if you can.
 - If you use quarantine, quarantine a test file and confirm an already-open media URL stops
-  working.
+  working, and that the quarantine response reports `media_revocation.complete: true`. On
+  `STORAGE_BACKEND=s3` this needs the bucket policy plus `s3:GetObjectTagging`,
+  `s3:PutObjectTagging` and `s3:GetBucketPolicy` for the app; see
+  [Verify that an issued URL stops working](./production-deployment.md#verify-that-an-issued-url-stops-working).
 
 **Troubleshooting**
 

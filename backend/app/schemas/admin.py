@@ -4,7 +4,9 @@ Pydantic schemas for admin settings
 
 import re
 import uuid as uuid_pkg
+from typing import TYPE_CHECKING
 from typing import Annotated
+from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import EmailStr
@@ -12,6 +14,9 @@ from pydantic import Field
 from pydantic import StringConstraints
 from pydantic import field_validator
 from pydantic import model_validator
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from app.models.media import MediaFile
 
 
 class RetryConfig(BaseModel):
@@ -387,6 +392,48 @@ class QuarantinedFilesList(BaseModel):
     total: int
 
 
+class MediaRevocationObject(BaseModel):
+    """The quarantine-tag write for one of the file's objects."""
+
+    # `derived` (extracted audio, burned-in video) and `bulk_export` (subtitle ZIP, DOCX/PDF)
+    # are cache-bucket copies, deleted on quarantine rather than tagged.
+    role: Literal["original", "thumbnail", "playback", "derived", "bulk_export"]
+    # `removed`: a cache copy was deleted. `absent`: the object does not exist, so no URL can
+    # serve it (not a failure).
+    outcome: Literal["applied", "removed", "absent", "failed"]
+    # Storage error code of a failure, e.g. `AccessDenied`.
+    error_code: str | None = None
+    # Storage action that failed, e.g. `s3:PutObjectTagging`.
+    failed_action: str | None = None
+
+
+class MediaRevocation(BaseModel):
+    """What a quarantine/release did to the file's already-issued media URLs.
+
+    The database action always happens; this reports the storage plane, which can fail on
+    its own (see ``services/media_revocation.py``). ``complete`` is false whenever an issued
+    URL may still work after a quarantine, or may still 403 after a release.
+    """
+
+    action: Literal["revoke", "restore"]
+    complete: bool
+    # Why it is incomplete: `tag_write_failed`, `copy_removal_failed` (a cache copy could not
+    # be listed or deleted), `enforcement_missing` (nothing makes the tag
+    # stop a URL: no MinIO presign identity, or no S3 bucket-policy Deny),
+    # `enforcement_unverified` (the bucket policy could not be read, or carries a Deny this
+    # code cannot prove covers the app's URLs), `tag_clear_failed`
+    # (release). None when complete. Stable codes; new ones may be added.
+    reason: str | None = None
+    # What enforces the tag (revoke only): `presign_identity`, `bucket_policy`, `none`,
+    # `unknown`. None on release or when there was nothing to tag.
+    enforcement: Literal["presign_identity", "bucket_policy", "none", "unknown"] | None = None
+    # Storage actions the app identity was refused, e.g. `s3:PutObjectTagging`.
+    missing_permissions: list[str] = Field(default_factory=list)
+    # Revoke only: how long an already-issued URL may keep working when incomplete.
+    exposure_seconds: int | None = None
+    objects: list[MediaRevocationObject] = Field(default_factory=list)
+
+
 class QuarantineActionResponse(BaseModel):
     """Result of a quarantine/release action."""
 
@@ -394,16 +441,78 @@ class QuarantineActionResponse(BaseModel):
     is_quarantined: bool
     legal_hold: bool
     status: str
-    # Presigned-URL revocation (issue #907), best-effort and MinIO-only. On quarantine,
-    # `presign_revoked` reports whether the object was successfully tagged so an
-    # already-minted presigned URL now 403s; `presign_tag_cleared` is None (not
-    # applicable). On release, `presign_tag_cleared` reports whether the tag was
-    # successfully removed (retried 3x — a persistent failure leaves the file released
-    # in the DB but its media URL still 403ing); `presign_revoked` is None.
+    # Presigned-URL revocation (issue #907). On quarantine, `presign_revoked` is
+    # `media_revocation.complete`: every object tagged AND something enforcing the tag, so
+    # an already-minted presigned URL now 403s; `presign_tag_cleared` is None. On release,
+    # `presign_tag_cleared` is `media_revocation.complete`: the tag is gone from every
+    # object (retried 3x; a persistent failure leaves the file released in the DB but its
+    # media URLs still 403ing); `presign_revoked` is None.
     presign_revoked: bool | None = None
     presign_tag_cleared: bool | None = None
+    # The detail behind those two booleans (additive; older clients ignore it).
+    media_revocation: MediaRevocation | None = None
     # Who holds the file after the action; None once nothing holds it (issue #1253).
     takedown_origin: str | None = None
+
+    @classmethod
+    def from_action(cls, file: "MediaFile") -> "QuarantineActionResponse":
+        """Shape the file ``quarantine_file`` / ``release_file`` returned.
+
+        Both stamp ``media_revocation`` (a ``MediaRevocationReport``) on the instance; its
+        ``action`` says which of the two booleans applies, so the admin and org-admin routes
+        cannot disagree about it.
+        """
+        report = file.media_revocation
+        status_value = file.status.value if hasattr(file.status, "value") else file.status
+        return cls(
+            uuid=str(file.uuid),
+            is_quarantined=bool(file.is_quarantined),
+            legal_hold=bool(file.legal_hold),
+            status=str(status_value),
+            presign_revoked=report.complete if report.action == "revoke" else None,
+            presign_tag_cleared=report.complete if report.action == "restore" else None,
+            media_revocation=MediaRevocation.model_validate(report.to_wire()),
+            takedown_origin=file.takedown_origin,
+        )
+
+
+class OrgMediaRevocation(BaseModel):
+    """What an organization admin is told about the media URLs.
+
+    No storage permissions, enforcer or per-object error: those describe the operator's
+    infrastructure, which a tenant must not see. The operator gets them on the platform route,
+    in the audit event and in the log.
+    """
+
+    action: Literal["revoke", "restore"]
+    complete: bool
+    # `revocation_incomplete` | `restore_incomplete` | None.
+    reason: str | None = None
+    exposure_seconds: int | None = None
+
+
+class OrgQuarantineActionResponse(BaseModel):
+    """Result of an organization admin's quarantine/release action."""
+
+    uuid: str
+    is_quarantined: bool
+    legal_hold: bool
+    status: str
+    presign_revoked: bool | None = None
+    presign_tag_cleared: bool | None = None
+    media_revocation: OrgMediaRevocation | None = None
+    takedown_origin: str | None = None
+
+    @classmethod
+    def from_action(cls, file: "MediaFile") -> "OrgQuarantineActionResponse":
+        """The platform shape with the infrastructure detail removed."""
+        full = QuarantineActionResponse.from_action(file)
+        return cls(
+            **full.model_dump(exclude={"media_revocation"}),
+            media_revocation=OrgMediaRevocation.model_validate(
+                file.media_revocation.to_tenant_wire()
+            ),
+        )
 
 
 class LinkExternalIdentityRequest(BaseModel):

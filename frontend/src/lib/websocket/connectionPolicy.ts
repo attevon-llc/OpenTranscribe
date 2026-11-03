@@ -19,15 +19,42 @@ export function websocketUrl(location: Pick<Location, 'protocol' | 'host'>): str
 }
 
 /**
+ * Close codes the server uses to REFUSE the connection: authentication required or invalid
+ * (4001, 4002), an invalid first message (4003), origin not allowed (4403). Retrying cannot
+ * change the answer and only hammers the server.
+ */
+export const TERMINAL_CLOSE_CODES: ReadonlySet<number> = new Set([4001, 4002, 4003, 4403]);
+
+/** An origin refusal: no session probe can change it. */
+const ORIGIN_REFUSED_CLOSE_CODE = 4403;
+
+/**
+ * - `probe-session`: the server refused the connection; stay in the error state and ask the
+ *   API once whether the session is still good (its 401/403 path reaches the sign-in or
+ *   account screen), reconnecting once only if it answers.
+ * - `refused`: the server refused the connection and there is nothing to ask: an origin
+ *   refusal, or a refusal streak whose one probe already ran.
  * - `recheck-session`: the server ended the socket because the user's sessions were
  *   revoked; reconnect only if one HTTP request shows the session survived.
  * - `reconnect`: retry on the backoff timer.
  * - `stay-closed`: a clean close (1000 / 1001), or the page is hidden (the visibility
  *   handler reconnects when it is shown again).
  */
-export type CloseAction = 'recheck-session' | 'reconnect' | 'stay-closed';
+export type CloseAction =
+  | 'probe-session'
+  | 'refused'
+  | 'recheck-session'
+  | 'reconnect'
+  | 'stay-closed';
 
-export function closeAction(code: number, pageHidden: boolean): CloseAction {
+/**
+ * @param refusalProbed - whether this refusal streak (since the last open or disconnect)
+ *   already probed the session; at most one probe runs per streak.
+ */
+export function closeAction(code: number, pageHidden: boolean, refusalProbed = false): CloseAction {
+  if (TERMINAL_CLOSE_CODES.has(code)) {
+    return code === ORIGIN_REFUSED_CLOSE_CODE || refusalProbed ? 'refused' : 'probe-session';
+  }
   if (code === SESSION_REVOKED_CLOSE_CODE) return 'recheck-session';
   // Don't attempt to reconnect if closed cleanly or if page is hidden
   if (code !== 1000 && code !== 1001 && !pageHidden) return 'reconnect';

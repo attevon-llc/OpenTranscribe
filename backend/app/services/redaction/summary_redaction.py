@@ -49,8 +49,8 @@ import dataclasses
 import logging
 from typing import Any
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import MASKABLE_CATEGORIES
-from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
 

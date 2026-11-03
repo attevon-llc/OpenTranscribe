@@ -283,6 +283,36 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
             state = str(self.get_model_status(model_id).get("state", "")).upper()
         return state
 
+    def _deploy_registered(self, model_name: str, model_id: str) -> str | None:
+        """Bring an already-registered model to DEPLOYED (waiting out an in-flight actor)."""
+        status = self.get_model_status(model_id)
+        if status.get("deployed"):
+            logger.info(f"Model {model_name} already deployed: {model_id}")
+            return self._verified_or_none(model_name, model_id)
+
+        # `find_model_by_name` matches the moment ML Commons creates the model's
+        # meta document -- state REGISTERING, long before there is anything to
+        # deploy. Wait it out rather than deploying into it (see
+        # _DEPLOYABLE_STATES's docstring for why that is destructive, not just
+        # wrong).
+        state = self._await_deployable_state(model_id)
+        if state == "DEPLOYED":
+            # Finished registering AND deploying while we waited.
+            return self._verified_or_none(model_name, model_id)
+        if state not in _DEPLOYABLE_STATES:
+            logger.warning(
+                f"Model {model_name} ({model_id}) is in state {state!r}, which is "
+                "not deployable. Not deploying -- doing so would delete the "
+                "registration cache of an in-flight register. The bootstrap "
+                "self-heal will retry."
+            )
+            return None
+
+        # Deploy if registered but not deployed
+        if self.deploy_model(model_id):
+            return self._verified_or_none(model_name, model_id)
+        return None
+
     def ensure_model_deployed(self, model_name: str) -> str | None:
         """Ensure a model is registered and deployed.
 
@@ -299,33 +329,7 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
         model_id = self.find_model_by_name(model_name)
 
         if model_id:
-            status = self.get_model_status(model_id)
-            if status.get("deployed"):
-                logger.info(f"Model {model_name} already deployed: {model_id}")
-                return self._verified_or_none(model_name, model_id)
-
-            # `find_model_by_name` matches the moment ML Commons creates the model's
-            # meta document -- state REGISTERING, long before there is anything to
-            # deploy. Wait it out rather than deploying into it (see
-            # _DEPLOYABLE_STATES's docstring for why that is destructive, not just
-            # wrong).
-            state = self._await_deployable_state(model_id)
-            if state == "DEPLOYED":
-                # Finished registering AND deploying while we waited.
-                return self._verified_or_none(model_name, model_id)
-            if state not in _DEPLOYABLE_STATES:
-                logger.warning(
-                    f"Model {model_name} ({model_id}) is in state {state!r}, which is "
-                    "not deployable. Not deploying -- doing so would delete the "
-                    "registration cache of an in-flight register. The bootstrap "
-                    "self-heal will retry."
-                )
-                return None
-
-            # Deploy if registered but not deployed
-            if self.deploy_model(model_id):
-                return self._verified_or_none(model_name, model_id)
-            return None
+            return self._deploy_registered(model_name, model_id)
 
         # Not registered - try local first (for offline deployments)
         local_path = self.get_local_model_path(model_name)
@@ -334,6 +338,15 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
             model_id = self.register_model_from_local(model_name)
             if model_id and self.deploy_model(model_id):
                 return self._verified_or_none(model_name, model_id)
+            # A registration whose task outlived its wait still completes on the server. Look
+            # the name up again before registering a second, duplicate model.
+            late_id = self.find_model_by_name(model_name)
+            if late_id:
+                logger.warning(
+                    f"Local registration of {model_name} reported failure but {late_id} "
+                    "exists; adopting it instead of registering a duplicate"
+                )
+                return self._deploy_registered(model_name, late_id)
             # Local registration failed, continue to try remote
             logger.warning(f"Local model registration failed for {model_name}, trying remote")
 

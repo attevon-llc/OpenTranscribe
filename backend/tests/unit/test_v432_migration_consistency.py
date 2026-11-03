@@ -21,6 +21,8 @@ from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from tests.audit_maintenance import audit_maintenance
+
 #: ``ddl_exclusive`` is applied PER TEST, never to the module: every EXCLUSIVE advisory
 #: lock drains all other xdist workers (issue #431).
 
@@ -244,7 +246,9 @@ def test_a_grant_with_uses_cannot_be_deleted(db_session):
             ),
             {"g": grant_id},
         )
-        with pytest.raises(IntegrityError):
+        # The audit guard would refuse this DELETE first; the owner switch lets the foreign
+        # key (RESTRICT) be what is under test here.
+        with pytest.raises(IntegrityError), audit_maintenance(conn):
             conn.execute(text("DELETE FROM support_access_grant WHERE id = :g"), {"g": grant_id})
     finally:
         db_session.rollback()
@@ -374,6 +378,7 @@ def test_detection_stamps_lower_without_the_tables(db_session):
     assert order.index(detected) < order.index(REVISION)
 
 
+@pytest.mark.ddl_exclusive
 def test_rerunning_the_upgrade_is_a_no_op(db_session):
     """The invariant the startup runner depends on, executed rather than asserted about."""
     module = _revision_module()

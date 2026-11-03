@@ -26,7 +26,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
 
-  type Feature = 'voiceprints' | 'gender';
+  type Feature = 'voiceprints' | 'gender' | 'consent';
 
   let policy: InstancePrivacyPolicy | null = null;
   let loading = true;
@@ -60,7 +60,9 @@
       const changes =
         feature === 'voiceprints'
           ? { voiceprint_matching_enabled: next }
-          : { gender_inference_enabled: next };
+          : feature === 'consent'
+            ? { voiceprint_upload_consent_required: next }
+            : { gender_inference_enabled: next };
       policy = await PrivacyApi.updateInstance(changes);
       toastStore.success($t('privacy.saved'));
     } catch (error) {
@@ -117,6 +119,15 @@
         : $t('privacy.purge.instanceHint')}
       canPurge={!policy.gender_inference_enabled}
       onPurge={() => (purging = ['inferred_gender'])}
+    />
+
+    <PrivacySwitchCard
+      id="instance-consent-required"
+      title={$t('privacy.instance.consentRequiredTitle')}
+      description={$t('privacy.instance.consentRequiredDescription')}
+      checked={policy.voiceprint_upload_consent_required}
+      busy={busy === 'consent'}
+      onToggle={(next) => toggle('consent', next)}
     />
 
     <fieldset class="scope">

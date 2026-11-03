@@ -2259,6 +2259,7 @@
   "gallery.bulk.speakerIdFailed": "Starten van sprekerherkenning voor {{count}} bestand(en) mislukt",
   "gallery.bulk.llmNotConfigured": "LLM-provider niet geconfigureerd",
   "gallery.bulk.llmConfigUnusable": "Uw AI-providerconfiguratie kan niet worden gebruikt. Controleer deze in Instellingen.",
+  "gallery.bulk.llmSettingsUnavailable": "Je AI-instellingen konden niet worden gelezen. Probeer het zo meteen opnieuw.",
   "gallery.bulk.noFailedFiles": "Geen mislukte bestanden in selectie",
   "gallery.bulk.noCompletedFiles": "Geen voltooide bestanden in selectie",
   "gallery.bulk.noProcessingFiles": "Geen bestanden in verwerking in selectie",

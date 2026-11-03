@@ -2259,6 +2259,7 @@
   "gallery.bulk.speakerIdFailed": "Failed to start speaker identification for {{count}} file(s)",
   "gallery.bulk.llmNotConfigured": "LLM provider not configured",
   "gallery.bulk.llmConfigUnusable": "Your AI provider configuration can't be used. Check it in Settings.",
+  "gallery.bulk.llmSettingsUnavailable": "Could not read your AI settings. Try again in a moment.",
   "gallery.bulk.noFailedFiles": "No failed files in selection",
   "gallery.bulk.noCompletedFiles": "No completed files in selection",
   "gallery.bulk.noProcessingFiles": "No processing files in selection",

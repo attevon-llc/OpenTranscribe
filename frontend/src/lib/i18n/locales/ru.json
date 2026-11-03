@@ -2229,6 +2229,7 @@
   "gallery.bulk.speakerIdFailed": "Не удалось запустить идентификацию говорящих для {{count}} файл(ов)",
   "gallery.bulk.llmNotConfigured": "Провайдер LLM не настроен",
   "gallery.bulk.llmConfigUnusable": "Конфигурацию поставщика ИИ нельзя использовать. Проверьте её в настройках.",
+  "gallery.bulk.llmSettingsUnavailable": "Не удалось прочитать настройки ИИ. Повторите попытку через минуту.",
   "gallery.bulk.noFailedFiles": "Нет неудачных файлов в выборке",
   "gallery.bulk.noCompletedFiles": "Нет завершённых файлов в выборке",
   "gallery.bulk.noProcessingFiles": "Нет файлов в обработке в выборке",

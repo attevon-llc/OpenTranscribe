@@ -2259,6 +2259,7 @@
   "gallery.bulk.speakerIdFailed": "Impossibile avviare l'identificazione del parlante per {{count}} file",
   "gallery.bulk.llmNotConfigured": "Provider LLM non configurato",
   "gallery.bulk.llmConfigUnusable": "La configurazione del provider IA non può essere usata. Controllala nelle Impostazioni.",
+  "gallery.bulk.llmSettingsUnavailable": "Impossibile leggere le impostazioni dell'IA. Riprova tra un momento.",
   "gallery.bulk.noFailedFiles": "Nessun file fallito nella selezione",
   "gallery.bulk.noCompletedFiles": "Nessun file completato nella selezione",
   "gallery.bulk.noProcessingFiles": "Nessun file in elaborazione nella selezione",

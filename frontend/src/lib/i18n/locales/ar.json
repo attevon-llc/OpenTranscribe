@@ -2259,6 +2259,7 @@
   "gallery.bulk.speakerIdFailed": "فشل بدء التعرف على المتحدثين لـ {{count}} ملف(ات)",
   "gallery.bulk.llmNotConfigured": "لم يتم تكوين مزوّد LLM",
   "gallery.bulk.llmConfigUnusable": "لا يمكن استخدام إعداد مزوّد الذكاء الاصطناعي لديك. تحقّق منه في الإعدادات.",
+  "gallery.bulk.llmSettingsUnavailable": "تعذّرت قراءة إعدادات الذكاء الاصطناعي. حاول مرة أخرى بعد قليل.",
   "gallery.bulk.noFailedFiles": "لا توجد ملفات فاشلة ضمن التحديد",
   "gallery.bulk.noCompletedFiles": "لا توجد ملفات مكتملة ضمن التحديد",
   "gallery.bulk.noProcessingFiles": "لا توجد ملفات قيد المعالجة ضمن التحديد",

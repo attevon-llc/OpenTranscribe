@@ -815,6 +815,7 @@
   "gallery.bulk.speakerIdFailed": "Sprecheridentifikation für {{count}} Datei(en) fehlgeschlagen",
   "gallery.bulk.llmNotConfigured": "LLM-Anbieter nicht konfiguriert",
   "gallery.bulk.llmConfigUnusable": "Ihre KI-Anbieterkonfiguration kann nicht verwendet werden. Prüfen Sie sie in den Einstellungen.",
+  "gallery.bulk.llmSettingsUnavailable": "Ihre KI-Einstellungen konnten nicht gelesen werden. Versuchen Sie es gleich noch einmal.",
   "gallery.bulk.noFailedFiles": "Keine fehlgeschlagenen Dateien in der Auswahl",
   "gallery.bulk.noCompletedFiles": "Keine abgeschlossenen Dateien in der Auswahl",
   "gallery.bulk.noProcessingFiles": "Keine Dateien in Verarbeitung in der Auswahl",

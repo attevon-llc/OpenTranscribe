@@ -815,6 +815,7 @@
   "gallery.bulk.speakerIdFailed": "Échec de l'identification des orateurs pour {{count}} fichier(s)",
   "gallery.bulk.llmNotConfigured": "Fournisseur LLM non configuré",
   "gallery.bulk.llmConfigUnusable": "Votre configuration du fournisseur d'IA est inutilisable. Vérifiez-la dans les paramètres.",
+  "gallery.bulk.llmSettingsUnavailable": "Impossible de lire vos paramètres d'IA. Réessayez dans un instant.",
   "gallery.bulk.noFailedFiles": "Aucun fichier échoué dans la sélection",
   "gallery.bulk.noCompletedFiles": "Aucun fichier terminé dans la sélection",
   "gallery.bulk.noProcessingFiles": "Aucun fichier en cours de traitement dans la sélection",

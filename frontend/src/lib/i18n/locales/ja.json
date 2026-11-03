@@ -2230,6 +2230,7 @@
   "gallery.bulk.speakerIdFailed": "{{count}}件のファイルの話者識別の開始に失敗しました",
   "gallery.bulk.llmNotConfigured": "LLMプロバイダーが未設定です",
   "gallery.bulk.llmConfigUnusable": "AI プロバイダー設定を使用できません。設定で確認してください。",
+  "gallery.bulk.llmSettingsUnavailable": "AI 設定を読み込めませんでした。しばらくしてからもう一度お試しください。",
   "gallery.bulk.noFailedFiles": "選択中に失敗したファイルがありません",
   "gallery.bulk.noCompletedFiles": "選択中に完了したファイルがありません",
   "gallery.bulk.noProcessingFiles": "選択中に処理中のファイルがありません",

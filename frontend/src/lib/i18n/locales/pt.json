@@ -2230,6 +2230,7 @@
   "gallery.bulk.speakerIdFailed": "Falha ao iniciar identificação de oradores para {{count}} ficheiro(s)",
   "gallery.bulk.llmNotConfigured": "Fornecedor LLM não configurado",
   "gallery.bulk.llmConfigUnusable": "Sua configuração do provedor de IA não pode ser usada. Verifique-a nas Configurações.",
+  "gallery.bulk.llmSettingsUnavailable": "Não foi possível ler as configurações de IA. Tente novamente em instantes.",
   "gallery.bulk.noFailedFiles": "Sem ficheiros falhados na seleção",
   "gallery.bulk.noCompletedFiles": "Sem ficheiros concluídos na seleção",
   "gallery.bulk.noProcessingFiles": "Sem ficheiros em processamento na seleção",

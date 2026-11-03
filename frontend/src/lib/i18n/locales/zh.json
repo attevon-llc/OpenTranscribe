@@ -2230,6 +2230,7 @@
   "gallery.bulk.speakerIdFailed": "{{count}} 个文件的说话人识别启动失败",
   "gallery.bulk.llmNotConfigured": "LLM 提供商未配置",
   "gallery.bulk.llmConfigUnusable": "您的 AI 提供商配置无法使用。请在设置中检查。",
+  "gallery.bulk.llmSettingsUnavailable": "无法读取您的 AI 设置。请稍后重试。",
   "gallery.bulk.noFailedFiles": "所选文件中无失败文件",
   "gallery.bulk.noCompletedFiles": "所选文件中无已完成文件",
   "gallery.bulk.noProcessingFiles": "所选文件中无处理中文件",

@@ -2259,6 +2259,7 @@
   "gallery.bulk.speakerIdFailed": "파일 {{count}}개의 화자 식별을 시작하지 못했습니다",
   "gallery.bulk.llmNotConfigured": "LLM 제공자가 설정되지 않았습니다",
   "gallery.bulk.llmConfigUnusable": "AI 공급자 구성을 사용할 수 없습니다. 설정에서 확인하세요.",
+  "gallery.bulk.llmSettingsUnavailable": "AI 설정을 읽을 수 없습니다. 잠시 후 다시 시도해 주세요.",
   "gallery.bulk.noFailedFiles": "선택 항목에 실패한 파일이 없습니다",
   "gallery.bulk.noCompletedFiles": "선택 항목에 완료된 파일이 없습니다",
   "gallery.bulk.noProcessingFiles": "선택 항목에 처리 중인 파일이 없습니다",

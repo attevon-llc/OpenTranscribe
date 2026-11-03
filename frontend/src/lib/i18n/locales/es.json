@@ -815,6 +815,7 @@
   "gallery.bulk.speakerIdFailed": "Error al iniciar identificación de oradores para {{count}} archivo(s)",
   "gallery.bulk.llmNotConfigured": "Proveedor LLM no configurado",
   "gallery.bulk.llmConfigUnusable": "No se puede usar su configuración del proveedor de IA. Revísela en Ajustes.",
+  "gallery.bulk.llmSettingsUnavailable": "No se pudieron leer los ajustes de IA. Inténtalo de nuevo en un momento.",
   "gallery.bulk.noFailedFiles": "No hay archivos fallidos en la selección",
   "gallery.bulk.noCompletedFiles": "No hay archivos completados en la selección",
   "gallery.bulk.noProcessingFiles": "No hay archivos en procesamiento en la selección",

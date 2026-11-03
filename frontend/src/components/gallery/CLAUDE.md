@@ -79,8 +79,10 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
 - Virtual renderers manage their own scroll windowing — keep `scrollContainer` wiring intact.
 - **The gallery listing carries no per-file tags.** `tags` lives on the `MediaFileDetail` schema,
   not the `MediaFile` one the paginated list returns, so `file.tags` is undefined here even though
-  the TS type allows it. `BulkTagModal` therefore scopes its _remove_ suggestions to the selection
-  only when something actually supplies them, and otherwise offers every tag and says so.
+  the TS type allows it. `BulkTagModal` therefore loads the selection's tags itself
+  (`listTagsOnFiles`) and scopes its _remove_ suggestions to them; only when those per-file tags
+  cannot be loaded does it fall back to offering every tag, and it says so
+  (`removeHintScoped` / `removeHintAll`).
 - **Bulk tag results are outcomes, not booleans.** `already_present` / `not_present` are
   _successful_ no-ops; only `failed` is a failure. Report changed and unchanged separately, and
   never let one refused file read as a failed batch.

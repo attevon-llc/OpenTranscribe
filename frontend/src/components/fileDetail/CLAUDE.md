@@ -9,11 +9,24 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 - `TxtExportOptionsModal.svelte` — the TXT-export options dialog (include timestamps / speakers /
   comments + redaction note). Markup + scoped CSS only.
+- `TranscriptExportDialogs.svelte` — transcript export and copy for the page: the comments
+  confirmation, the TXT options dialog, the lazily loaded Word/PDF dialog and the server-side
+  copy. Every byte comes from the server (#673 downloads, #821 copy, #1278 documents); nothing here
+  serializes a transcript and a failure never gets a local fallback. The page calls `openExport` /
+  `copyTranscript` via `bind:this` and reads `documentBusy` / `copyStatus` back through `bind:`.
+  `FilePlayer.svelte` — the player plus, for a completed audio/video file, the waveform; keeps
+  `currentTime` and the active-segment highlight in step and performs the one-time `?t=` seek. The
+  page owns the stream URL and calls `seekToTime` / `updateSubtitles` via `bind:this`.
+  `FileSummary.svelte` — the summary modal, its reprocess actions, the header's generate action and
+  the `?view=summary` deep link (the page binds the two spinner flags and calls `show()` /
+  `generate()` via `bind:this`). `*TestHost.svelte` / `*TestStub.svelte` here
+  (`FileSummaryTestHost`, `TranscriptExportDialogsTestHost`, `SummaryModalTestStub`,
+  `VideoPlayerTestStub`) are test doubles, not product components.
 - `DocumentExportOptionsModal.svelte` — the Word/PDF options dialog (timestamps, speakers, comments
   when the file has any, line numbering, page size, redaction note). **Lazy**: the page loads it with
   a dynamic `import()` so it adds nothing to the root layout or the static closure
   (`check-bundle-budget` has headroom to keep that true; never raise the budget for it). Scroll lock
-  is BaseModal's, unlike the TXT modal. Prefs come from `$lib/export/documentExportPrefs`.
+  is BaseModal's, unlike the TXT dialog (whose lock lives in `TranscriptExportDialogs`). Prefs come from `$lib/export/documentExportPrefs`.
 - `FileActionButtons.svelte` — the video-header action row (view transcript · AI summary
   view/generating/generate · reprocess). Emits `viewTranscript`, `showSummary`,
   `generateSummary`, `openReprocess`.
@@ -34,15 +47,19 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 ## Conventions / patterns
 
 - The route page owns the state and orchestration; these children take props and dispatch events.
-- `TxtExportOptionsModal`: `bind:show` + the `include*` toggles; emits `confirm`/`close`.
-  **Scroll-lock stays in the page** (`_prevTxtExport` + a `$:` lock/unlock block) — the child only
-  sets `show=false` + dispatches so the page's reactive block sequences lock/unlock exactly as before.
+  The orchestration itself lives in **context modules** under `$lib/fileDetail/`: each takes a
+  context object that reads and writes the page's state (the page keeps owning it, #338) —
+  `fileDetailData` (reads), `fileSpeakers` (composes `speakerLoader` / `speakerSave` /
+  `speakerEvents` / `speakerNames`), `segmentEdit`, `segmentPaging`, `segmentSync`, `segmentDom`,
+  `notificationHandler` / `notificationSelect`, `summaryActions`, `reprocess` / `reprocessStages`,
+  `redactionView`, `mediaStream`, `downloadStream`, `deepLinks`, `pageTimers`.
+- `TxtExportOptionsModal`: `bind:show` + the `include*` toggles; emits `confirm`/`close`. **Its
+  scroll lock sits in `TranscriptExportDialogs`** (a `$:` block on the TXT flag), not the page.
 - The modal-chrome CSS (`.modal-overlay`/`.modal-dialog`/`.modal-*`/`.btn*`) is duplicated between
   `TxtExportOptionsModal` and `SpeakerProfileConfirmModal` on purpose — Svelte scopes `<style>` per
   component, so each dialog needs its own copy. The page no longer carries it (#284 A3.5).
-- `SpeakerProfileConfirmModal`: **scroll-lock stays in the page**, same as `TxtExportOptionsModal` —
-  the page's `$:` block keys off `showSpeakerProfileConfirmation`, and the child is rendered inside
-  that `{#if}`.
+- `SpeakerProfileConfirmModal` holds its own scroll lock for exactly its lifetime (taken on mount,
+  released on destroy); the page renders it inside an `{#if}`.
 
 ## How it connects
 
@@ -93,4 +110,5 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 - The file-detail E2E (`backend/tests/e2e/test_file_detail_transcript.py`) guards the page's
   transcript/export/speaker-editor surfaces — keep those working when adding children here.
 - This is a coordinator route: it legitimately keeps a large `<script>` (data loading, WebSocket
-  notifications, speaker bulk-save). Extract markup/CSS, not the orchestration.
+  notifications, speaker bulk-save). Extract markup/CSS into children and orchestration into the
+  context-module pattern above (`$lib/fileDetail/*`), not into a store.

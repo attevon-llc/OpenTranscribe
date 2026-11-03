@@ -3,7 +3,7 @@
 ## Purpose
 
 Thin presentational children of `routes/search/+page.svelte` (the hybrid keyword+semantic search
-coordinator).
+coordinator). Its request-shaping and preview logic lives in `$lib/mediaSearch/` (`src/lib/mediaSearch/CLAUDE.md`).
 
 ## Key files
 

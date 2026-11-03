@@ -5,7 +5,7 @@
 **This is the Settings search, not the media search.** Everything here powers the search box
 inside `SettingsModal`. Media/transcript search is server-side hybrid keyword+semantic
 (OpenSearch) and lives in `routes/search/+page.svelte` + `$components/search/` + `$stores/search.ts`
-— see `frontend/src/components/search/CLAUDE.md`. Never rank, filter, or paginate those results here.
+— see `frontend/src/components/search/CLAUDE.md`; its request/preview logic is in `$lib/mediaSearch/` (`src/lib/mediaSearch/CLAUDE.md`). Never rank, filter, or paginate those results here.
 
 ## Key files
 

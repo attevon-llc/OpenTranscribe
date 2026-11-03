@@ -47,7 +47,7 @@ writes to it, each with a written reason, so the next one has to answer the ques
   dropped connection with no `data` is retried by the browser, not a failure.
 - `exportErrors.ts` — `exportErrorKey(error)`: HTTP 409/503 and a job `reason` mapped to a
   translation KEY. Every export or copy failure on the file page toasts it (a `console.error`-only
-  catch used to leave a button that silently did nothing; `routes/files/[id]/exportFailureToasts.test.ts`
+  catch used to leave a button that silently did nothing; `components/fileDetail/TranscriptExportDialogs.failureToasts.test.ts`
   pins the call sites).
 - `anchorDownload.ts` — `triggerAnchorDownload`: save a presigned URL through a transient anchor.
 - `documentExportPrefs.ts` — localStorage for line numbering, page size and the two toggles; a

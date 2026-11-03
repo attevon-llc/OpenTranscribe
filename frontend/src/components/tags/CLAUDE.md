@@ -29,7 +29,7 @@ selection is not here — that is `gallery/BulkTagModal.svelte`.
 ## Conventions / patterns
 
 - **Nothing here recomputes what the backend ships.** Usage counts, collision
-  clustering, ranked near matches, the suggested survivor and `awaiting_review`
+  clustering, ranked near matches and the suggested survivor
   all arrive decided and are rendered as received.
 - The coordinator owns state; children take props and `dispatch`. Don't move
   fetches down into a child.
@@ -46,18 +46,19 @@ selection is not here — that is `gallery/BulkTagModal.svelte`.
 
 - **Three ownership values, not a boolean** (`$lib/types/tag`): `mine`,
   `system` (the shared vocabulary), `shared_with_me` (someone else's, visible
-  only because they shared the media it sits on). `canMutateTag()` mirrors the
-  backend's `_writable_tag_ids` — a `shared_with_me` tag answers **404** to every
-  mutation, so the UI must not render Rename/Delete/Accept for it. The badge
-  explains the absence instead.
+  only because they shared the media it sits on). Write gates follow the server's verdict,
+  `Tag.can_write` (the backend's `_writable_tag_ids`) — a `shared_with_me` tag answers **404**
+  to every mutation, so the UI must not render Rename/Delete for it. The badge explains the
+  absence instead. Promote keeps the one client-side rule, `canWriteSystemTags(role,
+tenancyMode)` plus "every tag is mine" (`$lib/types/tag`).
 - **`is_shared` means the opposite elsewhere in this app** (`CollectionWithCount`
   uses it for "shared _with_ me"). That collision is why tags carry `ownership`
   rather than a boolean — don't reintroduce one.
 - **The scope picker's values ARE the ownership values.** `GET /tags?scope=` takes
   the same four strings, so a scoped request returns rows reporting that
   ownership. Renaming one side without the other silently breaks the filter;
-  `TagManagerModal.test.ts` pins the pairing.
-- **Cluster members must carry `ownership` through `buildModel`**, or the same
+  `TagManagerModal.contract.test.ts` pins the pairing.
+- **Cluster members must carry `ownership` through `buildIndex`**, or the same
   tag is gated one way in the flat list and another in cluster view.
 - **A typed name may not be the applied tag** — resolution is normalized-exact,
   so `Q3 Review` can land on `q3-review`. Surfaces that report success name the

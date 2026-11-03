@@ -47,7 +47,7 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   `<img>` of `assets/logo-icon.png` (the only non-SVG entry, so tests query `.notification-icon img`);
   topic/auto-label share the tag glyph and collection notifications use the folder glyph.
   **Retention (issue #1217):** the list is an inbox, pruned — never animated away. The policy is a
-  pure function in `$lib/notifications/retention.ts` (injected `now`, no timers); `websocket.ts`
+  pure function in `$lib/notifications/retention.ts` (injected `now`, no timers); `stores/websocketNotifications.ts`
   runs it on load, on add and on panel close, and it is a no-op while the panel is open. Never
   removed: errors/warnings (`status`/`data.status` anything but completed), in-flight items,
   `persistent` types, unread items under 14 days. A file's card is retained as ONE unit (all its
@@ -68,7 +68,7 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   `showNotificationsPanel`; `.notifications-panel` / `.notifications-backdrop` are unchanged.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`, `chat/`,
-  `fileDetail/`, `tags/`, `supportAccess/` (each with its own `CLAUDE.md`), plus `notifications/`,
+  `fileDetail/`, `tags/`, `supportAccess/`, `users/` (each with its own `CLAUDE.md`), plus `notifications/`,
   `mfa/`, `legal/` and `takedown/` (none yet).
   Each subfolder holds the presentational children split out of one oversized coordinator.
 

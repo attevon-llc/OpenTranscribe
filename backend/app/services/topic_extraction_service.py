@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Optional
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.enums import PostProcessingTask
@@ -226,15 +227,19 @@ IMPORTANT GUIDELINES:
 
         Returns:
             TopicExtractionService instance if LLM configured, None otherwise
+
+        Raises:
+            SQLAlchemyError: the LLM settings could not be read, which is not "not configured".
         """
         try:
-            # Try to create LLM service to check if configured
             llm_service = LLMService.create_from_settings(user_id=user_id)
             if llm_service:
                 return TopicExtractionService(db)
             else:
                 logger.info(f"LLM not configured for user {user_id}, skipping topic extraction")
                 return None
+        except SQLAlchemyError:
+            raise
         except Exception as e:
             logger.warning(f"Could not create topic extraction service: {e}")
             return None

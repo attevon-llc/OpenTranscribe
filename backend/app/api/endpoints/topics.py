@@ -38,6 +38,7 @@ from app.schemas.topic import RetroactiveAutoLabelRequest
 from app.schemas.topic import SuggestedCollection
 from app.schemas.topic import SuggestedTag
 from app.schemas.topic import TopicSuggestionResponse
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.request_context import RequestContext
 from app.services.topic_extraction_service import TopicExtractionService
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
@@ -105,8 +106,10 @@ def batch_extract_topics(
             detail="No valid files found for processing",
         )
 
-    # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
+    with llm_settings_outage_as_503():
+        extraction_service = TopicExtractionService.create_from_settings(
+            user_id=current_user.id, db=db
+        )
 
     if not extraction_service:
         raise HTTPException(
@@ -424,8 +427,10 @@ def extract_topics(
             detail="File has no transcript. Complete transcription first.",
         )
 
-    # Check if LLM is configured
-    extraction_service = TopicExtractionService.create_from_settings(user_id=current_user.id, db=db)
+    with llm_settings_outage_as_503():
+        extraction_service = TopicExtractionService.create_from_settings(
+            user_id=current_user.id, db=db
+        )
 
     if not extraction_service:
         raise HTTPException(

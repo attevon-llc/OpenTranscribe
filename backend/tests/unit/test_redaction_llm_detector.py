@@ -24,9 +24,10 @@ What is pinned here, in order:
 3. **Category validation (``_VALID_CATEGORIES``, L30)** — pins that ``"custom"`` is accepted
    even though the prompt (L21-28) only asks the model for ``pii``/``profanity``/``toxicity``.
    A model that hallucinates ``"category": "custom"`` passes validation and produces a span.
-4. **Fail-open contract** — ``detect_with_llm`` never raises. Any internal failure (no LLM
-   configured, the LLM call itself raising, a malformed response) results in ``{}``, never a
-   propagated exception.
+4. **Fail-open contract** — ``detect_with_llm`` never raises for a provider fault. Any such
+   failure (no LLM configured, the LLM call itself raising, a malformed response) results in
+   ``{}``. A database error while reading the provider settings is the exception: it
+   propagates, so the scan is retried instead of recording a gap that outlives the outage.
 
 Following the characterization-test convention of ``tests/unit/test_chunking_service.py``.
 """
@@ -236,6 +237,23 @@ def test_llm_service_creation_raising_returns_empty_dict(monkeypatch: pytest.Mon
     results = detect_with_llm([{"text": "some segment text"}], user_id=1)
 
     assert results == {}
+
+
+def test_a_settings_outage_propagates_instead_of_reading_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``failures`` entry becomes a permanent coverage gap; an outage must be retried."""
+    from sqlalchemy.exc import OperationalError
+
+    def _outage(user_id: int | None = None) -> None:
+        raise OperationalError("SELECT 1", {}, Exception("connection reset"))
+
+    monkeypatch.setattr(LLMService, "create_from_settings", staticmethod(_outage))
+    failures: list[str] = []
+
+    with pytest.raises(OperationalError):
+        detect_with_llm([{"text": "hello"}], user_id=1, failures=failures)
+    assert failures == []
 
 
 # ---------------------------------------------------------------------------

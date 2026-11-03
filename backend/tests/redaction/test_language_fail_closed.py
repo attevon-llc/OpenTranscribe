@@ -340,3 +340,31 @@ def test_an_llm_outage_is_reported_and_leaves_a_gap_rather_than_failing_the_file
     assert "llm" in result["skipped_detectors"], result
     cfg = resolve_effective_config(db_session, llm_detector_user.id)
     assert "llm" in uncovered_detectors(media, cfg)
+
+
+def test_an_llm_settings_outage_returns_the_scan_to_pending_instead_of_leaving_a_gap(
+    db_session, production_txn_view, llm_detector_user, quiet_detectors, monkeypatch
+) -> None:
+    """A provider-settings read that FAILED says nothing about whether one is configured.
+
+    Recording it as an unavailable detector leaves a coverage gap that no retry closes, and
+    ``llm_guard`` then refuses summarization and speaker-ID for the file. The scan goes back
+    to pending and the error propagates, so the task retries.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    from app.core import redaction_defaults
+
+    def _unreadable(user_id=None):
+        raise OperationalError("SELECT 1", {}, Exception("connection reset"))
+
+    monkeypatch.setattr(LLMService, "create_from_settings", staticmethod(_unreadable))
+    media = _seed_unscanned_file(db_session, llm_detector_user)
+    db_session.commit()
+
+    with pytest.raises(OperationalError):
+        RedactionService.detect_and_store(production_txn_view, media.id)
+
+    db_session.refresh(media)
+    assert media.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING
+    assert media.redaction_coverage is None

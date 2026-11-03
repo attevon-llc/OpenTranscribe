@@ -281,20 +281,7 @@ class RedactionService:
         llm_failures: list[str] = []
         llm_spans_by_idx: dict[int, list] = {}
         if run_llm:
-            try:
-                from app.services.redaction.detectors import llm
-
-                seg_dicts = [{"text": s.text, "words": s.words} for s in segments]
-                with llm_usage_run("redaction", file_id=file_id):
-                    detected = llm.detect_with_llm(
-                        seg_dicts, int(media.user_id), failures=llm_failures
-                    )
-                llm_spans_by_idx = {
-                    idx: [sp.model_dump() for sp in spans] for idx, spans in detected.items()
-                }
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("LLM redaction detection failed for file %s: %s", file_id, exc)
-                llm_failures.append("llm")
+            llm_spans_by_idx = RedactionService._run_llm_detector(db, media, segments, llm_failures)
             if llm_failures:
                 # Reported and recorded as a GAP, never FAILED. `failed` is not an inert label
                 # — `llm_guard` turns it into a permanent, NON-retryable refusal that would
@@ -580,6 +567,31 @@ class RedactionService:
         return "stale"
 
     @staticmethod
+    def _run_llm_detector(
+        db: Session, media: MediaFile, segments: list[TranscriptSegment], failures: list[str]
+    ) -> dict[int, list]:
+        """Run the owner's LLM detector, returning ``{segment_index: [span dicts]}``.
+
+        ``"llm"`` is appended to ``failures`` when it did not examine the text. Unreadable
+        provider settings are not missing ones: the scan returns to pending and the error
+        propagates so the task retries, rather than recording a gap that outlives the outage.
+        """
+        try:
+            from app.services.redaction.detectors import llm
+
+            seg_dicts = [{"text": s.text, "words": s.words} for s in segments]
+            with llm_usage_run("redaction", file_id=media.id):
+                detected = llm.detect_with_llm(seg_dicts, int(media.user_id), failures=failures)
+        except SQLAlchemyError:
+            RedactionService._return_to_pending(db, media, "LLM provider settings unreadable")
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("LLM redaction detection failed for file %s: %s", media.id, exc)
+            failures.append("llm")
+            return {}
+        return {idx: [sp.model_dump() for sp in spans] for idx, spans in detected.items()}
+
+    @staticmethod
     def _owner_wants_llm_or_defer(db: Session, media: MediaFile) -> bool:
         """Resolve the LLM-detector choice, returning the scan to pending if unreadable.
 
@@ -587,27 +599,30 @@ class RedactionService:
         The scan goes back to pending (not failed: failed is a permanent refusal
         downstream) and the error propagates so the task retries.
         """
-        file_id = media.id  # read now: a rollback expires the object
         try:
             return RedactionService._owner_wants_llm(
                 db, int(media.user_id), organization_id=getattr(media, "organization_id", None)
             )
         except Exception:
-            # Unconditional: after a failed SQL statement ``is_active`` still reads
-            # True while PostgreSQL has aborted the transaction. The only earlier
-            # write (PROCESSING) was committed before this point.
-            try:
-                db.rollback()
-                media.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
-                db.commit()
-                logger.warning(
-                    "Redaction policy unreadable for file %s; scan left pending", file_id
-                )
-            except SQLAlchemyError:
-                logger.error(
-                    "Could not return file %s to pending after an unreadable policy", file_id
-                )
+            RedactionService._return_to_pending(db, media, "Redaction policy unreadable")
             raise
+
+    @staticmethod
+    def _return_to_pending(db: Session, media: MediaFile, why: str) -> None:
+        """Put a scan back to pending (not failed: failed is a permanent refusal downstream).
+
+        The rollback is unconditional: after a failed SQL statement ``is_active`` still reads
+        True while PostgreSQL has aborted the transaction. Callers run before any detection
+        write, so the only earlier write (PROCESSING) is already committed.
+        """
+        file_id = media.id  # read now: a rollback expires the object
+        try:
+            db.rollback()
+            media.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+            db.commit()
+            logger.warning("%s for file %s; scan left pending", why, file_id)
+        except SQLAlchemyError:
+            logger.error("Could not return file %s to pending (%s)", file_id, why)
 
     @staticmethod
     def _owner_wants_llm(db: Session, user_id: int, *, organization_id: int | None = None) -> bool:

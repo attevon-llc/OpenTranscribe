@@ -50,6 +50,7 @@ from app.services.post_processing_status import tracks_post_processing
 from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.tasks.summarization_inputs import _load_summarization_inputs
+from app.utils.task_utils import task_error_text
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -120,16 +121,14 @@ def _handle_no_llm_configured(
 
 
 def _create_user_friendly_error(error_msg: str) -> str:
-    """Create a user-friendly error message from an exception message."""
+    """A fixed sentence for an exception message; the message itself is never returned."""
     if "timeout" in error_msg.lower():
         return "Request timed out. Try reducing video length or contact support."
     if "context" in error_msg.lower() or "token" in error_msg.lower():
         return "Content too long for model. Try shorter videos or contact support."
     if "connection" in error_msg.lower() or "network" in error_msg.lower():
         return "Network connection failed. Please try again."
-    if not error_msg.strip():
-        return "Unknown error occurred during summary generation"
-    return error_msg
+    return "Unknown error occurred during summary generation"
 
 
 def _mark_summary_failed(file_id: int) -> None:
@@ -370,8 +369,8 @@ def _handle_task_error(
     from app.utils.task_utils import update_task_status
 
     error_type = type(e).__name__
-    error_msg = str(e)
-    logger.error(f"Error summarizing file {file_id}: {error_type}: {error_msg}")
+    error_msg = task_error_text(e)
+    logger.error(f"Error summarizing file {file_id}: {error_type}: {e}")
     logger.error("Full error traceback:", exc_info=True)
 
     notify: tuple[int, int, str] | None = None

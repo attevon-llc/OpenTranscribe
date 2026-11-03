@@ -65,6 +65,7 @@ from app.services.chat.settings import apply_user_preferences
 from app.services.chat.settings import get_chat_settings
 from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.redaction.llm_guard import is_local_provider
 from app.services.request_context import RequestContext
 from app.services.support_access_service import coded_error
@@ -194,7 +195,8 @@ def _prepare_turn(
     Returns the keyword arguments for :meth:`ChatService.stream_reply`.
 
     Raises:
-        HTTPException: 400 (no LLM / oversized scope), 402 (quota), 429 (limits).
+        HTTPException: 400 (no LLM / oversized scope), 402 (quota), 429 (limits), 503 (the
+            LLM settings cannot be read).
     """
     # Narrow the admin's settings by any per-tenant ceiling before anything reads
     # them, so the rate-limit checks and the retrieval budget below both see the
@@ -599,11 +601,16 @@ def cancel_message(
 
 
 def _resolve_chat_llm(user_id: int, config_id: int | None) -> LLMService | None:
-    """The chat LLM for a turn; an unusable configuration is a clean 400, never a fallback."""
+    """The chat LLM for a turn, never a fallback.
+
+    Raises:
+        DomainError: 400 for an unusable configuration, 503 when the settings cannot be read.
+    """
     try:
-        if config_id is not None:
-            return LLMService.create_from_config_id(user_id, config_id)
-        return LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
+        with llm_settings_outage_as_503():
+            if config_id is not None:
+                return LLMService.create_from_config_id(user_id, config_id)
+            return LLMService.create_from_settings(user_id=user_id, raise_on_unusable=True)
     except LLMConfigurationError as unusable:
         # A stable code so the client can tell "unusable" from "none configured"; the message
         # is a fixed sentence per failure reason and safe to show.
@@ -622,7 +629,8 @@ def estimate_context(
     the picker can warn before someone selects 400 recordings.
     """
     file_count = count_scope_files(db, ctx, body)
-    llm = LLMService.create_from_settings(user_id=ctx.user.id)
+    with llm_settings_outage_as_503():
+        llm = LLMService.create_from_settings(user_id=ctx.user.id)
     context_window = llm.user_context_window if llm else 8192
 
     estimated = file_count * _ESTIMATED_TOKENS_PER_FILE
@@ -653,7 +661,7 @@ def answer_budget(
 
     Raises:
         HTTPException: 404 for a config the caller may not use, 400 when no LLM
-            is configured.
+            is configured, 503 when the LLM settings cannot be read.
     """
     chat_settings = apply_tenant_limits(get_chat_settings(db), ctx.org_id)
     config_id = resolve_llm_config_id(db, ctx, llm_config_uuid)

@@ -33393,7 +33393,7 @@
     },
     "/api/chat/answer-budget": {
       "get": {
-        "description": "Report the reply budget a turn would use, for the chat settings panel.\n\n``llm_config_uuid`` is the conversation's pinned model; omitted means the\naccount default — the same choice ``_prepare_turn`` makes. Both numbers come\nfrom ``resolve_answer_tokens`` with the same inputs the stream passes, so the\npanel can never advertise a default the turn does not actually send.\n\nRaises:\n    HTTPException: 404 for a config the caller may not use, 400 when no LLM\n        is configured.",
+        "description": "Report the reply budget a turn would use, for the chat settings panel.\n\n``llm_config_uuid`` is the conversation's pinned model; omitted means the\naccount default — the same choice ``_prepare_turn`` makes. Both numbers come\nfrom ``resolve_answer_tokens`` with the same inputs the stream passes, so the\npanel can never advertise a default the turn does not actually send.\n\nRaises:\n    HTTPException: 404 for a config the caller may not use, 400 when no LLM\n        is configured, 503 when the LLM settings cannot be read.",
         "operationId": "answer_budget_api_chat_answer_budget_get",
         "parameters": [
           {

@@ -46,6 +46,7 @@ from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
 from app.utils.speaker_identity_detail import llm_detail
 from app.utils.speaker_identity_source import record_suggestion
+from app.utils.task_utils import task_error_text
 from app.utils.transcript_builders import build_full_transcript
 from app.utils.transcript_builders import build_speaker_segments
 from app.utils.user_settings_helpers import get_user_llm_output_language
@@ -674,8 +675,9 @@ def identify_speakers_llm_task(self, file_uuid: str):
         raise  # unreachable — defer_for_redaction always raises
     except Exception as e:
         logger.error(f"Error in speaker identification task for file {file_id}: {str(e)}")
-        _mark_identification_failed(task_id, str(e))
-        return {"status": "error", "message": str(e)}
+        error_msg = task_error_text(e)
+        _mark_identification_failed(task_id, error_msg)
+        return {"status": "error", "message": error_msg}
 
 
 def _generate_predictions(
@@ -699,16 +701,20 @@ def _generate_predictions(
         The predictions, or None when no LLM provider is configured (the caller
         skips). A configured provider that fails still logs an error and returns
         empty predictions.
-    """
-    try:
-        llm_service = _create_llm_service(user_id)
-        if llm_service is None:
-            logger.info(
-                f"LLM not configured for user {user_id}, skipping speaker identification "
-                f"for file {file_id}"
-            )
-            return None
 
+    Raises:
+        SQLAlchemyError: the LLM settings could not be read. Outside the ``try`` so the
+            task records a failure, not a success with no predictions.
+    """
+    llm_service = _create_llm_service(user_id)
+    if llm_service is None:
+        logger.info(
+            f"LLM not configured for user {user_id}, skipping speaker identification "
+            f"for file {file_id}"
+        )
+        return None
+
+    try:
         logger.info(f"Starting LLM speaker identification for file {file_id}")
         logger.info(f"Using LLM output language: {output_language}")
 

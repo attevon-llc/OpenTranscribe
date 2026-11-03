@@ -7,9 +7,9 @@ gets its own outcome: a refusal or a database error on one file never fails the
 batch, and earlier files keep their change.
 
 A tag the batch itself inserted is committed up front, so a later per-file
-rollback cannot take it away, and its id is noted on the session. The closing
-:func:`refresh_tagged_files` deletes it again when no file ended up carrying
-it, so a batch where every file failed leaves no unused tag behind.
+rollback cannot take it away, and its id is handed back to the caller. The
+closing :func:`refresh_tagged_files` deletes it again when no file ended up
+carrying it, so a batch where every file failed leaves no unused tag behind.
 """
 
 from __future__ import annotations
@@ -54,9 +54,6 @@ MUTATION_ERROR: Final = "TAG_UPDATE_FAILED"
 TENANT_MISMATCH_ERROR: Final = "TAG_TENANT_MISMATCH"
 TENANT_MISMATCH_MESSAGE: Final = "This tag belongs to a different organization than the file"
 
-#: ``Session.info`` key holding the id of the tag the current batch created.
-_CREATED_TAG_KEY: Final = "tag_bulk.created_tag_id"
-
 
 class BulkTagOutcome(StrEnum):
     """What happened to one file of the selection."""
@@ -70,6 +67,14 @@ class BulkTagOutcome(StrEnum):
 
 #: Outcomes after which the file's tag set differs, so it needs a reindex.
 CHANGED_OUTCOMES: Final = frozenset({BulkTagOutcome.ADDED, BulkTagOutcome.REMOVED})
+
+
+@dataclass(frozen=True)
+class BulkTagResolution:
+    """The batch's tag, and its id again when this request inserted the row."""
+
+    tag: Tag | None
+    created_tag_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -93,13 +98,13 @@ def resolve_bulk_tag(
     *,
     user_id: int,
     organization_id: int | None,
-) -> Tag | None:
+) -> BulkTagResolution:
     """Resolve the batch's tag once, in the request tenant.
 
     Removing only looks the name up, so a typo leaves no new row and may yield
-    None. Adding resolves or creates, then commits so the row survives a later
-    per-file rollback; a row this request inserted is noted for
-    :func:`refresh_tagged_files`.
+    no tag. Adding resolves or creates, then commits so the row survives a later
+    per-file rollback; a row this request inserted comes back as
+    ``created_tag_id``, for :func:`refresh_tagged_files`.
 
     Raises:
         InvalidTagNameError: The name is missing or empty once normalized.
@@ -110,7 +115,7 @@ def resolve_bulk_tag(
         raise InvalidTagNameError("Tag name is required")
     existing = lookup_existing_tag(db, normalized, cleaned, user_id, organization_id)
     if action == REMOVE_TAG_ACTION:
-        return existing
+        return BulkTagResolution(existing)
     inserted = False
     tag = existing
     if tag is None:
@@ -124,9 +129,7 @@ def resolve_bulk_tag(
         )
     db.commit()
     # Only a row this request inserted; a race winner belongs to the request that won.
-    if inserted:
-        db.info[_CREATED_TAG_KEY] = tag.id
-    return tag
+    return BulkTagResolution(tag, tag.id if inserted else None)
 
 
 def _require_editor(
@@ -237,11 +240,8 @@ def apply_tag_to_file(
     return result
 
 
-def _discard_unattached_created_tag(db: Session) -> None:
+def _discard_unattached_created_tag(db: Session, tag_id: int) -> None:
     """Delete the tag this batch created if no file carries it and nobody shares it."""
-    tag_id = db.info.pop(_CREATED_TAG_KEY, None)
-    if tag_id is None:
-        return
     unattached = (
         db.query(Tag)
         .filter(
@@ -256,16 +256,29 @@ def _discard_unattached_created_tag(db: Session) -> None:
         logger.info(f"Bulk tag batch attached tag {tag_id} to no file; removed it")
 
 
-def refresh_tagged_files(db: Session, changed_file_uuids: list[str], *, user_id: int) -> list[int]:
+def refresh_tagged_files(
+    db: Session,
+    changed_file_uuids: list[str],
+    *,
+    user_id: int,
+    created_tag_id: int | None = None,
+) -> list[int]:
     """Close the batch: drop an unused created tag, then run the change hook once.
 
     Called even with no changed files: a tag created for the batch still needs
     the caller's cached tag list dropped. Unknown uuids are ignored.
 
+    Args:
+        db: Session.
+        changed_file_uuids: Files whose tag set changed.
+        user_id: The caller.
+        created_tag_id: :attr:`BulkTagResolution.created_tag_id` of the batch.
+
     Returns:
         The internal ids handed to the reindex.
     """
-    _discard_unattached_created_tag(db)
+    if created_tag_id is not None:
+        _discard_unattached_created_tag(db, created_tag_id)
     ids: list[int] = []
     if changed_file_uuids:
         rows = db.query(MediaFile.uuid, MediaFile.id).filter(MediaFile.uuid.in_(changed_file_uuids))

@@ -65,8 +65,11 @@ def test_name_is_derived_from_the_version_and_overridable() -> None:
 
 def test_ports_come_from_opentr_and_move_with_the_offset() -> None:
     real = REAL_OPENTR.read_text(encoding="utf-8")
-    block = re.search(r"^FRESH_PORT_VARS=\((.*?)^\)", real, re.S | re.M).group(1)  # type: ignore[union-attr]
-    stock = dict(re.findall(r'"([A-Z_]+)=(\d+)"', block))
+    stock: dict[str, str] = {}
+    for arr in ("FRESH_PORT_VARS", "FRESH_MOCK_LLM_PORT_VARS", "FRESH_MOCK_ASR_PORT_VARS"):
+        block = re.search(rf"^{arr}=\((.*?)^\)", real, re.S | re.M).group(1)  # type: ignore[union-attr]
+        stock.update(re.findall(r'"([A-Z_]+)=(\d+)"', block))
+    assert {"MOCK_LLM_PORT", "MOCK_ASR_PORT"} <= set(stock)
     assert "POSTGRES_PORT" in stock and len(stock) >= 8
     for offset in (0, 400, 1234):
         got = dict(
@@ -339,3 +342,26 @@ def test_stage_runs_preflight_before_the_build_and_after_the_stack_is_up() -> No
     after = code.index("fresh_stack_preflight_after")
     gate = code.index("run-dev-tests.sh")
     assert before < up < after < gate, "preflight must bracket stack start and precede the gate"
+
+
+def test_library_is_seeded_after_start_through_the_stacks_own_backend_port(tmp_path: Path) -> None:
+    repo = _stub_repo(tmp_path)
+    (repo / "scripts").mkdir()
+    seed = repo / "scripts" / "seed-fresh-deployment.sh"
+    seed.write_text('#!/bin/bash\necho "seed backend=$BACKEND_URL" >> "$STUB_LOG"\n')
+    log = tmp_path / "calls.log"
+    env = {"STUB_LOG": str(log), "RELEASE_TEST_FAST_VOLUMES": ""}
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    calls = log.read_text().splitlines()
+    start = next(i for i, c in enumerate(calls) if c.startswith("start dev --fresh"))
+    seeded = next(i for i, c in enumerate(calls) if c.startswith("seed "))
+    assert seeded > start, "the library must be seeded after the stack is up"
+    assert calls[seeded] == "seed backend=http://localhost:5574", (
+        "must target the offset backend port"
+    )
+
+
+def test_mock_provider_probe_follows_the_exported_port_variables() -> None:
+    """A fresh stack publishes the mocks at an offset; a literal 5198/5199 probe skips 7 tests."""
+    src = (REPO_ROOT / "backend/tests/integration/test_lite_mode_mocked_providers.py").read_text()
+    assert 'os.environ.get("MOCK_ASR_PORT"' in src and 'os.environ.get("MOCK_LLM_PORT"' in src

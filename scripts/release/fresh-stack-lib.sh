@@ -40,7 +40,8 @@ fresh_stack_name() {
 fresh_stack_port_exports() {
     local offset="$1" repo="${REPO_ROOT:-.}" name base
     # Entries look like:  "POSTGRES_PORT=5176"          # postgres → :5432
-    sed -n '/^FRESH_PORT_VARS=(/,/^)/p' "$repo/opentr.sh" \
+    # Main stack + the mock LLM/ASR overlays the gate starts (run-dev-tests.sh).
+    sed -n '/^FRESH_\(MOCK_LLM_\|MOCK_ASR_\)\{0,1\}PORT_VARS=(/,/^)/p' "$repo/opentr.sh" \
         | sed -n 's/^[[:space:]]*"\([A-Z_]*\)=\([0-9]*\)".*/\1 \2/p' \
         | while read -r name base; do
             echo "${name}=$((base + offset))"
@@ -102,7 +103,17 @@ fresh_stack_up() {
     export E2E_FRONTEND_URL="http://localhost:${FRONTEND_PORT:-5173}"
     export E2E_BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}"
     fresh_stack_seed_models "$name" || return 1
-    "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2
+    "$repo/opentr.sh" start dev --fresh "$name" --port-offset "$offset" >&2 || return 1
+    fresh_stack_seed_library
+}
+
+# fresh_stack_seed_library: the same small corpus on every run (scripts/seed-fresh-deployment.sh
+# picks the SEED_MAX_FILES smallest files; idempotent per file). Without it the library is empty
+# and tests that need a completed file skip or fail. Non-fatal by that script's own contract.
+fresh_stack_seed_library() {
+    local repo="${REPO_ROOT:-.}"
+    [[ -f "$repo/scripts/seed-fresh-deployment.sh" ]] || return 0
+    BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
 }
 
 # ── Preflight ────────────────────────────────────────────────────────────────────────────────

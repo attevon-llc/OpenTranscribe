@@ -584,7 +584,7 @@ this file is for.
   line, before the long phases: competing gate processes or other `otfresh-*` stacks, an
   OpenSearch that is slow or carries `blocks.*` settings / `read_only_allow_delete`, data volumes
   that are not tmpfs, or host load over `RELEASE_TEST_MAX_LOAD`. They never clear or kill anything.
-  The fast OpenSearch volume must exceed compose's absolute disk watermarks (low 30gb), or
+  After start the stack's library is seeded (`seed-fresh-deployment.sh`, same small corpus every run) and the mock-provider test ports follow the exported `MOCK_*_PORT` offsets. The fast OpenSearch volume must exceed compose's absolute disk watermarks (low 30gb), or
   OpenSearch blocks index creation cluster-wide at boot.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.session_utils import get_refreshed_object
@@ -34,6 +35,14 @@ _ACTIVE_TASK_STATUSES = (TASK_STATUS_PENDING, TASK_STATUS_IN_PROGRESS)
 #: types (search indexing, speaker clustering) mark their row failed and then ``self.retry()``
 #: under the same id, and the retry must be able to reopen it.
 _RUN_FENCED_TASK_TYPES = frozenset({"transcription"})
+
+
+def task_error_text(exc: BaseException) -> str:
+    """The text a task records for a failure: the class name alone for a database error.
+
+    A ``SQLAlchemyError``'s text quotes the statement and its bound parameters.
+    """
+    return type(exc).__name__ if isinstance(exc, SQLAlchemyError) else str(exc)
 
 
 #: A concurrent creator can win the index between our sibling-supersede and our insert; each

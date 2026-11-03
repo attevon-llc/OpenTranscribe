@@ -98,7 +98,8 @@ class TestAccountState:
 
 
 class TestAdminSignal:
-    def test_admin_users_matches_the_uid_before_the_at_sign(self):
+    def test_admin_users_matches_the_entrys_username_attribute(self):
+        """The entry's ``uid`` is ``alice``; the stored uid ``alice@corp`` is not what is compared."""
         probe = _probe(_directory_with(), _cfg(admin_users="alice"), uid="alice@corp")
 
         assert probe == LdapProbe(DIRECTORY_PRESENT, (STAFF,), True)

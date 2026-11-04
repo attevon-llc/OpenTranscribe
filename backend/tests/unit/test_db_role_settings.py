@@ -6,8 +6,9 @@ import pytest
 
 from app.core.config import Settings
 from app.db.migration_connection import AUDIT_MAINTENANCE_GUC
-from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import create_migration_engine
 from app.db.migration_connection import migration_database_url
+from app.db.migration_connection import set_audit_maintenance_on_connect
 
 _BASE = {"POSTGRES_HOST": "db.example", "POSTGRES_PORT": "5432", "POSTGRES_DB": "d"}
 
@@ -107,5 +108,46 @@ def test_alembic_config_and_env_source_use_the_migration_url():
     assert url.replace("%%", "%") == migration_database_url()
 
 
-def test_migration_connections_set_the_maintenance_switch():
-    assert migration_connect_args() == {"options": f"-c {AUDIT_MAINTENANCE_GUC}=on"}
+class _FakeCursor:
+    def __init__(self, log):
+        self.log = log
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, sql):
+        self.log.append(sql)
+
+
+class _FakeDBAPIConnection:
+    def __init__(self):
+        self.autocommit = False
+        self.log: list[str] = []
+        self.autocommit_during_set: bool | None = None
+
+    def cursor(self):
+        self.autocommit_during_set = self.autocommit
+        return _FakeCursor(self.log)
+
+
+def test_migration_engine_sends_no_libpq_startup_options():
+    """Proxies/poolers (e.g. RDS Proxy) refuse connections carrying ``options``."""
+    engine = create_migration_engine("postgresql://owner:pw@db.example:5432/d")
+    _args, kwargs = engine.dialect.create_connect_args(engine.url)
+    assert "options" not in kwargs
+    assert "options" not in engine.url.query
+
+
+def test_migration_engine_sets_the_maintenance_switch_with_a_session_set_on_connect():
+    engine = create_migration_engine("postgresql://owner:pw@db.example:5432/d")
+    from sqlalchemy import event
+
+    assert event.contains(engine, "connect", set_audit_maintenance_on_connect)
+    conn = _FakeDBAPIConnection()
+    set_audit_maintenance_on_connect(conn, None)
+    assert conn.log == [f"SET {AUDIT_MAINTENANCE_GUC} = 'on'"]
+    assert conn.autocommit_during_set is True, "the SET must not ride the implicit transaction"
+    assert conn.autocommit is False, "autocommit must be restored for the migration itself"

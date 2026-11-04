@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Migrations now work through connection proxies and poolers that reject libpq startup
+  parameters** (e.g. AWS RDS Proxy, PgBouncer in some modes). The migration runner, Alembic and
+  role reconciliation used to pass `options=-c opentranscribe.audit_maintenance=on` at connect
+  time, which such proxies refuse; the switch is now a session-level `SET` issued from a
+  SQLAlchemy pool `connect` event (`create_migration_engine()` in
+  `app/db/migration_connection.py`). Runtime engines still never set it.
+
 ## [0.6.1] - 2026-11-03
 
 ### Security

@@ -157,3 +157,22 @@ def test_every_protected_table_has_a_guard_trigger(db_session):
     for t in all_protected_tables():
         assert (t.own_guard or f"trg_audit_guard_{t.name}") in found
         assert f"trg_audit_guard_truncate_{t.name}" in found
+
+
+_GUC_VALUE = text("SELECT current_setting('opentranscribe.audit_maintenance', true)")
+
+
+def test_migration_engine_session_has_the_switch_and_runtime_engine_does_not():
+    from app.db.base import engine as runtime_engine
+    from app.db.migration_connection import create_migration_engine
+
+    migration_engine = create_migration_engine()
+    try:
+        with migration_engine.connect() as conn:
+            assert conn.execute(_GUC_VALUE).scalar() == "on"
+            conn.rollback()  # a rolled-back transaction must not undo the session-level SET
+            assert conn.execute(_GUC_VALUE).scalar() == "on"
+    finally:
+        migration_engine.dispose()
+    with runtime_engine.connect() as conn:
+        assert (conn.execute(_GUC_VALUE).scalar() or "") != "on"

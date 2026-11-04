@@ -21,7 +21,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import SQLAlchemyError
 
 from alembic import command  # type: ignore[attr-defined]
-from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import create_migration_engine
 from app.db.migration_connection import migration_database_url
 
 logger = logging.getLogger(__name__)
@@ -1686,7 +1686,7 @@ def _repair_skipped_v230(config) -> None:
     chain was linearised. All SQL is idempotent (IF NOT EXISTS).
     """
 
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
     try:
         with engine.connect() as conn:
             missing = not _check_column_exists(conn, "media_file", "upload_batch_id")
@@ -1857,7 +1857,7 @@ def _retry_object_key_indexes() -> None:
     _object_key_retry_done = True
     from app.db import object_key_indexes
 
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
     try:
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             if inspect(conn).has_table("media_file"):
@@ -1970,7 +1970,7 @@ def run_migrations() -> None:
 
     _await_database_available()
 
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
 
     # Acquire the advisory lock on a DEDICATED connection held open for the whole
     # upgrade (issue #284 A1.4).

@@ -49,6 +49,17 @@ Precedence is unchanged: admin UI (`auth_config` table) > `.env` > coded default
 | Blocklist + context words | on if a list is installed | on | off | off |
 | Account lockout | unchanged: `ACCOUNT_LOCKOUT_*` | unchanged | unchanged | unchanged |
 
+### Password expiry
+
+`PASSWORD_MAX_AGE_DAYS` (default 60; also editable under `custom`, 0-3650) sets how long a local
+password lives where the level enforces expiry (`hardened`, or `custom`; `basic` and `standard` never
+expire passwords). When a local-password account signs in with a password older than that, the login
+sets `must_change_password` and the user must choose a new password before any other request is
+served. Accounts that sign in through LDAP, OIDC or PKI, and accounts with no recorded password
+change time, are not affected. The development stack's `docker-compose.override.yml` sets
+`PASSWORD_MAX_AGE_DAYS` from `DEV_PASSWORD_MAX_AGE_DAYS` (default `0`, expiry off) so the seeded admin
+never expires; that file is never loaded in production.
+
 `PASSWORD_BLOCKLIST_ENABLED=true|false` overrides the level default in any level.
 `PASSWORD_POLICY_ENABLED=false` still disables the whole policy.
 

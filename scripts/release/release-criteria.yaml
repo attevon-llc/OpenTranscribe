@@ -85,6 +85,17 @@
 
 version: 2
 
+# Repo paths whose change CANNOT invalidate a stage's evidence. 70-tag.sh treats a stage as
+# fresh when its recorded sha is an ancestor of HEAD and every file changed since is matched
+# here (logic + tests: evidence_neutral.py, test_evidence_neutral_paths.py). `docs-site/**` is
+# neutral for test/rehearse but NOT build/scan: the docs image bakes docs-site/ in.
+# Globs: `dir/**` = anything under dir; otherwise fnmatch on the whole path, never crossing `/`.
+evidence_neutral_paths:
+  test: ["CHANGELOG.md", "docs/**", "docs-site/**", "*.md", ".release/**"]
+  rehearse: ["CHANGELOG.md", "docs/**", "docs-site/**", "*.md", ".release/**"]
+  build: ["CHANGELOG.md", "docs/**", "*.md"]
+  scan: ["CHANGELOG.md", "docs/**", "*.md"]
+
 stages:
   # ─── Static checks. No Docker, seconds. ─────────────────────────────────
   preflight:
@@ -424,8 +435,9 @@ stages:
       - id: artifacts-match-tagged-commit
         description: >-
           The ledger's test, build, scan and rehearse steps each have status done or
-          overridden and a recorded sha equal to HEAD — built = scanned = rehearsed =
-          tagged. Every stale stage is named. Overridable only via --force-tag with a reason.
+          overridden and a recorded sha that is HEAD, or an ancestor of HEAD with only
+          evidence-neutral paths (evidence_neutral_paths above) changed since — built =
+          scanned = rehearsed = tagged. Every stale stage is named. Overridable only via --force-tag with a reason.
         severity: blocking
 
       - id: version-consistency-pre-tag

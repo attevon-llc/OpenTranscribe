@@ -128,8 +128,11 @@ TEST_ROOT. Never `--force-rehearse` past it: it is the bug a fresh install hits 
   <name>`); `preflight` warns. `scripts/lib/stock-port-owners.sh` is the one definition.
 - **`tag` refuses stale evidence.** `artifacts-match-tagged-commit` needs `test`,
   `build`, `scan` and `rehearse` each `done`/`overridden` in the ledger with a recorded
-  sha equal to HEAD; every stale stage is named. Any commit after a stage (including
-  committing scan reports) makes it stale: re-run it, or `--force-tag "reason"`.
+  sha equal to HEAD, or an ancestor of HEAD with only evidence-neutral paths changed since
+  (`evidence_neutral_paths` in `release-criteria.yaml`: CHANGELOG, `docs/**`, root `*.md`;
+  plus `docs-site/**` and `.release/**` for `test`/`rehearse` only, since the docs image
+  bakes `docs-site/` in). So docs written after `bump` do not stale the evidence. Any other
+  change makes the stage stale and it is named: re-run it, or `--force-tag "reason"`.
 - **The branch under test must be pushed.** `rehearse` downloads the manifest files
   from `TO_BRANCH` (default: the current branch) and exits 3 if it is not on origin.
 - **`test` is the opposite:** it needs the dev stack UP (it probes Postgres on 5176).

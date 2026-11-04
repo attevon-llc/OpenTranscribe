@@ -41,8 +41,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Erasure receipts.** Every erasure measures each store it touches before and after the destroy and
+  stores a numbers-only receipt (migration v452); an erasure is complete only with a verified receipt.
+  A store that cannot be measured is reported unverified, never zero, and a re-check runs a minute
+  later. An erasure now also removes the lockout record, object prefixes and noncurrent versions,
+  multipart uploads, temporary objects and derived cache copies. Receipts are read through
+  `/api/admin/gdpr/erasure-receipt/...`; single-file erasure is available. See Operations > GDPR
+  erasure.
+- **Self-service account erasure (off by default).** A signed-in user can request erasure of their own
+  account from Settings after re-entering a password or authentication code, receive a receipt, and
+  withdraw the request during a grace period (default 14 days, at most 21). A super administrator
+  turns it on with `gdpr.self_erasure_enabled` and sets `gdpr.self_erasure_grace_days`. A database
+  restore never revives a cancelled request or erases early. Migration v455. See User guide > Erase
+  my account.
+- **Index-level erasure reconciliation.** After a restore, the reconciliation pass checks each search
+  index for rows of an already-erased subject in one batched query per index; an unreachable index is
+  reported unverified, not clean.
+- **Per-upload voiceprint statement and per-file opt-out.** The upload form can record the uploader's
+  statement about speaker voiceprints for that recording (`granted`, `declined` or unspecified;
+  migration v454). The file's owner can change it with `PATCH /files/{uuid}/voiceprint-consent`
+  (support-access grants are refused). A declined file contributes no new voiceprints and is left out
+  of speaker-profile averages, and declining queues a purge of the voiceprints derived from that one
+  file only; profiles are never deleted, and a file under a legal hold or takedown is left alone.
+  `privacy.voiceprint_upload_consent_required` makes the statement mandatory. Only the owner and
+  organization administrators see the state.
+- **File-scoped voiceprint purge, voiceprint retention and last-use tracking.** Voiceprints derived from
+  chosen files can be removed on their own; the average voiceprint of each affected profile is
+  recomputed and no profile is deleted. An opt-in daily sweep (`privacy.voiceprint_retention_months`,
+  off by default) purges the voiceprints of files whose profiles have gone unused, and every speaker
+  profile now records when it was last used (`last_interaction_at`). Recordings under a legal hold or
+  takedown are skipped by every voiceprint purge.
+- **Required legal documents before processing (off by default).** Two system settings name the legal
+  documents a file owner must accept before their files are processed; the check fails closed and
+  covers upload, URL and playlist import, watch sources, reprocess, re-diarize and retry. Super
+  administrators configure it in Settings > Legal. Acceptance records now also store the
+  organization, user agent, locale and scope. See Configuration > Required legal documents before
+  processing.
+- **Token usage for every LLM-backed task run.** Summarization, topic extraction, speaker
+  identification and the LLM redaction detector each write one usage event per task attempt
+  (`summary.tokens`, `topics.tokens`, `speaker_id.tokens`, `redaction.tokens`); a retry that spends
+  tokens is counted, a redelivery of the same attempt is not.
+- **`scripts/check-image-hygiene.sh`.** A fail-closed check that an image carries none of the build
+  machine's files; the release now gates on it.
+- **Release rehearsal Scenario D.** The model downloader runs from an empty cache, CPU only, in the
+  image under test, before the other scenarios; a change to `download-models.py` now triggers a full
+  patch rehearsal. The release test stage runs on an isolated `--fresh` stack with a fail-fast
+  preflight.
 
 ### Changed
+
+- **Behaviour change: LDAP over plain `ldap://` now requires StartTLS or an `ldaps://` address.**
+  A plain `ldap://` server address with StartTLS off used to bind unencrypted; binds that would be
+  unencrypted are now refused, and the admin connection test says so. Transport security is decided
+  from the effective connection, so an `ldaps://` address works with the SSL setting off and
+  StartTLS runs whenever it is enabled on a non-TLS server. Administrators of an `ldap://` directory
+  should enable StartTLS or switch to `ldaps://` before upgrading. See Authentication > LDAP.
+- **Accounts awaiting approval:** if the approval setting cannot be read, new accounts are held and
+  pending accounts get 503 instead of being admitted.
+- The development stack's override disables password expiry for the seeded admin
+  (`DEV_PASSWORD_MAX_AGE_DAYS`, default `0`); production values are unchanged.
 
 - The storage-key uniqueness check (`GET /api/admin/data-integrity/storage/keys`) and the erasure
   ledger and receipts (`/api/admin/gdpr/erasures`, `/api/admin/gdpr/erasure-receipt/...`) are
@@ -80,6 +137,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--gpus all` and was not wired into any gate).
 
 ### Fixed
+
+- **A legal hold or takedown now stops deletes that bypassed it.** Deleting the summary or a speaker of
+  a held file, and the per-file voiceprint opt-out, are refused for held or quarantined files; a
+  self-service erasure re-checks the last-super-administrator rule when it falls due and stays open
+  when its receipt could not be stored; and the audit guard allows cancelling a self-erasure
+  request. Legal-hold and takedown audit events carry the held files.
+- **One quarantine read rule.** Chat, tags, search and task exemptions now use the same rule as the
+  media routes, and the thumbnail fetch for URL imports is pinned to the validated target.
+- **Account admission on optional-auth routes.** Routes that also serve anonymous visitors now treat a
+  pending, rejected or expired account as anonymous, as the protected routes already refused it, and an
+  approval status outside the known values is refused like a rejection.
+- **Sign-in when the account lookup fails.** If the account behind a sign-in attempt cannot be looked up,
+  the attempt is refused with a single 503 instead of being counted against the submitted name, so a
+  correct password through an alias can no longer clear or skip the account's lockout.
+- **Session limit and consent banner.** An unrecognised concurrent-session policy value is enforced as
+  `reject` (with a warning) instead of issuing the session unchecked, and a refusal or eviction at the
+  limit is now audited. A failed read of the consent-banner setting no longer switches the banner off
+  once this process has seen it enabled.
+- **Authentication configuration.** A secret written over an older row is stored and read back as a
+  secret, and the admin connection test for LDAP and OIDC returns a clear message instead of a 500
+  when its client library is missing. The LDAP connection test now binds the way sign-in does,
+  including StartTLS.
+- **LDAP.** Every connection has a read timeout (a directory that accepts and never answers no longer
+  holds a worker), and sign-in and the directory sweep compare the administrator username in the same
+  form. The SSL-plus-StartTLS startup warning names the mode actually used.
+- **Automatic recovery resets go through the guarded retry reset**, and auto-labelling reports a
+  suggestion failure apart from a skip and validates its settings switches.
 
 - **LDAP: transport security is now determined from the effective connection.** Unencrypted
   binds are refused, and the admin connection test reports a mismatched address and TLS setting.

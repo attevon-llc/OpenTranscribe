@@ -11,7 +11,7 @@ from sqlalchemy import pool
 
 from alembic import context  # type: ignore[attr-defined]
 from app.db.base import Base
-from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import install_audit_maintenance_switch
 from app.db.migration_connection import migration_database_url
 
 # NOTE: Alembic is the sole authority for database schema creation and upgrades.
@@ -103,11 +103,12 @@ def run_migrations_online():
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-        connect_args=migration_connect_args(),
+    connectable = install_audit_maintenance_switch(
+        engine_from_config(
+            config.get_section(config.config_ini_section, {}),
+            prefix="sqlalchemy.",
+            poolclass=pool.NullPool,
+        )
     )
 
     with connectable.connect() as connection:

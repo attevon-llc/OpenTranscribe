@@ -186,8 +186,11 @@ referenced them (detection arms, consistency tests, this file).
   advisory lock, `app/db/migration_connection.py`) and `settings.DATABASE_URL` (runtime, `base.py`).
   They are equal unless `POSTGRES_APP_USER` is set. `alembic/env.py` takes its URL from
   `migration_database_url()`: it used to hand-build one from `POSTGRES_*` and ignored `DATABASE_URL`
-  and the SSL mode. Migration engines (and only those) connect with
-  `-c opentranscribe.audit_maintenance=on`; never add that to `base.py`.
+  and the SSL mode. Migration engines (and only those) are built by `create_migration_engine()`
+  (or `install_audit_maintenance_switch()` in `env.py`), which runs a session-level
+  `SET opentranscribe.audit_maintenance = 'on'` from a pool `connect` event; never add that to
+  `base.py`. Never go back to a libpq `options=-c ...` startup parameter: proxies/poolers such as
+  RDS Proxy refuse connections that carry one.
 - **Registry = one source of truth**: `audit_protection.py` (`PROTECTED_TABLES`, `EXEMPT_TABLES`,
   `register_protected_table` for editions). The v453 revision holds a frozen copy that
   `test_audit_protection_registry.py` compares with it. Never widen `mutable_columns` without a

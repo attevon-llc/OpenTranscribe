@@ -45,9 +45,14 @@ from pathlib import Path
 import pytest
 import requests
 
-CONTAINER_PORT = int(
+# HOST port the container is published on (the test process probes this). A --fresh stack
+# offsets it; the harness reports the resolved value as OT_RESOLVED_MOCK_LLM_PORT.
+HOST_PORT = int(
     os.environ.get("OT_RESOLVED_MOCK_LLM_PORT") or os.environ.get("MOCK_LLM_PORT", "5199")
 )
+# Port the server listens on INSIDE the compose network. The backend container reaches the mock
+# at <hostname>:<this>, whatever the host mapping is, so it must NOT follow the host offset.
+CONTAINER_PORT = 5199
 CONTAINER_HOSTNAME = "mock-llm"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-llm-server.py"
 
@@ -140,14 +145,14 @@ def mock_llm_url() -> Iterator[str]:
     BACKEND cannot reach a host subprocess, which is the whole reason these are two fixtures.
     """
     if os.environ.get("OT_MOCK_LLM_USE_CONTAINER") == "1":
-        if not _wait_until_serving(CONTAINER_PORT, deadline_s=30.0):
+        if not _wait_until_serving(HOST_PORT, deadline_s=30.0):
             pytest.fail(
                 f"OT_MOCK_LLM_USE_CONTAINER=1 but nothing is answering GET /v1/models on "
-                f"127.0.0.1:{CONTAINER_PORT}. Start it with "
+                f"127.0.0.1:{HOST_PORT}. Start it with "
                 f"'./opentr.sh start dev --with-mock-llm', or unset the variable to use the "
                 f"session-owned subprocess."
             )
-        yield f"http://127.0.0.1:{CONTAINER_PORT}/v1"
+        yield f"http://127.0.0.1:{HOST_PORT}/v1"
         return
 
     port = _free_port()
@@ -177,7 +182,7 @@ def mock_llm_base_url_for_backend() -> str:
     is invisible to the backend container, and a test that configured the app
     with a host ``localhost`` URL would fail confusingly rather than skip.
     """
-    if not _reachable("127.0.0.1", CONTAINER_PORT):
+    if not _reachable("127.0.0.1", HOST_PORT):
         pytest.skip(
             "mock LLM container not running — start with './opentr.sh start dev --with-mock-llm'"
         )

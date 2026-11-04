@@ -53,9 +53,14 @@ import pytest
 
 # Never a bare literal — the `readiness-probe-target` audit detector requires
 # the probe port to be derived from the env var, not a hardcoded constant.
-CONTAINER_PORT = int(
+# HOST port the container is published on (the test process probes this). A --fresh stack
+# offsets it; the harness reports the resolved value as OT_RESOLVED_MOCK_ASR_PORT.
+HOST_PORT = int(
     os.environ.get("OT_RESOLVED_MOCK_ASR_PORT") or os.environ.get("MOCK_ASR_PORT", "5198")
 )
+# Port the server listens on INSIDE the compose network. The backend container reaches the mock
+# at <hostname>:<this>, whatever the host mapping is, so it must NOT follow the host offset.
+CONTAINER_PORT = 5198
 CONTAINER_HOSTNAME = "mock-asr"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-asr-server.py"
 
@@ -88,8 +93,8 @@ def mock_asr_url() -> Iterator[str]:
     Reuses the compose container when it is up, otherwise starts a subprocess
     for the session. Never skips: one of the two always works.
     """
-    if _reachable("127.0.0.1", CONTAINER_PORT):
-        yield f"http://127.0.0.1:{CONTAINER_PORT}"
+    if _reachable("127.0.0.1", HOST_PORT):
+        yield f"http://127.0.0.1:{HOST_PORT}"
         return
 
     port = _free_port()
@@ -119,7 +124,7 @@ def mock_asr_base_url_for_backend() -> str:
     host is invisible to the backend container, and a test that configured the
     app with a host ``localhost`` URL would fail confusingly rather than skip.
     """
-    if not _reachable("127.0.0.1", CONTAINER_PORT):
+    if not _reachable("127.0.0.1", HOST_PORT):
         pytest.skip(
             "mock ASR container not running — start with './opentr.sh start dev --with-mock-asr'"
         )

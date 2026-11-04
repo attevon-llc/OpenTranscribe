@@ -409,3 +409,69 @@ def test_every_mock_port_read_in_tests_honours_the_resolved_variable() -> None:
             ):
                 offenders.append(f"{path.relative_to(REPO_ROOT)}")
     assert not offenders, offenders
+
+
+def test_route_discovery_follows_the_routes_directory(tmp_path: Path) -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "warm_frontend", REPO_ROOT / "scripts/release/warm_frontend.py"
+    )
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    for rel in (
+        "+page.svelte",
+        "speakers/+page.svelte",
+        "files/[id]/+page.svelte",
+        "chat/[[conversationId]]/+page.svelte",
+        "(app)/search/+page.svelte",
+        "lib/x.ts",
+    ):
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("")
+    assert mod.discover_routes(tmp_path) == ["/", "/chat", "/files/{id}", "/search", "/speakers"]
+    # Against the real tree it finds the app's own pages, so a new route is warmed without edits.
+    real = mod.discover_routes(REPO_ROOT / "frontend" / "src" / "routes")
+    assert {"/", "/speakers", "/search"} <= set(real)
+
+
+def test_warm_up_runs_after_the_wizard_step_and_never_fails_the_stack(tmp_path: Path) -> None:
+    repo = _stub_repo(tmp_path)
+    (repo / "scripts" / "release").mkdir(parents=True)
+    (repo / "scripts" / "release" / "warm_frontend.py").write_text("")
+    log = tmp_path / "calls.log"
+    py = repo / "backend" / "venv" / "bin" / "python"
+    py.parent.mkdir(parents=True)
+    py.write_text('#!/bin/bash\necho "warm $*" >> "$STUB_LOG"; exit 1\n')
+    py.chmod(0o755)
+    rc, err = _run(
+        "fresh_stack_warm_frontend",
+        tmp_path,
+        {},
+        {
+            "REPO_ROOT": str(repo),
+            "STUB_LOG": str(log),
+            "FRONTEND_PORT": "5573",
+            "BACKEND_PORT": "5574",
+        },
+    )
+    assert rc == 0 and "warm-up failed" in err, err
+    assert "--base http://localhost:5573 --api http://localhost:5574" in log.read_text()
+    lib = LIB.read_text(encoding="utf-8")
+    assert lib.index("fresh_stack_complete_first_run\n    fresh_stack_warm_frontend") > 0
+
+
+def test_backend_facing_mock_urls_use_the_in_network_port_not_the_host_offset(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The backend container reaches mock-asr:5198 whatever host port the mock is published on."""
+    import importlib
+
+    monkeypatch.setenv("OT_RESOLVED_MOCK_ASR_PORT", "5598")
+    monkeypatch.setenv("OT_RESOLVED_MOCK_LLM_PORT", "5599")
+    import tests.fixtures.mock_asr as asr
+    import tests.fixtures.mock_llm as llm
+
+    asr = importlib.reload(asr)
+    llm = importlib.reload(llm)
+    assert (asr.HOST_PORT, asr.CONTAINER_PORT) == (5598, 5198)
+    assert (llm.HOST_PORT, llm.CONTAINER_PORT) == (5599, 5199)

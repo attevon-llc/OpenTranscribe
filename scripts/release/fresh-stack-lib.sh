@@ -122,6 +122,20 @@ fresh_stack_seed_library() {
     [[ -f "$repo/scripts/seed-fresh-deployment.sh" ]] || return 0
     BACKEND_URL="http://localhost:${BACKEND_PORT:-5174}" bash "$repo/scripts/seed-fresh-deployment.sh" >&2 || true
     fresh_stack_complete_first_run
+    fresh_stack_warm_frontend
+}
+
+# fresh_stack_warm_frontend: compile every frontend route once before the browser tests. A cold
+# Vite dev server compiles a route on its first request, and three parallel browsers landing on
+# an uncompiled route got the "500 / Internal Error" page (a different dark-theme a11y test each
+# run; all 69 passed once warm). Routes are discovered, not listed: see warm_frontend.py.
+fresh_stack_warm_frontend() {
+    local repo="${REPO_ROOT:-.}" py="${REPO_ROOT:-.}/backend/venv/bin/python"
+    [[ -x "$py" ]] || py="python3"
+    "$py" "$repo/scripts/release/warm_frontend.py" \
+        --base "http://localhost:${FRONTEND_PORT:-5173}" \
+        --api "http://localhost:${BACKEND_PORT:-5174}" >&2 \
+        || echo "warning: frontend warm-up failed; the first browser tests may hit a cold dev server" >&2
 }
 
 # fresh_stack_complete_first_run: a brand-new admin gets the first-run setup wizard, a modal whose

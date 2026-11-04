@@ -59,10 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported unverified, not clean.
 - **Per-upload voiceprint statement and per-file opt-out.** The upload form can record the uploader's
   statement about speaker voiceprints for that recording (`granted`, `declined` or unspecified;
-  migration v454), and the owner or an organization administrator can change it on the file with
-  `PATCH /files/{uuid}/voiceprint-consent`. A declined file contributes no voiceprints, and opting
-  out purges the ones it produced. `privacy.voiceprint_upload_consent_required` makes the statement
-  mandatory. Only the owner and organization administrators see the state.
+  migration v454). The file's owner can change it with `PATCH /files/{uuid}/voiceprint-consent`
+  (support-access grants are refused). A declined file contributes no new voiceprints and is left out
+  of speaker-profile averages, and declining queues a purge of the voiceprints derived from that one
+  file only; profiles are never deleted, and a file under a legal hold or takedown is left alone.
+  `privacy.voiceprint_upload_consent_required` makes the statement mandatory. Only the owner and
+  organization administrators see the state.
 - **File-scoped voiceprint purge, voiceprint retention and last-use tracking.** Voiceprints derived from
   chosen files can be removed on their own; the average voiceprint of each affected profile is
   recomputed and no profile is deleted. An opt-in daily sweep (`privacy.voiceprint_retention_months`,
@@ -143,10 +145,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request. Legal-hold and takedown audit events carry the held files.
 - **One quarantine read rule.** Chat, tags, search and task exemptions now use the same rule as the
   media routes, and the thumbnail fetch for URL imports is pinned to the validated target.
-- **Authentication hardening.** Optional-auth gates, the session policy, lockout lookup and banner
-  reads, and the authentication-configuration secret writes, reads, audit and connection tests were
-  tightened. The LDAP admin username comparison, read timeout and SSL/StartTLS warning wording are
-  corrected.
+- **Account admission on optional-auth routes.** Routes that also serve anonymous visitors now treat a
+  pending, rejected or expired account as anonymous, as the protected routes already refused it, and an
+  approval status outside the known values is refused like a rejection.
+- **Sign-in when the account lookup fails.** If the account behind a sign-in attempt cannot be looked up,
+  the attempt is refused with a single 503 instead of being counted against the submitted name, so a
+  correct password through an alias can no longer clear or skip the account's lockout.
+- **Session limit and consent banner.** An unrecognised concurrent-session policy value is enforced as
+  `reject` (with a warning) instead of issuing the session unchecked, and a refusal or eviction at the
+  limit is now audited. A failed read of the consent-banner setting no longer switches the banner off
+  once this process has seen it enabled.
+- **Authentication configuration.** A secret written over an older row is stored and read back as a
+  secret, and the admin connection test for LDAP and OIDC returns a clear message instead of a 500
+  when its client library is missing. The LDAP connection test now binds the way sign-in does,
+  including StartTLS.
+- **LDAP.** Every connection has a read timeout (a directory that accepts and never answers no longer
+  holds a worker), and sign-in and the directory sweep compare the administrator username in the same
+  form. The SSL-plus-StartTLS startup warning names the mode actually used.
 - **Automatic recovery resets go through the guarded retry reset**, and auto-labelling reports a
   suggestion failure apart from a skip and validates its settings switches.
 

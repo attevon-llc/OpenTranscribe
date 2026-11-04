@@ -85,16 +85,18 @@
 
 version: 2
 
-# Repo paths whose change CANNOT invalidate a stage's evidence. 70-tag.sh treats a stage as
+# Repo paths whose change CANNOT invalidate a stage's evidence. Every CLAUDE.md and everything under
+# .claude/skills/ is documentation or agent instructions: not shipped, not exercised, so neutral for
+# all four stages. Scripts, tests, Dockerfiles, backend and frontend are never neutral. 70-tag.sh treats a stage as
 # fresh when its recorded sha is an ancestor of HEAD and every file changed since is matched
 # here (logic + tests: evidence_neutral.py, test_evidence_neutral_paths.py). `docs-site/**` is
 # neutral for test/rehearse but NOT build/scan: the docs image bakes docs-site/ in.
 # Globs: `dir/**` = anything under dir; otherwise fnmatch on the whole path, never crossing `/`.
 evidence_neutral_paths:
-  test: ["CHANGELOG.md", "docs/**", "docs-site/**", "*.md", ".release/**"]
-  rehearse: ["CHANGELOG.md", "docs/**", "docs-site/**", "*.md", ".release/**"]
-  build: ["CHANGELOG.md", "docs/**", "*.md"]
-  scan: ["CHANGELOG.md", "docs/**", "*.md"]
+  test: ["CHANGELOG.md", "docs/**", "docs-site/**", "*.md", ".release/**", "**/CLAUDE.md", ".claude/skills/**"]
+  rehearse: ["CHANGELOG.md", "docs/**", "docs-site/**", "*.md", ".release/**", "**/CLAUDE.md", ".claude/skills/**"]
+  build: ["CHANGELOG.md", "docs/**", "*.md", "**/CLAUDE.md", ".claude/skills/**"]
+  scan: ["CHANGELOG.md", "docs/**", "*.md", "**/CLAUDE.md", ".claude/skills/**"]
 
 stages:
   # ─── Static checks. No Docker, seconds. ─────────────────────────────────

@@ -9,7 +9,8 @@ Exit:   0 every path is neutral for <stage>; 1 prints the FIRST offending path; 
 
 Glob rules, deliberately tiny: `dir/**` matches anything under `dir/`; any other pattern
 is an fnmatch pattern that must match the whole path and cannot cross a `/` (so `*.md`
-is repo-root markdown only, never `backend/README.md`).
+is repo-root markdown only, never `backend/README.md`). A leading `**/` matches the basename
+at ANY depth, root included (`**/CLAUDE.md` is every CLAUDE.md in the tree).
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ DEFAULT_CRITERIA = Path(__file__).resolve().parent / 'release-criteria.yaml'
 
 
 def matches(pattern: str, path: str) -> bool:
+    if pattern.startswith('**/') and '/' not in pattern[3:]:
+        return fnmatch.fnmatchcase(path.rsplit('/', 1)[-1], pattern[3:])
     if pattern.endswith('/**'):
         return path.startswith(pattern[:-2])
     return path.count('/') == pattern.count('/') and fnmatch.fnmatchcase(path, pattern)

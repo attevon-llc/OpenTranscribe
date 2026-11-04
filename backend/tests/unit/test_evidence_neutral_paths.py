@@ -193,6 +193,12 @@ def test_an_unresolvable_sha_is_stale(repo: Path) -> None:
         ("CHANGELOG.md", "CHANGELOG.md", True),
         ("CHANGELOG.md", "x/CHANGELOG.md", False),
         (".release/**", ".release/v1/steps/test", True),
+        ("**/CLAUDE.md", "CLAUDE.md", True),
+        ("**/CLAUDE.md", "backend/app/tasks/CLAUDE.md", True),
+        ("**/CLAUDE.md", "backend/app/tasks/NOT-CLAUDE.md", False),
+        ("**/CLAUDE.md", "backend/CLAUDE.md.py", False),
+        (".claude/skills/**", ".claude/skills/release/SKILL.md", True),
+        (".claude/skills/**", ".claude/settings.json", False),
     ],
 )
 def test_glob_semantics(pattern: str, path: str, expected: bool) -> None:
@@ -208,3 +214,26 @@ def test_policy_declares_docs_site_neutral_only_where_the_image_does_not_bake_it
         assert "docs-site/**" in policy[stage] and ".release/**" in policy[stage]
     for stage in ("build", "scan"):
         assert "docs-site/**" not in policy[stage] and ".release/**" not in policy[stage]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("stage", STAGES)
+def test_agent_docs_are_neutral_everywhere_and_code_never_is(stage: str) -> None:
+    policy = yaml.safe_load(CRITERIA.read_text(encoding="utf-8"))["evidence_neutral_paths"]
+
+    for path in (
+        "CLAUDE.md",
+        "scripts/CLAUDE.md",
+        "backend/app/api/CLAUDE.md",
+        ".claude/skills/release/SKILL.md",
+    ):
+        assert evidence_neutral.first_offender(stage, [path], policy) is None, (stage, path)
+    for path in (
+        "scripts/release/fresh-stack-lib.sh",
+        "backend/tests/unit/test_x.py",
+        "frontend/Dockerfile.prod",
+        "backend/app/main.py",
+        "frontend/src/routes/+page.svelte",
+        ".claude/settings.json",
+    ):
+        assert evidence_neutral.first_offender(stage, [path], policy) == path, (stage, path)

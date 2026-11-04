@@ -36,6 +36,13 @@ this file is for.
   synthetic speech to PDF/DOCX and prints wall time, peak RSS, pages and size. MANUAL ONLY, never a
   test (a wall-clock budget is a flaky gate); run it on a quiet host, ideally inside the backend
   image where the real fonts live (`--font-dir` otherwise).
+- **Backend pytest from any worktree, no dev stack** — `test-in-worktree.sh [--services pg] [--keep]
+  -- <pytest args>` (helpers in `lib/throwaway-pg.sh`, stock range from `lib/stock-port-owners.sh`).
+  Throwaway `ot-wt-test-<hex>` postgres (label `ot-test-artifact=1`, tmpfs) on a free loopback port,
+  migrated by the worktree's own alembic; trap removes only that container + the mktemp dir on any
+  exit. Exit 2 misuse, 3 precondition (docker/venv/port/readiness), 4 migration failed, else pytest's.
+  Why it exists: conftest defaults to 5176, the dev stack on the MAIN checkout's schema.
+  Details: `backend/tests/CLAUDE.md` "Running DB-backed tests without the dev stack".
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
   `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
   `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a

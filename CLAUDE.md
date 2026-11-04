@@ -405,6 +405,8 @@ Manual frontend check: `./scripts/frontend-check.sh [--no-claude] [--check-only]
                                           # flags: --coverage --e2e-smoke --cleanup (+ more: see its header)
 ```
 
+**Testing from a git worktree without the dev stack:** `scripts/test-in-worktree.sh -- <pytest args>` starts a throwaway, branch-migrated Postgres on a free port and tears it down (`backend/tests/CLAUDE.md`).
+
 For a quick "does my current branch work" check during normal development — backend gate + e2e
 + frontend check, chained, one consolidated report — use `./scripts/run-dev-tests.sh --full`
 (or `--fast` for a smoke-e2e variant, `--backend-only`/`--e2e-only`/`--frontend-only` for a

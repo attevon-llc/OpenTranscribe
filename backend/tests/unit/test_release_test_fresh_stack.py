@@ -1,0 +1,534 @@
+"""The release `test` stage runs on its own isolated --fresh stack, repeatably.
+
+Run against the long-lived dev stack the gate's verdict depended on whatever that database
+held: the seeded admin's password aged past the 60-day expiry, ``must_change_password`` was
+set, and ~180 authenticated tests 403'd ``password_change_required`` -- nothing to do with the
+release. These tests drive ``scripts/release/fresh-stack-lib.sh`` against a STUB ``opentr.sh``
+that records its argv, so what is pinned is behaviour (what gets invoked, with which env), not
+string literals; plus two checks against the real ``opentr.sh``.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+LIB = REPO_ROOT / "scripts" / "release" / "fresh-stack-lib.sh"
+STAGE = REPO_ROOT / "scripts" / "release" / "60-test.sh"
+REAL_OPENTR = REPO_ROOT / "opentr.sh"
+
+
+def _bash(script: str, repo: Path, env: dict[str, str] | None = None) -> str:
+    base = {k: v for k, v in os.environ.items() if not k.startswith("RELEASE_TEST_")}
+    full = {**base, "REPO_ROOT": str(repo), **(env or {})}
+    return subprocess.run(
+        ["bash", "-c", f"source {LIB}\n{script}"],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=full,
+    ).stdout
+
+
+def _stub_repo(tmp_path: Path) -> Path:
+    """A repo root whose opentr.sh logs argv + the env the gate depends on, and succeeds."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    real = REAL_OPENTR.read_text(encoding="utf-8")
+    block = re.search(r"^FRESH_PORT_VARS=\(.*?^\)", real, re.S | re.M)
+    assert block, "opentr.sh no longer defines FRESH_PORT_VARS"
+    stub = repo / "opentr.sh"
+    stub.write_text(
+        "#!/bin/bash\n"
+        + block.group(0)
+        + '\necho "$* | project=${COMPOSE_PROJECT_NAME:-} pg=${POSTGRES_PORT:-}" >> "$STUB_LOG"\n'
+    )
+    stub.chmod(0o755)
+    return repo
+
+
+def test_name_is_derived_from_the_version_and_overridable() -> None:
+    assert _bash("fresh_stack_name v0.6.1", REPO_ROOT).strip() == "rel-0-6-1"
+    assert _bash("fresh_stack_name 0.6.10", REPO_ROOT).strip() == "rel-0-6-10"
+    assert (
+        _bash("fresh_stack_name 0.6.1", REPO_ROOT).strip()
+        != _bash("fresh_stack_name 0.61.0", REPO_ROOT).strip()
+    )
+    assert (
+        _bash("fresh_stack_name 0.6.1", REPO_ROOT, {"RELEASE_TEST_FRESH_NAME": "mine"}).strip()
+        == "mine"
+    )
+
+
+def test_ports_come_from_opentr_and_move_with_the_offset() -> None:
+    real = REAL_OPENTR.read_text(encoding="utf-8")
+
+    def stock_of(arr: str) -> dict[str, str]:
+        block = re.search(rf"^{arr}=\((.*?)^\)", real, re.S | re.M).group(1)  # type: ignore[union-attr]
+        return dict(re.findall(r'"([A-Z_]+)=(\d+)"', block))
+
+    main = stock_of("FRESH_PORT_VARS")
+    mocks = {**stock_of("FRESH_MOCK_LLM_PORT_VARS"), **stock_of("FRESH_MOCK_ASR_PORT_VARS")}
+    assert "POSTGRES_PORT" in main and len(main) >= 8
+    assert {"MOCK_LLM_PORT", "MOCK_ASR_PORT"} == set(mocks)
+    for offset in (0, 400, 1234):
+        got = dict(
+            line.split("=")
+            for line in _bash(f"fresh_stack_port_exports {offset}", REPO_ROOT).split()
+        )
+        expected = {k: str(int(v) + offset) for k, v in main.items()}
+        # opentr.sh re-offsets any exported <NAME>_PORT, so mocks must NOT be exported under it.
+        expected.update({f"OT_RESOLVED_{k}": str(int(v) + offset) for k, v in mocks.items()})
+        assert got == expected
+
+
+def test_up_destroys_stale_state_first_and_is_isolated(tmp_path: Path) -> None:
+    repo = _stub_repo(tmp_path)
+    log = tmp_path / "calls.log"
+    env = {"STUB_LOG": str(log)}
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    calls = log.read_text().splitlines()
+    assert calls[0].startswith("fresh-destroy rel-x --yes"), "stale deployment not cleared first"
+    assert calls[1].startswith("start dev --fresh rel-x --port-offset 400")
+    assert "project=otfresh-rel-x" in calls[1] and "pg=5576" in calls[1]
+    # Dev stack untouched, NAS never requested, nothing signalled.
+    joined = "\n".join(calls)
+    assert "--nas" not in joined
+    assert not re.search(r"^(stop|restart|rebuild)", joined, re.M)
+    assert all("--fresh" in c or c.startswith("fresh-destroy") for c in calls)
+
+
+def test_fast_volumes_are_created_tmpfs_before_start_and_removed_at_teardown(
+    tmp_path: Path,
+) -> None:
+    repo = _stub_repo(tmp_path)
+    log = tmp_path / "calls.log"
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    docker = bindir / "docker"
+    docker.write_text('#!/bin/bash\necho "docker $*" >> "$STUB_LOG"\n')
+    docker.chmod(0o755)
+    env = {"STUB_LOG": str(log), "PATH": f"{bindir}:{os.environ['PATH']}"}
+    _bash("fresh_stack_up rel-x 400; fresh_stack_teardown rel-x", repo, env)
+    calls = log.read_text().splitlines()
+    creates = [c for c in calls if c.startswith("docker volume create")]
+    assert {c.split()[-1] for c in creates} == {
+        "otfresh-rel-x_opensearch_data",
+        "otfresh-rel-x_postgres_data",
+    }
+    assert all("type=tmpfs" in c for c in creates)
+    start = next(i for i, c in enumerate(calls) if c.startswith("start dev --fresh"))
+    assert all(calls.index(c) < start for c in creates), "volumes must exist before compose starts"
+    # Stale ones are removed before creating (identical seed every run) and again at teardown.
+    assert sum(c.startswith("docker volume rm") for c in calls[:start]) == 2
+    assert sum(c.startswith("docker volume rm") for c in calls[start:]) == 2
+    # Disabled means no volumes touched.
+    log.write_text("")
+    _bash("fresh_stack_up rel-x 400", repo, {**env, "RELEASE_TEST_FAST_VOLUMES": ""})
+    assert "docker volume" not in log.read_text()
+
+
+def test_rerun_behaves_identically(tmp_path: Path) -> None:
+    repo = _stub_repo(tmp_path)
+    log = tmp_path / "calls.log"
+    env = {"STUB_LOG": str(log)}
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    first = log.read_text()
+    log.write_text("")
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    assert log.read_text() == first
+
+
+def test_real_opentr_fresh_start_never_loads_the_nas_overlay() -> None:
+    out = subprocess.run(
+        [
+            str(REAL_OPENTR),
+            "start",
+            "dev",
+            "--fresh",
+            "rel-pytest-dry",
+            "--port-offset",
+            "20000",
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=60,
+    )
+    try:
+        assert "docker-compose.nas.yml" not in out.stdout
+        assert "NAS overlay omitted by design" in out.stdout
+    finally:
+        subprocess.run(
+            [str(REAL_OPENTR), "fresh-destroy", "rel-pytest-dry", "--yes"],
+            capture_output=True,
+            cwd=REPO_ROOT,
+            timeout=60,
+        )
+
+
+def test_stage_uses_the_lib_and_never_probes_the_dev_stack() -> None:
+    text = STAGE.read_text(encoding="utf-8")
+    code = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+    assert "fresh-stack-lib.sh" in code and "fresh_stack_up" in code
+    assert "trap teardown_fresh EXIT" in code, "the stack must be torn down at exit"
+    assert "5176" not in code, "the stage must not probe the dev stack's stock Postgres port"
+    assert "opentr.sh start dev" not in code.replace("./opentr.sh start dev --fresh", "")
+
+
+def test_dev_tests_probe_the_offset_ports_not_the_stock_ones() -> None:
+    """A fresh stack lives on offset ports; a hard-coded :5174 probe reports it unreachable."""
+    text = (REPO_ROOT / "scripts" / "run-dev-tests.sh").read_text(encoding="utf-8")
+    probes = [ln for ln in text.splitlines() if "curl -sf http://localhost:" in ln]
+    assert probes, "run-dev-tests.sh no longer probes the stack"
+    for ln in probes:
+        assert "${BACKEND_PORT" in ln or "${FRONTEND_PORT" in ln, f"hard-coded port in probe: {ln}"
+
+
+def test_models_are_seeded_into_the_isolated_dir_before_start(tmp_path: Path) -> None:
+    """An empty isolated diar-native dir makes the sidecar exit 8 and `up --wait` fail."""
+    repo = _stub_repo(tmp_path)
+    src = tmp_path / "export"
+    src.mkdir()
+    (src / "plda_lda.npy").write_bytes(b"x")
+    (src / "diar-provision.json").write_text("{}")
+    log = tmp_path / "calls.log"
+    # The stub start records whether the seeded dir already held the files at start time.
+    stub = repo / "opentr.sh"
+    stub.write_text(
+        stub.read_text()
+        + 'if [[ "$1" == start ]]; then ls "$REPO_ROOT/.fresh/rel-x/diar-native-models" >> "$STUB_LOG"; fi\n'
+    )
+    env = {
+        "STUB_LOG": str(log),
+        "RELEASE_TEST_DIAR_MODELS_SRC": str(src),
+        "RELEASE_TEST_FAST_VOLUMES": "",
+    }
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    seen = log.read_text().splitlines()
+    assert "plda_lda.npy" in seen and "diar-provision.json" in seen
+    # The source export is only read, never modified or mounted.
+    assert sorted(p.name for p in src.iterdir()) == ["diar-provision.json", "plda_lda.npy"]
+    # No source => no seed, no failure.
+    log.write_text("")
+    empty = tmp_path / "none"
+    _bash("fresh_stack_up rel-y 400", repo, {**env, "RELEASE_TEST_DIAR_MODELS_SRC": str(empty)})
+    assert not (repo / ".fresh" / "rel-y").exists()
+
+
+def _gb(token: str) -> int:
+    return int(re.match(r"(\d+)", token).group(1))  # type: ignore[union-attr]
+
+
+def test_opensearch_tmpfs_is_larger_than_the_low_disk_watermark() -> None:
+    """A cap below the watermark makes OpenSearch block index creation cluster-wide at boot."""
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    low = _gb(re.search(r"watermark\.low=(\d+)gb", compose).group(1) + "gb")  # type: ignore[union-attr]
+    spec = _bash("fresh_stack_fast_volumes", REPO_ROOT).split()
+    size = next(_gb(s.split(":")[1]) for s in spec if s.startswith("opensearch_data:"))
+    assert size > low, f"opensearch_data tmpfs {size}g must exceed the {low}gb low watermark"
+
+
+# ── preflight checks: each one fails fast with a reason and changes nothing ─────────────────
+
+
+def _run(script: str, tmp_path: Path, stubs: dict[str, str], env: dict[str, str] | None = None):
+    """Run a lib function with stubbed external commands; returns (rc, stderr)."""
+    bindir = tmp_path / "pbin"
+    bindir.mkdir(exist_ok=True)
+    for cmd, body in stubs.items():
+        f = bindir / cmd
+        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.chmod(0o755)
+    base = {k: v for k, v in os.environ.items() if not k.startswith("RELEASE_TEST_")}
+    full = {
+        **base,
+        "PATH": f"{bindir}:{os.environ['PATH']}",
+        "REPO_ROOT": str(REPO_ROOT),
+        **(env or {}),
+    }
+    proc = subprocess.run(
+        ["bash", "-c", f"source {LIB}\n{script}"], capture_output=True, text=True, env=full
+    )
+    return proc.returncode, proc.stderr
+
+
+def test_load_check_uses_the_configured_ceiling(tmp_path: Path) -> None:
+    loadavg = tmp_path / "loadavg"
+    loadavg.write_text("12.50 10.00 9.00 1/100 1\n")
+    env = {"RELEASE_TEST_LOADAVG_FILE": str(loadavg)}
+    assert _run("fresh_stack_check_load", tmp_path, {}, env)[0] == 0
+    rc, err = _run("fresh_stack_check_load", tmp_path, {}, {**env, "RELEASE_TEST_MAX_LOAD": "10"})
+    assert rc == 1 and "12.50" in err and "RELEASE_TEST_MAX_LOAD" in err
+    missing = {"RELEASE_TEST_LOADAVG_FILE": str(tmp_path / "nope")}
+    assert _run("fresh_stack_check_load", tmp_path, {}, missing)[0] == 1
+
+
+def test_volume_check_demands_tmpfs_not_network_storage(tmp_path: Path) -> None:
+    good = 'echo "map[device:tmpfs o:size=48g type:tmpfs]"'
+    bad = 'echo "map[]"'
+    assert _run("fresh_stack_check_volumes rel-x", tmp_path, {"docker": good})[0] == 0
+    rc, err = _run("fresh_stack_check_volumes rel-x", tmp_path, {"docker": bad})
+    assert rc == 1 and "otfresh-rel-x_opensearch_data" in err and "not tmpfs" in err
+    off = {"RELEASE_TEST_FAST_VOLUMES": ""}
+    assert _run("fresh_stack_check_volumes rel-x", tmp_path, {"docker": bad}, off)[0] == 0
+
+
+_CURL = r"""
+args="$*"
+case "$args" in
+  *_cluster/settings*) echo "$OS_SETTINGS" ;;
+  *_all/_settings*) echo "$OS_INDEX_BLOCKS" ;;
+  *-XPUT*|*-XDELETE*) [ "$OS_CREATE_FAILS" = 1 ] && exit 22; echo '{"acknowledged":true}' ;;
+esac
+"""
+
+
+def _os_env(**kw: str) -> dict[str, str]:
+    base = {
+        "OPENSEARCH_PORT": "9",
+        "OS_SETTINGS": '{"persistent":{},"transient":{}}',
+        "OS_INDEX_BLOCKS": "{}",
+        "OS_CREATE_FAILS": "0",
+    }
+    return {**base, **kw}
+
+
+def test_opensearch_check_passes_on_a_clean_fast_cluster(tmp_path: Path) -> None:
+    assert _run("fresh_stack_check_opensearch", tmp_path, {"curl": _CURL}, _os_env())[0] == 0
+
+
+def test_opensearch_check_names_each_way_it_can_be_unusable(tmp_path: Path) -> None:
+    def run(**kw: str):
+        return _run("fresh_stack_check_opensearch", tmp_path, {"curl": _CURL}, _os_env(**kw))
+
+    rc, err = run(OS_CREATE_FAILS="1")
+    assert rc == 1 and "could not create+delete" in err
+    rc, err = run(
+        OS_SETTINGS='{"persistent":{"cluster.blocks.create_index":"true"},"transient":{}}'
+    )
+    assert rc == 1 and "cluster.blocks.create_index" in err
+    rc, err = run(OS_SETTINGS='{"persistent":{},"transient":{"cluster.blocks.read_only":"true"}}')
+    assert rc == 1 and "cluster.blocks.read_only" in err
+    rc, err = run(
+        OS_INDEX_BLOCKS='{"speakers_v4":{"settings":{"index.blocks.read_only_allow_delete":"true"}}}'
+    )
+    assert rc == 1 and "read_only_allow_delete" in err
+    rc, err = run(RELEASE_TEST_OS_MAX_SECONDS="0")
+    assert rc == 1 and "took more than" in err
+
+
+def test_competitor_check_sees_other_gates_and_other_fresh_stacks(tmp_path: Path) -> None:
+    quiet_ps = 'echo "    1     0 /sbin/init"'
+    busy_ps = 'echo "  4242     1 /bin/bash ./scripts/run-dev-tests.sh --full"'
+    docker_none = "true"
+    docker_ours = "echo otfresh-rel-x; echo transcribe-app"
+    docker_other = "echo otfresh-rel-x; echo otfresh-v061gate"
+    chk = "fresh_stack_check_no_competitors rel-x"
+    assert _run(chk, tmp_path, {"ps": quiet_ps, "docker": docker_none})[0] == 0
+    assert _run(chk, tmp_path, {"ps": quiet_ps, "docker": docker_ours})[0] == 0
+    rc, err = _run(chk, tmp_path, {"ps": busy_ps, "docker": docker_none})
+    assert rc == 1 and "4242" in err
+    rc, err = _run(chk, tmp_path, {"ps": quiet_ps, "docker": docker_other})
+    assert rc == 1 and "otfresh-v061gate" in err and "otfresh-rel-x " not in err
+
+
+def test_stage_runs_preflight_before_the_build_and_after_the_stack_is_up() -> None:
+    code = "\n".join(
+        ln
+        for ln in STAGE.read_text(encoding="utf-8").splitlines()
+        if not ln.lstrip().startswith("#")
+    )
+    before = code.index("fresh_stack_preflight_before")
+    up = code.index("fresh_stack_up ")
+    after = code.index("fresh_stack_preflight_after")
+    gate = code.index("run-dev-tests.sh")
+    assert before < up < after < gate, "preflight must bracket stack start and precede the gate"
+
+
+def test_library_is_seeded_after_start_through_the_stacks_own_backend_port(tmp_path: Path) -> None:
+    repo = _stub_repo(tmp_path)
+    (repo / "scripts").mkdir()
+    seed = repo / "scripts" / "seed-fresh-deployment.sh"
+    seed.write_text('#!/bin/bash\necho "seed backend=$BACKEND_URL" >> "$STUB_LOG"\n')
+    log = tmp_path / "calls.log"
+    env = {"STUB_LOG": str(log), "RELEASE_TEST_FAST_VOLUMES": ""}
+    _bash("fresh_stack_up rel-x 400", repo, env)
+    calls = log.read_text().splitlines()
+    start = next(i for i, c in enumerate(calls) if c.startswith("start dev --fresh"))
+    seeded = next(i for i, c in enumerate(calls) if c.startswith("seed "))
+    assert seeded > start, "the library must be seeded after the stack is up"
+    assert calls[seeded] == "seed backend=http://localhost:5574", (
+        "must target the offset backend port"
+    )
+
+
+def test_mock_provider_probe_follows_the_exported_port_variables() -> None:
+    """A fresh stack publishes the mocks at an offset; a literal 5198/5199 probe skips 7 tests."""
+    src = (REPO_ROOT / "backend/tests/integration/test_lite_mode_mocked_providers.py").read_text()
+    assert "OT_RESOLVED_MOCK_ASR_PORT" in src and "OT_RESOLVED_MOCK_LLM_PORT" in src
+
+
+def test_first_run_wizard_is_completed_with_the_seeded_admin(tmp_path: Path) -> None:
+    """A brand-new admin gets a modal wizard whose backdrop blocks every click (30 e2e timeouts)."""
+    curl = r"""
+case "$*" in
+  *api/auth/token*) echo '{"access_token":"tok123"}' ;;
+  *first-run-wizard/complete*) echo "complete auth=$(echo "$*" | grep -o 'Bearer [a-z0-9]*')" >> "$STUB_LOG" ;;
+esac
+"""
+    log = tmp_path / "calls.log"
+    rc, _ = _run(
+        "fresh_stack_complete_first_run",
+        tmp_path,
+        {"curl": curl},
+        {"STUB_LOG": str(log), "BACKEND_PORT": "5574"},
+    )
+    assert rc == 0 and log.read_text().strip() == "complete auth=Bearer tok123"
+    # A failed login is a warning, not a crash.
+    rc, err = _run(
+        "fresh_stack_complete_first_run", tmp_path, {"curl": "exit 22"}, {"STUB_LOG": str(log)}
+    )
+    assert rc == 0 and "first-run wizard" in err
+
+
+def test_every_mock_port_read_in_tests_honours_the_resolved_variable() -> None:
+    """A read of MOCK_*_PORT that ignores OT_RESOLVED_* skips (or probes the wrong port) on a fresh stack."""
+    offenders = []
+    for path in (REPO_ROOT / "backend" / "tests").rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for m in re.finditer(r'environ\.get\("MOCK_(ASR|LLM)_PORT"', text):
+            window = text[max(0, m.start() - 120) : m.start()]
+            if (
+                f"OT_RESOLVED_MOCK_{m.group(1)}_PORT" not in window
+                and path.name != "test_release_test_fresh_stack.py"
+            ):
+                offenders.append(f"{path.relative_to(REPO_ROOT)}")
+    assert not offenders, offenders
+
+
+def test_route_discovery_follows_the_routes_directory(tmp_path: Path) -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "warm_frontend", REPO_ROOT / "scripts/release/warm_frontend.py"
+    )
+    mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    for rel in (
+        "+page.svelte",
+        "speakers/+page.svelte",
+        "files/[id]/+page.svelte",
+        "chat/[[conversationId]]/+page.svelte",
+        "(app)/search/+page.svelte",
+        "lib/x.ts",
+    ):
+        f = tmp_path / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text("")
+    assert mod.discover_routes(tmp_path) == ["/", "/chat", "/files/{id}", "/search", "/speakers"]
+    # Against the real tree it finds the app's own pages, so a new route is warmed without edits.
+    real = mod.discover_routes(REPO_ROOT / "frontend" / "src" / "routes")
+    assert {"/", "/speakers", "/search"} <= set(real)
+
+
+def test_warm_up_runs_after_the_wizard_step_and_never_fails_the_stack(tmp_path: Path) -> None:
+    repo = _stub_repo(tmp_path)
+    (repo / "scripts" / "release").mkdir(parents=True)
+    (repo / "scripts" / "release" / "warm_frontend.py").write_text("")
+    log = tmp_path / "calls.log"
+    py = repo / "backend" / "venv" / "bin" / "python"
+    py.parent.mkdir(parents=True)
+    py.write_text('#!/bin/bash\necho "warm $*" >> "$STUB_LOG"; exit 1\n')
+    py.chmod(0o755)
+    rc, err = _run(
+        "fresh_stack_warm_frontend",
+        tmp_path,
+        {},
+        {
+            "REPO_ROOT": str(repo),
+            "STUB_LOG": str(log),
+            "FRONTEND_PORT": "5573",
+            "BACKEND_PORT": "5574",
+        },
+    )
+    assert rc == 0 and "warm-up failed" in err, err
+    assert "--base http://localhost:5573 --api http://localhost:5574" in log.read_text()
+    lib = LIB.read_text(encoding="utf-8")
+    assert lib.index("fresh_stack_complete_first_run\n    fresh_stack_warm_frontend") > 0
+
+
+def test_backend_facing_mock_urls_use_the_in_network_port_not_the_host_offset(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The backend container reaches mock-asr:5198 whatever host port the mock is published on."""
+    import importlib
+
+    monkeypatch.setenv("OT_RESOLVED_MOCK_ASR_PORT", "5598")
+    monkeypatch.setenv("OT_RESOLVED_MOCK_LLM_PORT", "5599")
+    import tests.fixtures.mock_asr as asr
+    import tests.fixtures.mock_llm as llm
+
+    asr = importlib.reload(asr)
+    llm = importlib.reload(llm)
+    assert (asr.HOST_PORT, asr.CONTAINER_PORT) == (5598, 5198)
+    assert (llm.HOST_PORT, llm.CONTAINER_PORT) == (5599, 5199)
+
+
+def test_competitor_check_lets_build_and_scan_run_beside_test_but_not_other_gates(
+    tmp_path: Path,
+) -> None:
+    """`test` runs on its own fresh stack and uses no built image, so a sibling build/scan is fine."""
+    docker_none = "true"
+    chk = "fresh_stack_check_no_competitors rel-x"
+
+    def ps_with(args: str) -> str:
+        return f'echo "  4242     1 {args}"'
+
+    for sibling in (
+        "/bin/bash ./scripts/release.sh build 0.6.1",
+        "/bin/bash ./scripts/release.sh scan 0.6.1 --force-scan reason",
+        "/bin/bash scripts/release/40-build.sh 0.6.1",
+        "/bin/bash scripts/release/50-scan.sh 0.6.1",
+        "/bin/bash ./scripts/docker-build-push.sh frontend",
+    ):
+        rc, err = _run(chk, tmp_path, {"ps": ps_with(sibling), "docker": docker_none})
+        assert rc == 0, f"{sibling!r} must not block the test stage: {err}"
+
+    for rival in (
+        "/bin/bash ./scripts/release.sh test 0.6.1",
+        "/bin/bash ./scripts/release.sh rehearse 0.6.1 --yes",
+        "/bin/bash ./scripts/run-dev-tests.sh --full",
+        "/bin/bash ./scripts/run-integration-tests.sh",
+        "/bin/bash scripts/release/65-rehearse.sh 0.6.1",
+        "/bin/bash ./scripts/release.sh run 0.6.1",
+    ):
+        rc, err = _run(chk, tmp_path, {"ps": ps_with(rival), "docker": docker_none})
+        assert rc == 1 and "4242" in err, f"{rival!r} must block: rc={rc} {err}"
+
+
+def test_competitor_check_does_not_count_its_own_forked_subshells(tmp_path: Path) -> None:
+    """Command/process substitutions fork the script and show ITS command line, e.g. a second
+    `release.sh test`. Seen live: the test stage refused to start beside a running build because of
+    its own subshells."""
+    fake = tmp_path / "release.sh"
+    fake.write_text(
+        "#!/bin/bash\n"
+        f"source {LIB}\n"
+        "( sleep 4; true ) &\n"  # a live forked subshell: same command line, child of this shell
+        "sleep 0.5\n"
+        'out="$(fresh_stack_check_no_competitors rel-x 2>&1)"; echo "rc=$? [$out]"\n'
+        "wait\n"
+    )
+    fake.chmod(0o755)
+    stub = tmp_path / "pbin"
+    stub.mkdir()
+    (stub / "docker").write_text("#!/bin/bash\ntrue\n")
+    (stub / "docker").chmod(0o755)
+    env = {**os.environ, "PATH": f"{stub}:{os.environ['PATH']}"}
+    out = subprocess.run(
+        [str(fake), "test", "0.6.1"], capture_output=True, text=True, env=env, cwd=tmp_path
+    )
+    assert "rc=0 []" in out.stdout, out.stdout + out.stderr

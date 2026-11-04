@@ -245,7 +245,9 @@ def transcribed_file_uuid(owned_transcribed_file: dict[str, Any]) -> str:
 #: HOST-side probe port — see the same constant in `test_chat_trace_panel.py`.
 #: `--port-offset N` moves it, and a hardcoded 5199 silently SKIPS this surface
 #: on an offset stack while appearing to pass.
-MOCK_LLM_PORT = int(os.environ.get("MOCK_LLM_PORT", "5199"))
+MOCK_LLM_PORT = int(
+    os.environ.get("OT_RESOLVED_MOCK_LLM_PORT") or os.environ.get("MOCK_LLM_PORT", "5199")
+)
 #: CONTAINER-side port, which the offset never moves.
 MOCK_LLM_URL_FOR_BACKEND = "http://mock-llm:5199/v1"
 ROOMY_CONTEXT_WINDOW = 32_000

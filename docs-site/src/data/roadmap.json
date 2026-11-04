@@ -1838,8 +1838,8 @@
       "version": "v0.6.0",
       "headline": "Interface polish, and chat measured",
       "summary": "A full UI pass over what v0.5.0 shipped, plus real metrics for search and chat answer quality instead of assumptions.",
-      "stage": "now",
-      "released": false,
+      "stage": "shipped",
+      "released": true,
       "scheduled": true,
       "total": 75,
       "closed": 74,
@@ -2335,7 +2335,7 @@
       "version": "v0.7.0",
       "headline": "Run it in public",
       "summary": "Publish the inert public demo, and put in place the spend limits, alerting and dependency hygiene you only miss once strangers are using it.",
-      "stage": "next",
+      "stage": "now",
       "released": false,
       "scheduled": true,
       "total": 31,
@@ -2602,7 +2602,7 @@
       "version": "v0.8.0",
       "headline": "Native inference, and small GPUs",
       "summary": "Replace the Python/PyTorch inference stack end to end, and prove it on the cards people actually have.",
-      "stage": "later",
+      "stage": "next",
       "released": false,
       "scheduled": true,
       "total": 21,
@@ -3280,6 +3280,98 @@
             {
               "number": 975,
               "title": "bug(rag-chat): corpus-scale retrieval collapses to 2 files regardless of scope, independent of #532's synthesis gap",
+              "done": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "version": "v0.6.1",
+      "headline": "",
+      "summary": "",
+      "stage": "complete",
+      "released": false,
+      "scheduled": false,
+      "total": 8,
+      "closed": 8,
+      "areas": [
+        {
+          "key": "data-safety",
+          "name": "Data Safety",
+          "scope": "Recoverable delete, per-user hide, ownership transfer, delayed erase",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 1357,
+              "title": "chore(backend): follow-up hardening bundle for storage, purge and audit tests",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "docs-release-ops",
+          "name": "Docs & Release Ops",
+          "scope": "Docs site, release pipeline, repo tooling",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 1359,
+              "title": "docs(storage): complete S3 IAM policy documentation",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "platform-ops",
+          "name": "Platform & Operations",
+          "scope": "Build, deploy, workers, GPU tuning, governance",
+          "known": true,
+          "total": 1,
+          "closed": 1,
+          "issues": [
+            {
+              "number": 1358,
+              "title": "fix(docker): OpenSearch model step pulls CUDA backend image on lite and arm64 installs",
+              "done": true
+            }
+          ]
+        },
+        {
+          "key": "compliance",
+          "name": "Security & Compliance",
+          "scope": "Hardening, data protection, certification",
+          "known": true,
+          "total": 5,
+          "closed": 5,
+          "issues": [
+            {
+              "number": 1352,
+              "title": "feat(audit): opt-in append-only audit log with real retention",
+              "done": true
+            },
+            {
+              "number": 1353,
+              "title": "feat(compliance): erasure receipt with per-store attestation and verification",
+              "done": true
+            },
+            {
+              "number": 1354,
+              "title": "feat(compliance): self-service account erasure request with grace period",
+              "done": true
+            },
+            {
+              "number": 1355,
+              "title": "feat(search): detect and reconcile erased content after an OpenSearch restore",
+              "done": true
+            },
+            {
+              "number": 1356,
+              "title": "feat(speakers): per-upload voiceprint consent and per-file opt-out",
               "done": true
             }
           ]

@@ -115,11 +115,11 @@ rather than silently ignored.
 | `preflight` | Version agreement, clean worktree, remote ARM64 builder reachable, scanners present, `HUGGINGFACE_TOKEN`, model fixtures, disk, deployment matrix, CHANGELOG section (early notice), live-stack state (informational) | no |
 | `bump` | Writes all five version sources, promotes `[Unreleased]`, refreshes the committed roadmap snapshot, re-verifies, then commits `chore(release): bump version to X.Y.Z` | no |
 | `verify` | Fast gate: consistency, deployment matrix, manifest, structural tests, docs build, visual-baseline freshness | no |
-| `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset); **needs the dev stack up** | no |
+| `test` | `run-dev-tests.sh --backend-only --e2e-smoke --export-capability` (the integration gate plus the smoke E2E subset) on its **own isolated `--fresh` stack** (name `rel-<version>`, port offset 400, NAS overlay never loaded, destroyed before and after; the dev stack is neither needed nor touched). Override with `RELEASE_TEST_FRESH_NAME`, `RELEASE_TEST_PORT_OFFSET`; `RELEASE_TEST_KEEP=1` keeps it for diagnosis. A **preflight** runs before the build and again once the stack is healthy and exits 3 with the reason if: another `release.sh`/`run-dev-tests.sh`/`run-integration-tests.sh` or another `otfresh-*` stack is running; a scratch OpenSearch index takes over `RELEASE_TEST_OS_MAX_SECONDS` (5) to create and delete, or any cluster/index block is set; the data volumes are not tmpfs; or 1-min load is not below `RELEASE_TEST_MAX_LOAD` (40). It clears nothing | no |
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images, plus `scripts/check-image-hygiene.sh` on every per-leg tag (`images-carry-no-dev-artifacts`: a leaked `mutants/`, test DB, cache, key or `.env` fails; an image it cannot inspect is `not-measured`) | no |
 | `rehearse` | Cold-cache model download, then fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
-| `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD** (`artifacts-match-tagged-commit`, every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
+| `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD, or at an ancestor with only evidence-neutral paths changed since** (`artifacts-match-tagged-commit`; the per-stage neutral set is `evidence_neutral_paths` in `release-criteria.yaml`: CHANGELOG, `docs/**` and root `*.md` for all four, plus `docs-site/**` and `.release/**` for `test`/`rehearse` only because the docs image bakes `docs-site/` in; every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
 | `publish` | Pushes the **already-built** legs (`docker push`, no rebuild, no re-scan) and assembles the `:vX.Y.Z` indexes; `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
 | `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
@@ -158,6 +158,35 @@ rather than silently ignored.
   version being promoted is OLDER than that, the copy is skipped and `:latest`
   is left alone — a pass, not a failure. See
   [Cutting a patch release](#cutting-a-patch-release).
+
+## Running the test stage
+
+The `test` stage runs the dev gate against its own isolated `--fresh` stack, never the dev stack or the NAS
+data, so its verdict does not depend on what a long-lived database happens to hold. The flow, the
+preflight, the parallelism rule (`test` may run beside `build` then `scan`), detached runs, waivers and the
+evidence-neutral rules are in the release skill, `.claude/skills/release/SKILL.md` ("Running the stages");
+this page keeps the explanations. Closing a release (git, docker, scratch, records, milestone) is the skill's
+"Closing the release" checklist.
+
+### Lessons learned (v0.6.1)
+
+- **NAS-backed docker volumes make OpenSearch slow.** Here the docker root is network storage; a named
+  volume's fsync took seconds and OpenSearch answered 503 `process_cluster_event_timeout_exception` on every
+  create-index. The test stack keeps OpenSearch and Postgres data on tmpfs.
+- **The tmpfs must exceed the compose disk watermarks.** `docker-compose.yml` uses absolute free-space
+  watermarks (low 30 GB, high 20 GB, flood 10 GB); a smaller volume made OpenSearch block index creation
+  cluster-wide at boot (`index_create_block_exception`). A test pins the size above the watermark.
+- **A fresh admin gets the first-run setup wizard.** Its modal backdrop intercepts every click, so browser
+  tests timed out. The stage completes it once through the same endpoint the UI uses. No browser test
+  exercises the wizard's terms step; only its component test does.
+- **Mock ports versus the opentr offset.** `opentr.sh` treats an exported `<NAME>_PORT` as a base and
+  offsets it again, so resolved mock ports travel as `OT_RESOLVED_MOCK_*_PORT`, and the container-side port
+  (what the backend reaches) never follows the host offset.
+- **Warm the frontend before browser tests.** A cold Vite dev server compiles each route on first request;
+  three parallel browsers hit "500 / Internal Error" on different pages each run. `warm_frontend.py` visits
+  every discovered route once.
+- **Rehearsal premises must be derived.** A check seeding data for a migration that the FROM release already
+  shipped (v448 in 0.6.0) failed for a reason unrelated to the product. Such checks are now `N/A` by rule.
 
 ## Cutting a patch release
 

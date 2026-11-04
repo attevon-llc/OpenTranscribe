@@ -36,6 +36,13 @@ this file is for.
   synthetic speech to PDF/DOCX and prints wall time, peak RSS, pages and size. MANUAL ONLY, never a
   test (a wall-clock budget is a flaky gate); run it on a quiet host, ideally inside the backend
   image where the real fonts live (`--font-dir` otherwise).
+- **Backend pytest from any worktree, no dev stack** — `test-in-worktree.sh [--services pg] [--keep]
+  -- <pytest args>` (helpers in `lib/throwaway-pg.sh`, stock range from `lib/stock-port-owners.sh`).
+  Throwaway `ot-wt-test-<hex>` postgres (label `ot-test-artifact=1`, tmpfs) on a free loopback port,
+  migrated by the worktree's own alembic; trap removes only that container + the mktemp dir on any
+  exit. Exit 2 misuse, 3 precondition (docker/venv/port/readiness), 4 migration failed, else pytest's.
+  Why it exists: conftest defaults to 5176, the dev stack on the MAIN checkout's schema.
+  Details: `backend/tests/CLAUDE.md` "Running DB-backed tests without the dev stack".
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/
   `--e2e-only`/`--frontend-only`). Chains `run-integration-tests.sh` → `e2e/run-e2e.sh` →
   `frontend-check.sh` and prints one consolidated pass/fail report with per-phase logs under a
@@ -574,6 +581,26 @@ this file is for.
   outside the repo and need `--yes` plus their `ask` rule. Exit codes: 0 pass,
   1 gate, 2 misuse, 3 precondition, 4 abort. `--force-<stage> "reason"` overrides
   a gate with a MANDATORY reason, recorded as `overridden` (not a pass).
+  The `test` stage runs on its own `--fresh` stack (`release/fresh-stack-lib.sh`: name
+  `rel-<version>`, offset 400, ports READ from `opentr.sh`'s `FRESH_PORT_VARS`, stale stack
+  destroyed first and again at exit, NAS overlay never loaded) so the verdict never depends on
+  the dev DB. A dev-DB gate once failed ~180 tests on `password_change_required` after the seeded
+  admin's password aged past the 60-day expiry; `docker-compose.override.yml` now also sets
+  `PASSWORD_MAX_AGE_DAYS` to 0 for dev. Pinned by `test_release_test_fresh_stack.py`.
+  `fresh_stack_preflight_before/after` (same lib) fail the stage with exit 3 and one reason
+  line, before the long phases: competing gate processes or other `otfresh-*` stacks, an
+  OpenSearch that is slow or carries `blocks.*` settings / `read_only_allow_delete`, data volumes
+  that are not tmpfs, or host load over `RELEASE_TEST_MAX_LOAD`. They never clear or kill anything.
+  After start the stack's library is seeded (`seed-fresh-deployment.sh`, same small corpus every run) and the mock-provider test ports follow the exported `MOCK_*_PORT` offsets. The fast OpenSearch volume must exceed compose's absolute disk watermarks (low 30gb), or
+  OpenSearch blocks index creation cluster-wide at boot.
+  Libraries behind the test stage: `release/fresh-stack-lib.sh` (`fresh_stack_name`,
+  `fresh_stack_port_exports` reads `opentr.sh`'s `FRESH_PORT_VARS`, `fresh_stack_up/teardown`, the seed,
+  wizard and warm-up steps, `fresh_stack_check_*` and `fresh_stack_preflight_before/after`; env
+  `RELEASE_TEST_FRESH_NAME|PORT_OFFSET|FAST_VOLUMES|MAX_LOAD|OS_MAX_SECONDS|KEEP`);
+  `release/warm_frontend.py` (discovers routes from `frontend/src/routes`); `test-in-worktree.sh` (backend
+  pytest from any worktree against a throwaway postgres); `release-tests/lib/alembic-head.py` (head, and
+  `--has-revision REV` for "did FROM ship this migration"); `release/evidence_neutral.py` (path policy, with
+  `**/NAME` matching a basename at any depth). Flow and closing checklist: `.claude/skills/release/SKILL.md`.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.
@@ -593,8 +620,9 @@ this file is for.
     `gr_check_ports_free` as a scenario FAIL (exit 1). `preflight` warns on the same evidence. And
     `70-tag.sh`'s `artifacts-match-tagged-commit` refuses to tag unless the ledger's `test`, `build`,
     `scan`, `rehearse` are `done`/`overridden` with a sha that resolves to HEAD (ledger sha is
-    short; compared as resolved commits). Both are tested by extracting their `BEGIN/END` blocks
-    (`test_stock_port_owners.py`, `test_tag_artifacts_match_commit.py`).
+    short; compared as resolved commits) or to an ancestor of HEAD with only paths in that stage's
+    `evidence_neutral_paths` (release-criteria.yaml; glob logic in `release/evidence_neutral.py`) changed since. Both are tested by extracting their `BEGIN/END` blocks
+    (`test_stock_port_owners.py`, `test_tag_artifacts_match_commit.py`, `test_evidence_neutral_paths.py`).
   - **`not-measured` is not a pass and not a failure.** Against a blocking criterion it stops the
     stage exactly as a failure does; a fifth `waived` argument downgrades it to a warning, and
     that is for an EXPLICIT operator opt-out only (`NO_COMMIT=true`, `SKIP_CI_CHECK=true`) — never

@@ -709,25 +709,25 @@ real caller could observe the difference.
 ## Running DB-backed tests without the dev stack
 
 Most API/service tests need Postgres but nothing else. When the dev stack is down (or is
-being used by someone else), a throwaway instance on a non-conflicting port is enough — it
-cannot touch the dev database, its volumes, or the NAS data:
+being used by someone else, or sits on another branch's schema), use the script — from any
+worktree, it finds its own repo root:
 
 ```bash
-docker run -d --rm --name ot-testdb \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=testpw -e POSTGRES_DB=transcribe_test \
-  -p 127.0.0.1:55432:5432 --tmpfs /var/lib/postgresql/data postgres:17.5-alpine
-
-mkdir -p /tmp/ot-test/{data,models,temp}
-export DATA_DIR=/tmp/ot-test/data MODELS_DIR=/tmp/ot-test/models TEMP_DIR=/tmp/ot-test/temp
-export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT=55432 POSTGRES_USER=postgres POSTGRES_PASSWORD=testpw \
-       POSTGRES_DB=transcribe_test SKIP_S3=True
-
-cd backend && python -m alembic upgrade head && python -m pytest tests/ --ignore=tests/e2e
-docker stop ot-testdb   # --rm removes it
+scripts/test-in-worktree.sh [--services pg] [--keep] -- tests/unit/test_x.py -n0 --no-cov
 ```
 
+It starts a throwaway `postgres:17.5-alpine` (`ot-wt-test-<hex>`, label `ot-test-artifact=1`,
+tmpfs data) on a free random loopback port, runs `alembic upgrade head` from **this worktree's**
+code (so the schema matches the branch), exports the env below, runs pytest with your args, and
+removes the container and temp dir on every exit (failure, INT, TERM). `--keep` leaves them and
+prints the removal command. It refuses ports 5173-5180, uses the worktree's `backend/venv`
+(else the main checkout's), never installs anything, and only ever names its own container.
+Only postgres is provisioned; MinIO/OpenSearch tests skip (`SKIP_S3`/`SKIP_OPENSEARCH` are
+forced) and need a `--fresh` stack. Tests: `unit/test_test_in_worktree.py` (stub `docker`).
+Cannot touch the dev database, its volumes, or the NAS data. What it sets, and why:
+
 Why each piece:
-- **Port 55432**, not 5176 — conftest only overrides `POSTGRES_PORT` when it is unset or
+- **A free random port**, not 5176 — conftest only overrides `POSTGRES_PORT` when it is unset or
   `5432`, so any other value is respected, and the dev stack's port stays free.
 - **`POSTGRES_HOST` explicitly** — conftest forces `localhost` for pytest, but `alembic`
   does not import conftest and would otherwise resolve the compose service name.

@@ -36,7 +36,7 @@ test" assertion fails. That is the single most common way to waste an hour here.
 ./scripts/release.sh bump 0.5.0          # all five version sources, self-verified
 #   <- write the CHANGELOG section and the blog post here
 ./scripts/release.sh verify              # fast gate: consistency, matrix, docs build
-./scripts/release.sh test                # the existing pre-merge gate (dev stack must be UP)
+./scripts/release.sh test                # the pre-merge gate on its OWN fresh stack (see "Running the stages")
 ./scripts/release.sh build               # local images, nothing published
 ./scripts/release.sh scan                # scans the LOCAL images + image-hygiene check per leg
 git push -u origin <branch>              # rehearse installs the branch's files from origin
@@ -60,6 +60,82 @@ purpose and reversibility.
 
 Exit codes: `0` pass, `1` gate failed, `2` misuse, `3` precondition unmet, `4`
 operator abort.
+
+## Running the stages
+
+- **Stop everything first.** No other gate, rehearsal, `run-dev-tests.sh` or `otfresh-*` stack; the dev
+  stack down before `rehearse`. Nobody else writes to the checkout while a stage runs, and neither do
+  you: edit in a worktree (`git worktree add .claude/worktrees/<name> -b <branch> origin/<prep>`).
+- **`test` builds and destroys its own isolated stack** (`rel-<version>`, port offset 400, tmpfs
+  OpenSearch/Postgres data, NAS overlay never loaded, library seeded, first-run wizard completed,
+  frontend warmed). Env: `RELEASE_TEST_FRESH_NAME`, `RELEASE_TEST_PORT_OFFSET`,
+  `RELEASE_TEST_FAST_VOLUMES`, `RELEASE_TEST_MAX_LOAD`, `RELEASE_TEST_OS_MAX_SECONDS`,
+  `RELEASE_TEST_KEEP=1` (leave the stack up to diagnose a failure). Functions: `scripts/release/fresh-stack-lib.sh`.
+- **Preflight (exit 3 with one reason line, changes nothing)** runs before the build and again once the
+  stack is healthy: no other gate process or `otfresh-*` stack; a scratch OpenSearch index creates and
+  deletes within 5 s; no `blocks.*` cluster setting and no `read_only_allow_delete` index; the data volumes
+  really are tmpfs; load below the ceiling. Each exists because its absence cost a multi-hour run.
+- **`test` may run in parallel with `build` then `scan`** (own stack, offset ports, no built image). A second
+  `test`, `rehearse`, `run-dev-tests.sh`, `run-integration-tests.sh` or other fresh stack still blocks it.
+  Then `rehearse` after `scan`; it needs the host quiet.
+- **Detach long stages** and wait on the pid; a harness task stop must not kill them:
+  `setsid nohup ./scripts/release.sh <stage> 0.X.Y > ~/ot-cleanup-work/<name>.log 2>&1 &` then
+  `timeout 590 tail --pid=<pid> -f /dev/null`. Logs under `~/ot-cleanup-work`, never `/tmp` (it is cleaned).
+  No watcher loops, no signals.
+- **Waivers are recorded as such.** `MUTATION_RATCHET_PARTIAL_OK=1` (modules whose source changed since the
+  last mutation run are NOT MEASURED; list that in the release notes) and `SKIP_VISUAL_BASELINE_FRESHNESS=true`
+  are waivers, never passes. `--force-scan "<reason>"` records `overridden`.
+- **Evidence-neutral paths** (`evidence_neutral_paths` in `release-criteria.yaml`): a change since a stage's
+  recorded sha keeps that evidence fresh only if every changed path is neutral for the stage. All
+  `CLAUDE.md` files and `.claude/skills/**` are neutral for all four stages. `docs-site/**` is neutral for
+  test/rehearse but NOT for build/scan, because the docs image bakes it in. Scripts, tests, Dockerfiles,
+  backend and frontend are never neutral.
+- **Stage order for a final cut:** merge everything, push, then `build` and `scan` (or `test` in parallel with
+  them), then `rehearse`, then `tag`. Any non-neutral change after a stage means that stage runs again.
+- **Feature-check premises are data-driven.** A rehearsal check that exercises a migration is judged only if
+  the FROM release's alembic graph does not already contain it (`alembic-head.py --has-revision`); otherwise
+  it is recorded `N/A` (counted separately, not a pass). New migration-dependent checks add one line to
+  `FC_MIGRATION_OF` in `scripts/release-tests/lib/feature-checks.sh`.
+
+Human-facing explanation and the lessons list: `docs-site/docs/developer-guide/releasing.md` ("Running the
+test stage" and "Lessons learned"). Library and flag reference: `scripts/CLAUDE.md`.
+
+## Closing the release
+
+A release is a repo milestone: tidy, then start the next task. Everything here is scoped and
+non-destructive by default; anything marked "owner" needs David's word.
+
+1. **git**
+   - `gh pr create --base master --head release/prep-X.Y.Z` and merge with a MERGE commit (never squash);
+     then `git fetch origin && git merge-base --is-ancestor vX.Y.Z origin/master && echo ok`.
+   - `git switch master && git pull --ff-only`.
+   - `git branch --merged master` then `git branch -d <name>` per branch (never `-D`).
+   - `git worktree list` then `git worktree remove <path>` for merged ones (never `--force`, never another
+     session's worktree). Remote branch deletion: owner only.
+2. **docker (this daemon is shared)**
+   - `./opentr.sh fresh-list`; `./opentr.sh fresh-destroy <name> --yes` for our own `rel-*` stacks.
+   - Only our labels: `docker ps -a --filter label=ot-test-artifact=1`, `--filter label=com.docker.compose.project=otfresh-*`
+     or `ot-reltest-*`. Never `docker system prune`, `prune -a` or `--volumes`.
+   - Check for leftover networks of those projects; then `./opentr.sh start dev` to restore the dev stack.
+3. **scratch**
+   - `/tmp/ot-redcheck.*`; `~/ot-cleanup-work` logs older than the release (keep what the notes cite);
+     old roots under `/mnt/nvm/opentranscribe-test-runs` via the cache purge script (see `scripts/CLAUDE.md`).
+   - `.fresh/<name>` leftovers (a seeded `diar-native-models` dir is root-owned: owner removes it).
+   - `git status` clean; `git checkout -- security-reports` (the scan rewrites tracked reports).
+4. **records**
+   - Leave `.release/<version>/` in place. Verify the GitHub release body and assets, record the Docker Hub
+     digests (`docker buildx imagetools inspect davidamacey/opentranscribe-backend:vX.Y.Z`), send the cloud
+     report, and publish an advisory only after the fixed release is live.
+5. **project hygiene**
+   - Close the milestone after checking its issues (`gh issue list --milestone vX.Y.Z --state open`); create the
+     next milestone; file follow-ups found during the release with a type label, area labels and the Roadmap
+     board (CLAUDE.md "Conventions"); update memory; write down what the next release should improve.
+
+### Things this release taught us
+
+Each is recorded once, in its home: NAS-backed volumes, tmpfs vs disk watermarks, the first-run wizard, mock
+ports vs the opentr offset, frontend warm-up, stale feature-check premises (`releasing.md` "Lessons learned");
+the libs behind them (`scripts/CLAUDE.md`).
 
 ## Ordering rules that must not be reordered
 
@@ -128,8 +204,11 @@ TEST_ROOT. Never `--force-rehearse` past it: it is the bug a fresh install hits 
   <name>`); `preflight` warns. `scripts/lib/stock-port-owners.sh` is the one definition.
 - **`tag` refuses stale evidence.** `artifacts-match-tagged-commit` needs `test`,
   `build`, `scan` and `rehearse` each `done`/`overridden` in the ledger with a recorded
-  sha equal to HEAD; every stale stage is named. Any commit after a stage (including
-  committing scan reports) makes it stale: re-run it, or `--force-tag "reason"`.
+  sha equal to HEAD, or an ancestor of HEAD with only evidence-neutral paths changed since
+  (`evidence_neutral_paths` in `release-criteria.yaml`: CHANGELOG, `docs/**`, root `*.md`;
+  plus `docs-site/**` and `.release/**` for `test`/`rehearse` only, since the docs image
+  bakes `docs-site/` in). So docs written after `bump` do not stale the evidence. Any other
+  change makes the stage stale and it is named: re-run it, or `--force-tag "reason"`.
 - **The branch under test must be pushed.** `rehearse` downloads the manifest files
   from `TO_BRANCH` (default: the current branch) and exits 3 if it is not on origin.
 - **`test` is the opposite:** it needs the dev stack UP (it probes Postgres on 5176).

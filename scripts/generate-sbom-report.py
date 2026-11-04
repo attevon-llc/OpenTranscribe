@@ -390,7 +390,7 @@ def main() -> None:
         frontend_os,
         OUT_DIR / 'frontend-os-packages.md',
         ['Package', 'License', 'Status'],
-        'Frontend — Alpine OS package licenses (nginx:1.31.2-alpine3.23 base image)',
+        'Frontend — Alpine OS package licenses (nginx:1.31.8-alpine3.24 base image)',
     )
 
     datasets = {

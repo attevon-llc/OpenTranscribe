@@ -85,8 +85,19 @@ for evidence_stage in test build scan rehearse; do
         fi
         if [[ -z "$ledger_commit" ]]; then
             stale_stages+=("$evidence_stage (recorded sha '${ledger_sha:-none}' does not resolve)")
-        elif [[ "$ledger_commit" != "$head_commit" ]]; then
-            stale_stages+=("$evidence_stage (ran at ${ledger_sha}, HEAD is ${head_commit:0:9})")
+        elif [[ "$ledger_commit" == "$head_commit" ]]; then
+            echo "  $evidence_stage: fresh - ran on HEAD" >&2
+        elif ! git merge-base --is-ancestor "$ledger_commit" "$head_commit" 2>/dev/null; then
+            stale_stages+=("$evidence_stage (ran at ${ledger_sha}, which is not an ancestor of HEAD ${head_commit:0:9})")
+        else
+            # Docs-only commits after the evidence cannot change tested/built code; the per-stage
+            # neutral set is the ONE policy in release-criteria.yaml (evidence_neutral_paths).
+            changed_paths="$(git diff --name-only "$ledger_commit" "$head_commit")"
+            if offending_path="$(printf '%s\n' "$changed_paths" | "${CRITERIA_PY:-python3}" "${EVIDENCE_NEUTRAL_TOOL:-$SCRIPT_DIR/evidence_neutral.py}" "$evidence_stage")"; then
+                echo "  $evidence_stage: fresh - only evidence-neutral paths changed since ${ledger_sha}: $(printf '%s' "$changed_paths" | tr '\n' ' ')" >&2
+            else
+                stale_stages+=("$evidence_stage (ran at ${ledger_sha}, HEAD is ${head_commit:0:9}; first non-neutral change: ${offending_path:-policy unreadable})")
+            fi
         fi
     fi
 done

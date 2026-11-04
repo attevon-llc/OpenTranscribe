@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 4
 title: Upgrading to 0.6.1
 description: What to expect when you upgrade an existing OpenTranscribe install to 0.6.1, and the two things that need your attention.
 ---

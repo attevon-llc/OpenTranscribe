@@ -1051,7 +1051,10 @@ for path, methods in sorted(spec.get("paths", {}).items()):
         fc_snapshot_v448_tasks "$out/v448_tasks.txt" || true
     else
         fc_snapshot_counts "$out/row_counts.txt" pre || true
-        # Give v448 real work: duplicate and superseded ACTIVE task rows the FROM schema accepts.
+        # Give v448 real work: duplicate and superseded ACTIVE task rows the FROM schema accepts
+        # (fc_seed_v448_tasks records "not applicable" instead when FROM already shipped v448).
+        FC_FROM_BACKEND_DIR="$TEST_ROOT/worktree-${FROM_VERSION}/backend"
+        export FC_FROM_BACKEND_DIR FROM_VERSION
         fc_seed_v448_tasks "$out/v448_seed.txt" || true
     fi
 
@@ -1993,6 +1996,10 @@ phase_11b_feature_checks() {
     # Forward path only, on the upgraded stack and BEFORE the rollback tail (phase 12 onward):
     # the purge in here is irreversible by design, and the rollback restores the pre-upgrade
     # backup over whatever it leaves behind.
+    # The FROM checkout's backend dir: lets the feature checks tell which migrations this upgrade
+    # actually runs (a check for a migration FROM already shipped is recorded N/A, not judged).
+    FC_FROM_BACKEND_DIR="$TEST_ROOT/worktree-${FROM_VERSION}/backend"
+    export FC_FROM_BACKEND_DIR FROM_VERSION
     fc_run_all upgrade \
         "$TEST_ROOT/snapshots/before/speaker_display_names.txt" \
         "$TEST_ROOT/snapshots/after/speaker_display_names.txt" \

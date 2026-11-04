@@ -593,6 +593,14 @@ this file is for.
   that are not tmpfs, or host load over `RELEASE_TEST_MAX_LOAD`. They never clear or kill anything.
   After start the stack's library is seeded (`seed-fresh-deployment.sh`, same small corpus every run) and the mock-provider test ports follow the exported `MOCK_*_PORT` offsets. The fast OpenSearch volume must exceed compose's absolute disk watermarks (low 30gb), or
   OpenSearch blocks index creation cluster-wide at boot.
+  Libraries behind the test stage: `release/fresh-stack-lib.sh` (`fresh_stack_name`,
+  `fresh_stack_port_exports` reads `opentr.sh`'s `FRESH_PORT_VARS`, `fresh_stack_up/teardown`, the seed,
+  wizard and warm-up steps, `fresh_stack_check_*` and `fresh_stack_preflight_before/after`; env
+  `RELEASE_TEST_FRESH_NAME|PORT_OFFSET|FAST_VOLUMES|MAX_LOAD|OS_MAX_SECONDS|KEEP`);
+  `release/warm_frontend.py` (discovers routes from `frontend/src/routes`); `test-in-worktree.sh` (backend
+  pytest from any worktree against a throwaway postgres); `release-tests/lib/alembic-head.py` (head, and
+  `--has-revision REV` for "did FROM ship this migration"); `release/evidence_neutral.py` (path policy, with
+  `**/NAME` matching a basename at any depth). Flow and closing checklist: `.claude/skills/release/SKILL.md`.
   `reset <version>` clears rehearsal history — do it before a real run, or the
   status table reports stale state as current.
   Full guide: `docs-site/docs/developer-guide/releasing.md`.

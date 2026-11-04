@@ -159,6 +159,35 @@ rather than silently ignored.
   is left alone — a pass, not a failure. See
   [Cutting a patch release](#cutting-a-patch-release).
 
+## Running the test stage
+
+The `test` stage runs the dev gate against its own isolated `--fresh` stack, never the dev stack or the NAS
+data, so its verdict does not depend on what a long-lived database happens to hold. The flow, the
+preflight, the parallelism rule (`test` may run beside `build` then `scan`), detached runs, waivers and the
+evidence-neutral rules are in the release skill, `.claude/skills/release/SKILL.md` ("Running the stages");
+this page keeps the explanations. Closing a release (git, docker, scratch, records, milestone) is the skill's
+"Closing the release" checklist.
+
+### Lessons learned (v0.6.1)
+
+- **NAS-backed docker volumes make OpenSearch slow.** Here the docker root is network storage; a named
+  volume's fsync took seconds and OpenSearch answered 503 `process_cluster_event_timeout_exception` on every
+  create-index. The test stack keeps OpenSearch and Postgres data on tmpfs.
+- **The tmpfs must exceed the compose disk watermarks.** `docker-compose.yml` uses absolute free-space
+  watermarks (low 30 GB, high 20 GB, flood 10 GB); a smaller volume made OpenSearch block index creation
+  cluster-wide at boot (`index_create_block_exception`). A test pins the size above the watermark.
+- **A fresh admin gets the first-run setup wizard.** Its modal backdrop intercepts every click, so browser
+  tests timed out. The stage completes it once through the same endpoint the UI uses. No browser test
+  exercises the wizard's terms step; only its component test does.
+- **Mock ports versus the opentr offset.** `opentr.sh` treats an exported `<NAME>_PORT` as a base and
+  offsets it again, so resolved mock ports travel as `OT_RESOLVED_MOCK_*_PORT`, and the container-side port
+  (what the backend reaches) never follows the host offset.
+- **Warm the frontend before browser tests.** A cold Vite dev server compiles each route on first request;
+  three parallel browsers hit "500 / Internal Error" on different pages each run. `warm_frontend.py` visits
+  every discovered route once.
+- **Rehearsal premises must be derived.** A check seeding data for a migration that the FROM release already
+  shipped (v448 in 0.6.0) failed for a reason unrelated to the product. Such checks are now `N/A` by rule.
+
 ## Cutting a patch release
 
 Entry condition: the release must be **revertible by pulling the previous

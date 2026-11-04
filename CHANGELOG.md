@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sweep. The records are pseudonymised, not anonymous; operators state their own lawful basis
   (see Legal documents). The database also refuses rewrites of an accepted record. Migration
   v451; its downgrade deletes the pseudonymised records.
-
+- **The web server base image is now `nginx:1.31.8-alpine3.24`** (frontend and documentation images), up from `nginx:1.31.2-alpine3.23`.
 
 ### Removed
 

@@ -166,25 +166,43 @@ fresh_stack_complete_first_run() {
 
 # fresh_stack_check_no_competitors <name>: no other gate process, no other otfresh stack.
 fresh_stack_check_no_competitors() {
-    local name="$1" pid args mine=" " p busy="" other
-    p=$$
-    local hops=0
-    while [[ "$p" =~ ^[0-9]+$ && "$p" -gt 1 && $hops -lt 64 ]]; do
-        mine+="$p "
-        p="$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$p/status" 2>/dev/null)"
-        hops=$((hops + 1))
-    done
-    while read -r pid args; do
-        [[ "$mine" == *" $pid "* ]] && continue
+    local name="$1" pid ppid args busy="" other cur hops snapshot
+    local -A parent=()
+    local -a lines=()
+    # ONE snapshot carrying each process's parent. Transient forks (the subshells behind $(...),
+    # <(...) and pipelines) show their parent's command line, so they look like a second
+    # `release.sh test`, and they are gone by the time /proc could be asked who their parent was.
+    snapshot="$(ps -eo pid=,ppid=,args= 2>/dev/null | grep -Ev " (rg|pgrep|grep) |bash -c" || true)"
+    while read -r pid ppid args; do
+        [[ "$pid" =~ ^[0-9]+$ ]] || continue
+        parent[$pid]="$ppid"
+        lines+=("$pid $args")
+    done <<< "$snapshot"
+    for entry in "${lines[@]}"; do
+        pid="${entry%% *}"
+        args="${entry#* }"
+        # Ours: this shell, its ancestors, and anything descended from this shell.
+        cur="$pid" hops=0
+        while [[ "$cur" =~ ^[0-9]+$ && "$cur" -gt 1 && $hops -lt 64 ]]; do
+            [[ "$cur" == "$$" ]] && continue 2
+            cur="${parent[$cur]:-}"
+            hops=$((hops + 1))
+        done
+        cur="$$" hops=0
+        while [[ "$cur" =~ ^[0-9]+$ && "$cur" -gt 1 && $hops -lt 64 ]]; do
+            [[ "$cur" == "$pid" ]] && continue 2
+            cur="${parent[$cur]:-$(sed -n 's/^PPid:[[:space:]]*//p' "/proc/$cur/status" 2>/dev/null)}"
+            hops=$((hops + 1))
+        done
         case "$args" in
             # `release.sh build|scan|status|explain` may run beside `test`: test uses its own fresh
             # stack at offset ports and no built image. Any other release.sh subcommand (test,
             # rehearse, run, ...) is a rival for the host, and so is a direct gate script.
             *release.sh\ build\ *|*release.sh\ build|*release.sh\ scan\ *|*release.sh\ scan|\
             *release.sh\ status*|*release.sh\ explain*) ;;
-            *release.sh*|*run-dev-tests.sh*|*run-integration-tests.sh*|*60-test.sh*|*65-rehearse.sh*) busy+="${pid}(${args%% *}) " ;;
+            *release.sh*|*run-dev-tests.sh*|*run-integration-tests.sh*|*60-test.sh*|*65-rehearse.sh*) busy+="${pid}(${args:0:90}) " ;;
         esac
-    done < <(ps -eo pid=,args= 2>/dev/null | grep -Ev " (rg|pgrep|grep) |bash -c")
+    done
     if [[ -n "$busy" ]]; then
         echo "another gate process is running: $busy" >&2
         return 1

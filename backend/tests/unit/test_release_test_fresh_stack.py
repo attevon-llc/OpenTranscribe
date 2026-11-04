@@ -323,8 +323,8 @@ def test_opensearch_check_names_each_way_it_can_be_unusable(tmp_path: Path) -> N
 
 
 def test_competitor_check_sees_other_gates_and_other_fresh_stacks(tmp_path: Path) -> None:
-    quiet_ps = 'echo "    1 /sbin/init"'
-    busy_ps = 'echo "  4242 /bin/bash ./scripts/run-dev-tests.sh --full"'
+    quiet_ps = 'echo "    1     0 /sbin/init"'
+    busy_ps = 'echo "  4242     1 /bin/bash ./scripts/run-dev-tests.sh --full"'
     docker_none = "true"
     docker_ours = "echo otfresh-rel-x; echo transcribe-app"
     docker_other = "echo otfresh-rel-x; echo otfresh-v061gate"
@@ -485,7 +485,7 @@ def test_competitor_check_lets_build_and_scan_run_beside_test_but_not_other_gate
     chk = "fresh_stack_check_no_competitors rel-x"
 
     def ps_with(args: str) -> str:
-        return f'echo "  4242 {args}"'
+        return f'echo "  4242     1 {args}"'
 
     for sibling in (
         "/bin/bash ./scripts/release.sh build 0.6.1",
@@ -507,3 +507,28 @@ def test_competitor_check_lets_build_and_scan_run_beside_test_but_not_other_gate
     ):
         rc, err = _run(chk, tmp_path, {"ps": ps_with(rival), "docker": docker_none})
         assert rc == 1 and "4242" in err, f"{rival!r} must block: rc={rc} {err}"
+
+
+def test_competitor_check_does_not_count_its_own_forked_subshells(tmp_path: Path) -> None:
+    """Command/process substitutions fork the script and show ITS command line, e.g. a second
+    `release.sh test`. Seen live: the test stage refused to start beside a running build because of
+    its own subshells."""
+    fake = tmp_path / "release.sh"
+    fake.write_text(
+        "#!/bin/bash\n"
+        f"source {LIB}\n"
+        "( sleep 4; true ) &\n"  # a live forked subshell: same command line, child of this shell
+        "sleep 0.5\n"
+        'out="$(fresh_stack_check_no_competitors rel-x 2>&1)"; echo "rc=$? [$out]"\n'
+        "wait\n"
+    )
+    fake.chmod(0o755)
+    stub = tmp_path / "pbin"
+    stub.mkdir()
+    (stub / "docker").write_text("#!/bin/bash\ntrue\n")
+    (stub / "docker").chmod(0o755)
+    env = {**os.environ, "PATH": f"{stub}:{os.environ['PATH']}"}
+    out = subprocess.run(
+        [str(fake), "test", "0.6.1"], capture_output=True, text=True, env=env, cwd=tmp_path
+    )
+    assert "rc=0 []" in out.stdout, out.stdout + out.stderr

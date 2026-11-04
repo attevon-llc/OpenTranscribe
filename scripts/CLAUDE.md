@@ -605,8 +605,9 @@ this file is for.
     `gr_check_ports_free` as a scenario FAIL (exit 1). `preflight` warns on the same evidence. And
     `70-tag.sh`'s `artifacts-match-tagged-commit` refuses to tag unless the ledger's `test`, `build`,
     `scan`, `rehearse` are `done`/`overridden` with a sha that resolves to HEAD (ledger sha is
-    short; compared as resolved commits). Both are tested by extracting their `BEGIN/END` blocks
-    (`test_stock_port_owners.py`, `test_tag_artifacts_match_commit.py`).
+    short; compared as resolved commits) or to an ancestor of HEAD with only paths in that stage's
+    `evidence_neutral_paths` (release-criteria.yaml; glob logic in `release/evidence_neutral.py`) changed since. Both are tested by extracting their `BEGIN/END` blocks
+    (`test_stock_port_owners.py`, `test_tag_artifacts_match_commit.py`, `test_evidence_neutral_paths.py`).
   - **`not-measured` is not a pass and not a failure.** Against a blocking criterion it stops the
     stage exactly as a failure does; a fifth `waived` argument downgrades it to a warning, and
     that is for an EXPLICIT operator opt-out only (`NO_COMMIT=true`, `SKIP_CI_CHECK=true`) — never

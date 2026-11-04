@@ -15,6 +15,10 @@ or a second head would silently produce the wrong answer.
 Usage:
     alembic-head.py <backend_dir>          # prints the head revision id
     alembic-head.py <backend_dir> --json   # full graph report
+    alembic-head.py <backend_dir> --has-revision v448
+        # exit 0 when that revision (id, or the id's prefix before the first `_`) is the head or an
+        # ancestor of it; 1 when it is not; 2 on a malformed chain. Used to ask "did the FROM
+        # release already ship the migration this check exercises?"
 
 Exits non-zero when the chain is not a single clean line, printing every problem.
 """
@@ -85,9 +89,37 @@ def find_bases(graph: dict[str, str | None]) -> list[str]:
     return sorted(rev for rev, down in graph.items() if down is None)
 
 
+def reachable_from_head(graph: dict[str, str | None], head: str) -> set[str]:
+    """The head and every revision below it."""
+    seen: set[str] = set()
+    cur: str | None = head
+    while cur is not None and cur not in seen:
+        seen.add(cur)
+        cur = graph.get(cur)
+    return seen
+
+
+def has_revision(graph: dict[str, str | None], wanted: str) -> bool:
+    """Whether *wanted* (a full id, or the part of an id before its first ``_``) is in the chain."""
+    heads = find_heads(graph)
+    if len(heads) != 1:
+        raise ValueError(f'expected exactly 1 head, found {heads}')
+    chain = reachable_from_head(graph, heads[0])
+    return any(rev == wanted or rev.split('_', 1)[0] == wanted for rev in chain)
+
+
 def main(argv: list[str]) -> int:
-    args = [a for a in argv[1:] if not a.startswith('--')]
-    as_json = '--json' in argv[1:]
+    rest = argv[1:]
+    wanted: str | None = None
+    if '--has-revision' in rest:
+        i = rest.index('--has-revision')
+        if i + 1 >= len(rest):
+            print(__doc__, file=sys.stderr)
+            return 2
+        wanted = rest[i + 1]
+        del rest[i : i + 2]
+    args = [a for a in rest if not a.startswith('--')]
+    as_json = '--json' in rest
 
     if len(args) != 1:
         print(__doc__, file=sys.stderr)
@@ -106,6 +138,16 @@ def main(argv: list[str]) -> int:
             return 1
 
     graph, problems = parse_versions(versions_dir)
+    if wanted is not None:
+        if problems:
+            for problem in problems:
+                print(f'ERROR: {problem}', file=sys.stderr)
+            return 2
+        try:
+            return 0 if has_revision(graph, wanted) else 1
+        except ValueError as err:
+            print(f'ERROR: {err}', file=sys.stderr)
+            return 2
     heads = find_heads(graph)
     bases = find_bases(graph)
 

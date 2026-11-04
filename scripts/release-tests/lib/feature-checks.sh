@@ -170,10 +170,37 @@ fc_record() {
     esac
 }
 
+# Which migration each data-dependent predicate exists to verify. A check that seeds data for, or
+# reads the effect of, a migration only means something when that migration RAN during this upgrade;
+# if the FROM release already shipped it there is nothing for the upgrade to do, and the seed is
+# refused by the FROM schema itself (0.6.0 -> 0.6.1 hit exactly this with v448). The mapping is the
+# only place a revision id is named; the applicability rule below is derived from the FROM tree's
+# alembic graph, never from a version table. A new migration-dependent check adds one line here.
+declare -A FC_MIGRATION_OF=(
+    [backfill-record]=v449
+    [backfill-consistent]=v449
+    [v448-tasks]=v448
+    [v448-guard]=v448
+)
+
+# fc_not_applicable_reason PREDICATE -- prints why the predicate cannot be judged on this run (and
+# returns 0), or prints nothing and returns 1 when it applies. FC_FROM_BACKEND_DIR is the backend
+# directory of the FROM release's checkout; unset (a fresh install has no FROM) means "applies".
+fc_not_applicable_reason() {
+    local rev="${FC_MIGRATION_OF[$1]:-}"
+    [[ -n "$rev" && -n "${FC_FROM_BACKEND_DIR:-}" ]] || return 1
+    ver_alembic_has_revision "$FC_FROM_BACKEND_DIR" "$rev" || return 1
+    echo "not applicable: ${rev} shipped in FROM ${FROM_VERSION:-the FROM release}, so this upgrade does not run it"
+}
+
 # fc_judge LABEL PREDICATE [ARGS...] -- evaluate and record in one step.
 fc_judge() {
-    local label="$1" rc=0
+    local label="$1" rc=0 why
     shift
+    if why="$(fc_not_applicable_reason "$1")"; then
+        as_record NA "$label" "$why"
+        return 0
+    fi
     fc_eval "$@" || rc=$?
     fc_record "$label" "$rc"
 }
@@ -621,7 +648,11 @@ FC_COUNT_TABLES=(media_file transcript_segment speaker task)
 # (file, step) and an active row with a newer completed one. Writes `(unseeded: why)` on failure
 # so the post-upgrade check FAILs instead of passing over nothing.
 fc_seed_v448_tasks() {
-    local out="$1" row f u
+    local out="$1" row f u why
+    if why="$(fc_not_applicable_reason v448-tasks)"; then
+        echo "($why)" > "$out"
+        return 0
+    fi
     row="$(fc_sql "SELECT id::text || '|' || user_id::text FROM media_file ORDER BY id LIMIT 1")"
     f="${row%%|*}"
     u="${row#*|}"

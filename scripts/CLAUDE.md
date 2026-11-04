@@ -691,6 +691,14 @@ this file is for.
   `backend/.dockerignore` must exclude with `**/` rules: `unit/test_image_hygiene.py` checks every
   depth and fails on a redundant rule, and `integration/test_image_hygiene_real_docker.py`
   cross-checks the ignore file against a real BuildKit context.
+- **Live docs check** — `check-docs-live.py` (stdlib only; exit 0 ok / 1 a check failed / 3 site unreachable).
+  Proves https://docs.opentranscribe.app/ matches the checkout: version badge vs `VERSION`, newest blog post
+  (by filename date) and newest `operations/upgrading-to-X-Y-Z` page reachable, key pages from
+  `sidebars.ts` (comments stripped, file must exist), sitemap, and freshness (Last-Modified, or the last
+  successful deploy run with `--use-gh`) against the last commit touching `docs-site/` or `VERSION`.
+  Inside `--grace-minutes` (90) a stale site is `PENDING`, not a failure. `--wait-seconds` retries for Pages
+  cache lag. Run by `.github/workflows/docs-live-check.yml`; tests drive it against a local `http.server`
+  (`unit/test_check_docs_live.py`). It is a release closing step (`.claude/skills/release/SKILL.md`).
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).

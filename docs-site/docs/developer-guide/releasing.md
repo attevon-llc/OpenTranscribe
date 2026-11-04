@@ -494,6 +494,20 @@ execution it caught the marker check deleting a volume it should have refused.
   `scripts/release/check-version-consistency.py`, which also runs as a pre-commit
   hook and a unit test.
 
+## Checking the live docs site
+
+The docs site is deployed by `.github/workflows/deploy-docs.yml` only on a push to master that touches
+`docs-site/**` or `VERSION` (plus a daily schedule), so a deploy queued behind a GitHub Actions incident leaves
+the site on the previous release with no failing check. As the last step of closing a release, run
+`python3 scripts/check-docs-live.py --wait-seconds 600 --use-gh`. It derives its expectations from the
+checkout (the `VERSION` file, the newest blog post, the newest `upgrading-to-X-Y-Z` page, the key pages in
+`sidebars.ts`) and checks the live version badge, those pages, the sitemap and the deploy's freshness. Exit
+codes: 0 ok, 1 a check failed, 3 the site was unreachable. A deploy still inside the grace window
+(`--grace-minutes`, default 90) is reported as `PENDING`, not as a failure. The `Docs Live Check` workflow
+(`docs-live-check.yml`) runs the same script after every `Deploy Documentation` run and every 6 hours, and
+opens or updates one issue titled "alert(docs): live docs site is stale or broken", closing it when a later
+run passes.
+
 ## What CI does
 
 `.github/workflows/release-validate.yml` runs on tag pushes, on PRs touching

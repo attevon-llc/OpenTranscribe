@@ -126,6 +126,12 @@ non-destructive by default; anything marked "owner" needs David's word.
    - Leave `.release/<version>/` in place. Verify the GitHub release body and assets, record the Docker Hub
      digests (`docker buildx imagetools inspect davidamacey/opentranscribe-backend:vX.Y.Z`), send the cloud
      report, and publish an advisory only after the fixed release is live.
+   - **Live docs site (a closing step, not optional).** Once the push to master that carries the bump has
+     deployed: `python3 scripts/check-docs-live.py --wait-seconds 600 --use-gh`. It must exit 0: the site's
+     version badge equals `VERSION`, the release's blog post and upgrade page are live and in the sitemap, and
+     the deploy is not stale. `PENDING` (inside the 90 min grace window) means the deploy is queued or running,
+     so re-run it; exit 3 means the site was unreachable. `docs-live-check.yml` repeats this after every deploy
+     and every 6 hours and keeps one open alert issue, so a deploy stuck behind a GitHub incident is noticed.
 5. **project hygiene**
    - Close the milestone after checking its issues (`gh issue list --milestone vX.Y.Z --state open`); create the
      next milestone; file follow-ups found during the release with a type label, area labels and the Roadmap

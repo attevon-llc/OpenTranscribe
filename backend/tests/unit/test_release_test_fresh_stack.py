@@ -475,3 +475,35 @@ def test_backend_facing_mock_urls_use_the_in_network_port_not_the_host_offset(mo
     llm = importlib.reload(llm)
     assert (asr.HOST_PORT, asr.CONTAINER_PORT) == (5598, 5198)
     assert (llm.HOST_PORT, llm.CONTAINER_PORT) == (5599, 5199)
+
+
+def test_competitor_check_lets_build_and_scan_run_beside_test_but_not_other_gates(
+    tmp_path: Path,
+) -> None:
+    """`test` runs on its own fresh stack and uses no built image, so a sibling build/scan is fine."""
+    docker_none = "true"
+    chk = "fresh_stack_check_no_competitors rel-x"
+
+    def ps_with(args: str) -> str:
+        return f'echo "  4242 {args}"'
+
+    for sibling in (
+        "/bin/bash ./scripts/release.sh build 0.6.1",
+        "/bin/bash ./scripts/release.sh scan 0.6.1 --force-scan reason",
+        "/bin/bash scripts/release/40-build.sh 0.6.1",
+        "/bin/bash scripts/release/50-scan.sh 0.6.1",
+        "/bin/bash ./scripts/docker-build-push.sh frontend",
+    ):
+        rc, err = _run(chk, tmp_path, {"ps": ps_with(sibling), "docker": docker_none})
+        assert rc == 0, f"{sibling!r} must not block the test stage: {err}"
+
+    for rival in (
+        "/bin/bash ./scripts/release.sh test 0.6.1",
+        "/bin/bash ./scripts/release.sh rehearse 0.6.1 --yes",
+        "/bin/bash ./scripts/run-dev-tests.sh --full",
+        "/bin/bash ./scripts/run-integration-tests.sh",
+        "/bin/bash scripts/release/65-rehearse.sh 0.6.1",
+        "/bin/bash ./scripts/release.sh run 0.6.1",
+    ):
+        rc, err = _run(chk, tmp_path, {"ps": ps_with(rival), "docker": docker_none})
+        assert rc == 1 and "4242" in err, f"{rival!r} must block: rc={rc} {err}"

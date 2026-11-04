@@ -177,7 +177,12 @@ fresh_stack_check_no_competitors() {
     while read -r pid args; do
         [[ "$mine" == *" $pid "* ]] && continue
         case "$args" in
-            *release.sh*|*run-dev-tests.sh*|*run-integration-tests.sh*) busy+="${pid}(${args%% *}) " ;;
+            # `release.sh build|scan|status|explain` may run beside `test`: test uses its own fresh
+            # stack at offset ports and no built image. Any other release.sh subcommand (test,
+            # rehearse, run, ...) is a rival for the host, and so is a direct gate script.
+            *release.sh\ build\ *|*release.sh\ build|*release.sh\ scan\ *|*release.sh\ scan|\
+            *release.sh\ status*|*release.sh\ explain*) ;;
+            *release.sh*|*run-dev-tests.sh*|*run-integration-tests.sh*|*60-test.sh*|*65-rehearse.sh*) busy+="${pid}(${args%% *}) " ;;
         esac
     done < <(ps -eo pid=,args= 2>/dev/null | grep -Ev " (rg|pgrep|grep) |bash -c")
     if [[ -n "$busy" ]]; then

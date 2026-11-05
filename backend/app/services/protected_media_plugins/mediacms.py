@@ -10,7 +10,6 @@ import logging
 import os
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 from typing import Any
 from urllib.parse import parse_qs
 from urllib.parse import urljoin
@@ -23,58 +22,12 @@ from app.core.exceptions import DomainError
 from app.core.exceptions import InvalidInputError
 from app.core.exceptions import UpstreamServiceError
 from app.services.protected_media_providers import ProtectedMediaProvider
+from app.utils.media_origin import _pin_media_url
 from app.utils.media_origin import host_matches
 from app.utils.media_origin import resolve_same_origin_url
 from app.utils.url_validation import pinned_requests_session
-from app.utils.url_validation import resolve_pinned_target
-
-if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
-    from app.utils.url_validation import PinnedTarget
 
 logger = logging.getLogger(__name__)
-
-
-def _pin_media_url(url: str, *, purpose: str) -> PinnedTarget:
-    """Validate *url* and pin it to the exact address that was validated.
-
-    All three outbound calls in this module (login, media-info, download) fetch the URL
-    in the same call frame that validates it, which is exactly the shape
-    ``resolve_pinned_target`` exists for (see ``utils/url_validation``'s module docstring).
-    The plain ``assert_safe_outbound_url`` + bare ``requests.post/get`` this used to be
-    left two gaps open: ``requests`` follows redirects by default, so a server that passes
-    validation on the login leg could 302 the media-info or download leg to
-    ``169.254.169.254`` with nothing checking the redirect target; and validate-then-
-    discard leaves a second, unchecked DNS resolution for a hostname whose records change
-    between the check and the connect. Pinning closes both — the checked IP is what gets
-    dialled, not the hostname — and mirrors ``llm_service.py``'s
-    ``_endpoint_session``/``llm_endpoint_safety.py``'s ``_pin_llm_endpoint``, the two other places
-    in this codebase that fetch a user-configured endpoint inline.
-
-    Callers MUST send the returned target's ``url`` through
-    ``pinned_requests_session(target)``, merge ``target.headers`` into their own, and pass
-    ``allow_redirects=False``: a pin covers exactly one hop, and MediaCMS's REST API (a
-    JSON login, a JSON media-info fetch, and a direct file download) has no legitimate
-    reason to redirect any of the three.
-
-    Args:
-        url: The URL about to be fetched server-side.
-        purpose: Short label for the server-side log line (e.g. "MediaCMS login").
-
-    Returns:
-        The pinned target to dial.
-
-    Raises:
-        InvalidInputError: 400, with a generic detail — the rejection reason
-            distinguishes "private IP" from "cannot resolve" and would turn this endpoint
-            into a network scanner if returned to the caller.
-    """
-    target, reason = resolve_pinned_target(url)
-    if target is None:
-        logger.warning("Blocked %s to %r: %s", purpose, url, reason)
-        raise InvalidInputError(
-            "The provided URL could not be used. It must be a publicly reachable http(s) address."
-        )
-    return target
 
 
 class MediacmsProvider(ProtectedMediaProvider):

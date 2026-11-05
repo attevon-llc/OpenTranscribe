@@ -53,7 +53,7 @@ utils/
 ├── Files and media
 │   ├── file_validation.py, file_hash.py, filename.py, media_types.py, content_disposition.py
 │   ├── url_validation.py                          # SSRF-safe URL validation
-│   ├── media_origin.py                            # MediaCMS host identity + same-origin download URLs
+│   ├── media_origin.py                            # MediaCMS host identity, same-origin URLs, request pinning
 │   └── csv_safe.py                                # Spreadsheet-formula neutralization for CSV exports
 ├── Hardware and models
 │   ├── hardware_detection.py   # CUDA/MPS/CPU authority; resolve_cuda_device_index

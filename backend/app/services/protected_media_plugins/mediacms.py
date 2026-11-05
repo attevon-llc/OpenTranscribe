@@ -21,6 +21,7 @@ import requests
 from app.core.exceptions import DomainError
 from app.core.exceptions import InvalidInputError
 from app.core.exceptions import UpstreamServiceError
+from app.services.media_source_access import query_user_media_sources
 from app.services.protected_media_providers import ProtectedMediaProvider
 from app.utils.media_origin import _pin_media_url
 from app.utils.media_origin import host_matches
@@ -55,51 +56,10 @@ class MediacmsProvider(ProtectedMediaProvider):
         except Exception:
             return []
 
-    @staticmethod
-    def _query_user_media_sources(db: Any, user_id: int | None) -> list[Any]:
-        """Per-user MediaCMS source rows ``user_id`` may use: own + shared in its tenant.
-
-        Own sources sort first so the user's own credentials take priority. A source
-        shared by another user is usable only when owner and user share a tenant — the
-        stored credentials are the owner's. With no user there is no tenant to share
-        within, so no per-user source is returned.
-        """
-        from sqlalchemy import and_
-        from sqlalchemy import or_
-
-        from app.models.user_media_source import UserMediaSource
-        from app.utils.tenant_sharing import owner_shares_tenant_with
-
-        if user_id is None:
-            return []
-        from app.core.capabilities import capability_enabled
-
-        if not capability_enabled("media_sources"):
-            # Per-user sources are a surface this deployment has turned off (issue #1109);
-            # operator-configured sources still apply.
-            return []
-        rows: list[Any] = (
-            db.query(UserMediaSource)
-            .filter(
-                UserMediaSource.provider_type == "mediacms",
-                UserMediaSource.is_active == True,  # noqa: E712
-                or_(
-                    UserMediaSource.user_id == user_id,
-                    and_(
-                        UserMediaSource.is_shared == True,  # noqa: E712
-                        owner_shares_tenant_with(UserMediaSource.user_id, user_id),
-                    ),
-                ),
-            )
-            .order_by((UserMediaSource.user_id == user_id).desc())
-            .all()
-        )
-        return rows
-
     def _get_user_media_sources(self, user_id: int | None = None) -> list[dict]:
         """Load MediaCMS sources from the per-user media source table.
 
-        See ``_query_user_media_sources`` for which rows are visible.
+        See ``media_source_access.query_user_media_sources`` for which rows are visible.
         """
         try:
             from app.db.base import SessionLocal
@@ -107,7 +67,7 @@ class MediacmsProvider(ProtectedMediaProvider):
 
             db = SessionLocal()
             try:
-                sources = self._query_user_media_sources(db, user_id)
+                sources = query_user_media_sources(db, user_id)
 
                 result = []
                 for s in sources:

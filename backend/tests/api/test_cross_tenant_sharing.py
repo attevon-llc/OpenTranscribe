@@ -274,9 +274,9 @@ def _media_listed(client) -> set:
 
 
 def _media_worker(db, user: User, hostname: str) -> bool:
-    from app.services.protected_media_plugins.mediacms import MediacmsProvider
+    from app.services.media_source_access import query_user_media_sources
 
-    return hostname in {s.hostname for s in MediacmsProvider._query_user_media_sources(db, user.id)}
+    return hostname in {s.hostname for s in query_user_media_sources(db, user.id)}
 
 
 # --- Organization context (UserSetting-backed, no model of its own) --------- #

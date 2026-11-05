@@ -26,7 +26,6 @@ import http.server
 import logging
 import socket
 import threading
-from typing import cast
 
 import numpy as np
 import pytest
@@ -61,26 +60,32 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
-class FakeSpeakerDiarizer:
+class FakeSpeakerDiarizer(SpeakerDiarizer):
     """Stand-in for the PyAnnote fork: same public surface, no GPU/model weights.
 
-    A real object with real (if canned) behavior — substituting only the expensive
-    collaborator — so a test using it exercises actual control flow rather than asserting
-    an internal call happened.
+    A real ``SpeakerDiarizer`` subclass with real (if canned) behavior — substituting only
+    the expensive collaborator, the weights load — so a test using it exercises actual
+    control flow rather than asserting an internal call happened.
     """
 
-    def __init__(self, config):
-        self.config = config
-        self.is_loaded = False
+    def __init__(self, config: TranscriptionConfig) -> None:
+        super().__init__(config)
+        self._loaded = False
         self.diarize_calls = 0
 
+    @property
+    def is_loaded(self) -> bool:
+        return self._loaded
+
     def load_model(self) -> None:
-        self.is_loaded = True
+        self._loaded = True
 
     def unload_model(self) -> None:
-        self.is_loaded = False
+        self._loaded = False
 
-    def diarize(self, audio, **_per_call):
+    def diarize(
+        self, audio: np.ndarray, *, return_centroids: bool | None = None, **_per_call: object
+    ) -> tuple[DiarizeResult, dict, dict[str, np.ndarray] | None]:
         self.diarize_calls += 1
         return (
             DiarizeResult(
@@ -92,7 +97,7 @@ class FakeSpeakerDiarizer:
             {"SPEAKER_00": np.array([0.1, 0.2], dtype=np.float32)},
         )
 
-    def embed_window(self, audio, start, end):
+    def embed_window(self, audio: np.ndarray, start: float, end: float) -> np.ndarray | None:
         return np.array([0.1, 0.2], dtype=np.float32)
 
 
@@ -306,7 +311,7 @@ class TestDiarizerCurrent:
             "app.transcription.diar_sidecar_status.sidecar_ready", lambda *a, **kw: True
         )
         config = TranscriptionConfig(diarizer_backend="native")
-        cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
+        cached = NativeSpeakerDiarizer(config)
         assert ModelManager._diarizer_current(cached, config) is True
 
     def test_native_selected_but_unreachable_swaps_and_logs(
@@ -320,7 +325,7 @@ class TestDiarizerCurrent:
             "app.transcription.diar_sidecar_status.sidecar_healthy", lambda *a, **kw: False
         )
         config = TranscriptionConfig(diarizer_backend="native")
-        cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
+        cached = NativeSpeakerDiarizer(config)
         caplog.set_level(logging.WARNING)
         assert ModelManager._diarizer_current(cached, config) is False
         assert any("unreachable" in r.message for r in caplog.records)
@@ -340,7 +345,7 @@ class TestDiarizerCurrent:
             "app.transcription.diar_sidecar_status.sidecar_healthy", lambda *a, **kw: True
         )
         config = TranscriptionConfig(diarizer_backend="native")
-        cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
+        cached = NativeSpeakerDiarizer(config)
         caplog.set_level(logging.WARNING)
         assert ModelManager._diarizer_current(cached, config) is False
         assert any("up but not ready" in r.message for r in caplog.records)
@@ -361,13 +366,13 @@ class TestDiarizerCurrent:
         monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_healthy", _fake_probe)
         monkeypatch.setattr("app.transcription.diar_sidecar_status.sidecar_ready", _fake_probe)
         config = TranscriptionConfig(diarizer_backend="pyannote")
-        cached = cast(SpeakerDiarizer, NativeSpeakerDiarizer(config))
+        cached = NativeSpeakerDiarizer(config)
         assert ModelManager._diarizer_current(cached, config) is False
         assert probed == []
 
     def test_pyannote_selected_and_pyannote_cached_is_current(self):
         config = TranscriptionConfig(diarizer_backend="pyannote")
-        cached = cast(SpeakerDiarizer, FakeSpeakerDiarizer(config))
+        cached = FakeSpeakerDiarizer(config)
         assert ModelManager._diarizer_current(cached, config) is True
 
 
@@ -545,12 +550,13 @@ _HW = HardwareConfig(force_device="cpu", force_compute_type="int8")
 class _FakeManagerOneNativeDiarizer(ModelManager):
     """A real ModelManager that hands out one fixed diarizer instead of building one."""
 
-    def __init__(self, diarizer):
+    def __init__(self, diarizer: SpeakerDiarizer | NativeSpeakerDiarizer) -> None:
         super().__init__()
         self._diarizer = diarizer
         self.release_calls = 0
 
-    def get_diarizer(self, tc):
+    def get_diarizer(self, config: TranscriptionConfig) -> SpeakerDiarizer | NativeSpeakerDiarizer:
+        assert self._diarizer is not None
         return self._diarizer
 
     def release_transcriber(self) -> None:
@@ -650,7 +656,7 @@ class TestOverlapMidJobFailureDegradesSafely:
             built: list[object] = []
 
             class _CountingFake(FakeSpeakerDiarizer):
-                def __init__(self, config):
+                def __init__(self, config: TranscriptionConfig) -> None:
                     super().__init__(config)
                     built.append(self)
 

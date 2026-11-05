@@ -18,7 +18,7 @@ def _host_identity(host: str, scheme: str | None = None) -> tuple[str, int | Non
 
     The one rule for "is this the same MediaCMS host": hostname compared case-insensitively
     and the port compared with an absent port meaning the scheme's default (when ``scheme``
-    is known). Mirrored in the frontend's ``configService.ts::hostIdentity``.
+    is known). Mirrored in the frontend's ``lib/utils/mediaHost.ts::hostIdentity``.
     """
     try:
         parsed = urlparse(f"//{host.strip()}")

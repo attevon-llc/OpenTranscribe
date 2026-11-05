@@ -1,4 +1,5 @@
 import axiosInstance from '../axios';
+import { hostIdentity } from '$lib/utils/mediaHost';
 
 type ProtectedMediaField = {
   name: string;
@@ -69,23 +70,6 @@ export function resetProtectedMediaAuthConfig(): void {
   loaded = false;
   loadingPromise = null;
   generation++;
-}
-
-const DEFAULT_PORTS: Record<string, string> = { 'http:': '80', 'https:': '443' };
-
-// One identity rule, mirrored by `_host_identity` in backend protected_media_plugins/mediacms.py:
-// lower-cased hostname plus the port, where an absent port means the scheme's default.
-function hostIdentity(rawHost: string, protocol: string): string | null {
-  const host = rawHost.trim();
-  // The backend compares the raw string; WHATWG URL normalises these (userinfo, backslash,
-  // percent-escapes, IDN), so the UI would match a host the server refuses.
-  if (/[@\\%]/.test(host) || /[^\x21-\x7e]/.test(host)) return null;
-  try {
-    const parsed = new URL(`${protocol}//${host}`);
-    return `${parsed.hostname.toLowerCase()}:${parsed.port || DEFAULT_PORTS[protocol] || ''}`;
-  } catch {
-    return null;
-  }
 }
 
 export function getAuthConfigForUrl(url: URL): ProtectedMediaAuthConfig | null {

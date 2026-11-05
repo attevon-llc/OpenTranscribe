@@ -85,6 +85,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **LDAP login and directory-sweep fixes.** Login and the directory sweep now compare the same
+  form of the username against `admin_users`, so the two paths agree about who is an admin. Every
+  LDAP connection carries a read timeout (`ldap_timeout`) and refuses the bind when the directory
+  accepts the connection but never answers, instead of holding the request indefinitely; the
+  admin connection test binds through the same path and gets the same timeout. The startup
+  warning for `LDAP_USE_SSL` together with `LDAP_USE_TLS` now says LDAPS is used and StartTLS is
+  not negotiated.
 - **Building the object-key indexes at startup no longer waits indefinitely on another session.**
   The background `CREATE UNIQUE INDEX CONCURRENTLY` waits for every open transaction in the
   database; a single idle-in-transaction session could hold it, and startup, for as long as that

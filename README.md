@@ -339,7 +339,7 @@ Then follow the on-screen instructions. The setup script will:
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
 # Unattended / CI equivalent
-OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_FORCE_CPU=1 bash
 ```
 
 The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
@@ -353,7 +353,7 @@ configure after install. Implies `--cpu`, and persists `DEPLOYMENT_MODE=lite`:
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
 
 # Unattended / CI equivalent
-OPENTRANSCRIBE_LITE=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_LITE=1 bash
 ```
 
 This is the only supported shape on a host with no NVIDIA GPU at all, and it is what arm64 hosts

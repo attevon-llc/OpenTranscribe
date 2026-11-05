@@ -56,7 +56,7 @@ WSL-capable Windows driver) — pass `--cpu` to skip GPU detection entirely:
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
 # Or via env var (useful in CI / unattended installs)
-OPENTRANSCRIBE_FORCE_CPU=1 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
+curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_FORCE_CPU=1 bash
 
 # Or after downloading the script
 ./setup-opentranscribe.sh --cpu

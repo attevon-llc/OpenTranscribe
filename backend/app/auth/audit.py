@@ -5,12 +5,15 @@ This module provides JSON-structured audit logging with optional OpenSearch inte
 Supports logging of authentication events, security events, and administrative actions.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 import uuid
 from datetime import UTC
 from datetime import datetime
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.auth.audit_events import AuditEventType
@@ -24,6 +27,9 @@ from app.core.config import settings
 # app/core/request_context.py).
 from app.core.request_context import request_id_var
 from app.utils.client_ip import parse_ip
+
+if TYPE_CHECKING:
+    from opensearchpy import OpenSearch
 
 #: Writer-client limits. Indexing runs synchronously inside the request that produced
 #: the event, so a slow OpenSearch must cost the request at most this long, once —
@@ -67,10 +73,10 @@ class AuditLogger:
     Provides JSON-formatted audit logs compliant with FedRAMP AU-2/AU-3 requirements.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the audit logger."""
         self._logger = logging.getLogger("audit")
-        self._opensearch_client = None
+        self._opensearch_client: OpenSearch | None = None
         # Indices this process has already seen exist (or created). Keyed by the
         # monthly index name, so a new month is checked exactly once.
         self._known_indices: set[str] = set()
@@ -83,7 +89,7 @@ class AuditLogger:
             self._logger.setLevel(logging.INFO)
             self._logger.propagate = False
 
-    def _get_opensearch_client(self):
+    def _get_opensearch_client(self) -> OpenSearch | None:
         """Get or create OpenSearch client for audit indexing."""
         if not settings.AUDIT_LOG_TO_OPENSEARCH:
             return None

@@ -37,7 +37,7 @@ SESSION_REVOKED_CLOSE = 4004
 
 # Connection manager to handle WebSocket connections
 class ConnectionManager:
-    def __init__(self):
+    def __init__(self) -> None:
         # user_id -> List[WebSocket]
         self.active_connections: dict[int, list[WebSocket]] = {}
         # Sockets whose user held an admin tier when the connection was opened.
@@ -51,7 +51,7 @@ class ConnectionManager:
         user_id: int,
         host_telemetry: bool = False,
         user_uuid: str | None = None,
-    ):
+    ) -> None:
         """Register a WebSocket connection for a user (accept() must be called before this).
 
         Bookkeeping only — no I/O — so it is a plain function, mirroring ``disconnect``.
@@ -122,7 +122,7 @@ class ConnectionManager:
             logger.info("Closed %d WebSocket(s) after a session revocation", len(doomed))
         return len(doomed)
 
-    def disconnect(self, websocket: WebSocket, user_id: int):
+    def disconnect(self, websocket: WebSocket, user_id: int) -> None:
         self.admin_connections.discard(websocket)
         self.socket_owners.pop(websocket, None)
         if user_id in self.active_connections:
@@ -133,7 +133,7 @@ class ConnectionManager:
                 f"User {user_id} disconnected. Total connections: {len(self.active_connections)}"
             )
 
-    async def send_personal_message(self, user_id: int, message: dict):
+    async def send_personal_message(self, user_id: int, message: dict[str, Any]) -> None:
         if user_id in self.active_connections:
             for connection in self.active_connections[user_id]:
                 try:
@@ -141,11 +141,11 @@ class ConnectionManager:
                 except Exception as e:
                     logger.error(f"Error sending message to user {user_id}: {str(e)}")
 
-    async def broadcast(self, message: dict):
+    async def broadcast(self, message: dict[str, Any]) -> None:
         for user_id in self.active_connections:
             await self.send_personal_message(user_id, message)
 
-    async def broadcast_to_admins(self, message: dict):
+    async def broadcast_to_admins(self, message: dict[str, Any]) -> None:
         """Send to administrator sockets only (e.g. host GPU telemetry)."""
         payload = json.dumps(message)
         for connection in list(self.admin_connections):
@@ -166,7 +166,7 @@ manager = ConnectionManager()
 redis_client: redis.Redis | None = None
 
 
-def setup_redis():
+def setup_redis() -> None:
     """Initialize Redis connection for pub/sub notifications.
 
     ``redis.asyncio.from_url`` only builds a lazily-connecting pool and
@@ -226,7 +226,7 @@ async def _dispatch_notification(message: dict) -> None:
         logger.warning(f"Invalid notification data: {notification_data}")
 
 
-async def redis_subscriber():
+async def redis_subscriber() -> None:
     """Forward Redis pub/sub notifications to WebSocket connections.
 
     Wrapped in a supervised reconnect loop: a transient Redis read timeout or
@@ -269,7 +269,7 @@ async def redis_subscriber():
 
 
 # Function to publish notification to Redis (for use from other processes)
-async def publish_notification(user_id: int, notification_type: str, data: dict):
+async def publish_notification(user_id: int, notification_type: str, data: dict[str, Any]) -> None:
     """Publish notification via Redis pub/sub."""
     if not redis_client:
         setup_redis()
@@ -426,7 +426,7 @@ def _origin_is_allowed(websocket: WebSocket) -> bool:
 
 
 @router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint with first-message authentication.
 
     Authentication flow:

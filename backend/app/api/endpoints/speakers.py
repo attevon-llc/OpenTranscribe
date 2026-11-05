@@ -66,7 +66,7 @@ def create_speaker(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Speaker:
     """
     Create a new speaker for a specific media file
     """
@@ -155,7 +155,7 @@ def get_speaker(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Speaker:
     """
     Get details of a specific speaker with computed status
     """
@@ -289,7 +289,7 @@ def update_speaker(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Speaker:
     """
     Update a speaker's information including display name and verification status.
 

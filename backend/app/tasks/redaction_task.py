@@ -70,7 +70,7 @@ def _mark_redaction_task(
 )
 @tracks_post_processing(PostProcessingTask.REDACTION, file_param="file_id")
 def redaction_detect_task(
-    self,
+    self: Any,
     file_id: int,
     user_id: int | None = None,
     pipeline_task_id: str | None = None,
@@ -177,7 +177,9 @@ def redaction_detect_task(
     name="redaction.reindex_all",
     priority=RedactionPriority.ADMIN_BACKFILL,
 )
-def redaction_reindex_all_task(self, only_stale: bool = True, limit: int | None = None) -> dict:
+def redaction_reindex_all_task(
+    self: Any, only_stale: bool = True, limit: int | None = None
+) -> dict:
     """Backfill/re-index redaction spans across completed files.
 
     Used on first rollout and after a detector model upgrade. ``only_stale`` skips files

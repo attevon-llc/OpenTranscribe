@@ -6,8 +6,10 @@ from app.core import privacy_env  # noqa: F401  # isort: skip
 import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextlib import suppress
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -77,7 +79,7 @@ async def _drain_websockets() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context manager for startup and shutdown events."""
     # First, and in test mode too: the thread limiter belongs to this event loop, and
     # every request it serves depends on its size relative to the DB pool (#1169).
@@ -372,7 +374,7 @@ app.add_middleware(ObservabilityMiddleware)
 # handler, but it dispatches one through `run_in_threadpool`, so declaring it `def`
 # would buy a thread hop on every error response and free nothing.
 @app.exception_handler(OpenTranscribeError)
-async def handle_app_error(request, exc: OpenTranscribeError):
+async def handle_app_error(request: Request, exc: OpenTranscribeError) -> JSONResponse:
     status_map = {
         StorageError: 503,
         SearchIndexError: 503,
@@ -430,13 +432,13 @@ app.add_exception_handler(SCIMError, scim_error_handler)
 
 # Health check endpoint
 @app.get("/health")
-def health_check():
+def health_check() -> dict[str, str]:
     """Health check endpoint"""
     return {"status": "healthy", "version": APP_VERSION}
 
 
-@app.get("/health/ready")
-def readiness_check():
+@app.get("/health/ready", response_model=None)
+def readiness_check() -> JSONResponse | dict[str, Any]:
     """Readiness probe for load balancers / orchestrators.
 
     Probes the critical dependencies (PostgreSQL, Redis) and the degraded-but-

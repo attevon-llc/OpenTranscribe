@@ -24,6 +24,7 @@ import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -37,8 +38,10 @@ from app.services import watch_settings_service
 from app.services.watch_sources import create_client
 from app.services.watch_sources import import_single_file
 from app.services.watch_sources import ingest_prepared_file
+from app.services.watch_sources.base import BaseWatchSourceClient
 from app.services.watch_sources.base import RemoteFileInfo
 from app.services.watch_sources.base import parse_extensions
+from app.services.watch_sources.multipart import MultipartGroup
 from app.services.watch_sources.processing import TERMINAL_STATUSES
 from app.services.watch_sources.processing import disable_if_owner_left_org
 from app.utils.task_lock import task_lock_manager
@@ -64,7 +67,7 @@ def _file_from_dict(d: dict) -> RemoteFileInfo:
 # Beat orchestrator
 # --------------------------------------------------------------------------- #
 @celery_app.task(name="watch_source.scan_all", bind=True, priority=CPUPriority.SYSTEM)
-def scan_all(self) -> dict:
+def scan_all(self: Any) -> dict:
     """Dispatch a scan for every enabled source that is due. Runs every minute."""
     summary = {"dispatched": 0, "skipped_not_due": 0}
     with task_lock_manager.acquire_lock("watch_source:scan_all", timeout=55) as acquired:
@@ -98,7 +101,7 @@ def scan_all(self) -> dict:
 # Per-source scan
 # --------------------------------------------------------------------------- #
 @celery_app.task(name="watch_source.scan_single", bind=True, priority=CPUPriority.USER_TRIGGERED)
-def scan_single(self, source_id: int) -> dict:
+def scan_single(self: Any, source_id: int) -> dict:
     """Scan one source: list, age-skip, import standalone, stitch multi-part.
 
     **Phased so that no DB session is open across the scan itself.** Previously
@@ -282,7 +285,7 @@ def _load_terminal_paths(source_id: int) -> set[str]:
 def _perform_scan(
     source_id: int,
     plan: dict,
-    client,
+    client: BaseWatchSourceClient,
     summary: dict,
     scan_started: datetime,
 ) -> None:
@@ -371,7 +374,7 @@ def _record_age_skips(source_id: int, files: list[RemoteFileInfo]) -> None:
             db.flush()
 
 
-def _handle_group(source_id: int, group, wait_scans: int) -> bool:
+def _handle_group(source_id: int, group: MultipartGroup, wait_scans: int) -> bool:
     """Dispatch stitch for a complete group, or age the wait counter for an incomplete one.
 
     Returns True if a stitch was dispatched this scan. The tracking upserts run
@@ -444,7 +447,7 @@ def _handle_group(source_id: int, group, wait_scans: int) -> bool:
     name="watch_source.stitch_and_import", bind=True, priority=CPUPriority.USER_TRIGGERED
 )
 def stitch_and_import(
-    self, source_id: int, base_name: str, extension: str, parts: list[dict]
+    self: Any, source_id: int, base_name: str, extension: str, parts: list[dict]
 ) -> dict:
     """Download the parts, ffmpeg-concat them, and import the single result.
 
@@ -579,7 +582,7 @@ def stitch_and_import(
 # Email notification (scan summary)
 # --------------------------------------------------------------------------- #
 @celery_app.task(name="watch_source.send_notification", bind=True, priority=CPUPriority.MAINTENANCE)
-def send_notification(self, source_id: int, summary: dict) -> dict:
+def send_notification(self: Any, source_id: int, summary: dict) -> dict:
     """Send a scan-summary email via each linked, enabled email config.
 
     The session is closed before any mail is sent: ``send_email`` is an SMTP or
@@ -677,7 +680,7 @@ def _merge_recipients(default_csv: str | None, extra_csv: str | None) -> list[st
 # Temp cleanup
 # --------------------------------------------------------------------------- #
 @celery_app.task(name="watch_source.cleanup_temp", bind=True, priority=CPUPriority.MAINTENANCE)
-def cleanup_temp(self, max_age_hours: int = 2) -> dict:
+def cleanup_temp(self: Any, max_age_hours: int = 2) -> dict:
     """Delete watch temp files older than ``max_age_hours``."""
     temp_dir = settings.watch_temp_dir
     if not temp_dir.exists():

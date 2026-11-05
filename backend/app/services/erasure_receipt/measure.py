@@ -8,6 +8,7 @@ a path, a key or a filename).
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from app.db.base import SessionLocal
 from app.services.erasure_receipt.inventory import ErasureStore
@@ -15,13 +16,16 @@ from app.services.erasure_receipt.inventory import stores_for
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
 logger = logging.getLogger(__name__)
 
 #: ``store key -> count``, or ``None`` when it could not be measured.
 Measurement = dict[str, int | None]
 
 
-def _one(store: ErasureStore, scope: ErasureScope, captured: Captured, db) -> int | None:
+def _one(store: ErasureStore, scope: ErasureScope, captured: Captured, db: Session) -> int | None:
     try:
         count = store.count(scope, captured, db)
         db.rollback()  # a failed statement must not poison the next store's read

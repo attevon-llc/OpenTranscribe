@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -80,7 +81,7 @@ def _record(file_id: int, object_name: str) -> bool:
     retry_backoff=True,
     retry_backoff_max=120,
 )
-def create_playback_rendition_task(self, file_uuid: str) -> dict:
+def create_playback_rendition_task(self: Any, file_uuid: str) -> dict:
     """Encode, store and record the playback rendition for one media file.
 
     Idempotent: a file that already has a rendition is left alone, so a reprocess or a

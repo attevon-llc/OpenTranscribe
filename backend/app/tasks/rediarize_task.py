@@ -24,6 +24,7 @@ import os
 import tempfile
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core import stage_timing
@@ -49,6 +50,11 @@ from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+    from app.services.diarization.base import DiarizationProvider
+
 logger = logging.getLogger(__name__)
 
 #: Recorded on the post stage's task row when a cloud speaker detector fails: the transcript
@@ -60,7 +66,7 @@ CLOUD_DIARIZATION_FAILED_MESSAGE = (
 )
 
 
-def _resolve_asr_provider(db, file_id: int) -> str:
+def _resolve_asr_provider(db: Session, file_id: int) -> str:
     """Resolve the ASR provider that produced this transcript, for metering.
 
     Reads ``FilePipelineTiming.asr_provider`` (recorded by the transcription
@@ -228,7 +234,7 @@ def _start(file_uuid: str, task_id: str, engine: str) -> dict:
     return meta
 
 
-def _build_detector(engine: str, user_id: int, config_uuid: str | None):
+def _build_detector(engine: str, user_id: int, config_uuid: str | None) -> DiarizationProvider:
     """The plan's speaker detector, built in a short read-only session (no HTTP inside).
 
     Raises:
@@ -245,7 +251,7 @@ def _build_detector(engine: str, user_id: int, config_uuid: str | None):
 
 def _detect(
     engine: str,
-    detector,
+    detector: DiarizationProvider,
     audio_file_path: str,
     speaker_range: SpeakerRange,
     sidecar_wav_path: str | None,
@@ -327,7 +333,7 @@ def _save(
     *,
     engine: str,
     merge: str,
-):
+) -> tuple[list[dict[str, Any]], dict[str, int], set[str]]:
     """Write phase: speakers, segments and the detector that actually ran (columns and
     the provenance record, in the same session as the segments)."""
     from app.tasks.transcription.speaker_processor import create_speaker_mapping
@@ -543,7 +549,7 @@ def _record_failure(file_uuid: str, task_id: str, error: Exception) -> str:
 
 @celery_app.task(bind=True, name="rediarize", priority=GPUPriority.USER_REDIARIZ)
 def rediarize_task(
-    self,
+    self: Any,
     file_uuid: str,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
@@ -554,7 +560,7 @@ def rediarize_task(
     engine: str = "local",
     merge: str | None = None,
     diarizer_config_uuid: str | None = None,
-):
+) -> dict[str, Any]:
     """Detect speakers for an existing transcript without re-transcribing.
 
     Args:

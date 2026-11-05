@@ -36,6 +36,7 @@ from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed
+from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import MediaFile as MediaFileSchema
 from app.schemas.media import PaginatedMediaFileResponse
@@ -161,7 +162,7 @@ async def upload_media_file(
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
     request: Request = None,  # type: ignore[assignment]
-):
+) -> JSONResponse:
     """Upload a media file for transcription"""
     current_user = ctx.user
     # The legal processing gate, before the upload is stored. The caller owns the file.
@@ -230,7 +231,7 @@ def update_transcript_segment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TranscriptSegment:
     """Update a specific transcript segment"""
     from .crud import update_single_transcript_segment
 
@@ -259,7 +260,7 @@ def reprocess_media_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> MediaFile:
     """Reprocess a media file for transcription with optional speaker diarization settings"""
     # Extract speaker parameters from request if provided
     min_speakers = reprocess_request.min_speakers if reprocess_request else None
@@ -313,7 +314,7 @@ def clear_video_cache(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Clear cached processed videos for a file (e.g., after speaker name updates)"""
     # Authorization runs OUTSIDE the try: get_media_file_by_uuid raises HTTPException
     # 403/404, and a broad `except Exception` around it re-wrapped that as a 500 — hiding
@@ -390,7 +391,7 @@ def refresh_analytics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Refresh analytics for a media file by recomputing them"""
     # Authorization runs OUTSIDE the try — see clear_video_cache above for why
     # (issue #284 A0.6). The `raise HTTPException(500)` below was also swallowed by the

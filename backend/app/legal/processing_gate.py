@@ -30,6 +30,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -41,6 +42,10 @@ from app.core.constants import LEGAL_PROCESSING_GATE_TTL_SECONDS
 from app.core.constants import LEGAL_PROCESSING_REQUIRED_KEYS_KEY
 from app.legal import registry
 from app.models.legal_acceptance import LegalAcceptance
+
+if TYPE_CHECKING:
+    from app.models.media import MediaFile
+    from app.tasks.transcription.hooks import LegalAcceptanceRequiredError
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +240,7 @@ def require_processing_allowed(
         raise refusal_error(refusal)
 
 
-def require_processing_allowed_for_file(db: Session, media_file) -> None:
+def require_processing_allowed_for_file(db: Session, media_file: MediaFile) -> None:
     """:func:`require_processing_allowed` for a ``MediaFile``'s owner and organization."""
     require_processing_allowed(
         db,
@@ -244,7 +249,9 @@ def require_processing_allowed_for_file(db: Session, media_file) -> None:
     )
 
 
-def check_processing_allowed_for_file(db: Session, media_file) -> ProcessingRefusal | None:
+def check_processing_allowed_for_file(
+    db: Session, media_file: MediaFile
+) -> ProcessingRefusal | None:
     """:func:`check_processing_allowed` for a ``MediaFile``'s owner and organization."""
     return check_processing_allowed(
         db,
@@ -253,7 +260,7 @@ def check_processing_allowed_for_file(db: Session, media_file) -> ProcessingRefu
     )
 
 
-def refusal_error(refusal: ProcessingRefusal):
+def refusal_error(refusal: ProcessingRefusal) -> LegalAcceptanceRequiredError:
     """The HTTP-shaped exception for *refusal* (403, or 503 when the gate cannot decide)."""
     from app.tasks.transcription.hooks import LegalAcceptanceRequiredError
 

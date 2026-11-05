@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import dataclasses
 import datetime
 import functools
 import io
 import logging
 import os
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 from typing import BinaryIO
 from typing import Literal
@@ -23,6 +26,8 @@ from app.services.storage_backend import rewrite_public_host
 from app.utils.content_disposition import attachment_header
 
 if TYPE_CHECKING:
+    from minio.commonconfig import Tags
+
     from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
@@ -74,7 +79,7 @@ def get_takedown_client() -> Minio:
     return storage_backend.build_storage_client(http_client=http_client)
 
 
-def ensure_bucket_exists():
+def ensure_bucket_exists() -> None:
     """
     Ensure the media bucket exists, creating it if necessary
     """
@@ -240,7 +245,7 @@ def get_file_url(object_name: str, expires: int = 0, content_type: str | None = 
         raise Exception(f"Error getting file URL: {e}") from e
 
 
-def delete_file(object_name: str) -> "RemovalResult":
+def delete_file(object_name: str) -> RemovalResult:
     """Delete a media object completely: every version of it on a versioned bucket.
 
     Args:
@@ -398,7 +403,7 @@ def write_object_quarantine_tag(
 _TAG_WRITE_ATTEMPTS = 2
 
 
-def _tags_with_quarantine(existing, quarantined: bool):
+def _tags_with_quarantine(existing: Mapping[str, str] | None, quarantined: bool) -> Tags:
     """The object's tag set with only the quarantine key changed (tags are replaced whole)."""
     from minio.commonconfig import Tags
 
@@ -412,8 +417,8 @@ def _tags_with_quarantine(existing, quarantined: bool):
     return new_tags
 
 
-def _carries_quarantine_tag(tags) -> bool:
-    return bool(tags) and tags.get(STORAGE_QUARANTINE_TAG_KEY) == (
+def _carries_quarantine_tag(tags: Tags | None) -> bool:
+    return tags is not None and tags.get(STORAGE_QUARANTINE_TAG_KEY) == (
         storage_presign_identity.QUARANTINE_TAG_VALUE
     )
 

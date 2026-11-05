@@ -9,9 +9,13 @@ started/done/failed as a batch worker applies it, so the file's own card shows t
 instead of a second, stand-alone notification for that file.
 """
 
+from __future__ import annotations
+
 import contextlib
 import logging
 import time
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_AUTO_LABEL_STATUS
@@ -21,6 +25,9 @@ from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.services import post_processing_status
 from app.services.notification_service import send_file_cache_invalidation
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +52,7 @@ def send_auto_label_notification(
 
 
 @celery_app.task(name="ai.group_batch_files", priority=NLPPriority.BACKGROUND)
-def group_batch_files_task(batch_id: int, user_id: int):
+def group_batch_files_task(batch_id: int, user_id: int) -> dict[str, Any]:
     """Group batch files by shared topics into collections.
 
     Triggered after all files in a batch complete topic extraction.
@@ -99,7 +106,7 @@ _LOCK_KEY = "auto_label_lock:{user_id}"
 
 
 def pending_suggestion_ids(
-    db,
+    db: Session,
     user_id: int,
     file_uuids: list[str] | None = None,
     *,
@@ -131,7 +138,7 @@ def pending_suggestion_ids(
 
 
 def _file_refs_for_suggestions(
-    db, suggestion_ids: list[int]
+    db: Session, suggestion_ids: list[int]
 ) -> list[post_processing_status.FileRef]:
     """The files the given suggestions belong to, one entry per file, as plain data."""
     from app.models.media import MediaFile
@@ -156,7 +163,7 @@ def retroactive_auto_label_task(
     file_uuids: list[str] | None = None,
     tenant_scoped: bool = False,
     organization_id: int | None = None,
-):
+) -> dict[str, Any]:
     """Coordinator: dispatch parallel batch workers for retroactive auto-labeling.
 
     Partitions pending suggestions into batches and dispatches
@@ -272,7 +279,7 @@ def auto_label_batch_task(
     suggestion_ids: list[int],
     user_id: int,
     confidence_threshold: float,
-):
+) -> dict[str, int]:
     """Process a batch of auto-label suggestions.
 
     Each batch worker creates its own DB session for thread safety.

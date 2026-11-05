@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Self
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -405,7 +406,7 @@ class LLMService(
         return url
 
     def chat_completion_raw(
-        self, messages: list[dict[str, str]], *, timeout: int = 300, **kwargs
+        self, messages: list[dict[str, str]], *, timeout: int = 300, **kwargs: Any
     ) -> dict[str, Any]:
         """Send one chat completion and return the provider's parsed JSON, unshaped.
 
@@ -443,7 +444,7 @@ class LLMService(
         payload = self._prepare_payload(messages, **kwargs)
         return self._send_llm_request(url, payload, self._get_headers(), timeout)
 
-    def chat_completion(self, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
+    def chat_completion(self, messages: list[dict[str, str]], **kwargs: Any) -> LLMResponse:
         """Send a chat completion request to the LLM provider.
 
         Every call, successful or not, is reported to the open usage run
@@ -474,7 +475,7 @@ class LLMService(
         return response
 
     def _chat_completion_untracked(
-        self, messages: list[dict[str, str]], call: "CallUsage", **kwargs
+        self, messages: list[dict[str, str]], call: "CallUsage", **kwargs: Any
     ) -> LLMResponse:
         """Provider dispatch for :meth:`chat_completion`; fills ``call`` with reported usage."""
         if self.config.provider == LLMProvider.BEDROCK:
@@ -530,7 +531,7 @@ class LLMService(
             raise
 
     def _bedrock_chat_completion(
-        self, messages: list[dict[str, str]], call: "CallUsage | None" = None, **kwargs
+        self, messages: list[dict[str, str]], call: "CallUsage | None" = None, **kwargs: Any
     ) -> LLMResponse:
         """Non-streaming completion via the Bedrock Converse SDK path.
 
@@ -604,7 +605,7 @@ class LLMService(
         self,
         messages: list[dict[str, str]],
         cancel_event: threading.Event | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Iterator[LLMStreamEvent]:
         """Stream a chat completion token-by-token from the configured provider.
 
@@ -720,7 +721,7 @@ class LLMService(
         finally:
             response.close()
 
-    def close(self):
+    def close(self) -> None:
         """
         Close the session and clean up resources.
 
@@ -731,11 +732,10 @@ class LLMService(
             self._discard_pinned_session()
         logger.debug(f"Closed session for {self.config.provider}")
 
-    def __enter__(self):
-        """Context manager entry."""
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, *exc_info: object) -> None:
         """Context manager exit with automatic cleanup."""
         self.close()
 

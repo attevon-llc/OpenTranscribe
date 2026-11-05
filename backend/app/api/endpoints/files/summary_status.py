@@ -3,6 +3,7 @@ Summary status endpoint for checking AI summary availability and status
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -31,7 +32,7 @@ async def get_summary_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Get the summary status for a file and LLM availability
 
@@ -98,7 +99,7 @@ async def retry_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Retry failed summary generation for a file
     """

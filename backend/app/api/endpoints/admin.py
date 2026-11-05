@@ -67,7 +67,7 @@ def _validate_user_deletion(user: User, current_user: User) -> None:
 @router.get("/stats", response_model=dict[str, Any])
 async def get_admin_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
-):
+) -> dict[str, Any]:
     """Report application and host statistics for the admin dashboard.
 
     Two fields have a fixed contract worth stating, because both were wrong:
@@ -94,7 +94,7 @@ async def get_admin_stats(
     try:
         # System statistics — offload sync psutil calls to a thread to avoid
         # blocking the async event loop.
-        def _collect_system_stats():
+        def _collect_system_stats() -> dict[str, Any]:
             return {
                 "cpu": get_cpu_usage(),
                 "memory": get_memory_usage(),
@@ -256,7 +256,7 @@ def get_admin_users(
     offset: int = Query(0, ge=0, description="Number of users to skip"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> list[User]:
     """
     Get users for admin panel with pagination.
 
@@ -286,7 +286,7 @@ def create_admin_user(
     user_data: UserCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> User:
     """
     Create a new user (admin only)
     """
@@ -328,7 +328,7 @@ def delete_admin_user(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
-):
+) -> dict[str, Any]:
     """Delete a user and all their data (admin only).
 
     **Phase boundary (issue #695).** The three cascade helpers that

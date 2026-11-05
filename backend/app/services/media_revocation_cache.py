@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
+from typing import Protocol
 
 from app.core.config import settings
 
@@ -66,7 +67,15 @@ def bulk_marker_prefix(file_id: int) -> str:
     return f"{BULK_MARKER_PREFIX}{int(file_id)}/"
 
 
-def record_bulk_export(storage, bucket: str, file_ids: Iterable[int], export_key: str) -> None:
+class BulkMarkerStore(Protocol):
+    """The slice of ``MinIOService`` that writes a marker object."""
+
+    def upload_bytes(self, bucket: str, key: str, data: bytes, content_type: str, /) -> None: ...
+
+
+def record_bulk_export(
+    storage: BulkMarkerStore, bucket: str, file_ids: Iterable[int], export_key: str
+) -> None:
     """Write one marker per file BEFORE ``export_key`` is uploaded, so a takedown can find it.
 
     Args:

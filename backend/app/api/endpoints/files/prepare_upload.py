@@ -318,7 +318,7 @@ async def prepare_upload(
     http_request: Request,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Prepare for a file upload by creating a MediaFile record and returning the file ID.
     This allows the frontend to track the file ID before the actual upload begins.

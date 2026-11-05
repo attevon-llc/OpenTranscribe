@@ -256,7 +256,7 @@ def update_segment_speaker(
     ctx: RequestContext = Depends(get_current_context),
     *,
     request: Request,
-):
+) -> TranscriptSegmentSchema:
     """
     Update the speaker assignment for a transcript segment.
 

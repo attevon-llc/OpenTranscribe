@@ -16,8 +16,12 @@ Key features:
 - Safe finalize with count validation, backup, and finally-block cleanup
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import TYPE_CHECKING
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
@@ -41,11 +45,14 @@ from app.tasks.embedding_migration_v4_scope import get_migration_status
 from app.tasks.embedding_migration_v4_writer import _embedding_result_writer
 from app.tasks.migration_pipeline import PreparedFile
 
+if TYPE_CHECKING:
+    from app.services.progress_tracker import ProgressTracker
+
 logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, name="check_migration_status", priority=UtilityPriority.BACKGROUND)
-def check_migration_status_task(self):
+def check_migration_status_task(self: Any) -> dict:
     """Check the current embedding migration status."""
     return get_migration_status()
 
@@ -61,10 +68,10 @@ def check_migration_status_task(self):
     priority=CPUPriority.ADMIN_BATCH,
 )
 def migrate_speaker_embeddings_v4_task(
-    self,
+    self: Any,
     user_id: int | None = None,
     force: bool = False,
-):
+) -> dict[str, Any]:
     """Orchestrate migration of all speaker embeddings to v4.
 
     Acquires the migration lock (pausing transcription), queries completed
@@ -236,13 +243,13 @@ def migrate_speaker_embeddings_v4_task(
     bind=True, name="extract_v4_embeddings_batch", priority=GPUPriority.ADMIN_MIGRATION
 )
 def extract_v4_embeddings_batch_task(
-    self,
+    self: Any,
     file_uuids: list[str],
     batch_index: int = 0,
     total_batches: int = 1,
     total_files: int = 0,
     user_id: int | None = None,
-):
+) -> dict[str, Any]:
     """Extract v4 embeddings for a batch of media files.
 
     Uses the unified migration_pipeline with EmbeddingModelAdapter for
@@ -351,7 +358,7 @@ def extract_v4_embeddings_batch_task(
 
 
 def _emit_progress(
-    tracker,
+    tracker: ProgressTracker,
     user_id: int,
     total_files: int,
     failed_item: str | None = None,
@@ -387,12 +394,12 @@ def _emit_progress(
 
 @celery_app.task(bind=True, name="extract_v4_embeddings", priority=GPUPriority.ADMIN_MIGRATION)
 def extract_v4_embeddings_task(
-    self,
+    self: Any,
     file_uuid: str,
     task_index: int = 0,
     total_tasks: int = 1,
     user_id: int | None = None,
-):
+) -> dict[str, Any]:
     """Legacy single-file extraction (kept for in-flight task compatibility).
 
     New migrations use extract_v4_embeddings_batch_task instead.

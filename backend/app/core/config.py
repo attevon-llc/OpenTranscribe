@@ -3,6 +3,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Annotated
+from typing import Any
 from typing import ClassVar
 from typing import Literal
 from urllib.parse import quote
@@ -1610,9 +1611,8 @@ class Settings(BaseSettings):
         return Path(self.WATCH_TEMP_DIR) if self.WATCH_TEMP_DIR else self.TEMP_DIR
 
     # Initialization (CORS and directories)
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         super().__init__(**data)
-        # Ensure directories exist
         self.TEMP_DIR.mkdir(exist_ok=True, parents=True)
 
     # `env_file` is resolved against the WORKING DIRECTORY, which made the whole test

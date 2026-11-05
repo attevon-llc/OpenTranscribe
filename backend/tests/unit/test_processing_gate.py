@@ -159,7 +159,9 @@ def test_the_refusal_error_carries_the_stable_detail():
         processing_gate.ProcessingRefusal(REASON_ACCEPTANCE_REQUIRED, (TERMS,))
     )
     assert err.status_code == 403
-    assert err.detail == {"code": REASON_ACCEPTANCE_REQUIRED, "documents": [TERMS]}
+    # HTTPException declares ``detail: str``; this subclass carries a dict.
+    detail: object = err.detail
+    assert detail == {"code": REASON_ACCEPTANCE_REQUIRED, "documents": [TERMS]}
     unavailable = processing_gate.refusal_error(
         processing_gate.ProcessingRefusal(REASON_GATE_UNAVAILABLE, ())
     )

@@ -9,6 +9,7 @@ this class composes them and stays the public face (``TaskRecoveryService`` and 
 ``task_recovery_service`` singleton), which is also where tests patch ``schedule_file_retry``.
 """
 
+from app.core.task_config import TaskRecoveryConfig
 from app.core.task_config import task_recovery_config
 from app.services.task_recovery_post_transcription import TaskRecoveryPostTranscriptionMixin
 from app.services.task_recovery_stuck import TaskRecoveryStuckMixin
@@ -17,7 +18,7 @@ from app.services.task_recovery_stuck import TaskRecoveryStuckMixin
 class TaskRecoveryService(TaskRecoveryStuckMixin, TaskRecoveryPostTranscriptionMixin):
     """Service for performing task and file recovery operations."""
 
-    def __init__(self, config=None):
+    def __init__(self, config: TaskRecoveryConfig | None = None) -> None:
         """Initialize with optional configuration override."""
         self.config = config or task_recovery_config
 

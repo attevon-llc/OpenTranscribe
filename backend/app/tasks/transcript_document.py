@@ -17,6 +17,7 @@ import json
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.constants import DOCUMENT_EXPORT_SOFT_TIME_LIMIT_S
@@ -90,7 +91,7 @@ def _fail(job_id: str, reason: str) -> dict:
     soft_time_limit=DOCUMENT_EXPORT_SOFT_TIME_LIMIT_S,
 )
 def prepare_transcript_document_task(
-    self,
+    self: Any,
     file_id: int,
     user_id: int | None,
     organization_id: int | None,

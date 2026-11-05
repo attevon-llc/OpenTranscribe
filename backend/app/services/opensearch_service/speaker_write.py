@@ -33,7 +33,7 @@ def add_speaker_embedding_v4(
     segment_count: int = 1,
     display_name: str | None = None,
     organization_id: int | None = None,
-):
+) -> dict[str, Any] | None:
     """
     Add a speaker embedding to the v4 staging index during migration.
 
@@ -55,12 +55,12 @@ def add_speaker_embedding_v4(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
-        return
+        return None
 
     # Tier 3 of the privacy policy: no voiceprint document is written for a scope that forbids
     # voiceprints, whichever caller got here (issue #1280).
     if not assert_voiceprint_write_allowed(user_id, organization_id, media_file_id=media_file_id):
-        return
+        return None
 
     v4_index = get_speaker_index_v4()
 
@@ -68,11 +68,11 @@ def add_speaker_embedding_v4(
         # Validate embedding before indexing
         if embedding is None:
             logger.error(f"Cannot index speaker {speaker_uuid}: embedding is None")
-            return
+            return None
 
         if not isinstance(embedding, list) or len(embedding) == 0:
             logger.error(f"Cannot index speaker {speaker_uuid}: invalid embedding format")
-            return
+            return None
 
         # Dimension safety check: v4 index expects 256-dim embeddings
         emb_len = len(embedding)
@@ -81,7 +81,7 @@ def add_speaker_embedding_v4(
                 f"Cannot index speaker {speaker_uuid} to v4: dimension mismatch "
                 f"{emb_len} != {PYANNOTE_EMBEDDING_DIMENSION_V4}"
             )
-            return
+            return None
 
         logger.info(
             f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) to v4 index with embedding length: {emb_len}"
@@ -108,7 +108,7 @@ def add_speaker_embedding_v4(
             doc["organization_id"] = organization_id
 
         # Index the document to the v4 staging index using UUID as document ID
-        response = _client.opensearch_client.index(
+        response: dict[str, Any] = _client.opensearch_client.index(
             index=v4_index,
             body=doc,
             id=str(speaker_uuid),  # Use speaker_uuid as document ID
@@ -123,6 +123,7 @@ def add_speaker_embedding_v4(
         logger.error(
             f"Error indexing speaker embedding to v4 for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
         )
+    return None
 
 
 def _declined_files_of(embeddings_data: list[dict[str, Any]]) -> set[int]:
@@ -261,7 +262,7 @@ def add_speaker_embedding(
     display_name: str | None = None,
     target_index: str | None = None,
     organization_id: int | None = None,
-):
+) -> dict[str, Any] | None:
     """
     Add a speaker embedding to OpenSearch with collection support
 
@@ -282,11 +283,11 @@ def add_speaker_embedding(
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping speaker embedding")
-        return
+        return None
 
     # Tier 3 of the privacy policy (see add_speaker_embedding_v4).
     if not assert_voiceprint_write_allowed(user_id, organization_id, media_file_id=media_file_id):
-        return
+        return None
 
     index_name = target_index or get_speaker_index()
 
@@ -296,11 +297,11 @@ def add_speaker_embedding(
         # Validate embedding before indexing
         if embedding is None:
             logger.error(f"Cannot index speaker {speaker_uuid}: embedding is None")
-            return
+            return None
 
         if not isinstance(embedding, list) or len(embedding) == 0:
             logger.error(f"Cannot index speaker {speaker_uuid}: invalid embedding format")
-            return
+            return None
 
         # Dimension safety check: prevent writing wrong-dimension vectors
         emb_len = len(embedding)
@@ -310,7 +311,7 @@ def add_speaker_embedding(
                 f"{emb_len} (expected {PYANNOTE_EMBEDDING_DIMENSION_V3} or "
                 f"{PYANNOTE_EMBEDDING_DIMENSION_V4})"
             )
-            return
+            return None
 
         logger.info(
             f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {emb_len}"
@@ -336,7 +337,7 @@ def add_speaker_embedding(
             doc["organization_id"] = organization_id
 
         # Index the document using UUID as document ID
-        response = _client.opensearch_client.index(
+        response: dict[str, Any] = _client.opensearch_client.index(
             index=index_name,
             body=doc,
             id=str(speaker_uuid),  # Use speaker_uuid as document ID
@@ -409,3 +410,4 @@ def add_speaker_embedding(
             logger.error(
                 f"Error indexing speaker embedding for speaker {speaker_uuid} (ID: {speaker_id}): {e}"
             )
+    return None

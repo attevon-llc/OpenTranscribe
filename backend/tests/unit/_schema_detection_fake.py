@@ -17,6 +17,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
+from typing import Any
+
+from sqlalchemy.engine import Connection
 
 from app.db.migrations import _detect_schema_version
 
@@ -212,14 +215,20 @@ class _Result:
         return self._value
 
 
-class FakeConn:
-    """Records every query in ``schema.queries`` and answers it from the schema."""
+class FakeConn(Connection):
+    """Records every query in ``schema.queries`` and answers it from the schema.
+
+    A real ``Connection`` subclass that never opens a connection: ``execute`` is the only
+    method the probes call, and it answers with a stand-in result, hence ``Any``.
+    """
 
     def __init__(self, schema: FakeSchema) -> None:
         self.schema = schema
 
-    def execute(self, clause, params=None):
-        sql = _norm(str(clause))
+    def execute(
+        self, statement: Any, parameters: Any = None, *, execution_options: Any = None
+    ) -> Any:
+        sql = _norm(str(statement))
         self.schema.queries.append(sql)
         return _Result(self.schema.answer(sql))
 

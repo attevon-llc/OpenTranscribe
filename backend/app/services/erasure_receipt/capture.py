@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy import ColumnElement
 from sqlalchemy import select
 
 from app.models.media import MediaFile
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
 
-def _file_filter(scope: ErasureScope):
+def _file_filter(scope: ErasureScope) -> ColumnElement[bool]:
     if scope.kind == "user":
         return MediaFile.user_id == scope.user_id
     if scope.kind == "org_member":
@@ -35,7 +36,9 @@ def _file_filter(scope: ErasureScope):
     return MediaFile.id.in_(scope.file_ids)
 
 
-def _owner_filter(model, scope: ErasureScope):
+def _owner_filter(
+    model: type[SpeakerProfile] | type[SpeakerCluster], scope: ErasureScope
+) -> ColumnElement[bool] | None:
     """Profiles and clusters: owned by the user (and tenant) or by the organization."""
     if scope.kind == "user":
         return model.user_id == scope.user_id

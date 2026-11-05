@@ -27,6 +27,7 @@ import threading
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 
 import pytest
 
@@ -63,11 +64,11 @@ class _FakeRedis:
         self.data[key] = value
         self.writes.append(value)
 
-    def register_script(self, src: str):
+    def register_script(self, src: str, /) -> lockout.CasScript:
         self.script_src = src
         return self._run_script
 
-    def _run_script(self, keys, args):
+    def _run_script(self, keys: list[str], args: list[Any]) -> list[Any]:
         """Emulate ``_CAS_LUA``: write only if the key still holds ``expected``."""
         key = keys[0]
         expected, new_value, ttl, expect_missing = args

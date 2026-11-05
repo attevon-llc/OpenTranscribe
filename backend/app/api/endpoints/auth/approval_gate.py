@@ -2,11 +2,12 @@
 
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy.orm import Session
 
 from app.auth import approval
 
 
-def approval_enforced(db) -> bool:
+def approval_enforced(db: Session | None) -> bool:
     """Whether a pending account is refused right now.
 
     Raises:

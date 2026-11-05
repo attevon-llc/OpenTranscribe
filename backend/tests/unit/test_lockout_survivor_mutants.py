@@ -51,6 +51,7 @@ import json
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -160,6 +161,16 @@ class TestDecodeStored:
 # ── _get_cas_script: the SHA cache, keyed on the client ───────────────────────────
 
 
+class _NamedScript:
+    """A registered-script stand-in; only its identity matters to the cache tests."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+
+    def __call__(self, *, keys: list[str], args: list[Any]) -> Any:
+        raise AssertionError("never run by the cache tests")
+
+
 class _ScriptStore:
     """A minimal store recording how many times its script was (re)registered."""
 
@@ -167,9 +178,12 @@ class _ScriptStore:
         self.name = name
         self.register_calls = 0
 
-    def register_script(self, src: str) -> str:
+    def get(self, key: str, /) -> None:
+        return None
+
+    def register_script(self, src: str, /) -> lockout.CasScript:
         self.register_calls += 1
-        return f"script-for-{self.name}-call-{self.register_calls}"
+        return _NamedScript(f"script-for-{self.name}-call-{self.register_calls}")
 
 
 class TestGetCasScript:
@@ -549,8 +563,8 @@ class _CasRedis:
     def set(self, key: str, value: str, ex: int | None = None) -> None:
         self.data[key] = value
 
-    def register_script(self, src: str):
-        def _run(keys, args):
+    def register_script(self, src: str, /) -> lockout.CasScript:
+        def _run(keys: list[str], args: list[Any]) -> list[Any]:
             key = keys[0]
             expected, new_value, ttl, expect_missing = args
             current = self.data.get(key)

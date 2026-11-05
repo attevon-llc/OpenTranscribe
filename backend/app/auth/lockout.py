@@ -14,6 +14,8 @@ with automatic fallback to thread-safe in-memory storage when Redis is unavailab
 periodic sweep live in ``auth/lockout_admin.py``.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from dataclasses import asdict
@@ -21,13 +23,30 @@ from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
+from typing import Any
+from typing import Protocol
 from typing import TypedDict
 
 from app.auth.degradation import record_degradation
+from app.auth.lockout_store import InMemoryLockoutStore
 from app.auth.lockout_store import _get_memory_fallback_store
 from app.auth.lockout_store import _get_store
 from app.auth.utils import mask_identifier
 from app.core.process_auth_settings import get_process_auth_settings
+
+
+class CasScript(Protocol):
+    """A registered compare-and-set script (``redis.commands.core.Script``)."""
+
+    def __call__(self, *, keys: list[str], args: list[Any]) -> Any: ...
+
+
+class CasStore(Protocol):
+    """The slice of a Redis client the compare-and-set lockout path uses."""
+
+    def get(self, key: str, /) -> Any: ...
+
+    def register_script(self, script: str, /) -> CasScript: ...
 
 
 class LockoutInfo(TypedDict):
@@ -74,7 +93,7 @@ class LockoutRecord:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "LockoutRecord":
+    def from_dict(cls, data: dict) -> LockoutRecord:
         """Create from dictionary (JSON deserialization)."""
         return cls(**data)
 
@@ -116,11 +135,11 @@ return {1, ''}
 #: How many times a losing writer recomputes before degrading to in-memory tracking.
 CAS_MAX_RETRIES = 5
 
-_cas_script = None
-_cas_script_client = None
+_cas_script: CasScript | None = None
+_cas_script_client: CasStore | None = None
 
 
-def _get_cas_script(store):
+def _get_cas_script(store: CasStore) -> CasScript:
     """Get the registered CAS script for ``store``.
 
     ``register_script`` hashes locally (no round trip), but caching keeps the SHA
@@ -145,7 +164,7 @@ def _decode_stored(value: str | bytes | None) -> str | None:
 
 
 def _cas_write(
-    script, key: str, expected: str | None, record: LockoutRecord
+    script: CasScript, key: str, expected: str | None, record: LockoutRecord
 ) -> tuple[bool, str | None]:
     """Persist ``record`` only if ``key`` still holds ``expected``.
 
@@ -488,7 +507,7 @@ def _apply_failed_login(
 
 
 def _check_and_record_attempt_redis(
-    store, key: str, identifier: str, success: bool, now: datetime
+    store: CasStore, key: str, identifier: str, success: bool, now: datetime
 ) -> tuple[bool, datetime | None]:
     """
     Atomic check-and-record backed by a compare-and-set Lua script.
@@ -555,7 +574,7 @@ def _check_and_record_attempt_redis(
 
 
 def _check_and_record_attempt_memory(
-    store, key: str, identifier: str, success: bool, now: datetime
+    store: InMemoryLockoutStore, key: str, identifier: str, success: bool, now: datetime
 ) -> tuple[bool, datetime | None]:
     """
     Check-and-record for in-memory store using thread locking.

@@ -121,7 +121,9 @@ class TestCacheCopies:
         written: list[tuple[str, str]] = []
 
         class _Storage:
-            def upload_bytes(self, bucket, key, data, content_type):
+            def upload_bytes(
+                self, bucket: str, key: str, data: bytes, content_type: str, /
+            ) -> None:
                 written.append((bucket, key))
 
         cache.record_bulk_export(_Storage(), "cache", [3, 1, 3], "bulk/abc.zip")

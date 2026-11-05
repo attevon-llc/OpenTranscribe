@@ -44,8 +44,12 @@ nobody can get into.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from app.core.env import is_truthy
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +67,7 @@ APPROVAL_REJECTED = "rejected"
 VALID_APPROVAL_STATUSES = (APPROVAL_PENDING, APPROVAL_APPROVED, APPROVAL_REJECTED)
 
 
-def approval_required(db) -> bool | None:
+def approval_required(db: Session | None) -> bool | None:
     """Whether this deployment holds new accounts for approval.
 
     Args:
@@ -102,7 +106,7 @@ def approval_required(db) -> bool | None:
     return bool(value)
 
 
-def initial_approval_status(db) -> str:
+def initial_approval_status(db: Session | None) -> str:
     """Return the ``approval_status`` a freshly provisioned account should carry.
 
     Call this from self-registration and from every external-IdP JIT creation
@@ -122,7 +126,7 @@ def initial_approval_status(db) -> str:
     return APPROVAL_APPROVED if approval_required(db) is False else APPROVAL_PENDING
 
 
-def is_pending(user) -> bool:
+def is_pending(user: object) -> bool:
     """Whether *user* is waiting on an administrator.
 
     Reads defensively: a ``User`` object built without the column (the testing
@@ -132,12 +136,12 @@ def is_pending(user) -> bool:
     return str(getattr(user, "approval_status", APPROVAL_APPROVED) or "") == APPROVAL_PENDING
 
 
-def is_rejected(user) -> bool:
+def is_rejected(user: object) -> bool:
     """Whether *user* was refused by an administrator."""
     return str(getattr(user, "approval_status", APPROVAL_APPROVED) or "") == APPROVAL_REJECTED
 
 
-def is_unrecognised(user) -> bool:
+def is_unrecognised(user: object) -> bool:
     """Whether *user* carries an ``approval_status`` outside the closed set.
 
     The ``ck_user_approval_status_valid`` CHECK keeps such a value out of the table;

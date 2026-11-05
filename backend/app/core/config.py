@@ -15,6 +15,9 @@ from pydantic_settings import BaseSettings
 from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
+from app.core.auth_settings_checks import validate_ldap_settings
+from app.core.auth_settings_checks import validate_oidc_settings
+from app.core.auth_settings_checks import validate_pki_settings
 from app.core.chat_defaults import DEFAULT_CHAT_RERANKER_TORCH_THREADS
 from app.core.constants import AUDIT_RETENTION_FLOOR_DAYS
 from app.core.legacy_auth_env import oidc_bool_env
@@ -95,81 +98,6 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
         untouched — it is filled in per-login with the escaped username.
     """
     return search_filter.replace("{username_attr}", username_attr)
-
-
-def _validate_ldap_settings(settings: "Settings") -> None:
-    """Validate LDAP configuration when LDAP authentication is enabled.
-
-    Args:
-        settings: The Settings instance to validate.
-
-    Raises:
-        ValueError: If LDAP_ENABLED is true but required LDAP fields are missing.
-    """
-    if not settings.LDAP_ENABLED:
-        return
-
-    missing_ldap = []
-    if not settings.LDAP_SERVER:
-        missing_ldap.append("LDAP_SERVER")
-    if not settings.LDAP_BIND_DN:
-        missing_ldap.append("LDAP_BIND_DN")
-    if not settings.LDAP_BIND_PASSWORD:
-        missing_ldap.append("LDAP_BIND_PASSWORD")
-    if not settings.LDAP_SEARCH_BASE:
-        missing_ldap.append("LDAP_SEARCH_BASE")
-    if missing_ldap:
-        raise ValueError(
-            f"LDAP_ENABLED=true but the following required settings are missing: "
-            f"{', '.join(missing_ldap)}"
-        )
-
-    if settings.LDAP_USE_SSL and settings.LDAP_USE_TLS:
-        _config_logger.warning(
-            "LDAP_USE_SSL and LDAP_USE_TLS are mutually exclusive; using LDAPS, not StartTLS."
-        )
-
-
-def _validate_oidc_settings(settings: "Settings") -> None:
-    """Validate OIDC configuration when OIDC authentication is enabled.
-
-    Args:
-        settings: The Settings instance to validate.
-
-    Raises:
-        ValueError: If OIDC_ENABLED is true but required OIDC fields are missing.
-    """
-    if not settings.OIDC_ENABLED:
-        return
-
-    missing_oidc = []
-    if not settings.OIDC_SERVER_URL:
-        missing_oidc.append("OIDC_SERVER_URL")
-    if not settings.OIDC_CLIENT_ID:
-        missing_oidc.append("OIDC_CLIENT_ID")
-    if not settings.OIDC_CALLBACK_URL:
-        missing_oidc.append("OIDC_CALLBACK_URL")
-    if missing_oidc:
-        raise ValueError(
-            f"OIDC_ENABLED=true but the following required settings are missing: "
-            f"{', '.join(missing_oidc)}"
-        )
-
-
-def _validate_pki_settings(settings: "Settings") -> None:
-    """Validate PKI configuration when PKI authentication with revocation checking is enabled.
-
-    Args:
-        settings: The Settings instance to validate.
-
-    Raises:
-        ValueError: If PKI_ENABLED and PKI_VERIFY_REVOCATION are true but PKI_CA_CERT_PATH is missing.
-    """
-    if settings.PKI_ENABLED and settings.PKI_VERIFY_REVOCATION and not settings.PKI_CA_CERT_PATH:
-        raise ValueError(
-            "PKI_VERIFY_REVOCATION=true but PKI_CA_CERT_PATH is not set. "
-            "CA certificate is required for OCSP revocation checking."
-        )
 
 
 class Settings(BaseSettings):
@@ -1078,9 +1006,9 @@ class Settings(BaseSettings):
             self.LDAP_USER_SEARCH_FILTER, self.LDAP_USERNAME_ATTR
         )
 
-        _validate_ldap_settings(self)
-        _validate_oidc_settings(self)
-        _validate_pki_settings(self)
+        validate_ldap_settings(self)
+        validate_oidc_settings(self)
+        validate_pki_settings(self)
 
         # Warn if using the default JWT_SECRET_KEY
         if self.JWT_SECRET_KEY == "this_should_be_changed_in_production":  # noqa: S105 - checking for default value  # nosec B105

@@ -36,6 +36,7 @@ this file is for.
   synthetic speech to PDF/DOCX and prints wall time, peak RSS, pages and size. MANUAL ONLY, never a
   test (a wall-clock budget is a flaky gate); run it on a quiet host, ideally inside the backend
   image where the real fonts live (`--font-dir` otherwise).
+- **Backend pytest from any worktree, no dev stack** — `test-in-worktree.sh [--services pg] [--keep] -- <pytest args>`: throwaway branch-migrated postgres on a free loopback port, removed on any exit. Details: `backend/tests/notes/db-tests-without-stack.md`.
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/`--e2e-only`/`--frontend-only`): chains the backend gate, e2e and the frontend check, auto-starting the overlays each phase needs. Full flag table, overlay reconciliation and the `run-backend-tests.sh --summary` runs-no-tests warning: `scripts/notes/dev-test-gate.md`.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the Unit/API suite, then the security suites **once** under `FIPS_MODE=true`, then
@@ -156,6 +157,14 @@ this file is for.
   `backend/.dockerignore` must exclude with `**/` rules: `unit/test_image_hygiene.py` checks every
   depth and fails on a redundant rule, and `integration/test_image_hygiene_real_docker.py`
   cross-checks the ignore file against a real BuildKit context.
+- **Live docs check** — `check-docs-live.py` (stdlib only; exit 0 ok / 1 a check failed / 3 site unreachable).
+  Proves https://docs.opentranscribe.app/ matches the checkout: version badge vs `VERSION`, newest blog post
+  (by filename date) and newest `operations/upgrading-to-X-Y-Z` page reachable, key pages from
+  `sidebars.ts` (comments stripped, file must exist), sitemap, and freshness (Last-Modified, or the last
+  successful deploy run with `--use-gh`) against the last commit touching `docs-site/` or `VERSION`.
+  Inside `--grace-minutes` (90) a stale site is `PENDING`, not a failure. `--wait-seconds` retries for Pages
+  cache lag. Run by `.github/workflows/docs-live-check.yml`; tests drive it against a local `http.server`
+  (`unit/test_check_docs_live.py`). It is a release closing step (`.claude/skills/release/SKILL.md`).
 - **Release gates** — `check-schema-drift.py` (model-vs-schema, report-first),
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).

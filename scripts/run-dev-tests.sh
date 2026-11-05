@@ -311,8 +311,8 @@ fi
 resolve_needed_overlays
 
 if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" || "$WITH_PIPELINE_SMOKE" == "true" ]]; then
-    if ! curl -sf http://localhost:5174/health >/dev/null 2>&1; then
-        echo -e "${RED}error:${NC} dev backend not reachable at :5174 — run ./opentr.sh start dev first" >&2
+    if ! curl -sf http://localhost:${BACKEND_PORT:-5174}/health >/dev/null 2>&1; then
+        echo -e "${RED}error:${NC} dev backend not reachable at :${BACKEND_PORT:-5174} — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
     fi
 
@@ -352,8 +352,8 @@ sys.exit(2)
     setup_overlays
 fi
 if [[ ( "$RUN_E2E" == "true" && "$E2E_SMOKE" == "false" ) || "$WITH_PIPELINE_SMOKE" == "true" ]]; then
-    if ! curl -sf http://localhost:5173 >/dev/null 2>&1; then
-        echo -e "${RED}error:${NC} dev frontend not reachable at :5173 — run ./opentr.sh start dev first" >&2
+    if ! curl -sf http://localhost:${FRONTEND_PORT:-5173} >/dev/null 2>&1; then
+        echo -e "${RED}error:${NC} dev frontend not reachable at :${FRONTEND_PORT:-5173} — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
     fi
 fi
@@ -558,7 +558,7 @@ import requests
 budget = float(sys.argv[1])
 repo_root = pathlib.Path(sys.argv[2])
 deadline = time.monotonic() + budget
-backend_url = os.environ.get("E2E_BACKEND_URL", "http://localhost:5174")
+backend_url = os.environ.get("E2E_BACKEND_URL", "http://localhost:" + os.environ.get("BACKEND_PORT", "5174"))
 opensearch = "http://localhost:" + os.environ.get("OPENSEARCH_PORT", "5180")
 failed = False
 

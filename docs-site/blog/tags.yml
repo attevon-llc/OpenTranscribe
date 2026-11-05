@@ -132,3 +132,8 @@ pwa:
   label: PWA
   permalink: /pwa
   description: Progressive Web App features
+
+rag:
+  label: RAG
+  permalink: /rag
+  description: Retrieval-augmented chat over your transcripts

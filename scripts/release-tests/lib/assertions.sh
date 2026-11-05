@@ -19,6 +19,7 @@ set -euo pipefail
 as_pass=0
 as_fail=0
 as_skip=0
+as_na=0
 
 # A scenario runs as several resumable phases, each possibly in a different process, so the
 # in-memory counters above only ever see the phases that ran in THIS process: a resumed run
@@ -44,6 +45,13 @@ as_record() {
             echo -e "\033[1;33m  SKIP\033[0m  $label  ${detail}"
             as_skip=$((as_skip + 1))
             ;;
+        # NA is a check whose precondition does not exist for THIS run (a migration the FROM release
+        # already shipped, so there is nothing for the upgrade to do). It is neither a pass nor a skip:
+        # it is reported on its own line and never counted as evidence.
+        NA)
+            echo -e "\033[0;36m  N/A\033[0m   $label  ${detail}"
+            as_na=$((as_na + 1))
+            ;;
         *)
             echo -e "\033[0;31m  FAIL\033[0m  $label  ${detail}"
             as_fail=$((as_fail + 1))
@@ -51,7 +59,7 @@ as_record() {
     esac
     printf '| %s | %s | %s |\n' "$status" "$label" "$detail" >> "$TEST_REPORT_FILE"
     if [[ -n "$TEST_ASSERT_LEDGER" ]]; then
-        case "$status" in PASS | SKIP) ;; *) status=FAIL ;; esac
+        case "$status" in PASS | SKIP | NA) ;; *) status=FAIL ;; esac
         printf '%s\n' "$status" >> "$TEST_ASSERT_LEDGER"
     fi
 }
@@ -165,14 +173,15 @@ as_summary() {
         as_pass="$(as_ledger_count PASS)"
         as_fail="$(as_ledger_count FAIL)"
         as_skip="$(as_ledger_count SKIP)"
+        as_na="$(as_ledger_count NA)"
     fi
     local total=$((as_pass + as_fail + as_skip))
     echo
     if (( as_fail == 0 )); then
-        echo -e "\033[0;32m=== ${as_pass}/${total} assertions passed (${as_skip} skipped) ===\033[0m"
+        echo -e "\033[0;32m=== ${as_pass}/${total} assertions passed (${as_skip} skipped, ${as_na} not applicable) ===\033[0m"
         return 0
     else
-        echo -e "\033[0;31m=== ${as_fail}/${total} assertions FAILED (${as_skip} skipped) ===\033[0m"
+        echo -e "\033[0;31m=== ${as_fail}/${total} assertions FAILED (${as_skip} skipped, ${as_na} not applicable) ===\033[0m"
         return 1
     fi
 }

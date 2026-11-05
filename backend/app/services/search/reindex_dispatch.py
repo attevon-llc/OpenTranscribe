@@ -44,6 +44,16 @@ from app.core.constants import TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS
 logger = logging.getLogger(__name__)
 
 _DEBOUNCE_KEY_TEMPLATE = "transcript_reindex_debounce:{file_uuid}"
+# Claimed per file by the search-index sweep task; defined here so services never import tasks.
+SWEEP_COOLDOWN_KEY_TEMPLATE = "search_index_sweep:{file_uuid}"
+
+
+def reindex_coordination_keys(file_uuid: str) -> list[str]:
+    """Every Redis key the reindex path claims for ``file_uuid`` (debounce + sweep cooldown)."""
+    return [
+        _DEBOUNCE_KEY_TEMPLATE.format(file_uuid=file_uuid),
+        SWEEP_COOLDOWN_KEY_TEMPLATE.format(file_uuid=file_uuid),
+    ]
 
 
 class ReindexDispatch(enum.Enum):

@@ -117,7 +117,7 @@ def _check_password_length_rules(merged: dict[str, Any]) -> None:
 def _check_pki_cross_field_rules(merged: dict[str, Any], incoming_keys: frozenset[str]) -> None:
     """Refuse revocation checking with no CA bundle to build the issuer chain from.
 
-    ``core/config.py:_validate_pki_settings`` has always raised this at startup for
+    ``core/auth_settings_checks.py:validate_pki_settings`` has always raised this at startup for
     the ``.env`` spelling. It could not see the DB copy, which did not matter while
     ``pki_auth.py`` read ``settings.PKI_*`` directly and the DB keys were inert.
     Now that they are live (issue #498), the admin UI can assemble a state the

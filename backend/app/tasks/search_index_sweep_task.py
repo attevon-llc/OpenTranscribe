@@ -21,12 +21,12 @@ from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.queues import EmbeddingPriority
 from app.core.queues import UtilityPriority
+from app.services.search.reindex_dispatch import SWEEP_COOLDOWN_KEY_TEMPLATE
 from app.utils.task_lock import with_task_lock
 
 logger = logging.getLogger(__name__)
 
 SWEEP_LOCK_KEY = "search_index_sweep"
-_COOLDOWN_KEY_TEMPLATE = "search_index_sweep:{file_uuid}"
 
 
 def run_search_index_sweep(db: Session) -> dict[str, Any]:
@@ -42,7 +42,7 @@ def run_search_index_sweep(db: Session) -> dict[str, Any]:
     dispatched = 0
     redis = get_redis()
     for file_id, file_uuid, user_id in candidates:
-        key = _COOLDOWN_KEY_TEMPLATE.format(file_uuid=file_uuid)
+        key = SWEEP_COOLDOWN_KEY_TEMPLATE.format(file_uuid=file_uuid)
         if not redis.set(key, "1", nx=True, ex=settings.SEARCH_INDEX_SWEEP_COOLDOWN_S):
             continue
         if dispatch_transcript_reindex(

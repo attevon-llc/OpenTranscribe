@@ -15,6 +15,10 @@ or a second head would silently produce the wrong answer.
 Usage:
     alembic-head.py <backend_dir>          # prints the head revision id
     alembic-head.py <backend_dir> --json   # full graph report
+    alembic-head.py <backend_dir> --has-revision v448
+        # exit 0 when that revision (id, or the id's prefix before the first `_`) is the head or an
+        # ancestor of it; 1 when it is not; 2 on a malformed chain. Used to ask "did the FROM
+        # release already ship the migration this check exercises?"
 
 Exits non-zero when the chain is not a single clean line, printing every problem.
 """
@@ -85,30 +89,55 @@ def find_bases(graph: dict[str, str | None]) -> list[str]:
     return sorted(rev for rev, down in graph.items() if down is None)
 
 
-def main(argv: list[str]) -> int:
-    args = [a for a in argv[1:] if not a.startswith('--')]
-    as_json = '--json' in argv[1:]
+def reachable_from_head(graph: dict[str, str | None], head: str) -> set[str]:
+    """The head and every revision below it."""
+    seen: set[str] = set()
+    cur: str | None = head
+    while cur is not None and cur not in seen:
+        seen.add(cur)
+        cur = graph.get(cur)
+    return seen
 
-    if len(args) != 1:
-        print(__doc__, file=sys.stderr)
+
+def has_revision(graph: dict[str, str | None], wanted: str) -> bool:
+    """Whether *wanted* (a full id, or the part of an id before its first ``_``) is in the chain."""
+    heads = find_heads(graph)
+    if len(heads) != 1:
+        raise ValueError(f'expected exactly 1 head, found {heads}')
+    chain = reachable_from_head(graph, heads[0])
+    return any(rev == wanted or rev.split('_', 1)[0] == wanted for rev in chain)
+
+
+def _resolve_versions_dir(backend_dir: Path) -> Path | None:
+    """The alembic versions dir for *backend_dir*; also accepts the versions or alembic dir."""
+    versions_dir = backend_dir / 'alembic' / 'versions'
+    if versions_dir.is_dir():
+        return versions_dir
+    for candidate in (backend_dir / 'versions', backend_dir):
+        if (candidate / '__init__.py').exists() or list(candidate.glob('v*.py')):
+            return candidate
+    return None
+
+
+def _has_revision_exit(graph: dict[str, str | None], problems: list[str], wanted: str) -> int:
+    """Exit code for ``--has-revision``: 0 present, 1 absent, 2 unreadable graph or bad id."""
+    if problems:
+        for problem in problems:
+            print(f'ERROR: {problem}', file=sys.stderr)
+        return 2
+    try:
+        return 0 if has_revision(graph, wanted) else 1
+    except ValueError as err:
+        print(f'ERROR: {err}', file=sys.stderr)
         return 2
 
-    backend_dir = Path(args[0]).resolve()
-    versions_dir = backend_dir / 'alembic' / 'versions'
-    if not versions_dir.is_dir():
-        # Tolerate being handed the versions dir or the alembic dir directly.
-        for candidate in (backend_dir / 'versions', backend_dir):
-            if (candidate / '__init__.py').exists() or list(candidate.glob('v*.py')):
-                versions_dir = candidate
-                break
-        else:
-            print(f'ERROR: no alembic/versions under {backend_dir}', file=sys.stderr)
-            return 1
 
-    graph, problems = parse_versions(versions_dir)
+def _report_head(
+    graph: dict[str, str | None], problems: list[str], versions_dir: Path, as_json: bool
+) -> int:
+    """Print the single head (or the JSON summary) and return 1 when the graph has problems."""
     heads = find_heads(graph)
     bases = find_bases(graph)
-
     if len(heads) != 1:
         problems.append(f'expected exactly 1 head, found {len(heads)}: {heads}')
     if len(bases) != 1:
@@ -136,6 +165,33 @@ def main(argv: list[str]) -> int:
             print(heads[0])
 
     return 1 if problems else 0
+
+
+def main(argv: list[str]) -> int:
+    rest = argv[1:]
+    wanted: str | None = None
+    if '--has-revision' in rest:
+        i = rest.index('--has-revision')
+        if i + 1 >= len(rest):
+            print(__doc__, file=sys.stderr)
+            return 2
+        wanted = rest[i + 1]
+        del rest[i : i + 2]
+    args = [a for a in rest if not a.startswith('--')]
+    if len(args) != 1:
+        print(__doc__, file=sys.stderr)
+        return 2
+
+    backend_dir = Path(args[0]).resolve()
+    versions_dir = _resolve_versions_dir(backend_dir)
+    if versions_dir is None:
+        print(f'ERROR: no alembic/versions under {backend_dir}', file=sys.stderr)
+        return 1
+
+    graph, problems = parse_versions(versions_dir)
+    if wanted is not None:
+        return _has_revision_exit(graph, problems, wanted)
+    return _report_head(graph, problems, versions_dir, '--json' in rest)
 
 
 if __name__ == '__main__':

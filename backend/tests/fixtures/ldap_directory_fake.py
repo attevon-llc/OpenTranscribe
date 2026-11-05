@@ -85,6 +85,14 @@ class _Server:
         if directory.server_error is not None:
             raise directory.server_error
         self.host = host
+        # ldap3: an ldap:// or ldaps:// scheme overrides use_ssl; a bare host follows it.
+        lowered = host.lower()
+        if lowered.startswith("ldaps://"):
+            self.ssl = True
+        elif lowered.startswith("ldap://"):
+            self.ssl = False
+        else:
+            self.ssl = bool(kwargs.get("use_ssl"))
 
 
 class _Connection:

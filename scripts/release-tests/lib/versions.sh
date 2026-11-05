@@ -336,6 +336,13 @@ ver_alembic_head() {
     python3 "$(dirname "${BASH_SOURCE[0]}")/alembic-head.py" "$backend_dir"
 }
 
+# ver_alembic_has_revision BACKEND_DIR REV -- 0 when REV is already in that tree's migration chain
+# (used on the FROM worktree to learn whether the FROM release shipped a migration), 1 when not,
+# 2 when the chain cannot be read.
+ver_alembic_has_revision() {
+    python3 "$(dirname "${BASH_SOURCE[0]}")/alembic-head.py" "$1" --has-revision "$2"
+}
+
 # ------------------------------------------------------------------- reporting
 
 ver_summary() {

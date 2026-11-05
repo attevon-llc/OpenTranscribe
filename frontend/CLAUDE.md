@@ -17,7 +17,8 @@ is frontend-specific. Folder-level `CLAUDE.md` files add detail where you're wor
   non-eagerly and `ensureLocaleLoaded()` fetches only the active one. Never static-import a
   locale JSON: that puts all ~6 MB (12 locales) back into the entry chunk. Only the active language is
   loaded (not the `en` fallback), which is safe because `npm run check:i18n` enforces exact
-  key parity — keep it green.
+  key parity — keep it green. Plural keys (`_one`/`_other` in `en.json`) are held to each locale's own CLDR
+  categories (`ru` needs `_few`/`_many`, `ja`/`ko`/`zh` only `_other`): a missing form falls back to English.
   **A link or badge inside a sentence is ONE translated string with a named placeholder**, rendered
   with `$lib/i18n/slots` (`$t(key, { link: SLOT })` then `splitAtSlot`); never a `*Suffix` key or a
   value that starts with a space, dash or punctuation (`lib/i18n/sourceCopy.test.ts`). Accents are

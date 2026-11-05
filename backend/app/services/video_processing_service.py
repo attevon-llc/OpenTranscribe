@@ -12,11 +12,14 @@ short sessions for the two reads they need (the filename, and the transcript for
 the SRT), so no transaction spans the slow work.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import re
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,6 +34,8 @@ from app.services.minio_bucket_admin import MinIOService
 from app.services.video_subtitle_burn import VideoSubtitleBurnMixin
 
 if TYPE_CHECKING:
+    from urllib3 import BaseHTTPResponse
+
     from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
@@ -101,7 +106,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         status: str,
         progress: int | None = None,
         error: str | None = None,
-    ):
+    ) -> None:
         """Send download progress update via WebSocket."""
         try:
             # This publishes straight to the ``websocket_notifications`` Redis
@@ -143,7 +148,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         status: str,
         progress: int | None = None,
         error: str | None = None,
-    ):
+    ) -> None:
         """Synchronous wrapper for sending download progress updates."""
         try:
             # Create new event loop for this thread if needed
@@ -160,7 +165,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         except Exception as e:
             logger.error(f"Failed to send download progress update (sync): {e}")
 
-    def _ensure_cache_bucket_exists(self):
+    def _ensure_cache_bucket_exists(self) -> None:
         """Ensure the cache bucket exists."""
         try:
             if not self.minio_service.bucket_exists(self.cache_bucket):
@@ -256,7 +261,9 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         except Exception:
             return False
 
-    def get_cached_video_stream(self, cache_key: str):
+    def get_cached_video_stream(
+        self, cache_key: str
+    ) -> tuple[Iterator[bytes], int, int | None, int | None]:
         """Get streaming response for a cached video."""
         try:
             # Use our custom cache bucket streaming function
@@ -275,11 +282,13 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             logger.error(f"Error getting cached object stats: {e}")
             return None
 
-    def _create_chunk_generator(self, response, max_bytes: int | None):
+    def _create_chunk_generator(
+        self, response: BaseHTTPResponse, max_bytes: int | None
+    ) -> Iterator[bytes]:
         """Create a generator that yields chunks from the MinIO response."""
         chunk_size = VIDEO_CHUNK_SIZE
 
-        def generate_chunks():
+        def generate_chunks() -> Iterator[bytes]:
             try:
                 bytes_read = 0
                 while True:
@@ -306,7 +315,9 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
 
         return generate_chunks()
 
-    def _get_cache_file_stream(self, object_name: str, range_header: str | None = None):
+    def _get_cache_file_stream(
+        self, object_name: str, range_header: str | None = None
+    ) -> tuple[Iterator[bytes], int, int | None, int | None]:
         """Get a file stream from the cache bucket."""
         try:
             total_length = self._get_object_size(object_name)
@@ -449,7 +460,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             logger.warning(f"Could not list masked derived renders for {filename}: {e}")
             return []
 
-    def clear_derived_cache(self, file_id: int, filename: str) -> "RemovalResult":
+    def clear_derived_cache(self, file_id: int, filename: str) -> RemovalResult:
         """Delete a file's derived-cache objects. **Takes no DB session.**
 
         Five MinIO round trips plus one listing, so callers must not be holding a

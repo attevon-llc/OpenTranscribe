@@ -502,9 +502,11 @@ def test_bulk_re_detection_reports_the_lite_refusal_per_file_before_clearing_spe
 ):
     """The gallery's bulk action makes the single-file refusal per file: on lite the result
     carries the plan's code and fixed sentence and the speakers stay; the full image re-runs."""
-    from app.api.endpoints.files import management
+    from app.api.endpoints.files import bulk_rework_actions
 
-    monkeypatch.setattr(management, "transcript_is_regenerable", lambda db, media_file: True)
+    monkeypatch.setattr(
+        bulk_rework_actions, "transcript_is_regenerable", lambda db, media_file: True
+    )
     if deployment == "lite":
         pipeline_env("lite")
     world.add_asr_config("deepgram", "nova-3", active=True)

@@ -14,7 +14,7 @@ backend/app/api/endpoints/files/media_delivery.py	1	ratchet: may only go down
 backend/app/api/endpoints/files/complete_upload.py	4	ratchet: may only go down
 backend/app/api/endpoints/files/crud.py	3	ratchet: may only go down
 backend/app/api/endpoints/files/detail_response.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/management.py	1	ratchet: may only go down
+backend/app/api/endpoints/files/bulk_actions.py	1	ratchet: may only go down
 backend/app/api/endpoints/files/post_processing.py	1	ratchet: may only go down
 backend/app/api/endpoints/files/redaction_gate.py	2	ratchet: may only go down
 backend/app/api/endpoints/files/subtitles.py	1	ratchet: may only go down

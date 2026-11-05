@@ -6,8 +6,8 @@
 
 # Code Quality & Formatting
 black==26.10.1
-ruff==0.16.7
-mypy==2.4.0
+ruff==0.17.3
+mypy==2.4.1
 mypy-extensions==1.1.0
 import-linter==2.15  # Enforces the app ↛ cloud seam (forbidden contract in pyproject.toml)
 
@@ -23,10 +23,10 @@ pytest-cov==7.1.0  # Code coverage reports — venv/CI only; no container run re
 # installs requirements-ci.txt (CPU-only, kept fast), and a mutation run is minutes
 # to tens of minutes per module. Config is [tool.mutmut] in pyproject.toml; the
 # entry point is scripts/run-mutation-tests.sh, which is not part of any gate.
-mutmut==3.8.0
+mutmut==3.8.1
 
 # E2E (Playwright) test infrastructure
-pytest-playwright==0.9.0  # Playwright pytest plugin (browser fixtures)
+pytest-playwright==0.10.0  # Playwright pytest plugin (browser fixtures)
 axe-playwright-python==0.1.8  # Bundled axe-core a11y scans (no CDN fetch at runtime)
 
 # Git Hooks & Pre-commit
@@ -40,7 +40,7 @@ pre-commit==4.7.0
 # There is deliberately NO types-redis: redis ships inline types, and a stub package would win
 # over them under PEP 561 and hide redis's real signatures.
 types-passlib==1.7.7.20260211
-types-python-dateutil==2.9.0.20261021
+types-python-dateutil==2.9.0.20261029
 types-PyYAML==6.0.12.20260906
 
 # Packages backend code imports directly that nothing else here pins exactly (they would
@@ -51,7 +51,7 @@ certifi==2026.10.23
 limits==5.8.0
 packaging==26.3
 pillow==13.0.0
-playwright==1.63.0
+playwright==1.64.1
 urllib3==2.8.0
 
 # Development Utilities

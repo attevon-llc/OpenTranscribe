@@ -150,17 +150,17 @@ Configure language settings in: **Settings → Transcription → Language**
 
 **12 languages** (every release ships all 12 in lockstep):
 - English (default)
-- Arabic (\u0627\u0644\u0639\u0631\u0628\u064a\u0629) \u2014 right-to-left
+- Arabic (العربية) — right-to-left
 - German (Deutsch)
-- Spanish (Espa\u00f1ol)
-- French (Fran\u00e7ais)
+- Spanish (Español)
+- French (Français)
 - Italian (Italiano)
-- Japanese (\u65e5\u672c\u8a9e)
-- Korean (\ud55c\uad6d\uc5b4)
+- Japanese (日本語)
+- Korean (한국어)
 - Dutch (Nederlands)
-- Portuguese (Portugu\u00eas)
-- Russian (\u0420\u0443\u0441\u0441\u043a\u0438\u0439)
-- Chinese (\u4e2d\u6587)
+- Portuguese (Português)
+- Russian (Русский)
+- Chinese (中文)
 
 Change the UI language in: **Settings → Profile & Security** (Language)
 

@@ -14,7 +14,7 @@ from datetime import datetime
 
 import pytest
 
-from app.core import celery as celery_module
+from app.core import celery_worker_lifecycle as lifecycle_module
 from app.services.local_models import worker_report
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("local_model_redis")]
@@ -103,8 +103,8 @@ class TestPreloadReportsAfterPinning:
         for name, module in (("model_manager", manager), ("vram_budget", budget)):
             monkeypatch.setitem(sys.modules, f"app.transcription.{name}", module)
             monkeypatch.setattr(transcription_pkg, name, module, raising=False)
-        monkeypatch.setattr(celery_module, "reconcile_gpu_concurrent_requests", lambda: None)
-        monkeypatch.setattr(celery_module, "configure_gpu_host_admission", lambda: None)
+        monkeypatch.setattr(lifecycle_module, "reconcile_gpu_concurrent_requests", lambda: None)
+        monkeypatch.setattr(lifecycle_module, "configure_gpu_host_admission", lambda: None)
 
     @pytest.fixture
     def events(self, monkeypatch):
@@ -132,13 +132,13 @@ class TestPreloadReportsAfterPinning:
     def test_the_model_is_reported_under_the_node_name_once_it_is_pinned(self, events):
         sender = types.SimpleNamespace(hostname="gpu-transcription@host1")
 
-        celery_module.preload_models(sender=sender)
+        lifecycle_module.preload_models(sender=sender)
 
         assert events == [("pin", "tiny"), ("report", "gpu-transcription@host1", "tiny")]
 
     def test_a_worker_that_never_pinned_a_model_reports_nothing(self, events, monkeypatch):
         monkeypatch.delenv("PRELOAD_GPU_MODELS")
 
-        celery_module.preload_models(sender=types.SimpleNamespace(hostname="cpu-processor@c"))
+        lifecycle_module.preload_models(sender=types.SimpleNamespace(hostname="cpu-processor@c"))
 
         assert events == []

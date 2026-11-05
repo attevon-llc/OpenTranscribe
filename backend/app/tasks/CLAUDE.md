@@ -352,9 +352,9 @@ indexing → WebSocket notification.
   `utility`, `redaction`, plus dynamic `cloud-asr`, `cpu-transcribe`, `gpu-transcribe`,
   `gpu-diarize`. **`task_create_missing_queues=False`** — a queue-name typo raises at
   dispatch instead of creating a phantom queue. **Every registered task needs a
-  `task_routes` entry**, or an entry in `celery.py:INTENTIONALLY_UNROUTED_TASKS` with a
+  `task_routes` entry**, or an entry in `celery_routing.py:INTENTIONALLY_UNROUTED_TASKS` with a
   written reason (call-time routing only) — `tests/unit/test_task_routes_complete.py` fails
-  otherwise (issue #1268); `_validate_task_routes()` logs the same check at worker startup.
+  otherwise (issue #1268); `celery._validate_task_routes()` logs the same check at worker startup.
   **Never put `queue=` in a task decorator**: Celery merges the route UNDER the task's own
   options, so a decorator queue silently overrides `task_routes` (the same test forbids it).
 - ⚠️ **A valid route is not a drained route, and `--lite` is where they diverge.**
@@ -363,7 +363,7 @@ indexing → WebSocket notification.
   published into a queue nothing drains — no error, no retry, and the API has already
   answered 200 (issue #865, and issue #584 for one earlier instance of the same shape).
   The eight speaker/diarization tasks that PREFER a GPU but are correct without one are
-  listed once as `celery.py:GPU_PREFERRED_TASKS` and routed through
+  listed once as `celery_routing.py:GPU_PREFERRED_TASKS` and routed through
   `queues.gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
   (the lite overlay sets that on **every** service, and routing is decided by the
   publisher). The reroute costs only speed — `requirements-lite.txt` deliberately keeps
@@ -387,7 +387,7 @@ indexing → WebSocket notification.
   outage where queueing is the *correct* behaviour, not a case for silent CPU
   downgrade.
 - Priorities are **per-queue** (`GPUPriority.X` is unrelated to `CPUPriority.X`); the scheme
-  is documented in the comment block above `task_routes` in `core/celery.py`.
+  is documented in the comment block above `task_queues` in `core/celery.py`.
 - ⚠️ **Not every worker runs `--pool=threads`, and assuming so cost issue #631 an entire
   investigation.** Only the GPU family (`GPU_WORKER_POOL`), `celery-redaction`
   (`REDACTION_WORKER_POOL`) and the gpu-scale worker (`GPU_SCALE_POOL`) default to threads.
@@ -396,7 +396,7 @@ indexing → WebSocket notification.
   `celery-nlp-worker`, `celery-embedding-worker` — so `worker_process_init` **does** fire on
   them, once per forked child. Logging is still wired via `setup_logging` (which covers both
   pool types); `worker_process_init` is not where you put logging setup.
-  **Anything you add to `core/celery.py:init_worker_process` runs inside a fork against
+  **Anything you add to `core/celery_worker_lifecycle.py:init_worker_process` runs inside a fork against
   `worker_proc_alive_timeout`** — overrun it and the child is SIGKILLed before it signals UP,
   its replacement runs the same code, and the worker enters a fork/kill loop that consumes
   zero tasks (69,231 kills over 10 h 46 m, issue #631). No network, no locks, no model loads

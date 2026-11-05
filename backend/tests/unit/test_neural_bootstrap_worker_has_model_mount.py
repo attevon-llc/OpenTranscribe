@@ -39,11 +39,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE = REPO_ROOT / "docker-compose.yml"
-CELERY = REPO_ROOT / "backend" / "app" / "core" / "celery.py"
+CELERY = REPO_ROOT / "backend" / "app" / "core" / "celery_beat.py"
 
 pytestmark = pytest.mark.skipif(
     not COMPOSE.is_file() or not CELERY.is_file(),
-    reason="docker-compose.yml or app/core/celery.py is not present in this checkout",
+    reason="docker-compose.yml or app/core/celery_beat.py is not present in this checkout",
 )
 
 MOUNT_PATH = "/ml-models"

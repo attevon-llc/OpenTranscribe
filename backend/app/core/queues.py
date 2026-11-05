@@ -125,7 +125,7 @@ def speaker_clustering_queue(largest_partition: int, deployment_mode: str | None
     task (``gpu`` in a full deployment, ``cpu`` in lite).
 
     The dispatcher passes the queue explicitly; the static ``task_routes`` entry
-    (``GPU_PREFERRED_TASKS`` in ``core/celery.py``) is only the fallback for a
+    (``GPU_PREFERRED_TASKS`` in ``core/celery_routing.py``) is only the fallback for a
     publisher that does not.
     """
     if largest_partition >= SPEAKER_CLUSTERING_GPU_MIN_SPEAKERS:

@@ -41,11 +41,11 @@ should import `app.api` or `app.services` at module scope.
   `chat_defaults.py`, `llm_defaults.py` (incl. `LLM_REASONING_*`, Bedrock), `redaction_defaults.py`.
   The env-reading runtime functions live with their module; import from the home, never via
   `constants`.
-- `celery.py` — `celery_app`, explicit `task_queues`, `task_routes`, beat schedule. Patches
+- `celery.py` — `celery_app` and its config; queues/routes in `celery_routing.py`, beat in `celery_beat.py`, fork-init/preload hooks in `celery_worker_lifecycle.py`. Patches
   `torch.load(weights_only=False)` *before* any ML import; the whole ML block is skipped when
   `SKIP_CELERY=true` (test startup, **and** `scripts/celery_pool_healthcheck.py`, which is a
   CLI client that never runs a task — measured 7.3 s -> 2.8 s per probe).
-  ⚠️ **`init_worker_process` runs inside every forked prefork child, against a kill timer.**
+  ⚠️ **`init_worker_process` (`celery_worker_lifecycle.py`) runs inside every forked prefork child, against a kill timer.**
   `worker_process_init` fires from `billiard.pool.Worker.after_fork()`, which runs *before*
   `on_loop_start()` puts `WORKER_UP`; the parent SIGKILLs any child that misses
   `worker_proc_alive_timeout` and forks a replacement, which runs the same code. So a slow

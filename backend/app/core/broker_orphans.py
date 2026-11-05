@@ -228,8 +228,8 @@ def transcription_stage_queues() -> list[str]:
     ``UNROUTED_STAGE_QUEUES`` next to that allowlist, and a test pins that every unrouted
     stage appears there.
     """
-    from app.core.celery import UNROUTED_STAGE_QUEUES
     from app.core.celery import celery_app
+    from app.core.celery_routing import UNROUTED_STAGE_QUEUES
 
     routes = celery_app.conf.task_routes or {}
     queues: set[str] = set()

@@ -219,9 +219,9 @@ def _app_sources() -> dict[str, str]:
 
 
 def _processing_tasks() -> dict[str, Task]:
-    from app.core.celery import GPU_PREFERRED_TASKS
-    from app.core.celery import INTENTIONALLY_UNROUTED_TASKS
     from app.core.celery import celery_app
+    from app.core.celery_routing import GPU_PREFERRED_TASKS
+    from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS
 
     celery_app.loader.import_default_modules()
     routes = celery_app.conf.task_routes

@@ -3,7 +3,7 @@
 ``/asr-settings/local-model/set`` only writes the database; a running worker keeps the model it
 pinned at start. After ``/restart`` the Settings page needs to know when the new model is
 really serving, and the only truthful source is the worker itself. So a Whisper worker records
-what it loaded, in Redis, the moment it has pinned it (``core/celery.py:preload_models``), and
+what it loaded, in Redis, the moment it has pinned it (``core/celery_worker_lifecycle.py:preload_models``), and
 ``GET /asr-settings/local-model/active`` reads those records.
 
 Activation semantics, verified against celery 5.6.3 (see ``tests`` and the plan):

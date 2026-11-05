@@ -139,7 +139,7 @@ Enrichment (speaker embeddings, indexing, summarization, topics, facts, redactio
 `recovery.py` holds `system.reclaim_lost_tasks` and `system.reclaim_orphaned_deliveries` (scheduled) and the startup and periodic health recovery (`system.health_check`). The stuck-file logic lives in `services/file_cleanup_cycle.py` and `utils/stuck_file_recovery.py`.
 
 ### Periodic schedule
-`celery_app.conf.beat_schedule` in `app/core/celery.py` is the authoritative schedule (about 20 entries: health check every 10 minutes, lost-task reclaim every 2 minutes, search maintenance and sweeps, OpenSearch orphan cleanup, embedding consistency check, GPU stats, retention, scratch janitor, upload sweeper, watch-source scans, backup and mirror checks, directory sync check, chat retention, account-inactivity sweep, session-cap sweep, GDPR erasure reconcile). Read it there rather than from this list. The `celery-beat` service runs it.
+`BEAT_SCHEDULE` in `app/core/celery_beat.py` is the authoritative schedule (about 20 entries: health check every 10 minutes, lost-task reclaim every 2 minutes, search maintenance and sweeps, OpenSearch orphan cleanup, embedding consistency check, GPU stats, retention, scratch janitor, upload sweeper, watch-source scans, backup and mirror checks, directory sync check, chat retention, account-inactivity sweep, session-cap sweep, GDPR erasure reconcile). Read it there rather than from this list. The `celery-beat` service runs it.
 
 ## Task Naming & Queue Convention
 
@@ -162,7 +162,7 @@ Legacy flat names (for example `generate_thumbnail`, `extract_speaker_embeddings
 
 ### Queue Assignment Rules
 
-1. **Define queue routing in `task_routes` only** (`backend/app/core/celery.py`), the single source of truth
+1. **Define queue routing in `task_routes` only** (`backend/app/core/celery_routing.py`), the single source of truth
 2. **Do NOT put `queue=` in task decorators.** A decorator queue silently overrides `task_routes`. Enforced by `tests/unit/test_task_routes_complete.py`
 3. **Use `CeleryQueues.*` constants** from `app.core.queues`, never raw queue-name strings
 4. **Exception**: tasks routed at call time (for example `transcription.gpu_transcribe`, `cpu_transcribe`, the plan's post stage) are listed with a reason in `INTENTIONALLY_UNROUTED_TASKS` in `core/celery.py`

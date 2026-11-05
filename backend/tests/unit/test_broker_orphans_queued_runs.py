@@ -148,8 +148,8 @@ def test_only_the_queues_a_transcription_stage_can_wait_on_are_read():
 
 def test_every_call_time_routed_stage_declares_its_queues():
     """A stage dispatched with a call-time queue must be listed, or the reaper never looks."""
-    from app.core.celery import INTENTIONALLY_UNROUTED_TASKS
-    from app.core.celery import UNROUTED_STAGE_QUEUES
+    from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS
+    from app.core.celery_routing import UNROUTED_STAGE_QUEUES
 
     unrouted_stages = set(INTENTIONALLY_UNROUTED_TASKS) & broker_orphans.TRANSCRIPTION_STAGES
     assert unrouted_stages == set(UNROUTED_STAGE_QUEUES)

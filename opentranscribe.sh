@@ -588,7 +588,7 @@ force_cpu_mode_requested() {
     fi
     if [ -f .env ]; then
         local value
-        value=$(read_env_value FORCE_CPU_MODE)
+        value=$(read_env_value FORCE_CPU_MODE | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
         [ "$value" = "true" ]
         return
     fi

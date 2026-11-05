@@ -11,6 +11,7 @@ genuinely gains an ``await``.
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -81,7 +82,7 @@ def create_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> CollectionSchema:
     """Create a collection in the request's tenant.
 
     Consumed by the gallery's "New collection" dialog and by scripts organising an
@@ -162,7 +163,7 @@ def get_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> CollectionResponse:
     """Get a specific collection with its media files.
 
     Uses PermissionService: any user with viewer+ permission can access.
@@ -221,7 +222,7 @@ def update_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> CollectionSchema:
     """Update a collection. Requires editor+ permission. Tenant-gated (#262d)."""
     collection, permission = get_collection_by_uuid_with_sharing(
         db, collection_uuid, current_user.id, min_permission="editor", organization_id=ctx.org_id
@@ -296,7 +297,7 @@ def set_collection_visibility(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> CollectionSchema:
     """Restrict an organization collection to its named people, or open it to the organization.
 
     ``restricted``: only the creator, the organization's admins and the people it is shared
@@ -378,7 +379,7 @@ def delete_collection(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Delete a collection. Tenant-gated (#262d).
 
     Personal collection: only its owner. Organization collection (v422): its

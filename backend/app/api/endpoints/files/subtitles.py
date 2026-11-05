@@ -11,6 +11,7 @@ too, so the download cannot be a way around the gate the page already applies.
 """
 
 import logging
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter
 from fastapi import Body
@@ -28,7 +29,9 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.audit_events import AuditEventType
 from app.core.exceptions import DomainError
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.db.base import get_db
+from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import SubtitleValidationResult
 from app.services.content_audit import AuditedResource
@@ -50,13 +53,13 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_subtitle_redaction(
-    db,
-    media_file,
-    current_user,
+    db: Session,
+    media_file: MediaFile,
+    current_user: User,
     redact: bool,
-    organization_id=None,
+    organization_id: int | None = None,
     bypass: PlatformBypass = PlatformBypass.none(),
-):
+) -> tuple[EffectiveRedactionConfig, set[str]]:
     """Resolve (cfg, reveal_categories) for a subtitle export.
 
     Honors the admin forced-export lock: when ``export_locked`` is set, the original
@@ -116,7 +119,7 @@ def get_subtitles(
     include_speakers: bool = Query(True, description="Include speaker labels in subtitles"),
     subtitle_format: str = Query("srt", description="Subtitle format (srt, webvtt, txt)"),
     redact: bool = Query(True, description="Apply content redaction (owner/admin may disable)"),
-):
+) -> Response:
     """
     Generate and download subtitles for a media file.
 
@@ -224,7 +227,7 @@ def validate_subtitles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> SubtitleValidationResult:
     """
     Validate subtitle timing and content for a media file.
 
@@ -317,7 +320,7 @@ def prepare_bulk_export(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, str]:
     """Queue an async bulk subtitle export and return a job id.
 
     The ZIP is built on the ``download`` worker, uploaded to object storage, and
@@ -455,7 +458,7 @@ def _cached_outcome_frame(cached: bytes | str, requester_id: int) -> str:
 def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
     current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream
-):
+) -> StreamingResponse:
     """Server-Sent Events stream for an async bulk export.
 
     Events: ``progress`` (status text), ``ready`` (``{url, filename, exported, skipped}``),
@@ -479,7 +482,7 @@ def bulk_export_stream(
     from app.core.config import settings
     from app.services.download_events import bulk_export_channel
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[str]:
         # The whole generator is iterated ON the event loop, so every Redis call in it
         # must be async. The result-cache read used to go through the synchronous
         # ``get_redis()`` singleton, stalling every other request for the round trip
@@ -580,7 +583,7 @@ def bulk_export_stream(
 
 
 @router.get("/supported-formats")
-def get_supported_formats():
+def get_supported_formats() -> dict[str, list[str]]:
     """
     Get list of supported subtitle formats.
 

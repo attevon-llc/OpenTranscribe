@@ -39,7 +39,7 @@ def list_tag_collisions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[TagCollisionCluster]:
     """Groups of tags whose names differ only by case, separators or spacing.
 
     Each group names the member a merge should keep, and lists similar but
@@ -66,7 +66,7 @@ def list_tags_on_files(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[TagOnSelection]:
     """The tags a selection of files carries, and on how many of them.
 
     Any file in the selection you cannot open fails the whole request exactly
@@ -113,7 +113,7 @@ def list_files_for_tag(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagFileList:
     """Your accessible files that carry a tag, newest first, with the true total."""
     tag_id = (
         db.query(Tag.id)

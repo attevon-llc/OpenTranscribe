@@ -152,7 +152,7 @@ def list_speaker_profiles(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[dict[str, Any]]:
     """List the caller's speaker profiles in the active tenant, including shared ones."""
     try:
         # A caller who sees all in scope gets every profile of the tenant; regular users
@@ -260,7 +260,7 @@ def create_speaker_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Create a new speaker profile (org-stamped from the request context, #262e)."""
     try:
         # Names are unique per user per tenant (v430).
@@ -355,7 +355,7 @@ def update_speaker_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Update a speaker profile.
 
     A name change is **not** a metadata edit. ``SpeakerProfile.name`` is not a
@@ -446,7 +446,7 @@ def get_speaker_profile_occurrences(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[dict[str, Any]]:
     """Get all media files of the active tenant where a speaker profile appears."""
     try:
         profile = require_profile_in_scope(
@@ -484,7 +484,7 @@ def delete_speaker_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Delete a speaker profile, taking its name and voice back from everything it reached.
 
     A linked speaker carries the profile's name as its display name (the invariant

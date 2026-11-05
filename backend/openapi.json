@@ -34630,7 +34630,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Collection Api Collections  Collection Uuid  Delete",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -37069,7 +37073,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Prepare Bulk Export Api Files Bulk Export Prepare Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -37643,7 +37653,16 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "title": "Response Get Supported Formats Api Files Supported Formats Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -39089,7 +39108,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Retry Summary Api Files  File Uuid  Retry Summary Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -39618,7 +39641,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Summary Api Files  File Uuid  Summary Delete",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -39712,7 +39739,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Summary Status Api Files  File Uuid  Summary Status Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -46100,7 +46131,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Speaker Media Preview Api Speaker Clusters Speakers  Speaker Uuid  Media Preview Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -46135,7 +46170,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Clustering Stats Api Speaker Clusters Stats Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -46382,7 +46421,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Analyze Outliers Api Speaker Clusters  Cluster Uuid  Analyze Outliers Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -46558,7 +46601,11 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Unassign Speakers Api Speaker Clusters  Cluster Uuid  Unassign Post",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"
@@ -54055,7 +54102,13 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Health Check Health Get",
+                  "type": "object"
+                }
               }
             },
             "description": "Successful Response"

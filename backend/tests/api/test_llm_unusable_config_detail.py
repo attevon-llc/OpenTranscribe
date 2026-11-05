@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 import pytest
 
-from app.api.endpoints.files.management import _handle_identify_speakers_action
-from app.api.endpoints.files.management import _handle_summarize_action
+from app.api.endpoints.files.bulk_action_handlers import _handle_identify_speakers_action
+from app.api.endpoints.files.bulk_action_handlers import _handle_summarize_action
 from app.services.llm_service import LLMConfigFailure
 from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService

@@ -11,8 +11,8 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from app.api.endpoints.files.management import _handle_identify_speakers_action
-from app.api.endpoints.files.management import _handle_summarize_action
+from app.api.endpoints.files.bulk_action_handlers import _handle_identify_speakers_action
+from app.api.endpoints.files.bulk_action_handlers import _handle_summarize_action
 
 RESOLVE = "app.services.llm_service.LLMService._resolve_user_llm_settings"
 UNREADABLE = "AI provider settings could not be read. Try again in a moment."

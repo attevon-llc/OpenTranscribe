@@ -15,7 +15,7 @@ import sys
 
 import pytest
 
-from app.core import celery as celery_module
+from app.core import celery_worker_lifecycle as lifecycle_module
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +38,7 @@ def test_unset_engine_slots_default_to_the_thread_count(monkeypatch):
     import os
 
     _argv(monkeypatch, "--pool=threads", "--concurrency=4")
-    celery_module.reconcile_gpu_concurrent_requests()
+    lifecycle_module.reconcile_gpu_concurrent_requests()
     assert os.environ["GPU_CONCURRENT_REQUESTS"] == "4"
 
 
@@ -46,7 +46,7 @@ def test_the_short_flag_spelling_is_understood(monkeypatch):
     import os
 
     _argv(monkeypatch, "-P", "threads", "-c", "3")
-    celery_module.reconcile_gpu_concurrent_requests()
+    lifecycle_module.reconcile_gpu_concurrent_requests()
     assert os.environ["GPU_CONCURRENT_REQUESTS"] == "3"
 
 
@@ -54,7 +54,7 @@ def test_the_result_feeds_the_transcription_config(monkeypatch):
     from app.transcription.config import TranscriptionConfig
 
     _argv(monkeypatch, "--pool=threads", "--concurrency=4")
-    celery_module.reconcile_gpu_concurrent_requests()
+    lifecycle_module.reconcile_gpu_concurrent_requests()
     assert TranscriptionConfig._resolve_concurrent_requests() == 4
 
 
@@ -63,8 +63,8 @@ def test_a_mismatch_warns_once_naming_both_values(monkeypatch, caplog):
 
     monkeypatch.setenv("GPU_CONCURRENT_REQUESTS", "1")
     _argv(monkeypatch, "--pool=threads", "--concurrency=4")
-    with caplog.at_level(logging.WARNING, logger="app.core.celery"):
-        celery_module.reconcile_gpu_concurrent_requests()
+    with caplog.at_level(logging.WARNING, logger="app.core.celery_worker_lifecycle"):
+        lifecycle_module.reconcile_gpu_concurrent_requests()
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
@@ -77,8 +77,8 @@ def test_a_mismatch_warns_once_naming_both_values(monkeypatch, caplog):
 def test_matching_values_are_silent(monkeypatch, caplog):
     monkeypatch.setenv("GPU_CONCURRENT_REQUESTS", "4")
     _argv(monkeypatch, "--pool=threads", "--concurrency=4")
-    with caplog.at_level(logging.WARNING, logger="app.core.celery"):
-        celery_module.reconcile_gpu_concurrent_requests()
+    with caplog.at_level(logging.WARNING, logger="app.core.celery_worker_lifecycle"):
+        lifecycle_module.reconcile_gpu_concurrent_requests()
     assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
@@ -87,7 +87,7 @@ def test_a_prefork_pool_is_left_alone(monkeypatch):
     import os
 
     _argv(monkeypatch, "--pool=prefork", "--concurrency=4")
-    celery_module.reconcile_gpu_concurrent_requests()
+    lifecycle_module.reconcile_gpu_concurrent_requests()
     assert "GPU_CONCURRENT_REQUESTS" not in os.environ
 
 
@@ -96,7 +96,7 @@ def test_a_non_gpu_worker_is_left_alone(monkeypatch):
 
     monkeypatch.delenv("PRELOAD_GPU_MODELS")
     _argv(monkeypatch, "--pool=threads", "--concurrency=4")
-    celery_module.reconcile_gpu_concurrent_requests()
+    lifecycle_module.reconcile_gpu_concurrent_requests()
     assert "GPU_CONCURRENT_REQUESTS" not in os.environ
 
 
@@ -121,5 +121,5 @@ def test_preload_reconciles_before_building_the_config(monkeypatch):
     monkeypatch.delenv("PRELOAD_CPU_WHISPER", raising=False)
     monkeypatch.delenv("PRELOAD_REDACTION_MODELS", raising=False)
     _argv(monkeypatch, "--pool=threads", "--concurrency=4")
-    celery_module.preload_models()
+    lifecycle_module.preload_models()
     assert seen == ["4"]

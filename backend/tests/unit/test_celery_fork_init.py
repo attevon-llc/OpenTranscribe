@@ -30,11 +30,11 @@ import pytest
 import yaml
 from celery.concurrency.asynpool import PROC_ALIVE_TIMEOUT
 
-from app.core import celery as celery_module
+from app.core import celery_worker_lifecycle as lifecycle_module
 from app.core.celery import celery_app
-from app.core.celery import init_worker_process
-from app.core.celery import preload_models
-from app.core.celery import publish_hf_token_to_environment
+from app.core.celery_worker_lifecycle import init_worker_process
+from app.core.celery_worker_lifecycle import preload_models
+from app.core.celery_worker_lifecycle import publish_hf_token_to_environment
 from app.core.config import settings
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -187,7 +187,7 @@ class TestForkInitializerDoesNoNetworkIo:
         """
         monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", "hf_configured_value")
 
-        with caplog.at_level(logging.INFO, logger="app.core.celery"):
+        with caplog.at_level(logging.INFO, logger="app.core.celery_worker_lifecycle"):
             init_worker_process()
 
         messages = [record.getMessage() for record in caplog.records]
@@ -274,12 +274,12 @@ class TestMainProcessPreloadIsBounded:
         monkeypatch.setenv("PRELOAD_CPU_WHISPER", "true")
         monkeypatch.delenv("PRELOAD_GPU_MODELS", raising=False)
         monkeypatch.delenv("PRELOAD_REDACTION_MODELS", raising=False)
-        monkeypatch.setattr(celery_module, "_CPU_WHISPER_PRELOAD_TIMEOUT_S", 0.5)
+        monkeypatch.setattr(lifecycle_module, "_CPU_WHISPER_PRELOAD_TIMEOUT_S", 0.5)
         calls: list[str] = []
         self._install_faster_whisper_stub(monkeypatch, self._stalling_whisper_model(20.0, calls))
 
         started = time.monotonic()
-        with caplog.at_level(logging.WARNING, logger="app.core.celery"):
+        with caplog.at_level(logging.WARNING, logger="app.core.celery_worker_lifecycle"):
             preload_models()
         elapsed = time.monotonic() - started
 
@@ -295,10 +295,10 @@ class TestMainProcessPreloadIsBounded:
         monkeypatch.setenv("PRELOAD_CPU_WHISPER", "true")
         monkeypatch.delenv("PRELOAD_GPU_MODELS", raising=False)
         monkeypatch.delenv("PRELOAD_REDACTION_MODELS", raising=False)
-        monkeypatch.setattr(celery_module, "_CPU_WHISPER_PRELOAD_TIMEOUT_S", 0.5)
+        monkeypatch.setattr(lifecycle_module, "_CPU_WHISPER_PRELOAD_TIMEOUT_S", 0.5)
         self._install_faster_whisper_stub(monkeypatch, self._stalling_whisper_model(20.0, []))
 
-        with caplog.at_level(logging.WARNING, logger="app.core.celery"):
+        with caplog.at_level(logging.WARNING, logger="app.core.celery_worker_lifecycle"):
             preload_models()
 
         messages = [r.getMessage() for r in caplog.records]
@@ -317,7 +317,7 @@ class TestMainProcessPreloadIsBounded:
 
         self._install_faster_whisper_stub(monkeypatch, _healthy_model)
 
-        with caplog.at_level(logging.INFO, logger="app.core.celery"):
+        with caplog.at_level(logging.INFO, logger="app.core.celery_worker_lifecycle"):
             preload_models()
 
         assert loaded, "the model was never loaded at all"
@@ -338,4 +338,4 @@ class TestMainProcessPreloadIsBounded:
             str(compose["services"]["celery-cpu-worker"]["healthcheck"]["start_period"]).rstrip("s")
         )
 
-        assert start_period == celery_module._CPU_WHISPER_PRELOAD_TIMEOUT_S
+        assert start_period == lifecycle_module._CPU_WHISPER_PRELOAD_TIMEOUT_S

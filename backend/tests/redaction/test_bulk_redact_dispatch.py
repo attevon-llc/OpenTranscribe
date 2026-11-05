@@ -2,7 +2,7 @@
 
 ``test_lazy_redaction_dispatch.py`` covers the *first read* of a never-scanned file.
 This file covers the other writer of ``redaction_status = pending``: the bulk /
-selective **Redact** action, ``endpoints/files/management._handle_redact_action``.
+selective **Redact** action, ``endpoints/files/bulk_action_handlers._handle_redact_action``.
 
 The two are the same protocol — claim ``pending``, publish the scan, and withdraw the
 claim if the publish never landed — and only the first one had it. The second
@@ -161,7 +161,7 @@ def _withheld(db_session, user, media) -> bool:
 
 
 def _redact(db_session, media):
-    from app.api.endpoints.files.management import _handle_redact_action
+    from app.api.endpoints.files.bulk_action_handlers import _handle_redact_action
 
     return _handle_redact_action(db_session, str(media.uuid), media.id)
 
@@ -176,8 +176,8 @@ def _redact_through_the_batch(db_session, user, media):
     response. Going through the endpoint rather than the handler keeps that
     distinction in the test instead of in prose.
     """
-    from app.api.endpoints.files.management import BulkActionRequest
-    from app.api.endpoints.files.management import bulk_file_action
+    from app.api.endpoints.files.bulk_actions import BulkActionRequest
+    from app.api.endpoints.files.bulk_actions import bulk_file_action
     from app.services.request_context import RequestContext
 
     results = bulk_file_action(
@@ -336,23 +336,23 @@ def test_the_withdrawal_does_not_overwrite_a_status_another_writer_moved_on(
 def test_the_claim_and_withdraw_protocol_has_exactly_one_implementation():
     """Two copies of this recovery protocol is precisely how the bug shipped.
 
-    ``redaction_gate._lazy_dispatch_redaction`` was fixed and ``management._handle_redact_action``
+    ``redaction_gate._lazy_dispatch_redaction`` was fixed and ``bulk_action_handlers._handle_redact_action``
     — the identical claim-then-publish, twenty lines of a different module away — was
-    not. This pins the shared helper as the only way ``management`` may touch either
+    not. This pins the shared helper as the only way ``bulk_action_handlers`` may touch either
     the status or the task, so a future re-fork fails here instead of in production.
     """
     import inspect
 
-    from app.api.endpoints.files import management
+    from app.api.endpoints.files import bulk_action_handlers
 
-    source = inspect.getsource(management)
+    source = inspect.getsource(bulk_action_handlers)
 
     assert "redaction_detect_task" not in source, (
-        "management.py publishes the redaction scan itself again — it must go through "
+        "bulk_action_handlers.py publishes the redaction scan itself again — it must go through "
         "redaction_gate.claim_and_dispatch_redaction_scan, which owns the withdrawal on failure"
     )
     assert "REDACTION_STATUS_PENDING" not in source, (
-        "management.py writes the pending claim itself again — the claim and its "
+        "bulk_action_handlers.py writes the pending claim itself again — the claim and its "
         "withdrawal are one protocol and must not be separated"
     )
     assert "claim_and_dispatch_redaction_scan" in source

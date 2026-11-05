@@ -372,13 +372,13 @@ def _composite_response(buckets: list[dict[str, Any]], after_key: dict[str, Any]
 def test_backfill_task_is_not_wired_to_run_automatically():
     """It must be a plain, undecorated-by-schedule Celery task — nothing beats it in.
 
-    A grep-shaped guard: the task name must not appear in `core/celery.py`'s
-    beat schedule (`CELERYBEAT_SCHEDULE` / `beat_schedule`). Read the file directly
+    A grep-shaped guard: the task name must not appear in the beat schedule
+    (`BEAT_SCHEDULE` in `core/celery_beat.py`). Read the file directly
     rather than importing celery_app's live schedule, so the check is independent of
     whatever else happens to be configured at import time in this test process.
 
-    The lookup asserts the block was actually found (this repo's `celery.py` HAS a
-    `beat_schedule=`, so "not found" would mean the parser broke, not "nothing is
+    The lookup asserts the block was actually found (this repo's `celery_beat.py` HAS a
+    `BEAT_SCHEDULE`, so "not found" would mean the parser broke, not "nothing is
     scheduled") before checking membership — so both halves run unconditionally
     rather than the membership check being the only assertion, hidden behind an
     `if "beat_schedule" in source` that could quietly stop firing if the file were
@@ -386,14 +386,14 @@ def test_backfill_task_is_not_wired_to_run_automatically():
     """
     import pathlib
 
-    celery_config = pathlib.Path(reindex_task.__file__).parent.parent / "core" / "celery.py"
+    celery_config = pathlib.Path(reindex_task.__file__).parent.parent / "core" / "celery_beat.py"
     source = celery_config.read_text()
     # Find the beat-schedule block and confirm our task name never appears inside
     # it. A bare substring check against the WHOLE file would also match this
     # task's own `@celery_app.task(name=...)` declaration in search_indexing_task.py,
     # which is not what we're checking.
-    start = source.find("beat_schedule")
-    assert start != -1, "core/celery.py has no beat_schedule= at all — parser assumption broke"
+    start = source.find("BEAT_SCHEDULE")
+    assert start != -1, "core/celery_beat.py has no BEAT_SCHEDULE at all — parser assumption broke"
     end = source.find("\n}\n", start)
     block = source[start : end if end != -1 else None]
     assert "backfill_speaker_id_fields" not in block

@@ -176,7 +176,7 @@ class TestPublishToHubEnvironment:
     def test_the_fork_hook_publishes_only_the_environment_token(
         self, resolver, db_session, monkeypatch
     ):
-        from app.core.celery import publish_hf_token_to_environment
+        from app.core.celery_worker_lifecycle import publish_hf_token_to_environment
 
         resolver.save_token(db_session, _APP)
         # saved app token is NOT consulted (no DB in a fork)

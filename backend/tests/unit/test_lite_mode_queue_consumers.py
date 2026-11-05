@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 import yaml
 
-from app.core.celery import GPU_PREFERRED_TASKS
+from app.core.celery_routing import GPU_PREFERRED_TASKS
 from app.core.queues import CeleryQueues
 from app.core.queues import gpu_preferred_queue
 
@@ -214,7 +214,8 @@ def test_the_real_import_time_routing_under_lite_matches_the_reconstruction(
     ``task_routes`` is frozen at first import and pytest has already imported it.
     """
     observed = run_in_clean_process(
-        "from app.core.celery import GPU_PREFERRED_TASKS, celery_app\n"
+        "from app.core.celery import celery_app\n"
+        "from app.core.celery_routing import GPU_PREFERRED_TASKS\n"
         "routes = celery_app.conf.task_routes\n"
         "print(sorted({routes[n]['queue'] for n in GPU_PREFERRED_TASKS}))\n",
         DEPLOYMENT_MODE="lite",

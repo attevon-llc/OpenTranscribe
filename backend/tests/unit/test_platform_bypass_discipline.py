@@ -149,7 +149,7 @@ ALLOWLIST: dict[str, str] = {
         "P: is_admin only fills the cancel_and_delete/force_delete capability hints in the "
         "409 body; the delete itself is authorized by get_deletable_file(bypass=)"
     ),
-    "api/endpoints/files/management.py::bulk_file_action": (
+    "api/endpoints/files/bulk_actions.py::bulk_file_action": (
         "P: the per-file handlers skip the retry ceiling and allow force for admins after the "
         "chokepoint passed with ctx.bypass"
     ),

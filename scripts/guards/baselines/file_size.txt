@@ -1,5 +1,3 @@
-backend/app/api/endpoints/files/management.py	1400	v0.6.1 merge: release growth; split by concern planned
-backend/app/core/celery.py	1467	v0.6.1 merge: release growth; split by concern planned
 backend/app/core/config.py	1647	v0.6.1 merge: release growth; split by concern planned
 backend/app/services/llm_service.py	1251	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FileUploader.svelte::script	827	v0.6.1 merge: release growth; split by concern planned

@@ -434,7 +434,7 @@ class TestSurfaceGates:
         self, db_session, normal_user, caps_off
     ):
         from app.models.user_media_source import UserMediaSource
-        from app.services.protected_media_plugins.mediacms import MediacmsProvider
+        from app.services.media_source_access import query_user_media_sources
 
         db_session.add(
             UserMediaSource(
@@ -446,9 +446,9 @@ class TestSurfaceGates:
         )
         db_session.commit()
 
-        assert len(MediacmsProvider._query_user_media_sources(db_session, normal_user.id)) == 1
+        assert len(query_user_media_sources(db_session, normal_user.id)) == 1
         caps_off("media_sources")
-        assert MediacmsProvider._query_user_media_sources(db_session, normal_user.id) == []
+        assert query_user_media_sources(db_session, normal_user.id) == []
 
 
 # ---------------------------------------------------------------------------

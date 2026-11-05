@@ -24,7 +24,7 @@ Request/response shaping and validation only; logic lives in `app/services`. 42 
   (audit A1). **Never reintroduce a local host-safety check here** — `url_validation` is the one
   implementation. ⚠️ `admin.py`'s `validate_hostname` validators (~L150-200) still re-declare the same shapes with a
   **regex only**; that path is admin-only and is covered at request time by `mediacms.py`'s
-  `resolve_pinned_target` (`_pin_media_url`), but the schema itself is unguarded.
+  `resolve_pinned_target` (`utils/media_origin._pin_media_url`), but the schema itself is unguarded.
 - `__init__.py` — a **partial, drifting** re-export; 28 of the other modules are absent (`base`, `admin`, `search`,
   `watch_source`, `speaker_cluster`, `topic`, `redaction_settings`, …). Import from the submodule.
   `UserSchema` / `GroupSchema` are aliases that exist only here.

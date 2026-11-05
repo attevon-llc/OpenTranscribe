@@ -49,6 +49,8 @@ a second one in a component. (`AudioExtractionService` is also exported as a cla
 - `llmService.ts` — TTL-cached `/llm/status` (60 s when available, 10 s after a failure).
   `$stores/llmStatus` wraps it — components should read the store, not the service.
 - `configService.ts` — once-only module-level cache of `/system/config/protected-media-auth`.
+  Host matching (`getAuthConfigForUrl`) uses `$lib/utils/mediaHost`'s `hostIdentity`, the twin of
+  backend `app/utils/media_origin.py`; `backend/tests/fixtures/mediacms_host_vectors.json` pins both.
 
 ## How it connects
 

@@ -27,8 +27,8 @@ from app.core.exceptions import UpstreamServiceError
 from app.main import app as real_app
 from app.services import media_download_service as mds
 from app.services.media_download_service import MediaDownloadService
-from app.services.protected_media_plugins import mediacms
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
+from app.utils import media_origin
 from app.utils.error_classification import ErrorCategory
 from app.utils.error_classification import categorize_error
 from app.utils.url_validation import assert_safe_outbound_url
@@ -220,7 +220,7 @@ def _patched(provider: MediacmsProvider):
 
 def test_pin_media_url_refuses_a_private_target():
     with pytest.raises((HTTPException, InvalidInputError)) as exc:
-        mediacms._pin_media_url("http://169.254.169.254/latest", purpose="test")
+        media_origin._pin_media_url("http://169.254.169.254/latest", purpose="test")
     _assert_refusal(exc.value, 400, _BAD_URL, InvalidInputError)
 
 

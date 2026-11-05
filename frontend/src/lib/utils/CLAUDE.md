@@ -29,6 +29,8 @@ and domain formatting belong in the backend (thin-frontend rule).
   these groups, so they must follow backend `services/playback_rendition.py`'s measured
   tables. Moving a format into "playable" without measuring it in both browsers advertises
   playback the user won't get.
+- `mediaHost.ts` — `hostIdentity(rawHost, protocol)`: the protected-media host rule, never looser
+  than backend `app/utils/media_origin.py` (shared vectors in `backend/tests/fixtures/`).
 - `searchHighlight.ts`, `metadataMapper.ts`, `scrollbarCalculations.ts`, `url.ts`, `ids.ts`.
 
 ## Conventions / patterns

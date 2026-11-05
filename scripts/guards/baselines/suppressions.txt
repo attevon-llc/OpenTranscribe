@@ -85,7 +85,6 @@ noqa::backend/app/services/multipart_upload.py	5	suppression: reason to be added
 noqa::backend/app/services/opensearch_erasure.py	2	suppression: reason to be added
 noqa::backend/app/services/playback_rendition.py	2	suppression: reason to be added
 noqa::backend/app/services/post_processing_status.py	3	suppression: reason to be added
-noqa::backend/app/services/protected_media_plugins/mediacms.py	2	suppression: reason to be added
 noqa::backend/app/services/redaction/detectors/llm.py	2	suppression: reason to be added
 noqa::backend/app/services/redaction/detectors/pii_presidio.py	2	suppression: reason to be added
 noqa::backend/app/services/redaction/detectors/toxicity.py	3	suppression: reason to be added

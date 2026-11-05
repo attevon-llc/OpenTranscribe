@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
-from app.services.protected_media_plugins.mediacms import host_matches
+from app.utils.media_origin import host_matches
 
 _VECTORS = json.loads(
     (Path(__file__).resolve().parents[1] / "fixtures" / "mediacms_host_vectors.json").read_text(

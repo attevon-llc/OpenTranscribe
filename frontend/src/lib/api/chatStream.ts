@@ -196,6 +196,7 @@ async function errorFromResponse(response: Response): Promise<ChatStreamEvent> {
       ...(retryAfter !== null && { retryAfter }),
     };
   }
+  if (response.status === 503) return { type: 'error', code: 'provider_unavailable', message };
   if (response.status === 400 && detailCode === 'llm_config_unusable') {
     return { type: 'error', code: 'llm_config_unusable', message };
   }

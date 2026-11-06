@@ -7,13 +7,22 @@
 #
 # Access from the host (loopback only — see the ports note below):
 #   - LLDAP Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}
-#   - LDAP server:  ldap://localhost:${LDAP_TEST_PORT:-3890}
+#   - LDAP server:  ldap://localhost:${LDAP_TEST_PORT:-3890}   (plaintext; host-side seeding only)
+#   - LDAPS server: ldaps://localhost:${LDAP_TEST_LDAPS_PORT:-6360}
 #   - Login: admin / admin_password
 #
 # Access from the backend/worker containers — always use the network ALIAS, not
 # the container name. The alias is stable; `--fresh` re-pins container_name to
-# otfresh-<name>-lldap (issue #347):
-#   LDAP_SERVER=ldap://lldap-test    LDAP_PORT=3890
+# otfresh-<name>-lldap (issue #347). The backend REFUSES plaintext binds and VERIFIES
+# the server certificate, so it must use LDAPS with the test CA mounted by
+# docker-compose.ldap-test-trust.yml (loaded together with this file by opentr.sh):
+#   LDAP_SERVER=ldaps://lldap-test   LDAP_PORT=6360
+#   LDAP_CA_CERT_FILE=/etc/opentranscribe/ldap-test-ca.crt
+#
+# The certificate is issued from the repo's test CA by
+# scripts/pki/issue-test-server-cert.sh (SANs: lldap-test, lldap, localhost, 127.0.0.1);
+# opentr.sh runs it before compose starts, because a missing bind-mount source would
+# otherwise be created as an empty directory.
 #
 # Bind DN: uid=admin,ou=people,dc=example,dc=com
 # Search base: dc=example,dc=com
@@ -30,13 +39,23 @@ services:
       # secret, so it must never be reachable off-host. Containers reach it over
       # the compose network at ldap://lldap-test:3890.
       - "127.0.0.1:${LDAP_TEST_PORT:-3890}:3890"      # LDAP port
+      - "127.0.0.1:${LDAP_TEST_LDAPS_PORT:-6360}:6360" # LDAPS port
       - "127.0.0.1:${LDAP_TEST_UI_PORT:-17170}:17170" # Web UI port
     environment:
       - LLDAP_JWT_SECRET=supersecretjwttokenfortest
       - LLDAP_LDAP_USER_PASS=admin_password
       - LLDAP_LDAP_BASE_DN=dc=example,dc=com
+      # LDAPS options: lldap_config.docker_template.toml `[ldaps_options]`
+      # (enabled / port / cert_file / key_file), set through the documented
+      # LLDAP_LDAPS_OPTIONS__<NAME> environment form.
+      - LLDAP_LDAPS_OPTIONS__ENABLED=true
+      - LLDAP_LDAPS_OPTIONS__PORT=6360
+      - LLDAP_LDAPS_OPTIONS__CERT_FILE=/certs/server.crt
+      - LLDAP_LDAPS_OPTIONS__KEY_FILE=/certs/server.key
     volumes:
       - lldap_data:/data
+      - ./scripts/pki/test-certs/servers/ldap-test/server.crt:/certs/server.crt:ro
+      - ./scripts/pki/test-certs/servers/ldap-test/server.key:/certs/server.key:ro
     networks:
       # The project's implicit default network. The alias keeps ldap://lldap-test
       # resolvable no matter what container_name this service ends up with, so a

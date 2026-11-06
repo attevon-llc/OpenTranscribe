@@ -12,6 +12,8 @@ set -uo pipefail
 # Source common functions
 # shellcheck source=scripts/common.sh
 source ./scripts/common.sh
+# shellcheck source=scripts/lib/ldap-test-overlay.sh
+source ./scripts/lib/ldap-test-overlay.sh
 
 # .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
 # get one automatically -- only the main checkout does. Left alone, every
@@ -217,7 +219,7 @@ show_help() {
   echo "                         docker-compose.pki-dev.yml, a built nginx in front of the"
   echo "                         bind-mounted dev backend) and prod. Generates its own test-env"
   echo "                         fragment (scripts/pki/generate-test-env.sh) — never touches .env."
-  echo "  --with-ldap-test     - Start LDAP test container (dev or prod; localhost:3890, UI :17170)"
+  echo "  --with-ldap-test     - Start LDAP test container (dev or prod; LDAPS localhost:6360, UI :17170)"
   echo "  --with-mock-llm      - Start mock LLM provider (localhost:5199) so chat/AI features"
   echo "                         work without a GPU or API key. Models: mock-gpt, mock-echo,"
   echo "                         mock-empty, mock-error, mock-slow"
@@ -1000,8 +1002,10 @@ overlay_banner() {
       echo "   Model: ${LLM_TEST_SERVED_NAME:-gemma-4-e4b}   GPU: ${LLM_TEST_GPU_DEVICE_ID:-2}"
       echo "   Ollama alternative (not auto-started): docker compose ... --profile ollama up -d llm-test-ollama" ;;
     ldap)
-      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
-      echo "   LDAP server: localhost:${LDAP_TEST_PORT:-3890}  (from containers: ldap://lldap-test:3890)"
+      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml + docker-compose.ldap-test-trust.yml)"
+      echo "   LDAPS: localhost:${LDAP_TEST_LDAPS_PORT:-6360}  (from containers: ldaps://lldap-test:6360)"
+      echo "   Backend CA file (set as ldap_ca_cert_file): /etc/opentranscribe/ldap-test-ca.crt"
+      echo "   Plain LDAP (host-side seeding only; the backend refuses it): localhost:${LDAP_TEST_PORT:-3890}"
       echo "   Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}" ;;
     keycloak)
       echo "🔐 Adding Keycloak test container (docker-compose.keycloak.yml)"
@@ -1492,6 +1496,7 @@ OT_PROFILE_GATED_PORT_VARS=(
 
 FRESH_LDAP_PORT_VARS=(
   "LDAP_TEST_PORT=3890"         # lldap LDAP   → :3890
+  "LDAP_TEST_LDAPS_PORT=6360"   # lldap LDAPS  → :6360
   "LDAP_TEST_UI_PORT=17170"     # lldap web UI → :17170
 )
 FRESH_MOCK_LLM_PORT_VARS=(
@@ -2430,7 +2435,7 @@ start_app() {
     if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
       _port_vars+=("${FRESH_LDAP_PORT_VARS[@]}")
       _aux_services+=("${FRESH_LDAP_SERVICES[@]}")
-      _aux_files+=("$(overlay_file_for WITH_LDAP_TEST_FLAG)")
+      _aux_files+=("$(overlay_file_for WITH_LDAP_TEST_FLAG)" "docker-compose.ldap-test-trust.yml")
     fi
     if [ -n "$WITH_MOCK_LLM_FLAG" ]; then
       _port_vars+=("${FRESH_MOCK_LLM_PORT_VARS[@]}")
@@ -2920,17 +2925,9 @@ start_app() {
     fi
   fi
 
-  # Add LDAP test container if requested
-  if [ -n "$WITH_LDAP_TEST_FLAG" ]; then
-    if [ -f "docker-compose.ldap-test.yml" ]; then
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.ldap-test.yml"
-      echo "🔐 Adding LDAP test container (docker-compose.ldap-test.yml)"
-      echo "   LDAP server: localhost:${LDAP_TEST_PORT:-3890}  (from containers: ldap://lldap-test:3890)"
-      echo "   Web UI: http://localhost:${LDAP_TEST_UI_PORT:-17170}"
-    else
-      echo "⚠️  --with-ldap-test specified but docker-compose.ldap-test.yml not found"
-    fi
-  fi
+  # Add LDAP test container (LDAPS + trusted CA) if requested
+  add_flag_overlay WITH_LDAP_TEST_FLAG
+  add_ldap_test_trust_overlay
 
   # Add Keycloak test container if requested
   if [ -n "$WITH_KEYCLOAK_TEST_FLAG" ]; then
@@ -3620,6 +3617,7 @@ reset_and_init() {
   add_flag_overlay WITH_LLM_TEST_FLAG
 
   add_flag_overlay WITH_LDAP_TEST_FLAG
+  add_ldap_test_trust_overlay
 
   add_flag_overlay WITH_KEYCLOAK_TEST_FLAG
 

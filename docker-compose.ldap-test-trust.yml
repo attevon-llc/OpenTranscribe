@@ -1,0 +1,17 @@
+# Trust the LLDAP test overlay's certificate (loaded WITH docker-compose.ldap-test.yml by
+# `./opentr.sh start ... --with-ldap-test`; never on its own).
+#
+# Kept apart from docker-compose.ldap-test.yml because that file is also started
+# standalone (backend/tests/e2e/idp_overlay.py), and a file that extends `backend:`
+# without an image is not a valid compose project by itself.
+#
+# Only the services that open an LDAP connection need the CA: backend (login and the
+# admin "Test connection") and celery-cpu-worker (directory sync). Verification stays ON;
+# the CA is mounted read-only and named in the admin LDAP settings (ldap_ca_cert_file).
+services:
+  backend:
+    volumes:
+      - ./scripts/pki/test-certs/servers/ldap-test/ca.crt:/etc/opentranscribe/ldap-test-ca.crt:ro
+  celery-cpu-worker:
+    volumes:
+      - ./scripts/pki/test-certs/servers/ldap-test/ca.crt:/etc/opentranscribe/ldap-test-ca.crt:ro

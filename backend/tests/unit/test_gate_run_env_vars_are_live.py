@@ -71,28 +71,9 @@ _NOT_A_GATE_CONSUMER: dict[str, str] = {
 
 #: Known-dead gates in scripts this change does not own. Keyed `<script>::<VAR>` with a
 #: mandatory reason; a stale entry FAILS, so the exemption dies with the offender rather than
-#: outliving it (same contract as `test_shell_expansion_guards.py`'s `_ALLOWLIST`).
-_PENDING: dict[str, str] = {
-    **{
-        f"run-mutation-tests.sh::{var}": (
-            "BACKLOG — the same dead `GATES=(...)` array, copied. Its header still says 'three "
-            "of the selected test files are behind a module-level skipif and a skipped test "
-            "kills no mutant', which stopped being true when the gates were removed from those "
-            "files. Harmless (it sets a variable nobody reads) but it is the stale justification "
-            "that would make someone re-add the array to run-integration-tests.sh. Owned by the "
-            "mutation harness, not by the change that added this guard."
-        )
-        for var in (
-            "RUN_PKI_TESTS",
-            "RUN_MFA_TESTS",
-            "RUN_LLM_TESTS",
-            "RUN_FEDRAMP_TESTS",
-            "RUN_FIPS_TESTS",
-            "RUN_AUTH_CONFIG_TESTS",
-            "RUN_ADVANCED_ADMIN_TESTS",
-        )
-    },
-}
+#: outliving it (same contract as `test_shell_expansion_guards.py`'s `_ALLOWLIST`). Empty since
+#: `run-mutation-tests.sh` dropped its copy of the dead array (#1331); keep it empty.
+_PENDING: dict[str, str] = {}
 
 
 #: `GATES=(` / `SUITES+=(` — an array assignment whose `)` is on a LATER line.

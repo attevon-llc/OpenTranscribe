@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 
+import pytest
+
 from app.core.security import get_password_hash
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
@@ -23,6 +25,10 @@ from app.models.organization import Organization
 from app.models.user import User
 from app.services.gdpr_erasure_service import erase_org_member_data
 from app.services.gdpr_erasure_service import erase_user
+
+# These pin what the SQL plane destroys; the receipt's measurers would otherwise reach the
+# default retrying storage client (~54 s per test when MinIO is unreachable).
+pytestmark = pytest.mark.usefixtures("no_receipt_measurement", "no_erasure_extras")
 
 
 def _user(db, label: str) -> User:

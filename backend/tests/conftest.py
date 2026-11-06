@@ -508,6 +508,21 @@ def no_receipt_measurement():
         yield
 
 
+@pytest.fixture
+def no_erasure_extras():
+    """Opt-in: stand in for the erasure's object-storage / Redis / filesystem destroy stage.
+
+    ``erase_extras`` calls the default storage client (5 retries, ~5 minute timeouts); with no
+    MinIO reachable (CI, ``SKIP_S3``) each erasure burns ~18-54 s in retry backoff. For tests that
+    pin what the SQL plane destroys. Covered against real stores by
+    ``integration/test_erasure_receipt_e2e.py``.
+    """
+    from unittest.mock import patch
+
+    with patch("app.services.gdpr_erasure_service.erase_extras"):
+        yield
+
+
 @pytest.fixture(scope="function")
 def db_session(request):
     """Fixture that provides a SQLAlchemy session for tests.

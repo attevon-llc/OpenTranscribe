@@ -226,7 +226,7 @@ jobs:
           python scripts/check-requirements-resolve.py
 
   backend-tests:
-    # Best-effort safety net: runs the unit/API suite + security-gated suites
+    # Best-effort safety net: runs the unit/API suite (the FIPS_MODE re-run is the sibling backend-fips-tests job)
     # against a fresh Postgres with CPU-only deps (requirements-ci.txt — no
     # Docker app images, no GPU wheels). The COMPLETE suite (S3/OpenSearch/
     # integration/E2E) runs locally via scripts/run-integration-tests.sh,
@@ -235,11 +235,11 @@ jobs:
     needs: changes
     permissions:
       contents: read
-    # ~17 min, dominated by installing CPU torch wheels and the FIPS security suites.
+    # Dominated by installing CPU torch wheels and the unit/API suite.
     # A docs- or frontend-only PR cannot change its outcome, so don't pay for it.
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
-    # ~17 min in the normal case. The cap exists because a hosted-runner apt mirror
+    # The cap exists because a hosted-runner apt mirror
     # outage once hung `apt-get update` until the 360-minute ACCOUNT default, burning
     # six hours of runner time without executing a single test (issue #493).
     timeout-minutes: 45
@@ -364,6 +364,83 @@ jobs:
       # clean tree, and fails on a stale allowlist entry so the list can only shrink.
       - name: Audit backend test quality
         run: python3 scripts/audit-tests.py backend/tests
+
+  backend-fips-tests:
+    # Split out of backend-tests (issue #1377) so the FIPS re-run has its own time budget and
+    # runs in parallel with the main suite instead of extending it.
+    name: Backend Security Suites (FIPS_MODE)
+    needs: changes
+    permissions:
+      contents: read
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17.5-alpine # same tag as docker-compose.yml; test_workflows_pinned.py enforces it
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcribe_app
+        ports:
+          - 5176:5432 # the port backend/tests/conftest.py expects
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5176'
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: transcribe_app
+      # No MinIO/OpenSearch services here — keep those suites skipped
+      SKIP_S3: 'True'
+      SKIP_OPENSEARCH: 'True'
+      DATA_DIR: /tmp/ci-data
+      MODELS_DIR: /tmp/ci-models
+      TEMP_DIR: /tmp/ci-temp
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-ci.txt
+
+      - name: Install system dependencies
+        # Bounded separately from the job: a mirror that stops answering should fail this
+        # step in minutes, not consume the whole job budget retrying (issue #493).
+        # libpq-dev: requirements-ci.txt pins psycopg2 (source build), not
+        # psycopg2-binary -- the binary wheel vendors its own bundled libpq/pcre2
+        # via auditwheel, which is how a stale, CVE-flagged pcre2 ended up baked
+        # into the arm64 lite image (issue #951). Building against the system
+        # libpq here means CI actually exercises the same driver the images ship.
+        # libimage-exiftool-perl: every backend image ships exiftool, and the
+        # media-duration tests (#969/#974) run real files through it.
+        timeout-minutes: 10
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg libpq-dev libimage-exiftool-perl
+
+      - name: Install Python dependencies (CPU wheels)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-ci.txt
+
+      - name: Verify app imports
+        working-directory: backend
+        run: python -c "import app.main"
+        env:
+          TESTING: 'True'
+
+      - name: Run database migrations
+        working-directory: backend
+        run: python -m alembic upgrade head
 
       # The CI twin of run-integration-tests.sh's `Security suites (FIPS_MODE=true)` phase,
       # and it must stay a twin: same eight files, same one live variable.

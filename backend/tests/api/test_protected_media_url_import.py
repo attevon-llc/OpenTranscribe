@@ -39,6 +39,7 @@ from app.services import media_download_service as mds
 from app.services.media_download_service import MediaDownloadService
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
 from app.utils.encryption import encrypt_api_key
+from tests.helpers import media_file_count
 from tests.helpers import stub_public_dns
 
 MEDIA_URL = "https://m.example.com/view?m=abc"
@@ -161,7 +162,7 @@ def test_a_playlist_never_carries_credentials(client, user_token_headers, seams,
 
 
 def test_a_private_protected_url_is_refused_before_any_provider_is_asked(
-    client, user_token_headers, db_session, seams, monkeypatch
+    client, user_token_headers, normal_user, db_session, seams, monkeypatch
 ):
     asked: list[str] = []
 
@@ -171,7 +172,7 @@ def test_a_private_protected_url_is_refused_before_any_provider_is_asked(
             return True
 
     monkeypatch.setattr(mds, "PROTECTED_MEDIA_PROVIDERS", [_ClaimsEverything()])
-    before = db_session.query(MediaFile).count()
+    before = media_file_count(db_session, normal_user.id)
 
     response = _post(
         client,
@@ -182,7 +183,7 @@ def test_a_private_protected_url_is_refused_before_any_provider_is_asked(
     assert response.status_code == status.HTTP_400_BAD_REQUEST
     assert response.json() == {"detail": "Invalid URL. Please enter a valid HTTP or HTTPS URL."}
     assert (asked, seams.extracted, seams.tasks, seams.redis.store) == ([], [], [], {})
-    assert db_session.query(MediaFile).count() == before
+    assert media_file_count(db_session, normal_user.id) == before
 
 
 @pytest.mark.parametrize(

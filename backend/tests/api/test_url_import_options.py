@@ -15,6 +15,7 @@ import app.api.endpoints.files.url_processing as url_processing
 import app.api.endpoints.files.url_request as url_request
 import app.api.endpoints.files.url_video_import as url_video_import
 from app.models.media import MediaFile
+from tests.helpers import media_file_count
 
 URL = "https://vimeo.com/123456"
 DEPLOYMENT_MODEL = "large-v3-turbo"
@@ -87,14 +88,14 @@ def test_nothing_entered_records_nothing(client, user_token_headers, db_session,
     ids=["unservable-model", "min-above-max", "non-positive"],
 )
 def test_bad_options_are_a_422_and_create_no_file(
-    client, user_token_headers, db_session, url_seams, extra
+    client, user_token_headers, normal_user, db_session, url_seams, extra
 ):
-    before = db_session.query(MediaFile).count()
+    before = media_file_count(db_session, normal_user.id)
     response = client.post(
         "/api/files/process-url", headers=user_token_headers, json={"url": URL, **extra}
     )
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-    assert db_session.query(MediaFile).count() == before
+    assert media_file_count(db_session, normal_user.id) == before
     assert url_seams.tasks == []
 
 

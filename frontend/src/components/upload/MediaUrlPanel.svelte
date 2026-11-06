@@ -40,7 +40,7 @@
   let mediaPassword = '';
   let currentAuthConfig: ProtectedMediaAuthConfig | null = null;
 
-  $: showProtectedMediaAuth = (() => {
+  $: showProtectedMediaAuth = ((): boolean => {
     try {
       const url = new URL(mediaUrl);
       currentAuthConfig = getAuthConfigForUrl(url);

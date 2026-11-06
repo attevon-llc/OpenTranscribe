@@ -4206,6 +4206,7 @@
   "settings.ldap.tlsServerNameHelp": "Controleert het certificaat van de directory tegen deze naam in plaats van tegen het adres hierboven. Gebruik dit als u verbinding maakt via een IP-adres, maar het certificaat alleen een hostnaam vermeldt. Laat leeg om het adres hierboven te controleren.",
   "settings.ldap.tlsSkipVerify": "Het TLS-certificaat van de directory niet controleren",
   "settings.ldap.tlsSkipVerifyWarning": "Onveilig: iedereen op het netwerkpad kan zich voordoen als de directoryserver en de wachtwoorden lezen die ernaartoe worden gestuurd. Gebruik dit alleen om te testen. Voor elke verbinding die zo wordt gemaakt, wordt een waarschuwing gelogd.",
+  "settings.ldap.tlsEnvFallbackHelp": "Lege velden gebruiken de serverinstellingen LDAP_CA_CERT_FILE en LDAP_TLS_SERVER_NAME. Zolang u het selectievakje hieronder niet wijzigt, volgt de certificaatcontrole LDAP_TLS_SKIP_VERIFY.",
   "settings.ldap.connectionTimeout": "Verbindingstime-out (seconden)",
   "settings.ldap.bindCredentials": "Bind-referenties",
   "settings.ldap.bindDn": "Bind-DN",

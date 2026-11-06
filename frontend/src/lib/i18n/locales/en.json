@@ -4206,6 +4206,7 @@
   "settings.ldap.tlsServerNameHelp": "Check the directory's certificate against this name instead of the address above. Use it when you connect by IP address but the certificate lists only a host name. Leave empty to check the address above.",
   "settings.ldap.tlsSkipVerify": "Do not verify the directory's TLS certificate",
   "settings.ldap.tlsSkipVerifyWarning": "Insecure: anyone on the network path can pose as the directory server and read the passwords sent to it. Use only for testing. A warning is logged for every connection made this way.",
+  "settings.ldap.tlsEnvFallbackHelp": "Empty fields use the server's LDAP_CA_CERT_FILE and LDAP_TLS_SERVER_NAME settings. Until you change the checkbox below, certificate checking follows LDAP_TLS_SKIP_VERIFY.",
   "settings.ldap.connectionTimeout": "Connection Timeout (seconds)",
   "settings.ldap.bindCredentials": "Bind Credentials",
   "settings.ldap.bindDn": "Bind DN",

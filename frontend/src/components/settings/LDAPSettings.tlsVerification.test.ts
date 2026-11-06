@@ -80,6 +80,30 @@ describe('LDAP panel: directory certificate verification', () => {
     ).toBe(true);
   });
 
+  it('leaves untouched, never-stored TLS fields unset so the server environment keeps applying', async () => {
+    const { onSave } = renderPanel({});
+
+    await fireEvent.input(screen.getByLabelText('settings.ldap.server'), {
+      target: { value: 'ldaps://dir.example' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'settings.ldap.saveConfiguration' }));
+
+    const sent = payload(onSave);
+    expect(sent.ldap_server).toBe('ldaps://dir.example');
+    expect(sent.ldap_tls_skip_verify).toBeNull();
+    expect(sent.ldap_ca_cert_file).toBe('');
+    expect(sent.ldap_tls_server_name).toBe('');
+    expect(screen.getByText('settings.ldap.tlsEnvFallbackHelp')).toBeTruthy();
+  });
+
+  it('sends an explicit verify-on once the admin has stored a choice', async () => {
+    const { onSave } = renderPanel({ ldap_tls_skip_verify: false });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'settings.ldap.saveConfiguration' }));
+
+    expect(payload(onSave).ldap_tls_skip_verify).toBe(false);
+  });
+
   it('defaults a config without the new fields to verifying with no CA file', () => {
     renderPanel({});
 

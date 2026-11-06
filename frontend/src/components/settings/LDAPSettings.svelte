@@ -15,7 +15,7 @@
     ldap_use_tls: config.ldap_use_tls ?? true,
     ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
     ldap_tls_server_name: config.ldap_tls_server_name ?? '',
-    ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? false,
+    ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? null,
     ldap_bind_dn: config.ldap_bind_dn ?? '',
     ldap_bind_password: config.ldap_bind_password ?? '',
     ldap_search_base: config.ldap_search_base ?? '',
@@ -43,7 +43,7 @@
       ldap_use_tls: config.ldap_use_tls ?? true,
       ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
       ldap_tls_server_name: config.ldap_tls_server_name ?? '',
-      ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? false,
+      ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? null,
       ldap_bind_dn: config.ldap_bind_dn ?? '',
       ldap_bind_password: config.ldap_bind_password ?? '',
       ldap_search_base: config.ldap_search_base ?? '',
@@ -62,6 +62,13 @@
 
   function handleChange() {
     dispatch('change');
+  }
+
+  // Not bind:checked: Svelte writes the unchecked DOM state back into a null bound value at
+  // mount, which would turn "not set here" into an explicit false on the next save.
+  function handleSkipVerifyChange(event: Event) {
+    formData.ldap_tls_skip_verify = (event.currentTarget as HTMLInputElement).checked;
+    handleChange();
   }
 
   function handleSave() {
@@ -150,6 +157,8 @@
       </label>
     </div>
 
+    <p class="help-text">{$t('settings.ldap.tlsEnvFallbackHelp')}</p>
+
     <div class="form-group">
       <label for="ldap_ca_cert_file">{$t('settings.ldap.caCertFile')}</label>
       <input
@@ -158,7 +167,7 @@
         bind:value={formData.ldap_ca_cert_file}
         on:input={handleChange}
         placeholder="/etc/ssl/certs/directory-ca.pem"
-        disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify}
+        disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify === true}
       />
       <span class="help-text">{$t('settings.ldap.caCertFileHelp')}</span>
     </div>
@@ -171,7 +180,7 @@
         bind:value={formData.ldap_tls_server_name}
         on:input={handleChange}
         placeholder="ldap.example.com"
-        disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify}
+        disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify === true}
       />
       <span class="help-text">{$t('settings.ldap.tlsServerNameHelp')}</span>
     </div>
@@ -179,8 +188,8 @@
     <label class="checkbox-label">
       <input
         type="checkbox"
-        bind:checked={formData.ldap_tls_skip_verify}
-        on:change={handleChange}
+        checked={formData.ldap_tls_skip_verify === true}
+        on:change={handleSkipVerifyChange}
         disabled={!formData.ldap_enabled}
       />
       <span>{$t('settings.ldap.tlsSkipVerify')}</span>

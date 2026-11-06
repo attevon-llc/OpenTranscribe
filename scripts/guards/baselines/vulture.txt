@@ -52,7 +52,6 @@ backend/app/services/asr/local_provider.py::method::supports_vocabulary	1	residu
 backend/app/services/asr/openai_provider.py::method::supports_vocabulary	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/asr/pyannote_provider.py::method::supports_vocabulary	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/asr/speechmatics_provider.py::method::supports_vocabulary	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/auth_config_service.py::method::delete_config	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/hooks.py::function::clear_hooks	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/hooks.py::function::register_before_message	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/chat/language.py::function::resolve_text_field_preset_for_locale	1	residual after the dead-code pass; delete or whitelist when touched

@@ -31,6 +31,7 @@ missing from the other tab's GET.
 from __future__ import annotations
 
 import inspect
+import typing
 from typing import Any
 
 import pytest
@@ -590,7 +591,10 @@ class TestSchemasDriveTheValidation:
                 declared = auth_config_keys.DATA_TYPE_MAPPING.get(name)
                 if declared is None:
                     continue
-                assert declared == expected.get(field.annotation, "string"), (
+                # ``X | None`` is stored as X: None only means "no row" (ENV_FALLBACK_KEYS).
+                members = [a for a in typing.get_args(field.annotation) if a is not type(None)]
+                base = members[0] if len(members) == 1 else field.annotation
+                assert declared == expected.get(base, "string"), (
                     f"{name}: schema says {field.annotation}, mapping says {declared}"
                 )
 

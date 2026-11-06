@@ -77,6 +77,8 @@ class FakeDirectory:
     calls: list[tuple[Any, ...]] = field(default_factory=list)
     #: Keyword options each ``Connection`` was built with, beyond user/password/auto_bind.
     connection_options: list[dict[str, Any]] = field(default_factory=list)
+    #: Every connection built, in order, so a test can ask whether one was left open.
+    connections: list[Any] = field(default_factory=list)
 
     def add_user(self, entry: FakeEntry, password: str, filter_text: str | None = None) -> None:
         """Make ``entry`` the single answer to ``filter_text`` (default ``(uid=<uid>)``)."""
@@ -117,7 +119,10 @@ class _Connection:
         self.user = user
         self.password = password
         self.bound = False
+        #: Like ldap3's ``Connection.closed``: what ``unbind`` leaves true, whether or not a bind happened.
+        self.closed = False
         self.entries: list[Any] = []
+        directory.connections.append(self)
         directory.calls.append(("connection", user, auto_bind))
         directory.connection_options.append(options)
 
@@ -152,6 +157,7 @@ class _Connection:
     def unbind(self) -> None:
         self._dir.calls.append(("unbind", self.user))
         self.bound = False
+        self.closed = True
 
 
 def install(monkeypatch: Any, directory: FakeDirectory | None = None) -> FakeDirectory:

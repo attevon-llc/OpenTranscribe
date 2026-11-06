@@ -128,7 +128,7 @@ def test_a_refused_bind_reports_the_generic_failure(fake_ldap: type[_Connection]
     assert result.success is False
     assert result.message == GENERIC_FAILURE
     (conn,) = fake_ldap.instances
-    assert conn.calls == ["bind"]
+    assert conn.calls == ["bind", "unbind"]
 
 
 def test_success_reports_the_server_info_of_the_server_it_bound_to(

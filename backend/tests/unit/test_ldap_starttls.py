@@ -37,6 +37,7 @@ class FakeConnection:
         self.open_called = False
         self.start_tls_called = False
         self.bind_called = False
+        self.unbind_called = False
         self.start_tls_result = True
         self.open_error: Exception | None = None
         self.bind_result = True
@@ -55,6 +56,9 @@ class FakeConnection:
     def bind(self):
         self.bind_called = True
         return self.bind_result
+
+    def unbind(self) -> None:
+        self.unbind_called = True
 
 
 class TestConnectAndBindTls:
@@ -89,6 +93,7 @@ class TestConnectAndBindTls:
         created = FakeConnection.instances[0]
         assert created.start_tls_called is True
         assert created.bind_called is False, "must not bind after failed StartTLS negotiation"
+        assert created.unbind_called is True, "the opened socket must be closed"
 
     def test_a_successful_open_is_followed_by_starttls(self, monkeypatch):
         """ldap3's ``open()`` returns ``None`` on success; that must not be read as failure."""

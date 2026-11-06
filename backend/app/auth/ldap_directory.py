@@ -93,7 +93,11 @@ def transport_problem(cfg: LdapConfig, server: Server) -> str | None:
 
 
 def _close_connection(conn: Connection | None, name: str) -> None:
-    """Unbind ``conn`` if it is bound; never raise.
+    """Close ``conn`` whatever its state; never raise.
+
+    ldap3's ``unbind()`` is what closes the socket (``Connection.unbind`` sends the
+    unbind request and calls the strategy's ``close``), and it is a no-op on a connection
+    that is already closed, so it is sent even when the bind never succeeded.
 
     Args:
         conn: The connection, or ``None`` when nothing was opened.
@@ -102,8 +106,7 @@ def _close_connection(conn: Connection | None, name: str) -> None:
     if conn is None:
         return
     try:
-        if conn.bound:
-            conn.unbind()
+        conn.unbind()
     except Exception as exc:
         logger.debug("Ignored an error while closing the %s LDAP connection: %s", name, exc)
 
@@ -143,6 +146,7 @@ def _connect_and_bind(
         auto_bind=False,
         receive_timeout=cfg.timeout,
     )
+    bound = False
     try:
         if not server.ssl:
             # The gate guarantees use_tls here: upgrade before any credential is sent.
@@ -154,17 +158,16 @@ def _connect_and_bind(
                     "StartTLS negotiation with the LDAP server failed; bind refused "
                     "(no fallback to a cleartext bind is attempted)"
                 )
-                _close_connection(conn, "starttls")
                 return None
-        if not conn.bind():
-            return None
+        bound = bool(conn.bind())
     except LDAPSocketReceiveError:
         logger.error("The LDAP server did not answer within %s s; bind refused", cfg.timeout)
-        _close_connection(conn, "timed-out")
-        return None
     except LDAPBindError:
-        return None
-    return conn
+        pass
+    finally:
+        if not bound:
+            _close_connection(conn, "refused")
+    return conn if bound else None
 
 
 def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:

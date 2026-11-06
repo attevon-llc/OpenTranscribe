@@ -95,7 +95,7 @@ def test_failed_starttls_refuses_the_bind(fake_ldap: type[_FakeConnection]) -> N
 
     assert result.success is False
     assert result.message == GENERIC_FAILURE
-    assert [c.calls for c in fake_ldap.instances] == [["open", "start_tls"]]
+    assert [c.calls for c in fake_ldap.instances] == [["open", "start_tls", "unbind"]]
 
 
 def test_starttls_is_negotiated_before_the_bind(fake_ldap: type[_FakeConnection]) -> None:

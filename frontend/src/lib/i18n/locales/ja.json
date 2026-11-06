@@ -2482,7 +2482,7 @@
   "tags.manager.impact.deleteMessage": "「{{name}}」を削除しますか？あなたのファイル {{accessible}} 件、デプロイ全体で {{total}} 件に付いています。元に戻せません。",
   "tags.manager.impact.accessible": "あなたが閲覧できるファイル: {{count}} 件",
   "tags.manager.impact.total": "全体で {{count}} 件のファイル",
-  "tags.manager.impact.totalNote": "この変更は、閲覧できないものも含め、このタグが付いた {{count}} 件すべてのファイルに適用されます。",
+  "tags.manager.impact.totalNote": "この変更は、閲覧できないものも含め、統合対象のいずれかのタグが付いた {{count}} 件すべてのファイルに適用されます。",
   "tags.manager.impact.loading": "影響を確認しています…",
   "tags.manager.action.merge": "統合",
   "tags.manager.action.merging": "統合中…",

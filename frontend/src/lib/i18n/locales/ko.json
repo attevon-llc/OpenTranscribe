@@ -2511,7 +2511,7 @@
   "tags.manager.impact.deleteMessage": "\"{{name}}\"을(를) 삭제하시겠습니까? 회원님의 파일 중 {{accessible}}개, 전체 배포에서는 총 {{total}}개에 사용되고 있습니다. 이 작업은 되돌릴 수 없습니다.",
   "tags.manager.impact.accessible": "볼 수 있는 파일: {{count}}개",
   "tags.manager.impact.total": "전체 파일 {{count}}개",
-  "tags.manager.impact.totalNote": "이 변경은 볼 수 없는 파일을 포함해 이 태그가 있는 파일 {{count}}개 모두에 적용됩니다.",
+  "tags.manager.impact.totalNote": "이 변경은 볼 수 없는 파일을 포함해 병합 대상 태그 중 하나라도 있는 파일 {{count}}개 모두에 적용됩니다.",
   "tags.manager.impact.loading": "영향을 계산하는 중…",
   "tags.manager.action.merge": "병합",
   "tags.manager.action.merging": "병합하는 중…",

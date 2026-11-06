@@ -2514,7 +2514,7 @@
   "tags.manager.impact.deleteMessage": "\"{{name}}\" verwijderen? Het staat op {{accessible}} van uw bestanden, en {{total}} in totaal binnen de implementatie. Dit kan niet ongedaan worden gemaakt.",
   "tags.manager.impact.accessible": "Bestanden die u kunt zien: {{count}}",
   "tags.manager.impact.total": "{{count}} bestanden in totaal",
-  "tags.manager.impact.totalNote": "De wijziging geldt voor alle {{count}} bestanden met deze tag, ook bestanden die u niet kunt zien.",
+  "tags.manager.impact.totalNote": "De wijziging geldt voor alle {{count}} bestanden met een van de samen te voegen tags, ook bestanden die u niet kunt zien.",
   "tags.manager.impact.loading": "Impact wordt berekend…",
   "tags.manager.action.merge": "Samenvoegen",
   "tags.manager.action.merging": "Samenvoegen…",

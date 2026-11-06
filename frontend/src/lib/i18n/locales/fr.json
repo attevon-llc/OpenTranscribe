@@ -2502,7 +2502,7 @@
   "tags.manager.impact.deleteMessage": "Supprimer « {{name}} » ? Elle est sur {{accessible}} de vos fichiers et sur {{total}} au total dans le déploiement. Action irréversible.",
   "tags.manager.impact.accessible": "Fichiers visibles pour vous : {{count}}",
   "tags.manager.impact.total": "{{count}} fichiers au total",
-  "tags.manager.impact.totalNote": "La modification concerne les {{count}} fichiers qui portent l’étiquette, y compris ceux que vous ne pouvez pas voir.",
+  "tags.manager.impact.totalNote": "La modification concerne les {{count}} fichiers qui portent l’une des étiquettes fusionnées, y compris ceux que vous ne pouvez pas voir.",
   "tags.manager.impact.loading": "Calcul de l’impact…",
   "tags.manager.action.merge": "Fusionner",
   "tags.manager.action.merging": "Fusion…",

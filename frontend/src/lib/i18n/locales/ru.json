@@ -2490,7 +2490,7 @@
   "tags.manager.impact.deleteMessage": "Удалить «{{name}}»? Тег есть у {{accessible}} ваших файлов и у {{total}} всего в системе. Отменить нельзя.",
   "tags.manager.impact.accessible": "Доступные вам файлы: {{count}}",
   "tags.manager.impact.total": "Всего файлов: {{count}}",
-  "tags.manager.impact.totalNote": "Изменение затронет все файлы с этим тегом ({{count}}), включая недоступные вам.",
+  "tags.manager.impact.totalNote": "Изменение затронет все файлы ({{count}}) с любым из объединяемых тегов, включая недоступные вам.",
   "tags.manager.impact.loading": "Оценка последствий…",
   "tags.manager.action.merge": "Объединить",
   "tags.manager.action.merging": "Объединение…",

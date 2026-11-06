@@ -2502,7 +2502,7 @@
   "tags.manager.impact.deleteMessage": "¿Eliminar «{{name}}»? Está en {{accessible}} de tus archivos y en {{total}} en total en la instalación. Esto no se puede deshacer.",
   "tags.manager.impact.accessible": "Archivos que puede ver: {{count}}",
   "tags.manager.impact.total": "{{count}} archivos en total",
-  "tags.manager.impact.totalNote": "El cambio afecta a los {{count}} archivos que tienen la etiqueta, incluidos los que usted no puede ver.",
+  "tags.manager.impact.totalNote": "El cambio afecta a los {{count}} archivos que tienen alguna de las etiquetas que se fusionan, incluidos los que usted no puede ver.",
   "tags.manager.impact.loading": "Calculando el impacto…",
   "tags.manager.action.merge": "Fusionar",
   "tags.manager.action.merging": "Fusionando…",

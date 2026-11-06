@@ -2514,7 +2514,7 @@
   "tags.manager.impact.deleteMessage": "Delete \"{{name}}\"? It is on {{accessible}} of your files, and {{total}} in total across the deployment. This cannot be undone.",
   "tags.manager.impact.accessible": "Files you can see: {{count}}",
   "tags.manager.impact.total": "{{count}} files in total",
-  "tags.manager.impact.totalNote": "The change applies to all {{count}} files that carry the tag, including files you cannot see.",
+  "tags.manager.impact.totalNote": "The change applies to all {{count}} files that carry any of the tags being merged, including files you cannot see.",
   "tags.manager.impact.loading": "Working out the impact…",
   "tags.manager.action.merge": "Merge",
   "tags.manager.action.merging": "Merging…",

@@ -2482,7 +2482,7 @@
   "tags.manager.impact.deleteMessage": "删除“{{name}}”？它用于你的 {{accessible}} 个文件，整个部署中共 {{total}} 个。此操作无法撤销。",
   "tags.manager.impact.accessible": "您可查看的文件：{{count}} 个",
   "tags.manager.impact.total": "文件总数 {{count}} 个",
-  "tags.manager.impact.totalNote": "此更改会作用于带有该标签的全部 {{count}} 个文件，包括您无法查看的文件。",
+  "tags.manager.impact.totalNote": "此更改会作用于带有任一待合并标签的全部 {{count}} 个文件，包括您无法查看的文件。",
   "tags.manager.impact.loading": "正在评估影响…",
   "tags.manager.action.merge": "合并",
   "tags.manager.action.merging": "正在合并…",

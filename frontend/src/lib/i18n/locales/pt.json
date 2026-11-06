@@ -2488,7 +2488,7 @@
   "tags.manager.impact.deleteMessage": "Eliminar «{{name}}»? Está em {{accessible}} dos seus ficheiros e em {{total}} no total na instalação. Não é possível anular.",
   "tags.manager.impact.accessible": "Ficheiros que pode ver: {{count}}",
   "tags.manager.impact.total": "{{count}} ficheiros no total",
-  "tags.manager.impact.totalNote": "A alteração abrange os {{count}} ficheiros com esta etiqueta, incluindo os que não pode ver.",
+  "tags.manager.impact.totalNote": "A alteração abrange os {{count}} ficheiros com qualquer uma das etiquetas a fundir, incluindo os que não pode ver.",
   "tags.manager.impact.loading": "A calcular o impacto…",
   "tags.manager.action.merge": "Fundir",
   "tags.manager.action.merging": "A fundir…",

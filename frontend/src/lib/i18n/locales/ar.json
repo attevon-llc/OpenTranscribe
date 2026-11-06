@@ -2526,7 +2526,7 @@
   "tags.manager.impact.deleteMessage": "حذف \"{{name}}\"؟ إنه موجود على {{accessible}} من ملفاتك، وعلى {{total}} إجمالاً عبر النشر. لا يمكن التراجع عن هذا الإجراء.",
   "tags.manager.impact.accessible": "الملفات التي يمكنك رؤيتها: {{count}}",
   "tags.manager.impact.total": "{{count}} ملف إجمالاً",
-  "tags.manager.impact.totalNote": "يشمل هذا التغيير جميع الملفات التي تحمل الوسم وعددها {{count}}، بما فيها ملفات لا يمكنك رؤيتها.",
+  "tags.manager.impact.totalNote": "يشمل هذا التغيير جميع الملفات التي تحمل أيًّا من الوسوم المراد دمجها وعددها {{count}}، بما فيها ملفات لا يمكنك رؤيتها.",
   "tags.manager.impact.loading": "جارٍ تقدير الأثر…",
   "tags.manager.action.merge": "دمج",
   "tags.manager.action.merging": "جارٍ الدمج…",

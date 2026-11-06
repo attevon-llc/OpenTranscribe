@@ -2517,7 +2517,7 @@
   "tags.manager.impact.deleteMessage": "Eliminare \"{{name}}\"? È presente su {{accessible}} dei tuoi file, e {{total}} in totale nell'installazione. Questa azione non può essere annullata.",
   "tags.manager.impact.accessible": "File che puoi vedere: {{count}}",
   "tags.manager.impact.total": "{{count}} file in totale",
-  "tags.manager.impact.totalNote": "La modifica riguarda tutti i {{count}} file con questo tag, compresi quelli che non puoi vedere.",
+  "tags.manager.impact.totalNote": "La modifica riguarda tutti i {{count}} file con almeno uno dei tag da unire, compresi quelli che non puoi vedere.",
   "tags.manager.impact.loading": "Calcolo dell'impatto…",
   "tags.manager.action.merge": "Unisci",
   "tags.manager.action.merging": "Unione in corso…",

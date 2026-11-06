@@ -2498,7 +2498,7 @@
   "tags.manager.impact.deleteMessage": "„{{name}}“ löschen? Es ist an {{accessible}} Ihrer Dateien und an insgesamt {{total}} in der Installation. Dies kann nicht rückgängig gemacht werden.",
   "tags.manager.impact.accessible": "Für Sie sichtbare Dateien: {{count}}",
   "tags.manager.impact.total": "{{count}} Dateien insgesamt",
-  "tags.manager.impact.totalNote": "Die Änderung betrifft alle {{count}} Dateien mit diesem Tag, auch solche, die Sie nicht sehen können.",
+  "tags.manager.impact.totalNote": "Die Änderung betrifft alle {{count}} Dateien mit mindestens einem der zusammenzuführenden Tags, auch solche, die Sie nicht sehen können.",
   "tags.manager.impact.loading": "Auswirkungen werden ermittelt…",
   "tags.manager.action.merge": "Zusammenführen",
   "tags.manager.action.merging": "Wird zusammengeführt…",

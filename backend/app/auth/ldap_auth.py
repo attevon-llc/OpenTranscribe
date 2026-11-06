@@ -74,6 +74,7 @@ class LdapConfig:
     use_ssl: bool = True
     use_tls: bool = False
     ca_cert_file: str = ""
+    tls_server_name: str = ""
     tls_skip_verify: bool = False
     bind_dn: str = ""
     bind_password: str = ""
@@ -103,6 +104,7 @@ class LdapConfig:
             use_ssl=settings.LDAP_USE_SSL,
             use_tls=getattr(settings, "LDAP_USE_TLS", False),
             ca_cert_file=settings.LDAP_CA_CERT_FILE,
+            tls_server_name=settings.LDAP_TLS_SERVER_NAME,
             tls_skip_verify=settings.LDAP_TLS_SKIP_VERIFY,
             bind_dn=settings.LDAP_BIND_DN,
             bind_password=settings.LDAP_BIND_PASSWORD,
@@ -155,6 +157,7 @@ class LdapConfig:
             use_ssl=flag("ldap_use_ssl", env.use_ssl),
             use_tls=flag("ldap_use_tls", env.use_tls),
             ca_cert_file=string("ldap_ca_cert_file", "ca_cert_file", env.ca_cert_file),
+            tls_server_name=string("ldap_tls_server_name", "tls_server_name", env.tls_server_name),
             tls_skip_verify=flag("ldap_tls_skip_verify", env.tls_skip_verify),
             bind_dn=string("ldap_bind_dn", "bind_dn", env.bind_dn),
             bind_password=string("ldap_bind_password", "bind_password", env.bind_password),

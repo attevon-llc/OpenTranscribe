@@ -31,7 +31,7 @@ login does: it negotiates StartTLS when that is configured and reports a failure
 falling back to an unencrypted bind; with neither LDAPS nor StartTLS configured it refuses
 before opening a connection and says why; with no bind DN or no bind password it tries an
 anonymous bind; it verifies the directory's certificate with the submitted
-`ldap_ca_cert_file` and `ldap_tls_skip_verify`, as a login does; and it waits at most the
+`ldap_ca_cert_file`, `ldap_tls_server_name` and `ldap_tls_skip_verify`, as a login does; and it waits at most the
 configured `ldap_timeout`. A green result proves the
 service account can bind. It does not prove that the search base, the search filter or the
 group settings find the right people: try a real login for that.
@@ -41,11 +41,12 @@ group settings find the right people: try a real login for that.
 | Admin UI key | Environment variable | Default | Meaning |
 |---|---|---|---|
 | `ldap_enabled` | `LDAP_ENABLED` | `false` | Turns directory login on |
-| `ldap_server` | `LDAP_SERVER` | empty | Host name, or an `ldap://` / `ldaps://` URL |
+| `ldap_server` | `LDAP_SERVER` | empty | Host name or IP address, or an `ldap://` / `ldaps://` URL |
 | `ldap_port` | `LDAP_PORT` | `636` | TCP port |
 | `ldap_use_ssl` | `LDAP_USE_SSL` | `true` | LDAPS: TLS from the first byte |
 | `ldap_use_tls` | `LDAP_USE_TLS` | `false` | StartTLS: upgrade a plain connection before binding |
 | `ldap_ca_cert_file` | `LDAP_CA_CERT_FILE` | empty | Path, inside the backend container, of a PEM file holding the CA that signed the directory's certificate (see [Certificate verification](#certificate-verification)) |
+| `ldap_tls_server_name` | `LDAP_TLS_SERVER_NAME` | empty | Name the directory's certificate must carry when it differs from the `ldap_server` address (see [Certificate verification](#certificate-verification)) |
 | `ldap_tls_skip_verify` | `LDAP_TLS_SKIP_VERIFY` | `false` | Turns certificate verification **off** (insecure; logs a warning on every connection) |
 | `ldap_bind_dn` | `LDAP_BIND_DN` | empty | DN of the read-only service account used to search |
 | `ldap_bind_password` | `LDAP_BIND_PASSWORD` | empty | Its password (the one encrypted value) |
@@ -95,8 +96,9 @@ every connection test is refused before anything is sent.
 
 Every TLS connection, LDAPS and StartTLS, the login's, the directory sync's and the admin
 **Test connection**'s, checks the directory's certificate before any credential is sent. The
-check is ldap3's `Tls(validate=ssl.CERT_REQUIRED)` (`ldap3/core/tls.py`): the certificate chain
-must lead to a trusted CA and the certificate must name the host the backend connected to.
+check happens inside the TLS handshake, in Python's `ssl` module (`ssl.create_default_context`
+with `server_hostname`): the certificate chain must lead to a trusted CA and the certificate must
+list the host name or IP address the backend connected to (its subject alternative names).
 
 - **Public or enterprise CA already trusted by the container**: nothing to configure.
 - **Private CA**: put the CA certificate (PEM, one or several certificates in one file) where
@@ -105,16 +107,19 @@ must lead to a trusted CA and the certificate must name the host the backend con
   file are trusted; the system CAs are not added to it. Include every CA you rely on.
 - **A CA file that is missing, unreadable or not PEM refuses the connection** with a clear
   error. It never falls back to an unverified connection.
-- **Name the server by host name.** ldap3 compares the certificate's DNS names (subject
-  alternative names, or the common name when there are none) with `ldap_server`. It does not
-  match IP addresses, so a server configured as `10.0.0.5` fails verification even when the
-  certificate lists that address. Use the host name that appears in the certificate and make
-  sure the backend container can resolve it.
+- **Host name or IP address both work.** `ldap_server` may be `ldap.example.com`, `10.0.0.5`, or
+  a URL such as `ldaps://10.0.0.5:636`. A host name must match a DNS name in the certificate's
+  subject alternative names; an IP address must match an IP address entry there. A certificate
+  that lists only a host name is **not** accepted for a connection made by IP address.
+- **`ldap_tls_server_name`** is for exactly that case: the backend still connects to the
+  address in `ldap_server`, but the certificate is checked against this name instead. Set it to
+  a name the certificate lists. Leave it empty otherwise. It has no effect when
+  `ldap_tls_skip_verify` is on.
 - **`ldap_tls_skip_verify`** switches verification off. Anyone able to intercept traffic between
   the backend and the directory can then pose as the directory and read the service-account
   and user passwords sent to it. Use it only to test, or on a network you fully control, and
-  prefer fixing the CA or host name. The backend logs `LDAP TLS certificate verification is
-  DISABLED` on every connection made this way.
+  prefer fixing the CA, or setting `ldap_tls_server_name`. The backend logs `LDAP TLS certificate
+  verification is DISABLED` on every connection made this way.
 - **Upgrading**: before this release the certificate was not checked. A deployment whose
   directory uses a private or self-signed certificate must set `ldap_ca_cert_file` (or
   `ldap_tls_skip_verify`) or its logins and connection tests are refused.
@@ -296,7 +301,7 @@ The backend logs every refusal. Look in `./opentr.sh logs backend`.
 | `LDAP bind refused before connecting: ...` (`app.auth.ldap_directory`) | Neither LDAPS nor StartTLS applies; the message names the cause (for example an `ldap://` URL with `ldap_use_ssl` on) |
 | `LDAP service account bind was refused: check the bind DN, its password and the TLS settings` | The service account could not bind |
 | `StartTLS negotiation with the LDAP server failed; bind refused (no fallback to a cleartext bind is attempted)` | The server does not offer StartTLS or refused the upgrade. The connection is closed afterwards |
-| `LDAP login for <name> failed: LDAPSocketOpenError: ...` (the type may be a subclass) | The host or port is unreachable, so the socket could not be opened (LDAPS and StartTLS alike); or, when the text says `certificate verify failed` or `doesn't match any name`, the directory's certificate was rejected (see [Certificate verification](#certificate-verification)) |
+| `LDAP login for <name> failed: LDAPSocketOpenError: ...` (the type may be a subclass) | The host or port is unreachable, so the socket could not be opened (LDAPS and StartTLS alike); or, when the text says `certificate verify failed` (with `Hostname mismatch` or `IP address mismatch` when the name is the problem), the directory's certificate was rejected (see [Certificate verification](#certificate-verification)) |
 | `The LDAP CA certificate file ... cannot be used: ...` (`app.auth.ldap_directory`) | `ldap_ca_cert_file` is missing, unreadable or not a PEM bundle; nothing was connected |
 | `The LDAP server did not answer within <N> s; bind refused` | The server accepted the connection and then went silent past `ldap_timeout` |
 | `LDAP user not found: <name>` | Check `ldap_search_base` and `ldap_user_search_filter` |

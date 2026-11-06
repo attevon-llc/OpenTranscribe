@@ -6,7 +6,7 @@ one bind path and one set of group rules. ldap3's ``Server`` and ``Connection``
 are module globals looked up at call time: tests replace exactly those two names.
 
 ldap3 references used: ``Server(host, port=, use_ssl=, get_info=, connect_timeout=, tls=)``,
-``ldap3.Tls(validate=, ca_certs_file=)`` (``ldap3/core/tls.py``),
+``ldap3.Tls(validate=, ca_certs_file=)`` and its ``wrap_socket`` (``ldap3/core/tls.py``),
 ``Connection(server, user=, password=, auto_bind=, receive_timeout=, auto_referrals=)``,
 ``Connection.open`` / ``start_tls`` / ``bind`` / ``search`` / ``unbind`` and
 ``ldap3.utils.conv.escape_filter_chars`` (RFC 4515), per the ldap3 2.9 documentation.
@@ -59,19 +59,66 @@ class LdapCaFileError(LDAPSSLConfigurationError):
     """The configured CA bundle cannot be used, so no TLS connection may be made."""
 
 
+class _HandshakeVerifiedTls(Tls):
+    """An ldap3 ``Tls`` that checks the directory's identity inside the TLS handshake.
+
+    ``Tls.wrap_socket`` (``ldap3/core/tls.py``) builds its ``SSLContext`` with
+    ``check_hostname = False`` and, after the handshake, compares the certificate with the
+    server host name through ``check_hostname()``. On Python 3.12, which removed
+    ``ssl.match_hostname``, that comparison is ldap3's own backport
+    (``ldap3/utils/tls_backport.py``), which matches DNS names only and so rejects every IP
+    address, even one the certificate lists. ``Tls`` has no parameter for a ready-made
+    context, so ``wrap_socket`` is replaced by the pattern the Python ``ssl`` documentation
+    gives for clients: ``ssl.create_default_context`` (``CERT_REQUIRED`` and
+    ``check_hostname``) and ``server_hostname`` on ``SSLContext.wrap_socket``. OpenSSL then
+    matches an IP literal against the certificate's IP subjectAltNames and a name against its
+    DNS ones. ldap3 calls ``wrap_socket`` itself for LDAPS (``BaseStrategy.open``) and for
+    StartTLS (``Tls._start_tls``), so both transports share this check.
+
+    Attributes:
+        server_name: The name the certificate must carry, or ``""`` for the address being
+            connected to (``connection.server.host``).
+    """
+
+    def __init__(self, *, server_name: str = "", ca_certs_file: str | None = None) -> None:
+        super().__init__(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_certs_file)
+        self.server_name = server_name
+
+    def wrap_socket(self, connection: Any, do_handshake: bool = False) -> None:
+        """Wrap ``connection.socket`` in TLS, refusing a certificate not valid for the identity.
+
+        Args:
+            connection: The ldap3 ``Connection`` whose open socket is upgraded.
+            do_handshake: Passed to ``do_handshake_on_connect``. The identity check runs in
+                the handshake, so it happens whenever the handshake does.
+
+        Raises:
+            ssl.SSLError: The chain does not lead to a trusted CA, or the certificate is not
+                valid for the identity (``ssl.SSLCertVerificationError``).
+        """
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=self.ca_certs_file)
+        connection.socket = context.wrap_socket(
+            connection.socket,
+            server_side=False,
+            do_handshake_on_connect=do_handshake,
+            server_hostname=self.server_name or connection.server.host,
+        )
+
+
 def _build_tls(cfg: LdapConfig) -> Tls:
     """Describe how the directory's certificate is checked.
 
     ldap3's ``Tls`` defaults to ``validate=ssl.CERT_NONE`` (``ldap3/core/tls.py``,
     ``Tls.__init__``) and a ``Server`` without one gets exactly that for both LDAPS and
     StartTLS (``Connection.start_tls`` builds a bare ``Tls()`` when the server has none),
-    so a ``Tls`` is always passed. With ``CERT_REQUIRED`` ldap3 builds the context with
-    ``ssl.create_default_context`` (system CAs, or only ``ca_certs_file`` when one is
-    given) and, after the handshake, matches the certificate against the server host name
-    (``Tls.wrap_socket`` / ``check_hostname``).
+    so a ``Tls`` is always passed. Unless verification is off, it is a
+    :class:`_HandshakeVerifiedTls`: ``CERT_REQUIRED`` against the system CAs (or only
+    ``ca_cert_file``) and the identity ``tls_server_name`` or, by default, the address in
+    ``cfg.server``, whether that is a host name or an IP address.
 
     Args:
-        cfg: Resolved LDAP configuration (``ca_cert_file``, ``tls_skip_verify``).
+        cfg: Resolved LDAP configuration (``ca_cert_file``, ``tls_server_name``,
+            ``tls_skip_verify``).
 
     Returns:
         The ``Tls`` object for the ``Server``.
@@ -91,7 +138,9 @@ def _build_tls(cfg: LdapConfig) -> Tls:
             raise LdapCaFileError(
                 "The configured LDAP CA certificate file is missing, unreadable or not a PEM bundle"
             ) from exc
-    return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_file or None)
+    return _HandshakeVerifiedTls(
+        server_name=cfg.tls_server_name.strip(), ca_certs_file=ca_file or None
+    )
 
 
 def _get_ldap_server(cfg: LdapConfig) -> Server:

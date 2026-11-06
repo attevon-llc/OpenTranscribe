@@ -31,7 +31,7 @@ from tests.fixtures.ldap_directory_fake import install
 #: A stand-in session: the stored-settings lookup is replaced, so nothing ever queries it.
 _DB = MagicMock(spec=Session)
 
-#: setting name -> ``LdapConfig`` field. All twenty, so a dropped mapping fails here.
+#: setting name -> ``LdapConfig`` field. All twenty-one, so a dropped mapping fails here.
 SETTING_TO_FIELD = {
     "LDAP_ENABLED": "enabled",
     "LDAP_SERVER": "server",
@@ -39,6 +39,7 @@ SETTING_TO_FIELD = {
     "LDAP_USE_SSL": "use_ssl",
     "LDAP_USE_TLS": "use_tls",
     "LDAP_CA_CERT_FILE": "ca_cert_file",
+    "LDAP_TLS_SERVER_NAME": "tls_server_name",
     "LDAP_TLS_SKIP_VERIFY": "tls_skip_verify",
     "LDAP_BIND_DN": "bind_dn",
     "LDAP_BIND_PASSWORD": "bind_password",
@@ -63,6 +64,7 @@ DISTINCT_VALUES: dict[str, Any] = {
     "LDAP_USE_SSL": False,
     "LDAP_USE_TLS": True,
     "LDAP_CA_CERT_FILE": "/etc/ssl/directory-ca.pem",
+    "LDAP_TLS_SERVER_NAME": "directory.example",
     "LDAP_TLS_SKIP_VERIFY": True,
     "LDAP_BIND_DN": "cn=reader,dc=test",
     "LDAP_BIND_PASSWORD": "reader-credential",
@@ -120,7 +122,7 @@ class TestFromEnv:
 
 
 class TestFromDb:
-    def test_it_asks_for_exactly_the_twenty_ldap_keys(self, monkeypatch):
+    def test_it_asks_for_exactly_the_twenty_one_ldap_keys(self, monkeypatch):
         _patch_settings(monkeypatch, DISTINCT_VALUES)
 
         _, fake = _from_db(monkeypatch, {})
@@ -199,7 +201,14 @@ class TestFromDb:
         assert cfg.user_search_filter == "(uid={username})"
         # Not "memberOf": an explicitly stored empty group attribute disables group retrieval.
         assert cfg.group_attr == ""
-        for field in ("server", "ca_cert_file", "bind_dn", "bind_password", "search_base"):
+        for field in (
+            "server",
+            "ca_cert_file",
+            "tls_server_name",
+            "bind_dn",
+            "bind_password",
+            "search_base",
+        ):
             assert getattr(cfg, field) == "", field
         for field in ("admin_users", "admin_groups", "user_groups"):
             assert getattr(cfg, field) == "", field
@@ -334,6 +343,7 @@ class TestEnvironmentParsing:
             "LDAP_USE_SSL": True,
             "LDAP_USE_TLS": False,
             "LDAP_CA_CERT_FILE": "",
+            "LDAP_TLS_SERVER_NAME": "",
             "LDAP_TLS_SKIP_VERIFY": False,
             "LDAP_BIND_DN": "",
             "LDAP_BIND_PASSWORD": "",
@@ -359,6 +369,7 @@ class TestEnvironmentParsing:
             "LDAP_USE_SSL": "false",
             "LDAP_USE_TLS": "true",
             "LDAP_CA_CERT_FILE": "/etc/ssl/directory-ca.pem",
+            "LDAP_TLS_SERVER_NAME": "directory.example",
             "LDAP_TLS_SKIP_VERIFY": "true",
             "LDAP_BIND_DN": "cn=reader,dc=test",
             "LDAP_BIND_PASSWORD": "reader-credential",
@@ -389,6 +400,7 @@ class TestEnvironmentParsing:
         for name in (
             "LDAP_SERVER",
             "LDAP_CA_CERT_FILE",
+            "LDAP_TLS_SERVER_NAME",
             "LDAP_BIND_DN",
             "LDAP_BIND_PASSWORD",
             "LDAP_SEARCH_BASE",

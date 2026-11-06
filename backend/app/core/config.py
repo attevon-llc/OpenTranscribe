@@ -1079,9 +1079,9 @@ class Settings(BaseSettings):
     LDAP_SERVER: str = ""  # host name, or an ldap:// / ldaps:// URL (the scheme wins)
     LDAP_PORT: int = 636
     LDAP_USE_SSL: bool = True
-    # LDAP_USE_TLS = StartTLS on non-SSL connections (port 389); exclusive with LDAP_USE_SSL (LDAPS)
-    LDAP_USE_TLS: bool = False
+    LDAP_USE_TLS: bool = False  # StartTLS on port 389; exclusive with LDAP_USE_SSL (LDAPS)
     LDAP_CA_CERT_FILE: str = ""  # PEM bundle of a private CA; replaces the system CAs
+    LDAP_TLS_SERVER_NAME: str = ""  # name the certificate must carry; empty = LDAP_SERVER
     LDAP_TLS_SKIP_VERIFY: bool = False  # insecure: certificate not checked; warns per connection
     LDAP_BIND_DN: str = ""  # read-only service account used for searches
     LDAP_BIND_PASSWORD: str = ""

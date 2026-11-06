@@ -37,8 +37,11 @@ describe('LDAP panel: directory certificate verification', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('sends both settings on save and on the connection test', async () => {
-    const { onSave, onTest } = renderPanel({ ldap_ca_cert_file: '/ca.pem' });
+  it('sends the verification settings on save and on the connection test', async () => {
+    const { onSave, onTest } = renderPanel({
+      ldap_ca_cert_file: '/ca.pem',
+      ldap_tls_server_name: 'directory.example',
+    });
     const skip = screen.getByLabelText('settings.ldap.tlsSkipVerify');
 
     await fireEvent.click(skip);
@@ -47,11 +50,23 @@ describe('LDAP panel: directory certificate verification', () => {
 
     for (const sent of [payload(onSave), payload(onTest)]) {
       expect(sent.ldap_ca_cert_file).toBe('/ca.pem');
+      expect(sent.ldap_tls_server_name).toBe('directory.example');
       expect(sent.ldap_tls_skip_verify).toBe(true);
     }
   });
 
-  it('warns while verification is off and locks the CA file field', async () => {
+  it('shows the stored server name and lets it be edited', async () => {
+    const { onSave } = renderPanel({ ldap_tls_server_name: 'directory.example' });
+    const name = screen.getByLabelText('settings.ldap.tlsServerName') as HTMLInputElement;
+    expect(name.value).toBe('directory.example');
+
+    await fireEvent.input(name, { target: { value: 'ldap.corp.example' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'settings.ldap.saveConfiguration' }));
+
+    expect(payload(onSave).ldap_tls_server_name).toBe('ldap.corp.example');
+  });
+
+  it('warns while verification is off and locks the CA file and server name fields', async () => {
     renderPanel({});
 
     await fireEvent.click(screen.getByLabelText('settings.ldap.tlsSkipVerify'));
@@ -60,6 +75,9 @@ describe('LDAP panel: directory certificate verification', () => {
     expect((screen.getByLabelText('settings.ldap.caCertFile') as HTMLInputElement).disabled).toBe(
       true
     );
+    expect(
+      (screen.getByLabelText('settings.ldap.tlsServerName') as HTMLInputElement).disabled
+    ).toBe(true);
   });
 
   it('defaults a config without the new fields to verifying with no CA file', () => {
@@ -69,5 +87,8 @@ describe('LDAP panel: directory certificate verification', () => {
       false
     );
     expect((screen.getByLabelText('settings.ldap.caCertFile') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('settings.ldap.tlsServerName') as HTMLInputElement).value).toBe(
+      ''
+    );
   });
 });

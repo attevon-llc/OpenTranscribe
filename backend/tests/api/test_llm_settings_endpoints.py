@@ -1,8 +1,7 @@
 """Gap-filling characterization tests for the user LLM settings endpoints.
 
-The existing ``backend/tests/test_llm_settings.py`` is gated behind
-``RUN_LLM_TESTS=true`` (it exercises model/schema/service internals with a
-mocked DB) and does NOT run in the default ungated suite. The ownership/authz
+``backend/tests/test_llm_settings.py`` exercises the model/schema/service internals
+with a mocked DB. The ownership/authz
 ``require_resource_owner`` details for this module are already snapshot-pinned in
 ``test_ownership_contracts.py``. This suite adds the ungated, live-DB coverage
 the wave brief calls for: provider CATALOG + status/list shapes, create/test

@@ -6,9 +6,8 @@
 # bury the assertion, and widening a production signature to suit a test is worse.
 """Tests for user LLM settings: encryption, model, API endpoints, schemas, service.
 
-Encryption tests always run. The remaining classes are gated behind
-RUN_LLM_TESTS=true (they exercise the multi-configuration LLM settings API
-against the test database — no external LLM calls are made).
+Every class runs by default: nothing here needs a provider, a key or the network, and
+no external LLM call is made. (The `RUN_LLM_TESTS` gate these once sat behind is gone.)
 """
 
 from unittest.mock import Mock

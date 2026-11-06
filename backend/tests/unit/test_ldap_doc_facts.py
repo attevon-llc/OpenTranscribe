@@ -1,8 +1,8 @@
 """The LDAP operator documentation and the ``LDAP_*`` setting comments say what the code does.
 
 Both were written once and drifted. ``docs/LDAP_AUTH.md`` documents error strings that do
-not exist, a direct-auth fallback that was removed, a SQL recipe that plants an empty
-password hash, and omits the group settings entirely; ``config.py`` calls the two group
+not exist, reads the local-login fallback log line as a database fault, a SQL recipe that
+plants an empty password hash, and omits the group settings entirely; ``config.py`` calls the two group
 lists comma-separated when the parser splits them on semicolons (a DN contains commas).
 
 Every test here was written for the CORRECT state and fails on the tree it was written
@@ -44,7 +44,8 @@ SETTINGS = (
 
 #: Claims that are false today (P3 spec section 8, "Do not carry over"), as patterns.
 FALSE_CLAIMS = {
-    "a direct-auth fallback log line that no longer exists": r"Direct auth failed, trying ORM",
+    "that the local-login fallback log line means a database fault": r"direct\s+(DB|database)\s+"
+    r"connection\s+(issue|problem)",
     "an error string that does not exist": r"Password change not allowed for LDAP users",
     "another error string that does not exist": r"cannot use password auth",
     "a third error string that does not exist": r"User has no email attribute",

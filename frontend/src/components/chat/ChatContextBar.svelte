@@ -119,7 +119,7 @@
     </button>
   {/if}
 
-  {#if useContext && estimate && estimate.warning_level !== 'ok'}
+  {#if useContext && estimate && estimate.pct !== null && estimate.warning_level !== 'ok'}
     <span
       class="chip chip-estimate"
       class:over={estimate.warning_level === 'over'}

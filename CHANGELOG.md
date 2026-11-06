@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `LDAP_RECURSIVE_GROUPS` no longer has a different default expression from the other LDAP
   booleans; it is parsed by the same settings parser.
+- `POST /api/chat/context/estimate` no longer reports a made-up 8192-token window when the model's context size is unknown: it returns `context_window: null`, `context_window_source: "unknown"` and a reason code, logs a warning, and the file picker shows "context size unknown". Callers may pass `assumed_context_window` to choose a window; it never overrides a known one.
 
 - **Migrations now work through connection proxies and poolers that reject libpq startup
   parameters** (e.g. AWS RDS Proxy, PgBouncer in some modes). The migration runner, Alembic and

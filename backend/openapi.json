@@ -4388,11 +4388,42 @@
         "type": "object"
       },
       "ContextEstimate": {
-        "description": "How much of the model's context window a scope would occupy.",
+        "description": "How much of the model's context window a scope would occupy.\n\n``context_window`` is ``None`` when no model window is known and the caller supplied no\n``assumed_context_window``: a made-up number would read as a measurement (it once\nunder-measured several evaluation runs at 8192), so ``pct`` is ``None`` and\n``warning_level`` is ``\"unknown\"`` instead.",
         "properties": {
           "context_window": {
-            "title": "Context Window",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "context_window_source": {
+            "enum": [
+              "model",
+              "assumed",
+              "unknown"
+            ],
+            "title": "Context Window Source",
+            "type": "string"
+          },
+          "context_window_unknown_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "llm_not_configured",
+                  "llm_config_unusable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Unknown Reason"
           },
           "estimated_tokens": {
             "title": "Estimated Tokens",
@@ -4403,15 +4434,23 @@
             "type": "integer"
           },
           "pct": {
-            "title": "Pct",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
           },
           "warning_level": {
             "default": "ok",
             "enum": [
               "ok",
               "warn",
-              "over"
+              "over",
+              "unknown"
             ],
             "title": "Warning Level",
             "type": "string"
@@ -4421,6 +4460,7 @@
           "file_count",
           "estimated_tokens",
           "context_window",
+          "context_window_source",
           "pct"
         ],
         "title": "ContextEstimate",
@@ -33016,7 +33056,7 @@
     },
     "/api/auth/register": {
       "post": {
-        "description": "Register a new user.\n\nPassword must meet the configured password policy requirements (FedRAMP IA-5):\n- Minimum length (default: 12 characters)\n- At least one uppercase letter\n- At least one lowercase letter\n- At least one digit\n- At least one special character\n- Cannot contain email username or name parts\n\nNote: When LDAP is enabled, local registration is still allowed for admin accounts.\nRegular users should use LDAP authentication.\n\nRate-limited like every other auth route — this was the ONLY one without a limiter,\nwhile creating accounts that are immediately active and GPU-capable (issue #284\nA0.11).\n\nRegistration can be closed entirely, which a deployment fronted by an external\nIdP should always do. The switch is DB-backed (Settings -> Authentication ->\nLocal) with ``ALLOW_OPEN_REGISTRATION`` as the env fallback, matching the\nprecedence every other auth setting uses. It previously read the env var ONLY,\nso the admin-UI toggle that appeared to control this did nothing at all — a\ndeployment running LDAP reported that users could still self-register (#354).",
+        "description": "Register a new user.\n\nPassword must meet the configured password policy requirements (FedRAMP IA-5):\n- Minimum length (default: 12 characters)\n- At least one uppercase letter\n- At least one lowercase letter\n- At least one digit\n- At least one special character\n- Cannot contain email username or name parts\n\nSelf-registration only ever creates local-password accounts with the ``user``\nrole; directory (LDAP) accounts are provisioned on their first directory login.\n\nRate-limited like every other auth route — this was the ONLY one without a limiter,\nwhile creating accounts that are immediately active and GPU-capable (issue #284\nA0.11).\n\nRegistration can be closed entirely, which a deployment fronted by an external\nIdP should always do. The switch is DB-backed (Settings -> Authentication ->\nLocal) with ``ALLOW_OPEN_REGISTRATION`` as the env fallback, matching the\nprecedence every other auth setting uses. It previously read the env var ONLY,\nso the admin-UI toggle that appeared to control this did nothing at all — a\ndeployment running LDAP reported that users could still self-register (#354).",
         "operationId": "register_api_auth_register_post",
         "requestBody": {
           "content": {
@@ -33449,8 +33489,28 @@
     },
     "/api/chat/context/estimate": {
       "post": {
-        "description": "Estimate how much of the model's context a selection would occupy.\n\nAdvisory only — the prompt builder enforces the real budget. This exists so\nthe picker can warn before someone selects 400 recordings.",
+        "description": "Estimate how much of the model's context a selection would occupy.\n\nAdvisory only — the prompt builder enforces the real budget. This exists so\nthe picker can warn before someone selects 400 recordings.\n\nWhen the caller has no usable model the window is unknown, and the response\nsays so (``context_window`` null, ``warning_level`` ``unknown``) rather than\nmeasuring against a guess. ``assumed_context_window`` lets an API caller choose\na window for that case; it is ignored whenever a model window is known.",
         "operationId": "estimate_context_api_chat_context_estimate_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "assumed_context_window",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2000000,
+                  "minimum": 512,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Assumed Context Window"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

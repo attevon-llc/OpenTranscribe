@@ -141,10 +141,14 @@
           <span>{$t('chat.picker.selected', { count: totalSelected })}</span>
           {#if estimate}
             <span class="estimate" class:over={estimate.warning_level === 'over'}>
-              {$t('chat.picker.estimatedFiles', {
-                files: estimate.file_count,
-                pct: Math.round(estimate.pct),
-              })}
+              {#if estimate.pct === null}
+                {$t('chat.picker.estimatedFilesUnknown', { files: estimate.file_count })}
+              {:else}
+                {$t('chat.picker.estimatedFiles', {
+                  files: estimate.file_count,
+                  pct: Math.round(estimate.pct),
+                })}
+              {/if}
             </span>
           {/if}
           <button type="button" class="clear-link" on:click={clearAll}>

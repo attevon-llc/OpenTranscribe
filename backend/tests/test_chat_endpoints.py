@@ -832,10 +832,14 @@ def test_estimate_reports_a_shape_the_picker_can_render(client, auth_headers):
         "file_count",
         "estimated_tokens",
         "context_window",
+        "context_window_source",
         "pct",
         "warning_level",
     }
-    assert body["warning_level"] in ("ok", "warn", "over")
+    # With no LLM configured the window is unknown; the old assertion passed only because the
+    # endpoint substituted 8192 (see tests/api/test_chat_context_estimate_window.py).
+    assert body["warning_level"] in ("ok", "warn", "over", "unknown")
+    assert (body["context_window"] is None) == (body["context_window_source"] == "unknown")
 
 
 # ---------------------------------------------------------------------------

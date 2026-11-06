@@ -375,13 +375,26 @@ class ChatUserSettingsUpdate(BaseModel):
 
 
 class ContextEstimate(BaseModel):
-    """How much of the model's context window a scope would occupy."""
+    """How much of the model's context window a scope would occupy.
+
+    ``context_window`` is ``None`` when no model window is known and the caller supplied no
+    ``assumed_context_window``: a made-up number would read as a measurement (it once
+    under-measured several evaluation runs at 8192), so ``pct`` is ``None`` and
+    ``warning_level`` is ``"unknown"`` instead.
+    """
 
     file_count: int
     estimated_tokens: int
-    context_window: int
-    pct: float
-    warning_level: Literal["ok", "warn", "over"] = "ok"
+    context_window: int | None
+    #: ``model`` = the user's configured model's window; ``assumed`` = the caller's
+    #: ``assumed_context_window`` (only used when no model window is known); ``unknown``.
+    context_window_source: Literal["model", "assumed", "unknown"]
+    #: Why no model window is known. Set when ``context_window_source`` is not ``model``.
+    context_window_unknown_reason: Literal["llm_not_configured", "llm_config_unusable"] | None = (
+        None
+    )
+    pct: float | None
+    warning_level: Literal["ok", "warn", "over", "unknown"] = "ok"
 
 
 class AnswerBudget(BaseModel):

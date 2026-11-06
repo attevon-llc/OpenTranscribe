@@ -5541,6 +5541,7 @@
   "chat.picker.emptySpeakers": "Nog geen benoemde sprekers — label eerst sprekers in een transcript",
   "chat.picker.emptyTags": "Nog geen labels",
   "chat.picker.estimatedFiles": "{{files}} opnamen · ~{{pct}}% van de context",
+  "chat.picker.estimatedFilesUnknown": "{{files}} opnamen · contextgrootte onbekend",
   "chat.picker.searchCollections": "Collecties zoeken",
   "chat.picker.searchFiles": "Opnamen zoeken",
   "chat.picker.searchSpeakers": "Sprekers filteren",

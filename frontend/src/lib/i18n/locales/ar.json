@@ -5573,6 +5573,7 @@
   "chat.picker.emptySpeakers": "لا يوجد متحدثون مُسمّون بعد — قم بتسمية المتحدثين في أحد النصوص المفرغة أولًا",
   "chat.picker.emptyTags": "لا توجد وسوم بعد",
   "chat.picker.estimatedFiles": "{{files}} تسجيلات · ~{{pct}}% من السياق",
+  "chat.picker.estimatedFilesUnknown": "{{files}} تسجيلات · حجم السياق غير معروف",
   "chat.picker.searchCollections": "البحث في المجموعات",
   "chat.picker.searchFiles": "البحث في التسجيلات",
   "chat.picker.searchSpeakers": "تصفية المتحدثين",

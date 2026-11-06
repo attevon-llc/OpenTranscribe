@@ -14,6 +14,8 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from app.core.constants import LLM_CONTEXT_WINDOW_MAX
+from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.enums import ContextWindowStatus
 from app.core.enums import LLMProvider
 from app.core.enums import ReasoningOffSwitch
@@ -131,7 +133,7 @@ class UserLLMSettingsBase(BaseModel):
     @field_validator("max_tokens")
     @classmethod
     def validate_max_tokens(cls, v: int) -> int:
-        if v < 512 or v > 2000000:
+        if v < LLM_CONTEXT_WINDOW_MIN or v > LLM_CONTEXT_WINDOW_MAX:
             raise ValueError("max_tokens must be between 512 and 2,000,000")
         return v
 
@@ -172,7 +174,7 @@ class UserLLMSettingsUpdate(BedrockCredentialFields):
     @field_validator("max_tokens")
     @classmethod
     def validate_max_tokens(cls, v: int | None) -> int | None:
-        if v is not None and (v < 512 or v > 2000000):
+        if v is not None and not LLM_CONTEXT_WINDOW_MIN <= v <= LLM_CONTEXT_WINDOW_MAX:
             raise ValueError("max_tokens must be between 512 and 2,000,000")
         return v
 

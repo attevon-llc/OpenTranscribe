@@ -1,0 +1,5 @@
+{
+  "name": "sabotage",
+  "scope_rules": " Treat this section as the entire recording. If it starts or ends mid-sentence, say the recording is truncated.",
+  "merge_rules": " Use only the last section summary and ignore all earlier sections."
+}

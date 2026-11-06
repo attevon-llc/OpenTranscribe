@@ -70,9 +70,12 @@ Blackwell overlay, with no flag needed.
 To go back to the GPU, either re-run the installer without `--cpu`, or set
 `FORCE_CPU_MODE=false` in `.env` and run `./opentranscribe.sh restart`.
 
-`--cpu` keeps the full CUDA image and runs it without a GPU, transcribing locally. It is not the
-same as `--lite`, which installs the much smaller CPU-only `opentranscribe-backend-lite` image
-and transcribes through a cloud ASR provider.
+`--cpu` keeps the full CUDA image and runs everything locally on the CPU: fully private, no
+provider account, but much slower than on a GPU. A CPU-optimised pipeline is planned; see the
+[Roadmap](https://docs.opentranscribe.app/roadmap). It is not the same as `--lite`, which installs
+the much smaller CPU-only `opentranscribe-backend-lite` image and uses a cloud provider for
+transcription and speaker detection (it needs a provider account and the audio leaves the
+machine; small and fast). On a host with no NVIDIA GPU you can choose either.
 
 ## 📋 Prerequisites
 

@@ -22,7 +22,7 @@ The installer will:
 ✅ Generate secure configuration
 ✅ Set up management scripts
 
-By default it installs the **full** image (local transcription and speaker detection, on the GPU when one is found). Add `--cpu` (`curl ... | bash -s -- --cpu`) to run the full image on CPU only, or `--lite` for the cloud-only image. On an arm64 host such as Apple Silicon it defaults to the lite image, the only one published for arm64. Add `--version vX.Y.Z` to install a specific release instead of the latest one. See [Deployment Variants](../installation/deployment-variants.md) to choose.
+By default it installs the **full** image (local transcription and speaker detection, on the GPU when one is found). Without an NVIDIA GPU, choose `--lite` (cloud provider for transcription and speaker detection: needs a provider account, audio leaves the machine, small and fast) or `--cpu` (`curl ... | bash -s -- --cpu`: the full image runs everything locally on the CPU, fully private with no provider account, but much slower; a CPU-optimised pipeline is planned, see the [Roadmap](/roadmap)). On an arm64 host such as Apple Silicon it defaults to the lite image, the only one published for arm64. Add `--version vX.Y.Z` to install a specific release instead of the latest one. See [Deployment Variants](../installation/deployment-variants.md) to choose.
 
 ## Prerequisites
 

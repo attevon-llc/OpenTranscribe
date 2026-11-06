@@ -59,6 +59,10 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 `opentranscribe.sh` then never loads the GPU overlays, even if an NVIDIA runtime appears later.
 On a CPU host the installer recommends the small `base` Whisper model.
 
+Everything runs locally on the CPU: it is fully private and needs no provider account, but
+processing is much slower than on a GPU. A CPU-optimised pipeline is planned; see the
+[Roadmap](/roadmap).
+
 :::caution Speaker detection is not switched off by CPU mode
 Each file's speaker detection follows the user's **Speaker Detection** setting. On a CPU-only
 host, speaker detection on this server runs on the CPU and is slow. To skip it, set **Speaker
@@ -78,8 +82,10 @@ vendor ever stores a voiceprint for you.
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
 ```
 
-`--lite` implies `--cpu` and writes `DEPLOYMENT_MODE=lite`. On an arm64 host the management
-script uses the lite image by default, because it is the only backend published for arm64.
+`--lite` implies `--cpu` and writes `DEPLOYMENT_MODE=lite`. It needs a provider account and the
+audio leaves the machine; in return the image is small and fast. On a host with no NVIDIA GPU you
+can choose either `--lite` or `--cpu`. On an arm64 host the management script uses the lite image
+by default, because it is the only backend published for arm64.
 
 On lite, choosing local transcription or "This server" for speaker detection is refused with a
 clear message:

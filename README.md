@@ -334,8 +334,10 @@ Then follow the on-screen instructions. The setup script will:
 
 **🧮 CPU-only install (`--cpu`):** for a machine where GPU containers cannot run, most often
 WSL2, where Docker lists the NVIDIA runtime but every GPU container fails at start; or for a
-machine without an NVIDIA GPU where you still want local transcription on the CPU. The installer
-then skips GPU detection entirely:
+machine without an NVIDIA GPU where you want everything to run locally on the CPU. It is fully
+private and needs no provider account, but processing is much slower than on a GPU. A
+CPU-optimised pipeline is planned; see the [Roadmap](https://docs.opentranscribe.app/roadmap). The
+installer then skips GPU detection entirely:
 
 ```bash
 # Pass the flag through the pipe
@@ -350,8 +352,10 @@ The choice is saved in `.env` as `FORCE_CPU_MODE=true`, so every later
 
 **🪶 Lite install (`--lite`):** `--cpu` still runs the full CUDA image, just without a GPU. `--lite`
 is different — it installs the much smaller CPU-only `opentranscribe-backend-lite` image, which
-carries no CUDA runtime and no local ASR model, and transcribes via a **cloud ASR provider** you
-configure after install. Implies `--cpu`, and persists `DEPLOYMENT_MODE=lite`:
+carries no CUDA runtime and no local ASR model. Transcription and speaker detection run with a
+**cloud provider** you configure after install, so you need a provider account and the audio
+leaves the machine; the image is small and fast. Implies `--cpu`, and persists
+`DEPLOYMENT_MODE=lite`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
@@ -360,9 +364,9 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_LITE=1 bash
 ```
 
-This is the only supported shape on a host with no NVIDIA GPU at all, and it is what arm64 hosts
-select automatically — the full CUDA image publishes no arm64 leg, so on Apple Silicon and other
-aarch64 machines the lite image is the only backend available.
+On a host with no NVIDIA GPU you can choose either `--lite` or `--cpu`. arm64 hosts select lite
+automatically — the full CUDA image publishes no arm64 leg, so on Apple Silicon and other aarch64
+machines the lite image is the only backend available.
 
 **⚠️ IMPORTANT - HuggingFace Setup:**
 The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**

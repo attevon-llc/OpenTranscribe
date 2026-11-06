@@ -275,7 +275,7 @@ The backend logs every refusal. Look in `./opentr.sh logs backend`.
 | `SECURITY: refusing provider-id match for ldap identity ... (provider_id_email_mismatch)` | The directory reports a different email for a known account; the login is refused until a super_admin corrects the stored address (see Accounts) |
 | `SECURITY: converting local account ... to LDAP; its local password is cleared` | A linked local account had its first directory login |
 
-A local-password login also logs `Direct auth failed, trying ORM auth for local user: <name>`
+A local-password login also logs `Falling back to the ORM password check for local user: <name>`
 whenever its first verification path does not accept the password, a wrong password included.
 That line is routine and says nothing about the directory.
 

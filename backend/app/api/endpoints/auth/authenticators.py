@@ -204,7 +204,7 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
         return user_uuid_str, user_data
 
     # Fall back to ORM-based auth
-    logger.info("Direct auth failed, trying ORM auth for local user: %s", username)
+    logger.info("Falling back to the ORM password check for local user: %s", username)
     user = authenticate_user(db, username, password)
     if not user:
         return None

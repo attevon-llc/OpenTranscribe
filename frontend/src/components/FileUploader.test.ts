@@ -102,6 +102,7 @@ vi.mock('$lib/api/asrSettings', () => ({
 vi.mock('$lib/api/tags', () => ({ listTags: vi.fn().mockResolvedValue([]) }));
 
 import FileUploader from './FileUploader.svelte';
+import { loadProtectedMediaAuthConfig } from '$lib/services/configService';
 import { capabilities, resetCapabilities } from '$stores/capabilities';
 import {
   DEFAULT_TRANSCRIPTION_SETTINGS,
@@ -140,6 +141,16 @@ beforeEach(() => {
     extraction_threshold_mb: 100,
     remember_choice: false,
     show_modal: true,
+  });
+});
+
+describe('protected media', () => {
+  it('starts loading the protected-media auth config on mount', async () => {
+    const { container } = render(FileUploader);
+    await waitFor(() => expect(container.querySelector('input[type="file"]')).not.toBeNull());
+
+    expect(loadProtectedMediaAuthConfig).toHaveBeenCalledTimes(1);
+    expect(loadProtectedMediaAuthConfig).toHaveBeenCalledWith();
   });
 });
 

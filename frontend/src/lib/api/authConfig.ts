@@ -58,6 +58,7 @@ export interface LDAPConfig {
   ldap_use_ssl: boolean;
   ldap_use_tls: boolean;
   ldap_ca_cert_file: string;
+  ldap_tls_server_name: string;
   ldap_tls_skip_verify: boolean;
   ldap_bind_dn: string;
   ldap_bind_password?: string;

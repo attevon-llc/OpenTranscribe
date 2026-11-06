@@ -14,6 +14,7 @@
     ldap_use_ssl: config.ldap_use_ssl ?? false,
     ldap_use_tls: config.ldap_use_tls ?? true,
     ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
+    ldap_tls_server_name: config.ldap_tls_server_name ?? '',
     ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? false,
     ldap_bind_dn: config.ldap_bind_dn ?? '',
     ldap_bind_password: config.ldap_bind_password ?? '',
@@ -41,6 +42,7 @@
       ldap_use_ssl: config.ldap_use_ssl ?? false,
       ldap_use_tls: config.ldap_use_tls ?? true,
       ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
+      ldap_tls_server_name: config.ldap_tls_server_name ?? '',
       ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? false,
       ldap_bind_dn: config.ldap_bind_dn ?? '',
       ldap_bind_password: config.ldap_bind_password ?? '',
@@ -159,6 +161,19 @@
         disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify}
       />
       <span class="help-text">{$t('settings.ldap.caCertFileHelp')}</span>
+    </div>
+
+    <div class="form-group">
+      <label for="ldap_tls_server_name">{$t('settings.ldap.tlsServerName')}</label>
+      <input
+        id="ldap_tls_server_name"
+        type="text"
+        bind:value={formData.ldap_tls_server_name}
+        on:input={handleChange}
+        placeholder="ldap.example.com"
+        disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify}
+      />
+      <span class="help-text">{$t('settings.ldap.tlsServerNameHelp')}</span>
     </div>
 
     <label class="checkbox-label">

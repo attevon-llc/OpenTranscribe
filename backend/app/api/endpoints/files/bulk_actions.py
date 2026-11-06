@@ -22,12 +22,12 @@ from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files.bulk_action_handlers import BulkActionResult
 from app.api.endpoints.files.bulk_action_handlers import RedactionNotEnabledError
+from app.api.endpoints.files.bulk_action_handlers import _apply_batch_tag
 from app.api.endpoints.files.bulk_action_handlers import _handle_cancel_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_delete_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_identify_speakers_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_recover_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_summarize_action
-from app.api.endpoints.files.bulk_action_handlers import _handle_tag_action
 from app.api.endpoints.files.bulk_action_handlers import _redact_if_enabled
 from app.api.endpoints.files.bulk_rework_actions import _handle_reprocess_action
 from app.api.endpoints.files.bulk_rework_actions import _handle_retry_action
@@ -164,10 +164,10 @@ def _process_single_file_action(
         "identify_speakers": lambda: _handle_identify_speakers_action(
             db, file_uuid, file_id, current_user.id
         ),
-        "add_tag": lambda: _handle_tag_action(
+        "add_tag": lambda: _apply_batch_tag(
             db, file_uuid, file_id, tag, add=True, user_id=current_user.id, bypass=bypass
         ),
-        "remove_tag": lambda: _handle_tag_action(
+        "remove_tag": lambda: _apply_batch_tag(
             db, file_uuid, file_id, tag, add=False, user_id=current_user.id, bypass=bypass
         ),
     }

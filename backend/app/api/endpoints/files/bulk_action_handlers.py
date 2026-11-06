@@ -301,7 +301,7 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
     )
 
 
-def _handle_tag_action(
+def _apply_batch_tag(
     db: Session,
     file_uuid: str,
     file_id: int,

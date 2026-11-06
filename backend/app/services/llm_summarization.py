@@ -15,30 +15,30 @@ logger = logging.getLogger(__name__)
 # Without them a short trailing section (goodbyes, crosstalk) reports "no decisions"
 # and the merge adopts that as the verdict for the whole meeting (#941).
 SECTION_SCOPE_RULES = (
-    " The transcript below covers only part of a longer recording. It was cut out"
-    " automatically by length, so its start and end are arbitrary points rather than"
-    " natural breaks in the conversation. Summarize only what this section contains and"
-    " make no claim about the recording overall: if no decision or action item appears"
-    " here, that says nothing about whether the meeting reached any in other sections."
-    " Do not describe this section as partial, cut off or incomplete because it starts"
-    " or ends mid-sentence; that is a side effect of the split. Only section 1 can show"
-    " that the recording itself started abruptly, and only the final section can show"
-    " that it ended abruptly."
+    " You are reading one slice of a longer recording."
+    " The slice was cut by length, not at a natural break."
+    " Its first and last lines may stop mid-sentence."
+    " Report only what this slice contains."
+    " Do not make any claim about the whole recording."
+    " If this slice has no decision or action item, do not infer that the meeting had none."
+    " Do not call the slice partial, cut off or incomplete because of where it starts or ends."
+    " Say the recording itself began abruptly only in section 1."
+    " Say it ended abruptly only in the final section."
 )
 
 SECTION_MERGE_RULES = (
-    " Each input is the summary of one section of the same recording; the sections were"
-    " summarized separately and are listed in chronological order. Combine them as a"
-    " union: every topic, decision, action item and follow-up that appears in any"
-    " section must appear in the final summary, merged where two sections report the"
-    " same item, and never left out. A section that reports nothing covers only its own"
-    " stretch of the recording; it must not remove, play down or contradict anything"
-    " another section reported. Build the summary from the sections that have"
-    " substance. Describe the recording as truncated or incomplete only if a section"
-    " explicitly says so, never because a section boundary falls mid-sentence. A"
-    ' section whose summary contains "_error": true could not be processed because of'
-    " a technical failure: say that this part of the recording could not be"
-    " summarized, and never treat it as evidence that nothing happened during it."
+    " The input is a list of section summaries from one recording."
+    " The sections were summarized separately and are in time order."
+    " Write one summary of the whole recording."
+    " Keep every topic, decision, action item and follow-up from every section."
+    " Merge an item that two sections both report."
+    " A section with nothing to report is silent only about its own part of the recording."
+    " Never let it remove, weaken or contradict what another section reported."
+    " Say the recording is truncated or incomplete only if a section explicitly says so."
+    " A section boundary that falls mid-sentence is not a reason."
+    ' If a section summary contains "_error": true, that section failed to process.'
+    " State that this part of the recording could not be summarized."
+    " Never take it as proof that nothing happened in that part."
 )
 
 

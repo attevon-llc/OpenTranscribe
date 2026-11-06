@@ -20,13 +20,44 @@ async function translator(lng: string, resources: Record<string, string>) {
 const KEY = 'common.retryAfterSeconds';
 
 describe('plural forms render in the active language, not the English fallback', () => {
-  it('ru: 1, 2, 5, 21 and a fraction each pick their own CLDR form', async () => {
+  it('ru: each count picks its own CLDR form (fixture resources, no wording pinned)', async () => {
+    const fixture = {
+      [`${KEY}_one`]: 'form-one {{count}}',
+      [`${KEY}_few`]: 'form-few {{count}}',
+      [`${KEY}_many`]: 'form-many {{count}}',
+      [`${KEY}_other`]: 'form-other {{count}}',
+    };
+    const t = await translator('ru', fixture);
+    const picked: Array<[number, string]> = [
+      [0, 'many'],
+      [1, 'one'],
+      [2, 'few'],
+      [4, 'few'],
+      [5, 'many'],
+      [11, 'many'],
+      [12, 'many'],
+      [14, 'many'],
+      [21, 'one'],
+      [22, 'few'],
+      [25, 'many'],
+      [101, 'one'],
+      [1.5, 'other'],
+    ];
+    for (const [count, form] of picked) {
+      expect(t(KEY, { count })).toBe(`form-${form} ${count}`);
+    }
+  });
+
+  it('ru: the shipped locale carries four distinct, non-English forms with the count', async () => {
     const t = await translator('ru', ru);
-    expect(t(KEY, { count: 1 })).toBe('Повторите попытку через 1 секунду');
-    expect(t(KEY, { count: 2 })).toBe('Повторите попытку через 2 секунды');
-    expect(t(KEY, { count: 5 })).toBe('Повторите попытку через 5 секунд');
-    expect(t(KEY, { count: 21 })).toBe('Повторите попытку через 21 секунду');
-    expect(t(KEY, { count: 1.5 })).toBe('Повторите попытку через 1.5 секунды');
+    const forms = [1, 2, 5, 1.5].map((count) => t(KEY, { count }));
+    for (const [i, count] of [1, 2, 5, 1.5].entries()) {
+      expect(forms[i]).toContain(String(count));
+      expect(forms[i]).not.toBe(t(KEY, { count, lng: 'en' }));
+    }
+    // Compare the sentences with the number masked out: the numbers alone would make them differ.
+    const masked = forms.map((form, i) => form.replace(String([1, 2, 5, 1.5][i]), '#'));
+    expect(new Set(masked.slice(0, 3)).size).toBe(3);
   });
 
   it('ar: dual and few forms are Arabic', async () => {

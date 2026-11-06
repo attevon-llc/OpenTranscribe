@@ -8,8 +8,9 @@ only crosstalk reported "no decision, no action", and the merge adopted that
 framing, returning an empty summary for a meeting whose first slice had topics,
 decisions and action items.
 
-The fix is instruction-level, so these tests pin the instructions and payload
-shape the model actually receives:
+The fix is instruction-level, so these tests pin where the instructions and what
+payload shape the model actually receives, without quoting the instruction prose
+(rewording the rules must not break them):
 
 * every slice's system prompt carries the scope rules (``SECTION_SCOPE_RULES``);
 * the merge's system prompt carries the union rules (``SECTION_MERGE_RULES``);
@@ -24,6 +25,7 @@ import json
 from typing import Any
 from unittest import mock
 
+from app.services import llm_summarization
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
@@ -62,20 +64,53 @@ def _merge_payload(call: Any) -> list[dict[str, Any]]:
     return payload
 
 
-def test_slice_prompt_scopes_the_model_to_its_own_span():
+def test_rule_blocks_are_space_prefixed_and_distinct():
+    """Both blocks are appended straight after a sentence, so each must open with a space."""
+    for rules in (llm_summarization.SECTION_SCOPE_RULES, llm_summarization.SECTION_MERGE_RULES):
+        assert rules.strip()
+        assert rules.startswith(" ")
+    assert llm_summarization.SECTION_SCOPE_RULES != llm_summarization.SECTION_MERGE_RULES
+
+
+def test_merge_rules_name_the_error_key_the_pipeline_writes():
+    """The merge payload carries ``_error``; the rules must refer to that exact key."""
+    assert "_error" in llm_summarization.SECTION_MERGE_RULES
+
+
+def test_slice_prompt_carries_the_scope_rules_between_opening_and_language():
     service = _service()
     with mock.patch.object(
         service, "chat_completion", return_value=_response('{"key_points": []}')
     ) as chat:
-        service._summarize_section("I can't hear you... bye", 2, 2, None, "{transcript}")
+        service._summarize_section("I can't hear you... bye", 2, 2, None, "{transcript}", "French")
 
     system = _system_prompt(chat.call_args)
+    rules = llm_summarization.SECTION_SCOPE_RULES
     assert "section 2 of 2" in system
-    assert "one slice of a longer recording" in system
-    assert "never draw a conclusion about the recording as a whole" in system
+    assert rules in system
+    assert llm_summarization.SECTION_MERGE_RULES not in system
+    assert system.index("section 2 of 2") < system.index(rules)
+    assert system.index(rules) + len(rules) <= system.index("French")
 
 
-def test_merge_prompt_requires_a_union_and_numbers_the_slices():
+def test_merge_prompt_carries_the_merge_rules_between_opening_and_language():
+    service = _service()
+    with mock.patch.object(
+        service, "chat_completion", return_value=_response(VALID_SUMMARY)
+    ) as chat:
+        service._combine_sections(
+            [{"key_points": ["Budget approved"]}], None, "{transcript}", 1, "French"
+        )
+
+    system = _system_prompt(chat.call_args)
+    rules = llm_summarization.SECTION_MERGE_RULES
+    assert rules in system
+    assert llm_summarization.SECTION_SCOPE_RULES not in system
+    assert system.index(rules) > 0
+    assert system.index(rules) + len(rules) <= system.index("French")
+
+
+def test_merge_payload_numbers_the_slices_in_chronological_order():
     service = _service()
     substantive = {"key_points": ["Budget approved"], "decisions": ["Approve budget"]}
     silent = {"key_points": ["No decision recorded"], "decisions": []}
@@ -83,14 +118,10 @@ def test_merge_prompt_requires_a_union_and_numbers_the_slices():
     with mock.patch.object(
         service, "chat_completion", return_value=_response(VALID_SUMMARY)
     ) as chat:
-        service._combine_sections([substantive, silent], None, "{transcript}", 2)
+        result = service._combine_sections([substantive, silent], None, "{transcript}", 2)
 
-    call = chat.call_args
-    system = _system_prompt(call)
-    assert "Take the union of their facts" in system
-    assert "can never cancel, weaken or reframe" in system
-
-    assert _merge_payload(call) == [
+    assert result["bluf"] == "Budget approved."
+    assert _merge_payload(chat.call_args) == [
         {"section": 1, "of": 2, "summary": substantive},
         {"section": 2, "of": 2, "summary": silent},
     ]
@@ -133,3 +164,23 @@ def test_slice_that_raises_reaches_the_merge_flagged_as_an_error():
     assert "_error" not in first
     assert second["_error"] is True
     assert second["key_points"] == ["Section 2: Processing failed (TimeoutError)"]
+
+
+def test_slice_that_never_completes_reaches_the_merge_flagged_as_an_error():
+    """A slot no worker filled must read as a failure, not as an empty span."""
+    service = _service()
+    captured: dict[str, list[dict[str, Any]]] = {}
+
+    def _combine(sections: list[dict[str, Any]], *args: Any, **kwargs: Any) -> dict[str, Any]:
+        captured["sections"] = sections
+        return {}
+
+    with (
+        mock.patch.object(service, "_summarize_section", return_value={"key_points": ["ok"]}),
+        mock.patch.object(service, "_combine_sections", side_effect=_combine),
+        mock.patch("concurrent.futures.as_completed", return_value=iter(())),
+    ):
+        service._process_multiple_chunks(["first", "second"], None, "{transcript}")
+
+    assert len(captured["sections"]) == 2
+    assert all(section["_error"] is True for section in captured["sections"])

@@ -332,7 +332,7 @@ Then follow the on-screen instructions. The setup script will:
 - **Automatically download and cache AI models** (several GB; the size depends on your Whisper and neural-search model choices) if a token is provided
 - Set up the management script (`opentranscribe.sh`)
 
-**🧮 CPU-only install (`--cpu`):** for a machine whose GPU containers cannot use, most often
+**🧮 CPU-only install (`--cpu`):** for a machine where GPU containers cannot run, most often
 WSL2, where Docker lists the NVIDIA runtime but every GPU container fails at start; or for a
 machine without an NVIDIA GPU where you still want local transcription on the CPU. The installer
 then skips GPU detection entirely:

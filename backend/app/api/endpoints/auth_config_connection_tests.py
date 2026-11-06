@@ -74,7 +74,8 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     service-account password over plaintext on a StartTLS deployment, and could
     report success for a configuration login then refused.
 
-    Synchronous: ``ldap3`` binds are blocking with a 10 s connect timeout, so the
+    Synchronous: ``ldap3`` binds are blocking, bounded by the submitted ``ldap_timeout``
+    (10 s when absent, the same limit a login uses), so the
     caller must run this off the event loop (issue #320).
 
     Args:
@@ -127,7 +128,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             use_tls=use_tls,
             bind_dn=bind_dn,
             bind_password=bind_password,
-            timeout=10,
+            timeout=int(config.get("ldap_timeout") or 10),
         )
         server = _get_ldap_server(cfg)
         problem = transport_problem(cfg, server)

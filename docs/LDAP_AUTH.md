@@ -59,8 +59,7 @@ group settings find the right people: try a real login for that.
 
 Booleans in `.env` accept `true`/`false`, `t`/`f`, `1`/`0`, `yes`/`no`, `y`/`n` and
 `on`/`off`, in any letter case; anything else stops the backend at start-up with a settings
-error. The exception is `LDAP_RECURSIVE_GROUPS`: only `true` (any letter case) turns it on, and
-every other value reads as off without an error. With `LDAP_ENABLED=true` the backend also
+error. That includes `LDAP_RECURSIVE_GROUPS` and `LDAP_TLS_SKIP_VERIFY`. With `LDAP_ENABLED=true` the backend also
 refuses to start when `LDAP_SERVER`, `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` or
 `LDAP_SEARCH_BASE` is empty.
 

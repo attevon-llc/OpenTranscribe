@@ -1102,7 +1102,7 @@ class Settings(BaseSettings):
     # Semicolon-separated group DNs required to log in (empty = allow all)
     LDAP_USER_GROUPS: str = os.getenv("LDAP_USER_GROUPS", "")
     # Enable recursive group membership (nested groups via LDAP_MATCHING_RULE_IN_CHAIN)
-    LDAP_RECURSIVE_GROUPS: bool = os.getenv("LDAP_RECURSIVE_GROUPS", "false").lower() == "true"
+    LDAP_RECURSIVE_GROUPS: bool = False
     # Attribute to check for group membership (default: memberOf for AD)
     LDAP_GROUP_ATTR: str = os.getenv("LDAP_GROUP_ATTR", "memberOf")
 

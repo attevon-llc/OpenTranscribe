@@ -55,6 +55,7 @@ FALSE_CLAIMS = {
     "hand-written compose commands instead of ./opentr.sh": r"docker[ -]compose\s+-f",
     "that every LDAP setting is stored encrypted": r"(all|every)\s+LDAP\s+settings?\s+(are|is)\s+"
     r"(stored\s+)?encrypted",
+    "that LDAP_RECURSIVE_GROUPS reads booleans differently from the other settings": r"LDAP_RECURSIVE_GROUPS`?:\s+only\s+`?true",
 }
 
 #: Facts the doc must state (P3 spec section 8, items 2-14), as literal substrings.

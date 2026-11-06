@@ -46,6 +46,7 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -220,20 +221,33 @@ def mock_llm_completion(mock_llm_url: str):
 
 @pytest.fixture
 def register_mock_llm_provider(mock_llm_base_url_for_backend: str):
-    """Configure the app's ``custom`` provider to point at the mock, then clean up.
+    """Point the app's ``custom`` provider at the mock and make it the ACTIVE configuration.
 
-    Takes an authenticated ``requests.Session`` so a test can drive the real API
-    surface. Deletes the config afterwards so the dev database is left as found —
-    the suite must never persist changes to dev data.
+    Takes an authenticated ``requests.Session`` (a cookie session or one carrying a bearer
+    header) so a test can drive the real API surface. Activation is part of registering: the
+    summarization, topic and speaker tasks all resolve the user's ACTIVE configuration, so a
+    registered-but-inactive provider would leave them on whatever was active before.
+
+    Everything is undone afterwards, pass or fail: the configurations are deleted and the one
+    that was active before the first registration is made active again. The suite must never
+    persist changes to dev data, and the active pointer is dev data.
     """
     created: list[tuple] = []
+    prior_active: list[str | None] = []
 
     def _register(session, api_base: str, model: str = "mock-gpt", name: str = "Mock LLM (test)"):
         headers = {"X-CSRF-Token": session.cookies.get("csrf_token")}
+        if not prior_active:
+            status = session.get(f"{api_base}/llm-settings/status", headers=headers, timeout=30)
+            status.raise_for_status()
+            active = status.json().get("active_configuration")
+            prior_active.append(active["uuid"] if active else None)
         response = session.post(
             f"{api_base}/llm-settings",
             json={
-                "name": name,
+                # Names are unique per user, so a fixed one would 409 against the leftovers of
+                # any run that died before its teardown.
+                "name": f"{name} {uuid.uuid4().hex[:8]}",
                 "provider": "custom",
                 "model_name": model,
                 "base_url": mock_llm_base_url_for_backend,
@@ -245,11 +259,29 @@ def register_mock_llm_provider(mock_llm_base_url_for_backend: str):
         response.raise_for_status()
         config = response.json()
         created.append((session, api_base, config["uuid"], headers))
+        activate = session.post(
+            f"{api_base}/llm-settings/set-active",
+            json={"configuration_id": config["uuid"]},
+            headers=headers,
+            timeout=30,
+        )
+        activate.raise_for_status()
         return config
 
     yield _register
 
-    for session, api_base, uuid, headers in created:
-        # Cleanup must never fail an otherwise-passing test.
+    # Cleanup must never fail an otherwise-passing test.
+    for session, api_base, config_uuid, headers in created:
         with contextlib.suppress(Exception):
-            session.delete(f"{api_base}/llm-settings/config/{uuid}", headers=headers, timeout=30)
+            session.delete(
+                f"{api_base}/llm-settings/config/{config_uuid}", headers=headers, timeout=30
+            )
+    if created and prior_active and prior_active[0]:
+        session, api_base, _uuid, headers = created[0]
+        with contextlib.suppress(Exception):
+            session.post(
+                f"{api_base}/llm-settings/set-active",
+                json={"configuration_id": prior_active[0]},
+                headers=headers,
+                timeout=30,
+            )

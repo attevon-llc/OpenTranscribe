@@ -41,6 +41,8 @@ from playwright.sync_api import expect
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
+from tests.fixtures.mock_llm import HOST_PORT as MOCK_LLM_HOST_PORT
+
 # The `gallery` marker is REGISTERED in e2e/pytest.ini and root CLAUDE.md documents
 # `./scripts/e2e/run-e2e.sh -m gallery` as a supported selector — but nothing in the tree
 # carried the marker, so the documented command deselected all 333 tests and pytest exited 5
@@ -988,7 +990,8 @@ class TestBulkActionAPI:
         )
         results: list[dict[str, Any]] = resp.json()
         assert len(results) == 1
-        # Summarize may fail with LLM_NOT_AVAILABLE if no LLM configured
+        # Endpoint contract only: what a summarize leaves behind is asserted by
+        # TestLLMActionsWithMockLLM. Summarize may fail with LLM_NOT_AVAILABLE if no LLM is configured.
         if not results[0]["success"]:
             assert results[0].get("error") == "LLM_NOT_AVAILABLE", (
                 f"Unexpected summarize error: {results[0]}"
@@ -1236,6 +1239,156 @@ class TestEndToEndProcessing:
             pytest.fail(
                 f"Speaker ID returned unexpected status {resp.status_code}: {resp.text[:300]}"
             )
+
+
+# ---------------------------------------------------------------------------
+# The actions that call a model, against the mock LLM
+# ---------------------------------------------------------------------------
+# The summarize and speaker-ID tests above accept "LLM_NOT_AVAILABLE" or a 503, so they pass
+# whether or not the feature produces anything. These activate a canned model (the
+# `--with-mock-llm` overlay, which `run-dev-tests.sh` starts for the e2e phase) BEFORE the file
+# is uploaded and assert the action's OUTPUT. They skip, with the fixture's reason, when the
+# overlay is not running. The mock's replies are constants: this proves the action is wired from
+# the endpoint through the Celery task to the stored row, and says nothing about quality.
+MOCK_SUMMARY_MODEL = "mock-summary-json"
+MOCK_SPEAKERS_MODEL = "mock-speakers-json"
+MOCK_SPEAKER_NAMES = {"Alex Morgan", "Priya Natarajan"}
+MOCK_RESULT_TIMEOUT_S = 180
+
+
+def _active_mock_llm(register_mock_llm_provider: Any, api_token: str, backend_url: str, model: str):
+    session = requests.Session()
+    session.headers["Authorization"] = f"Bearer {api_token}"
+    return register_mock_llm_provider(
+        session, f"{backend_url}/api", model=model, name=f"Gallery action {model}"
+    )
+
+
+@pytest.fixture
+def mock_summary_llm(register_mock_llm_provider: Any, api_token: str, backend_url: str):
+    """The mock summary model, active for the test.
+
+    Request it BEFORE ``owned_media_file``: the upload's own automatic summary then uses the
+    mock too, so the summary that lands cannot have come from whatever was active before.
+    """
+    return _active_mock_llm(register_mock_llm_provider, api_token, backend_url, MOCK_SUMMARY_MODEL)
+
+
+@pytest.fixture
+def mock_speakers_llm(register_mock_llm_provider: Any, api_token: str, backend_url: str):
+    """The mock speaker-ID model, active for the test (request before ``owned_media_file``)."""
+    return _active_mock_llm(register_mock_llm_provider, api_token, backend_url, MOCK_SPEAKERS_MODEL)
+
+
+def _mock_llm_models_seen() -> list[str]:
+    """Models the mock container has been asked for, oldest first."""
+    resp = requests.get(f"http://127.0.0.1:{MOCK_LLM_HOST_PORT}/_mock/requests", timeout=10)
+    resp.raise_for_status()
+    return [str(call["model"]) for call in resp.json()["requests"]]
+
+
+class TestLLMActionsWithMockLLM:
+    """Summarize and identify-speakers must leave their output behind, not merely be accepted."""
+
+    def test_bulk_summarize_with_mock_llm_stores_a_summary(
+        self,
+        mock_summary_llm: dict[str, Any],
+        owned_media_file: dict[str, Any],
+        api_token: str,
+        backend_url: str,
+    ) -> None:
+        file_uuid = owned_media_file["uuid"]
+        resp = requests.post(
+            f"{backend_url}/api/files/management/bulk-action",
+            headers={"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"},
+            json={"file_uuids": [file_uuid], "action": "summarize"},
+            timeout=30,
+        )
+        assert resp.status_code == 200, (
+            f"Bulk summarize failed: {resp.status_code} {resp.text[:300]}"
+        )
+        (result,) = resp.json()
+        assert result["success"] is True, f"summarize refused with the mock active: {result}"
+        assert "message" in result
+
+        data = self._wait_for_mock_summary(backend_url, api_token, file_uuid)
+
+        assert data.get("bluf"), f"stored summary has no BLUF: {sorted(data)}"
+        assert data.get("brief_summary"), f"stored summary has no brief_summary: {sorted(data)}"
+        assert isinstance(data.get("major_topics"), list) and data["major_topics"]
+        assert data.get("mock_system_sha256"), "the reply did not come from the mock's scenario"
+        assert data["metadata"]["provider"] == "custom"
+        assert MOCK_SUMMARY_MODEL in _mock_llm_models_seen(), "the mock was never asked"
+
+    def test_identify_speakers_with_mock_llm_stores_unapplied_suggestions(
+        self,
+        mock_speakers_llm: dict[str, Any],
+        owned_media_file: dict[str, Any],
+        api_token: str,
+        backend_url: str,
+    ) -> None:
+        """An LLM suggestion is surfaced for a person to verify; it never renames the speaker."""
+        file_uuid = owned_media_file["uuid"]
+        resp = requests.post(
+            f"{backend_url}/api/files/{file_uuid}/identify-speakers",
+            headers={"Authorization": f"Bearer {api_token}"},
+            timeout=30,
+        )
+        assert resp.status_code == 200, (
+            f"identify-speakers refused with the mock active: {resp.status_code} {resp.text[:300]}"
+        )
+        assert "task_id" in resp.json()
+
+        suggested = self._wait_for_llm_suggestions(backend_url, api_token, file_uuid)
+
+        for speaker in suggested:
+            assert speaker["suggested_name"] in MOCK_SPEAKER_NAMES, speaker
+            assert not speaker.get("display_name"), f"suggestion applied as the name: {speaker}"
+            assert re.fullmatch(r"SPEAKER_\d+", str(speaker["name"])), speaker
+        assert MOCK_SPEAKERS_MODEL in _mock_llm_models_seen(), "the mock was never asked"
+
+    @staticmethod
+    def _wait_for_mock_summary(backend_url: str, token: str, file_uuid: str) -> dict[str, Any]:
+        """Poll the summary endpoint until the mock model's summary is stored; return it."""
+        deadline = time.time() + MOCK_RESULT_TIMEOUT_S
+        last = "no response"
+        while time.time() < deadline:
+            resp = requests.get(
+                f"{backend_url}/api/files/{file_uuid}/summary",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30,
+            )
+            last = f"{resp.status_code} {resp.text[:200]}"
+            if resp.status_code == 200:
+                data: dict[str, Any] = resp.json()["summary_data"]
+                if data.get("metadata", {}).get("model") == MOCK_SUMMARY_MODEL:
+                    return data
+            # Pure API polling: no Playwright page here, so the sleep IS the poll interval.
+            time.sleep(2)
+        pytest.fail(
+            f"no summary from {MOCK_SUMMARY_MODEL} within {MOCK_RESULT_TIMEOUT_S}s ({last})"
+        )
+
+    @staticmethod
+    def _wait_for_llm_suggestions(
+        backend_url: str, token: str, file_uuid: str
+    ) -> list[dict[str, Any]]:
+        """Poll the file until at least one speaker carries an LLM suggestion; return those."""
+        deadline = time.time() + MOCK_RESULT_TIMEOUT_S
+        speakers: list[dict[str, Any]] = []
+        while time.time() < deadline:
+            resp = requests.get(
+                f"{backend_url}/api/files/{file_uuid}",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=30,
+            )
+            assert resp.status_code == 200, f"Get file failed: {resp.status_code}"
+            speakers = resp.json().get("speakers", [])
+            suggested = [s for s in speakers if s.get("suggestion_source") == "llm_analysis"]
+            if suggested:
+                return suggested
+            time.sleep(2)  # API polling: no page, so the sleep IS the poll interval
+        pytest.fail(f"no LLM suggestion stored within {MOCK_RESULT_TIMEOUT_S}s: {speakers}")
 
 
 # ---------------------------------------------------------------------------

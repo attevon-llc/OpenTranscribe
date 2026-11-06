@@ -57,7 +57,7 @@ in the root conftest, so no per-file import):
 | `mock_llm_url` | URL the TEST process can reach. Reuses the container, else starts a subprocess — never skips |
 | `mock_llm_base_url_for_backend` | URL the BACKEND CONTAINER can reach. **Skips** without the container: a host subprocess is invisible to it |
 | `mock_llm_completion` | Call the mock directly; returns `{status_code, body}` |
-| `register_mock_llm_provider` | Configure the app's `custom` provider at the mock, deleted on teardown |
+| `register_mock_llm_provider` | Configure the app's `custom` provider at the mock **and make it the active configuration** (the summary/topic/speaker tasks resolve the ACTIVE one); on teardown the configs are deleted and the previously active one is restored. Skips without the container. Registered for the e2e rootdir by `e2e/conftest.py` (`pytest_plugins`), which the root conftest does not reach |
 
 Scenario models select behaviour by `model` name, so a test picks a failure mode
 by *configuring a provider* and the app runs its REAL error handling:

@@ -8,6 +8,7 @@ import numpy as np
 
 from app.models.speaker import Speaker
 from app.services.opensearch_service.client import OpenSearchUnavailableError
+from app.services.smart_speaker_suggestion_service import media_file_org_id
 
 if TYPE_CHECKING:
     from app.services.speaker_matching_service import SpeakerMatchingService
@@ -42,7 +43,7 @@ def process_speaker_embeddings_native(
             match", the outage would store each voice as a new one.
     """
     # Tenant scope for all stores/queries follows the file's org.
-    organization_id = self._media_file_org_id(media_file_id)
+    organization_id = media_file_org_id(self.db, media_file_id)
 
     # Privacy policy (#1280): the centroids are discarded, never matched or stored.
     if not self._voiceprints_allowed(user_id, organization_id):

@@ -122,11 +122,14 @@ def _handle_no_llm_configured(
 
 def _create_user_friendly_error(error_msg: str) -> str:
     """A fixed sentence for an exception message; the message itself is never returned."""
-    if "timeout" in error_msg.lower():
+    lowered = error_msg.lower()
+    # "timed out" as well as "timeout": ``LLMService`` raises "Request timed out after N
+    # seconds", which contains neither "timeout" nor any other keyword below.
+    if "timeout" in lowered or "timed out" in lowered:
         return "Request timed out. Try reducing video length or contact support."
-    if "context" in error_msg.lower() or "token" in error_msg.lower():
+    if "context" in lowered or "token" in lowered:
         return "Content too long for model. Try shorter videos or contact support."
-    if "connection" in error_msg.lower() or "network" in error_msg.lower():
+    if "connection" in lowered or "network" in lowered:
         return "Network connection failed. Please try again."
     return "Unknown error occurred during summary generation"
 

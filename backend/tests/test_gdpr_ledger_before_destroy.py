@@ -68,6 +68,7 @@ def _erase(db, scope: str, user: User, org: Organization) -> dict[str, Any]:
     return gdpr.erase_organization(db, int(org.id))
 
 
+@pytest.mark.usefixtures("no_receipt_measurement", "no_erasure_extras")
 @pytest.mark.parametrize("scope", ["organization", "org_member", "user"])
 def test_the_ledger_entry_is_pending_when_destruction_begins(db_session, subject, scope):
     user, org = subject

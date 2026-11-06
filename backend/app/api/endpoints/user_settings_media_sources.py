@@ -71,10 +71,10 @@ def get_media_sources(
         db.query(models.UserMediaSource)
         .join(models.User, models.User.id == models.UserMediaSource.user_id)
         .filter(
-            models.UserMediaSource.is_shared == True,  # noqa: E712
-            models.UserMediaSource.is_active == True,  # noqa: E712
+            models.UserMediaSource.is_shared.is_(True),
+            models.UserMediaSource.is_active.is_(True),
             models.UserMediaSource.user_id != current_user.id,
-            models.User.is_active == True,  # noqa: E712
+            models.User.is_active.is_(True),
             owner_in_tenant(models.UserMediaSource.user_id, ctx.org_id),
         )
         .order_by(models.UserMediaSource.shared_at.desc().nullslast())

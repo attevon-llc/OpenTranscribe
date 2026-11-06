@@ -214,7 +214,7 @@ def search_users(
         db.query(User)
         .filter(
             User.id != ctx.user.id,
-            User.is_active == True,  # noqa: E712
+            User.is_active.is_(True),
             tenant_gate,
             or_(
                 User.email.ilike(pattern),

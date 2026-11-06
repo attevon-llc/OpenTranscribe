@@ -60,13 +60,13 @@ def get_shared_prompt_library(
         _shared_in_tenant(ctx),
         and_(
             models.SummaryPrompt.user_id == current_user.id,
-            models.SummaryPrompt.is_shared == True,  # noqa: E712
+            models.SummaryPrompt.is_shared.is_(True),
             not_(models.SummaryPrompt.is_system_default),
         ),
     )
     query = db.query(models.SummaryPrompt).filter(
         shared_here,
-        models.SummaryPrompt.is_active == True,  # noqa: E712
+        models.SummaryPrompt.is_active.is_(True),
     )
 
     if content_type:
@@ -125,7 +125,7 @@ def get_shared_prompt_library(
         tag_col = func.jsonb_array_elements_text(models.SummaryPrompt.tags).label("tag")
         tag_query = (
             db.query(tag_col)
-            .filter(shared_here, models.SummaryPrompt.is_active == True)  # noqa: E712
+            .filter(shared_here, models.SummaryPrompt.is_active.is_(True))
             .distinct()
             .order_by("tag")
         )

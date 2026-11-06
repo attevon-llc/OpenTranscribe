@@ -119,7 +119,7 @@ def list_asr_settings(
     shared_configs = (
         db.query(UserASRSettings)
         .filter(
-            UserASRSettings.is_shared == True,  # noqa: E712
+            UserASRSettings.is_shared.is_(True),
             UserASRSettings.user_id != current_user.id,
             owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
         )

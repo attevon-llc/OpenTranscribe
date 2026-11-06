@@ -119,7 +119,7 @@ def get_asr_status(
                 db.query(UserASRSettings)
                 .filter(
                     UserASRSettings.id == active_config_id,
-                    UserASRSettings.is_shared == True,  # noqa: E712
+                    UserASRSettings.is_shared.is_(True),
                     owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
                 )
                 .first()

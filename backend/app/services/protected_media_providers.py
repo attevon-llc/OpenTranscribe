@@ -1,12 +1,10 @@
-"""Protected media providers for authenticated media downloads.
+"""Registry of protected-media providers: download sources that need a site login.
 
-This module defines a simple plugin-style registry for sites that require
-authentication before media can be downloaded.
-
-Each provider implements a small interface for:
-- deciding whether it can handle a given URL
-- extracting basic media metadata without downloading
-- downloading the original media file to a local directory
+yt-dlp covers public platforms. Some sites (for example a self-hosted MediaCMS) only
+serve media to a signed-in user, so each such site is supported by a provider plugin in
+``app.services.protected_media_plugins``. This module defines the interface those plugins
+implement, discovers them once at import time, and assembles the non-secret login-form
+description the frontend uses to decide when to ask for site credentials.
 """
 
 from __future__ import annotations
@@ -21,16 +19,28 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
+_PLUGIN_PACKAGE = "app.services.protected_media_plugins"
+
 
 class ProtectedMediaProvider(Protocol):
-    """Interface for a protected media provider.
+    """What a protected-media plugin must offer.
 
-    Providers are responsible for handling URLs from specific hosts that
-    require authentication and cannot be processed by yt-dlp alone.
+    A provider decides which URLs it is responsible for, signs in to the site on the
+    user's behalf, and either describes or fetches the media. Every method receives the
+    requesting user's id so a provider can consult that user's own media sources.
     """
 
     def can_handle(self, url: str, user_id: int | None = None) -> bool:
-        """Return True if this provider knows how to handle the given URL."""
+        """Report whether this provider is responsible for ``url``.
+
+        Args:
+            url: The media URL the user submitted.
+            user_id: The requesting user, if known.
+
+        Returns:
+            True when this provider should handle the URL instead of yt-dlp.
+        """
+        ...
 
     def extract_info(
         self,
@@ -39,16 +49,19 @@ class ProtectedMediaProvider(Protocol):
         password: str | None = None,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Return a yt-dlp-like info dict for the media without downloading.
+        """Describe the media at ``url`` without downloading it.
 
-        The returned dict should contain at least:
-        - id
-        - title
-        - duration (optional)
-        - description (optional)
-        - uploader (optional)
-        - extractor (short provider name)
+        Args:
+            url: The media URL.
+            username: Site username given with this request, if any.
+            password: Site password given with this request, if any.
+            user_id: The requesting user, if known.
+
+        Returns:
+            A metadata dict shaped like yt-dlp's: always ``id``, ``title`` and
+            ``extractor``; ``duration``, ``description`` and ``uploader`` when known.
         """
+        ...
 
     def download(
         self,
@@ -59,107 +72,125 @@ class ProtectedMediaProvider(Protocol):
         password: str | None = None,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Download media file for this URL into output_path.
+        """Fetch the media at ``url`` into the directory ``output_path``.
 
-        Must return a dict with keys:
-        - file_path: absolute path to downloaded file
-        - filename: basename of the downloaded file
-        - info: the same kind of dict as extract_info() returns
+        Args:
+            url: The media URL.
+            output_path: Directory the file is written into.
+            progress_callback: Optional ``(percent, message)`` reporter.
+            username: Site username given with this request, if any.
+            password: Site password given with this request, if any.
+            user_id: The requesting user, if known.
+
+        Returns:
+            ``{"file_path": ..., "filename": ..., "info": <metadata as from extract_info>}``.
         """
+        ...
 
     def get_public_auth_config(self, user_id: int | None = None) -> dict[str, Any]:
-        """Return public auth config for this provider, as seen by ``user_id``.
+        """Describe, without any secret, the login form this provider needs.
 
-        Expected shape (per host or combined):
-        {
-          "hosts": ["media.example.com"],
-          "auth_type": "user_password" | "api_key" | "browser_cookies" | ...,
-          "fields": [
-            {"name": "media_username", "label": "Media username", "type": "text"},
-            {"name": "media_password", "label": "Media password", "type": "password"},
-          ],
-        }
+        Args:
+            user_id: The user the description is for; hosts depend on their sources.
 
-        Providers that do not wish to expose configuration publicly can
-        return an empty dict.
+        Returns:
+            ``{"hosts": [...], "auth_type": str, "fields": [{"name", "label", "type"}, ...]}``,
+            or an empty dict when the provider has nothing to offer this user.
         """
+        ...
+
+
+def _provider_from_module(module: Any) -> ProtectedMediaProvider | None:
+    """Return the provider a plugin module registers, or None if it registers none.
+
+    A module-level ``provider`` object takes precedence; ``get_provider`` is then never
+    called. Otherwise a callable ``get_provider`` is invoked to build one.
+    """
+    registered: ProtectedMediaProvider | None = getattr(module, "provider", None)
+    if registered is not None:
+        return registered
+    factory = getattr(module, "get_provider", None)
+    if callable(factory):
+        built: ProtectedMediaProvider | None = factory()
+        return built
+    return None
 
 
 def _load_providers() -> list[ProtectedMediaProvider]:
-    """Dynamically load all protected media providers from the plugins package.
+    """Import every plugin module and collect the providers they register.
 
-    Plugins live under ``app.services.protected_media_plugins`` and should
-    expose either:
-      - a module-level variable ``provider`` implementing ProtectedMediaProvider
-      - or a callable ``get_provider()`` returning such an instance
+    A plugin that fails to import or to build its provider is logged and left out, so
+    one broken plugin never takes the others down.
+
+    Returns:
+        The providers, in the order their modules were discovered.
     """
-    providers: list[ProtectedMediaProvider] = []
-
     try:
-        import app.services.protected_media_plugins as plugin_pkg
-    except ImportError:
-        logger.info("No protected media plugins package found")
-        return providers
+        package = importlib.import_module(_PLUGIN_PACKAGE)
+    except ImportError as exc:
+        logger.info("No protected-media plugin package available: %s", exc)
+        return []
 
-    package_path = getattr(plugin_pkg, "__path__", None)
-    if package_path is None:
-        logger.warning("protected_media_plugins has no __path__; skipping plugin discovery")
-        return providers
+    search_path = getattr(package, "__path__", None)
+    if search_path is None:
+        logger.warning("%s is not a package; no protected-media plugins loaded", _PLUGIN_PACKAGE)
+        return []
 
-    prefix = plugin_pkg.__name__ + "."
-
-    for module_info in pkgutil.iter_modules(package_path, prefix):
+    providers: list[ProtectedMediaProvider] = []
+    for module_info in pkgutil.iter_modules(search_path, _PLUGIN_PACKAGE + "."):
         try:
             module = importlib.import_module(module_info.name)
-        except Exception as e:
-            logger.warning(f"Failed to import protected media plugin {module_info.name}: {e}")
+        except Exception as exc:
+            logger.warning(
+                "Skipping protected-media plugin %s: import failed: %s", module_info.name, exc
+            )
             continue
-
-        # Convention 1: module-level variable `provider`
-        plugin = getattr(module, "provider", None)
-        if plugin is not None:
-            providers.append(plugin)
+        try:
+            provider = _provider_from_module(module)
+        except Exception as exc:
+            logger.warning(
+                "Skipping protected-media plugin %s: get_provider() failed: %s",
+                module_info.name,
+                exc,
+            )
             continue
-
-        # Convention 2: callable `get_provider()`
-        get_provider = getattr(module, "get_provider", None)
-        if callable(get_provider):
-            try:
-                provider_instance = get_provider()
-                providers.append(provider_instance)
-            except Exception as e:
-                logger.warning(f"get_provider() failed in {module_info.name}: {e}")
-
+        if provider is not None:
+            providers.append(provider)
     return providers
 
 
-# Registry of all protected media providers (loaded at import time)
 PROTECTED_MEDIA_PROVIDERS: list[ProtectedMediaProvider] = _load_providers()
 
 
-def get_protected_media_auth_config(user_id: int | None = None) -> list[dict[str, Any]]:
-    """Aggregate public auth config for all protected media providers, as seen by ``user_id``.
+def _accepts_user_id(method: Callable[..., Any]) -> bool:
+    """True when ``method`` declares a ``user_id`` parameter (older plugins do not)."""
+    return "user_id" in inspect.signature(method).parameters
 
-    Each entry is expected to have at minimum:
-      - hosts: list of hostnames
-      - auth_type: short string describing auth mechanism
-      - fields: optional list of field descriptors for UI
+
+def get_protected_media_auth_config(user_id: int | None = None) -> list[dict[str, Any]]:
+    """Collect every provider's public login-form description for one user.
+
+    Args:
+        user_id: The user asking; providers resolve the hosts that apply to them.
+
+    Returns:
+        One non-empty description per provider that offers one, in registry order.
+        A provider that fails is logged and skipped.
     """
     configs: list[dict[str, Any]] = []
-
     for provider in PROTECTED_MEDIA_PROVIDERS:
-        get_config = getattr(provider, "get_public_auth_config", None)
-        if not callable(get_config):
+        describe = getattr(provider, "get_public_auth_config", None)
+        if not callable(describe):
             continue
         try:
-            # Plugins written before per-user sources take no arguments.
-            accepts_user = "user_id" in inspect.signature(get_config).parameters
-            cfg = get_config(user_id=user_id) if accepts_user else get_config()
-            if cfg:
-                configs.append(cfg)
-        except Exception as e:
+            config = describe(user_id=user_id) if _accepts_user_id(describe) else describe()
+        except Exception as exc:
             logger.warning(
-                f"get_public_auth_config() failed for {provider.__class__.__name__}: {e}"
+                "Protected-media provider %s failed in get_public_auth_config: %s",
+                type(provider).__name__,
+                exc,
             )
-
+            continue
+        if config:
+            configs.append(config)
     return configs

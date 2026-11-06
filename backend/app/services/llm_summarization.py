@@ -1,5 +1,6 @@
 """Chunked summary pipeline for :class:`LLMService`."""
 
+import contextvars
 import json
 import logging
 from typing import Any
@@ -217,7 +218,14 @@ class LLMSummarizationMixin(LLMChunkingMixin, LLMJsonExtractMixin):
             )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_process_one, i, chunk): i for i, chunk in enumerate(chunks)}
+            # A pool thread starts with an EMPTY context, so the open LLM usage run
+            # (a ContextVar, services/llm_usage.py) would be invisible to every slice
+            # call. Each task needs its own copy: one Context cannot be entered by two
+            # threads at once. The copy holds the SAME run object, which locks its counters.
+            futures = {
+                executor.submit(contextvars.copy_context().run, _process_one, i, chunk): i
+                for i, chunk in enumerate(chunks)
+            }
 
             for future in as_completed(futures):
                 idx = futures[future]

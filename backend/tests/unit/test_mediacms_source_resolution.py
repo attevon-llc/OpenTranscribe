@@ -42,7 +42,10 @@ def _provider_with(monkeypatch, rows: list[dict]) -> MediacmsProvider:
     ("url", "claimed"),
     [
         ("https://m.example.com/view?m=x", True),
-        ("http://m.example.com/view?m=x", True),
+        # A source configured without a scheme is https only: its stored credential is
+        # never offered to a plain-http URL on the same host.
+        ("http://m.example.com/view?m=x", False),
+        ("http://m.example.com:443/view?m=x", False),
         ("https://M.Example.com:443/view?m=x", True),
         ("https://m.example.com/api/v1/media/tok", True),
         # Current behaviour, see defect D-7: the token segment is not required here.
@@ -82,15 +85,21 @@ def test_a_failing_host_lookup_means_not_claimed(monkeypatch):
         ("https://m.example.com/api/v1/media/tok/extra?x=1#f", ("tok", "https://m.example.com")),
         ("https://m.example.com/api/v1/media/path-tok?m=q", ("q", "https://m.example.com")),
         ("https://m.example.com:8443/view?m=t#frag", ("t", "https://m.example.com:8443")),
-        ("http://m.example.com/view?m=t", ("t", "http://m.example.com")),
-        ("https://M.Example.com/view?m=t", ("t", "https://M.Example.com")),
+        ("https://M.Example.com/view?m=t", ("t", "https://m.example.com")),
+        ("http://P.example.com:8080/view?m=t", ("t", "http://p.example.com:8080")),
+        ("https://m.example.com:443/view?m=t", ("t", "https://m.example.com")),
         # Current behaviour, see defect D-13: a path prefix is dropped from the base URL.
         ("https://m.example.com/mediacms/view?m=t", ("t", "https://m.example.com")),
     ],
 )
 def test_token_and_base_url(monkeypatch, url, expected):
     provider = _provider_with(
-        monkeypatch, [{"hostname": "m.example.com"}, {"hostname": "m.example.com:8443"}]
+        monkeypatch,
+        [
+            {"hostname": "m.example.com"},
+            {"hostname": "m.example.com:8443"},
+            {"hostname": "http://p.example.com:8080"},
+        ],
     )
     assert provider._get_token_and_base_url(url, user_id=1) == expected
 
@@ -100,6 +109,8 @@ def test_token_and_base_url(monkeypatch, url, expected):
     [
         ("https://u@m.example.com/view?m=t", _NOT_CONFIGURED),
         ("https://m.example.com:9443/view?m=t", _NOT_CONFIGURED),
+        ("http://m.example.com/view?m=t", _NOT_CONFIGURED),
+        ("http://m.example.com:443/view?m=t", _NOT_CONFIGURED),
         ("https://m.example.com/api/v1/media", _NO_TOKEN),
         ("https://m.example.com/view?m=", _NO_TOKEN),
         ("https://m.example.com/mediacms/api/v1/media/tok", _NO_TOKEN),
@@ -151,9 +162,14 @@ def test_the_first_matching_source_decides_tls_verification(monkeypatch):
         ],
     )
     assert provider._get_verify_ssl_for_host("m.example.com", user_id=1, scheme="https") is True
-    assert provider._get_verify_ssl_for_host("nokey.example.com", user_id=1) is True
-    assert provider._get_verify_ssl_for_host("zero.example.com", user_id=1) is False
-    assert provider._get_verify_ssl_for_host("unknown.example.com", user_id=1) is False
+    assert provider._get_verify_ssl_for_host("nokey.example.com", user_id=1, scheme="https") is True
+    assert provider._get_verify_ssl_for_host("zero.example.com", user_id=1, scheme="https") is False
+    assert (
+        provider._get_verify_ssl_for_host("unknown.example.com", user_id=1, scheme="https") is False
+    )
+    # The https source's setting never applies to the same host over http.
+    assert provider._get_verify_ssl_for_host("zero.example.com", user_id=1, scheme="http") is False
+    assert provider._get_verify_ssl_for_host("m.example.com", user_id=1, scheme="http") is False
 
 
 def test_stored_credentials_come_from_the_first_complete_matching_source(monkeypatch):
@@ -165,6 +181,7 @@ def test_stored_credentials_come_from_the_first_complete_matching_source(monkeyp
             {"hostname": "m.example.com", "username": None, "password": "only-pass"},
             {"hostname": "M.EXAMPLE.COM:443", "username": "first", "password": "one"},
             {"hostname": "m.example.com", "username": "second", "password": "two"},
+            {"hostname": "http://m.example.com", "username": "plain", "password": "text"},
         ],
     )
     assert provider._get_stored_credentials("m.example.com", user_id=1, scheme="https") == (
@@ -172,8 +189,12 @@ def test_stored_credentials_come_from_the_first_complete_matching_source(monkeyp
         "one",
     )
     assert provider._get_stored_credentials("m.example.com", user_id=1, scheme="http") == (
-        "second",
-        "two",
+        "plain",
+        "text",
+    )
+    assert provider._get_stored_credentials("m.example.com:80", user_id=1, scheme="http") == (
+        "plain",
+        "text",
     )
     assert provider._get_stored_credentials("x.example.com", user_id=1, scheme="https") == (
         None,

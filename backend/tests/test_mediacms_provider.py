@@ -209,7 +209,7 @@ class TestCredentialResolution:
             },
         ]
         with patch.object(provider, "_get_all_sources", return_value=sources):
-            u, p = provider._get_stored_credentials("h.example.com", user_id=1)
+            u, p = provider._get_stored_credentials("h.example.com", user_id=1, scheme="https")
             assert u == "own-user"
             assert p == "own-pass"
 
@@ -224,14 +224,14 @@ class TestCredentialResolution:
             },
         ]
         with patch.object(provider, "_get_all_sources", return_value=sources):
-            u, p = provider._get_stored_credentials("h.example.com", user_id=1)
+            u, p = provider._get_stored_credentials("h.example.com", user_id=1, scheme="https")
             assert u == "shared-user"
             assert p == "shared-pass"
 
     def test_no_credentials_returns_none(self, provider, _clear_mediacms_env):
         """Returns (None, None) when no sources match."""
         with patch.object(provider, "_get_all_sources", return_value=[]):
-            u, p = provider._get_stored_credentials("unknown.example.com")
+            u, p = provider._get_stored_credentials("unknown.example.com", scheme="https")
             assert u is None
             assert p is None
 
@@ -242,7 +242,7 @@ class TestCredentialResolution:
             {"hostname": "h.example.com", "username": "full", "password": "pass"},
         ]
         with patch.object(provider, "_get_all_sources", return_value=sources):
-            u, p = provider._get_stored_credentials("h.example.com")
+            u, p = provider._get_stored_credentials("h.example.com", scheme="https")
             assert u == "full"
             assert p == "pass"
 
@@ -259,24 +259,24 @@ class TestSSLVerification:
         """When a source has verify_ssl=False, that setting is returned."""
         sources = [{"hostname": "nossl.example.com", "verify_ssl": False}]
         with patch.object(provider, "_get_all_sources", return_value=sources):
-            assert provider._get_verify_ssl_for_host("nossl.example.com") is False
+            assert provider._get_verify_ssl_for_host("nossl.example.com", scheme="https") is False
 
     def test_host_specific_ssl_true(self, provider, _clear_mediacms_env):
         """When a source has verify_ssl=True, that setting is returned."""
         sources = [{"hostname": "ssl.example.com", "verify_ssl": True}]
         with patch.object(provider, "_get_all_sources", return_value=sources):
-            assert provider._get_verify_ssl_for_host("ssl.example.com") is True
+            assert provider._get_verify_ssl_for_host("ssl.example.com", scheme="https") is True
 
     def test_unknown_host_falls_back_to_env(self, provider, monkeypatch):
         """Unknown host uses MEDIACMS_VERIFY_SSL env var."""
         monkeypatch.setenv("MEDIACMS_VERIFY_SSL", "false")
         with patch.object(provider, "_get_all_sources", return_value=[]):
-            assert provider._get_verify_ssl_for_host("unknown.example.com") is False
+            assert provider._get_verify_ssl_for_host("unknown.example.com", scheme="https") is False
 
     def test_unknown_host_defaults_true(self, provider, _clear_mediacms_env):
         """Without env or DB config, default is True."""
         with patch.object(provider, "_get_all_sources", return_value=[]):
-            assert provider._get_verify_ssl_for_host("unknown.example.com") is True
+            assert provider._get_verify_ssl_for_host("unknown.example.com", scheme="https") is True
 
 
 # ===================================================================
@@ -320,11 +320,13 @@ class TestTokenAndBaseURL:
             assert exc.value.status_code == 400
             assert "Missing media token" in str(exc.value.detail)
 
-    def test_preserves_scheme(self, provider):
-        """HTTP scheme is preserved in base_url (not forced to HTTPS)."""
-        with patch.object(provider, "_get_allowed_hosts", return_value={"media.example.com"}):
+    def test_an_explicit_http_source_keeps_http(self, provider):
+        """A source configured as ``http://`` is reached over http (not forced to HTTPS)."""
+        with patch.object(
+            provider, "_get_allowed_hosts", return_value={"http://media.example.com"}
+        ):
             _, base = provider._get_token_and_base_url("http://media.example.com/view?m=tok")
-            assert base.startswith("http://")
+            assert base == "http://media.example.com"
 
 
 # ===================================================================

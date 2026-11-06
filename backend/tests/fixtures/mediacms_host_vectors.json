@@ -1,11 +1,12 @@
 {
-  "_comment": "Shared by backend/tests/unit/test_mediacms_host_matching.py and frontend/src/lib/services/configService.test.ts. Candidates are what a real URL host looks like (ASCII, punycoded). expected = both sides agree.",
+  "_comment": "Shared by backend/tests/unit/test_mediacms_host_matching.py and frontend/src/lib/services/configService.test.ts. Candidates are what a real URL host looks like (ASCII, punycoded). expected = both sides agree. A configured value without a scheme means https; scheme, host and port must all match.",
   "vectors": [
     {"configured": "m.example.com", "candidate": "m.example.com", "scheme": "https", "expected": true},
     {"configured": "M.Example.com", "candidate": "m.example.COM", "scheme": "https", "expected": true},
     {"configured": "m.example.com", "candidate": "m.example.com:443", "scheme": "https", "expected": true},
     {"configured": "m.example.com:443", "candidate": "m.example.com", "scheme": "https", "expected": true},
-    {"configured": "m.example.com", "candidate": "m.example.com:80", "scheme": "http", "expected": true},
+    {"configured": "m.example.com", "candidate": "m.example.com:80", "scheme": "http", "expected": false},
+    {"configured": "m.example.com", "candidate": "m.example.com", "scheme": "http", "expected": false},
     {"configured": "m.example.com:8443", "candidate": "m.example.com:8443", "scheme": "https", "expected": true},
     {"configured": "m.example.com:8443", "candidate": "m.example.com", "scheme": "https", "expected": false},
     {"configured": "m.example.com", "candidate": "m.example.com:8443", "scheme": "https", "expected": false},
@@ -17,6 +18,20 @@
     {"configured": "m.example.com\\@evil.example", "candidate": "m.example.com", "scheme": "https", "expected": false},
     {"configured": "m.example.com\\evil", "candidate": "m.example.com", "scheme": "https", "expected": false},
     {"configured": "m%2eexample.com", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "https://m.example.com", "candidate": "m.example.com", "scheme": "https", "expected": true},
+    {"configured": "HTTPS://M.example.com:443", "candidate": "m.example.com", "scheme": "https", "expected": true},
+    {"configured": "https://m.example.com", "candidate": "m.example.com", "scheme": "http", "expected": false},
+    {"configured": "https://m.example.com:8080", "candidate": "m.example.com:8080", "scheme": "http", "expected": false},
+    {"configured": "http://m.example.com", "candidate": "m.example.com", "scheme": "http", "expected": true},
+    {"configured": "http://m.example.com", "candidate": "m.example.com:80", "scheme": "http", "expected": true},
+    {"configured": "http://m.example.com:8080", "candidate": "m.example.com:8080", "scheme": "http", "expected": true},
+    {"configured": "http://m.example.com:8080", "candidate": "m.example.com", "scheme": "http", "expected": false},
+    {"configured": "http://m.example.com", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "http://m.example.com", "candidate": "m.example.com:443", "scheme": "https", "expected": false},
+    {"configured": "ftp://m.example.com", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "https://m.example.com/path", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "m.example.com/path", "candidate": "m.example.com", "scheme": "https", "expected": false},
+    {"configured": "https://", "candidate": "m.example.com", "scheme": "https", "expected": false},
     {"configured": "bücher.example", "candidate": "xn--bcher-kva.example", "scheme": "https", "expected": false}
   ]
 }

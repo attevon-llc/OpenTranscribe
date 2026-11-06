@@ -19,8 +19,44 @@ ALLOWED_PROVIDER_TYPES = {"mediacms"}
 _HOSTNAME_RE = re.compile(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$")
 
 
+def normalise_source_address(v: str) -> str:
+    """Syntax-check a media source address and return it as ``scheme://host[:port]``.
+
+    Accepts ``host``, ``host:port``, ``http://host[:port]`` and ``https://host[:port]``
+    (one trailing ``/`` is tolerated). A value without a scheme is stored as ``https``:
+    credentials go only over the scheme the source names, and plain ``http`` has to be
+    asked for explicitly (``utils/media_origin.source_origin`` reads the stored value).
+
+    Args:
+        v: The raw ``hostname`` field value.
+
+    Returns:
+        The normalised (stripped, lower-cased, scheme-explicit) value.
+
+    Raises:
+        ValueError: if the scheme, host or port is malformed.
+    """
+    v = v.strip().lower()
+    scheme, sep, authority = v.partition("://")
+    if not sep:
+        scheme, authority = "https", v
+    elif scheme not in ("http", "https"):
+        raise ValueError("Address must start with http:// or https://, or be a bare hostname")
+    authority = authority.removesuffix("/")
+
+    host_part = authority
+    if ":" in authority:
+        host_part, _, port_str = authority.rpartition(":")
+        if not port_str.isdigit() or not (1 <= int(port_str) <= 65535):
+            raise ValueError("Invalid port number (must be 1-65535)")
+
+    if not _HOSTNAME_RE.match(host_part):
+        raise ValueError("Invalid hostname format")
+    return f"{scheme}://{authority}"
+
+
 def _validated_hostname(v: str) -> str:
-    """Normalise ``host`` / ``host:port`` and refuse anything not publicly reachable.
+    """Normalise a media source address and refuse anything not publicly reachable.
 
     This value is **not** inert configuration: it becomes an allowed host for MediaCMS
     ingestion (``protected_media_plugins/mediacms.py::_get_allowed_hosts``) which the
@@ -36,27 +72,17 @@ def _validated_hostname(v: str) -> str:
     ``metadata.google.internal`` alike.
 
     Args:
-        v: The raw ``hostname`` field value, as ``host`` or ``host:port``.
+        v: The raw ``hostname`` field value; see :func:`normalise_source_address`.
 
     Returns:
-        The normalised (stripped, lower-cased) value.
+        The normalised ``scheme://host[:port]`` value.
 
     Raises:
         ValueError: if the value is malformed, or names a host that must not be
             fetched server-side.
     """
-    v = v.strip().lower()
-
-    host_part = v
-    if ":" in v:
-        host_part, _, port_str = v.rpartition(":")
-        if not port_str.isdigit() or not (1 <= int(port_str) <= 65535):
-            raise ValueError("Invalid port number (must be 1-65535)")
-
-    if not _HOSTNAME_RE.match(host_part):
-        raise ValueError("Invalid hostname format")
-
-    safe, reason = is_safe_url(f"https://{v}")
+    v = normalise_source_address(v)
+    safe, reason = is_safe_url(v)
     if not safe:
         # The reason distinguishes "private address" from "cannot resolve", which would
         # turn this endpoint into a network scanner. Logged, never returned.
@@ -64,6 +90,12 @@ def _validated_hostname(v: str) -> str:
         raise ValueError(
             "Hostname must be a publicly reachable fully qualified domain name "
             "(e.g., media.example.com)"
+        )
+    if v.startswith("http://"):
+        logger.warning(
+            "Media source %s is configured for plain http: its credentials will be sent "
+            "unencrypted",
+            v,
         )
     return v
 

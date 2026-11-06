@@ -42,6 +42,7 @@ from app.schemas.admin import RetryConfigUpdate
 from app.services import system_settings_service
 from app.services.platform_bypass import audit_metadata_access
 from app.services.request_context import RequestContext
+from app.utils.media_origin import same_source_origin
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -426,7 +427,7 @@ def add_media_source(
 
     # Check for duplicate hostname
     for existing in sources:
-        if existing.get("hostname") == source.hostname:
+        if same_source_origin(str(existing.get("hostname", "")), source.hostname):
             raise HTTPException(
                 status_code=400,
                 detail=f"A source with hostname '{source.hostname}' already exists",
@@ -479,7 +480,9 @@ def update_media_source(
             # Check hostname uniqueness if changed
             if update.hostname and update.hostname != s.get("hostname"):
                 for other in sources:
-                    if other.get("id") != source_id and other.get("hostname") == update.hostname:
+                    if other.get("id") != source_id and same_source_origin(
+                        str(other.get("hostname", "")), update.hostname
+                    ):
                         raise HTTPException(
                             status_code=400,
                             detail=f"A source with hostname '{update.hostname}' already exists",

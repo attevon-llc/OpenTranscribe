@@ -131,8 +131,24 @@ describe('getAuthConfigForUrl', () => {
     expect(getAuthConfigForUrl(new URL('https://media.example.com/view?m=1'))).toBeNull();
     expect(getAuthConfigForUrl(new URL('https://media.example.com:9000/view?m=1'))).toBeNull();
     expect(getAuthConfigForUrl(new URL('https://plain.example.com:443/view?m=1'))).not.toBeNull();
-    expect(getAuthConfigForUrl(new URL('http://plain.example.com/view?m=1'))).not.toBeNull();
+    // A host stored without a scheme is https only.
+    expect(getAuthConfigForUrl(new URL('http://plain.example.com/view?m=1'))).toBeNull();
     expect(getAuthConfigForUrl(new URL('https://plain.example.com:8443/'))).toBeNull();
+  });
+
+  it('matches a source configured for plain http only over http', async () => {
+    mockAxiosInstance.get.mockResolvedValue({
+      data: [
+        { hosts: ['http://intranet.example.com:8080'], auth_type: 'user_password', fields: [] },
+      ],
+    });
+    await loadProtectedMediaAuthConfig();
+
+    expect(
+      getAuthConfigForUrl(new URL('http://intranet.example.com:8080/view?m=1'))
+    ).not.toBeNull();
+    expect(getAuthConfigForUrl(new URL('https://intranet.example.com:8080/view?m=1'))).toBeNull();
+    expect(getAuthConfigForUrl(new URL('http://intranet.example.com/view?m=1'))).toBeNull();
   });
 
   it('trims and case-folds a configured host, and refuses a space or percent-escape in it', async () => {

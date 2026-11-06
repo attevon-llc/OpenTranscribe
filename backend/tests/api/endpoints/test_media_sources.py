@@ -93,7 +93,7 @@ class TestMediaSourceCreate:
         )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["hostname"] == "videos.example.com"
+        assert data["hostname"] == "https://videos.example.com"
         assert data["provider_type"] == "mediacms"
         assert data["username"] == "alice"
         assert data["label"] == "My Videos"
@@ -121,7 +121,7 @@ class TestMediaSourceCreate:
             headers=user_token_headers,
         )
         assert resp.status_code == 200
-        assert resp.json()["hostname"] == "media.example.com:8443"
+        assert resp.json()["hostname"] == "https://media.example.com:8443"
 
     def test_create_duplicate_hostname_rejected(
         self, client, db_session, normal_user, user_token_headers

@@ -107,9 +107,9 @@ def _scratch_database(starting_table: str) -> Iterator[Engine]:
     name = f"ot_p3_v030_{uuid.uuid4().hex[:10]}_test"
     url = make_url(settings.DATABASE_URL)
     admin = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    scratch = create_engine(url.set(database=name))
     with admin.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{name}"'))
-    scratch = create_engine(url.set(database=name))
     try:
         with scratch.begin() as conn:
             conn.execute(text(starting_table))

@@ -8,6 +8,7 @@ invocations, and ``--dry-run`` prints every command and executes none of them.
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 from pathlib import Path
 
@@ -17,11 +18,19 @@ SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "run-summary-eval.sh"
 ARMS = ["--arm", "old=@module", "--arm", "new=/arms/new.json"]
 
 
+def _closed_port() -> int:
+    """A port nothing listens on, so a model server running on this host cannot change the plan."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 def _run(tmp_path: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     environment = {
         "PATH": os.environ["PATH"],
         "HOME": str(tmp_path),
         "SUMMARY_EVAL_WORK_DIR": str(tmp_path / "work"),
+        "LLM_TEST_PORT": str(_closed_port()),
         **env,
     }
     return subprocess.run(
@@ -110,3 +119,14 @@ def test_the_remote_leg_is_opt_in_and_runs_the_anthropic_dialect_on_the_smoke_in
     line = next(ln for ln in remote.stdout.splitlines() if "--provider anthropic" in ln)
     assert "--inputs smoke" in line and "--model claude-haiku-4-5" in line
     assert "ANTHROPIC_API_KEY" not in remote.stdout  # the key is never echoed
+
+
+def test_a_resumed_run_does_not_repeat_its_smoke(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    (run_dir / "smoke").mkdir(parents=True)
+    (run_dir / "smoke" / "records.jsonl").write_text('{"cell": "I1|old|0"}\n')
+    result = _run(tmp_path, "--fresh", "sumeval", *ARMS, "--dry-run", "--resume-dir", str(run_dir))
+    assert result.returncode == 0, result.stderr
+    assert "not repeating it" in result.stdout
+    assert "run --inputs smoke" not in result.stdout
+    assert "run --inputs gate --runs 5" in result.stdout

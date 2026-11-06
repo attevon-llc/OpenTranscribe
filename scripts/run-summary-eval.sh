@@ -218,6 +218,12 @@ ensure_lock() {
 }
 
 smoke() {
+    # A resumed run already passed its smoke and budget projection; re-running it would refuse on
+    # the records it left, so the resume would never reach the cells it exists to finish.
+    if [[ -n "$RESUME_DIR" && -s "$SMOKE_DIR/records.jsonl" ]]; then
+        say "resuming: the smoke in $SMOKE_DIR already ran, not repeating it"
+        return 0
+    fi
     local image
     image="$(vllm_image)"
     bench run --inputs smoke --runs 1 --no-controls "${ARM_ARGS[@]}" --lock "$LOCK_DIR" \

@@ -89,9 +89,9 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   tenant's filenames must call `audit_metadata_access`; one that acts on a row takes
   `ctx.bypass`. `tests/api/test_support_access_matrix.py` proves no/pending/expired/revoked/wrong
   tenant per chokepoint kind and sweeps every parameterless GET for leaks.
-- **One definition each.** `get_current_super_admin_user` in `api/endpoints/auth_config.py` is a re-export alias (the
-  `admin_*` modules use `get_current_active_superuser` directly); the real thing lives in
-  `api/endpoints/auth/dependencies.py`. It used to be declared three times, each comparing
+- **One definition each.** The super-admin gate is `get_current_active_superuser` in
+  `api/endpoints/auth/dependencies.py`, imported under that name everywhere (no aliases;
+  `tests/unit/test_route_privilege_tiers.py` checks the admin and auth-config modules). It used to be declared three times, each comparing
   against its own `"super_admin"` literal.
 - `tests/unit/test_route_privilege_tiers.py` walks the live dependency tree and fails if a new
   route lands at the wrong tier or is accidentally public. Add genuinely-public routes to its

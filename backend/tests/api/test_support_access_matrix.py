@@ -369,7 +369,6 @@ NOT_SWEPT = {
 ADMIN_DEPS = {
     "get_current_admin_user",
     "get_current_active_superuser",
-    "get_current_super_admin_user",
 }
 
 

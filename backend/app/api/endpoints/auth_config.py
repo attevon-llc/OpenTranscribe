@@ -40,13 +40,6 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# The super_admin gate lives in api/endpoints/auth/dependencies.py, next to
-# get_current_user and get_current_admin_user. It used to be re-declared here and
-# in admin.py, each comparing against its own "super_admin" string literal rather
-# than roles.ROLE_SUPER_ADMIN — three copies of one authorization rule.
-get_current_super_admin_user = get_current_active_superuser
-
-
 #: The category allow-list, derived from the per-category schemas so it cannot drift.
 VALID_CATEGORIES: tuple[str, ...] = tuple(auth_config_keys.CONFIG_CATEGORIES)
 
@@ -158,7 +151,7 @@ def _audit_auth_config_event(
 @router.get("", response_model=dict[str, list[AuthConfigResponse]])
 def get_all_configs(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_super_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict[str, list[AuthConfigResponse]]:
     """Get all authentication configurations grouped by category.
 
@@ -206,7 +199,7 @@ def get_all_configs(
 @router.get("/status", response_model=AuthConfigStatusResponse)
 def get_auth_status(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_super_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> AuthConfigStatusResponse:
     """Get the enabled/disabled status of each authentication method.
 
@@ -224,7 +217,7 @@ def get_auth_status(
 def get_config_by_category(
     category: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_super_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict[str, Any]:
     """Get configuration for a specific category.
 
@@ -251,7 +244,7 @@ def update_config_category(
     config: dict[str, Any],
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_super_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict[str, Any]:
     """Update configuration for a category.
 
@@ -366,7 +359,7 @@ def get_audit_log(
     limit: int = Query(100, ge=1, le=MAX_AUDIT_LOG_LIMIT),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_super_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> list[AuthConfigAuditResponse]:
     """Get audit log for configuration changes.
 
@@ -433,7 +426,7 @@ def get_audit_log(
 def migrate_from_env(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_super_admin_user),
+    current_user: User = Depends(get_current_active_superuser),
 ) -> dict[str, Any]:
     """One-time migration from .env to database.
 

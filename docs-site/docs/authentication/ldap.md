@@ -194,9 +194,9 @@ between the two directory paths.
 
 | Symptom | Check |
 |---|---|
-| "Failed to bind to LDAP server" | Server, port, and service-account credentials |
-| "User not found in LDAP" | `ldap_search_base` and `ldap_user_search_filter` |
-| "User has no email attribute" | `ldap_email_attr` is populated for that account |
+| Log: `LDAP service account bind was refused: check the bind DN, its password and the TLS settings` | Server, port, TLS settings and service-account credentials |
+| Log: `LDAP user not found: <name>` | `ldap_search_base` and `ldap_user_search_filter` |
+| Log: `LDAP login refused for <name>: email attribute ... is missing or invalid` | `ldap_email_attr` is populated, with a valid address, for that account |
 | User authenticates but is refused | `ldap_user_groups` — they are not in a required group. Turn on `ldap_recursive_groups` if membership is nested |
 | Nobody becomes admin | `ldap_admin_users` / `ldap_admin_groups`, or use a [group mapping](./groups) and dry-run it with `POST /api/admin/group-mappings/test` |
 | Password change refused | Directory accounts have no local password; change it in AD/LDAP |

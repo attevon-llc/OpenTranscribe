@@ -87,7 +87,7 @@ def _thumbnail_url(raw: Any, base_url: str) -> str | None:
     """Absolute thumbnail URL: kept when it already has a scheme, else resolved on the site."""
     if not raw:
         return None
-    if urlparse(raw).scheme:
+    if urlparse(str(raw)).scheme:
         return str(raw)
     return urljoin(base_url, str(raw))
 
@@ -383,7 +383,7 @@ class MediacmsProvider(MediaSourceResolver, ProtectedMediaProvider):
                     continue
                 handle.write(chunk)
                 received += len(chunk)
-                if total_bytes and progress_callback:
+                if total_bytes > 0 and progress_callback:
                     percent = min(int(20 + 40 * received / total_bytes), 60)
                     progress_callback(percent, "Downloading media...")
 

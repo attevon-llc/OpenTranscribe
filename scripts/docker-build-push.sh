@@ -6,6 +6,8 @@ set -e
 
 # shellcheck source=scripts/lib/log.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/log.sh"
+# shellcheck source=scripts/lib/scan-report-dir.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/scan-report-dir.sh"
 
 # Configuration
 DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME:-davidamacey}"
@@ -339,9 +341,9 @@ run_security_scan() {
         scan_tag="${VERSION_FULL}"
     fi
 
-    print_info "Running security scan for ${component} (tag: ${scan_tag})..."
+    print_info "Running security scan for ${component} (tag: ${scan_tag}, output: $(scan_report_dir))..."
     local scan_rc=0
-    OUTPUT_DIR="./security-reports" FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-false}" \
+    OUTPUT_DIR="$(scan_report_dir)" FAIL_ON_CRITICAL="${FAIL_ON_CRITICAL:-false}" \
         IMAGE_TAG="${scan_tag}" \
         ./scripts/security-scan.sh "${component}" || scan_rc=$?
 
@@ -1241,9 +1243,7 @@ Security Scanning:
     - Trivy: Vulnerability scanning
     - Grype: Additional vulnerability scanning
     - Syft: SBOM generation
-
-    Reports are saved to ./security-reports/
-
+    Reports: ./security-reports/ (push-mode release semver only), else ./.security-reports-local/
 EOF
 }
 

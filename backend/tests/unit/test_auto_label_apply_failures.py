@@ -15,6 +15,7 @@ import logging
 import uuid
 
 import pytest
+from fixtures.tag_recorders import record_hook
 from sqlalchemy import text
 
 from app.models.collection import CollectionMember
@@ -127,3 +128,43 @@ def test_a_clean_run_has_no_failures_and_is_stamped_complete(gov, failing_name):
     assert result["auto_applied_collections"] == [c_ok]
     gov.db.refresh(suggestion)
     assert suggestion.auto_apply_completed_at is not None
+
+
+def test_the_change_hook_runs_once_per_batch_with_the_file_owner(gov, monkeypatch):
+    """Two new tags on one file are one hook call, credited to the owner, not one per tag."""
+    hook = record_hook(monkeypatch, "app.services.auto_label_service")
+    f = gov.file(gov.alice, org=None)
+    suggestion = _suggestion(
+        gov,
+        f,
+        tags=[
+            {"name": _u("Hook One"), "confidence": 0.9},
+            {"name": _u("Hook Two"), "confidence": 0.9},
+        ],
+    )
+
+    result = AutoLabelService(gov.db).auto_apply_suggestions(
+        f, suggestion, gov.bob.id, confidence_threshold=0.5, apply_collections=False
+    )
+
+    assert len(result["auto_applied_tags"]) == 2
+    assert len(hook.calls) == 1
+    assert set(hook.calls[0]["files"]) == {f.id}
+    assert hook.calls[0]["user_id"] == gov.alice.id
+    assert hook.calls[0]["system_scope"] is False
+
+
+def test_the_change_hook_is_skipped_when_every_tag_was_already_on_the_file(gov, monkeypatch):
+    hook = record_hook(monkeypatch, "app.services.auto_label_service")
+    f = gov.file(gov.alice, org=None)
+    names = [_u("Seen One"), _u("Seen Two")]
+    suggestion = _suggestion(gov, f, tags=[{"name": n, "confidence": 0.9} for n in names])
+    service = AutoLabelService(gov.db)
+    first = service.auto_apply_suggestions(f, suggestion, gov.alice.id, confidence_threshold=0.5)
+    assert len(hook.calls) == 1
+    hook.calls.clear()
+
+    again = service.auto_apply_suggestions(f, suggestion, gov.alice.id, confidence_threshold=0.5)
+
+    assert first["auto_applied_tags"] == again["auto_applied_tags"] == names
+    assert hook.calls == []

@@ -16,9 +16,12 @@ import pytest
 from app.core.config import settings
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.models.support_access import SupportAccessUse
+from app.models.tag import FileTag
+from app.models.tag import Tag
 from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.platform_bypass import SupportGrantView
 from app.services.platform_bypass import build_bypass
+from app.services.tag_service import normalize_tag_name
 
 
 def _code(response) -> str:
@@ -299,6 +302,12 @@ def test_a_grant_cannot_create_tags_through_the_bulk_action(support_world, actio
     )
     assert response.status_code == 403
     assert _code(response) == "support_grant_action_not_permitted"
+    # The refusal comes before any tag is resolved, so nothing was created or attached.
+    w.db.expire_all()
+    assert (
+        w.db.query(Tag).filter(Tag.normalized_name == normalize_tag_name("grant-made")).count() == 0
+    )
+    assert w.db.query(FileTag).filter(FileTag.media_file_id == w.file.id).count() == 0
 
 
 def test_the_refused_attempt_is_still_recorded(support_world):

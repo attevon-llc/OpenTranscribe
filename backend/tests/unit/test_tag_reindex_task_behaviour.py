@@ -59,6 +59,15 @@ def _use_client(monkeypatch, client) -> None:
     monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: client)
 
 
+def test_the_index_updates_ride_the_utility_queue():
+    from app.core.celery import celery_app
+
+    routes = celery_app.conf.task_routes
+    assert routes["update_file_tags_index"] == {"queue": "utility"}
+    assert routes["update_file_access_index"] == {"queue": "utility"}
+    assert update_file_tags_index.name == "update_file_tags_index"
+
+
 def test_an_empty_file_list_is_skipped_before_anything_else(monkeypatch):
     def explode():
         raise AssertionError("the client must not be looked up")

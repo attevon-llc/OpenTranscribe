@@ -121,9 +121,9 @@ class _Connection:
         directory.calls.append(("connection", user, auto_bind))
         directory.connection_options.append(options)
 
-    def open(self) -> bool:
+    def open(self) -> None:
+        """Like ldap3's sync ``open``: returns ``None`` on success, raises on failure."""
         self._dir.calls.append(("open", self.user))
-        return True
 
     def start_tls(self) -> bool:
         self._dir.calls.append(("start_tls", self.user))

@@ -292,8 +292,8 @@ class _StallingConnection:
             raise LDAPSocketReceiveError("timed out")
         return True
 
-    def open(self) -> bool:
-        return self._step("open")
+    def open(self) -> None:
+        self._step("open")
 
     def start_tls(self) -> bool:
         return self._step("start_tls")

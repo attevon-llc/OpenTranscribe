@@ -128,7 +128,8 @@ def _connect_and_bind(
         The bound connection, or ``None`` when the bind was refused for any reason.
 
     Raises:
-        LDAPException: Any ldap3 error other than a bind rejection or a read timeout.
+        LDAPException: Any ldap3 error other than a bind rejection or a read timeout,
+            including a socket that cannot be opened.
     """
     problem = transport_problem(cfg, server)
     if problem is not None:
@@ -145,9 +146,9 @@ def _connect_and_bind(
     try:
         if not server.ssl:
             # The gate guarantees use_tls here: upgrade before any credential is sent.
-            if not conn.open():
-                logger.error("Could not open the LDAP connection for StartTLS; bind refused")
-                return None
+            # ldap3's open() returns None on success and raises on failure
+            # (ldap3/strategy/base.py BaseStrategy.open), so its result is not a verdict.
+            conn.open()
             if not conn.start_tls():
                 logger.error(
                     "StartTLS negotiation with the LDAP server failed; bind refused "

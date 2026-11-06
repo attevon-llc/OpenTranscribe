@@ -58,9 +58,8 @@ class _Connection:
             self.bound = True
         _Connection.instances.append(self)
 
-    def open(self) -> bool:
+    def open(self) -> None:
         self.calls.append("open")
-        return True
 
     def start_tls(self) -> bool:
         self.calls.append("start_tls")

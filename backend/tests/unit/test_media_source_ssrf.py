@@ -92,7 +92,7 @@ def test_media_source_hostname_accepts_a_public_host(monkeypatch):
         password="secret",
     )
 
-    assert source.hostname == "media.example.com"
+    assert source.hostname == "https://media.example.com"
 
 
 def test_media_source_hostname_accepts_a_public_host_with_a_port(monkeypatch):
@@ -105,7 +105,7 @@ def test_media_source_hostname_accepts_a_public_host_with_a_port(monkeypatch):
 
     source = UserMediaSourceCreate(hostname="Media.Example.com:8443")
 
-    assert source.hostname == "media.example.com:8443"
+    assert source.hostname == "https://media.example.com:8443"
 
 
 def test_media_source_update_rejects_link_local():

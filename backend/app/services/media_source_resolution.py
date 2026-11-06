@@ -2,8 +2,9 @@
 
 Sources come from the caller's own and same-tenant shared rows (``media_source_access``), then
 the operator's system list, then the legacy ``MEDIACMS_*`` environment variables. Every host
-decision uses the one identity rule in ``utils/media_origin.host_matches``. The MediaCMS
-protected-media plugin inherits these lookups.
+decision uses the one identity rule in ``utils/media_origin.host_matches``: scheme, host and
+port, with a scheme-less source meaning ``https``. The MediaCMS protected-media plugin inherits
+these lookups.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any
 
 from app.services.media_source_access import query_user_media_sources
 from app.utils.media_origin import host_matches
+from app.utils.media_origin import source_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -103,9 +105,9 @@ class MediaSourceResolver:
         return hosts
 
     def _get_verify_ssl_for_host(
-        self, hostname: str, user_id: int | None = None, scheme: str | None = None
+        self, hostname: str, user_id: int | None = None, *, scheme: str
     ) -> bool:
-        """Get SSL verification setting for a specific host (``host`` or ``host:port``)."""
+        """SSL verification setting for the source at ``scheme`` + ``host[:port]``."""
         for s in self._get_all_sources(user_id):
             if host_matches(s.get("hostname", ""), hostname, scheme):
                 return bool(s.get("verify_ssl", True))
@@ -113,9 +115,9 @@ class MediaSourceResolver:
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
     def _get_stored_credentials(
-        self, hostname: str, user_id: int | None = None, scheme: str | None = None
+        self, hostname: str, user_id: int | None = None, *, scheme: str
     ) -> tuple[str | None, str | None]:
-        """Get stored credentials for a specific host.
+        """Stored credentials for the source at ``scheme`` + ``host[:port]``.
 
         Checks per-user sources first (own, then shared), then system-level.
         """
@@ -132,10 +134,19 @@ class MediaSourceResolver:
         """Global SSL verification fallback (used when host is unknown)."""
         return os.getenv("MEDIACMS_VERIFY_SSL", "true").lower() not in ("false", "0", "no")
 
+    def _configured_base_url(self, parsed: Any, user_id: int | None) -> str | None:
+        """The configured origin a parsed URL is on, built from the configuration, or None.
+
+        Requests that carry a credential are addressed to this value, never to the
+        submitted URL's own scheme and authority.
+        """
+        for configured in sorted(self._get_allowed_hosts(user_id)):
+            if host_matches(configured, parsed.netloc, parsed.scheme):
+                return source_base_url(configured)
+        return None
+
     def _is_allowed_host(self, parsed: Any, user_id: int | None) -> bool:
-        return any(
-            host_matches(h, parsed.netloc, parsed.scheme) for h in self._get_allowed_hosts(user_id)
-        )
+        return self._configured_base_url(parsed, user_id) is not None
 
     def _hosts_with_stored_credentials(self, user_id: int | None = None) -> set[str]:
         """Configured hostnames, as stored, whose source carries a username and a password."""

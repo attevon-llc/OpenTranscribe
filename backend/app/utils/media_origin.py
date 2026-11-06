@@ -1,9 +1,11 @@
 """Host identity, same-origin resolution and request pinning for protected-media sources.
 
 Every "is this the configured host" decision the MediaCMS plugin makes goes through
-``host_matches``, the server-supplied download path goes through
-``resolve_same_origin_url`` so a user's token is only ever sent to the configured origin,
-and every outbound request is pinned by ``_pin_media_url``. The frontend applies the same
+``host_matches`` (scheme, host and port; a scheme-less source means ``https``), the
+login and media requests are built from the configured origin (``source_base_url``), the
+server-supplied download path goes through ``resolve_same_origin_url`` so a user's token is
+only ever sent to the configured origin, and every outbound request is pinned by
+``_pin_media_url``. The frontend applies the same
 host rule; ``backend/tests/fixtures/mediacms_host_vectors.json`` pins both sides.
 """
 
@@ -28,26 +30,68 @@ _DEFAULT_PORTS = {"http": 80, "https": 443}
 def _host_identity(host: str, scheme: str | None = None) -> tuple[str, int | None] | None:
     """Return (lower-cased hostname, port) for ``host`` or ``host:port``, or None if unusable.
 
-    The one rule for "is this the same MediaCMS host": hostname compared case-insensitively
-    and the port compared with an absent port meaning the scheme's default (when ``scheme``
-    is known). Mirrored in the frontend's ``lib/utils/mediaHost.ts::hostIdentity``.
+    Hostname compared case-insensitively and an absent port meaning the scheme's default
+    (when ``scheme`` is known). Mirrored in the frontend's
+    ``lib/utils/mediaHost.ts::hostIdentity``.
     """
+    # userinfo ("user@host") would make a different authority look like the same host, and
+    # a path, query or fragment would be silently dropped by the parser below.
+    if any(c in host for c in "@/?#"):
+        return None
     try:
         parsed = urlparse(f"//{host.strip()}")
         name = parsed.hostname
         port = parsed.port
     except ValueError:
         return None
-    # userinfo ("user@host") would make a different authority look like the same host.
-    if not name or "@" in host:
+    if not name:
         return None
     return name.lower(), port or _DEFAULT_PORTS.get(scheme or "")
 
 
-def host_matches(configured: str, candidate: str, scheme: str | None = None) -> bool:
-    """True when a configured source host and a URL's host are the same host."""
-    left = _host_identity(configured, scheme)
-    return left is not None and left == _host_identity(candidate, scheme)
+def source_origin(configured: str) -> tuple[str, str, int] | None:
+    """Return (scheme, hostname, port) of a configured source, or None if unusable.
+
+    A source is stored as ``host[:port]`` or ``scheme://host[:port]``. A value without a
+    scheme means ``https``: plain ``http`` is used only when it was configured explicitly,
+    so a stored credential is never sent over a weaker transport than the one configured.
+    Mirrored in the frontend's ``lib/utils/mediaHost.ts::sourceOrigin``.
+    """
+    value = configured.strip()
+    scheme = "https"
+    head, sep, rest = value.partition("://")
+    if sep:
+        scheme, value = head.lower(), rest
+    if scheme not in _DEFAULT_PORTS:
+        return None
+    identity = _host_identity(value, scheme)
+    if identity is None or identity[1] is None:
+        return None
+    return scheme, identity[0], identity[1]
+
+
+def source_base_url(configured: str) -> str | None:
+    """``scheme://host[:port]`` for a configured source, the port omitted when it is the default."""
+    origin = source_origin(configured)
+    if origin is None:
+        return None
+    scheme, name, port = origin
+    netloc = f"[{name}]" if ":" in name else name
+    if port != _DEFAULT_PORTS[scheme]:
+        netloc = f"{netloc}:{port}"
+    return f"{scheme}://{netloc}"
+
+
+def host_matches(configured: str, candidate: str, scheme: str) -> bool:
+    """True when a URL with ``scheme`` and host ``candidate`` is on the configured source.
+
+    Scheme, hostname and effective port must all match the configured origin, so a
+    scheme-less (https) source never matches an ``http`` URL.
+    """
+    origin = source_origin(configured)
+    if origin is None or scheme != origin[0]:
+        return False
+    return origin[1:] == _host_identity(candidate, scheme)
 
 
 def _origin(url: str) -> tuple[str, str, int | None] | None:

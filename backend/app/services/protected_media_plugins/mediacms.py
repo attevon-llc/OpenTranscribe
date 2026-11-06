@@ -125,13 +125,15 @@ class MediacmsProvider(MediaSourceResolver, ProtectedMediaProvider):
             user_id: The requesting user, whose own and shared sources count.
 
         Returns:
-            ``(friendly_token, "scheme://host[:port]")``.
+            ``(friendly_token, "scheme://host[:port]")``, the origin taken from the matching
+            configured source rather than from the submitted URL.
 
         Raises:
             InvalidInputError: The host is not a configured source, or the URL names no media.
         """
         parsed = urlparse(url)
-        if not self._is_allowed_host(parsed, user_id):
+        base_url = self._configured_base_url(parsed, user_id)
+        if base_url is None:
             raise InvalidInputError(_NOT_CONFIGURED)
 
         token = _token_in_query(parsed)
@@ -141,7 +143,7 @@ class MediacmsProvider(MediaSourceResolver, ProtectedMediaProvider):
                 token = segments[len(_API_MEDIA_SEGMENTS)]
         if not token:
             raise InvalidInputError(_MEDIA_NOT_NAMED)
-        return token, f"{parsed.scheme}://{parsed.netloc}"
+        return token, base_url
 
     def _login_and_get_info(
         self,
@@ -180,6 +182,12 @@ class MediacmsProvider(MediaSourceResolver, ProtectedMediaProvider):
             raise InvalidInputError(_NO_CREDENTIALS)
 
         friendly_token, base_url = self._get_token_and_base_url(url, user_id=user_id)
+        if base_url.startswith("http://"):
+            logger.warning(
+                "MediaCMS source %s is configured for plain http: the sign-in credentials "
+                "are sent unencrypted",
+                urlparse(base_url).netloc,
+            )
         verify = self._get_verify_ssl_for_host(parsed.netloc, user_id=user_id, scheme=parsed.scheme)
 
         try:

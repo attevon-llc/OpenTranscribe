@@ -13,6 +13,7 @@
     type MediaSource,
     type MediaSourceUpdate
   } from '$lib/api/mediaSourcesApi';
+  import { isPlainHttpSource } from '$lib/utils/mediaHost';
 
   let loading = true;
   let sources: MediaSource[] = [];
@@ -182,7 +183,11 @@
               <div class="form-row">
                 <div class="form-field">
                   <label for="edit-hostname">{$t('settings.mediaSources.hostname')}</label>
-                  <input id="edit-hostname" type="text" bind:value={editHostname} class="form-input" placeholder="media.example.com" />
+                  <input id="edit-hostname" type="text" bind:value={editHostname} class="form-input" placeholder="media.example.com" aria-describedby="edit-hostname-hint" />
+                  <p id="edit-hostname-hint" class="field-hint">{$t('settings.mediaSources.hostnameHint')}</p>
+                  {#if isPlainHttpSource(editHostname)}
+                    <p class="http-warning" role="alert">{$t('settings.mediaSources.plainHttpWarning')}</p>
+                  {/if}
                 </div>
                 <div class="form-field">
                   <label for="edit-label">{$t('settings.mediaSources.label')}</label>
@@ -236,6 +241,9 @@
                 {/if}
                 {#if !source.verify_ssl}
                   <span class="meta-badge ssl-off">{$t('settings.mediaSources.sslOff')}</span>
+                {/if}
+                {#if isPlainHttpSource(source.hostname)}
+                  <span class="meta-badge http-plain">{$t('settings.mediaSources.plainHttpBadge')}</span>
                 {/if}
               </div>
             </div>
@@ -309,6 +317,9 @@
               {#if !source.verify_ssl}
                 <span class="meta-badge ssl-off">{$t('settings.mediaSources.sslOff')}</span>
               {/if}
+              {#if isPlainHttpSource(source.hostname)}
+                <span class="meta-badge http-plain">{$t('settings.mediaSources.plainHttpBadge')}</span>
+              {/if}
             </div>
           </div>
         </div>
@@ -342,7 +353,11 @@
           <div class="form-row">
             <div class="form-field">
               <label for="new-hostname">{$t('settings.mediaSources.hostname')}</label>
-              <input id="new-hostname" type="text" bind:value={newHostname} class="form-input" placeholder="media.example.com" />
+              <input id="new-hostname" type="text" bind:value={newHostname} class="form-input" placeholder="media.example.com" aria-describedby="new-hostname-hint" />
+              <p id="new-hostname-hint" class="field-hint">{$t('settings.mediaSources.hostnameHint')}</p>
+              {#if isPlainHttpSource(newHostname)}
+                <p class="http-warning" role="alert">{$t('settings.mediaSources.plainHttpWarning')}</p>
+              {/if}
             </div>
             <div class="form-field">
               <label for="new-label">{$t('settings.mediaSources.label')}</label>
@@ -600,6 +615,29 @@
   .meta-badge.ssl-off {
     background: rgba(239, 68, 68, 0.15);
     color: #dc2626;
+  }
+
+  .meta-badge.http-plain {
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
+  }
+
+  .field-hint {
+    font-size: var(--font-size-2xs);
+    color: var(--text-secondary);
+    margin: var(--space-1) 0 0;
+    line-height: 1.4;
+  }
+
+  .http-warning {
+    font-size: var(--font-size-xs);
+    color: var(--color-warning-text);
+    background: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-1-5) var(--space-2-5);
+    margin: var(--space-1-5) 0 0;
+    line-height: 1.4;
   }
 
   .source-actions {

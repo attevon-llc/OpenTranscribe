@@ -6,7 +6,7 @@
  * is dropped on logout and on a user switch.
  */
 import axiosInstance from '$lib/axios';
-import { hostIdentity } from '$lib/utils/mediaHost';
+import { hostIdentity, sourceOrigin } from '$lib/utils/mediaHost';
 
 export type ProtectedMediaAuthConfig = {
   hosts: string[];
@@ -59,16 +59,17 @@ export function resetProtectedMediaAuthConfig(): void {
 }
 
 /**
- * The config whose hosts include the URL's host, compared with the same identity rule as
- * the backend (hostname case-insensitive, absent port = the scheme's default port).
- * Only the host counts; path, query and userinfo are ignored. Null when nothing matches.
+ * The config whose hosts include the URL's origin, compared with the same rule as the
+ * backend: scheme, hostname (case-insensitive) and port (absent = the scheme's default),
+ * where a host stored without a scheme means https. Path, query and userinfo are ignored.
+ * Null when nothing matches.
  */
 export function getAuthConfigForUrl(url: URL): ProtectedMediaAuthConfig | null {
-  const wanted = hostIdentity(url.host, url.protocol);
-  if (wanted === null) return null;
+  const identity = hostIdentity(url.host, url.protocol);
+  if (identity === null) return null;
+  const wanted = `${url.protocol}//${identity}`;
   return (
-    configs.find((config) =>
-      (config.hosts ?? []).some((host) => hostIdentity(host, url.protocol) === wanted)
-    ) ?? null
+    configs.find((config) => (config.hosts ?? []).some((host) => sourceOrigin(host) === wanted)) ??
+    null
   );
 }

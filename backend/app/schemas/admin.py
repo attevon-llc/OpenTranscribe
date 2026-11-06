@@ -15,6 +15,8 @@ from pydantic import StringConstraints
 from pydantic import field_validator
 from pydantic import model_validator
 
+from app.schemas.media_source import normalise_source_address
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.models.media import MediaFile
 
@@ -143,7 +145,11 @@ class MediaSource(BaseModel):
     """A single protected media source configuration."""
 
     id: str = Field(..., description="Unique identifier for this source")
-    hostname: str = Field(..., min_length=1, description="Hostname (e.g. media.example.com)")
+    hostname: str = Field(
+        ...,
+        min_length=1,
+        description="Address: host[:port], or http(s)://host[:port] (default https)",
+    )
     provider_type: str = Field(
         default="mediacms", description="Provider plugin type (mediacms, etc.)"
     )
@@ -155,10 +161,7 @@ class MediaSource(BaseModel):
     @field_validator("hostname")
     @classmethod
     def validate_hostname(cls, v: str) -> str:
-        v = v.strip().lower()
-        if not re.match(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$", v):
-            raise ValueError("Invalid hostname format")
-        return v
+        return normalise_source_address(v)
 
 
 class MediaSourceCreate(BaseModel):
@@ -174,10 +177,7 @@ class MediaSourceCreate(BaseModel):
     @field_validator("hostname")
     @classmethod
     def validate_hostname(cls, v: str) -> str:
-        v = v.strip().lower()
-        if not re.match(r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$", v):
-            raise ValueError("Invalid hostname format")
-        return v
+        return normalise_source_address(v)
 
 
 class MediaSourceUpdate(BaseModel):
@@ -193,13 +193,7 @@ class MediaSourceUpdate(BaseModel):
     @field_validator("hostname")
     @classmethod
     def validate_hostname(cls, v: str | None) -> str | None:
-        if v is not None:
-            v = v.strip().lower()
-            if not re.match(
-                r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*$", v
-            ):
-                raise ValueError("Invalid hostname format")
-        return v
+        return None if v is None else normalise_source_address(v)
 
 
 class MediaSourcesList(BaseModel):

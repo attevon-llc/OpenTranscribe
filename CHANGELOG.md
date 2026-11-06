@@ -53,8 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backend will not start on a production install whose `.env` leaves `FLOWER_PASSWORD` unset or at
   a default (`flower`, `changeme`, a `CHANGE_ME` placeholder), or leaves `MINIO_KMS_AUTO_ENCRYPTION`
   off. Installs made by the current installer already have both. An older or hand-made `.env`
-  needs them added before `./opentranscribe.sh update` (which now stops with the exact lines to add
-  rather than leaving you with a crash-looping backend):
+  needs them added before upgrading. From 0.7.0 on, `./opentranscribe.sh update` stops with the exact
+  lines to add rather than leaving you with a crash-looping backend; the 0.6.x script you upgrade with
+  does not have that check yet, so add them first (see the 0.7.0 upgrade page):
   `FLOWER_PASSWORD=<openssl rand -hex 16>`,
   `MINIO_KMS_SECRET_KEY=opentranscribe-key:<openssl rand -base64 32>` and
   `MINIO_KMS_AUTO_ENCRYPTION=on`. **Back up the MinIO key**: objects written afterwards are

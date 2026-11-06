@@ -34,13 +34,18 @@ See [Backup & Restore](./backup-restore.md). Then update:
 A production install refuses to start when `FLOWER_PASSWORD` is unset or a default
 (`flower`, `changeme`, a `CHANGE_ME` placeholder), or when the bundled object store does not
 encrypt objects (`MINIO_KMS_AUTO_ENCRYPTION` is not `on`). An install made by the current
-installer already has both. Otherwise add these lines and start again:
+installer already has both. Otherwise add these lines to `.env` **before** you run the update:
 
 ```bash
 FLOWER_PASSWORD=<output of: openssl rand -hex 16>
 MINIO_KMS_SECRET_KEY=opentranscribe-key:<output of: openssl rand -base64 32>
 MINIO_KMS_AUTO_ENCRYPTION=on
 ```
+
+From 0.7.0 on, `./opentranscribe.sh update` checks these settings and stops before changing
+anything when one is missing. The script you upgrade *with* is your current one, which does not
+have that check yet, so on this first upgrade add the lines yourself first; otherwise the backend
+refuses to start and its log names the missing setting.
 
 Back up `MINIO_KMS_SECRET_KEY` somewhere safe: objects written from then on are encrypted with
 it, and if it is lost they cannot be read again. Objects stored before encryption was turned on

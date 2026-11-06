@@ -298,14 +298,14 @@ def _mock_client(*, exists: bool = True) -> MagicMock:
 
 
 def test_survey_speaker_id_coverage_is_unavailable_with_no_client():
-    with patch.object(svc, "opensearch_client", None):
+    with patch.object(svc._client, "opensearch_client", None):
         result = svc.survey_speaker_id_coverage()
     assert result["verdict"] == "unavailable"
 
 
 def test_survey_speaker_id_coverage_is_unavailable_when_the_index_is_absent():
     client = _mock_client(exists=False)
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         result = svc.survey_speaker_id_coverage()
     assert result["verdict"] == "unavailable"
     client.search.assert_not_called()
@@ -314,7 +314,7 @@ def test_survey_speaker_id_coverage_is_unavailable_when_the_index_is_absent():
 def test_survey_speaker_id_coverage_reports_empty_for_zero_chunk_plane_documents():
     client = _mock_client()
     client.search.return_value = {"hits": {"total": {"value": 0}}, "aggregations": {}}
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         result = svc.survey_speaker_id_coverage()
     assert result == {"verdict": "empty", "total": 0, "with_speaker_id": 0, "coverage_ratio": 0.0}
 
@@ -325,7 +325,7 @@ def test_survey_speaker_id_coverage_computes_the_ratio():
         "hits": {"total": {"value": 200}},
         "aggregations": {"with_speaker_id": {"doc_count": 50}},
     }
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         result = svc.survey_speaker_id_coverage()
     assert result == {
         "verdict": "measured",
@@ -347,7 +347,7 @@ def test_survey_speaker_id_coverage_uses_a_filter_agg_never_a_terms_agg_on_file_
         "hits": {"total": {"value": 1}},
         "aggregations": {"with_speaker_id": {"doc_count": 1}},
     }
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         svc.survey_speaker_id_coverage()
 
     body = client.search.call_args.kwargs["body"]

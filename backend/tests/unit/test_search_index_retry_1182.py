@@ -140,7 +140,7 @@ class TestCallSitesUseTheIndexTimeout:
         client = _RecordingClient()
         chunk = {"file_uuid": "f", "chunk_index": 0, "text": "t"}
 
-        with patch.object(bulk, "opensearch_client", client):
+        with patch.object(bulk._client, "opensearch_client", client):
             indexed = indexing_service.TranscriptIndexingService()._bulk_index_chunks([chunk])
 
         assert indexed == 1
@@ -153,7 +153,7 @@ class TestCallSitesUseTheIndexTimeout:
         monkeypatch.setattr(settings, "OPENSEARCH_INDEX_TIMEOUT_S", 62)
         client = _RecordingClient()
 
-        with patch.object(bulk, "opensearch_client", client):
+        with patch.object(bulk._client, "opensearch_client", client):
             indexed = indexing_service.TranscriptIndexingService()._bulk_index_documents(
                 [("f_digest_0", {"a": 1})], use_neural_pipeline=False
             )

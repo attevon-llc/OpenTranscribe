@@ -63,7 +63,7 @@ def test_available_filters_outage_raises_instead_of_empty_facets():
     client = MagicMock()
     client.search.side_effect = ConnectionError("down")
     with (
-        patch.object(suggestions, "opensearch_client", client),
+        patch.object(suggestions._client, "opensearch_client", client),
         patch.object(suggestions, "_chunks_index_verified", return_value=True),
         patch.object(suggestions, "_quarantined_file_uuids", return_value=[]),
         pytest.raises(ServiceUnavailableError),

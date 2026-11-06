@@ -6,7 +6,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.exceptions import ServiceUnavailableError
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 from app.services.search.access_filter import access_filter_clause
 from app.services.search.quarantine_exclusion import _quarantined_file_uuids
 from app.services.search.search_infra import _chunks_index_verified
@@ -42,12 +42,12 @@ def get_suggestions(
             content. Fail closed — the caller turns this into a 503 rather
             than serving suggestions built from an unproven exclusion.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return []
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
 
-    if not _chunks_index_verified(opensearch_client, index_name):
+    if not _chunks_index_verified(_client.opensearch_client, index_name):
         return []
 
     suggestions = []
@@ -110,7 +110,7 @@ def get_suggestions(
             },
         ]
 
-        response = opensearch_client.msearch(body=msearch_body)
+        response = _client.opensearch_client.msearch(body=msearch_body)
 
         # Process title matches
         if len(response.get("responses", [])) > 0:
@@ -165,12 +165,12 @@ def get_available_filters(
             cannot be proven free of taken-down content. Fail closed — the
             caller turns this into a 503 rather than serving the buckets.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return {"speakers": [], "tags": [], "date_range": {}}
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
 
-    if not _chunks_index_verified(opensearch_client, index_name):
+    if not _chunks_index_verified(_client.opensearch_client, index_name):
         return {"speakers": [], "tags": [], "date_range": {}}
 
     from app.services.search.tenant_scope import org_filter_clauses
@@ -205,7 +205,7 @@ def get_available_filters(
         query_must_not.append({"terms": {"file_uuid": quarantined_uuids}})
 
     try:
-        response = opensearch_client.search(
+        response = _client.opensearch_client.search(
             index=index_name,
             body={
                 "size": 0,

@@ -69,7 +69,7 @@ def test_the_retry_budget_outlasts_a_multi_second_transient(monkeypatch):
                 }
             return {"errors": False, "items": [{"index": {}} for _ in docs]}
 
-    monkeypatch.setattr(bulk, "opensearch_client", _Client())
+    monkeypatch.setattr(bulk._client, "opensearch_client", _Client())
 
     recovered = TranscriptIndexingService()._retry_failed_docs(docs, "transcript_chunks", True)
 
@@ -105,7 +105,7 @@ def test_the_backoff_is_jittered_so_concurrent_workers_do_not_resynchronise(monk
                 "items": [{"index": {"error": {"type": "circuit_breaking_exception"}}}],
             }
 
-    monkeypatch.setattr(bulk, "opensearch_client", _AlwaysOpen())
+    monkeypatch.setattr(bulk._client, "opensearch_client", _AlwaysOpen())
 
     runs: list[list[float]] = []
     for _ in range(6):

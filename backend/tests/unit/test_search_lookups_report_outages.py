@@ -25,21 +25,24 @@ from app.services.search.ml_model_service import OpenSearchMLModelService
 def test_ingest_pipeline_lookup_outage_is_not_reported_as_not_found():
     client = MagicMock()
     client.ingest.get_pipeline.side_effect = OSConnectionError("N/A", "down", Exception("down"))
-    with patch.object(pipelines, "opensearch_client", client), pytest.raises(OSConnectionError):
+    with (
+        patch.object(pipelines._client, "opensearch_client", client),
+        pytest.raises(OSConnectionError),
+    ):
         pipelines._check_existing_pipeline_config("p", {"model_id": "m"})
 
 
 def test_ingest_pipeline_lookup_404_is_still_not_found():
     client = MagicMock()
     client.ingest.get_pipeline.side_effect = NotFoundError(404, "missing", {})
-    with patch.object(pipelines, "opensearch_client", client):
+    with patch.object(pipelines._client, "opensearch_client", client):
         assert pipelines._check_existing_pipeline_config("p", {"model_id": "m"}) is None
 
 
 def test_search_pipeline_lookup_outage_does_not_attempt_creation():
     client = MagicMock()
     client.transport.perform_request.side_effect = OSConnectionError("N/A", "down", Exception("x"))
-    with patch.object(pipelines, "opensearch_client", client):
+    with patch.object(pipelines._client, "opensearch_client", client):
         assert pipelines.ensure_search_pipeline_exists() is False
     methods = [c.args[0] for c in client.transport.perform_request.call_args_list]
     assert methods == ["GET"]  # no PUT on the strength of "I could not read it"

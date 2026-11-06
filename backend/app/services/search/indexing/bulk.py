@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from app.core.config import settings
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import call_idempotent_write
 
 logger = logging.getLogger(__name__)
@@ -73,13 +73,13 @@ def _suspended_refresh_for_large_index(
         chunk_count: Number of chunks about to be loaded.
         threshold: Minimum chunk count that activates the suspension.
     """
-    if chunk_count < threshold or not opensearch_client:
+    if chunk_count < threshold or not _client.opensearch_client:
         yield
         return
 
     prior_interval: str | None = None
     try:
-        settings_resp = opensearch_client.indices.get_settings(index=index_name)
+        settings_resp = _client.opensearch_client.indices.get_settings(index=index_name)
         prior_interval = (
             settings_resp.get(index_name, {})
             .get("settings", {})
@@ -92,7 +92,7 @@ def _suspended_refresh_for_large_index(
         return
 
     try:
-        opensearch_client.indices.put_settings(
+        _client.opensearch_client.indices.put_settings(
             index=index_name, body={"index": {"refresh_interval": "-1"}}
         )
         logger.info(
@@ -103,10 +103,10 @@ def _suspended_refresh_for_large_index(
     finally:
         try:
             restored = prior_interval if prior_interval is not None else "1s"
-            opensearch_client.indices.put_settings(
+            _client.opensearch_client.indices.put_settings(
                 index=index_name, body={"index": {"refresh_interval": restored}}
             )
-            opensearch_client.indices.refresh(index=index_name)
+            _client.opensearch_client.indices.refresh(index=index_name)
             logger.info(f"Restored refresh_interval={restored!r} on {index_name} and refreshed")
         except Exception as e:
             logger.warning(
@@ -127,7 +127,7 @@ class BulkIndexMixin:
         from ``chunk_index``, and a digest's id is ``{uuid}_digest_{n}`` —
         ``{uuid}_0`` is already chunk 0.
         """
-        if not opensearch_client or not documents:
+        if not _client.opensearch_client or not documents:
             return 0
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
@@ -139,7 +139,9 @@ class BulkIndexMixin:
             bulk_body.append(action)
             bulk_body.append(document)
 
-        response = call_idempotent_write(opensearch_client.bulk, body=bulk_body, refresh=False)
+        response = call_idempotent_write(
+            _client.opensearch_client.bulk, body=bulk_body, refresh=False
+        )
         if response.get("errors"):
             failed = [
                 item["index"]
@@ -166,7 +168,7 @@ class BulkIndexMixin:
         Returns:
             Number of successfully indexed chunks.
         """
-        if not opensearch_client:
+        if not _client.opensearch_client:
             raise RuntimeError("OpenSearch client not initialized")
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
@@ -193,7 +195,9 @@ class BulkIndexMixin:
                 bulk_body.append(index_action)
                 bulk_body.append(chunk)
 
-            response = call_idempotent_write(opensearch_client.bulk, body=bulk_body, refresh=False)
+            response = call_idempotent_write(
+                _client.opensearch_client.bulk, body=bulk_body, refresh=False
+            )
 
             if response.get("errors"):
                 failed_docs = self._extract_failed_docs(response, batch)
@@ -283,7 +287,7 @@ class BulkIndexMixin:
         Returns:
             Number of successfully indexed documents after retries.
         """
-        if not opensearch_client or not failed_docs:
+        if not _client.opensearch_client or not failed_docs:
             return 0
 
         retried_count = 0
@@ -323,7 +327,7 @@ class BulkIndexMixin:
 
             try:
                 response = call_idempotent_write(
-                    opensearch_client.bulk, body=bulk_body, refresh=False
+                    _client.opensearch_client.bulk, body=bulk_body, refresh=False
                 )
             except Exception as e:
                 logger.error(f"Retry attempt {attempt} bulk call failed: {e}")

@@ -102,7 +102,7 @@ def test_filters_degrades_gracefully_without_an_opensearch_client(client, user_t
     """Confirmed in ``suggestions.get_available_filters``: no client
     means an empty-but-200 payload, not a 500 — a facet panel with nothing
     selected must still render the rest of the search page."""
-    with patch("app.services.search.suggestions.opensearch_client", None):
+    with patch("app.services.opensearch_service.client.opensearch_client", None):
         response = client.get(f"{_BASE}/filters", headers=user_token_headers)
 
     assert response.status_code == status.HTTP_200_OK

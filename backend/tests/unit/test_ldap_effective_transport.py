@@ -84,6 +84,12 @@ def test_ldaps_url_binds_over_tls_without_starttls() -> None:
     assert conn.calls == ["bind"]
 
 
+def test_ldaps_url_with_use_ssl_off_never_negotiates_starttls_inside_tls() -> None:
+    conn = _bind(_cfg("ldaps://dir.example", use_ssl=False, use_tls=True))
+    assert conn is not None
+    assert conn.calls == ["bind"]
+
+
 def test_connection_test_names_the_ldap_url_ssl_contradiction() -> None:
     result = _test_ldap_connection(
         {

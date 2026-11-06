@@ -78,7 +78,7 @@ exemptions (below).
 - **Renaming a container is only safe because in-network DNS uses the SERVICE name.** Compose
   aliases each service name on the network (`backend`, `prometheus`, `postgres`, `smb-test`), which
   is what Prometheus' scrape target, Grafana's datasource URL and the SMB docs all use. LLDAP is the
-  exception — it is documented/configured as `ldap://lldap-test`, the *container* name — so
+  exception — it is documented/configured as `lldap-test` (over LDAPS, port 6360), the *container* name — so
   `docker-compose.ldap-test.yml` pins `lldap-test` as an explicit network **alias**. Never drop that
   alias, and grep before renaming anything else.
 - The ldap/smb/keycloak overlays used to declare the default network `external: true` under the name

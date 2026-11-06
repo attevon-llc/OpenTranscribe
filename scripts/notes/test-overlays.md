@@ -7,7 +7,7 @@ Moved intact from the root `CLAUDE.md`. Fixtures and the scenario-model table: `
 Configure auth via Admin UI (Settings → Authentication); DB config takes precedence over `.env`. Pass test-container flags to spin up local IdPs:
 
 ```bash
-./opentr.sh start dev --with-ldap-test       # LDAP at localhost:3890, UI :17170 (admin/admin_password)
+./opentr.sh start dev --with-ldap-test       # LDAPS at localhost:6360 (test CA), UI :17170 (admin/admin_password)
 ./opentr.sh start dev --with-keycloak-test   # a Keycloak IdP to test OIDC against, localhost:8180 (admin/admin)
                                              # first start builds a pre-augmented image once; ~25 s to healthy after — see below
 ./opentr.sh start dev --with-authentik-test  # an Authentik IdP to test OIDC against, localhost:9022 (bootstrap: admin@example.com/admin_password)

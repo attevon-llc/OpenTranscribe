@@ -351,7 +351,7 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   alone, because `celery-cpu-worker` runs the nightly `session.cap_sweep` (utility queue) —
   if that process and `backend` disagreed about the cap, the sweep would silently evict the
   dev stack's sessions back down to 5 every night.
-- Local IdPs for testing: `--with-ldap-test` (LDAP :3890, UI :17170, `admin`/`admin_password`),
+- Local IdPs for testing: `--with-ldap-test` (LDAPS :6360 with a test-CA certificate the backend verifies via `ldap_ca_cert_file=/etc/opentranscribe/ldap-test-ca.crt`; plain LDAP :3890 is host-side seeding only; UI :17170, `admin`/`admin_password`),
   `--with-keycloak-test` (a Keycloak to test OIDC against, :8180, `admin`/`admin`),
   `--with-authentik-test` (an Authentik to test OIDC against, :9022, bootstrap
   `admin@example.com`/`admin_password` — the `AUTHENTIK_BOOTSTRAP_*` env vars create

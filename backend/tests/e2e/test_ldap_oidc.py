@@ -66,6 +66,15 @@ pytestmark = pytest.mark.skipif(
 # constants — they are container endpoints, not the stack under test.
 LLDAP_URL = os.environ.get("LLDAP_URL", "http://localhost:17170")
 LLDAP_LDAP_PORT = int(os.environ.get("LLDAP_LDAP_PORT", "3890"))
+# What the BACKEND (inside the compose network) uses. The backend refuses plaintext binds and
+# verifies the certificate, so it talks LDAPS to the overlay's network alias, trusting the test
+# CA that docker-compose.ldap-test-trust.yml mounts. These are container-side values, so a
+# --fresh --port-offset stack uses the same ones; only the host-published ports move.
+LLDAP_BACKEND_HOST = "lldap-test"
+LLDAPS_BACKEND_PORT = 6360
+LLDAP_BACKEND_CA_FILE = "/etc/opentranscribe/ldap-test-ca.crt"
+LLDAP_TEST_CERT_SCRIPT = "scripts/pki/issue-test-server-cert.sh"
+LLDAP_TEST_CERT_SANS = ("DNS:lldap-test", "DNS:lldap", "DNS:localhost", "IP:127.0.0.1")
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
 
 # Admin credentials for the app itself (local super_admin)
@@ -274,6 +283,17 @@ def _keycloak_api_get(path: str, token: str) -> dict | list:
 def ensure_lldap_running(request):
     """Ensure LLDAP container is running and has test users."""
     project_root = Path(__file__).resolve().parents[3]
+
+    # The overlay bind-mounts a server certificate, and compose would create a missing source
+    # as an empty directory. opentr.sh issues it for stack starts; do the same (idempotent) for
+    # the standalone start below.
+    if not _is_port_open("localhost", LLDAP_LDAP_PORT):
+        subprocess.run(
+            [str(project_root / LLDAP_TEST_CERT_SCRIPT), "ldap-test", *LLDAP_TEST_CERT_SANS],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
 
     # Started here only when nothing is listening; the handle remembers whether this fixture
     # is what brought it up so teardown puts back exactly that (see idp_overlay).
@@ -587,22 +607,34 @@ class TestLDAPConfiguration:
             # further down cannot auto-wait.
             page.wait_for_timeout(500)
 
-        # Fill in LLDAP connection details
-        # Use the container hostname since backend runs inside Docker
-        page.fill("#ldap_server", "lldap-test")
-        page.fill("#ldap_port", "3890")
+        # Fill in LLDAP connection details. The backend runs inside Docker, so it uses the
+        # overlay's network alias, over LDAPS with certificate verification ON (the CA is the
+        # one docker-compose.ldap-test-trust.yml mounts). Plaintext is refused by the backend.
+        page.fill("#ldap_server", LLDAP_BACKEND_HOST)
+        page.fill("#ldap_port", str(LLDAPS_BACKEND_PORT))
 
-        # Uncheck SSL (LLDAP is plaintext)
-        ssl_label = page.locator("label:has-text('Use SSL (LDAPS)')")
-        ssl_checkbox = ssl_label.locator("input[type=checkbox]")
-        if ssl_checkbox.is_checked():
-            ssl_checkbox.uncheck()
-
-        # Uncheck StartTLS (LLDAP doesn't support it)
+        # StartTLS first: it is disabled (not cleared) once LDAPS is on.
         tls_label = page.locator("label:has-text('Use StartTLS')")
         tls_checkbox = tls_label.locator("input[type=checkbox]")
         if tls_checkbox.is_checked():
             tls_checkbox.uncheck()
+
+        ssl_label = page.locator("label:has-text('Use SSL (LDAPS)')")
+        ssl_checkbox = ssl_label.locator("input[type=checkbox]")
+        if not ssl_checkbox.is_checked():
+            ssl_checkbox.check()
+
+        page.fill("#ldap_ca_cert_file", LLDAP_BACKEND_CA_FILE)
+        # The certificate lists the alias, so no name override is needed.
+        page.fill("#ldap_tls_server_name", "")
+        # Verification stays ON: this suite proves the verified path, never the skip flag.
+        skip_verify = page.locator("label:has-text('Do not verify')").locator(
+            "input[type=checkbox]"
+        )
+        expect(skip_verify).to_have_count(1)
+        if skip_verify.is_checked():
+            skip_verify.uncheck()
+        expect(skip_verify).not_to_be_checked()
 
         # Bind credentials
         page.fill("#ldap_bind_dn", LLDAP_BIND_DN)
@@ -647,18 +679,15 @@ class TestLDAPConfiguration:
 
         page.locator(".auth-settings button:has-text('Test Connection')").click()
         # The test-connection round trip is a backend call; settle on it rather than
-        # sleeping 5 s, since the feedback check below reads page.content() once (issue #431).
+        # sleeping 5 s (issue #431). The toast assertions below also wait for themselves.
         page.wait_for_load_state("networkidle")
 
-        # Look for success indicator (toast or inline feedback)
-        page_content = page.content()
-        has_feedback = (
-            "success" in page_content.lower()
-            or "connected" in page_content.lower()
-            or page.locator(".toast-success").count() > 0
-        )
-        # Note: even if connection test UI feedback is minimal, we verify login works next
-        assert has_feedback or True, "Test connection completed (feedback may vary)"
+        # The panel reports the result as a toast carrying the backend's message, so a refused
+        # TLS handshake (wrong CA, name mismatch, plaintext) shows the failure text instead.
+        # Waiting for the success text is the assertion: it times out when the test fails.
+        success_toast = page.get_by_text("LDAP connection successful")
+        expect(success_toast.first).to_be_visible(timeout=15000)
+        expect(page.get_by_text("LDAP connection failed")).to_have_count(0)
 
 
 @pytest.mark.auth

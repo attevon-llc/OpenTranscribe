@@ -16,10 +16,21 @@ from app.schemas.media_source import UserMediaSourceCreate
 from app.schemas.media_source import UserMediaSourceResponse
 from app.schemas.media_source import UserMediaSourcesList
 from app.schemas.media_source import UserMediaSourceUpdate
+from app.services.media_source_access import own_source_with_origin
 from app.services.request_context import RequestContext
 from app.utils.tenant_sharing import owner_in_tenant
 
 router = APIRouter()
+
+
+def _reject_duplicate_origin(
+    db: Session, user_id: int, hostname: str, exclude_id: int | None = None
+) -> None:
+    """400 when one of the user's own sources already has this source's origin."""
+    if own_source_with_origin(db, user_id, hostname, exclude_id) is not None:
+        raise HTTPException(
+            status_code=400, detail=f"A source with hostname '{hostname}' already exists"
+        )
 
 
 def _media_source_to_response(
@@ -124,6 +135,7 @@ def create_media_source(
     )
     if existing_count >= 50:
         raise HTTPException(status_code=400, detail="Maximum number of media sources reached (50)")
+    _reject_duplicate_origin(db, current_user.id, data.hostname)
 
     # Encrypt password if provided
     encrypted_password = None
@@ -189,6 +201,7 @@ def update_media_source(
         raise HTTPException(status_code=404, detail="Media source not found")
 
     if data.hostname and data.hostname != source.hostname:
+        _reject_duplicate_origin(db, current_user.id, data.hostname, exclude_id=source.id)
         source.hostname = data.hostname
     if data.provider_type is not None:
         source.provider_type = data.provider_type

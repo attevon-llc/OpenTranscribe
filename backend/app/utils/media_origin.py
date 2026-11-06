@@ -70,6 +70,16 @@ def source_origin(configured: str) -> tuple[str, str, int] | None:
     return scheme, identity[0], identity[1]
 
 
+def same_source_origin(left: str, right: str) -> bool:
+    """True when two configured source addresses name the same origin.
+
+    ``m.example.com``, ``https://m.example.com`` and ``https://M.example.com:443`` are one
+    source; ``http://m.example.com`` is another. An unusable value equals nothing.
+    """
+    origin = source_origin(left)
+    return origin is not None and origin == source_origin(right)
+
+
 def source_base_url(configured: str) -> str | None:
     """``scheme://host[:port]`` for a configured source, the port omitted when it is the default."""
     origin = source_origin(configured)

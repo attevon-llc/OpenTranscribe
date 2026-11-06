@@ -1,6 +1,7 @@
 """Which per-user media-source rows a user may use (own, plus shared within a tenant).
 
-The query the MediaCMS protected-media plugin reads its per-user sources through.
+The query the MediaCMS protected-media plugin reads its per-user sources through, and the
+per-origin uniqueness check the settings endpoints use.
 """
 
 from typing import Any
@@ -45,3 +46,21 @@ def query_user_media_sources(db: Any, user_id: int | None) -> list[Any]:
         .all()
     )
     return rows
+
+
+def own_source_with_origin(
+    db: Any, user_id: int, hostname: str, exclude_id: int | None = None
+) -> Any | None:
+    """The user's own source whose origin equals ``hostname``'s, other than ``exclude_id``.
+
+    Stored values differ in spelling (legacy rows carry no scheme), so the unique constraint
+    on the raw string alone would let one origin be added twice.
+    """
+    from app.models.user_media_source import UserMediaSource
+    from app.utils.media_origin import same_source_origin
+
+    own = db.query(UserMediaSource).filter(UserMediaSource.user_id == user_id).all()
+    for other in own:
+        if other.id != exclude_id and same_source_origin(str(other.hostname), hostname):
+            return other
+    return None

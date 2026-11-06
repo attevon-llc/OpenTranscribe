@@ -3,18 +3,15 @@
 ``LLMService.chat_completion`` and ``chat_completion_raw`` funnel every provider through
 ``_prepare_payload`` (build the request) and ``_extract_response_content`` (parse the
 response). Each dialect has its own quirks — Claude lifts system messages to a top-level
-key and reads only ``content[0]``, Ollama uses its native ``/api/chat`` shape and defaults
+key and reads the first ``text`` block, Ollama uses its native ``/api/chat`` shape and defaults
 ``done_reason`` to ``"stop"``, OpenAI-compatible servers can return ``content: null`` on a
 reasoning model that exhausts its budget. None of this was under test before this file:
 a change to any of these private methods could silently break Claude/Ollama non-streaming
 calls with nothing to catch it.
 
-Pure functions over dicts — no HTTP, no ``_transport`` mock. Two behaviors are pinned
-AS-IS, deliberately not fixed here (flagged in the PR body):
+Pure functions over dicts — no HTTP, no ``_transport`` mock. One behavior is pinned AS-IS,
+deliberately not fixed here (flagged in the PR body):
 
-* Claude's ``_extract_claude_response`` reads only ``content[0]`` — a multi-block response
-  (e.g. an extended-thinking block first, then text) returns the first block's text, which
-  could be empty for a thinking block.
 * Claude's ``_prepare_claude_payload`` keeps only the LAST system message when several are
   present (the loop overwrites), unlike Bedrock's ``split_system_messages`` which
   accumulates every system block.
@@ -237,9 +234,9 @@ def test_extract_claude_response_reads_the_messages_api_shape():
     assert finish_reason == "end_turn"
 
 
-def test_extract_claude_response_only_reads_the_first_content_block():
-    """Pinned as-is: a `thinking` block ahead of `text` returns the (possibly empty)
-    thinking block's text, not the text block. Flagged as a follow-up in the PR body.
+def test_extract_claude_response_selects_the_text_block_by_type():
+    """A `thinking` block ahead of `text` (adaptive thinking is on by default on the newer
+    models) must not hide the answer: the Claude docs say to select blocks by `type`.
     """
     service = _service(LLMProvider.ANTHROPIC)
     data = {
@@ -249,8 +246,17 @@ def test_extract_claude_response_only_reads_the_first_content_block():
         ],
     }
     content, _usage, _finish_reason = service._extract_claude_response(data)
-    # The first block has no "text" key at all, so `.get("text", "")` yields "".
+    assert content == "The actual answer"
+
+
+def test_extract_claude_response_thinking_only_reply_is_empty_text():
+    """A reply cut off inside thinking (max_tokens) has no text block at all."""
+    service = _service(LLMProvider.ANTHROPIC)
+    content, _usage, finish = service._extract_claude_response(
+        {"content": [{"type": "thinking", "thinking": "..."}], "stop_reason": "max_tokens"}
+    )
     assert content == ""
+    assert finish == "max_tokens"
 
 
 def test_extract_claude_response_missing_usage_is_none_not_zero():

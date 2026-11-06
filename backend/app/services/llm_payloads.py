@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 
+from app.services.llm_claude_capabilities import claude_capabilities
 from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMProvider
 
@@ -17,6 +18,14 @@ OPENAI_REASONING_MODEL_PREFIXES = (
     "o3",  # o3, o3-mini
     "o4",  # o4-mini
     "gpt-5",  # gpt-5 series
+)
+
+# For Claude models that reject an assistant prefill: the documented replacement is an
+# instruction (Claude docs, "Migrating away from prefilled responses", "Controlling output
+# formatting"). The summary parser tolerates a reply with or without its opening brace.
+_JSON_ONLY_INSTRUCTION = (
+    "Respond with a single valid JSON object and nothing else: begin the reply with "
+    "`{` and end it with `}`, with no preamble, no explanation and no markdown code fences."
 )
 
 
@@ -40,7 +49,19 @@ class LLMPayloadMixin(LLMHost):
     def _prepare_claude_payload(
         self, messages: list[dict[str, str]], **kwargs: Any
     ) -> dict[str, Any]:
-        """Prepare payload for Claude/Anthropic API."""
+        """Prepare payload for Claude/Anthropic API.
+
+        What the request may contain depends on the model generation, see
+        :func:`app.services.llm_claude_capabilities.claude_capabilities`: newer models
+        400 on a prefilled final assistant turn and on sampling parameters.
+
+        Args:
+            messages: Messages in OpenAI format.
+            **kwargs: ``max_tokens``, ``temperature`` and:
+                - prefill_json: Ask for a JSON object reply.
+                - json_schema: A JSON schema for the reply; implies ``prefill_json``.
+        """
+        caps = claude_capabilities(self.config.model)
         system_message = ""
         user_messages = []
 
@@ -50,13 +71,26 @@ class LLMPayloadMixin(LLMHost):
             elif msg.get("role") in ["user", "assistant"]:
                 user_messages.append({"role": msg["role"], "content": msg["content"]})
 
-        # Add response prefilling for JSON output if requested
-        if (
-            kwargs.get("prefill_json", False)
-            and user_messages
-            and user_messages[-1]["role"] == "user"
-        ):
-            user_messages.append({"role": "assistant", "content": "{"})
+        json_schema = kwargs.get("json_schema")
+        output_config: dict[str, Any] | None = None
+        if kwargs.get("prefill_json", False) or json_schema:
+            if json_schema and caps.supports_structured_outputs:
+                output_config = {"format": {"type": "json_schema", "schema": json_schema}}
+            elif caps.accepts_prefill:
+                if user_messages and user_messages[-1]["role"] == "user":
+                    user_messages.append({"role": "assistant", "content": "{"})
+            else:
+                system_message = f"{system_message}\n\n{_JSON_ONLY_INSTRUCTION}".strip()
+
+        # A final assistant turn is a prefill. Models that reject it 400 the whole call;
+        # the callers that add one (topic extraction, speaker ID) only steer the reply
+        # and the prompt already carries the instruction, so it is dropped.
+        if not caps.accepts_prefill and user_messages and user_messages[-1]["role"] == "assistant":
+            logger.info(
+                "Dropping final assistant turn: %s does not accept a prefilled response",
+                self.config.model,
+            )
+            user_messages.pop()
 
         # The Messages API rejects a final assistant (prefill) turn that ends in
         # whitespace, and an empty one; a prefill like "<thinking>\n" is natural to write
@@ -68,15 +102,18 @@ class LLMPayloadMixin(LLMHost):
             else:
                 user_messages.pop()
 
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": user_messages,
             "max_tokens": kwargs.get("max_tokens", self.config.response_tokens),
-            "temperature": kwargs.get("temperature", self.config.temperature),
         }
+        if caps.accepts_sampling_params:
+            payload["temperature"] = kwargs.get("temperature", self.config.temperature)
 
         if system_message:
             payload["system"] = system_message
+        if output_config:
+            payload["output_config"] = output_config
 
         return payload
 
@@ -181,7 +218,9 @@ class LLMPayloadMixin(LLMHost):
         Args:
             messages: List of message dictionaries in OpenAI format
             **kwargs: Additional parameters to override defaults
-                - prefill_json: If True, adds JSON prefill to force structured output
+                - prefill_json: If True, asks for a JSON object reply (a Claude
+                  prefill, or a system instruction where the model rejects prefill)
+                - json_schema: Claude only; a schema for structured outputs
 
         Returns:
             Dictionary containing the API request payload
@@ -190,7 +229,8 @@ class LLMPayloadMixin(LLMHost):
             - Claude/Anthropic: Separates system messages from user/assistant messages
             - Ollama: Uses native /api/chat format with messages array
             - Other providers: Use standard OpenAI format with provider-specific params
-            - Response prefilling: For Claude, adds assistant message with "{" to force JSON
+            - JSON replies on Claude: an assistant "{" prefill on models that accept one,
+              ``output_config.format`` when a schema is given, else a system instruction
         """
         if self.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             return self._prepare_claude_payload(messages, **kwargs)
@@ -207,7 +247,17 @@ class LLMPayloadMixin(LLMHost):
 
         content_blocks = data["content"]
         if isinstance(content_blocks, list) and content_blocks:
-            content = content_blocks[0].get("text", "")
+            # By type, not position: adaptive thinking is on by default on the newer
+            # models, so a reply can start with a `thinking` block that has no `text`
+            # (Claude docs, migration guides, "Handle thinking in responses").
+            text_block = next(
+                (b for b in content_blocks if isinstance(b, dict) and b.get("type") == "text"),
+                None,
+            )
+            if text_block is None and isinstance(content_blocks[0], dict):
+                # Untyped legacy-compatible shape, e.g. an Anthropic-compatible gateway.
+                text_block = content_blocks[0]
+            content = (text_block or {}).get("text", "")
         else:
             content = str(content_blocks)
 

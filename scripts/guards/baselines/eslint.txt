@@ -344,7 +344,6 @@ frontend/src/lib/fileDetail/notificationHandler.ts::@typescript-eslint/no-explic
 frontend/src/lib/services/audioExtractionService.ts::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/lib/services/audioExtractionService.ts::@typescript-eslint/no-unused-vars	2	lint: burn-down planned
 frontend/src/lib/services/audioExtractionService.ts::no-restricted-imports	5	lint: burn-down planned
-frontend/src/lib/services/configService.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/services/uploadService.ts::@typescript-eslint/no-unused-vars	3	lint: burn-down planned
 frontend/src/lib/settings/sectionLoaders.ts::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/lib/types/audioExtraction.ts::@typescript-eslint/no-explicit-any	2	lint: burn-down planned

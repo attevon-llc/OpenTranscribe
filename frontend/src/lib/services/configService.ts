@@ -1,84 +1,74 @@
-import axiosInstance from '../axios';
+/**
+ * Session cache of the protected-media login forms (`GET /system/config/protected-media-auth`).
+ *
+ * The upload dialog uses it to decide, for a pasted URL, whether to offer username and
+ * password fields for an authenticated media site. The answer is per user, so the cache
+ * is dropped on logout and on a user switch.
+ */
+import axiosInstance from '$lib/axios';
 import { hostIdentity } from '$lib/utils/mediaHost';
-
-type ProtectedMediaField = {
-  name: string;
-  label: string;
-  type: string;
-};
 
 export type ProtectedMediaAuthConfig = {
   hosts: string[];
   hosts_with_stored_credentials?: string[];
   auth_type: string;
-  fields: ProtectedMediaField[];
+  fields: { name: string; label: string; type: string }[];
 };
 
-let protectedConfigs: ProtectedMediaAuthConfig[] = [];
+let configs: ProtectedMediaAuthConfig[] = [];
 let loaded = false;
-let loadingPromise: Promise<void> | null = null;
-// Bumped on every reset. A fetch captures the generation it started under and
-// discards its own result if that generation has since moved — otherwise a
-// fetch still in flight at logout resolves AFTER reset and overwrites
-// protectedConfigs with the PREVIOUS user's data, reintroducing the exact
-// leak resetProtectedMediaAuthConfig exists to prevent.
+let pending: Promise<void> | null = null;
+// Bumped by every reset, so a response requested before a logout is thrown away.
 let generation = 0;
 
-export async function loadProtectedMediaAuthConfig(): Promise<void> {
-  if (loaded) return;
-  if (loadingPromise) return loadingPromise;
+/**
+ * Fetch the configs once per session. Concurrent callers share one request, and a failed
+ * fetch counts as "no protected sites" for the rest of the session rather than retrying.
+ */
+export function loadProtectedMediaAuthConfig(): Promise<void> {
+  if (loaded) return Promise.resolve();
+  if (pending) return pending;
 
-  const startedAtGeneration = generation;
-
-  loadingPromise = (async () => {
-    try {
-      const resp = await axiosInstance.get<ProtectedMediaAuthConfig[]>(
-        '/system/config/protected-media-auth'
-      );
-      if (generation !== startedAtGeneration) return;
-      protectedConfigs = resp.data ?? [];
+  const requestedIn = generation;
+  const request = axiosInstance
+    .get('/system/config/protected-media-auth')
+    .then((resp) => {
+      if (requestedIn !== generation) return;
+      configs = resp.data ?? [];
       loaded = true;
-    } catch (e) {
-      if (generation !== startedAtGeneration) return;
-      // Config is optional; swallow errors and leave configs empty
-      console.error('Failed to load protected media auth config', e);
-      protectedConfigs = [];
+    })
+    .catch((error) => {
+      if (requestedIn !== generation) return;
+      console.error('Could not load the protected media login settings:', error);
+      configs = [];
       loaded = true;
-    } finally {
-      if (generation === startedAtGeneration) {
-        loadingPromise = null;
-      }
-    }
-  })();
+    })
+    .finally(() => {
+      if (requestedIn === generation) pending = null;
+    });
+  pending = request;
+  return request;
+}
 
-  return loadingPromise;
+/** Forget the cached configs (logout or user switch) and discard any fetch still in flight. */
+export function resetProtectedMediaAuthConfig(): void {
+  configs = [];
+  loaded = false;
+  pending = null;
+  generation += 1;
 }
 
 /**
- * Drop the cached config so the next session re-fetches it.
- *
- * Registered in `$lib/session/clearUserState`. `hosts_with_stored_credentials`
- * is PER-USER — it is what drives the "credentials already stored" affordance —
- * and `loaded` is a once-only latch, so without this reset User B was shown
- * which protected hosts User A had saved credentials for until a hard reload.
- *
- * Bumping `generation` also discards the result of any fetch already in
- * flight at the moment of reset — see the comment on `generation` above.
+ * The config whose hosts include the URL's host, compared with the same identity rule as
+ * the backend (hostname case-insensitive, absent port = the scheme's default port).
+ * Only the host counts; path, query and userinfo are ignored. Null when nothing matches.
  */
-export function resetProtectedMediaAuthConfig(): void {
-  protectedConfigs = [];
-  loaded = false;
-  loadingPromise = null;
-  generation++;
-}
-
 export function getAuthConfigForUrl(url: URL): ProtectedMediaAuthConfig | null {
   const wanted = hostIdentity(url.host, url.protocol);
   if (wanted === null) return null;
-  for (const cfg of protectedConfigs) {
-    if (cfg.hosts?.some((h) => hostIdentity(h, url.protocol) === wanted)) {
-      return cfg;
-    }
-  }
-  return null;
+  return (
+    configs.find((config) =>
+      (config.hosts ?? []).some((host) => hostIdentity(host, url.protocol) === wanted)
+    ) ?? null
+  );
 }

@@ -10,6 +10,7 @@ Supports YouTube, Vimeo, Twitter/X, TikTok, and many other platforms via yt-dlp.
 
 import logging
 import uuid as uuid_lib
+from typing import Any
 from typing import TypedDict
 
 from celery.exceptions import Retry
@@ -190,7 +191,7 @@ def _load_media_credentials(
     rate_limit=settings.YOUTUBE_DOWNLOAD_RATE_LIMIT or None,
 )
 def process_youtube_url_task(
-    self,
+    self: Any,
     url: str,
     user_id: int,
     file_uuid: str,

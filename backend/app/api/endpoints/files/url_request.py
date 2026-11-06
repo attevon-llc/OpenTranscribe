@@ -37,8 +37,8 @@ class URLProcessingRequest(BaseModel):
     media_username: str | None = Field(
         default=None,
         description=(
-            "Optional username for protected media sources. "
-            "Used only for authenticated downloads of protected media URLs."
+            "Optional username for a protected media source (such as a MediaCMS site); "
+            "used for this import only and overrides any stored username for that host"
         ),
     )
     media_password: str | None = Field(

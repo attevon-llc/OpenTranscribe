@@ -33,7 +33,9 @@ env:
 jobs:
   check:
     # A Deploy Documentation run for a pull request builds only and never publishes.
-    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.head_branch == 'master')
+    # A workflow_run job runs with this repo's token, so it only follows a master deploy from
+    # this repository (never a fork's run) and checks out only that run's commit.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.head_branch == 'master' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -42,8 +44,9 @@ jobs:
       actions: read
     steps:
       - name: Checkout the commit that was deployed
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
+          persist-credentials: false
           # The script derives every expectation (VERSION, newest blog post, upgrade page)
           # from the checkout and dates the last docs-site/VERSION commit from git history.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -58,7 +61,7 @@ jobs:
 
       - name: Upload the check output
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: docs-live-check
           path: docs-live-check.txt
@@ -75,13 +78,13 @@ jobs:
       issues: write
     steps:
       - name: Download the check output
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         continue-on-error: true
         with:
           name: docs-live-check
 
       - name: Open, update or close the alert issue
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         env:
           CHECK_RESULT: ${{ needs.check.result }}
         with:

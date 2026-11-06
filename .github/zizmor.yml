@@ -31,3 +31,12 @@ rules:
       # Fenced: docker-publish.yml is a retired stub owned by the release workstream;
       # its top-level permissions: {} lands after the release.
       - docker-publish.yml:61
+  dangerous-triggers:
+    ignore:
+      # docs-live-check.yml must run AFTER a Deploy Documentation run has finished, which only
+      # workflow_run expresses: as a job inside deploy-docs.yml it would see its own run still in
+      # progress and judge the site against the previous deploy. The risks zizmor names are closed
+      # in the job's `if:` (master pushes of this repository only, never a pull_request or fork
+      # run), the check job checks out that run's commit with read-only permissions and no
+      # persisted credentials, and the alert job checks out nothing.
+      - docs-live-check.yml:16

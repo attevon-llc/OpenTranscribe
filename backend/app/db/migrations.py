@@ -419,7 +419,7 @@ def run_migrations() -> None:
             logger.info(f"Existing database detected, stamping {detected_version}...")
             command.stamp(config, detected_version)
             if detected_version != head_rev:
-                logger.info("Applying migrations to upgrade to current version...")
+                logger.info(f"Applying the migrations after {detected_version} up to {head_rev}...")
                 command.upgrade(config, "head")
         elif tables:
             logger.info("Existing untracked database detected, stamping current version...")

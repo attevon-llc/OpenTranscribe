@@ -66,8 +66,8 @@ def register(
     - At least one special character
     - Cannot contain email username or name parts
 
-    Note: When LDAP is enabled, local registration is still allowed for admin accounts.
-    Regular users should use LDAP authentication.
+    Self-registration only ever creates local-password accounts with the ``user``
+    role; directory (LDAP) accounts are provisioned on their first directory login.
 
     Rate-limited like every other auth route — this was the ONLY one without a limiter,
     while creating accounts that are immediately active and GPU-capable (issue #284
@@ -121,7 +121,7 @@ def register(
 
     password_hash = get_password_hash(user_in.password)
 
-    # Create new user with local authentication
+    # A self-registered account is always local and never privileged.
     approval_status = initial_approval_status(db)
     db_user = User(
         email=user_in.email,

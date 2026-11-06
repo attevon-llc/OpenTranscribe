@@ -10,6 +10,9 @@ rather than silently falling back to sending the password over the still-clearte
 connection.
 """
 
+import pytest
+from ldap3.core.exceptions import LDAPSocketOpenError
+
 from app.auth.ldap_auth import LdapConfig
 from app.auth.ldap_directory import _connect_and_bind
 
@@ -34,14 +37,17 @@ class FakeConnection:
         self.open_called = False
         self.start_tls_called = False
         self.bind_called = False
+        self.unbind_called = False
         self.start_tls_result = True
-        self.open_result = True
+        self.open_error: Exception | None = None
         self.bind_result = True
         FakeConnection.instances.append(self)
 
-    def open(self):
+    def open(self) -> None:
+        """Like ldap3's sync ``open``: ``None`` on success, an exception on failure."""
         self.open_called = True
-        return self.open_result
+        if self.open_error is not None:
+            raise self.open_error
 
     def start_tls(self):
         self.start_tls_called = True
@@ -51,13 +57,16 @@ class FakeConnection:
         self.bind_called = True
         return self.bind_result
 
+    def unbind(self) -> None:
+        self.unbind_called = True
+
 
 class TestConnectAndBindTls:
     def setup_method(self):
         FakeConnection.instances = []
 
     def _patch(self, monkeypatch, **conn_kwargs):
-        def _factory(server, user, password, auto_bind, receive_timeout=None):
+        def _factory(server, user, password, auto_bind, receive_timeout=None, auto_referrals=True):
             conn = FakeConnection(server, user, password, auto_bind)
             for k, v in conn_kwargs.items():
                 setattr(conn, k, v)
@@ -84,13 +93,25 @@ class TestConnectAndBindTls:
         created = FakeConnection.instances[0]
         assert created.start_tls_called is True
         assert created.bind_called is False, "must not bind after failed StartTLS negotiation"
+        assert created.unbind_called is True, "the opened socket must be closed"
 
-    def test_use_tls_fails_closed_when_the_connection_cannot_open(self, monkeypatch):
-        """No socket, no StartTLS: the bind must not be attempted on whatever ldap3
-        would open lazily (a cleartext connection) instead."""
-        self._patch(monkeypatch, open_result=False)
+    def test_a_successful_open_is_followed_by_starttls(self, monkeypatch):
+        """ldap3's ``open()`` returns ``None`` on success; that must not be read as failure."""
+        self._patch(monkeypatch)
         cfg = LdapConfig(enabled=True, server="ldap.example.com", use_ssl=False, use_tls=True)
-        assert _connect_and_bind(cfg, FakeServer(), "cn=svc", "pw") is None
+        conn = _connect_and_bind(cfg, FakeServer(), "cn=svc", "pw")
+        assert conn is not None
+        created = FakeConnection.instances[0]
+        assert created.open_called is True
+        assert created.start_tls_called is True
+
+    def test_use_tls_never_binds_when_the_connection_cannot_open(self, monkeypatch):
+        """No socket, no StartTLS: ldap3 raises from ``open()``; nothing is bound, and the
+        error reaches the caller rather than a bind on a lazily opened cleartext socket."""
+        self._patch(monkeypatch, open_error=LDAPSocketOpenError("unable to open socket"))
+        cfg = LdapConfig(enabled=True, server="ldap.example.com", use_ssl=False, use_tls=True)
+        with pytest.raises(LDAPSocketOpenError):
+            _connect_and_bind(cfg, FakeServer(), "cn=svc", "pw")
         created = FakeConnection.instances[0]
         assert created.start_tls_called is False
         assert created.bind_called is False

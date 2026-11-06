@@ -1,51 +1,120 @@
-"""LDAP directory access: connection, bind, user search and group-membership checks.
+"""Directory access for LDAP / Active Directory: connect, bind, search, groups.
 
-One path to the directory, shared by login (``auth/ldap_auth.py``: ``ldap_authenticate``)
-and the read-only deprovisioning probes (``auth/ldap_probe.py``): the server object, the
-encrypted-or-refused bind (StartTLS fails closed), the injection-escaped and
-ambiguity-refusing user search, and the ``user_groups`` entitlement check with its
-optional recursive (``LDAP_MATCHING_RULE_IN_CHAIN``) lookup.
+Everything that talks to the directory through ldap3 lives here, so the login
+(``app.auth.ldap_auth``) and the read-only probes (``app.auth.ldap_probe``) share
+one bind path and one set of group rules. ldap3's ``Server`` and ``Connection``
+are module globals looked up at call time: tests replace exactly those two names.
+
+ldap3 references used: ``Server(host, port=, use_ssl=, get_info=, connect_timeout=, tls=)``,
+``ldap3.Tls(validate=, ca_certs_file=)`` (``ldap3/core/tls.py``),
+``Connection(server, user=, password=, auto_bind=, receive_timeout=, auto_referrals=)``,
+``Connection.open`` / ``start_tls`` / ``bind`` / ``search`` / ``unbind`` and
+``ldap3.utils.conv.escape_filter_chars`` (RFC 4515), per the ldap3 2.9 documentation.
 """
 
 from __future__ import annotations
 
 import logging
+import ssl
 from typing import TYPE_CHECKING
+from typing import Any
 
 from ldap3 import ALL
+from ldap3 import BASE
 from ldap3 import Connection
 from ldap3 import Server
+from ldap3 import Tls
+from ldap3.abstract.entry import Entry
 from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
 from ldap3.core.exceptions import LDAPSocketReceiveError
+from ldap3.core.exceptions import LDAPSSLConfigurationError
+from ldap3.utils.conv import escape_filter_chars
 
 if TYPE_CHECKING:
-    from ldap3 import Entry
-
     from app.auth.ldap_auth import LdapConfig
 
 logger = logging.getLogger(__name__)
 
+#: Active Directory's LDAP_MATCHING_RULE_IN_CHAIN: matches nested group membership.
+IN_CHAIN_MATCHING_RULE = "1.2.840.113556.1.4.1941"
+
 
 def _escape_ldap_filter(value: str) -> str:
-    """Escape special characters in LDAP filter values to prevent injection."""
-    return (
-        value.replace("\\", "\\5c")
-        .replace("*", "\\2a")
-        .replace("(", "\\28")
-        .replace(")", "\\29")
-        .replace("\x00", "\\00")
-    )
+    """Escape a value for use inside an LDAP filter assertion (RFC 4515).
+
+    Backslash, ``*``, ``(``, ``)`` and NUL become ``\\5c``, ``\\2a``, ``\\28``,
+    ``\\29`` and ``\\00``; nothing else changes.
+
+    Args:
+        value: Untrusted text, for example what a user typed as a login name.
+
+    Returns:
+        The escaped text, safe to splice into a filter.
+    """
+    return str(escape_filter_chars(value))
+
+
+class LdapCaFileError(LDAPSSLConfigurationError):
+    """The configured CA bundle cannot be used, so no TLS connection may be made."""
+
+
+def _build_tls(cfg: LdapConfig) -> Tls:
+    """Describe how the directory's certificate is checked.
+
+    ldap3's ``Tls`` defaults to ``validate=ssl.CERT_NONE`` (``ldap3/core/tls.py``,
+    ``Tls.__init__``) and a ``Server`` without one gets exactly that for both LDAPS and
+    StartTLS (``Connection.start_tls`` builds a bare ``Tls()`` when the server has none),
+    so a ``Tls`` is always passed. With ``CERT_REQUIRED`` ldap3 builds the context with
+    ``ssl.create_default_context`` (system CAs, or only ``ca_certs_file`` when one is
+    given) and, after the handshake, matches the certificate against the server host name
+    (``Tls.wrap_socket`` / ``check_hostname``).
+
+    Args:
+        cfg: Resolved LDAP configuration (``ca_cert_file``, ``tls_skip_verify``).
+
+    Returns:
+        The ``Tls`` object for the ``Server``.
+
+    Raises:
+        LdapCaFileError: ``ca_cert_file`` is set but missing, unreadable or not a PEM
+            bundle. Verification is never silently dropped.
+    """
+    if cfg.tls_skip_verify:
+        return Tls(validate=ssl.CERT_NONE)
+    ca_file = cfg.ca_cert_file.strip()
+    if ca_file:
+        try:
+            ssl.create_default_context(cafile=ca_file)
+        except (OSError, ssl.SSLError) as exc:
+            logger.error("The LDAP CA certificate file %r cannot be used: %s", ca_file, exc)
+            raise LdapCaFileError(
+                "The configured LDAP CA certificate file is missing, unreadable or not a PEM bundle"
+            ) from exc
+    return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_file or None)
 
 
 def _get_ldap_server(cfg: LdapConfig) -> Server:
-    """Create and return an LDAP server object."""
+    """Build the ldap3 server object for one login or probe.
+
+    Args:
+        cfg: Resolved LDAP configuration.
+
+    Returns:
+        An ldap3 ``Server``. Construction opens no socket. Its ``ssl`` attribute is the
+        effective transport: a URL scheme in ``cfg.server`` overrides ``use_ssl``. Its
+        ``tls`` verifies the directory's certificate unless ``cfg.tls_skip_verify``.
+
+    Raises:
+        LdapCaFileError: ``cfg.ca_cert_file`` is set but unusable.
+    """
     return Server(
         cfg.server,
         port=cfg.port,
         use_ssl=cfg.use_ssl,
         get_info=ALL,
         connect_timeout=cfg.timeout,
+        tls=_build_tls(cfg),
     )
 
 
@@ -72,77 +141,143 @@ def transport_problem(cfg: LdapConfig, server: Server) -> str | None:
 
 
 def _close_connection(conn: Connection | None, name: str) -> None:
-    """Safely close an LDAP connection."""
+    """Close ``conn`` whatever its state; never raise.
+
+    ldap3's ``unbind()`` is what closes the socket (``Connection.unbind`` sends the
+    unbind request and calls the strategy's ``close``), and it is a no-op on a connection
+    that is already closed, so it is sent even when the bind never succeeded.
+
+    Args:
+        conn: The connection, or ``None`` when nothing was opened.
+        name: Role label used in the debug log (``"user"``, ``"service"``, ...).
+    """
     if conn is None:
         return
     try:
-        if conn.bound:
-            conn.unbind()
-    except Exception:
-        logger.debug(f"Error closing {name} connection (ignored)")
+        conn.unbind()
+    except Exception as exc:
+        logger.debug("Ignored an error while closing the %s LDAP connection: %s", name, exc)
 
 
 def _connect_and_bind(
     cfg: LdapConfig, server: Server, user: str, password: str
 ) -> Connection | None:
-    """Open a connection, negotiate encryption per ``cfg``, and bind.
+    """Open a connection and bind as ``user``, refusing any insecure transport.
 
-    - ``server.ssl`` (the effective server, e.g. ``ldaps://``): the socket is already
-      wrapped in TLS — bind directly.
-    - ``use_tls=True`` on a plaintext server (StartTLS over ``ldap://``): negotiate
-      StartTLS explicitly and FAIL CLOSED if negotiation does not succeed, rather
-      than silently falling through to a cleartext bind. ``cfg.use_tls`` used to be
-      read into ``LdapConfig`` and then never consulted by the bind code — every
-      StartTLS deployment was binding in cleartext regardless of the setting.
-    - Neither: refuse the bind (see :func:`transport_problem`).
+    The transport gate (:func:`transport_problem`) runs first. With TLS already on the
+    socket (``server.ssl``) the bind is sent directly; otherwise StartTLS must be
+    negotiated before the bind, and a failed negotiation refuses the bind outright.
+    An empty ``user`` and ``password`` attempt an anonymous bind.
+
+    Args:
+        cfg: Resolved LDAP configuration (``use_tls`` and ``timeout`` are read).
+        server: The server object; only its ``ssl`` attribute is consulted.
+        user: Bind DN.
+        password: Bind password.
 
     Returns:
-        A bound ``Connection``, or ``None`` if TLS negotiation or the bind failed.
+        The bound connection, or ``None`` when the bind was refused for any reason.
+
+    Raises:
+        LDAPException: Any ldap3 error other than a bind rejection or a read timeout,
+            including a socket that cannot be opened.
     """
     problem = transport_problem(cfg, server)
     if problem is not None:
-        logger.error("LDAP bind refused: %s", problem)
+        logger.error("LDAP bind refused before connecting: %s", problem)
         return None
-    # The Server's connect_timeout only bounds the TCP connect; without a receive timeout a
-    # directory that accepts and then never answers holds this thread indefinitely.
-    conn = Connection(
-        server, user=user, password=password, auto_bind=False, receive_timeout=cfg.timeout
-    )
-    try:
-        if cfg.use_tls and not server.ssl and (not conn.open() or not conn.start_tls()):
-            logger.error(
-                "LDAP StartTLS negotiation failed; refusing to fall back to a "
-                "cleartext bind (ldap_use_tls is enabled)"
-            )
-            _close_connection(conn, "failed-starttls")
-            return None
-        if not conn.bind():
-            return None
-        return conn
-    except LDAPBindError:
-        return None
-    except LDAPSocketReceiveError:
-        # A directory that accepted the socket and then stayed silent past ldap_timeout:
-        # refuse the bind, and say why, instead of reporting it as bad credentials.
-        logger.error(
-            "LDAP directory did not answer within %s s (ldap_timeout); refusing the bind",
-            cfg.timeout,
+
+    if cfg.tls_skip_verify:
+        logger.warning(
+            "LDAP TLS certificate verification is DISABLED (ldap_tls_skip_verify): the "
+            "directory server's identity is not checked on this connection"
         )
-        _close_connection(conn, "timed-out")
-        return None
+
+    # Referrals are not followed: ldap3 would open a second connection to a host named in
+    # the reply, and a StartTLS referral target is upgraded with a default, non-verifying
+    # Tls (ldap3/strategy/base.py create_referral_connection -> Connection.start_tls).
+    conn = Connection(
+        server,
+        user=user,
+        password=password,
+        auto_bind=False,
+        receive_timeout=cfg.timeout,
+        auto_referrals=False,
+    )
+    bound = False
+    try:
+        if not server.ssl:
+            # The gate guarantees use_tls here: upgrade before any credential is sent.
+            # ldap3's open() returns None on success and raises on failure
+            # (ldap3/strategy/base.py BaseStrategy.open), so its result is not a verdict.
+            conn.open()
+            if not conn.start_tls():
+                logger.error(
+                    "StartTLS negotiation with the LDAP server failed; bind refused "
+                    "(no fallback to a cleartext bind is attempted)"
+                )
+                return None
+        bound = bool(conn.bind())
+    except LDAPSocketReceiveError:
+        logger.error("The LDAP server did not answer within %s s; bind refused", cfg.timeout)
+    except LDAPBindError:
+        pass
+    finally:
+        if not bound:
+            _close_connection(conn, "refused")
+    return conn if bound else None
 
 
 def _bind_service_account(cfg: LdapConfig, server: Server) -> Connection | None:
-    """Bind to LDAP server using service account."""
+    """Bind the configured read-only service account.
+
+    Args:
+        cfg: Resolved LDAP configuration.
+        server: Server object from :func:`_get_ldap_server`.
+
+    Returns:
+        The bound service connection, or ``None`` when the bind was refused.
+    """
     conn = _connect_and_bind(cfg, server, cfg.bind_dn, cfg.bind_password)
     if conn is None:
         logger.error(
-            "Failed to bind to LDAP server with service account. "
-            "Check LDAP bind DN and password configuration, or LDAP TLS negotiation."
+            "LDAP service account bind was refused: check the bind DN, its password and "
+            "the TLS settings"
         )
         return None
-    logger.debug("LDAP service account bind successful")
+    logger.debug("LDAP service account bound as %s", cfg.bind_dn)
     return conn
+
+
+def _run_user_search(
+    cfg: LdapConfig,
+    bind_conn: Connection,
+    search_filter: str,
+    attributes: list[str],
+    base_attributes: list[str],
+) -> list[Any]:
+    """Run one user search and return every entry it produced.
+
+    A server that rejects an optional attribute (typically ``memberOf``) is asked again
+    with the base attributes only.
+    """
+    try:
+        bind_conn.search(
+            search_base=cfg.search_base, search_filter=search_filter, attributes=attributes
+        )
+    except LDAPException as exc:
+        text = str(exc)
+        if "memberOf" not in text and "invalid attribute" not in text.lower():
+            raise
+        logger.info(
+            "LDAP server rejected an optional attribute (%s); searching again without it", exc
+        )
+        bind_conn.search(
+            search_base=cfg.search_base,
+            search_filter=search_filter,
+            attributes=base_attributes,
+        )
+    return list(bind_conn.entries)
 
 
 def _search_ldap_user(
@@ -152,179 +287,143 @@ def _search_ldap_user(
     ldap_username: str,
     extra_attributes: list[str] | None = None,
 ) -> Entry | None:
-    """Search for user in LDAP by username or email.
+    """Find exactly one directory entry for a login name.
 
-    Handles LDAP servers that don't support certain attributes (e.g., memberOf)
-    by retrying without the unsupported attribute.
+    The configured filter is tried with ``ldap_username``; only when it finds nothing is
+    the full ``username`` tried against the email attribute. More than one match on
+    either search is refused rather than resolved.
 
-    ``extra_attributes`` are requested alongside the configured ones but kept OUT
-    of ``base_attributes`` on purpose: the invalid-attribute retry below falls back
-    to ``base_attributes``, so an optional attribute a given server doesn't know
-    (``userAccountControl`` on OpenLDAP/LLDAP) degrades to "not returned" instead
-    of failing the whole search.
+    Args:
+        cfg: Resolved LDAP configuration.
+        bind_conn: A bound (service-account) connection.
+        username: The name exactly as typed.
+        ldap_username: The typed name up to its first ``@``.
+        extra_attributes: Further attributes to request, after the standard ones.
+
+    Returns:
+        The single matching entry, or ``None`` when there is none or the match is
+        ambiguous.
+
+    Raises:
+        LDAPException: A search failure other than a rejected optional attribute.
     """
     base_attributes = [cfg.username_attr, cfg.email_attr, cfg.name_attr]
-
-    # Only add group attribute if configured
     attributes = list(base_attributes)
     if cfg.group_attr:
         attributes.append(cfg.group_attr)
-    if extra_attributes:
-        attributes.extend(extra_attributes)
+    attributes.extend(extra_attributes or [])
 
-    # Search by username attribute first
-    search_filter = cfg.user_search_filter.format(username=_escape_ldap_filter(ldap_username))
-
-    def _do_search(search_filter: str, attrs: list[str]) -> bool:
-        """Execute search, retrying without group attr if needed. Returns True if found."""
-        try:
-            bind_conn.search(
-                search_base=cfg.search_base,
-                search_filter=search_filter,
-                attributes=attrs,
-            )
-            return bool(bind_conn.entries)
-        except LDAPException as e:
-            # Some LDAP servers (e.g., LLDAP) don't support memberOf
-            if "memberOf" in str(e) or "invalid attribute" in str(e).lower():
-                logger.info(f"LDAP server doesn't support group attribute, retrying without: {e}")
-                bind_conn.search(
-                    search_base=cfg.search_base,
-                    search_filter=search_filter,
-                    attributes=base_attributes,
-                )
-                return bool(bind_conn.entries)
-            raise
-
-    def _single_entry(search_filter: str, label: str) -> Entry | None:
-        """Return the one matching entry, or None — never an arbitrary pick.
-
-        A search filter that is too loose (or genuine directory duplicates) can
-        return more than one entry. Silently binding as ``entries[0]`` in that case
-        would authenticate the caller as whichever account the directory happened
-        to list first — an authentication-ambiguity bug, and a deliberate one if an
-        attacker with any directory write access can create a colliding entry. Fail
-        closed instead: an ambiguous search is treated as "not found".
-        """
-        entries = bind_conn.entries
+    filters = (
+        cfg.user_search_filter.format(username=_escape_ldap_filter(ldap_username)),
+        f"({cfg.email_attr}={_escape_ldap_filter(username)})",
+    )
+    for search_filter in filters:
+        entries = _run_user_search(cfg, bind_conn, search_filter, attributes, base_attributes)
         if len(entries) > 1:
             logger.error(
-                f"LDAP search by {label} ({search_filter!r}) matched {len(entries)} entries; "
-                "refusing to authenticate against an ambiguous match"
+                "LDAP filter %s matched %d entries; refusing an ambiguous login",
+                search_filter,
+                len(entries),
             )
             return None
-        return entries[0]
-
-    if _do_search(search_filter, attributes):
-        entry = _single_entry(search_filter, cfg.username_attr)
-        if entry is not None:
-            return entry
-        return None
-
-    # Fallback: search by email
-    logger.debug(f"User not found by {cfg.username_attr}={ldap_username}, trying email search")
-    email_filter = f"({cfg.email_attr}={_escape_ldap_filter(username)})"
-    if _do_search(email_filter, attributes):
-        return _single_entry(email_filter, cfg.email_attr)
-
+        if entries:
+            found: Entry = entries[0]
+            return found
     return None
 
 
-def _get_user_groups(cfg: LdapConfig, user_entry: Entry) -> list[str]:
-    """Extract group DNs from LDAP user entry."""
-    if not cfg.group_attr:
-        return []
-    if cfg.group_attr not in user_entry:
-        return []
+def _get_user_groups(cfg: LdapConfig, user_entry: Any) -> list[str]:
+    """Read the entry's group attribute as a list of strings.
 
-    group_value = user_entry[cfg.group_attr].value
-    if group_value is None:
-        return []
+    Args:
+        cfg: Resolved LDAP configuration (``group_attr``).
+        user_entry: The directory entry.
 
-    if isinstance(group_value, list):
-        return [str(g) for g in group_value]
-    return [str(group_value)]
+    Returns:
+        The group values; empty when the attribute is unset, absent or has no value.
+    """
+    attr = cfg.group_attr
+    if not attr or attr not in user_entry:
+        return []
+    value = user_entry[attr].value
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return [str(item) for item in value]
+    return [str(value)]
 
 
 def _is_member_of_groups(user_groups: list[str], required_groups: list[str]) -> bool:
-    """Check if user is a member of any of the required groups.
+    """Whether any required group is one of the user's groups.
 
-    Case-insensitive exact match. Both sides are stripped of whitespace.
-    Configure groups using the exact DN string returned by your LDAP server.
+    Comparison is the whole DN, trimmed and case-folded; no DN normalisation.
+
+    Args:
+        user_groups: Groups read from the user's entry.
+        required_groups: Groups to look for. Empty means there is no requirement.
+
+    Returns:
+        ``True`` for an empty requirement or any match, else ``False``.
     """
     if not required_groups:
         return True
-    user_groups_lower = {g.lower().strip() for g in user_groups}
-    return any(rg.lower().strip() in user_groups_lower for rg in required_groups)
+    held = {group.strip().lower() for group in user_groups}
+    return any(group.strip().lower() in held for group in required_groups)
 
 
 def _parse_group_list(value: str) -> list[str]:
-    """Parse a semicolon-delimited list of LDAP group DNs.
+    """Split a semicolon-separated list of group DNs.
 
-    LDAP/AD distinguished names contain commas as component separators
-    (e.g. ``CN=Whisper_Users,CN=Users,DC=example,DC=com``), so commas cannot
-    be used to delimit multiple groups. Semicolons are the standard delimiter here.
+    Semicolons, not commas, delimit the list because every DN contains commas.
 
-    Rules:
-    - Multiple groups are separated by ``;``
-    - Each group value should be the exact DN string your LDAP server returns
-    - Whitespace around each entry is stripped
+    Args:
+        value: The configured list.
 
-    Examples::
-
-        # Single group (full DN)
-        LDAP_USER_GROUPS=CN=Whisper_Users,CN=Users,DC=example,DC=com
-
-        # Multiple groups
-        LDAP_USER_GROUPS=CN=Whisper_Users,CN=Users,DC=example,DC=com;CN=OtherGroup,DC=example,DC=com
+    Returns:
+        The non-empty, trimmed entries (empty for a blank value).
     """
-    value = value.strip()
-    if not value:
+    if not value or not value.strip():
         return []
-    return [g.strip() for g in value.split(";") if g.strip()]
-
-
-def _get_required_user_groups(cfg: LdapConfig) -> list[str]:
-    """Parse user_groups setting into a list of required group DNs."""
-    if not cfg.user_groups:
-        return []
-    return _parse_group_list(cfg.user_groups)
+    return [part.strip() for part in value.split(";") if part.strip()]
 
 
 def _search_recursive_group_membership(
     bind_conn: Connection, user_dn: str, group_dns: list[str]
 ) -> bool:
-    """Check recursive group membership using LDAP_MATCHING_RULE_IN_CHAIN.
+    """Ask the directory whether ``user_dn`` is a nested member of any group.
 
-    Uses Active Directory OID 1.2.840.113556.1.4.1941 for nested groups.
+    Uses Active Directory's in-chain matching rule; other directories never match.
+    A directory error on one group means "not a member of that one".
+
+    Args:
+        bind_conn: A bound connection.
+        user_dn: The user's DN.
+        group_dns: Candidate group DNs, checked in order.
+
+    Returns:
+        ``True`` as soon as one group reports the user as a (nested) member.
     """
-    matching_rule_in_chain = "1.2.840.113556.1.4.1941"
-
+    escaped_user = _escape_ldap_filter(user_dn)
     for group_dn in group_dns:
         try:
             bind_conn.search(
                 search_base=group_dn,
                 search_filter="(objectClass=*)",
-                search_scope="BASE",
+                search_scope=BASE,
                 attributes=["distinguishedName"],
             )
+            if not bind_conn.entries:
+                continue
+            chain_filter = (
+                f"(&(distinguishedName={_escape_ldap_filter(group_dn)})"
+                f"(member:{IN_CHAIN_MATCHING_RULE}:={escaped_user}))"
+            )
+            bind_conn.search(search_base=group_dn, search_filter=chain_filter, search_scope=BASE)
             if bind_conn.entries:
-                recursive_filter = (
-                    f"(&(distinguishedName={_escape_ldap_filter(group_dn)})"
-                    f"(member:{matching_rule_in_chain}:={_escape_ldap_filter(user_dn)}))"
-                )
-                bind_conn.search(
-                    search_base=group_dn,
-                    search_filter=recursive_filter,
-                    search_scope="BASE",
-                )
-                if bind_conn.entries:
-                    logger.debug(f"User {user_dn} is a recursive member of group {group_dn}")
-                    return True
-        except LDAPException as e:
-            logger.debug(f"Error checking recursive group membership for {group_dn}: {e}")
-            continue
-
+                logger.debug("%s is a nested member of %s", user_dn, group_dn)
+                return True
+        except LDAPException as exc:
+            logger.debug("Nested-group lookup of %s failed (%s); not a member", group_dn, exc)
     return False
 
 
@@ -335,31 +434,34 @@ def _check_group_access(
     user_groups: list[str],
     username: str,
 ) -> bool:
-    """Check group-based access with optional recursive membership lookup.
+    """Apply the ``user_groups`` login requirement.
 
-    Returns True if no required groups configured, or user is a member of
-    at least one required group.
+    Args:
+        cfg: Resolved LDAP configuration.
+        bind_conn: A bound connection, used only for the recursive lookup.
+        user_dn: The user's DN.
+        user_groups: Groups read from the user's entry.
+        username: Name used in log lines.
+
+    Returns:
+        ``True`` when no group is required or the user belongs to one of them.
     """
-    required_groups = _get_required_user_groups(cfg)
-    if not required_groups:
+    required = _parse_group_list(cfg.user_groups)
+    if not required:
         return True
-
-    # Check direct membership first
-    if _is_member_of_groups(user_groups, required_groups):
+    if _is_member_of_groups(user_groups, required):
         return True
-
-    # Check recursive membership if enabled
     if cfg.recursive_groups:
-        if _search_recursive_group_membership(bind_conn, user_dn, required_groups):
+        if _search_recursive_group_membership(bind_conn, user_dn, required):
             return True
         logger.warning(
-            f"User {username} denied access - not a member of required groups "
-            "(recursive check enabled)"
+            "LDAP user %s belongs to none of the required groups, directly or nested", username
         )
         return False
-
     logger.warning(
-        f"User {username} denied access - not a member of any required groups. "
-        f"User groups: {user_groups}, Required: {required_groups}"
+        "LDAP user %s belongs to none of the required groups (has %s; requires %s)",
+        username,
+        user_groups,
+        required,
     )
     return False

@@ -18,8 +18,11 @@ from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.models.user import User
+from app.schemas.auth_config import LDAP_TIMEOUT_MAX_SECONDS
+from app.schemas.auth_config import LDAP_TIMEOUT_MIN_SECONDS
 from app.schemas.auth_config import AuthMethodTestResponse
 
 router = APIRouter()
@@ -63,6 +66,15 @@ async def test_auth_connection(
 
 
 _LDAP_TEST_FAILED = "LDAP connection failed. Please verify server address, port, and credentials."
+_LDAP_CA_FILE_UNUSABLE = (
+    "The LDAP CA certificate file is missing, unreadable or not a PEM bundle. "
+    "No connection was attempted."
+)
+
+
+def _flag(value: Any) -> bool:
+    """Read a submitted boolean; anything but a clear yes is off (verification stays on)."""
+    return value if isinstance(value, bool) else is_truthy(str(value or ""))
 
 
 def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
@@ -74,8 +86,9 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     service-account password over plaintext on a StartTLS deployment, and could
     report success for a configuration login then refused.
 
-    Synchronous: ``ldap3`` binds are blocking with a 10 s connect timeout, so the
-    caller must run this off the event loop (issue #320).
+    Synchronous: ``ldap3`` binds are blocking, bounded by the submitted ``ldap_timeout``
+    (10 s when absent; a value outside the saved setting's range is refused, not clamped),
+    so the caller must run this off the event loop (issue #320).
 
     Args:
         config: LDAP configuration to test
@@ -89,6 +102,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         from ldap3.core.exceptions import LDAPException
 
         from app.auth.ldap_auth import LdapConfig
+        from app.auth.ldap_directory import LdapCaFileError
         from app.auth.ldap_directory import _close_connection
         from app.auth.ldap_directory import _connect_and_bind
         from app.auth.ldap_directory import _get_ldap_server
@@ -120,14 +134,29 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         if not (bind_dn and bind_password):
             bind_dn = bind_password = ""  # anonymous bind
 
+        try:
+            timeout = int(config.get("ldap_timeout") or 10)
+        except (TypeError, ValueError):
+            timeout = 0
+        if not LDAP_TIMEOUT_MIN_SECONDS <= timeout <= LDAP_TIMEOUT_MAX_SECONDS:
+            return AuthMethodTestResponse(
+                success=False,
+                message=(
+                    f"LDAP timeout must be a whole number of seconds between "
+                    f"{LDAP_TIMEOUT_MIN_SECONDS} and {LDAP_TIMEOUT_MAX_SECONDS}"
+                ),
+            )
+
         cfg = LdapConfig(
             server=server_address,
             port=port,
             use_ssl=use_ssl,
             use_tls=use_tls,
+            ca_cert_file=str(config.get("ldap_ca_cert_file") or ""),
+            tls_skip_verify=_flag(config.get("ldap_tls_skip_verify")),
             bind_dn=bind_dn,
             bind_password=bind_password,
-            timeout=10,
+            timeout=timeout,
         )
         server = _get_ldap_server(cfg)
         problem = transport_problem(cfg, server)
@@ -164,6 +193,9 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             details={"server_info": server_info},
         )
 
+    except LdapCaFileError:
+        logger.warning("LDAP connection test refused: the CA certificate file is unusable")
+        return AuthMethodTestResponse(success=False, message=_LDAP_CA_FILE_UNUSABLE)
     except LDAPException as e:
         logger.warning(f"LDAP connection test failed: {e}")
         return AuthMethodTestResponse(success=False, message=_LDAP_TEST_FAILED)

@@ -28,8 +28,15 @@ A reader here has to be one of:
   declared on ``DynamicAuthSettings``** — i.e. the layered accessor, not
   ``settings.<KEY>``, which is the .env-only read the dead keys were stuck on.
 
-Both forms require the value to flow out of the layered accessor into the
-module. Neither can be satisfied by naming the key in prose.
+* a string literal passed to a **forwarding helper**: a function in the same
+  module with a parameter that its body hands to one of the accessor calls above
+  (``def number(key, fallback): return _as_int(stored.get(key), fallback)``).
+  The helper is the reader; each literal handed to it is a key it resolves. This
+  is how ``LdapConfig.from_db`` reads its seventeen keys without repeating the
+  accessor call at every line.
+
+All forms require the value to flow out of the layered accessor into the
+module. None can be satisfied by naming the key in prose.
 """
 
 from __future__ import annotations
@@ -94,20 +101,60 @@ def _callee_name(node: ast.Call) -> str | None:
     return None
 
 
+def _literal_args(node: ast.Call) -> list[str]:
+    """String literals in any argument position of a call."""
+    args = list(node.args) + [kw.value for kw in node.keywords]
+    return [
+        arg.value for arg in args if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
+    ]
+
+
+def _forwarding_helpers(tree: ast.AST) -> dict[str, set[int | str]]:
+    """Find functions that pass one of their parameters to an accessor call.
+
+    Returns:
+        Function name -> the positions (``int``) and names (``str``) of the parameters
+        it forwards. A call to the function with a string literal at one of those
+        positions is a read of that key.
+    """
+    helpers: dict[str, set[int | str]] = {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        params = [a.arg for a in fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs]
+        forwarded: set[int | str] = set()
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call) or _callee_name(node) not in _ACCESSOR_CALLS:
+                continue
+            # Only the key is forwarded; a later positional is the default value.
+            key_args = node.args[:1] + [kw.value for kw in node.keywords if kw.arg == "key"]
+            for arg in key_args:
+                if isinstance(arg, ast.Name) and arg.id in params:
+                    forwarded.update({arg.id, params.index(arg.id)})
+        if forwarded:
+            helpers[fn.name] = forwarded
+    return helpers
+
+
 def _keys_read_by(tree: ast.AST) -> set[str]:
     """Collect config keys this module resolves through the layered accessor."""
     found: set[str] = set()
+    helpers = _forwarding_helpers(tree)
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            if _callee_name(node) not in _ACCESSOR_CALLS:
-                continue
-            args = list(node.args) + [kw.value for kw in node.keywords]
-            found.update(
-                arg.value
-                for arg in args
-                if isinstance(arg, ast.Constant) and isinstance(arg.value, str)
-            )
+            callee = _callee_name(node)
+            if callee in _ACCESSOR_CALLS:
+                found.update(_literal_args(node))
+            elif callee in helpers:
+                for index, arg in enumerate(node.args):
+                    if index in helpers[callee] and isinstance(arg, ast.Constant):
+                        found.add(str(arg.value))
+                found.update(
+                    str(kw.value.value)
+                    for kw in node.keywords
+                    if kw.arg in helpers[callee] and isinstance(kw.value, ast.Constant)
+                )
         elif isinstance(node, ast.Attribute) and node.attr in _ACCESSOR_PROPERTIES:
             found.add(node.attr)
 
@@ -204,3 +251,30 @@ def test_scanner_finds_a_known_reader() -> None:
     assert "ldap_server" in _READERS, "AST scan found no reader for ldap_server — it is wired"
     assert "app/auth/ldap_auth.py" in _READERS["ldap_server"]
     assert _ACCESSOR_PROPERTIES, "DynamicAuthSettings exposes no properties — scan is blind"
+
+
+_FORWARDED = """
+def reader(stored):
+    def flag(key, fallback):
+        return bool(stored.get(key, fallback))
+
+    return flag("ldap_forwarded_key", False)
+"""
+
+_NOT_FORWARDED = """
+def reader(stored):
+    def flag(key, fallback):
+        return bool(fallback)
+
+    return flag("ldap_unforwarded_key", False), print("ldap_prose_key")
+"""
+
+
+def test_scanner_follows_a_forwarding_helper() -> None:
+    """A literal handed to a helper that feeds the accessor is a read."""
+    assert _keys_read_by(ast.parse(_FORWARDED)) == {"ldap_forwarded_key"}
+
+
+def test_scanner_ignores_a_helper_that_never_reaches_the_accessor() -> None:
+    """A helper that drops its parameter, or a bare call naming a key, is no reader."""
+    assert _keys_read_by(ast.parse(_NOT_FORWARDED)) == set()

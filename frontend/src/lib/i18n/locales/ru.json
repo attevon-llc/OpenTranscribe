@@ -4206,7 +4206,7 @@
   "settings.ldap.enable": "Включить аутентификацию LDAP/Active Directory",
   "settings.ldap.serverConnection": "Подключение к серверу",
   "settings.ldap.server": "Сервер LDAP",
-  "settings.ldap.serverHelp": "Имя хоста или IP-адрес сервера LDAP",
+  "settings.ldap.serverHelp": "Имя хоста LDAP-сервера так, как оно указано в его TLS-сертификате (сертификат нельзя проверить, если сервер задан IP-адресом)",
   "settings.ldap.port": "Порт",
   "settings.ldap.useSsl": "Использовать SSL (LDAPS)",
   "settings.ldap.useStartTls": "Использовать StartTLS",
@@ -6505,5 +6505,9 @@
   "settings.selfErasureAdmin.saveGrace": "Сохранить период",
   "settings.selfErasureAdmin.saved": "Сохранено",
   "settings.selfErasureAdmin.saveError": "Не удалось сохранить настройку.",
-  "settings.selfErasureAdmin.loadError": "Не удалось загрузить настройку."
+  "settings.selfErasureAdmin.loadError": "Не удалось загрузить настройку.",
+  "settings.ldap.caCertFile": "Файл сертификата ЦС",
+  "settings.ldap.caCertFileHelp": "Путь на сервере к PEM-файлу с центром сертификации, подписавшим сертификат каталога. Оставьте пустым, чтобы доверять центрам сертификации системы. Если путь указан, доверие распространяется только на этот файл.",
+  "settings.ldap.tlsSkipVerify": "Не проверять TLS-сертификат каталога",
+  "settings.ldap.tlsSkipVerifyWarning": "Небезопасно: любой, кто находится на сетевом пути, может выдать себя за сервер каталога и прочитать отправляемые ему пароли. Используйте только для тестирования. Для каждого такого подключения в журнал записывается предупреждение."
 }

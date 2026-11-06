@@ -23,6 +23,21 @@ SERVICE_CREDENTIAL = "svc-credential"
 SEARCH_BASE = "dc=test"
 
 
+def effective_ssl(host: str, use_ssl: Any) -> bool:
+    """The ``ssl`` value ldap3 2.9's ``Server(host, use_ssl=...)`` ends up with.
+
+    A URL scheme overrides ``use_ssl`` (``ldap3.core.server.Server.__init__``): ``ldaps://``
+    is always TLS, ``ldap://`` / ``ldapi://`` never are, and only a bare host follows the
+    flag. Every fake server takes its ``ssl`` from here so no fake can drift from ldap3.
+    """
+    url = host.strip().lower()
+    if url.startswith("ldaps://"):
+        return True
+    if url.startswith(("ldap://", "ldapi://")):
+        return False
+    return bool(use_ssl)
+
+
 class FakeAttr:
     def __init__(self, value: Any) -> None:
         self.value = value
@@ -62,6 +77,8 @@ class FakeDirectory:
     calls: list[tuple[Any, ...]] = field(default_factory=list)
     #: Keyword options each ``Connection`` was built with, beyond user/password/auto_bind.
     connection_options: list[dict[str, Any]] = field(default_factory=list)
+    #: Every connection built, in order, so a test can ask whether one was left open.
+    connections: list[Any] = field(default_factory=list)
 
     def add_user(self, entry: FakeEntry, password: str, filter_text: str | None = None) -> None:
         """Make ``entry`` the single answer to ``filter_text`` (default ``(uid=<uid>)``)."""
@@ -85,14 +102,7 @@ class _Server:
         if directory.server_error is not None:
             raise directory.server_error
         self.host = host
-        # ldap3: an ldap:// or ldaps:// scheme overrides use_ssl; a bare host follows it.
-        lowered = host.lower()
-        if lowered.startswith("ldaps://"):
-            self.ssl = True
-        elif lowered.startswith("ldap://"):
-            self.ssl = False
-        else:
-            self.ssl = bool(kwargs.get("use_ssl"))
+        self.ssl = effective_ssl(host, kwargs.get("use_ssl"))
 
 
 class _Connection:
@@ -109,13 +119,16 @@ class _Connection:
         self.user = user
         self.password = password
         self.bound = False
+        #: Like ldap3's ``Connection.closed``: what ``unbind`` leaves true, whether or not a bind happened.
+        self.closed = False
         self.entries: list[Any] = []
+        directory.connections.append(self)
         directory.calls.append(("connection", user, auto_bind))
         directory.connection_options.append(options)
 
-    def open(self) -> bool:
+    def open(self) -> None:
+        """Like ldap3's sync ``open``: returns ``None`` on success, raises on failure."""
         self._dir.calls.append(("open", self.user))
-        return True
 
     def start_tls(self) -> bool:
         self._dir.calls.append(("start_tls", self.user))
@@ -144,6 +157,7 @@ class _Connection:
     def unbind(self) -> None:
         self._dir.calls.append(("unbind", self.user))
         self.bound = False
+        self.closed = True
 
 
 def install(monkeypatch: Any, directory: FakeDirectory | None = None) -> FakeDirectory:

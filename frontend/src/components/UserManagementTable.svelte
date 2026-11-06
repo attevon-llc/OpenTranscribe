@@ -37,7 +37,7 @@
    * @property {string|null} [last_login]
    * @property {boolean} [is_active]
    * @property {string} [full_name]
-   * @property {string} [auth_type]
+   * @property {string} [auth_type] - local, ldap, oidc, pki, ...
    * @property {boolean} [allow_local_fallback]
    * @property {boolean} [email_verified]
    * @property {string|null} [email_verified_at]

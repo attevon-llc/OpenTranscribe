@@ -138,6 +138,12 @@ class LocalAuthConfig(_CategoryConfig):
     require_account_approval: bool = False
 
 
+#: Bounds of the saved ``ldap_timeout`` (seconds). The admin "Test connection" applies the
+#: same bounds to the value it is handed, since it is read unvalidated.
+LDAP_TIMEOUT_MIN_SECONDS = 1
+LDAP_TIMEOUT_MAX_SECONDS = 300
+
+
 class LDAPConfig(_CategoryConfig):
     """LDAP/Active Directory configuration."""
 
@@ -146,6 +152,8 @@ class LDAPConfig(_CategoryConfig):
     ldap_port: int = Field(default=636, ge=1, le=65535)
     ldap_use_ssl: bool = True
     ldap_use_tls: bool = False
+    ldap_ca_cert_file: str = ""
+    ldap_tls_skip_verify: bool = False
     ldap_bind_dn: str = ""
     ldap_bind_password: str | None = None  # Sensitive
     ldap_search_base: str = ""
@@ -153,7 +161,7 @@ class LDAPConfig(_CategoryConfig):
     ldap_email_attr: str = "mail"
     ldap_name_attr: str = "cn"
     ldap_user_search_filter: str = "({username_attr}={username})"
-    ldap_timeout: int = Field(default=10, ge=1, le=300)
+    ldap_timeout: int = Field(default=10, ge=LDAP_TIMEOUT_MIN_SECONDS, le=LDAP_TIMEOUT_MAX_SECONDS)
     ldap_admin_users: str = ""
     ldap_admin_groups: str = ""
     ldap_user_groups: str = ""

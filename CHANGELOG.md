@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LDAP_RECURSIVE_GROUPS` no longer has a different default expression from the other LDAP
+  booleans; it is parsed by the same settings parser.
+
 - **Migrations now work through connection proxies and poolers that reject libpq startup
   parameters** (e.g. AWS RDS Proxy, PgBouncer in some modes). The migration runner, Alembic and
   role reconciliation used to pass `options=-c opentranscribe.audit_maintenance=on` at connect
@@ -37,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   startup moves any such tag association onto the file organization's own tag of the same
   name (creating it if needed, deleting no tag). The bulk tag action reports a file it refuses
   for this reason with the new per-file error code `TAG_TENANT_MISMATCH`.
+
+- **LDAP logins with StartTLS enabled were always refused.** The bind treated the result of
+  opening the connection as a failure, so StartTLS was never attempted and every such login (and
+  the admin Test connection) failed with a StartTLS error. StartTLS now runs, and a refused bind
+  or failed StartTLS closes its connection instead of leaving the socket open.
 
 ### Security
 
@@ -51,6 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MINIO_KMS_AUTO_ENCRYPTION=on`. **Back up the MinIO key**: objects written afterwards are
   encrypted with it and are unreadable if it is lost. To store objects unencrypted on purpose, set
   `ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead.
+
+- **LDAP now verifies the directory's TLS certificate by default.** Until now no LDAPS or
+  StartTLS connection (login, directory sync or the admin Test connection) checked the server
+  certificate. The chain and the host name are now checked against the system CA store. New
+  settings: `ldap_ca_cert_file` / `LDAP_CA_CERT_FILE` points at a PEM bundle for a private CA,
+  and `ldap_tls_skip_verify` / `LDAP_TLS_SKIP_VERIFY` (default off) restores the old behaviour
+  and logs a warning on every connection. A CA file that cannot be read refuses the
+  connection. **Upgrade note:** a directory with a private or self-signed certificate needs one
+  of these settings, and the server must be named by host name (ldap3 cannot verify an IP
+  address). LDAP referrals are no longer followed.
 
 ## [0.6.1] - 2026-11-03
 

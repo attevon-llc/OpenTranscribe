@@ -5551,6 +5551,7 @@
   "chat.picker.emptySpeakers": "Aucun intervenant nommé — nommez d'abord les intervenants dans une transcription",
   "chat.picker.emptyTags": "Aucune étiquette pour l'instant",
   "chat.picker.estimatedFiles": "{{files}} enregistrements · ~{{pct}} % du contexte",
+  "chat.picker.estimatedFilesUnknown": "{{files}} enregistrements · taille du contexte inconnue",
   "chat.picker.searchCollections": "Rechercher des collections",
   "chat.picker.searchFiles": "Rechercher des enregistrements",
   "chat.picker.searchSpeakers": "Filtrer les intervenants",

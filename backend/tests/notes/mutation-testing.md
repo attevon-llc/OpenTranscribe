@@ -80,10 +80,9 @@ but it will saturate every core, so don't start one beside a benchmark.
 
 **Two traps the script handles, and you must not undo.** `-n0` is appended via
 `PYTEST_ADDOPTS` to override pyproject's `-n auto`: without it every mutant forks one xdist
-worker per core against the shared DB. The script also still exports the seven old security-suite
-`RUN_*` gates (its `GATES` array), but those are dead (see "Markers and gates"): no selected file
-is gated any more, so they select nothing. Keep the principle, though: **a skipped test kills no
-mutant**, so a gated or skipping file in a module's `MODULE_TESTS` reports false survivors that
+worker per core against the shared DB. The script used to export the seven old security-suite
+`RUN_*` gates (a `GATES` array); they were dead (no selected file is gated any more) and are
+removed. Keep the principle, though: **a skipped test kills no mutant**, so a gated or skipping file in a module's `MODULE_TESTS` reports false survivors that
 look exactly like real findings.
 
 **Reading a surviving mutant.** `--results` lists ids; `--show <id>` prints the diff.

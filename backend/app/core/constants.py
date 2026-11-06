@@ -201,6 +201,11 @@ CHARS_PER_TOKEN_ESTIMATE = 4.0  # Average characters per token
 SUBWORD_TOKENIZATION_FACTOR = 1.3  # Factor for subword tokenization
 TOKEN_ESTIMATION_BUFFER = 1.1  # 10% buffer for safety
 
+# Bounds on a model context window, in tokens. Shared by the LLM settings validators and the
+# chat context-estimate `assumed_context_window` parameter so the two cannot drift.
+LLM_CONTEXT_WINDOW_MIN = 512
+LLM_CONTEXT_WINDOW_MAX = 2_000_000
+
 # Stream processing constants
 DEFAULT_CHUNK_SIZE = 16384  # 16KB default chunk size
 VIDEO_CHUNK_SIZE = 65536  # 64KB for video streaming

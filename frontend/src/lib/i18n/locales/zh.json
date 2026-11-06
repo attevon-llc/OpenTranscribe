@@ -5535,6 +5535,7 @@
   "chat.picker.emptySpeakers": "暂无已命名的说话人 — 请先在转写中为说话人命名",
   "chat.picker.emptyTags": "暂无标签",
   "chat.picker.estimatedFiles": "{{files}} 个录音 · 约占上下文 {{pct}}%",
+  "chat.picker.estimatedFilesUnknown": "{{files}} 个录音 · 上下文大小未知",
   "chat.picker.searchCollections": "搜索合集",
   "chat.picker.searchFiles": "搜索录音",
   "chat.picker.searchSpeakers": "筛选说话人",

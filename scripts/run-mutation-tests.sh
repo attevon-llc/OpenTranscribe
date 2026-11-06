@@ -111,8 +111,7 @@ fi
 # mutant, so pointing it at all ~5,300 tests would multiply a 4-minute suite by the
 # mutant count. The selection has to be honest in the other direction too: a test that
 # SKIPS kills no mutant, so an under-selected (or gate-disabled) set reports false
-# survivors that look exactly like real findings. That is why the RUN_* gates are
-# exported below.
+# survivors that look exactly like real findings.
 # ---------------------------------------------------------------------------
 declare -A MODULE_PATH=(
     [spans]="app/services/redaction/spans.py"
@@ -474,7 +473,7 @@ _verify_survivor_locked() {
     rc=0
     for stage in "$fast" "$slow"; do
         [[ -n "${stage// /}" ]] || continue
-        ( cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $stage \
+        ( cd "$BACKEND" && "$VENV_BIN/python" -m pytest $stage \
             -o addopts= -p no:cacheprovider -q --no-header -x >/dev/null 2>&1 )
         rc=$?
         [[ $rc -ne 0 ]] && break
@@ -697,12 +696,13 @@ check_baseline() {
     return $failed
 }
 
-# Same set scripts/run-backend-tests.sh --gated enables. Mandatory here: three of the
-# test files above are behind a module-level skipif, and a skipped test cannot kill a
-# mutant — an ungated run would report their mutants as survivors.
-GATES=(RUN_PKI_TESTS=true RUN_MFA_TESTS=true RUN_LLM_TESTS=true
-       RUN_FEDRAMP_TESTS=true RUN_FIPS_TESTS=true
-       RUN_AUTH_CONFIG_TESTS=true RUN_ADVANCED_ADMIN_TESTS=true)
+# ⚠️ There is deliberately no `GATES=(RUN_*_TESTS=true ...)` array here, and re-adding one is a
+# regression. It set seven variables that no test reads: the module-level `skipif` gates were
+# removed from the security suites (they run by DEFAULT now), so nothing selected below is
+# gated. A skipped test still kills no mutant, so keep MODULE_TESTS honest about files that
+# skip for other reasons (a missing service, an absent optional dependency).
+# `backend/tests/unit/test_gate_run_env_vars_are_live.py` fails on any `RUN_*` set here that no
+# test reads.
 
 # Service credentials must be EXPORTED, not left to conftest's .env read.
 #
@@ -1080,7 +1080,7 @@ for key in "${MODULES[@]}"; do
         # silently made this check a no-op the first time it was written. The Cover column is
         # found by scanning the row from the right for a field ending in `%`, because
         # [tool.coverage.report] show_missing puts the line list in the LAST column.
-        cov_pct=$(cd "$BACKEND" && env "${GATES[@]}" "$VENV_BIN/python" -m pytest $tests \
+        cov_pct=$(cd "$BACKEND" && "$VENV_BIN/python" -m pytest $tests \
             -o addopts= -p no:cacheprovider -q --no-header \
             --cov="$(dirname "$path")" --cov-report=term 2>/dev/null \
             | awk -v f="$path" '$1 == f {
@@ -1111,13 +1111,13 @@ for key in "${MODULES[@]}"; do
     if $DRY_RUN; then
         echo -e "${YELLOW}    would run:${NC}"
         echo "      cd $BACKEND"
-        echo "      env ${GATES[*]} PYTEST_ADDOPTS=\"$addopts\" \\"
+        echo "      env PYTEST_ADDOPTS=\"$addopts\" \\"
         echo "        venv/bin/mutmut run '$mutant_glob'"
         echo
         continue
     fi
 
-    if env "${GATES[@]}" PYTEST_ADDOPTS="$addopts" \
+    if env PYTEST_ADDOPTS="$addopts" \
         "$VENV_BIN/mutmut" run "$mutant_glob" 2>&1 | tee "$log"; then
         echo -e "${GREEN}✓ $key complete${NC}"
     else

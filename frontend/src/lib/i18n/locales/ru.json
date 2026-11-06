@@ -5553,6 +5553,7 @@
   "chat.picker.emptySpeakers": "Именованных спикеров пока нет — сначала назовите спикеров в расшифровке",
   "chat.picker.emptyTags": "Тегов пока нет",
   "chat.picker.estimatedFiles": "Записей: {{files}} · ~{{pct}}% контекста",
+  "chat.picker.estimatedFilesUnknown": "Записей: {{files}} · размер контекста неизвестен",
   "chat.picker.searchCollections": "Поиск коллекций",
   "chat.picker.searchFiles": "Поиск записей",
   "chat.picker.searchSpeakers": "Фильтр спикеров",

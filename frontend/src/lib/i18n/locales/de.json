@@ -5543,6 +5543,7 @@
   "chat.picker.emptySpeakers": "Noch keine benannten Sprecher – benenne Sprecher zuerst in einem Transkript",
   "chat.picker.emptyTags": "Noch keine Tags",
   "chat.picker.estimatedFiles": "{{files}} Aufnahmen · ~{{pct}} % des Kontexts",
+  "chat.picker.estimatedFilesUnknown": "{{files}} Aufnahmen · Kontextgröße unbekannt",
   "chat.picker.searchCollections": "Sammlungen suchen",
   "chat.picker.searchFiles": "Aufnahmen suchen",
   "chat.picker.searchSpeakers": "Sprecher filtern",

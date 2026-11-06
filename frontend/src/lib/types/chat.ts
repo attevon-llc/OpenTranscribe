@@ -330,9 +330,13 @@ export interface ChatUserSettings {
 export interface ContextEstimate {
   file_count: number;
   estimated_tokens: number;
-  context_window: number;
-  pct: number;
-  warning_level: 'ok' | 'warn' | 'over';
+  /** null when no model window is known (see `context_window_unknown_reason`). */
+  context_window: number | null;
+  context_window_source: 'model' | 'assumed' | 'unknown';
+  context_window_unknown_reason: 'llm_not_configured' | 'llm_config_unusable' | null;
+  /** null when the window is unknown; render "unknown", never a percentage. */
+  pct: number | null;
+  warning_level: 'ok' | 'warn' | 'over' | 'unknown';
 }
 
 /**

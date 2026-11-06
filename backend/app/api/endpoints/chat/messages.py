@@ -14,6 +14,7 @@ import threading
 import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -36,6 +37,8 @@ from app.api.endpoints.chat.common import resolve_effective_scope
 from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
+from app.core.constants import LLM_CONTEXT_WINDOW_MAX
+from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.tenant_limits import resolve_allowed_models
 from app.db.base import get_db
 from app.models.chat import ROLE_ASSISTANT
@@ -617,9 +620,21 @@ def _resolve_chat_llm(user_id: int, config_id: int | None) -> LLMService | None:
         raise coded_error(400, "llm_config_unusable", unusable.user_message) from None
 
 
+def _estimate_warning_level(pct: float | None) -> Literal["ok", "warn", "over", "unknown"]:
+    """Bucket a context-usage percentage; ``None`` (no known window) is its own level."""
+    if pct is None:
+        return "unknown"
+    if pct < 70:
+        return "ok"
+    return "warn" if pct < 100 else "over"
+
+
 @router.post("/context/estimate", response_model=ContextEstimate)
 def estimate_context(
     body: ChatScope,
+    assumed_context_window: int | None = Query(
+        default=None, ge=LLM_CONTEXT_WINDOW_MIN, le=LLM_CONTEXT_WINDOW_MAX
+    ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> ContextEstimate:
@@ -627,22 +642,48 @@ def estimate_context(
 
     Advisory only — the prompt builder enforces the real budget. This exists so
     the picker can warn before someone selects 400 recordings.
+
+    When the caller has no usable model the window is unknown, and the response
+    says so (``context_window`` null, ``warning_level`` ``unknown``) rather than
+    measuring against a guess. ``assumed_context_window`` lets an API caller choose
+    a window for that case; it is ignored whenever a model window is known.
     """
     file_count = count_scope_files(db, ctx, body)
+    window: int | None = None
+    source: Literal["model", "assumed", "unknown"] = "unknown"
+    unknown_reason: Literal["llm_not_configured", "llm_config_unusable"] | None = None
     with llm_settings_outage_as_503():
-        llm = LLMService.create_from_settings(user_id=ctx.user.id)
-    context_window = llm.user_context_window if llm else 8192
+        try:
+            llm = LLMService.create_from_settings(user_id=ctx.user.id, raise_on_unusable=True)
+        except LLMConfigurationError:
+            llm = None
+            unknown_reason = "llm_config_unusable"
+        else:
+            unknown_reason = None if llm else "llm_not_configured"
+    if llm is not None:
+        window, source = llm.user_context_window, "model"
+    else:
+        # Reason code and user id only: the log must never carry scope or model details.
+        logger.warning(
+            "Context estimate for user %s has no known context window (%s)%s",
+            ctx.user.id,
+            unknown_reason,
+            "; using the caller's assumed window" if assumed_context_window else "",
+        )
+        if assumed_context_window:
+            window, source = assumed_context_window, "assumed"
 
     estimated = file_count * _ESTIMATED_TOKENS_PER_FILE
-    pct = (estimated / context_window * 100) if context_window else 0.0
-    level = "ok" if pct < 70 else ("warn" if pct < 100 else "over")
+    pct = round(estimated / window * 100, 1) if window else None
 
     return ContextEstimate(
         file_count=file_count,
         estimated_tokens=estimated,
-        context_window=context_window,
-        pct=round(pct, 1),
-        warning_level=level,  # type: ignore[arg-type]
+        context_window=window,
+        context_window_source=source,
+        context_window_unknown_reason=unknown_reason,
+        pct=pct,
+        warning_level=_estimate_warning_level(pct),
     )
 
 

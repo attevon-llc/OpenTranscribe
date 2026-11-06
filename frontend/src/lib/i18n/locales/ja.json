@@ -5535,6 +5535,7 @@
   "chat.picker.emptySpeakers": "名前付きの話者がまだありません。まず文字起こしで話者に名前を付けてください",
   "chat.picker.emptyTags": "タグはまだありません",
   "chat.picker.estimatedFiles": "{{files}} 件の録音 · コンテキストの約 {{pct}}%",
+  "chat.picker.estimatedFilesUnknown": "{{files}} 件の録音 · コンテキストサイズ不明",
   "chat.picker.searchCollections": "コレクションを検索",
   "chat.picker.searchFiles": "録音を検索",
   "chat.picker.searchSpeakers": "話者を絞り込む",

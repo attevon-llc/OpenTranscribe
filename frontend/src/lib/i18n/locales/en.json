@@ -5543,6 +5543,7 @@
   "chat.picker.emptySpeakers": "No named speakers yet — label speakers on a transcript first",
   "chat.picker.emptyTags": "No tags yet",
   "chat.picker.estimatedFiles": "{{files}} recordings · ~{{pct}}% of context",
+  "chat.picker.estimatedFilesUnknown": "{{files}} recordings · context size unknown",
   "chat.picker.searchCollections": "Search collections",
   "chat.picker.searchFiles": "Search recordings",
   "chat.picker.searchSpeakers": "Filter speakers",

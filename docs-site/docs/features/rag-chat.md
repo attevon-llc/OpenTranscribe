@@ -73,7 +73,12 @@ specific.
 
 The footer of the picker estimates how much of the model's context window your
 selection would occupy, and warns before you pick more than the model can
-usefully handle.
+usefully handle. When no model is configured, or the configured one cannot be used, the
+picker shows "context size unknown" instead of a percentage. API callers of
+`POST /api/chat/context/estimate` get `context_window: null` with
+`context_window_source: "unknown"` and a reason code in that case, and may pass
+`assumed_context_window` to choose a window to measure against; it is ignored whenever the
+model's own window is known.
 
 ## Projects
 

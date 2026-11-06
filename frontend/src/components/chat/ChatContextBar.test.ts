@@ -19,7 +19,7 @@ vi.mock('$stores/locale', () => ({
 
 import ChatContextBar from './ChatContextBar.svelte';
 import ChatContextBarTestHost from './ChatContextBarTestHost.svelte';
-import { emptyScope, type ChatScope } from '$lib/types/chat';
+import { emptyScope, type ChatScope, type ContextEstimate } from '$lib/types/chat';
 
 function scope(overrides: Partial<ChatScope> = {}): ChatScope {
   return { ...emptyScope(), ...overrides };
@@ -94,5 +94,42 @@ describe('ChatContextBar — individually dismissible speaker chips', () => {
   it('no speaker chips at all when the scope carries none', () => {
     const { queryByTestId } = render(ChatContextBar, { props: { scope: emptyScope() } });
     expect(queryByTestId('chat-scope-speaker')).toBeNull();
+  });
+});
+
+describe('ChatContextBar — context estimate chip', () => {
+  const estimate = (overrides: Partial<ContextEstimate> = {}): ContextEstimate => ({
+    file_count: 10,
+    estimated_tokens: 7000,
+    context_window: 8192,
+    context_window_source: 'model',
+    context_window_unknown_reason: null,
+    pct: 85,
+    warning_level: 'warn',
+    ...overrides,
+  });
+
+  it('shows the percentage when a known window is getting full', () => {
+    const { getByTestId } = render(ChatContextBar, {
+      props: { scope: emptyScope(), estimate: estimate() },
+    });
+    expect(getByTestId('chat-context-estimate').textContent).toContain('"pct":85');
+  });
+
+  it('shows no percentage when the window is unknown', () => {
+    // An unknown window has pct null; the chip used to render "~0% of context" for it.
+    const { queryByTestId } = render(ChatContextBar, {
+      props: {
+        scope: emptyScope(),
+        estimate: estimate({
+          context_window: null,
+          context_window_source: 'unknown',
+          context_window_unknown_reason: 'llm_not_configured',
+          pct: null,
+          warning_level: 'unknown',
+        }),
+      },
+    });
+    expect(queryByTestId('chat-context-estimate')).toBeNull();
   });
 });

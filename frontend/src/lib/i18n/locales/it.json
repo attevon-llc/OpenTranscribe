@@ -5551,6 +5551,7 @@
   "chat.picker.emptySpeakers": "Ancora nessun parlante nominato — etichetta prima i parlanti in una trascrizione",
   "chat.picker.emptyTags": "Ancora nessun tag",
   "chat.picker.estimatedFiles": "{{files}} registrazioni · ~{{pct}}% del contesto",
+  "chat.picker.estimatedFilesUnknown": "{{files}} registrazioni · dimensione del contesto sconosciuta",
   "chat.picker.searchCollections": "Cerca raccolte",
   "chat.picker.searchFiles": "Cerca registrazioni",
   "chat.picker.searchSpeakers": "Filtra parlanti",

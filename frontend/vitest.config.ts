@@ -64,7 +64,6 @@ export default defineConfig({
     //    starts costing wall time. A percentage, so it scales with the host's cores.
     fsModuleCache: true,
     maxWorkers: '50%',
-    fsModuleCache: true,
     // Coverage via `npm run test:coverage`. Thresholds are RATCHET FLOORS set just below
     // the measured baseline — raise them as component test coverage grows, never lower them.
     //

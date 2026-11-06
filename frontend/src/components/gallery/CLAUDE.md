@@ -81,9 +81,10 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   `MediaFileDetail` (`GET /files/{uuid}`), so reading `file.tags` from a list row is always
   empty. That is why the page passes no `presentTagNames`: `BulkTagModal` fetches the
   selection's tags itself (`listTagsOnFiles` → `GET /tags/for-files`), shows them as chips and
-  limits the Remove suggestions to them. Only when that request fails (and no names were
-  passed in) does Remove offer the whole library, under the `removeHintAll` hint instead of
-  `removeHintScoped`.
+  limits the Remove suggestions to them. Whenever that list is empty (and no names were
+  passed in) Remove offers the whole library, under the `removeHintAll` hint instead of
+  `removeHintScoped`. That covers the request failing, the selected files carrying no tags,
+  and the moment while the request is still running.
 - **Bulk tag results are judged per file, by `outcome`.** `already_present` and `not_present`
   are successful no-ops; `failed` is the only failure. Count changed and unchanged files
   separately, and never present a batch as failed because one file in it was refused.

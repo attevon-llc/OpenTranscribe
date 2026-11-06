@@ -43,6 +43,8 @@ COMPOSE_PROJECT="${DIARIZATION_TEST_PROJECT:-opentranscribe-diar-tests}"
 BASE_IMAGE="${DIARIZATION_TEST_BASE_IMAGE:-opentranscribe-backend:latest}"
 AUDIO_FIXTURE="${PROJECT_ROOT}/benchmark/test_audio/0.5h_1899s.wav"
 
+# shellcheck source=scripts/lib/model-cache-dir.sh
+source "${PROJECT_ROOT}/scripts/lib/model-cache-dir.sh"
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 if ! docker image inspect "${BASE_IMAGE}" >/dev/null 2>&1; then
@@ -60,6 +62,12 @@ if [[ ! -f "${AUDIO_FIXTURE}" ]]; then
     echo "      See docs/diarization-vram-profile/README.md for how the fixtures are made."
     exit 3
 fi
+
+# docker-compose.benchmark.yml bind-mounts ${MODEL_CACHE_DIR:-./models}; resolved against a
+# git worktree that creates empty root-owned stubs and every test dies on the HF cache.
+MODEL_CACHE_DIR="$(resolve_model_cache_dir "${PROJECT_ROOT}")"
+require_model_cache_dir "${MODEL_CACHE_DIR}" || exit 3
+export MODEL_CACHE_DIR
 
 if ! command -v nvidia-smi >/dev/null 2>&1; then
     echo -e "${YELLOW}WARN: nvidia-smi not found; the container may come up without a GPU,${NC}"

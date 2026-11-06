@@ -46,6 +46,7 @@ from app.core import llm_defaults
 from app.core.config import settings
 from app.services import bedrock_settings
 from app.services.bedrock_settings import BedrockConnection
+from app.services.llm_claude_capabilities import claude_capabilities
 from app.services.llm_stream import LLMStreamEvent
 
 if TYPE_CHECKING:
@@ -373,6 +374,23 @@ def converse(
     return "".join(content_parts), usage_tokens, finish_reason
 
 
+def build_inference_config(
+    model_id: str, max_tokens: int, temperature: float | None, top_p: float | None
+) -> dict[str, Any]:
+    """Build the Converse ``inferenceConfig``, omitting sampling the model would reject.
+
+    Claude Opus 4.7+, Sonnet 5+ and Haiku 5+ 400 on any sampling parameter, on Bedrock
+    as on the first-party API (Claude docs, migration guides, "Sampling parameters").
+    """
+    config: dict[str, Any] = {"maxTokens": max_tokens}
+    if claude_capabilities(model_id).accepts_sampling_params:
+        if temperature is not None:
+            config["temperature"] = temperature
+        if top_p is not None:
+            config["topP"] = top_p
+    return config
+
+
 def stream_converse(
     *,
     model: str,
@@ -420,11 +438,7 @@ def stream_converse(
         yield LLMStreamEvent(type="error", message="No messages to send to Bedrock")
         return
 
-    inference_config: dict[str, Any] = {"maxTokens": max_tokens}
-    if temperature is not None:
-        inference_config["temperature"] = temperature
-    if top_p is not None:
-        inference_config["topP"] = top_p
+    inference_config = build_inference_config(model_id, max_tokens, temperature, top_p)
 
     request: dict[str, Any] = {
         "modelId": model_id,

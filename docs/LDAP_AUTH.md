@@ -57,8 +57,10 @@ group settings find the right people: try a real login for that.
 | `ldap_recursive_groups` | `LDAP_RECURSIVE_GROUPS` | `false` | Also count nested group membership (Active Directory) |
 | `ldap_group_attr` | `LDAP_GROUP_ATTR` | `memberOf` | Attribute listing the user's groups |
 
-Booleans in `.env` accept `true`/`false`, `1`/`0`, `yes`/`no` and `on`/`off`; anything else
-stops the backend at start-up with a settings error. With `LDAP_ENABLED=true` the backend also
+Booleans in `.env` accept `true`/`false`, `t`/`f`, `1`/`0`, `yes`/`no`, `y`/`n` and
+`on`/`off`, in any letter case; anything else stops the backend at start-up with a settings
+error. The exception is `LDAP_RECURSIVE_GROUPS`: only `true` (any letter case) turns it on, and
+every other value reads as off without an error. With `LDAP_ENABLED=true` the backend also
 refuses to start when `LDAP_SERVER`, `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` or
 `LDAP_SEARCH_BASE` is empty.
 
@@ -70,7 +72,8 @@ over TLS in one of two ways:
 - **LDAPS**: `ldap_use_ssl` on, usually port 636. The connection is TLS from the start.
 - **StartTLS**: `ldap_use_tls` on and LDAPS off, usually port 389. The backend opens a plain
   connection, negotiates StartTLS, and only then sends the bind. If the connection cannot be
-  opened or the negotiation fails, the bind is refused; it is never retried in cleartext.
+  opened the login fails with the ldap3 error; if the negotiation fails the bind is refused.
+  Either way nothing is retried in cleartext, and the connection is closed.
 
 A URL scheme in `ldap_server` decides over the `ldap_use_ssl` switch:
 
@@ -171,8 +174,14 @@ and the role the admin rules above give it. When account approval is required
 (`require_account_approval`), the new account waits as pending until an administrator
 approves it. Two first logins arriving at the same moment do not create two accounts.
 
-**Later logins** refresh the email (a changed address is applied and logged as a
-security-relevant change; an empty one never clears the stored address) and the display name.
+**Later logins** refresh the display name, and the email only when it differs from the stored
+one in letter case or surrounding spaces (that is applied and logged as a security-relevant
+change; an empty address never clears the stored one). A genuinely different address is not
+applied: the account is found by its directory username, the stored and the asserted email
+disagree, and the login is refused with the same answer as a wrong password. The refusal is
+logged as `SECURITY: refusing provider-id match ...` and does not heal by logging in again.
+After deciding that the rename is legitimate, a super_admin corrects the stored address with
+`PUT /api/admin/users/{user_uuid}/external-email`.
 
 **Existing accounts with the same email.** A directory cannot vouch that an email address
 belongs to the person logging in, so an LDAP login never attaches itself to an existing
@@ -252,8 +261,8 @@ The backend logs every refusal. Look in `./opentr.sh logs backend`.
 | `LDAP login refused: empty username or password` | Nothing was sent to the directory |
 | `LDAP bind refused before connecting: ...` (`app.auth.ldap_directory`) | Neither LDAPS nor StartTLS applies; the message names the cause (for example an `ldap://` URL with `ldap_use_ssl` on) |
 | `LDAP service account bind was refused: check the bind DN, its password and the TLS settings` | The service account could not bind |
-| `StartTLS negotiation with the LDAP server failed; bind refused (no fallback to a cleartext bind is attempted)` | The server does not offer StartTLS, or the certificate is not trusted |
-| `Could not open the LDAP connection for StartTLS; bind refused` | Host or port unreachable |
+| `StartTLS negotiation with the LDAP server failed; bind refused (no fallback to a cleartext bind is attempted)` | The server does not offer StartTLS or refused the upgrade. The connection is closed afterwards |
+| `LDAP login for <name> failed: LDAPSocketOpenError: ...` (the type may be a subclass) | The host or port is unreachable, so the socket could not be opened (LDAPS and StartTLS alike) |
 | `The LDAP server did not answer within <N> s; bind refused` | The server accepted the connection and then went silent past `ldap_timeout` |
 | `LDAP user not found: <name>` | Check `ldap_search_base` and `ldap_user_search_filter` |
 | `LDAP filter <filter> matched <n> entries; refusing an ambiguous login` | The filter is too broad or the directory holds duplicates |
@@ -262,7 +271,8 @@ The backend logs every refusal. Look in `./opentr.sh logs backend`.
 | `LDAP password check failed for <name>` | Wrong password, or the account is locked in the directory |
 | `LDAP login succeeded for <name>` | Success |
 | `LDAP login for <name> failed: <type>: <message>` / `Unexpected error during LDAP login ...` | A directory or internal error; the type and message say which |
-| `SECURITY: LDAP login changes the email of ...` | The directory reported a new address for a known account |
+| `SECURITY: LDAP login changes the email of ...` | The directory reported the stored address with different letter case or spacing, and it was updated |
+| `SECURITY: refusing provider-id match for ldap identity ... (provider_id_email_mismatch)` | The directory reports a different email for a known account; the login is refused until a super_admin corrects the stored address (see Accounts) |
 | `SECURITY: converting local account ... to LDAP; its local password is cleared` | A linked local account had its first directory login |
 
 A local-password login also logs `Direct auth failed, trying ORM auth for local user: <name>`

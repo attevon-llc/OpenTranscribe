@@ -38,6 +38,21 @@ __all__ = [
 # Version of the cloud-extension seam surface (verifier registry, pipeline
 # hooks, capability resolver, ExternalIdentity shape). Bump on ANY signature
 # change so the private cloud repo fails loudly instead of drifting silently.
+# The import paths an extension may rely on are listed in
+# ``backend/tests/fixtures/extension_surface.txt`` and checked by
+# ``tests/unit/test_extension_import_surface.py``.
+#
+# v14 (0.7.0): import paths moved, no behaviour change. ``CeleryQueues`` ->
+# ``app.core.queues``; ``RECOVERED_AFTER_STUCK`` -> ``app.core.task_config``; the
+# ``DEFAULT_CHAT_*`` defaults -> ``app.core.chat_defaults``; ``query_audit_logs`` ->
+# ``app.auth.audit_query``; ``_get_client_info`` -> ``app.api.endpoints.auth.lifecycle_gates``
+# (an extension should call the public ``app.utils.client_ip.resolve_client_ip``);
+# ``_build_neural_ingest_pipeline`` -> ``app.services.search.pipelines``. BREAKING:
+# ``app.core.security.create_access_token(subject, expires_delta, additional_claims)`` is
+# gone; mint with ``app.auth.direct_auth.create_access_token({"sub": subject, **extra},
+# expires_delta)``. Extra claims can no longer replace ``exp``/``iat``/``jti``/``type``
+# (the issuer stamps them last), and the token no longer carries ``alg_version``. Full table:
+# ``docs/design/v070_downstream_changes.md``.
 #
 # v13 (0.6.1): legal records outlive their user (the DB keeps a pseudonymised acceptance row after
 # account deletion), a server-side required-documents gate in the shared pre-dispatch check (new
@@ -189,7 +204,7 @@ __all__ = [
 # candidate-window hook flipped from max to MIN override
 # (set_retention_resolver(resolver, min_resolver=...)), and
 # TenantUploadLimits.max_duration_seconds is now enforced at dispatch.
-CLOUD_SEAM_VERSION = 13
+CLOUD_SEAM_VERSION = 14
 
 # Auth types that support local password fallback (have local password capability)
 AUTH_TYPES_SUPPORT_LOCAL_FALLBACK = [AUTH_TYPE_PKI, AUTH_TYPE_OIDC]

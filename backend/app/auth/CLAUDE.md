@@ -175,7 +175,10 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   `InMemoryStore`, `get_redis_client` — **OIDC login state only, not sessions**) ·
   `audit.py` (`AuditLogger` writer) · `audit_events.py` (`AuditEventType`, `AuditOutcome`) · `audit_query.py` (read path).
 - `provider_registry.py` — **cloud-edition seam**, empty in community. `constants.py`
-  carries `CLOUD_SEAM_VERSION`; bump it on any seam signature change.
+  carries `CLOUD_SEAM_VERSION`; bump it on any seam signature change. The import paths an
+  extension may rely on are listed in `tests/fixtures/extension_surface.txt` and enforced by
+  `tests/unit/test_extension_import_surface.py`: moving one needs a bump, a `moved` line and a
+  row in the release's `docs/design/v<release>_downstream_changes.md`.
   ⚠️ `get_optional_current_user` (`api/endpoints/auth/dependencies.py`) must stay in step with
   `get_current_user` on the revocation check: both pass the token's `iat` as `issued_at`, which
   is what lets the per-user epoch cancel a still-valid stateless access token

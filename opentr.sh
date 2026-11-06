@@ -2645,7 +2645,7 @@ start_app() {
   fi
 
   if [ -n "$CPU_FLAG" ]; then
-    echo "🧮 CPU-only mode enabled (local CPU transcription, no GPU overlay)"
+    echo "🧮 CPU-only mode enabled: transcription runs locally on the CPU and the GPU overlay is not loaded"
   fi
 
   # Ensure Docker is running
@@ -3429,7 +3429,7 @@ reset_and_init() {
   fi
 
   if [ -n "$CPU_FLAG" ]; then
-    echo "🧮 CPU-only mode enabled (local CPU transcription, no GPU overlay)"
+    echo "🧮 CPU-only mode enabled: transcription runs locally on the CPU and the GPU overlay is not loaded"
   fi
 
   # Ensure Docker is running

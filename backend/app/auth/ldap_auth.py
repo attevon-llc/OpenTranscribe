@@ -1,24 +1,27 @@
-"""
-LDAP/Active Directory authentication module.
+"""LDAP / Active Directory login: configuration, password check and account provisioning.
 
-Handles authentication against LDAP/Active Directory servers.
-Configuration is loaded from database first, falling back to environment variables.
-The directory connection, user search and group checks live in ``auth/ldap_directory.py``;
-the read-only deprovisioning probes in ``auth/ldap_probe.py``.
+A login resolves one immutable :class:`LdapConfig`, finds the user's entry with the
+service account, checks the entry's email and group entitlement, verifies the password
+by binding as the entry's DN, and then provisions (or refreshes) the local ``User`` row.
+Directory I/O lives in :mod:`app.auth.ldap_directory`; the read-only probes used by the
+directory sync live in :mod:`app.auth.ldap_probe`.
 """
+
+from __future__ import annotations
 
 import logging
 import re
 from dataclasses import dataclass
+from typing import Any
 from typing import TypedDict
 
-from ldap3 import Connection
-from ldap3 import Server
 from ldap3.core.exceptions import LDAPException
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.auth.account_linking import assert_email_link_permitted
 from app.auth.account_linking import assert_provider_id_link_permitted
+from app.auth.approval import initial_approval_status
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.ldap_directory import _bind_service_account
 from app.auth.ldap_directory import _check_group_access
@@ -33,35 +36,37 @@ from app.auth.ldap_directory import _search_recursive_group_membership
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.auth.roles import role_implies_superuser
+from app.core import auth_settings
 from app.core.auth_types import AUTH_TYPE_LDAP
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import resolve_ldap_search_filter
-from app.core.config import settings as env_settings
+from app.core.config import settings
 from app.core.env import is_truthy
+from app.models.group import MAPPING_SOURCE_LDAP
+from app.models.user import User
+from app.services import idp_group_mapping_service
 
 logger = logging.getLogger(__name__)
 
-# Re-export for backwards compatibility
-LDAP_NO_PASSWORD = EXTERNAL_AUTH_NO_PASSWORD
-
-#: Whether an LDAP directory asserts that a user's ``mail`` value is a *verified*
-#: address. It does not, and nothing in LDAP or AD can: ``mail`` is an ordinary
-#: writable attribute with no verification semantics, and in a self-service directory
-#: the user owns it. The "source asserts the address verified" guard therefore fails
-#: closed for LDAP, so email-match linking is always refused. Accounts already carrying
-#: an ``ldap_uid`` are unaffected, and so is a new LDAP user whose address collides
-#: with no existing account.
+#: A directory's ``mail`` attribute is writable data, not a verified address.
 LDAP_ASSERTS_EMAIL_VERIFIED = False
+
+_LOGIN_REFUSED = "Incorrect username or password"
+_BEARER_CHALLENGE = {"WWW-Authenticate": "Bearer"}
+_EMAIL_SHAPE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+#: Value used when a stored string setting is empty, per field (``""`` for the rest).
+_EMPTY_STRING_DEFAULTS = {
+    "username_attr": "uid",
+    "user_search_filter": "(uid={username})",
+    "email_attr": "mail",
+    "name_attr": "cn",
+}
 
 
 @dataclass(frozen=True)
 class LdapConfig:
-    """Immutable LDAP configuration resolved from database or environment.
-
-    This is the single source of truth for LDAP settings during an
-    authentication attempt. Created once per request, passed to all
-    helper functions — no global state mutation.
-    """
+    """Everything one LDAP login or probe needs, resolved once and never mutated."""
 
     enabled: bool = False
     server: str = ""
@@ -83,101 +88,110 @@ class LdapConfig:
     timeout: int = 10
 
     @classmethod
-    def from_env(cls) -> "LdapConfig":
-        """Create config from environment variables only."""
+    def from_env(cls) -> LdapConfig:
+        """Build the configuration from the process settings (the ``LDAP_*`` variables).
+
+        Returns:
+            The environment's LDAP configuration.
+        """
         return cls(
-            enabled=env_settings.LDAP_ENABLED,
-            server=env_settings.LDAP_SERVER,
-            port=env_settings.LDAP_PORT,
-            use_ssl=env_settings.LDAP_USE_SSL,
-            use_tls=getattr(env_settings, "LDAP_USE_TLS", False),
-            bind_dn=env_settings.LDAP_BIND_DN,
-            bind_password=env_settings.LDAP_BIND_PASSWORD,
-            search_base=env_settings.LDAP_SEARCH_BASE,
-            username_attr=env_settings.LDAP_USERNAME_ATTR,
-            email_attr=env_settings.LDAP_EMAIL_ATTR,
-            name_attr=env_settings.LDAP_NAME_ATTR,
-            group_attr=env_settings.LDAP_GROUP_ATTR,
-            user_search_filter=env_settings.LDAP_USER_SEARCH_FILTER,
-            admin_users=env_settings.LDAP_ADMIN_USERS,
-            admin_groups=env_settings.LDAP_ADMIN_GROUPS,
-            user_groups=env_settings.LDAP_USER_GROUPS,
-            recursive_groups=env_settings.LDAP_RECURSIVE_GROUPS,
-            timeout=env_settings.LDAP_TIMEOUT,
+            enabled=settings.LDAP_ENABLED,
+            server=settings.LDAP_SERVER,
+            port=settings.LDAP_PORT,
+            use_ssl=settings.LDAP_USE_SSL,
+            use_tls=getattr(settings, "LDAP_USE_TLS", False),
+            bind_dn=settings.LDAP_BIND_DN,
+            bind_password=settings.LDAP_BIND_PASSWORD,
+            search_base=settings.LDAP_SEARCH_BASE,
+            username_attr=settings.LDAP_USERNAME_ATTR,
+            email_attr=settings.LDAP_EMAIL_ATTR,
+            name_attr=settings.LDAP_NAME_ATTR,
+            group_attr=settings.LDAP_GROUP_ATTR,
+            user_search_filter=settings.LDAP_USER_SEARCH_FILTER,
+            admin_users=settings.LDAP_ADMIN_USERS,
+            admin_groups=settings.LDAP_ADMIN_GROUPS,
+            user_groups=settings.LDAP_USER_GROUPS,
+            recursive_groups=settings.LDAP_RECURSIVE_GROUPS,
+            timeout=settings.LDAP_TIMEOUT,
         )
 
     @classmethod
-    def from_db(cls, db) -> "LdapConfig":
-        """Create config from database with env fallback.
+    def from_db(cls, db: Session) -> LdapConfig:
+        """Build the configuration from the admin-managed ``auth_config`` keys.
 
-        Uses DynamicAuthSettings which checks DB > .env > defaults.
+        Each ``ldap_*`` key is read through the dynamic auth settings; a key with no
+        value takes the matching ``LDAP_*`` environment setting.
+
+        Args:
+            db: Database session.
+
+        Returns:
+            The effective LDAP configuration.
         """
-        from app.core.auth_settings import get_auth_settings
+        stored = auth_settings.get_auth_settings(db)
+        env = cls.from_env()
 
-        auth = get_auth_settings(db)
+        def flag(key: str, fallback: bool) -> bool:
+            return _as_bool(stored.get(key), fallback)
 
-        def _get(key: str, default):
-            """Get value from DB settings, falling back to default."""
-            val = auth.get(key)
-            return val if val is not None else default
+        def number(key: str, fallback: int) -> int:
+            return _as_int(stored.get(key), fallback)
 
-        def _get_bool(key: str, default: bool) -> bool:
-            val = auth.get(key)
-            if val is None:
-                return default
-            if isinstance(val, bool):
-                return val
-            if isinstance(val, str):
-                return is_truthy(val)
-            return bool(val)
+        def string(key: str, field_name: str, fallback: str) -> str:
+            return _as_text(stored.get(key), fallback, _EMPTY_STRING_DEFAULTS.get(field_name, ""))
 
-        def _get_int(key: str, default: int) -> int:
-            val = auth.get(key)
-            if val is None:
-                return default
-            try:
-                return int(val)
-            except (ValueError, TypeError):
-                return default
-
-        username_attr = str(_get("ldap_username_attr", env_settings.LDAP_USERNAME_ATTR) or "uid")
-        # Resolve the `{username_attr}` placeholder the same way the .env-backed
-        # Settings validator does (app/core/config.py). Without this, a DB-configured
-        # search filter containing the literal placeholder never matches any real
-        # LDAP attribute name and every DB-configured LDAP login fails to find the
-        # user (or matches nothing/everything, depending on the server's parsing).
-        user_search_filter = resolve_ldap_search_filter(
-            str(
-                _get("ldap_user_search_filter", env_settings.LDAP_USER_SEARCH_FILTER)
-                or "(uid={username})"
-            ),
-            username_attr,
+        username_attr = string("ldap_username_attr", "username_attr", env.username_attr)
+        search_filter = string(
+            "ldap_user_search_filter", "user_search_filter", env.user_search_filter
         )
-
         return cls(
-            enabled=_get_bool("ldap_enabled", env_settings.LDAP_ENABLED),
-            server=str(_get("ldap_server", env_settings.LDAP_SERVER) or ""),
-            port=_get_int("ldap_port", env_settings.LDAP_PORT),
-            use_ssl=_get_bool("ldap_use_ssl", env_settings.LDAP_USE_SSL),
-            use_tls=_get_bool("ldap_use_tls", getattr(env_settings, "LDAP_USE_TLS", False)),
-            bind_dn=str(_get("ldap_bind_dn", env_settings.LDAP_BIND_DN) or ""),
-            bind_password=str(_get("ldap_bind_password", env_settings.LDAP_BIND_PASSWORD) or ""),
-            search_base=str(_get("ldap_search_base", env_settings.LDAP_SEARCH_BASE) or ""),
+            enabled=flag("ldap_enabled", env.enabled),
+            server=string("ldap_server", "server", env.server),
+            port=number("ldap_port", env.port),
+            use_ssl=flag("ldap_use_ssl", env.use_ssl),
+            use_tls=flag("ldap_use_tls", env.use_tls),
+            bind_dn=string("ldap_bind_dn", "bind_dn", env.bind_dn),
+            bind_password=string("ldap_bind_password", "bind_password", env.bind_password),
+            search_base=string("ldap_search_base", "search_base", env.search_base),
             username_attr=username_attr,
-            email_attr=str(_get("ldap_email_attr", env_settings.LDAP_EMAIL_ATTR) or "mail"),
-            name_attr=str(_get("ldap_name_attr", env_settings.LDAP_NAME_ATTR) or "cn"),
-            group_attr=str(_get("ldap_group_attr", env_settings.LDAP_GROUP_ATTR) or ""),
-            user_search_filter=user_search_filter,
-            admin_users=str(_get("ldap_admin_users", env_settings.LDAP_ADMIN_USERS) or ""),
-            admin_groups=str(_get("ldap_admin_groups", env_settings.LDAP_ADMIN_GROUPS) or ""),
-            user_groups=str(_get("ldap_user_groups", env_settings.LDAP_USER_GROUPS) or ""),
-            recursive_groups=_get_bool("ldap_recursive_groups", env_settings.LDAP_RECURSIVE_GROUPS),
-            timeout=_get_int("ldap_timeout", env_settings.LDAP_TIMEOUT),
+            email_attr=string("ldap_email_attr", "email_attr", env.email_attr),
+            name_attr=string("ldap_name_attr", "name_attr", env.name_attr),
+            group_attr=string("ldap_group_attr", "group_attr", env.group_attr),
+            user_search_filter=resolve_ldap_search_filter(search_filter, username_attr),
+            admin_users=string("ldap_admin_users", "admin_users", env.admin_users),
+            admin_groups=string("ldap_admin_groups", "admin_groups", env.admin_groups),
+            user_groups=string("ldap_user_groups", "user_groups", env.user_groups),
+            recursive_groups=flag("ldap_recursive_groups", env.recursive_groups),
+            timeout=number("ldap_timeout", env.timeout),
         )
+
+
+def _as_bool(raw: Any, fallback: bool) -> bool:
+    if raw is None:
+        return fallback
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return is_truthy(raw)
+    return bool(raw)
+
+
+def _as_int(raw: Any, fallback: int) -> int:
+    if raw is None:
+        return fallback
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _as_text(raw: Any, fallback: str, when_empty: str) -> str:
+    resolved = str(fallback if raw is None else raw)
+    return resolved or when_empty
 
 
 class LdapUserData(TypedDict):
-    """Type definition for LDAP user data returned by ldap_authenticate."""
+    """What a successful directory login reports about the user."""
 
     username: str
     email: str
@@ -187,386 +201,367 @@ class LdapUserData(TypedDict):
 
 
 def _is_valid_email(email: str) -> bool:
-    """Validate email format."""
-    if not email:
-        return False
-    pattern = r"^[^\s@]+@[^\s@]+\.[^\s@]+$"
-    return bool(re.match(pattern, email))
+    """Whether ``email`` has the shape ``local@domain.tld`` with no whitespace.
 
+    Args:
+        email: Value read from the directory.
 
-def _directory_username(cfg: LdapConfig, user_entry, fallback: str) -> str:
-    """The account's username as the directory holds it: the username attribute, else *fallback*.
-
-    The one form stored as ``ldap_uid`` and compared against ``admin_users``, by login and by
-    the directory sweep alike. Comparing different forms (for example a ``userPrincipalName``
-    against its part before ``@``) makes the two paths disagree about who is an admin.
+    Returns:
+        ``True`` for a plausible address, ``False`` otherwise (including empty).
     """
-    attr_value = (
-        getattr(user_entry, cfg.username_attr, None)
-        if hasattr(user_entry, cfg.username_attr)
-        else None
-    )
-    return str(attr_value) if attr_value is not None else fallback
+    return bool(email) and _EMAIL_SHAPE.fullmatch(email) is not None
 
 
-def _extract_user_attributes(cfg: LdapConfig, user_entry, ldap_username: str) -> dict | None:
-    """Extract and validate user attributes from LDAP entry."""
-    username_value = _directory_username(cfg, user_entry, ldap_username)
-
-    # Extract email
-    email_value = user_entry[cfg.email_attr].value if cfg.email_attr in user_entry else None
-    user_email = str(email_value) if email_value is not None else ""
-
-    # Extract full name
-    name_value = user_entry[cfg.name_attr].value if cfg.name_attr in user_entry else None
-    user_full_name = str(name_value) if name_value is not None else ""
-
-    # Extract group memberships
-    user_groups = _get_user_groups(cfg, user_entry)
-
-    # Validate email
-    if not _is_valid_email(user_email):
-        logger.warning(
-            f"User {username_value} has no valid email attribute in LDAP (got: {user_email!r})"
-        )
-        return None
-
-    return {
-        "username": username_value,
-        "email": user_email,
-        "full_name": user_full_name,
-        "groups": user_groups,
-    }
+def _entry_text(user_entry: Any, attr: str) -> str:
+    """The string value of ``attr`` on the entry, or ``""`` when absent or empty."""
+    if not attr or attr not in user_entry:
+        return ""
+    value = user_entry[attr].value
+    return "" if value is None else str(value)
 
 
-def _verify_user_credentials(
-    cfg: LdapConfig, server: Server, user_dn: str, password: str
-) -> Connection | None:
-    """Verify user credentials by binding as the user."""
-    return _connect_and_bind(cfg, server, user_dn, password)
+def _directory_username(cfg: LdapConfig, user_entry: Any, fallback: str) -> str:
+    """The username form stored as ``ldap_uid`` and compared against ``admin_users``.
+
+    Login and the directory sync both call this, so they always compare the same value:
+    the entry's username-attribute value as the directory holds it.
+
+    Args:
+        cfg: Resolved LDAP configuration (``username_attr``).
+        user_entry: The directory entry.
+        fallback: Used when the entry has no value for the attribute.
+
+    Returns:
+        The attribute's value as a string, or ``fallback``.
+    """
+    attr = cfg.username_attr
+    if attr and attr in user_entry:
+        value = getattr(user_entry, attr, None)
+        if value is not None:
+            return str(value)
+    return fallback
 
 
 def _is_ldap_admin(
     cfg: LdapConfig,
     username: str,
     user_groups: list[str],
-    bind_conn: Connection | None = None,
+    bind_conn: Any = None,
     user_dn: str | None = None,
 ) -> bool:
-    """Check if user is an admin via admin_users or admin_groups config."""
-    # Check admin_users list
-    if cfg.admin_users:
-        admin_users = cfg.admin_users.split(",")
-        if username.strip().lower() in [u.strip().lower() for u in admin_users]:
-            logger.debug(f"User {username} is admin via LDAP admin_users")
-            return True
+    """Whether the directory marks this user as an admin.
 
-    # Check admin_groups
-    # A value of only separators/whitespace parses to no groups; an empty list
-    # means "no requirement" to the membership helper, so it must not grant admin.
-    admin_groups = _parse_group_list(cfg.admin_groups) if cfg.admin_groups else []
-    if admin_groups:
-        if _is_member_of_groups(user_groups, admin_groups):
-            logger.debug(f"User {username} is admin via LDAP admin_groups (direct)")
-            return True
+    True when ``username`` is listed in ``admin_users`` (comma-separated, exact,
+    case-insensitive) or the user belongs to an ``admin_groups`` group (directly, or
+    nested when ``recursive_groups`` is on and a connection and DN are supplied). A blank
+    or separator-only ``admin_groups`` grants admin to nobody.
 
-        if (
-            cfg.recursive_groups
-            and bind_conn
-            and user_dn
-            and _search_recursive_group_membership(bind_conn, user_dn, admin_groups)
-        ):
-            logger.debug(f"User {username} is admin via LDAP admin_groups (recursive)")
-            return True
+    Args:
+        cfg: Resolved LDAP configuration.
+        username: The directory username form (see :func:`_directory_username`).
+        user_groups: Groups read from the user's entry.
+        bind_conn: Bound connection for the nested-group lookup.
+        user_dn: The user's DN for the nested-group lookup.
 
+    Returns:
+        The admin signal.
+    """
+    candidate = username.strip().lower()
+    listed = {name.strip().lower() for name in cfg.admin_users.split(",") if name.strip()}
+    if candidate and candidate in listed:
+        logger.debug("LDAP user %s is an admin through admin_users", username)
+        return True
+
+    admin_groups = _parse_group_list(cfg.admin_groups)
+    if not admin_groups:
+        return False
+    if _is_member_of_groups(user_groups, admin_groups):
+        logger.debug("LDAP user %s is an admin through a direct admin group", username)
+        return True
+    if (
+        cfg.recursive_groups
+        and bind_conn is not None
+        and user_dn
+        and _search_recursive_group_membership(bind_conn, user_dn, admin_groups)
+    ):
+        logger.debug("LDAP user %s is an admin through a nested admin group", username)
+        return True
     return False
 
 
-def ldap_authenticate(username: str, password: str, db=None) -> LdapUserData | None:
-    """Authenticate a user against LDAP/Active Directory.
+def _resolve_login_config(db: Session | None) -> LdapConfig:
+    if db is None:
+        return LdapConfig.from_env()
+    try:
+        return LdapConfig.from_db(db)
+    except Exception as exc:
+        logger.warning(
+            "Could not read the LDAP settings from the database (%s); using the environment",
+            type(exc).__name__,
+        )
+        return LdapConfig.from_env()
 
-    Loads configuration from database when db is provided, otherwise uses
-    environment variables. Configuration is resolved once and passed through
-    to all helper functions as an immutable LdapConfig dataclass.
+
+def ldap_authenticate(
+    username: str, password: str, db: Session | None = None
+) -> LdapUserData | None:
+    """Verify a username and password against the directory.
+
+    Order: refuse when disabled or given an empty name or password (an empty-password
+    bind is anonymous on many servers); bind the service account; find exactly one
+    entry; require a valid email and group entitlement; only then bind as the entry's
+    DN with the password. Both connections are always closed.
 
     Args:
-        username: The username or email to authenticate
-        password: The user's password
-        db: Optional database session for loading config from database
+        username: Login name as typed: a bare name or an email address.
+        password: The password to verify.
+        db: Session for the admin-managed settings; without one the environment is used.
 
     Returns:
-        LdapUserData dict if authentication succeeds, None otherwise
+        The user's directory data, or ``None`` when the login is refused for any reason.
+        Never raises.
     """
-    # Resolve configuration once (DB > .env > defaults)
-    if db is not None:
-        try:
-            cfg = LdapConfig.from_db(db)
-        except Exception as e:
-            logger.warning(f"Failed to load LDAP config from database, using .env: {e}")
-            cfg = LdapConfig.from_env()
-    else:
-        cfg = LdapConfig.from_env()
-
+    cfg = _resolve_login_config(db)
     if not cfg.enabled:
-        logger.warning("LDAP authentication attempted but LDAP is not enabled")
+        logger.warning("LDAP login attempted for %s while LDAP is disabled", username)
         return None
-
-    # Validate inputs early
     if not username or not password:
-        logger.warning("LDAP authentication attempted with empty username or password")
+        logger.warning("LDAP login refused: empty username or password")
         return None
 
-    logger.debug(f"LDAP authenticate called for: {username}")
-    ldap_username = username.split("@")[0] if "@" in username else username
-
-    bind_conn: Connection | None = None
-    user_conn: Connection | None = None
-
+    ldap_username = username.split("@", 1)[0]
+    service_conn = None
+    user_conn = None
     try:
         server = _get_ldap_server(cfg)
-
-        # Step 1: Bind with service account
-        bind_conn = _bind_service_account(cfg, server)
-        if not bind_conn:
+        service_conn = _bind_service_account(cfg, server)
+        if service_conn is None:
             return None
 
-        # Step 2: Search for user
-        user_entry = _search_ldap_user(cfg, bind_conn, username, ldap_username)
-        if not user_entry:
-            logger.warning(f"User not found in LDAP: {username}")
+        entry = _search_ldap_user(cfg, service_conn, username, ldap_username)
+        if entry is None:
+            logger.warning("LDAP user not found: %s", username)
             return None
 
-        user_dn = user_entry.entry_dn
-        logger.debug(f"Found user in LDAP: {user_dn}")
+        directory_name = _directory_username(cfg, entry, ldap_username)
+        email = _entry_text(entry, cfg.email_attr)
+        full_name = _entry_text(entry, cfg.name_attr)
+        groups = _get_user_groups(cfg, entry)
 
-        # Step 3: Extract and validate attributes
-        attrs = _extract_user_attributes(cfg, user_entry, ldap_username)
-        if not attrs:
+        if not _is_valid_email(email):
+            logger.warning(
+                "LDAP login refused for %s: email attribute %r is missing or invalid",
+                directory_name,
+                email,
+            )
+            return None
+        if not _check_group_access(cfg, service_conn, entry.entry_dn, groups, directory_name):
             return None
 
-        user_groups = attrs.get("groups", [])
-        logger.debug(f"User {attrs['username']} belongs to {len(user_groups)} groups")
-
-        # Step 4: Check group-based access requirements
-        if not _check_group_access(cfg, bind_conn, user_dn, user_groups, attrs["username"]):
+        user_conn = _connect_and_bind(cfg, server, entry.entry_dn, password)
+        if user_conn is None:
+            logger.warning("LDAP password check failed for %s", directory_name)
             return None
 
-        # Step 5: Verify credentials
-        user_conn = _verify_user_credentials(cfg, server, user_dn, password)
-        if not user_conn:
-            logger.warning(f"LDAP password verification failed for user: {attrs['username']}")
-            return None
-
-        logger.info(f"LDAP authentication successful for user: {attrs['username']}")
-
-        # Step 6: Determine admin status
+        logger.info("LDAP login succeeded for %s", directory_name)
         is_admin = _is_ldap_admin(
-            cfg,
-            attrs["username"],
-            user_groups,
-            bind_conn=bind_conn,
-            user_dn=user_dn,
+            cfg, directory_name, groups, bind_conn=service_conn, user_dn=entry.entry_dn
         )
-
         return LdapUserData(
-            username=attrs["username"],
-            email=attrs["email"],
-            full_name=attrs["full_name"],
+            username=directory_name,
+            email=email,
+            full_name=full_name,
             is_admin=is_admin,
-            groups=user_groups,
+            groups=groups,
         )
-
-    except LDAPException as e:
-        logger.error(f"LDAP authentication error for {username}: {type(e).__name__}: {e}")
+    except LDAPException as exc:
+        logger.error("LDAP login for %s failed: %s: %s", username, type(exc).__name__, exc)
         return None
-    except Exception as e:
+    except Exception as exc:
         logger.error(
-            f"Unexpected error during LDAP authentication for {username}: {type(e).__name__}: {e}"
+            "Unexpected error during LDAP login for %s: %s: %s", username, type(exc).__name__, exc
         )
         return None
     finally:
         _close_connection(user_conn, "user")
-        _close_connection(bind_conn, "service")
+        _close_connection(service_conn, "service")
 
 
-def _create_ldap_user(db, username: str, email: str, ldap_data: LdapUserData, *, is_admin: bool):
-    """Create a new user from LDAP data.
+def _apply_directory_profile(
+    user: User, username: str, email: str, ldap_data: LdapUserData
+) -> None:
+    """Copy the directory's email and name onto ``user`` without ever blanking them."""
+    if email and email != user.email:
+        logger.warning(
+            "SECURITY: LDAP login changes the email of %s from %s to %s",
+            username,
+            user.email,
+            email,
+        )
+        user.email = email
+    if ldap_data["full_name"]:
+        user.full_name = ldap_data["full_name"]
+
+
+def _create_ldap_user(
+    db: Session, username: str, email: str, ldap_data: LdapUserData, *, is_admin: bool
+) -> User:
+    """Create the account for a first directory login.
 
     Args:
-        is_admin: The *effective* admin signal — the legacy ``admin_users`` /
-            ``admin_groups`` rule OR-ed with any ``group_mapping`` that grants
-            ``admin``. Computed by :func:`sync_ldap_user_to_db`.
-    """
-    from app.auth.approval import initial_approval_status
-    from app.models.user import User
+        db: Database session.
+        username: Directory username (stored as ``ldap_uid``).
+        email: Directory email.
+        ldap_data: The login's directory data.
+        is_admin: Effective admin signal (directory OR group mapping).
 
-    logger.info(f"Creating new user from LDAP: {username} ({email})")
-    # External IdPs grant at most 'admin'; super_admin is local-only.
+    Returns:
+        The new row, or the row a concurrent login created first.
+
+    Raises:
+        ValueError: The insert conflicted but no conflicting row can be found.
+    """
     role = ROLE_ADMIN if is_admin else ROLE_USER
     user = User(
         email=email,
-        full_name=ldap_data["full_name"] or email.split("@")[0],
-        hashed_password=LDAP_NO_PASSWORD,
+        full_name=ldap_data["full_name"] or email.split("@", 1)[0],
+        hashed_password=EXTERNAL_AUTH_NO_PASSWORD,
         auth_type=AUTH_TYPE_LDAP,
         ldap_uid=username,
         role=role,
         is_active=True,
         is_superuser=role_implies_superuser(role),
-        # Same rule as OIDC JIT: the directory authenticated them, it did not
-        # decide this deployment wants them. 'approved' unless the setting is on.
         approval_status=initial_approval_status(db),
     )
     db.add(user)
-
+    logger.info("Creating LDAP account %s with role %s", username, role)
     try:
         db.commit()
-        return user
     except IntegrityError:
         db.rollback()
-        logger.info(f"User {username} was created by concurrent request, fetching existing user")
-        user = db.query(User).filter(User.ldap_uid == username).first()
-        if not user:
-            user = db.query(User).filter(User.email == email).first()
-        if not user:
-            raise ValueError(f"Failed to create or find LDAP user: {username}") from None
-        return user
+        logger.info("LDAP account %s was created by a concurrent login; reusing it", username)
+        winner = (
+            db.query(User).filter(User.ldap_uid == username).first()
+            or db.query(User).filter(User.email == email).first()
+        )
+        if winner is None:
+            raise ValueError(
+                f"LDAP account {username} conflicted on insert, but no conflicting row exists"
+            ) from None
+        return winner
+    return user
 
 
-def _update_ldap_user(db, user, username: str, email: str, ldap_data: LdapUserData):
-    """Update an existing LDAP user's profile fields.
+def _update_ldap_user(
+    db: Session, user: User, username: str, email: str, ldap_data: LdapUserData
+) -> User:
+    """Refresh an existing directory-owned account from the directory.
 
-    Privilege is deliberately NOT decided here. Promotion and demotion used to be
-    copy-pasted into this function, :func:`_convert_local_user_to_ldap` and both
-    OIDC equivalents, each with its own super_admin guard and none of them
-    revoking sessions. It now lives in
-    ``services/idp_group_mapping_service.reconcile_user``, which
-    :func:`sync_ldap_user_to_db` calls for every login.
+    Role, superuser flag and sessions are left to group reconciliation.
+
+    Args:
+        db: Database session.
+        user: The stored account.
+        username: Directory username.
+        email: Directory email (an empty value never clears the stored one).
+        ldap_data: The login's directory data.
+
+    Returns:
+        The updated row.
     """
-    logger.info(f"Updating existing LDAP user: {username} ({email})")
-
-    # Conditional, matching oidc/provisioning.py, saml/provisioning.py and
-    # external_sync.py: an unconditional write is a footgun the moment the upstream
-    # _is_valid_email gate changes (#910). Latent today — that gate refuses a
-    # blank/malformed mail, and assert_provider_id_link_permitted above already
-    # refuses a disagreeing one — so what this actually changes is that a directory
-    # re-casing an address no longer rewrites the stored column.
-    if email and email != user.email:
-        logger.warning(
-            f"SECURITY: User email changed during LDAP login. "
-            f"ldap_uid={username}, old_email={user.email}, new_email={email}"
-        )
-        user.email = email
-    user.full_name = ldap_data["full_name"] or user.full_name
+    _apply_directory_profile(user, username, email, ldap_data)
     user.ldap_uid = username
     user.auth_type = AUTH_TYPE_LDAP
-
     db.commit()
     return user
 
 
-def _convert_local_user_to_ldap(db, user, username: str, email: str, ldap_data: LdapUserData):
-    """Convert an existing local user to LDAP authentication."""
-    logger.info(f"Converting local user {user.email} to LDAP auth: {username}")
+def _convert_local_user_to_ldap(
+    db: Session, user: User, username: str, email: str, ldap_data: LdapUserData
+) -> User:
+    """Turn a local account already linked to this ``ldap_uid`` into a directory account.
 
+    Its local password is replaced by the no-password marker. Role and superuser flag
+    are left to group reconciliation.
+
+    Args:
+        db: Database session.
+        user: The local account.
+        username: Directory username.
+        email: Directory email (an empty value never clears the stored one).
+        ldap_data: The login's directory data.
+
+    Returns:
+        The converted row.
+    """
+    _apply_directory_profile(user, username, email, ldap_data)
     user.auth_type = AUTH_TYPE_LDAP
     user.ldap_uid = username
-    user.hashed_password = LDAP_NO_PASSWORD
-
-    if email and email != user.email:
-        logger.warning(
-            f"SECURITY: User email changed during LDAP conversion. "
-            f"ldap_uid={username}, old_email={user.email}, new_email={email}"
-        )
-        user.email = email
-    user.full_name = ldap_data["full_name"] or user.full_name
-
-    # Privilege is applied by reconcile_user after this returns — see
-    # _update_ldap_user's docstring. (Setting role='admin' with is_superuser=True
-    # here used to violate ck_user_superuser_matches_role (v369) and 500 the
-    # commit, locking every LDAP-admin local user out of conversion.)
+    user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD
     db.commit()
     return user
 
 
-def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
-    """Create or update a user in the database from LDAP data.
+def sync_ldap_user_to_db(db: Session, ldap_data: LdapUserData) -> User:
+    """Create or refresh the ``User`` row for a successful directory login.
 
-    Handles creating new users, updating existing LDAP users, converting local
-    users to LDAP, and race conditions — and then reconciles the account's group
-    memberships and privilege against the configured ``group_mapping`` rows
-    (``v378``). Before that, ``ldap_data["groups"]`` was collected on every login
-    and thrown away: ``is_admin`` was the only bit that survived, so a directory
-    group could never become an OpenTranscribe sharing group.
+    The account is found by ``ldap_uid`` (guarded against a divergent email and against
+    super_admin takeover), else by email, which LDAP may never link on its own: that
+    refusal is indistinguishable from a wrong password. Privilege is resolved before
+    any write, so a new account is created at its final role, and is then reconciled
+    against the IdP group mappings.
 
-    With no mappings configured this behaves exactly as it did before: the grant
-    set is empty, no membership changes, and the legacy ``admin_users`` /
-    ``admin_groups`` rule alone decides ``admin``.
+    Args:
+        db: Database session.
+        ldap_data: Result of :func:`ldap_authenticate`.
 
-    Lookup is ``ldap_uid`` first, then email. The email fallback links a directory
-    identity to a **pre-existing** account, so it goes through
-    ``account_linking.assert_email_link_permitted`` — see that module for the rule,
-    why a refusal fails the login instead of creating a second account, and the
-    operator remedy.
+    Returns:
+        The refreshed row.
 
     Raises:
-        AuthenticationError: 401, when an email-matched link is refused. Deliberately the
-            same response ``_authenticate_ldap_user`` gives for a bad password, so a
-            refusal is not an oracle for "this address exists".
+        AuthenticationError: The match may not be linked to this directory identity.
     """
-    from app.models.group import MAPPING_SOURCE_LDAP
-    from app.models.user import User
-    from app.services.idp_group_mapping_service import reconcile_user
-    from app.services.idp_group_mapping_service import resolve_grants
-
     username = ldap_data["username"]
     email = ldap_data["email"]
-    groups = ldap_data.get("groups") or []
+    groups = ldap_data["groups"] or []
 
     user = db.query(User).filter(User.ldap_uid == username).first()
-    if user:
-        # A stored ldap_uid is not necessarily a deliberate admin link — JIT
-        # provisioning stamps it on ordinary first logins too, so a stale or
-        # reassigned uid still needs the corroboration/super_admin guard.
+    if user is not None:
         assert_provider_id_link_permitted(
             user,
             provider=AUTH_TYPE_LDAP,
             source_identifier=username,
             asserted_email=email,
-            failure_detail="Incorrect username or password",
-            failure_headers={"WWW-Authenticate": "Bearer"},
+            failure_detail=_LOGIN_REFUSED,
+            failure_headers=_BEARER_CHALLENGE,
         )
-    if not user:
-        # The email fallback links a directory identity to a PRE-EXISTING account,
-        # so it is gated too.
+    else:
         user = db.query(User).filter(User.email == email).first()
-        if user:
+        if user is not None:
             assert_email_link_permitted(
                 user,
                 provider=AUTH_TYPE_LDAP,
                 source_identifier=username,
                 email_verified=LDAP_ASSERTS_EMAIL_VERIFIED,
-                failure_detail="Incorrect username or password",
-                failure_headers={"WWW-Authenticate": "Bearer"},
+                failure_detail=_LOGIN_REFUSED,
+                failure_headers=_BEARER_CHALLENGE,
             )
 
-    # Resolved before the row is written so a brand-new account is created at the
-    # right role instead of being created and then immediately promoted.
-    grants = resolve_grants(db, MAPPING_SOURCE_LDAP, groups)
-    is_admin = bool(ldap_data["is_admin"]) or grants.grants_admin
+    grants = idp_group_mapping_service.resolve_grants(db, MAPPING_SOURCE_LDAP, groups)
+    effective_admin = bool(ldap_data["is_admin"]) or bool(grants.grants_admin)
 
-    if not user:
-        user = _create_ldap_user(db, username, email, ldap_data, is_admin=is_admin)
+    if user is None:
+        user = _create_ldap_user(db, username, email, ldap_data, is_admin=effective_admin)
     elif user.auth_type == AUTH_TYPE_LOCAL:
         logger.warning(
-            f"SECURITY: Converting local user {email} to LDAP auth. "
-            "User will now authenticate exclusively via LDAP. "
-            "Local password will be cleared."
+            "SECURITY: converting local account %s to LDAP; its local password is cleared",
+            user.email,
         )
         user = _convert_local_user_to_ldap(db, user, username, email, ldap_data)
     else:
         user = _update_ldap_user(db, user, username, email, ldap_data)
 
-    reconcile_user(
+    idp_group_mapping_service.reconcile_user(
         db,
         user,
         MAPPING_SOURCE_LDAP,
@@ -574,6 +569,5 @@ def sync_ldap_user_to_db(db, ldap_data: LdapUserData):
         legacy_admin=bool(ldap_data["is_admin"]),
         reason="idp_login",
     )
-
     db.refresh(user)
     return user

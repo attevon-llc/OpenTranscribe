@@ -78,8 +78,8 @@ def probe(conn: Connection, tables: list[str]) -> LegacyFacts:
     _check_exists = partial(check_exists, conn)
     return LegacyFacts(
         has_ldap=_check_exists(
-            "SELECT EXISTS(SELECT 1 FROM information_schema.columns "
-            "WHERE table_name='user' AND column_name='auth_type')"
+            "SELECT EXISTS(SELECT 1 FROM information_schema.columns WHERE "
+            "table_name='user' AND column_name='auth_type')"
         ),
         # NOTE ON THE RETIRED SPELLING IN THIS FILE. Every probe below describes a
         # schema *as it was at some past revision*, so the pre-v378 column names are the

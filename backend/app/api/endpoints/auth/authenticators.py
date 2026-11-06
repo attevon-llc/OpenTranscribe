@@ -9,6 +9,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.direct_auth import direct_authenticate_user
@@ -63,7 +64,7 @@ def _authenticate_testing_user(db: Session, username: str, password: str) -> str
 
 
 def _authenticate_ldap_user(db: Session, username: str, password: str) -> tuple[str, dict]:
-    """Authenticate user via LDAP/Active Directory.
+    """Verify a password against the directory and provision the matching account.
 
     Args:
         db: Database session
@@ -88,37 +89,24 @@ def _authenticate_ldap_user(db: Session, username: str, password: str) -> tuple[
         )
 
     ldap_user = ldap_authenticate(username, password, db=db)
-
     if not ldap_user:
-        logger.warning(f"LDAP authentication failed for user: {username}")
+        logger.warning("Directory login refused for %s", username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    logger.info(f"LDAP authentication successful for user: {username}")
-
-    # Sync LDAP user to database
+    logger.info("Directory login accepted for %s", username)
     user = sync_ldap_user_to_db(db, ldap_user)
-
     if not user.is_active:
-        logger.warning(f"LDAP user account is inactive: {username}")
+        logger.warning("Directory login for %s matched a deactivated account", username)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account",
         )
 
-    user_data = {
-        "uuid": str(user.uuid),
-        "email": user.email,
-        "full_name": user.full_name,
-        "role": user.role,
-        "is_active": user.is_active,
-        "is_superuser": user.is_superuser,
-    }
-
-    return str(user.uuid), user_data
+    return str(user.uuid), _build_user_data(user)
 
 
 def _build_user_data(user: User) -> dict:
@@ -178,7 +166,7 @@ def _check_user_active(user_data: dict, username: str) -> None:
         HTTPException: If user is inactive
     """
     if not user_data.get("is_active", True):
-        logger.warning(f"Login attempt for inactive local user: {username}")
+        logger.warning("Refusing login for deactivated local account %s", username)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account",
@@ -209,20 +197,20 @@ def _authenticate_local_user(db: Session, username: str, password: str) -> tuple
     # Try direct auth first
     user_data = direct_authenticate_user(username, password)
     if user_data:
-        logger.info(f"Direct authentication successful for local user: {username}")
+        logger.info("Local password accepted for %s (direct SQL path)", username)
         user_uuid_str = _ensure_user_uuid(db, user_data)
         _check_user_active(user_data, username)
         assert_email_verified_for_local_login(db, user_uuid_str)
         return user_uuid_str, user_data
 
     # Fall back to ORM-based auth
-    logger.info(f"Direct auth failed, trying ORM auth for local user: {username}")
+    logger.info("Direct auth failed, trying ORM auth for local user: %s", username)
     user = authenticate_user(db, username, password)
     if not user:
         return None
 
     if not user.is_active:
-        logger.warning(f"Login attempt for inactive local user: {username}")
+        logger.warning("Refusing login for deactivated local account %s", username)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user account",
@@ -279,9 +267,9 @@ def _authenticate_production_user(
 ) -> tuple[str, dict, str]:
     """Authenticate user in production environment.
 
-    Hybrid authentication:
+    Sources are tried in this order:
     1. Try local authentication (database password) — includes users with allow_local_fallback
-    2. If enabled, try LDAP authentication
+    2. Otherwise, or when that fails, ask the LDAP directory (only when LDAP is enabled)
 
     Args:
         db: Database session
@@ -296,9 +284,8 @@ def _authenticate_production_user(
     Raises:
         HTTPException: If authentication fails
     """
-    # Check if user exists in database by username (ldap_uid or email)
     local_user = (
-        db.query(User).filter((User.email == username) | (User.ldap_uid == username)).first()
+        db.query(User).filter(or_(User.email == username, User.ldap_uid == username)).first()
     )
 
     # Determine if user can use local (password) authentication
@@ -331,11 +318,11 @@ def _authenticate_production_user(
         if result:
             return result[0], result[1], AUTH_TYPE_LOCAL
         # Local auth failed, try LDAP as fallback
-        logger.info(f"Local auth failed for {username}, trying LDAP as fallback")
+        logger.info("Local password rejected for %s; asking the directory", username)
         uuid_str, data = _authenticate_ldap_user(db, username, password)
         return uuid_str, data, "ldap"
 
-    # Try LDAP authentication
+    # No usable local password: the directory decides.
     try:
         uuid_str, data = _authenticate_ldap_user(db, username, password)
         return uuid_str, data, "ldap"
@@ -344,12 +331,12 @@ def _authenticate_production_user(
         if not local_user:
             raise
 
-        logger.info(f"LDAP failed, trying local auth as fallback for: {username}")
+        logger.info("Directory refused %s; trying the stored local password", username)
         result = _authenticate_local_user(db, str(local_user.email), password)
         if result:
             return result[0], result[1], AUTH_TYPE_LOCAL
 
-        # All authentication methods failed
+        # Same answer as every other refusal, so the response does not say which source failed.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

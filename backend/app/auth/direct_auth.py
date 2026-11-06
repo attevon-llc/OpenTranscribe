@@ -226,7 +226,7 @@ def direct_authenticate_user(email: str, password: str) -> dict | None:
             role,
             is_active,
             is_superuser,
-            auth_type,
+            _auth_type,
             _allow_local_fallback,
         ) = user
 

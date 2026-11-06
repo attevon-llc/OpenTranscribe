@@ -1074,32 +1074,32 @@ class Settings(BaseSettings):
     # These are system fallbacks for quick access when no user settings exist
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "")
 
-    # LDAP/Active Directory Configuration
-    LDAP_ENABLED: bool = os.getenv("LDAP_ENABLED", "false").lower() == "true"
-    LDAP_SERVER: str = os.getenv("LDAP_SERVER", "")
+    # ===== LDAP / Active Directory (seed values; the admin UI's stored keys win) =====
+    LDAP_ENABLED: bool = False
+    LDAP_SERVER: str = ""  # host name, or an ldap:// / ldaps:// URL (the scheme wins)
     LDAP_PORT: int = 636
-    LDAP_USE_SSL: bool = os.getenv("LDAP_USE_SSL", "true").lower() == "true"
+    LDAP_USE_SSL: bool = True
     # LDAP_USE_TLS enables StartTLS on non-SSL connections (port 389)
     # Use LDAP_USE_SSL=true for LDAPS (port 636) - they are mutually exclusive
-    LDAP_USE_TLS: bool = os.getenv("LDAP_USE_TLS", "false").lower() == "true"
-    LDAP_BIND_DN: str = os.getenv("LDAP_BIND_DN", "")
-    LDAP_BIND_PASSWORD: str = os.getenv("LDAP_BIND_PASSWORD", "")
-    LDAP_SEARCH_BASE: str = os.getenv("LDAP_SEARCH_BASE", "")
-    LDAP_USERNAME_ATTR: str = os.getenv("LDAP_USERNAME_ATTR", "sAMAccountName")
+    LDAP_USE_TLS: bool = False
+    LDAP_BIND_DN: str = ""  # read-only service account used for searches
+    LDAP_BIND_PASSWORD: str = ""
+    LDAP_SEARCH_BASE: str = ""
+    LDAP_USERNAME_ATTR: str = "sAMAccountName"  # uid for OpenLDAP / LLDAP
     # Plain field default (not a class-body expression computed from another
     # os.getenv call) resolved in `validate_auth_settings` below — same bug class
     # as MFA_REQUIRE_REDIS/DATABASE_URL: the old class-body `.replace(...)` chain
     # ran once at class-definition time against `os.getenv`, so it never saw a
     # value that pydantic-settings later sourced from a real .env FILE.
     LDAP_USER_SEARCH_FILTER: str = "({username_attr}={username})"
-    LDAP_EMAIL_ATTR: str = os.getenv("LDAP_EMAIL_ATTR", "mail")
-    LDAP_NAME_ATTR: str = os.getenv("LDAP_NAME_ATTR", "cn")
-    LDAP_TIMEOUT: int = 10
-    LDAP_ADMIN_USERS: str = os.getenv("LDAP_ADMIN_USERS", "")
+    LDAP_EMAIL_ATTR: str = "mail"
+    LDAP_NAME_ATTR: str = "cn"
+    LDAP_TIMEOUT: int = 10  # seconds; bounds the TCP connect and every read
+    LDAP_ADMIN_USERS: str = ""  # comma-separated username-attribute values, any case
     # LDAP Group-based RBAC (alternative to LDAP_ADMIN_USERS)
-    # Comma-separated list of group DNs that grant admin role
+    # Semicolon-separated group DNs that grant the admin role (a DN contains commas)
     LDAP_ADMIN_GROUPS: str = os.getenv("LDAP_ADMIN_GROUPS", "")
-    # Comma-separated list of group DNs required for user access (empty = allow all)
+    # Semicolon-separated group DNs required to log in (empty = allow all)
     LDAP_USER_GROUPS: str = os.getenv("LDAP_USER_GROUPS", "")
     # Enable recursive group membership (nested groups via LDAP_MATCHING_RULE_IN_CHAIN)
     LDAP_RECURSIVE_GROUPS: bool = os.getenv("LDAP_RECURSIVE_GROUPS", "false").lower() == "true"

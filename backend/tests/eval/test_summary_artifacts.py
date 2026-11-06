@@ -7,6 +7,7 @@ tests run the real pipeline on a sentinel arm and then search everything it wrot
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -186,6 +187,16 @@ class TestNoArmTextInArtifacts:
 class TestCli:
     def _arms(self, tmp_path: Path) -> list[str]:
         return ["--arm", "old=@module", "--arm", f"new={_arm_file(tmp_path)}"]
+
+    def test_main_leaves_the_app_loggers_levels_alone(
+        self, bench: SimpleNamespace, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # main() runs inside the backend test session; a logger level it set would outlive this
+        # test and hide a later caplog test's DEBUG records (af8 sweep, 2026-11-05).
+        names = ("app.services.llm_service", "app.services.llm_chunking")
+        before = {name: logging.getLogger(name).level for name in names}
+        bench.cli.main(["run", "--inputs", "gate", "--dry-run", *self._arms(tmp_path)])
+        assert {name: logging.getLogger(name).level for name in names} == before
 
     def test_the_gate_dry_run_lists_the_72_summaries_of_the_plan_in_blocks_by_run(
         self, bench: SimpleNamespace, tmp_path: Path, capsys: pytest.CaptureFixture[str]

@@ -17,12 +17,20 @@ from rag_bench.parser import build_parser
 from rag_bench.scoring import latency_summary, score_answers
 
 
+def quiet_app_loggers() -> None:
+    """Silence chunk retrieval's per-query INFO lines for a command-line run.
+
+    Called only by the ``benchmark_rag.py`` entry script, never by ``main``: tests import and
+    call ``main`` inside the backend test session, where a level set here would outlive them.
+    """
+    logging.getLogger('app.services.search.chunk_retrieval').setLevel(logging.WARNING)
+
+
 def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read top to bottom
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format='%(levelname)s %(message)s'
     )
-    logging.getLogger('app.services.search.chunk_retrieval').setLevel(logging.WARNING)
 
     if args.compare_only:
         # No stack needed: reads two committed baseline files and exits, before any

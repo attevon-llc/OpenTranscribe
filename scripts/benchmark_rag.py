@@ -5,7 +5,8 @@ Entry point only: the implementation, and the full ``--help`` text, live in the
 ``scripts/rag_bench/`` package.
 """
 
-from rag_bench.cli import main
+from rag_bench.cli import main, quiet_app_loggers
 
 if __name__ == '__main__':
+    quiet_app_loggers()
     raise SystemExit(main())

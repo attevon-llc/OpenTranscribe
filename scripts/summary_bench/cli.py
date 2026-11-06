@@ -241,17 +241,23 @@ def cmd_project(args: Namespace) -> int:
     return ExitCode.OK
 
 
+def quiet_app_loggers() -> None:
+    """Silence the app chunker's per-budget INFO lines for a command-line run.
+
+    Called only by the ``benchmark_summary.py`` entry script: ``main`` runs inside the backend
+    test session too (tests/eval/), where a logger level set here outlives the test and hides
+    other tests' DEBUG/INFO records.
+    """
+    logging.getLogger('app.services.llm_service').setLevel(logging.WARNING)
+    logging.getLogger('app.services.llm_chunking').setLevel(logging.WARNING)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if getattr(args, 'verbose', False) else logging.WARNING,
         format='%(levelname)s %(message)s',
     )
-    # The app's chunker logs its decisions at INFO for every candidate budget the planner tries.
-    # Quieted here, at the entry point: set inside the library, it leaked into the backend test
-    # session that imports it (tests/eval/) and hid other tests' DEBUG/INFO records.
-    logging.getLogger('app.services.llm_service').setLevel(logging.WARNING)
-    logging.getLogger('app.services.llm_chunking').setLevel(logging.WARNING)
     ensure_app_environment()
     from summary_bench import post
 

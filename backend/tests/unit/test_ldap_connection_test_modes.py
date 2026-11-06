@@ -1,9 +1,10 @@
-"""The admin LDAP "Test connection": the plaintext mode, a refused bind, and its timeout.
+"""The admin LDAP "Test connection": the cleartext refusal, a refused bind, and its timeout.
 
 ``test_ldap_connection_test_tls.py`` pins the StartTLS and LDAPS sequences. Left open there:
-with neither SSL nor StartTLS the test makes one plain bind (no ``open`` / ``start_tls``), a
-refused bind reports the generic failure, the server's ``info`` read for the details comes
-from the server object the bind used, and the probe honours the submitted ``ldap_timeout``.
+with neither SSL nor StartTLS the test refuses before any connection is built (v0.6.1's
+transport rule, the same refusal a login makes), a refused bind reports the generic failure,
+the server's ``info`` read for the details comes from the server object the bind used, and
+the probe honours the submitted ``ldap_timeout``. The other cases run over LDAPS.
 
 ``test_the_submitted_timeout_bounds_the_test`` is written for the CORRECT behaviour and fails
 on the code it was written against (P3 defect D-18): the test hard-codes a 10 s timeout, so a
@@ -20,6 +21,8 @@ import pytest
 
 from app.api.endpoints.auth_config_connection_tests import _test_ldap_connection
 from app.auth import ldap_directory
+from app.auth.ldap_directory import CLEARTEXT_REFUSAL
+from tests.fixtures.ldap_directory_fake import effective_ssl
 
 GENERIC_FAILURE = "LDAP connection failed. Please verify server address, port, and credentials."
 
@@ -30,6 +33,7 @@ class _Server:
     def __init__(self, host: str, **kwargs: Any) -> None:
         self.host = host
         self.kwargs = kwargs
+        self.ssl = effective_ssl(host, kwargs.get("use_ssl"))
         self.info = SimpleNamespace(
             vendor_name="Test Directory",
             vendor_version="1.0",
@@ -87,8 +91,8 @@ def fake_ldap(monkeypatch: pytest.MonkeyPatch) -> type[_Connection]:
 def _config(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "ldap_server": "ldap.example",
-        "ldap_port": 389,
-        "ldap_use_ssl": False,
+        "ldap_port": 636,
+        "ldap_use_ssl": True,
         "ldap_use_tls": False,
         "ldap_bind_dn": "cn=svc,dc=example",
         "ldap_bind_password": "svc-password",
@@ -97,14 +101,24 @@ def _config(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def test_plaintext_mode_makes_one_plain_bind(fake_ldap: type[_Connection]) -> None:
+def test_plaintext_mode_is_refused_before_any_connection(fake_ldap: type[_Connection]) -> None:
+    result = _test_ldap_connection(_config(ldap_port=389, ldap_use_ssl=False))
+
+    assert result.success is False
+    assert result.message == CLEARTEXT_REFUSAL
+    assert fake_ldap.instances == []
+    assert _Server.instances[0].kwargs["use_ssl"] is False
+
+
+def test_ldaps_makes_one_direct_bind_with_the_configured_account(
+    fake_ldap: type[_Connection],
+) -> None:
     result = _test_ldap_connection(_config())
 
     assert result.success is True
     (conn,) = fake_ldap.instances
     assert conn.calls == ["bind", "unbind"]
     assert (conn.user, conn.password) == ("cn=svc,dc=example", "svc-password")
-    assert _Server.instances[0].kwargs["use_ssl"] is False
 
 
 def test_a_refused_bind_reports_the_generic_failure(fake_ldap: type[_Connection]) -> None:

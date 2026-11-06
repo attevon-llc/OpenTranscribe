@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -35,6 +36,7 @@ from tests.fixtures.ldap_directory_fake import install
 ALICE_DN = "uid=alice,dc=test"
 ALICE_PW = "alice-pw-6f1c"
 STAFF = "CN=Staff,DC=test"
+_PLAINTEXT_SERVER = SimpleNamespace(ssl=False)  # an ldap:// server, so StartTLS must upgrade it
 
 
 def _cfg(**overrides: Any) -> LdapConfig:
@@ -76,12 +78,13 @@ def _directory(monkeypatch, entry: FakeEntry | None = None) -> FakeDirectory:
 
 
 class TestServerObject:
-    @pytest.mark.parametrize("use_ssl,port", [(True, 636), (False, 389)])
+    @pytest.mark.parametrize("use_ssl,use_tls,port", [(True, False, 636), (False, True, 389)])
     def test_the_host_is_positional_and_port_ssl_and_timeout_are_keywords(
-        self, monkeypatch, use_ssl, port
+        self, monkeypatch, use_ssl, use_tls, port
     ):
         d = _directory(monkeypatch)
-        _use(monkeypatch, _cfg(server="dir.test", port=port, use_ssl=use_ssl, timeout=9))
+        cfg = _cfg(server="dir.test", port=port, use_ssl=use_ssl, use_tls=use_tls, timeout=9)
+        _use(monkeypatch, cfg)
 
         assert ldap_authenticate("alice", ALICE_PW) is not None
 
@@ -266,7 +269,7 @@ class TestReadTimeouts:
         cfg = _cfg(use_ssl=False, use_tls=True, timeout=4)
 
         with caplog.at_level(logging.ERROR, logger="app.auth.ldap_directory"):
-            assert ldap_directory._connect_and_bind(cfg, object(), "cn=a", "pw") is None
+            assert ldap_directory._connect_and_bind(cfg, _PLAINTEXT_SERVER, "cn=a", "pw") is None
 
         assert "did not answer within 4 s" in caplog.text
         (conn,) = made

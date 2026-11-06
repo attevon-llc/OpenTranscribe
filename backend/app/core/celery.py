@@ -190,9 +190,10 @@ celery_app = Celery(
         "app.tasks.media_download",
         "app.tasks.transcript_document",
         "app.tasks.local_model_download",
-        # Re-export shim (NOT dead) — keeps legacy task-name routing working by
-        # re-exporting from speaker_{identification,update,embedding}_task. Must stay here.
+        # Re-export shim for legacy imports; task names are explicit strings, so it
+        # does not affect routing or registration.
         "app.tasks.speaker_tasks",
+        "app.tasks.speaker_embedding_reassignment_task",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",
         "app.tasks.speaker_merge_task",

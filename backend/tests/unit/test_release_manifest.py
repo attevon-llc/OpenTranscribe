@@ -415,3 +415,22 @@ def test_no_shipped_script_references_scripts_lib():
         f"reaches a standalone install: {offenders}. Use scripts/common.sh's "
         f"read_env_value() instead (issue #590/#581)."
     )
+
+
+def test_every_file_opentranscribe_sh_sources_is_in_the_manifest():
+    """A sourced helper missing from the manifest is silently absent on real installs.
+
+    opentranscribe.sh sources its helpers behind ``[ -f ]`` guards, so a file the
+    manifest does not ship turns the feature it implements into a no-op.
+    """
+    sourced = re.findall(
+        r"^[^#\n]*?(?:^|&&\s*|;\s*)(?:\.|source)\s+(\./[\w./-]+)",
+        MANAGER.read_text(encoding="utf-8"),
+        re.MULTILINE,
+    )
+    assert sourced, "found no sourced files in opentranscribe.sh; the pattern is broken"
+    listed = {path for path, _flags in _entries()}
+    missing = sorted({s[2:] for s in sourced} - listed)
+    assert not missing, (
+        f"opentranscribe.sh sources files release-manifest.txt does not ship: {missing}"
+    )

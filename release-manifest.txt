@@ -101,6 +101,8 @@ nginx/site.conf.template
 
 # --- Scripts the management script and installer call --------------------------
 scripts/common.sh	exec
+# Sourced by opentranscribe.sh: refuses an upgrade whose .env lacks required service credentials.
+scripts/lib/service-credentials.sh	exec
 scripts/generate-ssl-cert.sh	exec
 scripts/fix-model-permissions.sh	exec
 scripts/download-models.sh	exec

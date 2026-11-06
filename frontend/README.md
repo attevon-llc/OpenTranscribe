@@ -194,13 +194,12 @@ workflow greps for that. Full rules: [`src/lib/cloud/README.md`](src/lib/cloud/R
 
 Build-time variables read through `import.meta.env`:
 
-| Variable                                                                       | Purpose                                                                                   |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `VITE_DEPLOYMENT_EDITION`                                                      | `cloud` selects the managed edition; anything else is community                           |
-| `VITE_API_PROXY_TARGET`, `VITE_MINIO_URL`                                      | Dev-server proxy targets (read by `vite.config.ts`, not shipped)                          |
-| `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT`, `VITE_SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting                                                                  |
-| `VITE_API_BASE_URL`                                                            | Dev-mode override of the API origin used when building absolute URLs (`lib/utils/url.ts`) |
-| `VITE_FLOWER_URL_PREFIX`                                                       | Flower link prefix                                                                        |
+| Variable                                                                       | Purpose                                                          |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `VITE_DEPLOYMENT_EDITION`                                                      | `cloud` selects the managed edition; anything else is community  |
+| `VITE_API_PROXY_TARGET`, `VITE_MINIO_URL`                                      | Dev-server proxy targets (read by `vite.config.ts`, not shipped) |
+| `VITE_SENTRY_DSN`, `VITE_SENTRY_ENVIRONMENT`, `VITE_SENTRY_TRACES_SAMPLE_RATE` | Optional error reporting                                         |
+| `VITE_FLOWER_URL_PREFIX`                                                       | Flower link prefix                                               |
 
 Never put secrets in a `VITE_*` variable; Vite inlines them into the client bundle.
 

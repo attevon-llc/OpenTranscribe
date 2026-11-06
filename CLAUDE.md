@@ -265,6 +265,7 @@ subsystem, and put new subsystem detail **there**, not in this file.
 | Subsystem | File |
 |---|---|
 | Backend orientation | `backend/CLAUDE.md` |
+| Every other nested backend file (api/endpoints, scim, tags, auth/oidc, auth/proxy, services/clustering, erasure_receipt, search/indexing, speaker_matching, tasks/transcription, tests/eval, tests/fixtures) | `git ls-files 'backend/**/CLAUDE.md'` |
 | ASR, hybrid mode, diarization, boundary correction | `backend/app/transcription/CLAUDE.md` |
 | Celery pipeline, queues, GPU scaling | `backend/app/tasks/CLAUDE.md` |
 | Auth methods, MFA, privilege model | `backend/app/auth/CLAUDE.md` |

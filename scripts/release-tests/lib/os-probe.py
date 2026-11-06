@@ -74,7 +74,7 @@ def _client():
 
 
 def _concrete_speaker_indices(client) -> list[str]:
-    from app.core.constants import get_speaker_index_v3, get_speaker_index_v4
+    from app.core.embedding_models import get_speaker_index_v3, get_speaker_index_v4
 
     # v3 / v4 only: the alias is the same documents, and the backup is legacy-only.
     return [
@@ -108,7 +108,7 @@ def _seed_docs(speaker_uuid: str) -> dict:
 
 
 def _count_docs(ids: list[str]) -> dict:
-    from app.services.gdpr_erasure_service import count_speaker_docs_by_ids
+    from app.services.gdpr_voiceprint_erasure import count_speaker_docs_by_ids
 
     counts: dict[str, int | None] = {}
     for doc_id in ids:
@@ -117,7 +117,7 @@ def _count_docs(ids: list[str]) -> dict:
 
 
 def _delete_doc(doc_id: str) -> dict:
-    from app.services.gdpr_erasure_service import delete_speaker_docs_by_ids
+    from app.services.gdpr_voiceprint_erasure import delete_speaker_docs_by_ids
 
     return {'deleted': delete_speaker_docs_by_ids([doc_id])}
 

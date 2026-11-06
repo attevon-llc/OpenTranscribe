@@ -499,7 +499,8 @@ phase_2_ldap_keycloak() {
     # BEGIN idp-start-flags
     local idp_flags=()
     local start_lldap=false start_keycloak=false
-    if port_open 3890; then
+    # LDAPS is required too: a container started before the LDAPS overlay existed has only 3890.
+    if port_open 3890 && port_open "${LDAP_TEST_LDAPS_PORT:-6360}"; then
         log_ok "LLDAP already running"
     else
         idp_flags+=(--with-ldap-test)
@@ -532,6 +533,7 @@ phase_2_ldap_keycloak() {
     # proves the port is bound, and a batched start returns as soon as compose has created the
     # containers, not when Keycloak has finished booting.
     wait_for_port 3890 30 "LLDAP (LDAP)" || return 1
+    wait_for_port "${LDAP_TEST_LDAPS_PORT:-6360}" 30 "LLDAP (LDAPS)" || return 1
     wait_for_port 17170 30 "LLDAP (Web UI)" || return 1
     wait_for_port 8180 120 "Keycloak" || return 1
     sleep 5  # Keycloak serves its port before the realm endpoints are ready

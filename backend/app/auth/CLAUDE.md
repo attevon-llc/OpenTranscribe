@@ -3,8 +3,8 @@
 ## Purpose
 
 Multiple auth methods run **simultaneously**, selected per-user by `User.auth_type`
-(`local`, `ldap`, `oidc`, `pki`, `proxy`, `saml` — `constants.py:VALID_AUTH_TYPES`, enforced by a
-DB CHECK, `v377`, value set swapped by `v380`, widened by `v383`). The value set the CHECK admits has ONE home, `constants.py:DB_ADMITTED_AUTH_TYPES` (a superset of
+(`local`, `ldap`, `oidc`, `pki`, `proxy`, `saml` — `core/auth_types.py:VALID_AUTH_TYPES`, enforced by a
+DB CHECK, `v377`, value set swapped by `v380`, widened by `v383`). The value set the CHECK admits has ONE home, `core/auth_types.py:DB_ADMITTED_AUTH_TYPES` (`auth/constants.py` only re-exports it for the cloud seam) (a superset of
 `VALID_AUTH_TYPES`); the model CHECK bodies are rendered from it and
 `tests/unit/test_auth_type_allowlist_single_source.py` pins the newest migration to it. Configure in the Admin UI
 (Settings → Authentication): **DB `auth_config` wins over `.env`, which wins over the coded

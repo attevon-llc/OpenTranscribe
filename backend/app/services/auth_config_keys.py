@@ -49,6 +49,19 @@ RESTART_REQUIRED_KEYS = frozenset(
     }
 )
 
+#: Keys whose "no value" means "use the environment". The admin panel posts its whole
+#: form, so an untouched field arrives as None or "" (or, for a checkbox, as its unchecked
+#: state, which the panel sends as None while the admin has not set it). Storing that would
+#: override the ``LDAP_*`` setting the operator configured, so a save carrying no value
+#: removes the row instead.
+ENV_FALLBACK_KEYS = frozenset(
+    {
+        "ldap_ca_cert_file",
+        "ldap_tls_server_name",
+        "ldap_tls_skip_verify",
+    }
+)
+
 #: Keys the API once accepted that are now removed from the category schemas.
 #: Each was an orphan alias of a real key — ``mfa_issuer`` for
 #: ``mfa_issuer_name``, ``password_require_numbers`` for

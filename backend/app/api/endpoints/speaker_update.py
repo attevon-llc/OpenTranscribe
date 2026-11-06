@@ -338,7 +338,7 @@ def _load_suggestion_speaker_documents(
             Speaker.suggested_name == trigger["display_name"],
             Speaker.confidence >= 0.5,
             Speaker.confidence < 0.75,
-            Speaker.verified == False,  # noqa: E712 - SQLAlchemy requires == for SQL generation
+            Speaker.verified.is_(False),
         )
         .all()
     )

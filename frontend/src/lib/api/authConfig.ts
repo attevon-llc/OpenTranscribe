@@ -59,7 +59,8 @@ export interface LDAPConfig {
   ldap_use_tls: boolean;
   ldap_ca_cert_file: string;
   ldap_tls_server_name: string;
-  ldap_tls_skip_verify: boolean;
+  /** null: not set in the panel, so the server's LDAP_TLS_SKIP_VERIFY applies. */
+  ldap_tls_skip_verify: boolean | null;
   ldap_bind_dn: string;
   ldap_bind_password?: string;
   ldap_search_base: string;

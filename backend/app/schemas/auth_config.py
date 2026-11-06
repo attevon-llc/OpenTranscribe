@@ -152,9 +152,11 @@ class LDAPConfig(_CategoryConfig):
     ldap_port: int = Field(default=636, ge=1, le=65535)
     ldap_use_ssl: bool = True
     ldap_use_tls: bool = False
-    ldap_ca_cert_file: str = ""
-    ldap_tls_server_name: str = ""
-    ldap_tls_skip_verify: bool = False
+    # None or "" means "not set here": nothing is stored and the LDAP_* environment value
+    # applies (``auth_config_keys.ENV_FALLBACK_KEYS``).
+    ldap_ca_cert_file: str | None = ""
+    ldap_tls_server_name: str | None = ""
+    ldap_tls_skip_verify: bool | None = False
     ldap_bind_dn: str = ""
     ldap_bind_password: str | None = None  # Sensitive
     ldap_search_base: str = ""

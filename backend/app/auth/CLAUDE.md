@@ -89,9 +89,9 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   tenant's filenames must call `audit_metadata_access`; one that acts on a row takes
   `ctx.bypass`. `tests/api/test_support_access_matrix.py` proves no/pending/expired/revoked/wrong
   tenant per chokepoint kind and sweeps every parameterless GET for leaks.
-- **One definition each.** `get_current_super_admin_user` in `api/endpoints/auth_config.py` is a re-export alias (the
-  `admin_*` modules use `get_current_active_superuser` directly); the real thing lives in
-  `api/endpoints/auth/dependencies.py`. It used to be declared three times, each comparing
+- **One definition each.** The super-admin gate is `get_current_active_superuser` in
+  `api/endpoints/auth/dependencies.py`, imported under that name everywhere (no aliases;
+  `tests/unit/test_route_privilege_tiers.py` checks the admin and auth-config modules). It used to be declared three times, each comparing
   against its own `"super_admin"` literal.
 - `tests/unit/test_route_privilege_tiers.py` walks the live dependency tree and fails if a new
   route lands at the wrong tier or is accidentally public. Add genuinely-public routes to its
@@ -175,7 +175,10 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   `InMemoryStore`, `get_redis_client` — **OIDC login state only, not sessions**) ·
   `audit.py` (`AuditLogger` writer) · `audit_events.py` (`AuditEventType`, `AuditOutcome`) · `audit_query.py` (read path).
 - `provider_registry.py` — **cloud-edition seam**, empty in community. `constants.py`
-  carries `CLOUD_SEAM_VERSION`; bump it on any seam signature change.
+  carries `CLOUD_SEAM_VERSION`; bump it on any seam signature change. The import paths an
+  extension may rely on are listed in `tests/fixtures/extension_surface.txt` and enforced by
+  `tests/unit/test_extension_import_surface.py`: moving one needs a bump, a `moved` line and a
+  row in the release's `docs/design/v<release>_downstream_changes.md`.
   ⚠️ `get_optional_current_user` (`api/endpoints/auth/dependencies.py`) must stay in step with
   `get_current_user` on the revocation check: both pass the token's `iat` as `issued_at`, which
   is what lets the per-user epoch cancel a still-valid stateless access token

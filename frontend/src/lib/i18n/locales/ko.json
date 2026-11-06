@@ -4204,6 +4204,7 @@
   "settings.ldap.tlsServerNameHelp": "위의 주소 대신 이 이름으로 디렉터리 인증서를 검증합니다. IP 주소로 접속하지만 인증서에 호스트 이름만 있는 경우에 사용합니다. 비워 두면 위의 주소로 검증합니다.",
   "settings.ldap.tlsSkipVerify": "디렉터리의 TLS 인증서를 검증하지 않음",
   "settings.ldap.tlsSkipVerifyWarning": "안전하지 않음: 네트워크 경로상의 누구나 디렉터리 서버를 사칭하여 전송되는 비밀번호를 읽을 수 있습니다. 테스트 용도로만 사용하십시오. 이 방식으로 연결할 때마다 경고가 기록됩니다.",
+  "settings.ldap.tlsEnvFallbackHelp": "비워 둔 항목에는 서버의 LDAP_CA_CERT_FILE 및 LDAP_TLS_SERVER_NAME 설정이 사용됩니다. 아래 확인란을 변경하기 전까지 인증서 검증은 LDAP_TLS_SKIP_VERIFY를 따릅니다.",
   "settings.ldap.connectionTimeout": "연결 제한 시간(초)",
   "settings.ldap.bindCredentials": "바인드 자격 증명",
   "settings.ldap.bindDn": "바인드 DN",

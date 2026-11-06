@@ -4229,6 +4229,7 @@
   "settings.ldap.tlsServerNameHelp": "يتحقق من شهادة الدليل بهذا الاسم بدلًا من العنوان أعلاه. استخدمه عندما تتصل عبر عنوان IP بينما تتضمن الشهادة اسم مضيف فقط. اتركه فارغًا للتحقق من العنوان أعلاه.",
   "settings.ldap.tlsSkipVerify": "عدم التحقق من شهادة TLS الخاصة بالدليل",
   "settings.ldap.tlsSkipVerifyWarning": "غير آمن: يمكن لأي طرف على مسار الشبكة انتحال هوية خادم الدليل وقراءة كلمات المرور المرسلة إليه. استخدمه للاختبار فقط. يُسجَّل تحذير عن كل اتصال يتم بهذه الطريقة.",
+  "settings.ldap.tlsEnvFallbackHelp": "تستخدم الحقول الفارغة إعدادَي الخادم LDAP_CA_CERT_FILE و LDAP_TLS_SERVER_NAME. وإلى أن تغيّر مربع الاختيار أدناه، يتبع التحقق من الشهادة الإعداد LDAP_TLS_SKIP_VERIFY.",
   "settings.ldap.connectionTimeout": "مهلة الاتصال (بالثواني)",
   "settings.ldap.bindCredentials": "بيانات اعتماد الربط",
   "settings.ldap.bindDn": "Bind DN",

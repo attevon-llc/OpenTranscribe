@@ -48,9 +48,7 @@ MATRIX_PATH = REPO_ROOT / "docs" / "security" / "platform-access-matrix.tsv"
 
 HEADER = ("kind", "key", "gate", "header", "guard", "test")
 
-ADMIN_DEPS = frozenset(
-    {"get_current_admin_user", "get_current_super_admin_user", "get_current_active_superuser"}
-)
+ADMIN_DEPS = frozenset({"get_current_admin_user", "get_current_active_superuser"})
 
 #: ``tests/api/test_support_access_matrix.py`` proves the quartet per chokepoint kind.
 MATRIX_TEST = "tests/api/test_support_access_matrix.py"
@@ -245,7 +243,6 @@ USER_DEPENDENCIES = frozenset(
         "get_current_active_user",
         "get_current_admin_user",
         "get_current_active_superuser",
-        "get_current_super_admin_user",
         "get_optional_current_user",
     }
 )
@@ -476,7 +473,7 @@ def _dependency_row(
 
 def _platform_op(key: str, header: str, names: set[str], source: str) -> Row:
     tier = "admin"
-    if names & {"get_current_super_admin_user", "get_current_active_superuser"}:
+    if "get_current_active_superuser" in names:
         tier = "super_admin"
     if key in AUDITED_ROUTES:
         category = "metadata-audited"

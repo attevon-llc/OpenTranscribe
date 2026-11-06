@@ -4176,6 +4176,7 @@
   "settings.ldap.tlsServerNameHelp": "Verifica el certificado del directorio con este nombre en lugar de con la dirección indicada arriba. Úselo cuando se conecte por dirección IP pero el certificado solo incluya un nombre de host. Déjelo vacío para verificar la dirección indicada arriba.",
   "settings.ldap.tlsSkipVerify": "No verificar el certificado TLS del directorio",
   "settings.ldap.tlsSkipVerifyWarning": "Inseguro: cualquiera en la ruta de red puede hacerse pasar por el servidor del directorio y leer las contraseñas que se le envían. Úselo solo para pruebas. Se registra una advertencia por cada conexión realizada de este modo.",
+  "settings.ldap.tlsEnvFallbackHelp": "Los campos vacíos usan los ajustes del servidor LDAP_CA_CERT_FILE y LDAP_TLS_SERVER_NAME. Mientras no cambie la casilla de abajo, la verificación del certificado sigue LDAP_TLS_SKIP_VERIFY.",
   "settings.ldap.connectionTimeout": "Tiempo de espera de conexión (segundos)",
   "settings.ldap.bindCredentials": "Credenciales de enlace",
   "settings.ldap.bindDn": "DN de enlace",

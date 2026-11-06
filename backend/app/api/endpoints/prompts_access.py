@@ -46,7 +46,7 @@ def _in_tenant(ctx: RequestContext) -> Any:
 def _shared_in_tenant(ctx: RequestContext) -> Any:
     """Other users' shared prompts that reach the caller's active tenant."""
     return and_(
-        models.SummaryPrompt.is_shared == True,  # noqa: E712
+        models.SummaryPrompt.is_shared.is_(True),
         models.SummaryPrompt.user_id != ctx.user.id,
         not_(models.SummaryPrompt.is_system_default),
         _in_tenant(ctx),

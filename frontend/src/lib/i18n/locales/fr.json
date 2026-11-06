@@ -4176,6 +4176,7 @@
   "settings.ldap.tlsServerNameHelp": "Vérifie le certificat de l'annuaire par rapport à ce nom plutôt qu'à l'adresse ci-dessus. À utiliser lorsque vous vous connectez par adresse IP alors que le certificat ne contient qu'un nom d'hôte. Laissez vide pour vérifier l'adresse ci-dessus.",
   "settings.ldap.tlsSkipVerify": "Ne pas vérifier le certificat TLS de l'annuaire",
   "settings.ldap.tlsSkipVerifyWarning": "Non sécurisé : toute personne située sur le chemin réseau peut se faire passer pour le serveur d'annuaire et lire les mots de passe qui lui sont envoyés. À n'utiliser que pour des tests. Un avertissement est consigné pour chaque connexion établie ainsi.",
+  "settings.ldap.tlsEnvFallbackHelp": "Les champs vides utilisent les paramètres du serveur LDAP_CA_CERT_FILE et LDAP_TLS_SERVER_NAME. Tant que vous ne modifiez pas la case ci-dessous, la vérification du certificat suit LDAP_TLS_SKIP_VERIFY.",
   "settings.ldap.connectionTimeout": "Délai de connexion (secondes)",
   "settings.ldap.bindCredentials": "Identifiants de liaison",
   "settings.ldap.bindDn": "DN de liaison",

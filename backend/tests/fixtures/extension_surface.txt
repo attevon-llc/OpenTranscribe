@@ -1,0 +1,111 @@
+# Documented extension surface: the import paths an out-of-tree extension may rely on.
+#
+# Read by tests/unit/test_extension_import_surface.py. Every entry must resolve on this tree.
+# Moving, renaming or deleting one is a seam change: bump CLOUD_SEAM_VERSION
+# (app/auth/constants.py), set "seam_version" below to match, add a "moved" line, and record
+# the move in docs/design/v<release>_downstream_changes.md.
+#
+# Formats:
+#   module:name                     the attribute exists
+#   module:name(p1, p2, ...)        ...and its parameters are exactly these, in order
+#   moved OLD -> NEW @VERSION       OLD is gone; NEW resolves; the downstream doc that
+#                                   VERSION points at names both. A trailing * on the name
+#                                   is a prefix match (a group of constants).
+
+seam_version 14
+downstream_doc 14 docs/design/v070_downstream_changes.md
+
+# Seam version and auth-type vocabulary
+app.auth.constants:CLOUD_SEAM_VERSION
+app.auth.constants:EXTERNAL_AUTH_NO_PASSWORD
+app.auth.constants:VALID_AUTH_TYPES
+app.auth.constants:TOKEN_TYPE_ACCESS
+app.auth.constants:TOKEN_TYPE_REFRESH
+
+# External identity providers
+app.auth.provider_registry:ExternalIdentity
+app.auth.provider_registry:TokenVerifier
+app.auth.provider_registry:register_verifier
+app.auth.provider_registry:unregister_verifier
+app.auth.provider_registry:has_verifiers
+app.auth.provider_registry:get_registered_providers
+app.auth.provider_registry:verify_external_token
+app.auth.external_sync:sync_external_user_to_db
+app.auth.account_linking:assert_provider_id_link_permitted
+
+# Access-token issuer (every login path uses it; extra claims go in `data`)
+app.auth.direct_auth:create_access_token(data, expires_delta)
+
+# Audit trail
+app.auth.audit:AuditLogger
+app.auth.audit:audit_logger
+app.auth.audit_events:AuditEventType
+app.auth.audit_events:AuditOutcome
+app.auth.audit_query:query_audit_logs(start_date, end_date, event_type, user_id, target_user_id, outcome, resource_type, resource_uuid, scope_user_ids, scope_org_id, limit, offset, index_pattern)
+app.utils.client_ip:resolve_client_ip
+
+# Capabilities
+app.core.capabilities:COMMUNITY_CAPABILITIES
+app.core.capabilities:NO_PLATFORM_BYPASS
+app.core.capabilities:set_capability_resolver
+app.core.capabilities:reset_capability_resolver
+app.core.capabilities:get_capabilities
+app.core.capabilities:get_capabilities_for_viewer
+app.core.capabilities:require_capability
+
+# Tenant limits
+app.core.tenant_limits:TenantUploadLimits
+app.core.tenant_limits:RedactionFloor
+app.core.tenant_limits:set_retention_resolver
+app.core.tenant_limits:set_upload_limits_resolver
+app.core.tenant_limits:set_chat_limits_resolver
+app.core.tenant_limits:set_allowed_models_resolver
+app.core.tenant_limits:set_redaction_floor_resolver
+app.core.tenant_limits:resolve_redaction_floor
+
+# Request context
+app.api.deps_context:get_base_context
+app.api.deps_context:get_current_context
+app.services.request_context:RequestContext
+
+# Pipeline and chat hooks
+app.tasks.transcription.hooks:QuotaExceededError
+app.tasks.transcription.hooks:DispatchBlockedError
+app.tasks.transcription.hooks:register_before_dispatch
+app.tasks.transcription.hooks:register_transcription_complete
+app.tasks.transcription.hooks:fire_before_dispatch
+app.services.chat.hooks:register_before_message
+app.services.chat.hooks:register_message_complete
+app.services.usage_service:record_event
+
+# Task routing and recovery
+app.core.queues:CeleryQueues
+app.core.task_config:RECOVERED_AFTER_STUCK
+
+# Legal documents
+app.legal.registry:set_document_provider
+
+# Privacy, visibility and erasure
+app.services.privacy.consent:VoiceprintConsentRequest
+app.services.privacy.consent:register_voiceprint_consent_hook
+app.services.privacy.policy:PrivacyCeiling
+app.services.privacy.policy:set_privacy_ceiling_resolver
+app.services.privacy.policy:reset_privacy_ceiling_resolver
+app.services.privacy.policy:assert_voiceprint_write_allowed
+app.services.privacy.gates:voiceprints_allowed
+app.services.privacy.gates:gender_allowed
+app.services.privacy.label_reindex:ResyncScope
+app.services.privacy.label_reindex:request_label_resync
+app.services.collection_visibility:visible_collection_ids
+app.services.search.access_filter:access_filter_clause
+app.services.erasure_receipt.inventory:ErasureStore
+app.services.erasure_receipt.inventory:register_erasure_store
+
+# Moved in seam v14 (0.7.0)
+moved app.core.constants:CeleryQueues -> app.core.queues:CeleryQueues @14
+moved app.services.task_detection_service:RECOVERED_AFTER_STUCK -> app.core.task_config:RECOVERED_AFTER_STUCK @14
+moved app.auth.audit:query_audit_logs -> app.auth.audit_query:query_audit_logs @14
+moved app.auth.dependencies:_get_client_info -> app.api.endpoints.auth.lifecycle_gates:_get_client_info @14
+moved app.core.security:create_access_token -> app.auth.direct_auth:create_access_token @14
+moved app.core.constants:DEFAULT_CHAT_* -> app.core.chat_defaults:DEFAULT_CHAT_* @14
+moved app.services.search.indexing_service:_build_neural_ingest_pipeline -> app.services.search.pipelines:_build_neural_ingest_pipeline @14

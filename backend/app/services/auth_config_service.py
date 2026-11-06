@@ -27,6 +27,7 @@ from app.schemas.auth_config_validation import coded_default
 from app.schemas.auth_config_validation import validate_category_config
 from app.services.auth_config_keys import CONFIG_CATEGORIES
 from app.services.auth_config_keys import DATA_TYPE_MAPPING
+from app.services.auth_config_keys import ENV_FALLBACK_KEYS
 from app.services.auth_config_keys import ENV_TO_CONFIG_MAPPING
 from app.services.auth_config_keys import RESTART_REQUIRED_KEYS
 from app.services.auth_config_keys import RETIRED_KEYS
@@ -483,6 +484,8 @@ class AuthConfigService:
         Every key is checked against the category's schema before anything is
         written: unknown keys, unparseable values, out-of-range numbers and
         rejected combinations all fail here rather than being stored verbatim.
+        A key in ``ENV_FALLBACK_KEYS`` saved with no value has its row removed, so
+        its environment setting applies again.
 
         Args:
             db: Database session
@@ -507,6 +510,12 @@ class AuthConfigService:
         results: dict[str, AuthConfig] = {}
 
         for key, value in config_dict.items():
+            if key in ENV_FALLBACK_KEYS and (
+                value is None or (isinstance(value, str) and not value.strip())
+            ):
+                AuthConfigService.delete_config(db, key, user_id, request)
+                continue
+
             is_sensitive = key in SENSITIVE_KEYS
 
             # Leave the stored secret alone unless the caller actually typed a new

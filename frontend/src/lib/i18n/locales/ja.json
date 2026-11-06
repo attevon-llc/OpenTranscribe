@@ -4166,6 +4166,7 @@
   "settings.ldap.tlsServerNameHelp": "上のアドレスの代わりに、この名前でディレクトリの証明書を検証します。IP アドレスで接続しているが、証明書にホスト名しか記載されていない場合に使用します。空欄の場合は上のアドレスで検証します。",
   "settings.ldap.tlsSkipVerify": "ディレクトリのTLS証明書を検証しない",
   "settings.ldap.tlsSkipVerifyWarning": "安全ではありません。ネットワーク経路上の第三者がディレクトリサーバーになりすまし、送信されるパスワードを読み取れます。テスト目的でのみ使用してください。この方法で接続するたびに警告がログに記録されます。",
+  "settings.ldap.tlsEnvFallbackHelp": "空欄の項目にはサーバーの LDAP_CA_CERT_FILE と LDAP_TLS_SERVER_NAME の設定が使われます。下のチェックボックスを変更するまで、証明書の検証は LDAP_TLS_SKIP_VERIFY に従います。",
   "settings.ldap.connectionTimeout": "接続タイムアウト（秒）",
   "settings.ldap.bindCredentials": "バインド資格情報",
   "settings.ldap.bindDn": "バインド DN",

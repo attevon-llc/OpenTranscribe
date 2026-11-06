@@ -18,6 +18,7 @@ from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.config import settings
 from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.models.user import User
@@ -152,9 +153,16 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             port=port,
             use_ssl=use_ssl,
             use_tls=use_tls,
-            ca_cert_file=str(config.get("ldap_ca_cert_file") or ""),
-            tls_server_name=str(config.get("ldap_tls_server_name") or ""),
-            tls_skip_verify=_flag(config.get("ldap_tls_skip_verify")),
+            # An unset TLS field falls back to the environment, as it does at login.
+            ca_cert_file=str(config.get("ldap_ca_cert_file") or settings.LDAP_CA_CERT_FILE or ""),
+            tls_server_name=str(
+                config.get("ldap_tls_server_name") or settings.LDAP_TLS_SERVER_NAME or ""
+            ),
+            tls_skip_verify=(
+                settings.LDAP_TLS_SKIP_VERIFY
+                if config.get("ldap_tls_skip_verify") is None
+                else _flag(config.get("ldap_tls_skip_verify"))
+            ),
             bind_dn=bind_dn,
             bind_password=bind_password,
             timeout=timeout,

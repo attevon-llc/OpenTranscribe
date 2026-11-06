@@ -21,14 +21,21 @@ backend container is the container, not the host.
 
 Scenario models (see the server for details):
 
-==================  =======================================================
-``mock-gpt``        normal reply with ``[1]``/``[2]`` citations and markdown
-``mock-echo``       echoes the prompt it received — assert what the app SENT
-``mock-empty``      completes with no content
-``mock-error``      HTTP 500 before any token
-``mock-slow``       stalls past the first-token watchdog
-``mock-reasoning``  streams ``delta.reasoning_content`` before the answer
-==================  =======================================================
+======================  =======================================================
+``mock-gpt``            normal reply with ``[1]``/``[2]`` citations and markdown
+``mock-echo``           echoes the prompt it received — assert what the app SENT
+``mock-empty``          completes with no content
+``mock-error``          HTTP 500 before any token
+``mock-slow``           stalls past the first-token watchdog
+``mock-reasoning``      streams ``delta.reasoning_content`` before the answer
+``mock-summary-json``   constant, schema-valid BLUF summary (summarization task)
+``mock-topics-json``    constant tag/collection suggestion (topic extraction)
+``mock-speakers-json``  constant speaker predictions (speaker identification)
+======================  =======================================================
+
+The three ``*-json`` scenarios echo the SHA-256 of the request's system message in
+``mock_system_sha256``, and every request is recorded at ``GET <server root>/_mock/requests``
+(``POST .../_mock/requests/clear`` empties it), so a test can count calls and read each prompt without patching code.
 """
 
 from __future__ import annotations

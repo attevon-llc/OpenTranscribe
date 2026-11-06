@@ -15,7 +15,17 @@ import json
 
 import requests
 
-MODELS = ("mock-gpt", "mock-echo", "mock-empty", "mock-error", "mock-slow", "mock-reasoning")
+MODELS = (
+    "mock-gpt",
+    "mock-echo",
+    "mock-empty",
+    "mock-error",
+    "mock-slow",
+    "mock-reasoning",
+    "mock-summary-json",
+    "mock-topics-json",
+    "mock-speakers-json",
+)
 
 
 def test_advertises_every_scenario_model(mock_llm_url):

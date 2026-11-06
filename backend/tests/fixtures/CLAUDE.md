@@ -70,6 +70,16 @@ by *configuring a provider* and the app runs its REAL error handling:
 | `mock-error` | HTTP 500 before any token → `provider_error` frame |
 | `mock-slow` | stalls past the first-token watchdog |
 | `mock-reasoning` | a "thinking" phase before the same `[1]`/`[2]` answer as `mock-gpt`. ⚠️ **Separates it only when the request activated thinking** (`chat_template_kwargs={"enable_thinking": true}`); unasked it reproduces #439 — the thoughts arrive on `delta.content` with a bare `<channel|>` closer, exactly as vLLM does — so both branches are testable. The field is `delta.reasoning` on vLLM 0.19, not `reasoning_content`; our parser reads both |
+| `mock-summary-json` | a constant, schema-valid BLUF summary — the shape the summarization task persists. Wiring only: the body is a constant, so it measures nothing about summary quality |
+| `mock-topics-json` | a constant tag/collection suggestion (one tag above the 0.75 auto-apply threshold, one below) for `TopicExtractionService` |
+| `mock-speakers-json` | constant speaker predictions for `SPEAKER_00`/`SPEAKER_01`; the task stores them as unapplied suggestions |
+
+The three `*-json` scenarios put the SHA-256 of the request's **system message** in a
+`mock_system_sha256` field of the body, which no parser reads (on a summary it survives into
+`summary_data` and names the call that produced it). Every request is also recorded: `GET
+<server root>/_mock/requests` lists them (model, `system_sha256`, `max_tokens`, full messages;
+last 200) and `POST <root>/_mock/requests/clear` empties it — the root is `mock_llm_url` without its `/v1`. Clear it
+at the start of a test; the server is shared by the whole worker session.
 
 **CI needs no setup**: the subprocess fallback means `tests/unit/test_mock_llm_fixture.py`
 runs in the GitHub `backend-tests` job with no compose stack. Tests that need the

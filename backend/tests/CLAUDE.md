@@ -377,4 +377,4 @@ See `backend/tests/notes/db-tests-without-stack.md`.
 Harness layout, corpora, qrels, metrics and `runinfo.json`: `backend/tests/eval/CLAUDE.md`.
 ## Chat suites, mock LLM, mock cloud ASR, document export fixtures
 
-Chat suites (issue #52), the mock LLM provider (`--with-mock-llm`, scenario models `mock-gpt`/`mock-echo`/`mock-empty`/`mock-error`/`mock-slow`/`mock-reasoning`), the mock cloud ASR provider (`--with-mock-asr`) and the document export fixtures (#1278): `backend/tests/fixtures/CLAUDE.md`.
+Chat suites (issue #52), the mock LLM provider (`--with-mock-llm`, scenario models `mock-gpt`/`mock-echo`/`mock-empty`/`mock-error`/`mock-slow`/`mock-reasoning`, plus the JSON-shaped `mock-summary-json`/`mock-topics-json`/`mock-speakers-json`), the mock cloud ASR provider (`--with-mock-asr`) and the document export fixtures (#1278): `backend/tests/fixtures/CLAUDE.md`.

@@ -64,6 +64,15 @@ def normalize_token(raw: str) -> str:
     return _TOKEN_CLEAN_RE.sub("", raw.lower().replace("’", "'"))
 
 
+def parse_nxt(path: Path) -> ET.Element:
+    """Parse one NXT/AMI/ICSI XML file and return its root element.
+
+    The only place in the corpus tooling that touches the stdlib XML parser, so the
+    trust note in the module docstring covers every reader (gold summaries included).
+    """
+    return ET.parse(path).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+
+
 def read_meeting_channels(meetings_xml: Path) -> dict[str, dict[str, dict[str, str]]]:
     """Parse AMI's ``corpusResources/meetings.xml`` into per-meeting channel metadata.
 
@@ -84,7 +93,7 @@ def read_meeting_channels(meetings_xml: Path) -> dict[str, dict[str, dict[str, s
     Channel *presence* must come from the `segments`/`words` directory listing, never from this
     file; this function exists only to attach a friendlier label where one exists.
     """
-    root = ET.parse(meetings_xml).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+    root = parse_nxt(meetings_xml)
     out: dict[str, dict[str, dict[str, str]]] = {}
     for meeting in root:
         observation = meeting.get("observation")
@@ -112,7 +121,7 @@ def read_channel_words(path: Path) -> list[TimedToken]:
     keeps it whole, so a leading-apostrophe token is folded into its predecessor
     and the pair's time span merged.
     """
-    root = ET.parse(path).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+    root = parse_nxt(path)
     out: list[TimedToken] = []
     for el in root.iter():
         if not el.tag.endswith("w") or el.get("punc") == "true":

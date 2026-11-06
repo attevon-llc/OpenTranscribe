@@ -39,7 +39,7 @@ noqa::backend/app/schemas/auth_config.py	1	suppression: reason to be added
 noqa::backend/app/scripts/benchmark_reranker_threads.py	1	suppression: reason to be added
 noqa::backend/app/scripts/build_password_blocklist.py	2	suppression: reason to be added
 noqa::backend/app/scripts/corpus_injection/adapters/ami.py	4	suppression: reason to be added
-noqa::backend/app/scripts/corpus_injection/nxt.py	3	suppression: reason to be added
+noqa::backend/app/scripts/corpus_injection/nxt.py	2	suppression: reason to be added
 noqa::backend/app/scripts/corpus_injection/timings.py	1	suppression: reason to be added
 noqa::backend/app/scripts/verify_redaction.py	1	suppression: reason to be added
 noqa::backend/app/scripts/whisper_batch_diag.py	1	suppression: reason to be added

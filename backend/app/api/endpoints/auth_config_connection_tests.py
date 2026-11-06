@@ -20,6 +20,8 @@ from fastapi.concurrency import run_in_threadpool
 from app.api.endpoints.auth import get_current_active_superuser
 from app.core.exceptions import DomainError
 from app.models.user import User
+from app.schemas.auth_config import LDAP_TIMEOUT_MAX_SECONDS
+from app.schemas.auth_config import LDAP_TIMEOUT_MIN_SECONDS
 from app.schemas.auth_config import AuthMethodTestResponse
 
 router = APIRouter()
@@ -75,8 +77,8 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     report success for a configuration login then refused.
 
     Synchronous: ``ldap3`` binds are blocking, bounded by the submitted ``ldap_timeout``
-    (10 s when absent, the same limit a login uses), so the
-    caller must run this off the event loop (issue #320).
+    (10 s when absent; a value outside the saved setting's range is refused, not clamped),
+    so the caller must run this off the event loop (issue #320).
 
     Args:
         config: LDAP configuration to test
@@ -121,6 +123,19 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         if not (bind_dn and bind_password):
             bind_dn = bind_password = ""  # anonymous bind
 
+        try:
+            timeout = int(config.get("ldap_timeout") or 10)
+        except (TypeError, ValueError):
+            timeout = 0
+        if not LDAP_TIMEOUT_MIN_SECONDS <= timeout <= LDAP_TIMEOUT_MAX_SECONDS:
+            return AuthMethodTestResponse(
+                success=False,
+                message=(
+                    f"LDAP timeout must be a whole number of seconds between "
+                    f"{LDAP_TIMEOUT_MIN_SECONDS} and {LDAP_TIMEOUT_MAX_SECONDS}"
+                ),
+            )
+
         cfg = LdapConfig(
             server=server_address,
             port=port,
@@ -128,7 +143,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             use_tls=use_tls,
             bind_dn=bind_dn,
             bind_password=bind_password,
-            timeout=int(config.get("ldap_timeout") or 10),
+            timeout=timeout,
         )
         server = _get_ldap_server(cfg)
         problem = transport_problem(cfg, server)

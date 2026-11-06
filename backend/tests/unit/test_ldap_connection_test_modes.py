@@ -182,3 +182,23 @@ def test_the_submitted_timeout_bounds_the_test(fake_ldap: type[_Connection]) -> 
 
     assert _Server.instances[0].kwargs["connect_timeout"] == 25
     assert fake_ldap.instances[0].kwargs["receive_timeout"] == 25
+
+
+@pytest.mark.parametrize("submitted", [1, 300])
+def test_the_ends_of_the_saved_timeout_range_are_used_as_submitted(
+    fake_ldap: type[_Connection], submitted: int
+) -> None:
+    assert _test_ldap_connection(_config(ldap_timeout=submitted)).success is True
+
+    assert _Server.instances[0].kwargs["connect_timeout"] == submitted
+
+
+@pytest.mark.parametrize("submitted", [-5, 301, 100_000, "ten", [3]])
+def test_a_timeout_outside_the_saved_range_is_refused_before_any_connection(
+    fake_ldap: type[_Connection], submitted: Any
+) -> None:
+    result = _test_ldap_connection(_config(ldap_timeout=submitted))
+
+    assert result.success is False
+    assert "between 1 and 300" in result.message
+    assert fake_ldap.instances == [] and _Server.instances == []

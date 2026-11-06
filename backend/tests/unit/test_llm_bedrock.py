@@ -522,3 +522,25 @@ def test_openai_config_still_reaches_send_llm_request_unchanged():
 
     assert response.content == "hi"
     mock_send.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("model", "sent"),
+    [
+        ("anthropic.claude-haiku-4-5-20251001-v1:0", True),
+        ("anthropic.claude-sonnet-4-6-v1:0", True),
+        ("anthropic.claude-opus-4-7-v1:0", False),
+        ("anthropic.claude-sonnet-5-5-v1:0", False),
+        ("anthropic.claude-haiku-5-5-v1:0", False),
+        ("amazon.nova-pro-v1:0", True),
+    ],
+)
+def test_sampling_params_are_dropped_for_claude_models_that_reject_them(model, sent):
+    """Opus 4.7+, Sonnet 5+ and Haiku 5+ 400 on temperature/top_p (Claude docs, migration
+    guides); every other model, including non-Anthropic ones, still gets them.
+    """
+    cfg = _sent_inference_config(model=model, temperature=0.1, top_p=0.9)
+    if sent:
+        assert cfg == {"maxTokens": 100, "temperature": 0.1, "topP": 0.9}
+    else:
+        assert cfg == {"maxTokens": 100}

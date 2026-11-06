@@ -123,8 +123,8 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   embedding window, not from the plan's assumed 256.
 - **Redaction** — `redaction/` (**own CLAUDE.md**). **Watch sources** — `watch_sources/`
   (**own CLAUDE.md**).
-- **Media in/out** — `media_download_service.py` (yt-dlp), `media_mirror_*.py`,
-  `protected_media_providers.py` + `protected_media_plugins/`, `minio_service.py` +
+- **Media in/out** — `media_download_service.py` (yt-dlp), `media_mirror_*.py`, `protected_media_providers.py`
+  + `protected_media_plugins/` (+ `media_source_resolution.py`), `minio_service.py` +
   `storage_backend.py` (**see below**), `subtitle_service.py`, `formatting_service.py`.
   **Every export surface takes a required redaction config** (#85, see the gotcha below).
 - **Transcript export** — `transcript_export_service.build_export_content` is the dispatcher for

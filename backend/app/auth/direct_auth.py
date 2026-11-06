@@ -60,7 +60,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     plus a 64-byte ``JWT_SECRET_KEY``.
 
     Args:
-        data: Dictionary of claims to encode in the token
+        data: Claims to encode: ``sub`` plus any extra claims (this is the documented way
+            for an extension to add its own). ``exp``, ``iat``, ``jti`` and ``type`` are
+            always stamped here and replace any value in *data*.
         expires_delta: Optional custom expiration time
 
     Returns:

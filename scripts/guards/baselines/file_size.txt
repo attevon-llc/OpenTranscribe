@@ -6,7 +6,7 @@ frontend/src/components/SettingsModal.svelte::script	998	oversize: split by conc
 frontend/src/lib/services/uploadService.ts	1400	v0.6.1 merge: release growth; split by concern planned
 frontend/src/routes/+page.svelte::script	1464	v0.6.1 merge: release growth; split by concern planned
 opentr.sh	4905	v0.6.1 merge: release growth; split by concern planned
-opentranscribe.sh	2597	v0.6.1 merge: release growth; split by concern planned
+opentranscribe.sh	2595	v0.6.1 merge: release growth; split by concern planned
 scripts/cleanup-test-data.py	1158	cohesive: one signature-scoped sweep (cutoff, shapes, finders, API deletes, planes) sharing one safety model
 scripts/common.sh	1932	v0.6.1 merge: release growth; split by concern planned
 scripts/docker-build-push.sh	1562	oversize: split by concern planned
@@ -17,4 +17,4 @@ scripts/release-tests/lib/guardrails.sh	1281	oversize: split by concern planned
 scripts/release-tests/test-upgrade.sh	2933	oversize: split by concern planned
 scripts/run-mutation-tests.sh	1173	oversize: split by concern planned
 scripts/security-scan.sh	1165	oversize: split by concern planned
-setup-opentranscribe.sh	2542	oversize: split by concern planned
+setup-opentranscribe.sh	2537	oversize: split by concern planned

@@ -332,17 +332,21 @@ Then follow the on-screen instructions. The setup script will:
 - **Automatically download and cache AI models** (several GB; the size depends on your Whisper and neural-search model choices) if a token is provided
 - Set up the management script (`opentranscribe.sh`)
 
-**💻 CPU-only install:** If you don't have an NVIDIA GPU, or you're on WSL2 with the NVIDIA Container Toolkit installed but GPU passthrough disabled, pass `--cpu` to skip GPU detection and avoid the `nvidia-container-cli` adapter error at container start:
+**🧮 CPU-only install (`--cpu`):** for a machine whose GPU containers cannot use, most often
+WSL2, where Docker lists the NVIDIA runtime but every GPU container fails at start; or for a
+machine without an NVIDIA GPU where you still want local transcription on the CPU. The installer
+then skips GPU detection entirely:
 
 ```bash
-# Piped install
+# Pass the flag through the pipe
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
-# Unattended / CI equivalent
+# Or set the variable on bash, not on curl (unattended / CI)
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_FORCE_CPU=1 bash
 ```
 
-The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
+The choice is saved in `.env` as `FORCE_CPU_MODE=true`, so every later
+`./opentranscribe.sh start` or `restart` leaves the GPU overlay out without the flag.
 
 **🪶 Lite install (`--lite`):** `--cpu` still runs the full CUDA image, just without a GPU. `--lite`
 is different — it installs the much smaller CPU-only `opentranscribe-backend-lite` image, which
@@ -352,7 +356,7 @@ configure after install. Implies `--cpu`, and persists `DEPLOYMENT_MODE=lite`:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
 
-# Unattended / CI equivalent
+# Unattended / CI: set the variable on bash, not on curl
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_LITE=1 bash
 ```
 

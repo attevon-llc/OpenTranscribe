@@ -6,15 +6,12 @@
 #   OPENTRANSCRIBE_UNATTENDED  When non-empty, skip all interactive prompts and
 #                              use safe defaults or pre-set environment variables
 #                              (used by CI and release-test harnesses)
-#   OPENTRANSCRIBE_FORCE_CPU   When non-empty, skip NVIDIA/GPU detection entirely
-#                              and install in CPU-only mode. Equivalent to passing
-#                              --cpu on the command line. Useful on hosts with the
-#                              NVIDIA Container Toolkit installed but no working
-#                              GPU passthrough (e.g. WSL2 without a supported
-#                              Windows NVIDIA driver), where auto-detection would
-#                              otherwise enable a GPU overlay that fails at
-#                              container start with an nvidia-container-cli
-#                              adapter error.
+#   OPENTRANSCRIBE_FORCE_CPU   When non-empty, run on the CPU and probe no GPU at
+#                              all. Equivalent to --cpu. For hosts where Docker
+#                              lists the NVIDIA runtime but GPU passthrough is
+#                              broken (usually WSL2 without a WSL-capable Windows
+#                              driver), where every GPU container dies at start
+#                              with an nvidia-container-cli adapter error.
 #   OPENTRANSCRIBE_LITE        When non-empty, install the CPU-only lite deployment
 #                              (opentranscribe-backend-lite + cloud ASR) and persist
 #                              DEPLOYMENT_MODE=lite. Equivalent to --lite; implies
@@ -149,12 +146,8 @@ GPU_NAME=""
 GPU_MEMORY=""
 NGINX_SERVER_NAME=""
 SSL_CONFIGURED=false
-# FORCE_CPU: when "true", skip NVIDIA/GPU detection entirely and install in
-# CPU-only mode. Set via --cpu flag or OPENTRANSCRIBE_FORCE_CPU=1 env var.
-# This is a supported manual opt-out for hosts where GPU auto-detection
-# produces a false positive (e.g. WSL2 with toolkit installed but no working
-# adapter passthrough), or where the user simply wants to exclude GPU
-# workloads. Default (unset) preserves the original auto-detect behaviour.
+# FORCE_CPU: "true" installs for CPU-only use even when a GPU is present. Set here from
+# OPENTRANSCRIBE_FORCE_CPU (any non-empty value) and later by --cpu in main.
 FORCE_CPU="false"
 if [[ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]]; then
     FORCE_CPU="true"
@@ -217,14 +210,14 @@ detect_platform() {
 detect_hardware_acceleration() {
     DETECTED_DEVICE="cpu"  # Default fallback
 
-    # CPU-only mode requested explicitly (--cpu flag or OPENTRANSCRIBE_FORCE_CPU):
-    # skip all GPU probing so we don't touch nvidia-smi or docker's NVIDIA
-    # runtime. This also prevents a later false-positive overlay being layered
-    # in at runtime by opentranscribe.sh, because we write USE_GPU=false into
-    # .env below.
+    # CPU-only on request: probe nothing GPU-related, because on the hosts this exists
+    # for even asking Docker or nvidia-smi gives a misleading "GPU available" answer.
+    # What keeps later starts off the GPU is FORCE_CPU_MODE=true, written to .env from
+    # FORCE_CPU and read by opentranscribe.sh's force_cpu_mode_requested; USE_GPU in
+    # .env is not consulted when the compose overlays are chosen.
     if [[ "$FORCE_CPU" == "true" ]]; then
-        echo "ℹ️  CPU-only mode requested (--cpu / OPENTRANSCRIBE_FORCE_CPU set)"
-        echo "    Skipping NVIDIA GPU detection."
+        echo "✓ CPU-only mode requested (--cpu or OPENTRANSCRIBE_FORCE_CPU)"
+        echo "  Skipping GPU detection"
         DETECTED_DEVICE="cpu"
         COMPUTE_TYPE="int8"
         BATCH_SIZE="4"
@@ -2198,7 +2191,7 @@ display_summary() {
     echo "┌─ Hardware:"
     echo "│  • Platform: $DETECTED_PLATFORM ($ARCH)"
     if [[ "$FORCE_CPU" == "true" ]]; then
-        echo "│  • Device: cpu ($COMPUTE_TYPE precision) — forced via --cpu / OPENTRANSCRIBE_FORCE_CPU"
+        echo "│  • Device: cpu ($COMPUTE_TYPE precision), forced by --cpu / OPENTRANSCRIBE_FORCE_CPU"
     else
         echo "│  • Device: $DETECTED_DEVICE ($COMPUTE_TYPE precision)"
     fi
@@ -2412,12 +2405,13 @@ prompt_start() {
 }
 
 main() {
-    # Parse command-line arguments. Currently the only supported flag is
-    # --cpu, which forces CPU-only mode and skips NVIDIA/GPU detection.
-    # Equivalent to setting OPENTRANSCRIBE_FORCE_CPU=1 in the environment.
+    # Consume every argument before any setup step runs; each flag sets the same
+    # variable as its OPENTRANSCRIBE_* env var, so the flag wins when both are given.
+    # Anything unrecognised is fatal (see the last arm).
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --cpu)
+                # CPU-only on the full image: no GPU probing, no GPU overlay.
                 FORCE_CPU="true"
                 shift
                 ;;
@@ -2455,14 +2449,14 @@ main() {
                 echo "              model. Implies --cpu. Persists DEPLOYMENT_MODE=lite."
                 echo "              This is the only supported shape on hosts with no"
                 echo "              NVIDIA GPU at all, and the default on arm64."
-                echo "  --cpu       Install in CPU-only mode. Skips NVIDIA GPU"
-                echo "              detection and configures the stack to run"
-                echo "              without the GPU compose overlay. Use this on"
-                echo "              hosts that have the NVIDIA Container Toolkit"
-                echo "              installed but no working GPU passthrough"
-                echo "              (e.g. WSL2 without a WSL-capable driver), or"
-                echo "              on any machine where you simply do not want"
-                echo "              GPU acceleration."
+                echo "  --cpu       Run on the CPU with the full image: skip GPU"
+                echo "              detection and never load the GPU overlay."
+                echo "              Persists FORCE_CPU_MODE=true. Use it on a machine"
+                echo "              without an NVIDIA GPU that should still transcribe"
+                echo "              locally, or where Docker reports the NVIDIA runtime"
+                echo "              but containers cannot reach the GPU (for example"
+                echo "              WSL2 without a WSL-capable Windows driver, which"
+                echo "              fails with an nvidia-container-cli error)."
                 echo "  --version vX.Y.Z"
                 echo "              Install a specific published release. Compose files"
                 echo "              are downloaded at that tag and images are pinned to"
@@ -2471,12 +2465,13 @@ main() {
                 echo "  --branch <ref>"
                 echo "              Install from a git ref with :latest images. TESTING"
                 echo "              ONLY - the result is not reproducible."
-                echo "  -h, --help  Show this help message."
+                echo "  -h, --help  Show this help and exit."
                 echo ""
-                echo "Environment variables (see script header for the full list):"
+                echo "Environment variables:"
                 echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
                 echo "  OPENTRANSCRIBE_LITE       Non-empty = same as --lite"
-                echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = skip all prompts"
+                echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = no prompts; use defaults and"
+                echo "                            pre-set variables (see the script header)"
                 echo "  OPENTRANSCRIBE_VERSION    Same as --version"
                 echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
                 exit 0
@@ -2505,7 +2500,7 @@ main() {
         echo "   Transcription requires a cloud ASR provider, configured after install"
         echo "   in Settings. See docs: API-Lite Deployment."
     elif [[ "$FORCE_CPU" == "true" ]]; then
-        echo -e "${BLUE}ℹ️  CPU-only install mode selected${NC}"
+        echo -e "${BLUE}ℹ️  CPU-only install mode selected (full image, GPU detection and GPU overlay skipped)${NC}"
     fi
 
     # Auto-enable unattended mode when /dev/tty is unavailable (CI, Docker without -it, etc.)

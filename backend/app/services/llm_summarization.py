@@ -11,28 +11,34 @@ from app.services.llm_types import LLMResponse
 
 logger = logging.getLogger(__name__)
 
+# Both rule blocks are appended directly after a sentence, hence the leading space.
+# Without them a short trailing section (goodbyes, crosstalk) reports "no decisions"
+# and the merge adopts that as the verdict for the whole meeting (#941).
 SECTION_SCOPE_RULES = (
-    " The transcript below is one slice of a longer recording; its boundaries were "
-    "produced by an automatic splitter, not by the meeting itself. Report only what "
-    "this slice contains and never draw a conclusion about the recording as a whole: "
-    "an absence of decisions here means this slice holds none, not that the meeting "
-    "reached none. Do not label the summary as a fragment or an incomplete exchange "
-    "because the slice starts or ends mid-sentence; only the first slice (abrupt "
-    "start) or the last slice (abrupt end) can observe a genuinely truncated "
-    "recording."
+    " The transcript below covers only part of a longer recording. It was cut out"
+    " automatically by length, so its start and end are arbitrary points rather than"
+    " natural breaks in the conversation. Summarize only what this section contains and"
+    " make no claim about the recording overall: if no decision or action item appears"
+    " here, that says nothing about whether the meeting reached any in other sections."
+    " Do not describe this section as partial, cut off or incomplete because it starts"
+    " or ends mid-sentence; that is a side effect of the split. Only section 1 can show"
+    " that the recording itself started abruptly, and only the final section can show"
+    " that it ended abruptly."
 )
 
 SECTION_MERGE_RULES = (
-    " You are merging slices of one recording that were summarized independently and "
-    "are given in chronological order. Take the union of their facts: every topic, "
-    "decision, action item and follow-up present in any slice must appear in the "
-    "final summary, deduplicated, never dropped. A slice that reports nothing "
-    "describes only its own span; it can never cancel, weaken or reframe the content "
-    "of another slice, whatever wording it uses. Build the summary from the "
-    "substantive slices, and describe the recording as truncated only if a slice "
-    "explicitly says so, never because slice boundaries are abrupt. A slice carrying "
-    '"_error": true could not be processed for technical reasons: say so plainly and '
-    "never read it as evidence that nothing happened during that span."
+    " Each input is the summary of one section of the same recording; the sections were"
+    " summarized separately and are listed in chronological order. Combine them as a"
+    " union: every topic, decision, action item and follow-up that appears in any"
+    " section must appear in the final summary, merged where two sections report the"
+    " same item, and never left out. A section that reports nothing covers only its own"
+    " stretch of the recording; it must not remove, play down or contradict anything"
+    " another section reported. Build the summary from the sections that have"
+    " substance. Describe the recording as truncated or incomplete only if a section"
+    " explicitly says so, never because a section boundary falls mid-sentence. A"
+    ' section whose summary contains "_error": true could not be processed because of'
+    " a technical failure: say that this part of the recording could not be"
+    " summarized, and never treat it as evidence that nothing happened during it."
 )
 
 

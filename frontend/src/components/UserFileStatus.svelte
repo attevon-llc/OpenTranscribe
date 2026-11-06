@@ -234,7 +234,7 @@
   }
 
   function openFlowerDashboard() {
-    // Dynamically construct Flower URL from current location
+    // Same-origin path; the proxy in front of Flower supplies its credentials.
     const url = getFlowerUrl();
     // 'noopener' — unlike <a target="_blank">, window.open() gets no implicit
     // noopener, so the new tab would keep a live window.opener handle back here.

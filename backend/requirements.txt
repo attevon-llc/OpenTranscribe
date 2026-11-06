@@ -88,7 +88,7 @@ imohash==1.1.0  # Fast constant-time file fingerprint (murmur3 over sampled firs
 opensearch-py==3.2.0
 httpx==0.28.1
 python-dotenv==1.2.4
-# LDAP/Active Directory Authentication
+# Directory sign-in (LDAP / Active Directory)
 ldap3==2.9.1
 
 # Rate Limiting

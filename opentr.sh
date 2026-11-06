@@ -212,7 +212,7 @@ show_help() {
   echo "                         not whatever was on disk when a container last reloaded (#55)."
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud-only ASR mode (no GPU required)"
-  echo "  --cpu                - CPU-only mode (local transcription, no GPU overlay)"
+  echo "  --cpu                - Local CPU-only transcription: skip GPU detection and the GPU overlay"
   echo "  --with-pki           - Enable PKI certificate authentication (mTLS). Works in dev (via"
   echo "                         docker-compose.pki-dev.yml, a built nginx in front of the"
   echo "                         bind-mounted dev backend) and prod. Generates its own test-env"
@@ -314,7 +314,7 @@ show_help() {
   echo "  ./opentr.sh start dev --with-gpu-split       # Split transcribe/diarize across two GPUs"
   echo "  ./opentr.sh start dev --fresh t1 --gpu-device 2   # Isolated stack on GPU 2, .env untouched"
   echo "  ./opentr.sh start dev --lite                 # Cloud-only ASR mode (no GPU)"
-  echo "  ./opentr.sh start dev --cpu                  # Local CPU-only (skip GPU overlay)"
+  echo "  ./opentr.sh start dev --cpu                  # Local transcription on the CPU, no GPU overlay"
   echo "  ./opentr.sh start dev --with-ldap-test       # Dev with LDAP test container"
   echo "  ./opentr.sh start dev --with-mock-llm        # Dev with a fake LLM for chat/AI testing"
   echo "  ./opentr.sh start dev --with-mock-asr        # Dev with a fake cloud ASR provider for testing"
@@ -2651,10 +2651,10 @@ start_app() {
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware (skipped in lite/cpu modes — no GPU needed)
+  # --cpu and --lite skip hardware detection (and so the GPU overlay); only the message differs.
   if [ -n "$CPU_FLAG" ] || [ -n "$LITE_FLAG" ]; then
     if [ -n "$CPU_FLAG" ]; then
-      echo "ℹ️  Skipping GPU detection (--cpu mode: local CPU transcription only)"
+      echo "ℹ️  Skipping GPU detection (--cpu requested)"
     else
       echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
     fi
@@ -3435,10 +3435,10 @@ reset_and_init() {
   # Ensure Docker is running
   check_docker
 
-  # Detect and configure hardware (skipped in lite/cpu modes — no GPU needed)
+  # --cpu and --lite skip hardware detection (and so the GPU overlay); only the message differs.
   if [ -n "$CPU_FLAG" ] || [ -n "$LITE_FLAG" ]; then
     if [ -n "$CPU_FLAG" ]; then
-      echo "ℹ️  Skipping GPU detection (--cpu mode: local CPU transcription only)"
+      echo "ℹ️  Skipping GPU detection (--cpu requested)"
     else
       echo "ℹ️  Skipping GPU detection (lite mode uses cloud ASR providers)"
     fi

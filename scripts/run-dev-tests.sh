@@ -38,12 +38,16 @@
 #                                                        #   search->chat live smoke test, against
 #                                                        #   a real local LLM (--with-llm-test);
 #                                                        #   several minutes, needs a visible GPU
+#   scripts/run-dev-tests.sh --with-summary-eval        # + a one-meeting-per-arm wiring/sanity run of the
+#                                                        #   summary quality harness (run-summary-eval.sh
+#                                                        #   --inputs smoke) against a real local LLM;
+#                                                        #   ~10 min, needs a visible GPU; NOT a gate verdict
 #
 # Mode flags (--full/--fast/--backend-only/--e2e-only/--frontend-only) are composable — pass more
 # than one to union their phases. --fast additionally selects the e2e-smoke subset unless
 # --e2e-only is also given, in which case the full e2e suite runs. --with-gpu-diarization,
-# --with-mutation-tests, and --with-pipeline-smoke are STRICT opt-in: never included by
-# --full/--fast, and each also counts as a phase selector on its own (so a bare
+# --with-mutation-tests, --with-pipeline-smoke and --with-summary-eval are STRICT opt-in: never
+# included by --full/--fast, and each also counts as a phase selector on its own (so a bare
 # `--with-pipeline-smoke` is a valid invocation).
 #
 # Requires: ./opentr.sh start dev (live stack up) for any phase but --frontend-only.
@@ -106,6 +110,7 @@ WITH_GPU_DIARIZATION=false
 WITH_MUTATION_TESTS=false
 MUTATION_TEST_MODULE="${MUTATION_TEST_MODULE:-spans}"
 WITH_PIPELINE_SMOKE=false
+WITH_SUMMARY_EVAL=false
 # Passed straight through to run-integration-tests.sh. It exists so the full-test-matrix
 # Cycle 2A leg can be run by ONE command that matches the doc's leg 1 exactly
 # (`run-integration-tests.sh --coverage --search-quality --cleanup`) instead of the matrix
@@ -193,6 +198,15 @@ selector on its own):
                           needs to download) and stops it again on exit if this run
                           was the one that started it (a container --with-llm-test
                           was already running before this run is left alone).
+  --with-summary-eval     the summary quality harness's wiring check: one tail-meeting
+                          summary per arm (the current merge rules and your new ones)
+                          through the real pipeline against the same --with-llm-test
+                          model; fails if an arm was not applied or a summary is not
+                          schema-valid. Shares --with-pipeline-smoke's bring-up. It
+                          measures NO verdict (that is scripts/run-summary-eval.sh) and is
+                          NOT MEASURED until the new-rules arm file exists at
+                          $SUMMARY_EVAL_WORK_DIR/arms/new.json (default work dir
+                          ~/ot-cleanup-work/summary-eval).
 
 Report and per-phase logs are written to a fresh temp dir, printed at the end.
 Requires the live dev stack up (./opentr.sh start dev) for any phase but
@@ -224,6 +238,7 @@ while [[ $# -gt 0 ]]; do
         --with-gpu-diarization) WITH_GPU_DIARIZATION=true ;;
         --with-mutation-tests)  WITH_MUTATION_TESTS=true ;;
         --with-pipeline-smoke)  WITH_PIPELINE_SMOKE=true ;;
+        --with-summary-eval)    WITH_SUMMARY_EVAL=true ;;
         -h|--help)       usage; exit 0 ;;
         *) echo -e "${RED}error:${NC} unknown option: $1" >&2; usage; exit "$EXIT_MISUSE" ;;
     esac
@@ -235,7 +250,7 @@ if $E2E_ONLY_EXPLICIT; then
     E2E_SMOKE=false
 fi
 
-if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND && ! $WITH_GPU_DIARIZATION && ! $WITH_MUTATION_TESTS && ! $WITH_PIPELINE_SMOKE; then
+if ! $RUN_BACKEND && ! $RUN_E2E && ! $RUN_FRONTEND && ! $WITH_GPU_DIARIZATION && ! $WITH_MUTATION_TESTS && ! $WITH_PIPELINE_SMOKE && ! $WITH_SUMMARY_EVAL; then
     if $LIST_OVERLAYS || $DRY_RUN; then
         echo -e "${YELLOW}==>${NC} no phase flag given — resolving overlays as if --full were passed"
         RUN_BACKEND=true; RUN_E2E=true; RUN_FRONTEND=true
@@ -262,7 +277,7 @@ assert_fresh_stack_isolated
 LLM_TEST_STARTED_BY_US=false
 _rdt_exit_cleanup() {
     if $LLM_TEST_STARTED_BY_US; then
-        echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: stopping llm-test-vllm (this run started it)"
+        echo -e "${YELLOW}==>${NC} llm-test-vllm: stopping it (this run started it)"
         local c
         c="$(overlay_container_name llm-test-vllm || true)"
         if [[ -n "$c" ]]; then docker stop "$c" >/dev/null 2>&1 || true; fi
@@ -302,6 +317,11 @@ if $LIST_OVERLAYS || $DRY_RUN; then
         echo "  --with-pipeline-smoke: would ensure --with-llm-test is up, then run" \
              "RUN_PIPELINE_SMOKE=1 against tests/e2e/test_full_pipeline_smoke.py"
     fi
+    if $WITH_SUMMARY_EVAL; then
+        echo ""
+        echo "  --with-summary-eval: would ensure --with-llm-test is up, then run" \
+             "scripts/run-summary-eval.sh --inputs smoke --runs 1 --judge none (NOT a gate verdict)"
+    fi
     echo ""
     echo "(--list-overlays/--dry-run: nothing started)"
     exit 0
@@ -310,7 +330,7 @@ fi
 # --------------------------------------------------------------------------- preconditions
 resolve_needed_overlays
 
-if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" || "$WITH_PIPELINE_SMOKE" == "true" ]]; then
+if [[ "$RUN_BACKEND" == "true" || "$RUN_E2E" == "true" || "$WITH_GPU_DIARIZATION" == "true" || "$WITH_MUTATION_TESTS" == "true" || "$WITH_PIPELINE_SMOKE" == "true" || "$WITH_SUMMARY_EVAL" == "true" ]]; then
     if ! curl -sf http://localhost:${BACKEND_PORT:-5174}/health >/dev/null 2>&1; then
         echo -e "${RED}error:${NC} dev backend not reachable at :${BACKEND_PORT:-5174} — run ./opentr.sh start dev first" >&2
         exit "$EXIT_PRECONDITION"
@@ -420,11 +440,11 @@ if $WITH_GPU_SCALE; then
     fi
 fi
 
-# --with-pipeline-smoke: explicit opt-in only, reserves a real GPU (LLM_TEST_GPU_DEVICE_ID,
+# --with-pipeline-smoke / --with-summary-eval: explicit opt-in only, reserve a real GPU (LLM_TEST_GPU_DEVICE_ID,
 # default 2 — an idle secondary card, never this project's own GPU 1). Same "bring it up if
 # not already there" shape as --with-gpu-scale above, but unlike that one this container is
 # cheap to tear back down, so it does — only if THIS run was the one that started it.
-if $WITH_PIPELINE_SMOKE; then
+if $WITH_PIPELINE_SMOKE || $WITH_SUMMARY_EVAL; then
     LLM_TEST_PORT="${LLM_TEST_PORT:-5195}"
     LLM_TEST_CONTAINER="$(overlay_container_name llm-test-vllm)"
     if [[ -n "$LLM_TEST_CONTAINER" ]]; then
@@ -448,7 +468,8 @@ if $WITH_PIPELINE_SMOKE; then
         done
         echo -e "${GREEN}==>${NC} llm-test-vllm is healthy"
     fi
-    export RUN_PIPELINE_SMOKE=1
+    # Only the pipeline smoke reads this; the summary eval talks to the vLLM endpoint directly.
+    $WITH_PIPELINE_SMOKE && export RUN_PIPELINE_SMOKE=1
 fi
 
 # Phases are about to write to the stack: arm the end-of-run sweep (see the trap above).
@@ -828,6 +849,21 @@ if $WITH_MUTATION_TESTS; then
         "$REPO_ROOT/scripts/run-mutation-tests.sh" --module "$MUTATION_TEST_MODULE"
 fi
 
+if $WITH_SUMMARY_EVAL; then
+    # No test-data sweep arming above for this phase on purpose: it writes only under
+    # $SUMMARY_EVAL_WORK_DIR (outside the repo), never to the stack's database or storage.
+    SUMMARY_EVAL_WORK="${SUMMARY_EVAL_WORK_DIR:-$HOME/ot-cleanup-work/summary-eval}"
+    if [[ -f "$SUMMARY_EVAL_WORK/arms/new.json" ]]; then
+        run_phase "summary eval wiring (run-summary-eval.sh --inputs smoke; no verdict)" \
+            "$REPO_ROOT/scripts/run-summary-eval.sh" --inputs smoke --runs 1 --judge none \
+            --llm-base-url "http://localhost:${LLM_TEST_PORT:-5195}/v1" \
+            --arm old=@module --arm "new=$SUMMARY_EVAL_WORK/arms/new.json"
+    else
+        run_phase "summary eval wiring (no new-rules arm file: NOT MEASURED)" \
+            bash -c "echo 'no $SUMMARY_EVAL_WORK/arms/new.json; the lead supplies the new-rules arm' >&2; exit $PHASE_NOT_MEASURED_EXIT"
+    fi
+fi
+
 if $WITH_PIPELINE_SMOKE; then
     # Its own artifact dir: this also goes through run-e2e.sh's three phases, so under
     # `--full --with-pipeline-smoke` it would otherwise overwrite the full suite's junit
@@ -840,7 +876,7 @@ fi
 # Stopped here (before the report) rather than left to the exit trap, so the GPU is free
 # as soon as the last phase that needs it is done; the trap covers every early exit.
 if $LLM_TEST_STARTED_BY_US; then
-    echo -e "${YELLOW}==>${NC} --with-pipeline-smoke: stopping llm-test-vllm (this run started it)"
+    echo -e "${YELLOW}==>${NC} llm-test-vllm: stopping it (this run started it)"
     docker stop "$(overlay_container_name llm-test-vllm)" >/dev/null 2>&1 || true
     LLM_TEST_STARTED_BY_US=false
 fi

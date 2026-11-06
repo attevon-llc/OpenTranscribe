@@ -48,7 +48,10 @@ Moved intact from `scripts/CLAUDE.md` ("Which script to reach for"). Read this b
   builds a dedicated test image, several minutes, needs a visible GPU); `--with-mutation-tests`
   runs a single-module `run-mutation-tests.sh --module` pass (default module `spans`, override
   with `MUTATION_TEST_MODULE=<module>`; never `--all` through this flag — that's hours, run it
-  by hand); `--with-pipeline-smoke` runs `tests/e2e/test_full_pipeline_smoke.py` — the one test
+  by hand); `--with-summary-eval` runs `scripts/run-summary-eval.sh --inputs smoke` (one I1
+  summary per rule set against the same `--with-llm-test` model; it asserts the arm was applied
+  and the output is schema-valid, and measures no verdict; NOT MEASURED until the lead's
+  `arms/new.json` exists); `--with-pipeline-smoke` runs `tests/e2e/test_full_pipeline_smoke.py` — the one test
   in the whole suite that pushes a real fixture (`backend/tests/fixtures/media/sample_short.wav`,
   10s of real speech) through real upload -> real WhisperX/diarization -> real search indexing ->
   a real local LLM chat answer, start to finish, and asserts on the result. Every other e2e test

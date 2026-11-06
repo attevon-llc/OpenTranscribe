@@ -76,6 +76,15 @@ this file is for.
   measured nothing.
 - **E2E** — `e2e/run-e2e.sh` (two phases: non-visual in parallel, then visual serially) and `e2e/run-e2e-smoke.sh`. Phase behaviour, exit codes and the zero-collected rules: `scripts/e2e/CLAUDE.md`.
 - **Test-suite quality tooling** (issue #431) — `audit-tests.py` (21 AST detectors, allowlist-gated, `--selftest`), `analyze-test-timing.py`, `run-mutation-tests.sh` and the other auditors. Every detector, allowlist rule, selftest and the mutation-harness traps: `scripts/audit_tests/CLAUDE.md`.
+- **Summary-merge quality gate** — `run-summary-eval.sh --fresh NAME --arm old=@module --arm new=<file>`
+  (design: `docs/design/summary_quality_eval_plan.md`; package `summary_bench/`, entry
+  `benchmark_summary.py`). Measures the multi-slice scope/merge rules on a real local model:
+  GPU check (GPU 2 idle or exit 4; GPU 0 refused), isolated `--fresh` stack, a smoke that projects
+  the matrix against the budget, then run, replay-merge, judge and report. `--dry-run` prints every
+  command and runs none. The arms are JSON files OUTSIDE the repo; a results file holds only their
+  SHA-256 and length. A verdict of `VOID` (missing cell, arm never applied, sabotage control not
+  caught, A/A control tripped) means the numbers must not be read. `run-dev-tests.sh
+  --with-summary-eval` runs only its smoke wiring check.
 - **Fake providers** — `mock-llm-server.py`: OpenAI-compatible server so chat/AI features work
   without a GPU or API key. Run it via `./opentr.sh start dev --with-mock-llm` (compose
   service `mock-llm`, in-network `http://mock-llm:5199/v1`) rather than by hand — a bare

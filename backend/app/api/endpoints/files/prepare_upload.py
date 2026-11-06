@@ -182,8 +182,8 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
     system tag is reused rather than forked, so applying a seeded default still
     attaches the shared row.
 
-    Resolution (normalization, normalized-exact match, SAVEPOINT-guarded insert)
-    is shared with every other tag-creation path via
+    Resolving the names (normalize, match normalized-exact, insert under a
+    SAVEPOINT) runs through the one implementation all tag creation shares, in
     ``app/services/tag_service.py``, and stays batched — a constant number of
     SELECTs regardless of list length (issue #284 A2.8), not 2N. These names
     were typed by a person, so the fuzzy suggestion lookup is deliberately not

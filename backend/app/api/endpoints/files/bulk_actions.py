@@ -62,7 +62,7 @@ class BulkActionRequest(BaseModel):
     action: str
     force: bool = False
     reset_retry_count: bool = False
-    # Tag actions (required when action='add_tag' or 'remove_tag')
+    # Must be set for add_tag / remove_tag; ignored by every other action.
     tag_name: str | None = None
     # Selective reprocessing (optional, used when action='reprocess')
     stages: list[str] = Field(default_factory=list)
@@ -195,8 +195,8 @@ def bulk_file_action(
     is_tag_action = request.action in TAG_ACTIONS
     resolution = BulkTagResolution(None)
     if is_tag_action:
-        # Tagging creates tenant vocabulary, which a support grant never does (same rule as the
-        # tag routes).
+        # Refused before resolving: adding resolves by inserting, and a support grant
+        # must never leave a new tag in the tenant's vocabulary.
         refuse_under_support_grant(ctx)
         try:
             resolution = resolve_bulk_tag(
@@ -271,19 +271,18 @@ def bulk_file_action(
                 )
 
         if is_tag_action:
-            # One refresh for the whole batch, and best-effort: every change in
-            # `results` is already committed, so a failing reindex must not turn
-            # a completed batch into a 500 (the task is idempotent, so a re-run
-            # converges).
+            changed_uuids = [r.file_uuid for r in results if r.outcome in CHANGED_OUTCOMES]
+            # Every file's change is already committed and the reindex is idempotent, so a
+            # failed refresh must not turn those committed results into an error response.
             try:
                 refresh_tagged_files(
                     db,
-                    [r.file_uuid for r in results if r.outcome in CHANGED_OUTCOMES],
+                    changed_uuids,
                     user_id=current_user.id,
                     created_tag_id=resolution.created_tag_id,
                 )
-            except Exception as e:
-                logger.error(f"Could not refresh tags for bulk {request.action}: {e}")
+            except Exception:
+                logger.exception(f"Post-batch tag refresh failed after bulk {request.action}")
 
         return results
 

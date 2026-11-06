@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /**
- * The client is transport-only, so these tests assert the wire shape each
- * method produces (path, method, params/body) plus the return-value passthrough.
+ * The client does nothing but move requests over the wire, so each test checks
+ * the request a method sends (verb, path, query params or body) and that the
+ * response data comes back unchanged.
  *
  * Regression coverage for BC-25: `triggerRedactionReindex` used to hand-build
  * its query string with a template literal (`?only_stale=${onlyStale}`) instead

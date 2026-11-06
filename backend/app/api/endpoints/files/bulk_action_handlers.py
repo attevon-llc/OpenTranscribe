@@ -311,10 +311,25 @@ def _handle_tag_action(
     user_id: int,
     bypass: PlatformBypass,
 ) -> BulkActionResult:
-    """Attach or detach the batch's tag on one file, as a per-file outcome.
+    """Attach (``add=True``) or detach the batch's tag on one file.
 
-    The mutation itself lives in ``app.services.tag_bulk`` — this only maps its
-    outcome onto the bulk envelope.
+    A thin adapter: ``tag_bulk.apply_tag_to_file`` owns the permission and tenant
+    checks, the per-file savepoint and the mapping of every failure onto a
+    ``failed`` outcome, so nothing is caught here. This only copies its result onto
+    the response row.
+
+    Args:
+        db: Database session.
+        file_uuid: Public id of the file, echoed on the row.
+        file_id: Internal id of the same file.
+        tag: The tag resolved once for the batch; None when a removal named a tag
+            that does not exist.
+        add: Attach when True, detach when False.
+        user_id: The caller.
+        bypass: The request's platform bypass.
+
+    Returns:
+        The file's row, carrying its ``BulkTagOutcome``.
     """
     applied = apply_tag_to_file(
         db, file_id=file_id, tag=tag, add=add, user_id=user_id, bypass=bypass

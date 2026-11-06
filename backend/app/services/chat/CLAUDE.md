@@ -238,7 +238,7 @@ An empty resolved scope means **match nothing**, not match everything —
 files go through `get_file_by_uuid_with_permission`, collections through
 `PermissionService.get_accessible_collection_ids`, and tags through
 `get_accessible_file_ids_subquery` — the same sharing rule
-`endpoints/tags/_common.py:_visible_to` uses. Tags were owner-only until #385, so
+`services/tag_scope.py:get_accessible_file_ids_subquery` uses. Tags were owner-only until #385, so
 scoping a chat by a tag spanning shared recordings silently dropped them and the
 model answered confidently from the remainder. Don't write a fourth sharing rule
 here; if an axis needs one, it is already wrong. Tag names are unique **per

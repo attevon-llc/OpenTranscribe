@@ -25,7 +25,7 @@ This page provides step-by-step procedures for diagnosing and resolving common p
    ```bash
    ./opentr.sh shell backend
    python -c "
-   from app.db.session import SessionLocal
+   from app.db.base import SessionLocal
    from app.models.media import MediaFile, FileStatus
    db = SessionLocal()
    stuck = db.query(MediaFile).filter(

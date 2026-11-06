@@ -136,7 +136,7 @@ keeps a failure attributable to one leg.
 ```
 
 These five overlays safely co-run on one stack: each binds a distinct loopback port (mock-llm
-`5199`, `--with-llm-test`'s vLLM `5195`, lldap `3890`/`17170`, Keycloak `8180`, Authentik `9022`),
+`5199`, `--with-llm-test`'s vLLM `5195`, lldap `3890`/`17170` (LDAPS `6360`), Keycloak `8180`, Authentik `9022`),
 none of them touches Celery worker scaling or `COMPOSE_PROFILES` (that's Cycle 2B's job), and only
 `--with-llm-test` takes a GPU — pinned via `LLM_TEST_GPU_DEVICE_ID`.
 

@@ -25,9 +25,9 @@ MediaFile` with what only `GET /files/{uuid}` returns (`transcript_segments`,
   never sends. Also holds `GroupedTranscriptSegment`, the backend-computed overlap grouping
   the frontend must render rather than recompute, and `GroupedSegmentView`, its camelCase
   client-side projection shared by `TranscriptDisplay` and `TranscriptSegmentList`.
-- `collection.ts` / `tag.ts` / `comment.ts` — added in #284 A3.6. Before that, `Collection`
-  had three competing local declarations, `Tag` one unexported one, and comments had none, so
-  every call site fell back to `any[]`. These are now the single home for each.
+- `collection.ts` / `tag.ts` — added in #284 A3.6. Before that, `Collection`
+  had three competing local declarations and `Tag` one unexported one. These are now the
+  single home for each. Comments have no shared type.
 - `speaker.ts` — `Speaker` + `Segment`; `overlap_index`/`overlap_count` are the only fields marked
   client-computed. `Segment.redactions` is `unknown[]` on purpose — every read site only tests
   whether it is non-empty.

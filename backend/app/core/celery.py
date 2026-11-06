@@ -354,7 +354,7 @@ celery_app.conf.update(
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
     # Enable Redis priority queues: lower number = higher priority (runs first).
     # Priorities are PER-QUEUE — GPUPriority.X is independent of CPUPriority.X.
-    # Named constants defined in app.core.constants: GPUPriority, CPUPriority, etc.
+    # Named constants defined in app.core.queues: GPUPriority, CPUPriority, etc.
     # GPU queue:  0=speaker-reassign  1=embed-extract  2=transcription-retry
     #             3=transcription  4=rediarize  5=recluster  7=admin-migration-batches
     # CPU queue:  1=pipeline-retry  2=pipeline-critical  4=user-triggered  5=system

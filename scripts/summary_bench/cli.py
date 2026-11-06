@@ -247,6 +247,11 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if getattr(args, 'verbose', False) else logging.WARNING,
         format='%(levelname)s %(message)s',
     )
+    # The app's chunker logs its decisions at INFO for every candidate budget the planner tries.
+    # Quieted here, at the entry point: set inside the library, it leaked into the backend test
+    # session that imports it (tests/eval/) and hid other tests' DEBUG/INFO records.
+    logging.getLogger('app.services.llm_service').setLevel(logging.WARNING)
+    logging.getLogger('app.services.llm_chunking').setLevel(logging.WARNING)
     ensure_app_environment()
     from summary_bench import post
 

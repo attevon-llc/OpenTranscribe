@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A fake OpenAI-compatible LLM, for exercising chat without a real model.
+"""A fake OpenAI-compatible LLM, for exercising chat and the JSON-shaped LLM tasks without a model.
 
 Everything except the model is real when you point OpenTranscribe at this:
 retrieval runs against your actual transcripts, redaction masking applies,
@@ -30,6 +30,8 @@ they would against a real provider.
 from __future__ import annotations
 
 import argparse
+import collections
+import hashlib
 import json
 import re
 import time
@@ -53,7 +55,124 @@ MODEL_ID = 'mock-gpt'
 #                   reasoning display end to end with no GPU or real model.
 #                   Reasoning only SEPARATES when the request asked for thinking;
 #                   see THINKING_END_TOKEN below for why that condition is real
-SCENARIOS = ('mock-gpt', 'mock-echo', 'mock-empty', 'mock-error', 'mock-slow', 'mock-reasoning')
+#   mock-summary-json   a constant, schema-valid BLUF summary (the default summary prompt's
+#   mock-topics-json    output format), a constant tag/collection suggestion, and a constant
+#   mock-speakers-json  speaker-identification answer. Each is the exact JSON shape the
+#                       matching parser reads, so the summarization, topic-extraction and
+#                       speaker-ID tasks run for real against it. Each reply also carries
+#                       ECHO_FIELD, the SHA-256 of the request's system message, so a test
+#                       can tell WHICH prompt produced WHICH reply (a slice call and the
+#                       merge call differ only in their system message). Wiring only: the
+#                       body is a constant, so it says nothing about summary quality.
+SCENARIOS = (
+    'mock-gpt',
+    'mock-echo',
+    'mock-empty',
+    'mock-error',
+    'mock-slow',
+    'mock-reasoning',
+    'mock-summary-json',
+    'mock-topics-json',
+    'mock-speakers-json',
+)
+
+#: Key carrying the system-message digest inside a JSON scenario's body. No parser reads it:
+#: the topic and speaker parsers pick fields by name, and a summary keeps any key a custom
+#: prompt produces, so on a persisted summary it names the call that produced it.
+ECHO_FIELD = 'mock_system_sha256'
+
+#: Every chat request the server has seen, newest last, readable at ``GET /_mock/requests``
+#: and cleared with ``POST /_mock/requests/clear``. Lets a test assert how many calls a task
+#: made and what each one carried without patching the code under test. Bounded: a long-lived
+#: container must not grow with every chat turn.
+REQUEST_LOG_LIMIT = 200
+REQUEST_LOG: collections.deque[dict] = collections.deque(maxlen=REQUEST_LOG_LIMIT)
+
+SUMMARY_BODY = {
+    'bluf': 'Mock summary: the group reviewed the plan and agreed on the next steps.',
+    'brief_summary': (
+        'A canned summary returned by scripts/mock-llm-server.py. It has the shape of the '
+        'default summary prompt so the summarization task can persist and index it.'
+    ),
+    'major_topics': [
+        {
+            'topic': 'Mock topic',
+            'summary': 'A canned discussion of the plan.',
+            'key_points': ['The plan was reviewed', 'The next steps were agreed'],
+            'timestamp_range': '[00:00] - [00:10]',
+        }
+    ],
+    'action_items': [
+        {
+            'item': 'Send the follow-up notes',
+            'owner': 'Not specified',
+            'due_date': 'Not specified',
+            'priority': 'medium',
+            'context': 'The group asked for written notes.',
+            'mentioned_timestamp': '[00:05]',
+        }
+    ],
+    'key_decisions': [
+        {
+            'decision': 'Proceed with the plan as reviewed',
+            'context': 'No objections were raised.',
+            'impact': 'Work continues unchanged.',
+            'stakeholders': [],
+            'timestamp': '[00:08]',
+        }
+    ],
+    'speakers_analysis': [],
+    'follow_up_items': ['Confirm the schedule'],
+    'overall_sentiment': 'neutral',
+    'content_type_detected': 'meeting',
+}
+
+TOPICS_BODY = {
+    'suggested_collections': [
+        {
+            'name': 'Mock Planning Sessions',
+            'confidence': 0.9,
+            'rationale': 'Canned collection suggestion.',
+        }
+    ],
+    'suggested_tags': [
+        {'name': 'mock-planning', 'confidence': 0.9, 'rationale': 'Canned high-confidence tag.'},
+        {
+            'name': 'mock-schedule',
+            'confidence': 0.6,
+            'rationale': 'Canned moderate-confidence tag.',
+        },
+    ],
+}
+
+# Two predictions, so a file with either one or two diarized speakers gets at least one
+# suggestion; a label the file does not have is simply not stored.
+SPEAKERS_BODY = {
+    'speaker_predictions': [
+        {
+            'speaker_label': 'SPEAKER_00',
+            'predicted_name': 'Alex Morgan',
+            'confidence': 0.85,
+            'reasoning': 'Canned reasoning.',
+            'evidence_types': ['name_mention'],
+        },
+        {
+            'speaker_label': 'SPEAKER_01',
+            'predicted_name': 'Priya Natarajan',
+            'confidence': 0.7,
+            'reasoning': 'Canned reasoning.',
+            'evidence_types': ['role_reference'],
+        },
+    ],
+    'overall_confidence': 'medium',
+    'analysis_notes': 'Canned analysis from the mock LLM.',
+}
+
+JSON_SCENARIO_BODIES = {
+    'mock-summary-json': SUMMARY_BODY,
+    'mock-topics-json': TOPICS_BODY,
+    'mock-speakers-json': SPEAKERS_BODY,
+}
 
 # The boundary token a Gemma-4-class model emits between its chain-of-thought and
 # its answer. Reproduced verbatim (issue #439) because canning the *fixed* shape
@@ -118,6 +237,12 @@ def _thinking_requested(body: dict) -> bool:
     return bool(isinstance(kwargs, dict) and kwargs.get('enable_thinking'))
 
 
+def _system_sha256(messages: list[dict]) -> str:
+    """SHA-256 of the system message, or of the empty string when there is none."""
+    system = next((str(m.get('content') or '') for m in messages if m.get('role') == 'system'), '')
+    return hashlib.sha256(system.encode()).hexdigest()
+
+
 def _topic_from(messages: list[dict]) -> str:
     """Echo the user's question back so the reply looks responsive."""
     for message in reversed(messages):
@@ -131,6 +256,20 @@ def _topic_from(messages: list[dict]) -> str:
                 question = re.sub(r'^(question|user)\s*:\s*', '', question, flags=re.I)
                 return question[:80]
     return 'your question'
+
+
+def _reply_text(model: str, messages: list[dict], system_sha256: str) -> str:
+    """The answer a scenario model gives to ``messages``."""
+    if model == 'mock-echo':
+        # Verbatim, so a test can assert on the prompt the app really built:
+        # whether redaction masked the excerpts, and whether the system
+        # prompt layers arrived in the documented order.
+        return '\n\n'.join(f'[{m.get("role")}]\n{m.get("content") or ""}' for m in messages)
+    if model == 'mock-empty':
+        return ''
+    if model in JSON_SCENARIO_BODIES:
+        return json.dumps({**JSON_SCENARIO_BODIES[model], ECHO_FIELD: system_sha256})
+    return REPLY_TEMPLATE.format(topic=_topic_from(messages))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -159,6 +298,9 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if self.path.rstrip('/') == '/_mock/requests':
+            self._json({'requests': list(REQUEST_LOG)})
+            return
         self._json({'status': 'ok', 'model': MODEL_ID})
 
     def do_POST(self) -> None:  # noqa: N802
@@ -168,8 +310,22 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             body = {}
 
+        if self.path.rstrip('/') == '/_mock/requests/clear':
+            REQUEST_LOG.clear()
+            self._json({'requests': []})
+            return
+
         messages = body.get('messages') or []
         model = str(body.get('model') or MODEL_ID)
+        system_sha256 = _system_sha256(messages)
+        REQUEST_LOG.append(
+            {
+                'model': model,
+                'system_sha256': system_sha256,
+                'max_tokens': body.get('max_tokens'),
+                'messages': messages,
+            }
+        )
 
         if model == 'mock-error':
             # A provider that IS configured but fails. The app must surface this
@@ -180,15 +336,7 @@ class Handler(BaseHTTPRequestHandler):
         if model == 'mock-slow':
             time.sleep(SLOW_FIRST_TOKEN_DELAY_S)
 
-        if model == 'mock-echo':
-            # Verbatim, so a test can assert on the prompt the app really built:
-            # whether redaction masked the excerpts, and whether the system
-            # prompt layers arrived in the documented order.
-            text = '\n\n'.join(f'[{m.get("role")}]\n{m.get("content") or ""}' for m in messages)
-        elif model == 'mock-empty':
-            text = ''
-        else:
-            text = REPLY_TEMPLATE.format(topic=_topic_from(messages))
+        text = _reply_text(model, messages, system_sha256)
 
         reasoning = (
             REASONING_TEMPLATE.format(topic=_topic_from(messages))

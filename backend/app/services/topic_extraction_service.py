@@ -454,7 +454,12 @@ IMPORTANT GUIDELINES:
         try:
             # Keep status as "pending" so suggestions remain available
             # Track what user has accepted in user_decisions for analytics
-            existing_decisions: dict[str, list[str]] = suggestion.user_decisions or {}
+            # A copy, not the loaded dict: the column is a plain JSONB, so assigning back the
+            # SAME object after mutating it in place is no change to SQLAlchemy and the second
+            # and later accepts were never written.
+            existing_decisions: dict[str, list[str]] = {
+                key: list(values) for key, values in (suggestion.user_decisions or {}).items()
+            }
             existing_decisions.setdefault("accepted_collections", []).extend(accepted_collections)
             existing_decisions.setdefault("accepted_tags", []).extend(accepted_tags)
 

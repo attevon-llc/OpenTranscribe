@@ -30,7 +30,9 @@ app actually *sent*), `mock-empty`, `mock-error`, `mock-slow`, `mock-reasoning`
 ⚠️ It separates reasoning **only when the request activated thinking** via
 `chat_template_kwargs={"enable_thinking": true}`; unasked, it reproduces the real server's
 #439 behaviour and leaks the thoughts into the answer, so the app's handling of that is
-testable). Never start it as a
+testable). Three JSON-shaped scenarios — `mock-summary-json`, `mock-topics-json`,
+`mock-speakers-json` — return constant, schema-valid replies for the summary, topic and
+speaker-ID tasks (wiring only; they measure no quality). Never start it as a
 bare host process: it binds 5199 and then blocks the container. Fixtures and the
 full table: `backend/tests/CLAUDE.md`.
 `--with-mock-asr` is the sibling overlay — a mocked cloud ASR (Gladia stand-in) provider at

@@ -89,7 +89,14 @@ import tests.conftest  # noqa: F401,E402 — side effects only, see above
 # say ``from conftest import ...`` rather than ``from tests.e2e.conftest import ...``.
 # It owns every artifact the suite asserts on, so that no test reads the dev library
 # (see its module docstring and ``backend/tests/CLAUDE.md``).
-pytest_plugins = ["tests.fixtures.search_corpus_stack", "owned_corpus", "privacy_fixtures"]
+pytest_plugins = [
+    "tests.fixtures.search_corpus_stack",
+    # `register_mock_llm_provider`: point the app at the `--with-mock-llm` container and make
+    # it the active configuration, undone afterwards. Same confcutdir reason as above.
+    "tests.fixtures.mock_llm",
+    "owned_corpus",
+    "privacy_fixtures",
+]
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

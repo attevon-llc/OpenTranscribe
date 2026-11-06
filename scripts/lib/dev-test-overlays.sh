@@ -134,7 +134,7 @@ declare -A OVERLAY_NEED_PREDICATE=(
 #: order is unspecified, and a stable order makes the printed plan/report reproducible.
 OVERLAY_ORDER=(mock-llm keycloak-test ldap-test watch mock-asr diar-native)
 declare -A OVERLAY_DESC=(
-    [mock-llm]="mock LLM — chat/summarization/topic-extraction suites (backend + e2e chat)"
+    [mock-llm]="mock LLM — e2e chat suites and the summarize / speaker-ID actions in test_gallery_actions.py"
     [keycloak-test]="Keycloak/OIDC — test_auth_buttons.py::TestOIDCLogin, test_ldap_oidc.py (~60-90s to healthy)"
     [ldap-test]="LDAP — test_auth_buttons.py::TestLDAPLogin, test_ldap_oidc.py (fast, no healthcheck)"
     [watch]="watch-sources host-folder mount — test_watch_sources_e2e.py (recreates app containers)"

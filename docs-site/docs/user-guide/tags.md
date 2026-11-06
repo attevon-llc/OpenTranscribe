@@ -42,7 +42,7 @@ case, hyphens, underscores and repeated spaces, so `Q3 Review`, `q3-review` and
 A *near* match is never applied automatically. Typing `q4-earnings` when `q3-earnings`
 exists creates a new tag, because nothing can split two tags apart once they are
 combined. The auto-labeler is the one exception — it may attach a close match on its
-own, and those tags show **Added by AI** in the Origin column.
+own, and those tags show **Applied by AI** in the Origin column.
 
 ## Finding a tag
 

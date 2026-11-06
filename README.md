@@ -332,33 +332,41 @@ Then follow the on-screen instructions. The setup script will:
 - **Automatically download and cache AI models** (several GB; the size depends on your Whisper and neural-search model choices) if a token is provided
 - Set up the management script (`opentranscribe.sh`)
 
-**💻 CPU-only install:** If you don't have an NVIDIA GPU, or you're on WSL2 with the NVIDIA Container Toolkit installed but GPU passthrough disabled, pass `--cpu` to skip GPU detection and avoid the `nvidia-container-cli` adapter error at container start:
+**🧮 CPU-only install (`--cpu`):** for a machine where GPU containers cannot run, most often
+WSL2, where Docker lists the NVIDIA runtime but every GPU container fails at start; or for a
+machine without an NVIDIA GPU where you want everything to run locally on the CPU. It is fully
+private and needs no provider account, but processing is much slower than on a GPU. A
+CPU-optimised pipeline is planned; see the [Roadmap](https://docs.opentranscribe.app/roadmap). The
+installer then skips GPU detection entirely:
 
 ```bash
-# Piped install
+# Pass the flag through the pipe
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
-# Unattended / CI equivalent
+# Or set the variable on bash, not on curl (unattended / CI)
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_FORCE_CPU=1 bash
 ```
 
-The CPU-only choice is persisted to `.env` as `FORCE_CPU_MODE=true` so subsequent `./opentranscribe.sh start`/`restart` calls continue to skip the GPU overlay automatically.
+The choice is saved in `.env` as `FORCE_CPU_MODE=true`, so every later
+`./opentranscribe.sh start` or `restart` leaves the GPU overlay out without the flag.
 
 **🪶 Lite install (`--lite`):** `--cpu` still runs the full CUDA image, just without a GPU. `--lite`
 is different — it installs the much smaller CPU-only `opentranscribe-backend-lite` image, which
-carries no CUDA runtime and no local ASR model, and transcribes via a **cloud ASR provider** you
-configure after install. Implies `--cpu`, and persists `DEPLOYMENT_MODE=lite`:
+carries no CUDA runtime and no local ASR model. Transcription and speaker detection run with a
+**cloud provider** you configure after install, so you need a provider account and the audio
+leaves the machine; the image is small and fast. Implies `--cpu`, and persists
+`DEPLOYMENT_MODE=lite`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --lite
 
-# Unattended / CI equivalent
+# Unattended / CI: set the variable on bash, not on curl
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_LITE=1 bash
 ```
 
-This is the only supported shape on a host with no NVIDIA GPU at all, and it is what arm64 hosts
-select automatically — the full CUDA image publishes no arm64 leg, so on Apple Silicon and other
-aarch64 machines the lite image is the only backend available.
+On a host with no NVIDIA GPU you can choose either `--lite` or `--cpu`. arm64 hosts select lite
+automatically — the full CUDA image publishes no arm64 leg, so on Apple Silicon and other aarch64
+machines the lite image is the only backend available.
 
 **⚠️ IMPORTANT - HuggingFace Setup:**
 The script will prompt you for your HuggingFace token during setup. **BEFORE running the installer:**

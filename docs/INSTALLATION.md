@@ -43,36 +43,39 @@ curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/s
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash
 ```
 
-## 🧮 CPU-Only Installation (Opt-Out of GPU)
+### ✅ **CPU-only installation (opting out of the GPU)**
 
-Auto-detection enables GPU acceleration whenever it finds a working NVIDIA
-setup. If you **know** you want to run on CPU only — either because you have
-no NVIDIA GPU, or because the NVIDIA Container Toolkit is installed but GPU
-passthrough is not functional (a common situation on WSL2 without a
-WSL-capable Windows driver) — pass `--cpu` to skip GPU detection entirely:
+Use `--cpu` when the GPU must not be used even though the host seems to offer one. The common
+case is WSL2 without a WSL-capable Windows NVIDIA driver: Docker lists the NVIDIA runtime, but
+GPU containers cannot reach the device and fail at start with an `nvidia-container-cli` error.
+It also suits a machine without an NVIDIA GPU where you want local transcription on the CPU.
 
 ```bash
-# Piped install: forward --cpu with `bash -s --`
+# Pass the flag through the pipe
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | bash -s -- --cpu
 
-# Or via env var (useful in CI / unattended installs)
+# Or set the variable on bash, not on curl (unattended / CI)
 curl -fsSL https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh | OPENTRANSCRIBE_FORCE_CPU=1 bash
 
-# Or after downloading the script
-./setup-opentranscribe.sh --cpu
+# Or download the script first, then run it with the flag
+curl -fsSLO https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/master/setup-opentranscribe.sh
+bash setup-opentranscribe.sh --cpu
 ```
 
-When `--cpu` is active the installer:
+In CPU-only mode the installer does not probe for a GPU at all. It writes `FORCE_CPU_MODE=true`,
+`DETECTED_DEVICE=cpu`, `COMPUTE_TYPE=int8` and a CPU-sized `BATCH_SIZE` into `.env`, and from
+then on `./opentranscribe.sh start` and `restart` leave out both the GPU overlay and the
+Blackwell overlay, with no flag needed.
 
-- Skips `nvidia-smi` and NVIDIA Container Toolkit probing.
-- Writes `FORCE_CPU_MODE=true`, `DETECTED_DEVICE=cpu`, and CPU-optimized
-  precision (`int8`) / batch-size defaults into `.env`.
-- Causes `opentranscribe.sh start` (and subsequent `restart`/`stop` calls) to
-  skip the `docker-compose.gpu.yml` / `docker-compose.blackwell.yml`
-  overlays. You do **not** need to re-pass `--cpu` on every run.
+To go back to the GPU, either re-run the installer without `--cpu`, or set
+`FORCE_CPU_MODE=false` in `.env` and run `./opentranscribe.sh restart`.
 
-To switch a CPU-only install back to GPU later, re-run the installer without
-`--cpu` (or set `FORCE_CPU_MODE=false` in `.env` and restart).
+`--cpu` keeps the full CUDA image and runs everything locally on the CPU: fully private, no
+provider account, but much slower than on a GPU. A CPU-optimised pipeline is planned; see the
+[Roadmap](https://docs.opentranscribe.app/roadmap). It is not the same as `--lite`, which installs
+the much smaller CPU-only `opentranscribe-backend-lite` image and uses a cloud provider for
+transcription and speaker detection (it needs a provider account and the audio leaves the
+machine; small and fast). On a host with no NVIDIA GPU you can choose either.
 
 ## 📋 Prerequisites
 
@@ -154,7 +157,7 @@ LDAP_ENABLED=true
 LDAP_SERVER=ldaps://your-ad-server.domain.com
 LDAP_PORT=636
 LDAP_BIND_DN=CN=service-account,CN=Users,DC=domain,DC=com
-LDAP_BIND_PASSWORD=your-service-account-password
+LDAP_BIND_PASSWORD=<service-account-password>
 LDAP_SEARCH_BASE=DC=domain,DC=com
 ```
 

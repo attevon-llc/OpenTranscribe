@@ -26,7 +26,7 @@ OpenTranscribe combines state-of-the-art AI models with a modern web interface t
 - 40x+ realtime speed on GPU (`large-v3-turbo` default, 6x faster than `large-v2`)
 - Support for audio (MP3, WAV, FLAC, M4A) and video (MP4, MOV, AVI, MKV)
 - Cloud ASR providers: Deepgram, AssemblyAI, OpenAI, Google, AWS, Azure, Speechmatics, Gladia, pyannote.ai
-- A lite image for hosts with no GPU, which transcribes and detects speakers with cloud providers only (see [Deployment Variants](../installation/deployment-variants.md))
+- A lite image for hosts with no GPU, which transcribes and detects speakers with cloud providers only (or `--cpu` to run the full image locally on the CPU, slower but fully private; see [Deployment Variants](../installation/deployment-variants.md))
 
 ### Smart Speaker Management
 - Automatic speaker detection, chosen per user: on this server (the diar-native engine by default, with PyAnnote as a fallback), by your cloud transcription provider, or by the pyannote.ai cloud service

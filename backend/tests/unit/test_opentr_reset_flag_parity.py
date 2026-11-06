@@ -93,6 +93,19 @@ def test_the_case_flag_extractor_can_actually_fail() -> None:
     )
 
 
+def test_both_parsers_accept_the_cpu_only_mode_flags() -> None:
+    """The set difference below is blind to a flag missing from BOTH parsers.
+
+    ``--cpu`` and ``--lite`` decide whether the GPU overlay loads at all, so each must
+    be named explicitly in start_app() and reset_and_init().
+    """
+    source = OPENTR_SH.read_text(encoding="utf-8")
+    for function in ("start_app", "reset_and_init"):
+        flags = _case_flags(_function_body(source, function))
+        for flag in ("--cpu", "--lite"):
+            assert flag in flags, f"{function}() has no {flag}) case arm"
+
+
 def test_reset_and_init_parses_every_overlay_flag_start_app_does() -> None:
     """The #690fb3d8-shaped assertion: derive both flag sets from the real parsers."""
     source = OPENTR_SH.read_text(encoding="utf-8")

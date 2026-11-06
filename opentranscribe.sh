@@ -573,15 +573,13 @@ nvidia_gpu_offer_available() {
     return 0
 }
 
-# force_cpu_mode_requested: returns success (0) when the user opted out of
-# GPU acceleration at install time (setup-opentranscribe.sh --cpu, or the
-# OPENTRANSCRIBE_FORCE_CPU env var), which persisted FORCE_CPU_MODE=true to
-# .env. When true, get_compose_files skips the GPU overlay(s) regardless of
-# whether Docker reports an nvidia runtime. This is the authoritative signal
-# because Docker's runtime presence is a necessary but not sufficient
-# condition for a working GPU (e.g. WSL2 with toolkit installed but no
-# adapter passthrough still advertises the runtime). Also honors
-# OPENTRANSCRIBE_FORCE_CPU set in the current shell for one-off overrides.
+# force_cpu_mode_requested: succeed when this run must stay off the GPU.
+#
+# The NVIDIA runtime being registered with Docker does not mean a container can use the
+# GPU (WSL2 without a WSL-capable driver lists the runtime, then every GPU container fails
+# at start), so the user's explicit choice decides, not runtime detection. The choice is
+# FORCE_CPU_MODE in .env, written by the installer's --cpu; a non-empty
+# OPENTRANSCRIBE_FORCE_CPU in the calling shell forces CPU for this one invocation.
 force_cpu_mode_requested() {
     if [ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]; then
         return 0
@@ -875,7 +873,7 @@ get_compose_files() {
         fi
     fi
 
-    # Add GPU overlay if NVIDIA runtime is available and overlay exists,
+    # Add the GPU overlay when the NVIDIA Container Toolkit runtime is present,
     # unless the user explicitly chose CPU-only mode at install time, or this is
     # a lite deployment (the lite image carries no CUDA runtime at all, so a GPU
     # reservation on it reserves a device nothing in the container can use).
@@ -895,7 +893,7 @@ get_compose_files() {
         fi
     elif force_cpu_mode_requested; then
         if [ "$docker_runtime" = "nvidia" ]; then
-            echo -e "${BLUE}🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU overlay despite nvidia runtime being available${NC}" >&2
+            echo -e "${BLUE}🧮 CPU-only mode requested — skipping the GPU overlay although the NVIDIA runtime is present${NC}" >&2
         fi
     elif [ "$docker_runtime" = "nvidia" ]; then
         if is_blackwell_gpu && [ -f docker-compose.blackwell.yml ]; then

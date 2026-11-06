@@ -404,51 +404,61 @@ psql -U postgres -l
 ./opentr.sh reset dev
 ```
 
-**6. Or just reset Postgres password if you want to retain the data:**
+**6. Reset the Postgres password and keep the data** (the alternative to step 5 when the
+database contents matter):
 
-When
-```bash
-./opentranscribe.sh logs postgres
-```
-shows error:
+This applies when the Postgres or backend logs show:
 
-     FATAL:  password authentication failed for user "postgres"
-
-Connect to the postgres container, install nano
-```bash
-docker exec -it opentranscribe-postgres /bin/sh
-apk add nano
-```
-Edit pg_hba.conf and change last line from
-
-    host all all all scram-sha-256
-
-to
-
-    host all all all trust
-```bash
-nano /var/lib/postgresql/data/pg_hba.conf
-```
-Save the file and restart the container.
-
-Reconnect and update the Postgres password to match `POSTGRES_PASSWORD` in your `.env` file:
-```bash
-psql -U postgres
-ALTER USER postgres WITH PASSWORD 'your-password-from-env-file';
-\q
+```text
+FATAL:  password authentication failed for user "postgres"
 ```
 
-Restart the container, reconnect, and return `pg_hba.conf` last line to the original auth value of `scram-sha-256`.
+The usual cause is that `POSTGRES_PASSWORD` in `.env` was changed after the database volume
+was first created. Postgres stores the password it was initialised with and ignores later
+changes to the variable, so the backend now offers a password the database does not accept.
+The fix is to give the database role the password that `.env` holds.
 
-Restart OpenTranscribe:
+Inside the container, connections over the local socket need no password (the
+`postgres:17.5-alpine` image trusts them by default), so no configuration change is needed:
+
+```bash
+./opentranscribe.sh shell postgres     # development checkout: ./opentr.sh shell postgres
+psql -U postgres -d postgres           # or your POSTGRES_USER, if you changed it
+```
+
+At the `postgres=#` prompt:
+
+```text
+\password postgres
+```
+
+Type the value of `POSTGRES_PASSWORD` from `.env` twice when asked. `\password` keeps it out
+of your shell and psql history; `ALTER USER postgres WITH PASSWORD '...';` also works but
+records the password in the history file.
+
+If you use a separate application role (`POSTGRES_APP_USER` / `POSTGRES_APP_PASSWORD`, see
+[Audit record integrity](../operations/audit-integrity.md)), the backend sets that role's
+password from `.env` on every start once it can log in as the owner again. Only with
+`POSTGRES_APP_ROLE_PROVISION=false` do you need to set it yourself, the same way
+(`\password <POSTGRES_APP_USER>`).
+
+Leave psql with `\q`, leave the container shell with `exit`, then restart and check:
+
 ```bash
 ./opentranscribe.sh restart
+./opentranscribe.sh logs postgres
+./opentranscribe.sh status
 ```
 
-Check Postgres status:
-```bash
-./opentranscribe.sh logs postgres
-```
+**Only if the local socket asks for a password** (a customised `pg_hba.conf`): in
+`/var/lib/postgresql/data/pg_hba.conf`, change the method of the `local` rule (and, for TCP,
+the final `host all all all scram-sha-256` rule) to `trust`, restart, set the password as
+above, restore the original methods, and restart again. While a rule says `trust`, Postgres accepts
+any password from anyone who can reach it, so keep the port unpublished (the default compose
+file binds it to `127.0.0.1` only) and revert straight away.
+
+Never paste the password into logs, issues or chat.
+
 ### Database Schema Errors
 
 **Symptoms**:

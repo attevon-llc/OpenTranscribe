@@ -89,7 +89,7 @@ Renaming a container does **not** change how other containers reach it: compose
 registers each service's *service name* as a network alias, and everything
 in-network is addressed that way (`backend:8080`, `prometheus:9090`,
 `postgres:5432`, `smb-test:445`). The one exception is LLDAP, which is
-documented and configured as `ldap://lldap-test` — the container name. The
+documented and configured as `lldap-test` (LDAPS, port 6360) — the container name. The
 overlay therefore pins `lldap-test` as an explicit network alias, so that name
 keeps resolving inside every project, fresh or not.
 
@@ -121,7 +121,8 @@ flag is passed:
 
 | Flag | Variable | Default | Service |
 |---|---|---|---|
-| `--with-ldap-test` | `LDAP_TEST_PORT` | 3890 | LLDAP LDAP |
+| `--with-ldap-test` | `LDAP_TEST_PORT` | 3890 | LLDAP LDAP (plaintext, host-side seeding) |
+| `--with-ldap-test` | `LDAP_TEST_LDAPS_PORT` | 6360 | LLDAP LDAPS |
 | `--with-ldap-test` | `LDAP_TEST_UI_PORT` | 17170 | LLDAP web UI |
 | `--with-smb-test` | `SMB_TEST_PORT` | 4450 | Samba share |
 | `--with-monitoring` | `GRAFANA_PORT` | 5185 | Grafana |

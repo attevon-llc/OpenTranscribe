@@ -270,7 +270,8 @@ Start the stack with a throwaway LLDAP directory:
 ./opentr.sh start dev --with-ldap-test
 ```
 
-- LDAP on the host at port 3890, LLDAP web UI on port 17170
+- LDAPS on the host at port 6360, LLDAP web UI on port 17170
+- Plain LDAP on the host at port 3890, for host-side seeding only (the backend refuses it)
 - Admin login `admin` / `admin_password`, base DN `dc=example,dc=com`
 
 From the backend, use:
@@ -278,17 +279,22 @@ From the backend, use:
 | Setting | Value |
 |---|---|
 | Server | `lldap-test` (a network alias, still valid for `--fresh` stacks) |
-| Port | `3890` |
-| Use SSL | off |
+| Port | `6360` |
+| Use SSL | on |
+| CA certificate file | `/etc/opentranscribe/ldap-test-ca.crt` |
+| Skip certificate verification | off |
 | Bind DN | `uid=admin,ou=people,dc=example,dc=com` |
 | Search base | `dc=example,dc=com` |
 | Username attribute | `uid` |
 
-The overlay's LLDAP serves plain LDAP on that port and the overlay sets up no TLS. Because
-unencrypted binds are refused, logins and the connection test against it are refused with the
-cleartext message until TLS (StartTLS or an `ldaps://` listener) is put in front of it.
+The overlay's LLDAP serves LDAPS (`LLDAP_LDAPS_OPTIONS__*`, from LLDAP's
+`[ldaps_options]` configuration) with a certificate that `scripts/pki/issue-test-server-cert.sh`
+issues from a test CA under `scripts/pki/test-certs/servers/ca`. The certificate lists
+`lldap-test`, `lldap`, `localhost` and `127.0.0.1`. `./opentr.sh` issues it before compose starts
+and loads `docker-compose.ldap-test-trust.yml`, which mounts that CA read-only into the backend
+and the CPU worker at the path above. Verification stays on; the skip switch is never needed.
 
-Always go through `./opentr.sh`; it loads the overlay into the right compose project.
+Always go through `./opentr.sh`; it loads both overlay files into the right compose project.
 
 ## Troubleshooting
 

@@ -175,7 +175,7 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 ### LLDAP Test Container
 
 **Access:**
-- LDAP server: `localhost:3890`
+- LDAPS server: `localhost:6360` (plain LDAP `localhost:3890` is host-side seeding only)
 - Web UI: `http://localhost:17170`
 - Admin credentials: `admin` / `admin_password`
 - Base DN: `dc=example,dc=com`
@@ -186,8 +186,9 @@ This mode disables the GPU worker requirement and is suitable for cloud-only tra
 
 **Configuration in OpenTranscribe:**
 - Server: `lldap-test` (or `localhost` for external access)
-- Port: `3890`
-- Use SSL: `false`
+- Port: `6360`
+- Use SSL: `true`
+- CA certificate file: `/etc/opentranscribe/ldap-test-ca.crt`
 - Bind DN: `uid=admin,ou=people,dc=example,dc=com`
 - Bind Password: `admin_password`
 - Search Base: `dc=example,dc=com`

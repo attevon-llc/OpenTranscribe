@@ -174,7 +174,10 @@ between the two directory paths.
 ./opentr.sh start dev --with-ldap-test
 ```
 
-- LDAP server `localhost:3890`
+- LDAPS server `localhost:6360` (from the backend: `lldap-test`, port `6360`, **Use SSL** on)
+- Plain LDAP `localhost:3890` is for host-side seeding only; the backend refuses plaintext binds
+- CA certificate file for the backend: `/etc/opentranscribe/ldap-test-ca.crt` (mounted by the
+  overlay; the certificate is verified, never skipped)
 - Web UI `http://localhost:17170`
 - Admin `admin` / `admin_password`
 - Base DN `dc=example,dc=com`

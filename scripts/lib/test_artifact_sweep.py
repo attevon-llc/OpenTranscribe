@@ -278,6 +278,9 @@ TEST_TMP_SPECS: list[ArtifactSpec] = [
     # The red-first recipe in the root CLAUDE.md: `mktemp -d -t ot-redcheck.XXXXXX`. The ad hoc
     # `/tmp/redcheck*` trees it replaces were 4.1 GB on 2026-10-11, with no shape to sweep.
     _spec('red-check-tree', r'ot-redcheck\.[A-Za-z0-9]{6}', TIER_A, 'root CLAUDE.md recipe'),
+    # Temp tree of `run-backend-tests.sh --throwaway-db` (scripts/lib/throwaway-pg.sh); removed
+    # by its EXIT trap, so only a SIGKILLed run leaves one.
+    _spec('throwaway-db-tree', r'ot-throwaway-db\.[A-Za-z0-9]{6}', TIER_A, 'lib/throwaway-pg.sh'),
     _spec(
         'integration-scratch',
         r'ot-integration-scratch\.[A-Za-z0-9]{6}',

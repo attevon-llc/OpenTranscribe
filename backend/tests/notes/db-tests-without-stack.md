@@ -4,48 +4,46 @@ Moved intact from `backend/tests/CLAUDE.md`.
 
 ## Running DB-backed tests without the dev stack
 
-Most API/service tests need Postgres but nothing else. When the dev stack is down (or is
-being used by someone else), `--throwaway-db` gives the run its own disposable instance — it
-cannot touch the dev database, its volumes, or the NAS data:
+Most API/service tests need Postgres but nothing else. When the dev stack is down, is being used
+by someone else, or sits on another branch's schema, `--throwaway-db` gives the run its own
+disposable instance. It works from the main checkout and from any git worktree, and cannot touch
+the dev database, its volumes, or the NAS data:
 
 ```bash
 ./scripts/run-backend-tests.sh --throwaway-db                       # whole suite
 ./scripts/run-backend-tests.sh --throwaway-db tests/unit/test_x.py -q -n0 --no-cov
+./scripts/run-backend-tests.sh --throwaway-db --keep tests/unit/test_x.py   # leave it up to poke at
 ```
 
-The flag may appear anywhere; everything else is forwarded to pytest. It starts
-`ot-testdb-<random-hex>` (random per-run suffix, never derived from the directory; tmpfs data dir, loopback port from 55432 up, random password, both
-`com.docker.compose.project` and `org.opentranscribe.purpose=throwaway-test-db` labels), runs
-`alembic upgrade head`, runs the tests, and stops the container by its exact name on exit. It
-refuses to start if that name already exists. Inspect with
-`docker ps -a --filter label=org.opentranscribe.purpose=throwaway-test-db`. Why it exports what it
-does: conftest respects an explicit `POSTGRES_PORT` (it only overrides unset/`5432`) but forces
-`POSTGRES_HOST=localhost`, so the script exports `POSTGRES_HOST=127.0.0.1` for `alembic`, which does
-not import conftest; `DATA_DIR`/`MODELS_DIR`/`TEMP_DIR` point at a `mktemp -d` because `config.py`
-defaults them to `/app/...`; `SKIP_S3=True`/`SKIP_OPENSEARCH=True` stop an unrelated service on
-`:5178`/`:5180` enabling S3/OpenSearch-backed tests that then fail as `SignatureDoesNotMatch`.
+The flags may appear anywhere; everything else is forwarded to pytest. This is the single
+implementation (`scripts/lib/throwaway-pg.sh`, sourced by the runner); there is no second
+worktree-specific script. What it does:
 
-## From a git worktree: `scripts/test-in-worktree.sh`
+- starts `postgres:17.5-alpine` as `ot-testdb-<random-hex>` on a kernel-assigned free loopback
+  port (never 5173-5180, the dev stack's range), random password, tmpfs data, image platform
+  pinned to the daemon's, a lost bind race retried on another port at most 5 times;
+- labels it `ot-test-artifact=1`, `org.opentranscribe.purpose=throwaway-test-db` and a private
+  `com.docker.compose.project=opentranscribe-pytest-<hex32>`. The last one is the namespace that
+  `./opentr.sh test-cleanup` (`scripts/lib/test_artifact_sweep.py`) recognises as a test
+  leftover, and it keeps every project-scoped command against the live stack from matching it. A
+  compose-project label of any other shape would make the sweep refuse the container;
+- refuses to start if that exact name already exists, and every docker call names only the one
+  container it started (the host daemon is shared with unrelated services);
+- runs `alembic upgrade head` from **this checkout's** `backend/` (so the schema matches the
+  branch), then pytest, then removes the container and a `mktemp` dir (`ot-throwaway-db.*`) on
+  every exit: failure, INT and TERM included. `--keep` leaves both and prints the removal command;
+- uses `backend/venv` of the checkout, else the main checkout's (the parent of the shared git
+  dir); it never installs anything;
+- exit codes: 2 misuse, 3 precondition (no docker, no venv, stock port, not ready), 4 migration
+  failed, otherwise pytest's.
 
-Most API/service tests need Postgres but nothing else. When the dev stack is down (or is
-being used by someone else, or sits on another branch's schema), use the script — from any
-worktree, it finds its own repo root:
+Only postgres is provisioned: redis is already a per-worker fixture, and S3/OpenSearch tests are
+skipped (`SKIP_S3`/`SKIP_OPENSEARCH` forced); they need a `./opentr.sh start dev --fresh <name>`
+stack. Inspect leftovers with `docker ps -a --filter label=org.opentranscribe.purpose=throwaway-test-db`.
+Tests: `unit/test_run_backend_tests_throwaway_db.py` (stub `docker`; each property above has an
+assertion that fails if the property is removed).
 
-```bash
-scripts/test-in-worktree.sh [--services pg] [--keep] -- tests/unit/test_x.py -n0 --no-cov
-```
-
-It starts a throwaway `postgres:17.5-alpine` (`ot-wt-test-<hex>`, label `ot-test-artifact=1`,
-tmpfs data) on a free random loopback port, runs `alembic upgrade head` from **this worktree's**
-code (so the schema matches the branch), exports the env below, runs pytest with your args, and
-removes the container and temp dir on every exit (failure, INT, TERM). `--keep` leaves them and
-prints the removal command. It refuses ports 5173-5180, uses the worktree's `backend/venv`
-(else the main checkout's), never installs anything, and only ever names its own container.
-Only postgres is provisioned; MinIO/OpenSearch tests skip (`SKIP_S3`/`SKIP_OPENSEARCH` are
-forced) and need a `--fresh` stack. Tests: `unit/test_test_in_worktree.py` (stub `docker`).
-Cannot touch the dev database, its volumes, or the NAS data. What it sets, and why:
-
-Why each piece:
+Why it exports what it does:
 - **A free random port**, not 5176 — conftest only overrides `POSTGRES_PORT` when it is unset or
   `5432`, so any other value is respected, and the dev stack's port stays free.
 - **`POSTGRES_HOST` explicitly** — conftest forces `localhost` for pytest, but `alembic`

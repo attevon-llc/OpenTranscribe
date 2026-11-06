@@ -129,6 +129,10 @@ on its own (a bare `--with-mutation-tests` is a complete invocation):
                                                      # real upload -> ASR/diarization -> search ->
                                                      # a real local LLM chat answer, start to
                                                      # finish (tests/e2e/test_full_pipeline_smoke.py)
+./scripts/run-dev-tests.sh --with-summary-eval      # a wiring check of the summary quality
+                                                     # harness: one tail-meeting summary per arm
+                                                     # against the same local LLM; no verdict
+                                                     # (the gate is scripts/run-summary-eval.sh)
 ```
 
 Never `--all` (hours) through `--with-mutation-tests` — run `scripts/run-mutation-tests.sh --all`

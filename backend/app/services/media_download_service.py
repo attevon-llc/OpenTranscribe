@@ -142,11 +142,12 @@ def _update_media_file_with_download_data(
 
 
 class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
-    """Service for processing media from various platforms.
+    """Fetch media and its metadata from a URL.
 
-    Uses yt-dlp for public platforms and a pluggable registry of
-    ProtectedMediaProvider implementations for authenticated sites
-    (for example, internal corporate media portals).
+    Public platforms go through yt-dlp. Sites that need a login (for example a
+    self-hosted MediaCMS) are served by the protected-media providers registered in
+    ``app.services.protected_media_providers``; the first provider that claims a URL
+    handles both its metadata lookup and its download.
     """
 
     def __init__(self):
@@ -155,15 +156,29 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
     def _get_protected_provider(
         self, url: str, user_id: int | None = None
     ) -> ProtectedMediaProvider | None:
-        """Return a protected media provider that can handle this URL, if any."""
+        """Find the protected-media provider that claims ``url``, if any.
+
+        Providers are asked in registry order and the first one that claims the URL
+        wins. A provider that fails while deciding is logged and treated as declining,
+        so one broken plugin cannot block the others or the yt-dlp fallback.
+
+        Args:
+            url: The media URL to route.
+            user_id: The requesting user, so providers can consult per-user sources.
+
+        Returns:
+            The claiming provider, or None when no provider claims the URL.
+        """
         for provider in PROTECTED_MEDIA_PROVIDERS:
             try:
                 if provider.can_handle(url, user_id=user_id):
                     return provider
-            except Exception as e:
+            except Exception as exc:
                 logger.warning(
-                    f"Protected media provider {provider.__class__.__name__} "
-                    f"failed in can_handle for {url}: {e}"
+                    "Protected-media provider %s failed to check %s: %s",
+                    type(provider).__name__,
+                    url,
+                    exc,
                 )
         return None
 
@@ -222,13 +237,13 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
         """
         Extract video metadata without downloading.
 
-        For generic public platforms this uses yt-dlp. For URLs handled by
-        a ProtectedMediaProvider, it delegates to that provider's custom API-based logic.
+        A URL claimed by a protected-media provider is looked up by that provider,
+        with the given site credentials; every other URL goes to yt-dlp.
 
         Args:
             url: Media URL
-            media_username: Optional username for protected media sources
-            media_password: Optional password for protected media sources
+            media_username: Optional site username, used only by a protected-media provider
+            media_password: Optional site password, used only by a protected-media provider
             user_id: Optional user ID for per-user credential resolution
 
         Returns:
@@ -237,7 +252,7 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
         Raises:
             InvalidInputError: If unable to extract video information
         """
-        # Try protected media providers first (authenticated corporate sites, etc.)
+        # A protected-media provider gets the first say; yt-dlp handles everything else.
         provider = self._get_protected_provider(url, user_id=user_id)
         if provider is not None:
             return provider.extract_info(
@@ -281,13 +296,15 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
         """
         Download video from media URL.
 
-        For public platforms uses yt-dlp; for URLs recognized by a
-        ProtectedMediaProvider it delegates to that provider.
+        A URL claimed by a protected-media provider is downloaded by that provider with
+        the given site credentials; the quality options apply to yt-dlp only.
 
         Args:
             url: Media URL
             output_path: Directory to save downloaded file
             progress_callback: Optional callback for progress updates
+            media_username: Optional site username, used only by a protected-media provider
+            media_password: Optional site password, used only by a protected-media provider
             user_id: Optional user ID for per-user credential resolution
 
         Returns:
@@ -311,7 +328,7 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
         if not self.is_valid_media_url(url):
             raise InvalidInputError("Invalid URL. Please enter a valid HTTP or HTTPS URL.")
 
-        # First, try pluggable protected-media providers
+        # Providers are only consulted once the URL has passed the fetch-time check above.
         provider = self._get_protected_provider(url, user_id=user_id)
         if provider is not None:
             return provider.download(

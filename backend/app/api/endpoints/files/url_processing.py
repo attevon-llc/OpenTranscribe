@@ -311,7 +311,7 @@ def process_media_url(
             db, media_file, request_data, transcription_options, current_user.id
         )
 
-        # Dispatch background task (pass credentials only for this processing request)
+        # Only this single-video dispatch carries the request's media credentials.
         _dispatch_url_video_task(
             db,
             media_file,

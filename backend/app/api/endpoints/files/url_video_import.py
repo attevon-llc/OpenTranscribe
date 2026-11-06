@@ -177,7 +177,7 @@ def _create_media_file_record(
         normalized_url: Normalized media URL.
         video_id: Video ID from the platform.
         video_title: Video title.
-        video_info: Full video info dict from yt-dlp or custom extractor.
+        video_info: Complete metadata dict, as returned by yt-dlp or a protected-media provider.
         organization_id: Active organization id (cloud org-scoped ingest) or
             None for personal scope. Always None in the community edition.
 

@@ -275,10 +275,11 @@ def get_system_stats(
 
 @router.get("/config/protected-media-auth", response_model=list[dict[str, Any]])
 def get_protected_media_auth(current_user: User = Depends(get_current_active_user)) -> Any:
-    """Return public auth configuration for protected media providers.
+    """List the protected-media login forms that apply to the caller.
 
-    Used by the frontend to decide when to prompt for username/password
-    (or other credentials) when processing media URLs.
+    The upload dialog reads this to decide, per pasted URL, whether to ask for a
+    username and password for an authenticated media site. Only host names and field
+    descriptors are returned; no stored credential ever leaves the server.
     """
     try:
         return get_protected_media_auth_config(user_id=current_user.id)

@@ -165,7 +165,7 @@ Legacy flat names (for example `generate_thumbnail`, `extract_speaker_embeddings
 1. **Define queue routing in `task_routes` only** (`backend/app/core/celery_routing.py`), the single source of truth
 2. **Do NOT put `queue=` in task decorators.** A decorator queue silently overrides `task_routes`. Enforced by `tests/unit/test_task_routes_complete.py`
 3. **Use `CeleryQueues.*` constants** from `app.core.queues`, never raw queue-name strings
-4. **Exception**: tasks routed at call time (for example `transcription.gpu_transcribe`, `cpu_transcribe`, the plan's post stage) are listed with a reason in `INTENTIONALLY_UNROUTED_TASKS` in `core/celery.py`
+4. **Exception**: tasks routed at call time (for example `transcription.gpu_transcribe`, `cpu_transcribe`, the plan's post stage) are listed with a reason in `INTENTIONALLY_UNROUTED_TASKS` in `core/celery_routing.py`
 5. **Lite deployments**: work that prefers a GPU but is correct without one is listed in `GPU_PREFERRED_TASKS` and routed through `gpu_preferred_queue()`, which resolves to `cpu` when `DEPLOYMENT_MODE=lite`
 
 ### Queue Definitions
@@ -186,7 +186,7 @@ All valid queues are declared in `CeleryQueues` (`backend/app/core/queues.py`); 
 | `embedding` | `celery-embedding-worker` | 1 | Transcript search indexing |
 | `redaction` | `celery-redaction` | 2 | Content-redaction detection |
 
-Priorities are per queue (`GPUPriority`, `CPUPriority`, `NLPPriority`, `UtilityPriority`, ... in `core/queues.py`); the scheme is documented above `task_routes` in `core/celery.py`.
+Priorities are per queue (`GPUPriority`, `CPUPriority`, `NLPPriority`, `UtilityPriority`, ... in `core/queues.py`); the scheme is documented above `task_routes=` in `core/celery.py`.
 
 ### Startup Validation
 `tests/unit/test_task_routes_complete.py` fails on any registered task missing from `task_routes` and not listed (with a reason) in `INTENTIONALLY_UNROUTED_TASKS`. On worker startup `_validate_task_routes()` logs the same check as a WARNING, because an unrouted task would otherwise land on the default `celery` queue.
@@ -237,7 +237,7 @@ Useful structural tests: `test_task_routes_complete.py` (routing), the `test_*_s
 
 ### Checklist
 1. **Define the purpose**: one responsibility; pick a `<domain>.<action>` name
-2. **Register**: add the module to `include=[...]` and a `task_routes` entry in `app/core/celery.py` (and a `CeleryQueues` constant if you need a new queue)
+2. **Register**: add the module to `include=[...]` and a `TASK_ROUTES` entry in `app/core/celery_routing.py` (and a `CeleryQueues` constant if you need a new queue)
 3. **Sessions**: follow the three-phase session rule above
 4. **Progress and errors**: report progress with `update_task_status` / `progress_tracker`; classify failures once
 5. **WebSocket events** that name a media file go through `utils/websocket_notify.send_ws_event_for_file`

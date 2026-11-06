@@ -190,9 +190,10 @@ celery_app = Celery(
         "app.tasks.media_download",
         "app.tasks.transcript_document",
         "app.tasks.local_model_download",
-        # Re-export shim (NOT dead) — keeps legacy task-name routing working by
-        # re-exporting from speaker_{identification,update,embedding}_task. Must stay here.
+        # Re-export shim for legacy imports; task names are explicit strings, so it
+        # does not affect routing or registration.
         "app.tasks.speaker_tasks",
+        "app.tasks.speaker_embedding_reassignment_task",
         "app.tasks.speaker_identification_task",
         "app.tasks.speaker_update_task",
         "app.tasks.speaker_merge_task",
@@ -354,7 +355,7 @@ celery_app.conf.update(
     result_expires=86400,  # Expire results after 24h (prevent Redis bloat)
     # Enable Redis priority queues: lower number = higher priority (runs first).
     # Priorities are PER-QUEUE — GPUPriority.X is independent of CPUPriority.X.
-    # Named constants defined in app.core.constants: GPUPriority, CPUPriority, etc.
+    # Named constants defined in app.core.queues: GPUPriority, CPUPriority, etc.
     # GPU queue:  0=speaker-reassign  1=embed-extract  2=transcription-retry
     #             3=transcription  4=rediarize  5=recluster  7=admin-migration-batches
     # CPU queue:  1=pipeline-retry  2=pipeline-critical  4=user-triggered  5=system

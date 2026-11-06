@@ -12,6 +12,7 @@ from app.models.speaker import SpeakerClusterMember
 from app.services.clustering.thresholds import CLUSTER_ASSIGNMENT_THRESHOLD
 from app.services.clustering.thresholds import GENDER_CROSS_THRESHOLD
 from app.services.opensearch_service.client import OpenSearchUnavailableError
+from app.services.smart_speaker_suggestion_service import media_file_org_id
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import clusters_holding_speakers
 from app.services.speaker_identity_rules import identity_conflicts_with_cluster
@@ -72,7 +73,7 @@ def find_or_create_cluster(
         # Search for matching cluster centroids (gated by the file's org)
         from app.services.opensearch_service import find_matching_clusters
 
-        organization_id = self._media_file_org_id(int(speaker.media_file_id))
+        organization_id = media_file_org_id(self.db, int(speaker.media_file_id))
         matches = find_matching_clusters(
             embedding,
             user_id,

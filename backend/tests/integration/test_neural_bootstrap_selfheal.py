@@ -53,18 +53,20 @@ def test_bootstrap_reaches_ok_and_is_idempotent():
     # being counted, not a mocked-away one, and the audit-tests external-service-mock
     # detector cannot tell "wraps=" (a spy that still calls through) from a real
     # replacement. Save/restore the bound method manually instead.
-    real_put_pipeline = pipelines.opensearch_client.ingest.put_pipeline
+    live_client = pipelines._client.opensearch_client
+    assert live_client is not None
+    real_put_pipeline = live_client.ingest.put_pipeline
     call_count = {"n": 0}
 
     def _counting_put_pipeline(*args: object, **kwargs: object):
         call_count["n"] += 1
         return real_put_pipeline(*args, **kwargs)
 
-    pipelines.opensearch_client.ingest.put_pipeline = _counting_put_pipeline
+    live_client.ingest.put_pipeline = _counting_put_pipeline
     try:
         second = ensure_neural_search_bootstrap()
     finally:
-        pipelines.opensearch_client.ingest.put_pipeline = real_put_pipeline
+        live_client.ingest.put_pipeline = real_put_pipeline
 
     assert second.state == "ok"
     assert second.model_id == first.model_id

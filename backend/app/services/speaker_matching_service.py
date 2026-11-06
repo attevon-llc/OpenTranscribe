@@ -29,7 +29,7 @@ class SpeakerMatchingService:
 
     * **Per-file speaker docs** (voiceprints of a speaker instance in one media
       file) follow the FILE's ``organization_id`` — resolved from the DB via
-      ``_media_file_org_id`` and passed to both the store calls and the match
+      ``media_file_org_id`` and passed to both the store calls and the match
       queries, matching what the transcription pipeline stamps in the v4
       staging path (``ctx.organization_id``).
     * **Profile docs** (cross-video profile centroids) mirror the
@@ -50,23 +50,6 @@ class SpeakerMatchingService:
         # parallel with chunk indexing, and rediarize re-matches a long-completed
         # file. Recorded here, dispatched after the commit (issue #432).
         self._rename_tracker = SpeakerRenameTracker()
-
-    def _media_file_org_id(self, media_file_id: int | None) -> int | None:
-        """Resolve the tenant scope of a per-file speaker operation.
-
-        The org of a speaker instance is defined by the media file it belongs
-        to (``media_file.organization_id``), never by caller-supplied state.
-
-        Args:
-            media_file_id: Media file ID (None-safe).
-
-        Returns:
-            The file's organization_id, or None for personal/community files.
-        """
-        if media_file_id is None:
-            return None
-        row = self.db.query(MediaFile.organization_id).filter(MediaFile.id == media_file_id).first()
-        return int(row[0]) if row and row[0] is not None else None
 
     def _voiceprints_allowed(self, user_id: int, organization_id: int | None) -> bool:
         """Privacy policy (#1280): may voiceprints be matched or stored for this scope?

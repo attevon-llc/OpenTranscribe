@@ -6,7 +6,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 
 from .index_schema import _INDEX_VERSION
 from .index_schema import ADDITIVE_MAPPING_STEPS
@@ -22,13 +22,13 @@ def ensure_chunks_index_exists() -> bool:
     Returns:
         True if index exists or was created, False on error.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return False
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     try:
-        if opensearch_client.indices.exists(index=index_name):
+        if _client.opensearch_client.indices.exists(index=index_name):
             # Check MAJOR index version from _meta (log-only; a real upgrade
             # needs a full reindex, never done here).
             _check_index_version(index_name)
@@ -46,13 +46,13 @@ def ensure_chunks_index_exists() -> bool:
         dimension = get_search_embedding_dimension()
         index_body = _get_index_body_with_dimension(dimension)
 
-        opensearch_client.indices.create(index=index_name, body=index_body)
+        _client.opensearch_client.indices.create(index=index_name, body=index_body)
         logger.info(f"Created transcript chunks index: {index_name} (version={_INDEX_VERSION})")
 
         # Create alias
         alias_name = CHUNKS_ALIAS_NAME
-        if not opensearch_client.indices.exists_alias(name=alias_name):
-            opensearch_client.indices.put_alias(index=index_name, name=alias_name)
+        if not _client.opensearch_client.indices.exists_alias(name=alias_name):
+            _client.opensearch_client.indices.put_alias(index=index_name, name=alias_name)
             logger.info(f"Created alias {alias_name} -> {index_name}")
 
         return True
@@ -74,14 +74,14 @@ def recreate_index_for_dimension(dimension: int) -> bool:
     Returns:
         True if index was recreated or already correct, False on error.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return False
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     try:
-        if opensearch_client.indices.exists(index=index_name):
+        if _client.opensearch_client.indices.exists(index=index_name):
             # Check current dimension from mapping
-            mapping = opensearch_client.indices.get_mapping(index=index_name)
+            mapping = _client.opensearch_client.indices.get_mapping(index=index_name)
             current_dim = (
                 mapping.get(index_name, {})
                 .get("mappings", {})
@@ -103,23 +103,25 @@ def recreate_index_for_dimension(dimension: int) -> bool:
             # Remove alias first if it exists
             alias_name = CHUNKS_ALIAS_NAME
             try:
-                if opensearch_client.indices.exists_alias(name=alias_name):
-                    opensearch_client.indices.delete_alias(index=index_name, name=alias_name)
+                if _client.opensearch_client.indices.exists_alias(name=alias_name):
+                    _client.opensearch_client.indices.delete_alias(
+                        index=index_name, name=alias_name
+                    )
             except Exception as e:
                 logger.debug(f"Could not remove alias {alias_name} before index recreation: {e}")
 
             # Delete the old index
-            opensearch_client.indices.delete(index=index_name)
+            _client.opensearch_client.indices.delete(index=index_name)
             logger.info(f"Deleted old index {index_name}")
 
         # Create with new dimension
         index_body = _get_index_body_with_dimension(dimension)
-        opensearch_client.indices.create(index=index_name, body=index_body)
+        _client.opensearch_client.indices.create(index=index_name, body=index_body)
         logger.info(f"Created index {index_name} with dimension {dimension}")
 
         # Recreate alias
         alias_name = CHUNKS_ALIAS_NAME
-        opensearch_client.indices.put_alias(index=index_name, name=alias_name)
+        _client.opensearch_client.indices.put_alias(index=index_name, name=alias_name)
         logger.info(f"Created alias {alias_name} -> {index_name}")
 
         return True
@@ -143,11 +145,11 @@ def _check_index_version(index_name: str) -> None:
     Args:
         index_name: Name of the index to check.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return
 
     try:
-        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        mapping = _client.opensearch_client.indices.get_mapping(index=index_name)
         meta = mapping.get(index_name, {}).get("mappings", {}).get("_meta", {})
         stored_version = meta.get("version", 0)
 
@@ -194,11 +196,11 @@ def _apply_pending_additive_steps(index_name: str) -> None:
     Args:
         index_name: The chunks index to check and, if needed, update.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return
 
     try:
-        mapping = opensearch_client.indices.get_mapping(index=index_name)
+        mapping = _client.opensearch_client.indices.get_mapping(index=index_name)
         meta = mapping.get(index_name, {}).get("mappings", {}).get("_meta", {}) or {}
         current_additive = int(meta.get("additive_version", 0) or 0)
 
@@ -211,7 +213,7 @@ def _apply_pending_additive_steps(index_name: str) -> None:
             return
 
         for step in pending:
-            opensearch_client.indices.put_mapping(
+            _client.opensearch_client.indices.put_mapping(
                 index=index_name, body={"properties": step.properties}
             )
             logger.info(
@@ -223,7 +225,7 @@ def _apply_pending_additive_steps(index_name: str) -> None:
         # never claim the index reached a major version it did not actually
         # reindex to. Only additive_version moves.
         new_additive_version = max(step.version for step in pending)
-        opensearch_client.indices.put_mapping(
+        _client.opensearch_client.indices.put_mapping(
             index=index_name,
             body={
                 "_meta": {
@@ -266,15 +268,15 @@ def survey_speaker_id_coverage() -> dict[str, Any]:
         "with_speaker_id": 0,
         "coverage_ratio": 0.0,
     }
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return empty_result
 
     index_name = settings.OPENSEARCH_CHUNKS_INDEX
     try:
-        if not opensearch_client.indices.exists(index=index_name):
+        if not _client.opensearch_client.indices.exists(index=index_name):
             return empty_result
 
-        response = opensearch_client.search(
+        response = _client.opensearch_client.search(
             index=index_name,
             body={
                 "size": 0,

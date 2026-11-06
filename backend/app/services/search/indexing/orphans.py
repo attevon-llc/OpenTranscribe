@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class OrphanProbeMixin:
         Returns:
             The ids that exist, in probe order. Empty means nothing to prune.
         """
-        if not opensearch_client:
+        if not _client.opensearch_client:
             return []
 
         found: list[str] = []
@@ -65,7 +65,9 @@ class OrphanProbeMixin:
         start = first_orphan
         while True:
             probe = [document_id(n) for n in range(start, start + _ORPHAN_PROBE_WINDOW)]
-            response = opensearch_client.mget(index=index_name, body={"ids": probe}, _source=False)
+            response = _client.opensearch_client.mget(
+                index=index_name, body={"ids": probe}, _source=False
+            )
             window = [doc["_id"] for doc in response.get("docs", []) if doc.get("found")]
             if window:
                 found.extend(window)
@@ -118,8 +120,11 @@ class OrphanProbeMixin:
             means "stop walking" — the behaviour the walk already had, so this can
             only ever find more, never less.
         """
+        client = _client.opensearch_client
+        if client is None:
+            return None
         try:
-            response = opensearch_client.search(
+            response = client.search(
                 index=index_name,
                 body={
                     "size": 0,

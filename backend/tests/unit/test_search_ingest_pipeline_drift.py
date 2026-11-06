@@ -89,7 +89,7 @@ def client(monkeypatch):
 
     def _install(live: dict[str, Any] | None) -> _FakeClient:
         fake = _FakeClient(live)
-        monkeypatch.setattr(pipelines, "opensearch_client", fake)
+        monkeypatch.setattr(pipelines._client, "opensearch_client", fake)
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
         pipelines.reset_neural_pipeline_state()
         return fake

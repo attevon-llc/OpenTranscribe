@@ -5,7 +5,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 
 from ..plane_queries import summary_plane_query
 from .bulk import BulkIndexMixin
@@ -121,7 +121,7 @@ class SummaryPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
         as often, for the identical reason — the bulk load above uses
         ``refresh=False``.
         """
-        if not opensearch_client:
+        if not _client.opensearch_client:
             return 0
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
@@ -139,8 +139,8 @@ class SummaryPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
             if not stale_ids:
                 return 0
 
-            opensearch_client.indices.refresh(index=index_name)
-            response = opensearch_client.delete_by_query(
+            _client.opensearch_client.indices.refresh(index=index_name)
+            response = _client.opensearch_client.delete_by_query(
                 index=index_name,
                 body={"query": summary_plane_query(file_uuid, from_leaf=keep_count)},
                 refresh=True,

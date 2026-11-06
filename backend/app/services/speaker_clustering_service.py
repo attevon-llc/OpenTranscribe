@@ -47,7 +47,7 @@ class SpeakerClusteringService:
     is stamped at creation from the member speakers' FILE org and mirrored
     onto the centroid doc (``store_cluster_embedding``); cluster-centroid kNN
     queries are gated by the searching speaker's file org
-    (``_media_file_org_id`` -> ``find_matching_clusters``), so org files join
+    (``media_file_org_id`` -> ``find_matching_clusters``), so org files join
     org clusters and personal files join personal clusters — never across.
     ``batch_recluster`` partitions the Phase-2 similarity graph per tenant
     scope so a member's org and personal speakers are never AHC-linked.
@@ -116,13 +116,6 @@ class SpeakerClusteringService:
         )
         pred = org_scope_pred(SpeakerCluster.organization_id, organization_id)
         return query.filter(pred) if pred is not None else query
-
-    def _media_file_org_id(self, media_file_id: int | None) -> int | None:
-        """Resolve the tenant scope of a speaker via its media file's org."""
-        if media_file_id is None:
-            return None
-        row = self.db.query(MediaFile.organization_id).filter(MediaFile.id == media_file_id).first()
-        return int(row[0]) if row and row[0] is not None else None
 
     # ------------------------------------------------------------------
     # Privacy policy (#1280)

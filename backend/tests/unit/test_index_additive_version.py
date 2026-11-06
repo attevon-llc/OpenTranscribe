@@ -250,7 +250,7 @@ def test_a_fresh_index_body_already_carries_every_additive_field():
 def test_applying_pending_steps_bumps_additive_version_and_preserves_major_version():
     client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         svc._apply_pending_additive_steps(_INDEX)
 
     put_calls = client.indices.put_mapping.call_args_list
@@ -283,7 +283,7 @@ def test_an_index_already_at_the_target_additive_version_is_untouched():
         {"version": schema._INDEX_VERSION, "additive_version": schema._ADDITIVE_VERSION}
     )
 
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         result = svc.ensure_chunks_index_exists()
 
     assert result is True
@@ -294,7 +294,7 @@ def test_applying_pending_steps_twice_is_idempotent():
     """Idempotency, case 2: running it twice in a row does the work exactly once."""
     client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         svc._apply_pending_additive_steps(_INDEX)
         first_call_count = client.indices.put_mapping.call_count
         assert first_call_count > 0
@@ -330,7 +330,7 @@ def test_applying_pending_steps_never_recreates_the_index():
     """
     client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         svc._apply_pending_additive_steps(_INDEX)
         applied_fields: dict[str, Any] = {}
         for call in client.indices.put_mapping.call_args_list:
@@ -346,7 +346,7 @@ def test_ensure_chunks_index_exists_applies_pending_steps_for_an_existing_index(
     creation time."""
     client = _client({"version": schema._INDEX_VERSION, "additive_version": 0})
 
-    with patch.object(svc, "opensearch_client", client):
+    with patch.object(svc._client, "opensearch_client", client):
         result = svc.ensure_chunks_index_exists()
 
     assert result is True

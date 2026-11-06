@@ -12,7 +12,7 @@ from typing import Any
 from opensearchpy.exceptions import NotFoundError
 
 from app.core.config import settings
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 
 from .embedding_provenance import reset_active_embedding_model
 from .embedding_provenance import resolve_model_label
@@ -47,7 +47,7 @@ def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
     Returns:
         True if pipeline exists or was created, False on error.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return False
 
@@ -56,14 +56,14 @@ def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
     pipeline_body = cfg.pipeline_body()
     try:
         try:
-            response = opensearch_client.transport.perform_request(
+            response = _client.opensearch_client.transport.perform_request(
                 "GET", f"/_search/pipeline/{pipeline_id}"
             )
             existing = response.get(pipeline_id, response) if isinstance(response, dict) else {}
             if pipeline_matches(existing, cfg):
                 return True
             logger.info(f"Search pipeline {pipeline_id} drifted from {cfg.slug()}, recreating")
-            opensearch_client.transport.perform_request(
+            _client.opensearch_client.transport.perform_request(
                 "DELETE", f"/_search/pipeline/{pipeline_id}"
             )
         except NotFoundError:
@@ -72,7 +72,7 @@ def ensure_search_pipeline_exists(fusion: FusionConfig | None = None) -> bool:
             logger.debug(f"Search pipeline {pipeline_id} not found, will create it")
 
         # Create pipeline
-        opensearch_client.transport.perform_request(
+        _client.opensearch_client.transport.perform_request(
             "PUT",
             f"/_search/pipeline/{pipeline_id}",
             body=pipeline_body,
@@ -169,11 +169,11 @@ def _check_existing_pipeline_config(pipeline_id: str, expected: dict[str, Any]) 
     Returns:
         True if the live pipeline matches, False if it has drifted, None if not found.
     """
-    if not opensearch_client:
+    if not _client.opensearch_client:
         return None
 
     try:
-        response = opensearch_client.ingest.get_pipeline(id=pipeline_id)
+        response = _client.opensearch_client.ingest.get_pipeline(id=pipeline_id)
     except NotFoundError:
         logger.debug(f"Neural ingest pipeline {pipeline_id} not found, will create it")
         return None
@@ -259,7 +259,7 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
         logger.debug("Neural search disabled, skipping neural ingest pipeline")
         return False
 
-    if not opensearch_client:
+    if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized")
         return False
 
@@ -289,7 +289,7 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
 
         # Create or update pipeline (try with batch_size first, fall back without)
         try:
-            opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
+            _client.opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
             logger.info(
                 f"Created/updated neural ingest pipeline: {pipeline_id} "
                 f"with model {model_id} (batch_size={batch_size})"
@@ -301,7 +301,7 @@ def ensure_neural_ingest_pipeline(model_id: str | None = None) -> bool:
             )
             # Fall back to pipeline without batch_size for older OpenSearch versions
             text_embedding_config.pop("batch_size", None)
-            opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
+            _client.opensearch_client.ingest.put_pipeline(id=pipeline_id, body=pipeline_body)
             logger.info(
                 f"Created/updated neural ingest pipeline: {pipeline_id} "
                 f"with model {model_id} (no batch_size)"

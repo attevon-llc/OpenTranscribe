@@ -4,7 +4,7 @@ import logging
 
 from app.core.config import settings
 from app.core.exceptions import SearchIndexError
-from app.services.opensearch_service import opensearch_client
+from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import OpenSearchUnavailableError
 
@@ -45,17 +45,17 @@ class ChunkPlaneMixin(OrphanProbeMixin):
         """
         from opensearchpy.exceptions import NotFoundError
 
-        if not opensearch_client:
+        if not _client.opensearch_client:
             if not settings.OPENSEARCH_ENABLED:
                 return 0
             raise OpenSearchUnavailableError("OpenSearch client unavailable")
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
         try:
-            if not opensearch_client.indices.exists(index=index_name):
+            if not _client.opensearch_client.indices.exists(index=index_name):
                 return 0
 
-            response = opensearch_client.delete_by_query(
+            response = _client.opensearch_client.delete_by_query(
                 index=index_name,
                 body={"query": file_plane_query(file_uuid)},
                 refresh=True,
@@ -122,15 +122,15 @@ class ChunkPlaneMixin(OrphanProbeMixin):
         """
         from opensearchpy.exceptions import NotFoundError
 
-        if not opensearch_client:
+        if not _client.opensearch_client:
             raise RuntimeError("OpenSearch client unavailable")
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
         try:
-            if not opensearch_client.indices.exists(index=index_name):
+            if not _client.opensearch_client.indices.exists(index=index_name):
                 return 0
-            opensearch_client.indices.refresh(index=index_name)
-            response = opensearch_client.count(
+            _client.opensearch_client.indices.refresh(index=index_name)
+            response = _client.opensearch_client.count(
                 index=index_name, body={"query": file_plane_query(file_uuid)}
             )
             return int(response["count"])
@@ -206,7 +206,7 @@ class ChunkPlaneMixin(OrphanProbeMixin):
         Returns:
             Number of stale chunks deleted.
         """
-        if not opensearch_client:
+        if not _client.opensearch_client:
             return 0
 
         index_name = settings.OPENSEARCH_CHUNKS_INDEX
@@ -223,8 +223,8 @@ class ChunkPlaneMixin(OrphanProbeMixin):
 
             # The probe read the translog; delete_by_query reads a searcher. Without
             # this the delete matches nothing it was just told about.
-            opensearch_client.indices.refresh(index=index_name)
-            response = opensearch_client.delete_by_query(
+            _client.opensearch_client.indices.refresh(index=index_name)
+            response = _client.opensearch_client.delete_by_query(
                 index=index_name,
                 body={"query": chunk_plane_query(file_uuid, from_chunk_index=keep_count)},
                 refresh=True,

@@ -89,7 +89,7 @@ class _FakeSuggestionsCluster:
 def fake_cluster(monkeypatch) -> _FakeSuggestionsCluster:
     """Point the service at a stub cluster that would happily serve suggestions."""
     fake = _FakeSuggestionsCluster()
-    monkeypatch.setattr(suggestions, "opensearch_client", fake)
+    monkeypatch.setattr(suggestions._client, "opensearch_client", fake)
     monkeypatch.setattr(search_infra, "_index_verified", True)
     return fake
 

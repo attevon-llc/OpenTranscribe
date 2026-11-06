@@ -31,6 +31,17 @@ from app.models.speaker import Speaker
 logger = logging.getLogger(__name__)
 
 
+def media_file_org_id(db: Session, media_file_id: int | None) -> int | None:
+    """Resolve the tenant scope of one media file (None-safe).
+
+    Returns:
+        The file's organization_id, or None for personal/community files.
+    """
+    if media_file_id is None:
+        return None
+    return _media_file_org_ids(db, {int(media_file_id)}).get(int(media_file_id))
+
+
 def _media_file_org_ids(db: Session, media_file_ids: set[int]) -> dict[int, int | None]:
     """Resolve the tenant scope (organization_id) of a set of media files.
 

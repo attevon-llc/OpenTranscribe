@@ -25,6 +25,8 @@ class _FakeServer:
         self.host = host
         self.kwargs = kwargs
         self.info = None
+        # ldap3 derives the effective transport from the scheme as well as use_ssl.
+        self.ssl = bool(kwargs.get("use_ssl")) or host.startswith("ldaps://")
 
 
 class _FakeConnection:

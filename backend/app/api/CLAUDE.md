@@ -46,7 +46,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   walks the live route table so the next export route cannot be missed the way this one was.
 - `endpoints/files/` — the oversized files router split into a package (`upload`, `crud`,
   `filtering`, `listing`, `single_file`, `media_delivery`, `streaming`, `subtitles`, `reprocess`, `url_processing`, `waveform`, …).
-  `management.py` exports a second router mounted at the same `/files` prefix.
+  `management.py` exports a second router (same `/files` prefix) that includes `bulk_actions`; verbs in `bulk_action_handlers` and `bulk_rework_actions`.
 
 ## Conventions / patterns
 

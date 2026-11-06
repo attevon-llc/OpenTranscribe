@@ -287,7 +287,7 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("files/management.py", "cancel_file_processing"),
     ("files/management.py", "retry_file_processing"),
     ("files/management.py", "recover_file"),
-    ("files/management.py", "_process_single_file_action"),
+    ("files/bulk_actions.py", "_process_single_file_action"),
     ("files/reprocess.py", "process_file_reprocess"),
     ("files/summary_status.py", "retry_summary"),
     ("files/waveform.py", "generate_waveform_for_file"),

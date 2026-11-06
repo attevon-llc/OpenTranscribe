@@ -10,8 +10,10 @@ keeps its own sweep (``tasks/legal_retention.py``).
 """
 
 import logging
+from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
 from app.core.config import settings
@@ -24,7 +26,7 @@ logger = logging.getLogger(__name__)
 TASK_NAME = "audit.retention_sweep"
 
 
-def prune_audit_tables(db, keep_days: int) -> dict[str, int]:
+def prune_audit_tables(db: Session, keep_days: int) -> dict[str, int]:
     """Prune every prunable table older than ``keep_days`` in the caller's transaction.
 
     Returns the number of rows removed per table. ``keep_days`` below the floor is clamped by
@@ -43,7 +45,7 @@ def prune_audit_tables(db, keep_days: int) -> dict[str, int]:
 
 
 @celery_app.task(bind=True, name=TASK_NAME, priority=UtilityPriority.BACKGROUND)
-def audit_retention_sweep(self) -> dict:  # noqa: ARG001 — bind=True signature
+def audit_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
     """Delete audit rows older than ``AUDIT_LOG_RETENTION_DAYS`` (no-op when it is 0)."""
     from app.auth.audit import AuditEventType
     from app.auth.audit import AuditOutcome

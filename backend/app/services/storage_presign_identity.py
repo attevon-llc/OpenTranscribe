@@ -419,7 +419,7 @@ def classify_quarantine_policy(policy_json: str | None, bucket: str) -> PolicyVe
     return verdict
 
 
-def _as_list(value) -> list:
+def _as_list(value: object) -> list[object]:
     return value if isinstance(value, list) else [value]
 
 

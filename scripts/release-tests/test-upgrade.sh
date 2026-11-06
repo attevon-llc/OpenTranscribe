@@ -1051,7 +1051,10 @@ for path, methods in sorted(spec.get("paths", {}).items()):
         fc_snapshot_v448_tasks "$out/v448_tasks.txt" || true
     else
         fc_snapshot_counts "$out/row_counts.txt" pre || true
-        # Give v448 real work: duplicate and superseded ACTIVE task rows the FROM schema accepts.
+        # Give v448 real work: duplicate and superseded ACTIVE task rows the FROM schema accepts
+        # (fc_seed_v448_tasks records "not applicable" instead when FROM already shipped v448).
+        FC_FROM_BACKEND_DIR="$TEST_ROOT/worktree-${FROM_VERSION}/backend"
+        export FC_FROM_BACKEND_DIR FROM_VERSION
         fc_seed_v448_tasks "$out/v448_seed.txt" || true
     fi
 
@@ -1634,28 +1637,7 @@ phase_10_assert_and_report() {
         while IFS= read -r fid; do
             local detail
             detail=""
-            if detail="$(python3 - "$pre/transcript-$fid.json" "$post/transcript-$fid.json" "$fid" <<'PY'
-import json, sys
-pre, post, fid = sys.argv[1:4]
-def segs(p):
-    try:
-        d = json.load(open(p))
-    except Exception:
-        return None
-    return d.get("segments") or d.get("transcript_segments") or []
-pre_segs = segs(pre)
-post_segs = segs(post)
-ok = pre_segs is not None and post_segs is not None and len(post_segs) >= len(pre_segs)
-if ok:
-    for i, s in enumerate(pre_segs):
-        ps = post_segs[i]
-        if s.get("text") != ps.get("text") or abs((s.get("start") or 0) - (ps.get("start") or 0)) > 0.01:
-            ok = False
-            break
-print(f"pre={len(pre_segs or [])} post={len(post_segs or [])}")
-sys.exit(0 if ok else 1)
-PY
-)"; then
+            if detail="$(python3 "$LIB_DIR/transcript-compare.py" prefix "$pre/transcript-$fid.json" "$post/transcript-$fid.json")"; then
                 as_record PASS "transcript prefix preserved for file $fid"
             else
                 as_record FAIL "transcript prefix preserved for file $fid" "$detail"
@@ -1993,6 +1975,10 @@ phase_11b_feature_checks() {
     # Forward path only, on the upgraded stack and BEFORE the rollback tail (phase 12 onward):
     # the purge in here is irreversible by design, and the rollback restores the pre-upgrade
     # backup over whatever it leaves behind.
+    # The FROM checkout's backend dir: lets the feature checks tell which migrations this upgrade
+    # actually runs (a check for a migration FROM already shipped is recorded N/A, not judged).
+    FC_FROM_BACKEND_DIR="$TEST_ROOT/worktree-${FROM_VERSION}/backend"
+    export FC_FROM_BACKEND_DIR FROM_VERSION
     fc_run_all upgrade \
         "$TEST_ROOT/snapshots/before/speaker_display_names.txt" \
         "$TEST_ROOT/snapshots/after/speaker_display_names.txt" \
@@ -2669,27 +2655,7 @@ print(len(items or []))
             ac_get_segments "$fid" > "$post_transcript" 2>/dev/null || true
             local detail
             detail=""
-            if detail="$(python3 - "$pre_transcript" "$post_transcript" "$fid" <<'PY'
-import json, sys
-pre, post, fid = sys.argv[1:4]
-def segs(p):
-    try:
-        d = json.load(open(p))
-    except Exception:
-        return None
-    return d.get("segments") or d.get("transcript_segments") or []
-pre_segs = segs(pre)
-post_segs = segs(post)
-ok = pre_segs is not None and post_segs is not None and len(post_segs) == len(pre_segs)
-if ok:
-    for s, ps in zip(pre_segs, post_segs):
-        if s.get("text") != ps.get("text") or abs((s.get("start") or 0) - (ps.get("start") or 0)) > 0.01:
-            ok = False
-            break
-print(f"pre={len(pre_segs or [])} post={len(post_segs or [])}")
-sys.exit(0 if ok else 1)
-PY
-)"; then
+            if detail="$(python3 "$LIB_DIR/transcript-compare.py" exact "$pre_transcript" "$post_transcript")"; then
                 as_record PASS "B-7: transcript for file $fid matches the pre-upgrade snapshot exactly"
             else
                 as_record FAIL "B-7: transcript for file $fid matches the pre-upgrade snapshot exactly" "$detail"

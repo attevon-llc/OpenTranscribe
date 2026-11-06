@@ -1,4 +1,5 @@
 import logging
+from enum import Enum
 
 from fastapi import APIRouter
 
@@ -87,8 +88,13 @@ api_router = APIRouter()
 
 # Function to include routers with proper route handling for consistent frontend-backend communication
 def include_router_with_consistency(
-    router, prefix, tags=None, capability=None, platform_admin_bypass=True, refuse_under_grant=None
-):
+    router: APIRouter,
+    prefix: str,
+    tags: list[str | Enum] | None = None,
+    capability: str | None = None,
+    platform_admin_bypass: bool = True,
+    refuse_under_grant: bool | None = None,
+) -> None:
     """Include a router with consistent route handling that works both with and without trailing slashes
 
     This ensures consistent API behavior regardless of whether the frontend sends requests

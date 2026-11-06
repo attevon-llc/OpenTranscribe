@@ -22,8 +22,10 @@
     exists: boolean;
     total?: number;
     breakdown?: Record<string, number>;
+    error?: string;
   }
   interface IndexOverview {
+    error?: string;
     indices: IndexEntry[];
     pg_stats?: { active_files: number; completed_files: number; speakers: number };
   }
@@ -199,6 +201,11 @@
       {#if indexOverview && !loading}
         <div class="overview-section">
           <h4 class="overview-title">{$t('settings.dataIntegrity.indexOverview')}</h4>
+          {#if indexOverview.error}
+            <p class="index-error" data-testid="index-overview-error">
+              {$t('settings.dataIntegrity.overviewUnavailable')}
+            </p>
+          {/if}
           {#if indexOverview.pg_stats}
             <div class="pg-stats">
               <span>{$t('settings.dataIntegrity.pgFiles', { active: indexOverview.pg_stats.active_files, completed: indexOverview.pg_stats.completed_files })}</span>
@@ -208,12 +215,16 @@
           {/if}
           <div class="overview-grid">
             {#each indexOverview.indices as idx}
-              <div class="index-card" class:missing={!idx.exists}>
+              <div class="index-card" class:missing={!idx.exists && !idx.error}>
                 <div class="index-header">
                   <span class="index-label">{idx.label}</span>
                   <span class="index-name">{idx.name}</span>
                 </div>
-                {#if !idx.exists}
+                {#if idx.error}
+                  <div class="index-body empty failed" data-testid="index-error-{idx.name}">
+                    {$t('settings.dataIntegrity.indexUnreadable', { name: idx.name })}
+                  </div>
+                {:else if !idx.exists}
                   <div class="index-body empty">
                     {$t('settings.dataIntegrity.indexNotCreated')}
                   </div>
@@ -450,6 +461,11 @@
     color: var(--text-muted);
     font-style: italic;
     padding: 0.5rem 0.625rem;
+  }
+
+  .index-body.failed,
+  .index-error {
+    color: var(--error-color);
   }
 
   .breakdown-row {

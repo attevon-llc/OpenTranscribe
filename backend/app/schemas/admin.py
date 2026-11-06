@@ -34,7 +34,7 @@ class RetryConfigUpdate(BaseModel):
 
     @field_validator("max_retries")
     @classmethod
-    def validate_max_retries(cls, v):
+    def validate_max_retries(cls, v: int | None) -> int | None:
         if v is not None and (v < 0 or v > 99):
             raise ValueError("max_retries must be between 0 and 99 (0 = unlimited)")
         return v
@@ -55,7 +55,7 @@ class GarbageCleanupConfigUpdate(BaseModel):
 
     @field_validator("max_word_length")
     @classmethod
-    def validate_max_word_length(cls, v):
+    def validate_max_word_length(cls, v: int | None) -> int | None:
         if v is not None and (v < 20 or v > 200):
             raise ValueError("max_word_length must be between 20 and 200")
         return v
@@ -84,7 +84,7 @@ class RetentionConfigUpdate(BaseModel):
 
     @field_validator("run_time")
     @classmethod
-    def validate_run_time(cls, v):
+    def validate_run_time(cls, v: str | None) -> str | None:
         if v is not None:
             if not re.match(r"^\d{2}:\d{2}$", v):
                 raise ValueError("run_time must be in HH:MM format")
@@ -95,7 +95,7 @@ class RetentionConfigUpdate(BaseModel):
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, v):
+    def validate_timezone(cls, v: str | None) -> str | None:
         if v is not None:
             try:
                 import zoneinfo

@@ -2,6 +2,9 @@
 
 from typing import Any
 
+from sqlalchemy import create_engine
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine import make_url
 
 from app.core.config import Settings
@@ -31,6 +34,35 @@ def migration_database_url() -> str:
     return url.render_as_string(hide_password=False)
 
 
-def migration_connect_args() -> dict[str, Any]:
-    """``connect_args`` for a migration engine: sets the audit maintenance switch."""
-    return {"options": f"-c {AUDIT_MAINTENANCE_GUC}=on"}
+def set_audit_maintenance_on_connect(dbapi_connection: Any, _connection_record: Any) -> None:
+    """``PoolEvents.connect`` listener: session-level ``SET`` of the maintenance switch."""
+    previous = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute(f"SET {AUDIT_MAINTENANCE_GUC} = 'on'")
+    finally:
+        dbapi_connection.autocommit = previous
+
+
+def install_audit_maintenance_switch(engine: Engine) -> Engine:
+    """Turn the audit maintenance switch on for every DBAPI connection ``engine`` opens.
+
+    A session-level ``SET`` in a pool ``connect`` event, not a libpq ``options`` startup
+    parameter: connection proxies and poolers (e.g. AWS RDS Proxy, PgBouncer in transaction
+    mode) reject or drop startup options, so a ``-c`` switch would either fail every migration
+    connection or silently not apply. This is SQLAlchemy's documented on-connect pattern
+    ("Setting a Default Schema for New Connections", PoolEvents.connect). Autocommit is enabled
+    for the ``SET`` so it is not rolled back with the driver's implicit transaction (psycopg2
+    opens one on first execute) and so it persists for the whole session.
+    """
+
+    event.listen(engine, "connect", set_audit_maintenance_on_connect)
+    return engine
+
+
+def create_migration_engine(url: str | None = None, **kwargs: Any) -> Engine:
+    """Owner engine for migrations and role reconciliation, with the maintenance switch on."""
+    return install_audit_maintenance_switch(
+        create_engine(url or migration_database_url(), **kwargs)
+    )

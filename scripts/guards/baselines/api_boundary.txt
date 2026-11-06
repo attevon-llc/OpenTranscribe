@@ -66,7 +66,8 @@ orm_call_in_api::backend/app/api/endpoints/files/complete_upload.py	1	layering: 
 orm_call_in_api::backend/app/api/endpoints/files/crud.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/detail_response.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/filtering.py	9	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/files/management.py	5	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/files/bulk_action_handlers.py	3	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/files/bulk_rework_actions.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/multipart.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/prepare_upload.py	6	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/files/redaction_gate.py	1	layering: removal planned

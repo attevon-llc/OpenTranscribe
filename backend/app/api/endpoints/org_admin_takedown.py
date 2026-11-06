@@ -163,7 +163,7 @@ def list_org_quarantined_files(
     ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> OrgQuarantinedFilesList:
     """List this organization's taken-down files, newest first.
 
     A file the operator holds is listed (so an administrator can answer "why did this
@@ -240,7 +240,7 @@ def quarantine_org_file(
     response: Response,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> OrgQuarantineActionResponse:
     """Take one of this organization's files down (hidden from everyone but the operator).
 
     Never places a legal hold: that decision is not delegated to organizations yet.
@@ -276,7 +276,7 @@ def release_org_file(
     request_body: OrgReleaseRequest | None = None,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(require_org_admin),
-):
+) -> OrgQuarantineActionResponse:
     """Release a file this organization took down.
 
     409 when the file is not held; 403 ``takedown_platform_origin`` when the operator

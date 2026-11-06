@@ -11,8 +11,10 @@ selected. Modelled on ``chat_retention``: bounded per tick, UTILITY queue, daily
 """
 
 import logging
+from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
@@ -37,7 +39,7 @@ _DELETE_DUE_SQL = text(
 )
 
 
-def delete_due_acceptances(db, limit: int = MAX_DELETIONS_PER_RUN) -> int:
+def delete_due_acceptances(db: Session, limit: int = MAX_DELETIONS_PER_RUN) -> int:
     """Delete up to ``limit`` records past ``retain_until`` in the caller's transaction.
 
     ``SET LOCAL`` scopes the sweep flag to this transaction, so it cannot leak to other work on
@@ -45,11 +47,11 @@ def delete_due_acceptances(db, limit: int = MAX_DELETIONS_PER_RUN) -> int:
     """
     db.execute(text("SET LOCAL opentranscribe.legal_retention_sweep = 'on'"))
     result = db.execute(_DELETE_DUE_SQL, {"limit": int(limit)})
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)
 
 
 @celery_app.task(bind=True, name=TASK_NAME, priority=UtilityPriority.BACKGROUND)
-def legal_acceptance_retention_sweep(self) -> dict:  # noqa: ARG001 — bind=True signature
+def legal_acceptance_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
     """Delete pseudonymised acceptance records whose retention period has ended.
 
     Returns:

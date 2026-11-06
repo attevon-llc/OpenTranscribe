@@ -12,6 +12,7 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
@@ -309,7 +310,24 @@ def _purge_external_copies(plan: dict[str, Any]) -> list[dict[str, Any]]:
         )
 
     residual.extend(_cleanup_opensearch_for_file(plan, file_uuid) or [])
+    _clear_reindex_coordination_keys(file_uuid)
     return residual
+
+
+def _clear_reindex_coordination_keys(file_uuid: str) -> None:
+    """Drop the Redis keys the search sweep and reindex dispatcher claim for a file.
+
+    Both are TTL'd claims, but a delete inside the window left them behind, named after a
+    file that no longer exists. Best effort: they expire on their own, so an unreachable
+    Redis must not turn a finished delete into a failure.
+    """
+    try:
+        from app.core.redis import get_redis
+        from app.services.search.reindex_dispatch import reindex_coordination_keys
+
+        get_redis().delete(*reindex_coordination_keys(file_uuid))
+    except (RedisError, OSError) as err:
+        logger.debug(f"purge {file_uuid}: reindex coordination keys not cleared: {err}")
 
 
 def purge_media_file(db: Session, file: MediaFile) -> dict:

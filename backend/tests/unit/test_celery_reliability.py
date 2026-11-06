@@ -68,7 +68,7 @@ def test_postrun_does_not_dispose_the_engine():
 
 def test_post_fork_dispose_is_retained():
     """The dispose that DOES matter — a forked child must not inherit sockets."""
-    from app.core.celery import init_worker_process
+    from app.core.celery_worker_lifecycle import init_worker_process
 
     assert "dispose()" in inspect.getsource(init_worker_process)
 

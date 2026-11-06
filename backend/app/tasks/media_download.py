@@ -10,6 +10,7 @@ existing ``download_progress`` WebSocket channel.
 """
 
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import DownloadPriority
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
     retry_backoff=True,
 )
 def prepare_media_download_task(
-    self, file_id: int, user_id: int, mode: str, variant: str = ""
+    self: Any, file_id: int, user_id: int, mode: str, variant: str = ""
 ) -> dict:
     """Prepare a derived download asset and push a presigned URL over SSE.
 
@@ -191,7 +192,7 @@ def prepare_media_download_task(
     retry_backoff=True,
 )
 def prepare_bulk_subtitles_task(
-    self,
+    self: Any,
     file_specs: list,
     subtitle_format: str,
     include_speakers: bool,

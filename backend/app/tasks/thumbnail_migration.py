@@ -14,6 +14,7 @@ inside a single Postgres transaction holding ``ACCESS SHARE`` on ``media_file``.
 
 import io
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="migrate_thumbnails_to_webp", bind=True, priority=CPUPriority.ADMIN_BATCH)
-def migrate_thumbnails_to_webp(self, batch_size: int = 20) -> dict:
+def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20) -> dict:
     """
     Migrate existing JPEG thumbnails to optimized WebP format.
 
@@ -228,7 +229,7 @@ def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
 
 
 @celery_app.task(name="backfill_missing_thumbnails", bind=True, priority=CPUPriority.ADMIN_BATCH)
-def backfill_missing_thumbnails(self, after_id: int = 0, batch_size: int = 50) -> dict:
+def backfill_missing_thumbnails(self: Any, after_id: int = 0, batch_size: int = 50) -> dict:
     """Regenerate thumbnails for completed video files that have none.
 
     Covers the rows whose shared legacy thumbnail key was cleared by the v456 revision

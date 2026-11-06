@@ -81,8 +81,8 @@ def _completed_file(db_session, owner):
 
 
 def _bulk_redact(db_session, user, media):
-    from app.api.endpoints.files.management import BulkActionRequest
-    from app.api.endpoints.files.management import bulk_file_action
+    from app.api.endpoints.files.bulk_actions import BulkActionRequest
+    from app.api.endpoints.files.bulk_actions import bulk_file_action
     from app.services.request_context import RequestContext
 
     return bulk_file_action(

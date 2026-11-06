@@ -499,7 +499,7 @@ detect_and_configure_hardware() {
   # so `./opentr.sh start dev` loaded the nvidia GPU reservation (and the diar-native GPU
   # overlay, gated on the same $DOCKER_RUNTIME below) anyway. `--cpu`/`--lite` already clear
   # DOCKER_RUNTIME themselves; this only covers the .env-only opt-out those flags don't set.
-  if [ "${FORCE_CPU_MODE:-}" = "true" ]; then
+  if [ "$(printf '%s' "${FORCE_CPU_MODE:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" = "true" ]; then
     echo "🧮 CPU-only mode (FORCE_CPU_MODE=true in .env) — skipping GPU detection"
     export COMPUTE_TYPE="int8"
     export USE_GPU="false"

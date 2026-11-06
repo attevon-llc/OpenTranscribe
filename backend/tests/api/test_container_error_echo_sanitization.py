@@ -38,7 +38,7 @@ def test_bulk_action_per_file_failure_does_not_echo_the_exception(
     def _raise(*args, **kwargs):
         raise RuntimeError(f"could not dispatch: {SENTINEL}")
 
-    monkeypatch.setattr("app.api.endpoints.files.management._process_single_file_action", _raise)
+    monkeypatch.setattr("app.api.endpoints.files.bulk_actions._process_single_file_action", _raise)
 
     with caplog.at_level(logging.ERROR):
         response = client.post(

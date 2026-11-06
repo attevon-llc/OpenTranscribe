@@ -7,15 +7,20 @@ to avoid repeated model loading overhead. Supports both sequential
 Pattern matches speaker_embedding_service.py::get_cached_embedding_service().
 """
 
+from __future__ import annotations
+
 import logging
 import threading
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
-from typing import cast
 
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarizer import SpeakerDiarizer
 from app.transcription.transcriber import Transcriber
+
+if TYPE_CHECKING:
+    from app.transcription.diarizer_native import NativeSpeakerDiarizer
 
 logger = logging.getLogger(__name__)
 
@@ -32,17 +37,17 @@ class ModelManager:
     share the same GPU weights.
     """
 
-    _instance: ClassVar["ModelManager | None"] = None
+    _instance: ClassVar[ModelManager | None] = None
 
     def __init__(self: Any) -> None:
         self._transcriber: Transcriber | None = None
-        self._diarizer: SpeakerDiarizer | None = None
+        self._diarizer: SpeakerDiarizer | NativeSpeakerDiarizer | None = None
         self._transcriber_hash: str | None = None
         self._diarizer_hash: str | None = None
         self._lock = threading.RLock()
 
     @classmethod
-    def get_instance(cls) -> "ModelManager":
+    def get_instance(cls) -> ModelManager:
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
@@ -68,7 +73,7 @@ class ModelManager:
             self._transcriber_hash = config_hash
             return transcriber
 
-    def get_diarizer(self, config: TranscriptionConfig) -> SpeakerDiarizer:
+    def get_diarizer(self, config: TranscriptionConfig) -> SpeakerDiarizer | NativeSpeakerDiarizer:
         """Return cached diarizer if config matches, else load new one."""
         config_hash = config.config_hash()
 
@@ -94,7 +99,9 @@ class ModelManager:
             self._diarizer_hash = config_hash
             return diarizer
 
-    def _build_diarizer(self, config: TranscriptionConfig) -> SpeakerDiarizer:
+    def _build_diarizer(
+        self, config: TranscriptionConfig
+    ) -> SpeakerDiarizer | NativeSpeakerDiarizer:
         """Construct and load the configured diarization engine.
 
         ``config.diarizer_backend`` (SystemSettings ``engine.diarizer_backend`` -> env
@@ -114,8 +121,7 @@ class ModelManager:
 
                 native = NativeSpeakerDiarizer(config)
                 native.load_model()
-                # Duck-typed drop-in: identical diarize/embed_window/unload_model surface.
-                return cast(SpeakerDiarizer, native)
+                return native
             except Exception as exc:  # noqa: BLE001 — any failure means "use the fork"
                 fallback_reason = self._native_unavailable_reason()
                 self._refuse_if_sidecar_required(fallback_reason, exc)
@@ -161,7 +167,9 @@ class ModelManager:
         raise DiarSidecarUnavailableError(message, reason=reason) from cause
 
     @staticmethod
-    def _diarizer_current(diarizer: SpeakerDiarizer, config: TranscriptionConfig) -> bool:
+    def _diarizer_current(
+        diarizer: SpeakerDiarizer | NativeSpeakerDiarizer, config: TranscriptionConfig
+    ) -> bool:
         """Whether the cached diarizer is still the engine that should serve this task.
 
         With ``config.diarizer_backend == "native"`` the sidecar is probed per task, which

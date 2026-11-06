@@ -86,7 +86,7 @@ def test_torch_threads_divided_across_children(fake_env, monkeypatch):
     import sys
     import types
 
-    from app.core import celery as celery_mod
+    from app.core import celery_worker_lifecycle as celery_mod
 
     fake_env("800000 100000\n")
     calls: list[int] = []

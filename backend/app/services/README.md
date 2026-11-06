@@ -44,7 +44,7 @@ Most services are plain modules of functions that take a `Session`; a few are cl
 | Module | Purpose |
 |---|---|
 | `minio_service.py`, `storage_backend.py`, `storage_presign_identity.py`, `multipart_upload.py`, `storage_recovery_service.py` | Object storage (MinIO or native S3), presigning, browser-side multipart upload, orphan re-ingestion |
-| `media_download_service.py`, `youtube_rate_limiter.py`, `protected_media_providers.py` | yt-dlp URL ingestion and rate limiting |
+| `media_download_service.py`, `youtube_rate_limiter.py`, `protected_media_providers.py`, `media_source_access.py` | yt-dlp URL ingestion and rate limiting; which per-user media sources a user may use (own, plus shared within a tenant) |
 | `media_mirror_engine.py`, `media_mirror_service.py` | Incremental media mirror (MinIO to a configured S3 destination) |
 | `playback_rendition.py` | Browser-playable AAC/M4A renditions for formats browsers cannot decode |
 | `subtitle_service.py`, `video_processing_service.py`, `video_processing_host.py`, `video_subtitle_burn.py`, `audio_extraction.py`, `transcript_export_*.py`, `summary_export_service.py` | Subtitle files, burned-in subtitles, transcript and summary export |

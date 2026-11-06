@@ -266,9 +266,9 @@ def test_summarization_uses_same_org_shared_context(_prompt, world):
 
 
 def _visible_hosts(db, user_id: int | None) -> set[str]:
-    from app.services.protected_media_plugins.mediacms import MediacmsProvider
+    from app.services.media_source_access import query_user_media_sources
 
-    return {s.hostname for s in MediacmsProvider._query_user_media_sources(db, user_id)}
+    return {s.hostname for s in query_user_media_sources(db, user_id)}
 
 
 def test_mediacms_credentials_not_usable_across_orgs(world):

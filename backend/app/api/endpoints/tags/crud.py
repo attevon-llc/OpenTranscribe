@@ -56,7 +56,7 @@ def create_tag(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagSchema:
     """Create a tag in the request tenant, or return the one the name already resolves to.
 
     Case, ``-``/``_`` and spacing variants resolve onto the existing tag; a
@@ -86,7 +86,7 @@ def list_tags(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[TagWithCount] | list[dict[str, Any]]:
     """The tags you can see, most used first, with how many of your files carry each.
 
     The unfiltered personal list is served from a short-lived cache.
@@ -103,7 +103,7 @@ def list_tags(
     )
     cache_key = f"cache:tags:{current_user.id}"
     if cacheable:
-        cached = redis_cache.get(cache_key)
+        cached: list[dict[str, Any]] | None = redis_cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -129,7 +129,7 @@ def list_unused_tags(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[TagSchema]:
     """Your tenant's tags and system tags that none of your accessible files carry."""
     rows = list_unused_tag_rows(db, user_id=current_user.id, organization_id=ctx.org_id)
     rights = _write_rights(ctx, current_user.id)
@@ -149,7 +149,7 @@ def cleanup_unused_tags(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Delete tags that no file carries. Admin only; system tags are always kept."""
     if not ctx.bypass.user_is_admin:
         raise HTTPException(
@@ -203,7 +203,7 @@ def add_tag_to_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagSchema:
     """Attach a tag to a file by name, creating the tag in the file's tenant if needed.
 
     Needs editor rights on the file. A file you cannot open is answered like an
@@ -251,7 +251,7 @@ def remove_tag_from_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Detach the tag with exactly this stored name from a file; the tag itself is kept.
 
     Needs editor rights on the file. A file you cannot open is answered like an

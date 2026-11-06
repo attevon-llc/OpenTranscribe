@@ -178,6 +178,10 @@ between the two directory paths.
 
 ## Security
 
+- **A plain `ldap://` address now needs StartTLS (v0.6.1).** Transport security is decided from the
+  effective connection: a bind that would be unencrypted is refused, and **Test connection** reports a
+  mismatch between the server address and the TLS settings. Enable **Use StartTLS** or use an
+  `ldaps://` address.
 - **Use LDAPS** (port 636, `ldap_use_ssl=true`) or StartTLS in production. Verify with
   `openssl s_client -connect ad-server:636`.
 - Use a **read-only** service account for the bind DN.

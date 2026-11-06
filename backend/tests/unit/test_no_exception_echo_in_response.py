@@ -1002,7 +1002,7 @@ _CONTAINER_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
         "`message`. Already sanitized on both paths; note the returned expression only "
         "references `config` via str(config.uuid), never the tainted attribute",
     ),
-    "api/endpoints/files/management.py::bulk_file_action": (
+    "api/endpoints/files/bulk_actions.py::bulk_file_action": (
         1,
         "our own HTTPException detail: the surviving tainted branch is `except "
         "HTTPException as e: message=str(e.detail)`, the same re-surfacing of a detail "

@@ -38,6 +38,7 @@ from sqlalchemy import exists
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.expression import Exists
 
 from app.core.celery import celery_app
 from app.core.constants import DEFAULT_PRIVACY_VOICEPRINT_RETENTION_MONTHS
@@ -71,7 +72,7 @@ def cutoff_for(months: int, now: datetime | None = None) -> datetime:
     return (now or datetime.now(UTC)) - timedelta(days=months * _DAYS_PER_MONTH)
 
 
-def _fresh_linked_profile(cutoff: datetime):
+def _fresh_linked_profile(cutoff: datetime) -> Exists:
     """EXISTS a speaker of the file linked to a profile used on/after the cutoff (or never stamped)."""
     from app.models.media import MediaFile
     from app.models.speaker import Speaker
@@ -259,7 +260,7 @@ def run_sweep(
 
 
 @celery_app.task(bind=True, name=TASK_NAME, priority=UtilityPriority.BACKGROUND)
-def voiceprint_retention_sweep(self) -> dict:  # noqa: ARG001 — bind=True signature
+def voiceprint_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
     """Daily: destroy the voiceprints of files nobody has used for the configured months."""
     from app.db.session_utils import session_scope
 

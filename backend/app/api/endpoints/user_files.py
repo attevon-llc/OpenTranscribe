@@ -81,7 +81,7 @@ def _status_fields(file_status: FileStatus | None) -> dict[str, Any]:
 @router.get("/status", response_model=dict[str, Any])
 def get_user_file_status(
     db: Session = Depends(get_db), ctx: RequestContext = Depends(get_current_context)
-):
+) -> dict[str, Any]:
     """
     Get status summary of current user's files including any problems.
 
@@ -260,7 +260,7 @@ def get_file_detailed_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Get detailed status for a specific file including task information.
     """
@@ -384,7 +384,7 @@ def retry_file_processing(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Retry processing for a file that failed or is stuck.
     Available to all users for their own files.
@@ -527,7 +527,7 @@ def request_user_recovery(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """
     Request recovery for all of the current user's problem files.
     This triggers the same recovery process that admins can run, limited to the
@@ -540,7 +540,7 @@ def request_user_recovery(
         # This could be implemented with Redis or database tracking
 
         # Schedule user-specific recovery
-        def run_user_recovery():
+        def run_user_recovery() -> None:
             try:
                 from app.tasks.recovery import recover_user_files_task
 

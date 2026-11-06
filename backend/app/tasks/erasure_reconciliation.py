@@ -64,6 +64,8 @@ Community-edition invariance: the ledger is empty until someone requests an eras
 so this is two indexed queries returning nothing.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING
 from typing import Any
@@ -72,6 +74,9 @@ from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
 
 if TYPE_CHECKING:  # heavy model import kept out of the worker's import path
+    from sqlalchemy.orm import Session
+
+    from app.models.erasure import ErasureLedgerEntry
     from app.models.media import MediaFile
 
 logger = logging.getLogger(__name__)
@@ -85,7 +90,7 @@ MAX_OPEN_ENTRIES_PER_RUN = 100
 MAX_COMPLETED_CHECKS_PER_RUN = 500
 
 
-def _subject_is_alive(db, entry) -> bool:
+def _subject_is_alive(db: Session, entry: ErasureLedgerEntry) -> bool:
     """Is the subject this entry says was erased present in the database again?
 
     Only answerable for the two scopes that delete the subject row itself:
@@ -127,7 +132,14 @@ def _subject_is_alive(db, entry) -> bool:
     return False
 
 
-def _rerun(db, entry) -> dict[str, Any]:
+def _required_id(value: int | None, column: str) -> int:
+    """A subject id the ledger's CHECK constraint guarantees for this ``subject_type``."""
+    if value is None:
+        raise ValueError(f"erasure ledger entry has no {column}")
+    return value
+
+
+def _rerun(db: Session, entry: ErasureLedgerEntry) -> dict[str, Any]:
     """Re-run the erasure this entry describes, updating the entry in place.
 
     The existing entry is passed down so the retry updates it rather than opening a
@@ -141,15 +153,21 @@ def _rerun(db, entry) -> dict[str, Any]:
     from app.services.gdpr_erasure_service import erase_user
 
     if entry.subject_type == "user":
-        return erase_user(db, int(entry.subject_user_id), ledger_entry=entry)
+        return erase_user(
+            db, _required_id(entry.subject_user_id, "subject_user_id"), ledger_entry=entry
+        )
     if entry.subject_type == "file":
         return erase_file(db, entry.subject_file_uuid, ledger_entry=entry)
     if entry.subject_type == "organization":
-        return erase_organization(db, int(entry.subject_organization_id), ledger_entry=entry)
+        return erase_organization(
+            db,
+            _required_id(entry.subject_organization_id, "subject_organization_id"),
+            ledger_entry=entry,
+        )
     return erase_org_member_data(
         db,
-        int(entry.subject_user_id),
-        int(entry.subject_organization_id),
+        _required_id(entry.subject_user_id, "subject_user_id"),
+        _required_id(entry.subject_organization_id, "subject_organization_id"),
         ledger_entry=entry,
         created_before=cutoff_of(entry),
     )
@@ -160,7 +178,7 @@ def _rerun(db, entry) -> dict[str, Any]:
     name="gdpr.erasure_reconcile",
     priority=UtilityPriority.BACKGROUND,
 )
-def erasure_reconciliation_sweep(self) -> dict:  # noqa: ARG001 — bind=True signature
+def erasure_reconciliation_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
     """Finish deferred erasures and re-erase resurrected subjects.
 
     Returns:
@@ -282,7 +300,7 @@ def erasure_reconciliation_sweep(self) -> dict:  # noqa: ARG001 — bind=True si
     }
 
 
-def notify_hold_released(file: "MediaFile") -> None:
+def notify_hold_released(file: MediaFile) -> None:
     """Nudge the sweep after a legal hold is lifted. Never raises, never blocks.
 
     Called by ``takedown_service.release_file``. It dispatches the sweep rather than

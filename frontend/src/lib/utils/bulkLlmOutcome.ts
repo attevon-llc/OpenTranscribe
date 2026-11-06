@@ -5,13 +5,21 @@
  * configured): telling someone to add a provider they already have sends them the wrong way.
  */
 export const BULK_LLM_UNUSABLE_KEY = 'gallery.bulk.llmConfigUnusable';
+export const BULK_LLM_SETTINGS_UNAVAILABLE_KEY = 'gallery.bulk.llmSettingsUnavailable';
 export const BULK_LLM_NOT_CONFIGURED_KEY = 'gallery.bulk.llmNotConfigured';
 
 export function bulkLlmFailureKey(
   results: { success: boolean; error?: string | null }[]
-): typeof BULK_LLM_UNUSABLE_KEY | typeof BULK_LLM_NOT_CONFIGURED_KEY | null {
+):
+  | typeof BULK_LLM_UNUSABLE_KEY
+  | typeof BULK_LLM_SETTINGS_UNAVAILABLE_KEY
+  | typeof BULK_LLM_NOT_CONFIGURED_KEY
+  | null {
   const failed = results.filter((r) => !r.success);
   if (failed.some((r) => r.error === 'LLM_CONFIG_UNUSABLE')) return BULK_LLM_UNUSABLE_KEY;
+  // A transient read failure is retryable; it must not read as "add a provider".
+  if (failed.some((r) => r.error === 'LLM_SETTINGS_UNAVAILABLE'))
+    return BULK_LLM_SETTINGS_UNAVAILABLE_KEY;
   if (failed.some((r) => r.error === 'LLM_NOT_AVAILABLE')) return BULK_LLM_NOT_CONFIGURED_KEY;
   return null;
 }

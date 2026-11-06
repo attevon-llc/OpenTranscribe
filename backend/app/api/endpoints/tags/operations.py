@@ -44,7 +44,7 @@ def get_tag_impact(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagImpact:
     """How many files a rename, merge or delete of these tags would touch.
 
     Reports the files you can open and the deployment-wide total separately.
@@ -71,7 +71,7 @@ def promote_tags_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagMutationResult:
     """Publish tags to the shared vocabulary every account sees.
 
     Same-named tags are folded into the published one: across every tenant in
@@ -112,7 +112,7 @@ def rename_tag_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagMutationResult:
     """Rename a tag.
 
     When the new name already belongs to another tag nothing changes and
@@ -150,7 +150,7 @@ def merge_tags_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagMutationResult:
     """Fold the source tags into this tag; their files and grants move to it."""
     (target_id,) = _writable_tag_ids(
         db,
@@ -185,7 +185,7 @@ def delete_tags_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> TagMutationResult:
     """Delete tags. Their files lose them and their share grants go too."""
     tag_ids = _writable_tag_ids(
         db,

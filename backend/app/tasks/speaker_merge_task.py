@@ -22,6 +22,7 @@ either open their OWN short session or hold none at all. See ``tasks/CLAUDE.md``
 """
 
 import logging
+from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -87,7 +88,7 @@ def _load_merge_plan(target_speaker_uuid: str) -> dict | None:
     bind=True, name="process_speaker_merge_background", priority=CPUPriority.USER_TRIGGERED
 )
 def process_speaker_merge_background(
-    self,
+    self: Any,
     source_speaker_uuid: str,
     target_speaker_uuid: str,
     user_id: int,
@@ -95,7 +96,7 @@ def process_speaker_merge_background(
     source_profile_id: int | None,
     target_profile_id: int | None,
     media_file_ids: list[int],
-):
+) -> dict[str, Any]:
     """Finish a speaker merge after the Postgres side has committed.
 
     Args:

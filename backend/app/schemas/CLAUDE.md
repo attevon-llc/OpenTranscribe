@@ -24,7 +24,7 @@ Request/response shaping and validation only; logic lives in `app/services`. 42 
   (audit A1). **Never reintroduce a local host-safety check here** — `url_validation` is the one
   implementation. ⚠️ `admin.py`'s `validate_hostname` validators (~L150-200) still re-declare the same shapes with a
   **regex only**; that path is admin-only and is covered at request time by `mediacms.py`'s
-  `resolve_pinned_target` (`_pin_media_url`), but the schema itself is unguarded.
+  `resolve_pinned_target` (`utils/media_origin._pin_media_url`), but the schema itself is unguarded.
 - `__init__.py` — a **partial, drifting** re-export; 28 of the other modules are absent (`base`, `admin`, `search`,
   `watch_source`, `speaker_cluster`, `topic`, `redaction_settings`, …). Import from the submodule.
   `UserSchema` / `GroupSchema` are aliases that exist only here.
@@ -82,7 +82,7 @@ value falls back to. They were dead code while the write path accepted a bare `d
   valid but jointly incoherent (`allow_registration` while `local_enabled` is off;
   `pki_verify_revocation` with no `pki_ca_cert_path`). The caller merges the payload over the
   *current effective* values first, so the rejected state cannot be assembled one save at a time.
-  The PKI rule exists because `core/config.py:_validate_pki_settings` enforces the same
+  The PKI rule exists because `core/auth_settings_checks.py:validate_pki_settings` enforces the same
   invariant at startup for the **`.env`** spelling only; once those keys became live (issue
   #498) the admin UI could otherwise assemble a state the environment refuses to boot with.
   **A cross-field rule mirroring a startup validator needs a copy here** — the two config

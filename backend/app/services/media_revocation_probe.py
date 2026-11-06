@@ -30,6 +30,8 @@ import dataclasses
 import io
 import logging
 import uuid
+from collections.abc import Callable
+from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
 from app.core.config import settings
@@ -79,7 +81,12 @@ def _code(error: Exception) -> str:
 
 
 def _run(
-    client: Minio, bucket: str, key: str, steps, *, delete_is_needed: bool
+    client: Minio,
+    bucket: str,
+    key: str,
+    steps: Iterable[tuple[str, Callable[[], object]]],
+    *,
+    delete_is_needed: bool,
 ) -> tuple[list[str], str | None, str | None]:
     """Write ``key``, run ``steps`` ((action, call) pairs), delete ``key``.
 

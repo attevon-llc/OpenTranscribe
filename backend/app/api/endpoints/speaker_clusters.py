@@ -74,7 +74,7 @@ def list_clusters(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """List speaker clusters with pagination and filtering."""
     try:
         service = SpeakerClusteringService(db)
@@ -102,7 +102,7 @@ def trigger_recluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Trigger full re-clustering of all speakers.
 
     Answers **409** ``voiceprints_disabled`` (with the layer that turned it off in
@@ -171,7 +171,7 @@ def get_unverified_inbox(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Get paginated list of unverified speakers for the inbox."""
     service = SpeakerClusteringService(db)
     return service.get_unverified_speakers(
@@ -189,7 +189,7 @@ def batch_verify(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Batch verify multiple speakers.
 
     A speaker the user unassigned from (or rejected) the identity being applied is
@@ -220,7 +220,7 @@ def get_speaker_media_preview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Get presigned URL and segment timestamps for speaker media preview.
 
     Returns the source media file URL and the longest transcript segment
@@ -315,7 +315,7 @@ def get_clustering_stats(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Get aggregate speaker clustering statistics for the active tenant.
 
     While voiceprint matching is off for the caller's active scope the clusters are hidden
@@ -362,7 +362,7 @@ def analyze_outliers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Analyze minority-gender speakers for potential outliers.
 
     Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint
@@ -387,7 +387,7 @@ def unassign_speakers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Unassign speakers from a cluster with optional blacklisting."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
@@ -415,7 +415,7 @@ def get_cluster_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Get cluster detail with all members."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     service = SpeakerClusteringService(db)
@@ -432,7 +432,7 @@ def update_cluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Update cluster label and description."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
@@ -478,7 +478,7 @@ def delete_cluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> None:
     """Delete a speaker cluster, detaching its members rather than deleting them.
 
     Consumed by the speaker-cluster management UI when the operator rejects a
@@ -534,7 +534,7 @@ def promote_cluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Promote a cluster to a speaker profile.
 
     Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint
@@ -567,7 +567,7 @@ def merge_clusters(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Merge source cluster into target cluster.
 
     A source member the user unassigned from the target (or its profile, or one of its
@@ -605,7 +605,7 @@ def split_cluster(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> dict[str, Any]:
     """Split speakers from a cluster into a new cluster.
 
     Answers **409** ``voiceprints_disabled`` while the caller's scope has voiceprint

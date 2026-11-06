@@ -17,9 +17,12 @@ import contextlib
 import json
 import logging
 import uuid
+from typing import Any
 
 from celery import chain
 from celery import group
+from celery.canvas import Signature
+from sqlalchemy.orm import Session
 
 from app.core.exceptions import PipelinePlanRefusedError
 from app.core.queues import CeleryQueues
@@ -46,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 
 def _plan_for_dispatch(
-    db, media_file: MediaFile, *, whisper_model: str | None, skip_diarization: bool
+    db: Session, media_file: MediaFile, *, whisper_model: str | None, skip_diarization: bool
 ) -> PipelinePlan:
     """The file's pipeline plan, or a refusal recorded on the file (issue #1225).
 
@@ -162,7 +165,9 @@ def _mark_dispatch_failed(file_uuid: str, task_id: str, message: str) -> None:
         send_error_notification(user_id, file_id, truncated)
 
 
-def _run_pre_dispatch_gate(db, media_file: MediaFile, file_uuid: str, task_id: str) -> None:
+def _run_pre_dispatch_gate(
+    db: Session, media_file: MediaFile, file_uuid: str, task_id: str
+) -> None:
     """Checks every dispatch path runs before it creates a task record.
 
     Shared by :func:`dispatch_transcription_pipeline` and
@@ -383,7 +388,7 @@ def dispatch_transcription_pipeline(
     return task_id
 
 
-def _transcribe_stage(plan: PipelinePlan, cpu_priority: int, gpu_priority: int):
+def _transcribe_stage(plan: PipelinePlan, cpu_priority: int, gpu_priority: int) -> Signature:
     """The chain's transcription link, on the queue the plan names.
 
     A per-file lightweight model (``local_cpu``) runs ``transcription.cpu_transcribe`` on
@@ -403,7 +408,7 @@ def _transcribe_stage(plan: PipelinePlan, cpu_priority: int, gpu_priority: int):
 def dispatch_batch_transcription(
     file_uuids: list[str],
     user_id: int | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> dict:
     """Dispatch transcription chains for a batch of files using Celery group.
 

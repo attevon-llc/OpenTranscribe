@@ -17,7 +17,7 @@ from app.core.exceptions import DomainError
 from app.core.exceptions import UpstreamServiceError
 from app.services.protected_media_plugins import mediacms
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
-from app.services.protected_media_plugins.mediacms import resolve_same_origin_url
+from app.utils.media_origin import resolve_same_origin_url
 
 BASE = "https://m.example.com"
 

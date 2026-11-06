@@ -91,7 +91,7 @@ cc_expected_gpu_overlay() {
     # for a working GPU.
     if [[ -n "${OPENTRANSCRIBE_FORCE_CPU:-}" ]]; then echo ""; return 0; fi
     local forced=""
-    forced="$(grep -E '^FORCE_CPU_MODE=' "$dir/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "' || true)"
+    forced="$(grep -E '^FORCE_CPU_MODE=' "$dir/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "' | tr '[:upper:]' '[:lower:]' || true)"
     if [[ "$forced" == "true" ]]; then echo ""; return 0; fi
 
     # `grep -c ... -gt 0`, never `| grep -q`. This file runs under `set -euo pipefail`, and

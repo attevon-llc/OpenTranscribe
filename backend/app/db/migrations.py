@@ -17,11 +17,12 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine
 from sqlalchemy import inspect
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import SQLAlchemyError
 
 from alembic import command  # type: ignore[attr-defined]
-from app.db.migration_connection import migration_connect_args
+from app.db.migration_connection import create_migration_engine
 from app.db.migration_connection import migration_database_url
 from app.db.schema_detect.ladder import LADDER
 from app.db.schema_detect.ladder import collect_facts
@@ -55,7 +56,7 @@ def get_alembic_head() -> str | None:
     return head
 
 
-def _detect_schema_version(conn, tables: list[str]) -> str | None:
+def _detect_schema_version(conn: Connection, tables: list[str]) -> str | None:
     """Detect the schema version of an existing untracked database.
 
     Returns the Alembic revision to stamp, or None if no user table exists. Every probe runs
@@ -72,7 +73,7 @@ def _detect_schema_version(conn, tables: list[str]) -> str | None:
     return "v010_baseline"
 
 
-def _repair_skipped_v230(config) -> None:
+def _repair_skipped_v230(config: Config) -> None:
     """Apply v230 schema changes if they were skipped due to branch merge.
 
     The v230_add_auto_labeling migration may have been skipped on databases
@@ -80,7 +81,7 @@ def _repair_skipped_v230(config) -> None:
     chain was linearised. All SQL is idempotent (IF NOT EXISTS).
     """
 
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
     try:
         with engine.connect() as conn:
             missing = not _check_column_exists(conn, "media_file", "upload_batch_id")
@@ -251,7 +252,7 @@ def _retry_object_key_indexes() -> None:
     _object_key_retry_done = True
     from app.db import object_key_indexes
 
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
     try:
         with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             if inspect(conn).has_table("media_file"):
@@ -262,7 +263,7 @@ def _retry_object_key_indexes() -> None:
         engine.dispose()
 
 
-def _check_column_exists(conn, table: str, column: str) -> bool:
+def _check_column_exists(conn: Connection, table: str, column: str) -> bool:
     """Check if a column exists in a table."""
     result = conn.execute(
         text(
@@ -364,7 +365,7 @@ def run_migrations() -> None:
 
     _await_database_available()
 
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
 
     # Acquire the advisory lock on a DEDICATED connection held open for the whole
     # upgrade (issue #284 A1.4).

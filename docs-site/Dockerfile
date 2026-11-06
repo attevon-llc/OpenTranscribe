@@ -43,14 +43,14 @@ RUN npm run build
 # Production image: nginx:alpine (~25MB) serving static files.
 #
 # Pinned to the SAME tag as frontend/Dockerfile.prod, deliberately. This image
-# had drifted to nginx:1.27-alpine while the frontend moved to 1.31.2-alpine3.23,
+# had drifted to nginx:1.27-alpine while the frontend moved to 1.31.x-alpine,
 # and the older base was carrying libcrypto3/libssl3 3.3.3-r0 — CVE-2026-31789,
 # fixed in 3.3.7-r0. That was the docs image's entire CRITICAL count (2), against
 # a frontend scanning 0/0 from the same kind of base.
 #
 # Two images serving static files behind nginx have no reason to be on different
 # bases; when they diverge, only one of them gets looked at. Bump both together.
-FROM nginx:1.31.2-alpine3.23
+FROM nginx:1.31.8-alpine3.24
 
 # OCI annotations for container metadata and compliance.
 #

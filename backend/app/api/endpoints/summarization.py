@@ -77,7 +77,7 @@ async def trigger_summarization(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Trigger AI-powered summarization for a transcript
 
@@ -238,7 +238,7 @@ def get_file_summary(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
-):
+) -> SummaryResponse:
     """
     Retrieve the latest AI-generated summary for a file
 
@@ -307,7 +307,7 @@ def export_summary(
     speaker_analysis_label: str = Query("Speaker Analysis"),
     follow_up_items_label: str = Query("Follow-up Items"),
     disclaimer_label: str = Query("AI-generated summary - please verify important details."),
-):
+) -> Response:
     """Export the requesting user's masked summary as a downloadable/copyable document.
 
     This is issue #885's real fix. #885 was filed as a redaction bypass and the premise was
@@ -517,7 +517,7 @@ async def identify_speakers(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
-):
+) -> SpeakerIdentificationResponse:
     """
     Generate LLM-based speaker identification suggestions
 
@@ -602,7 +602,7 @@ def delete_summary(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
     db: Session = Depends(get_db),
-):
+) -> dict[str, Any]:
     """
     Delete a file's summary
 

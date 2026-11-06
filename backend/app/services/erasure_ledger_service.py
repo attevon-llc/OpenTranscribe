@@ -68,6 +68,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import ColumnElement
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -633,7 +634,7 @@ def record_resurrection(
     )
 
 
-def _is_open_grace():
+def _is_open_grace() -> ColumnElement[bool]:
     return and_(
         ErasureLedgerEntry.status == "deferred",
         ErasureLedgerEntry.deferred_reason == "grace_period",

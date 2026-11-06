@@ -367,6 +367,36 @@ describe('streamChatMessage', () => {
     vi.unstubAllGlobals();
   });
 
+  it('maps a 503 (settings unreadable) to provider_unavailable, not the generic failure', async () => {
+    const { streamChatMessage } = await import('./chatStream');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: async () => ({
+          detail: 'AI provider settings could not be read. Try again in a moment.',
+        }),
+      })
+    );
+    const events: ChatStreamEvent[] = [];
+    await streamChatMessage(
+      'c',
+      { content: 'hi' },
+      (e) => events.push(e),
+      new AbortController().signal
+    );
+    vi.unstubAllGlobals();
+
+    expect(events).toEqual([
+      {
+        type: 'error',
+        code: 'provider_unavailable',
+        message: 'AI provider settings could not be read. Try again in a moment.',
+      },
+    ]);
+  });
+
   async function send400(detail: unknown): Promise<ChatStreamEvent> {
     const { streamChatMessage } = await import('./chatStream');
     vi.stubGlobal(

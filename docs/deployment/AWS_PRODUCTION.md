@@ -12,7 +12,7 @@ are AWS-infra recommendations (outside this repo) are marked ☁️.
 > client to gate data; the backend already re-checks ownership/redaction (audited).
 
 ## 1. Already solid (verified in-repo) ✅
-- **No secrets in the browser bundle.** Only `VITE_API_BASE_URL`, `VITE_FLOWER_URL_PREFIX`,
+- **No secrets in the browser bundle.** Only `VITE_FLOWER_URL_PREFIX` and
   `import.meta.env.DEV` are referenced. LLM/ASR provider keys are backend-only (encrypted in DB).
 - **No production source maps** (`vite.config.ts`: `sourcemap: mode !== 'production'`); minified.
 - **All `{@html}` is DOMPurify-sanitized** (`src/lib/utils/sanitizeHtml.ts`, allowlist).

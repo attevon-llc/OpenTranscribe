@@ -29,4 +29,25 @@ describe('bulkLlmFailureKey', () => {
       ])
     ).toBeNull();
   });
+
+  it('reports "settings unreadable" distinctly from "not configured"', () => {
+    expect(bulkLlmFailureKey([{ success: false, error: 'LLM_SETTINGS_UNAVAILABLE' }])).toBe(
+      'gallery.bulk.llmSettingsUnavailable'
+    );
+  });
+
+  it('ranks unusable above unreadable above not-configured', () => {
+    expect(
+      bulkLlmFailureKey([
+        { success: false, error: 'LLM_NOT_AVAILABLE' },
+        { success: false, error: 'LLM_SETTINGS_UNAVAILABLE' },
+      ])
+    ).toBe('gallery.bulk.llmSettingsUnavailable');
+    expect(
+      bulkLlmFailureKey([
+        { success: false, error: 'LLM_SETTINGS_UNAVAILABLE' },
+        { success: false, error: 'LLM_CONFIG_UNUSABLE' },
+      ])
+    ).toBe('gallery.bulk.llmConfigUnusable');
+  });
 });

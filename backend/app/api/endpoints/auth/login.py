@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -411,7 +412,7 @@ def login_for_access_token(
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
-):
+) -> JSONResponse:
     """OAuth2 compatible token login, get an access token for future requests.
 
     Rate limited to prevent brute force attacks.

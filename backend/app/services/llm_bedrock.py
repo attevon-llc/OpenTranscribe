@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core import llm_defaults
@@ -46,6 +47,9 @@ from app.core.config import settings
 from app.services import bedrock_settings
 from app.services.bedrock_settings import BedrockConnection
 from app.services.llm_stream import LLMStreamEvent
+
+if TYPE_CHECKING:
+    from botocore.client import BaseClient
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +107,7 @@ def is_transient_error(exc: BaseException) -> bool:
 
 def _client(
     region: str, connection: BedrockConnection | None = None, service: str = "bedrock-runtime"
-):
+) -> BaseClient:
     """Build a Bedrock client (``bedrock-runtime`` by default).
 
     Not cached: botocore clients are not documented as thread-safe for concurrent

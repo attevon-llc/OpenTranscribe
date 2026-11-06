@@ -147,7 +147,7 @@ def claim_and_dispatch_redaction_scan(
     **One implementation on purpose.** Two call sites need this exact protocol — the
     lazy dispatch on a transcript read (:func:`_lazy_dispatch_redaction`) and the
     bulk/selective "Redact" action
-    (``endpoints/files/management._handle_redact_action``) — and the second shipped
+    (``endpoints/files/bulk_action_handlers._handle_redact_action``) — and the second shipped
     without the withdrawal, which is how files got stranded. A second copy of a
     recovery protocol is a second chance to omit half of it.
 

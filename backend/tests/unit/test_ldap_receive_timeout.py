@@ -9,6 +9,7 @@ open. Both are bounded by the one ``ldap_timeout`` setting, and a timed-out bind
 from __future__ import annotations
 
 import dataclasses
+from types import SimpleNamespace
 from typing import Any
 
 from ldap3.core.exceptions import LDAPSocketReceiveError
@@ -24,6 +25,7 @@ from tests.fixtures.ldap_directory_fake import FakeEntry
 from tests.fixtures.ldap_directory_fake import install
 
 ALICE_PW = "alice-pw"
+_TLS_SERVER = SimpleNamespace(ssl=True)  # effective transport is TLS (ldaps://)
 
 
 def _cfg(**overrides: Any) -> LdapConfig:
@@ -78,6 +80,6 @@ def test_a_directory_that_never_answers_is_refused_with_a_clear_log(monkeypatch,
     monkeypatch.setattr(ldap_directory, "Connection", _SilentConnection)
 
     with caplog.at_level("ERROR", logger="app.auth.ldap_directory"):
-        assert ldap_directory._connect_and_bind(_cfg(), object(), "cn=a", "pw") is None
+        assert ldap_directory._connect_and_bind(_cfg(), _TLS_SERVER, "cn=a", "pw") is None
 
     assert "did not answer within 7 s" in caplog.text

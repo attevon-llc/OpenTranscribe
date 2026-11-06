@@ -1,6 +1,4 @@
-backend/app/api/endpoints/files/management.py	1400	v0.6.1 merge: release growth; split by concern planned
-backend/app/core/celery.py	1467	v0.6.1 merge: release growth; split by concern planned
-backend/app/core/config.py	1647	v0.6.1 merge: release growth; split by concern planned
+backend/app/core/config.py	1575	v0.6.1 merge: release growth; split by concern planned
 backend/app/services/llm_service.py	1251	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FileUploader.svelte::script	827	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FilterSidebar.svelte::script	756	oversize: split by concern planned
@@ -16,7 +14,7 @@ scripts/download-models.py	1367	v0.6.1 merge: release growth; split by concern p
 scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
 scripts/release-tests/lib/guardrails.sh	1281	oversize: split by concern planned
-scripts/release-tests/test-upgrade.sh	2967	oversize: split by concern planned
+scripts/release-tests/test-upgrade.sh	2933	oversize: split by concern planned
 scripts/run-mutation-tests.sh	1173	oversize: split by concern planned
 scripts/security-scan.sh	1165	oversize: split by concern planned
 setup-opentranscribe.sh	2542	oversize: split by concern planned

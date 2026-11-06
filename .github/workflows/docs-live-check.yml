@@ -1,0 +1,137 @@
+name: Docs Live Check
+
+# Proves the PUBLISHED docs site matches the repo. deploy-docs.yml only runs on a push to
+# master touching docs-site/** or VERSION (plus a daily cron), so a deploy that sits queued
+# behind a GitHub Actions incident leaves the live site on the previous release with nothing
+# failing. After v0.6.1 the site stayed on v0.6.0 for hours exactly that way.
+#
+# Three triggers cover three different failures:
+#   workflow_run   the deploy finished (or failed): is the site really updated?
+#   schedule       the deploy never started or never finished: a 6-hourly backstop
+#   workflow_dispatch  run it by hand
+# The checks themselves live in scripts/check-docs-live.py (run it locally with
+# `python3 scripts/check-docs-live.py --wait-seconds 600`).
+
+on:
+  workflow_run:
+    workflows: ['Deploy Documentation']
+    types: [completed]
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-live-check
+  cancel-in-progress: false
+
+env:
+  ALERT_TITLE: 'alert(docs): live docs site is stale or broken'
+
+jobs:
+  check:
+    # A Deploy Documentation run for a pull request builds only and never publishes.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.head_branch == 'master')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      # --use-gh reads the Deploy Documentation run list (queued / in progress / last success).
+      actions: read
+    steps:
+      - name: Checkout the commit that was deployed
+        uses: actions/checkout@v7
+        with:
+          # The script derives every expectation (VERSION, newest blog post, upgrade page)
+          # from the checkout and dates the last docs-site/VERSION commit from git history.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Check the live docs site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/check-docs-live.py --use-gh --wait-seconds 600 \
+            --repo "${{ github.repository }}" 2>&1 | tee docs-live-check.txt
+
+      - name: Upload the check output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs-live-check
+          path: docs-live-check.txt
+          if-no-files-found: ignore
+
+  alert:
+    needs: check
+    # Run after a failed check to open or update the alert, and after a passing one to close it.
+    # A skipped check (a PR-triggered deploy) and a cancelled one change nothing.
+    if: always() && (needs.check.result == 'failure' || needs.check.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Download the check output
+        uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: docs-live-check
+
+      - name: Open, update or close the alert issue
+        uses: actions/github-script@v9
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+        with:
+          script: |
+            const fs = require('fs');
+            const title = process.env.ALERT_TITLE;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            let output = 'The check output artifact was not available; see the run log.';
+            try { output = fs.readFileSync('docs-live-check.txt', 'utf8').slice(0, 6000); } catch (e) {}
+
+            // One alert issue, deduplicated by title: comment on it instead of opening another.
+            const open = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'ci-cd', per_page: 100,
+            });
+            const existing = open.find(i => i.title === title && !i.pull_request);
+
+            if (process.env.CHECK_RESULT === 'success') {
+              if (!existing) return;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.number,
+                body: `The live docs site passes every check again (${runUrl}). Closing.`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, state: 'closed', state_reason: 'completed',
+              });
+              return;
+            }
+
+            const body = [
+              `The live docs site failed its check: ${runUrl}`,
+              '',
+              '```',
+              output,
+              '```',
+              '',
+              'Look for a queued or failed `Deploy Documentation` run first: ' +
+                `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy-docs.yml`,
+              'Re-run locally with `python3 scripts/check-docs-live.py --use-gh --wait-seconds 600`.',
+            ].join('\n');
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body,
+                labels: ['documentation', 'ci-cd', 'needs-triage'],
+              });
+            }

@@ -90,7 +90,7 @@ ENV GIT_SHA=${GIT_SHA}
 RUN npm run build
 
 # Production stage
-FROM nginx:1.31.2-alpine3.23
+FROM nginx:1.31.8-alpine3.24
 
 # OCI annotations for container metadata and compliance
 LABEL org.opencontainers.image.title="OpenTranscribe Frontend" \

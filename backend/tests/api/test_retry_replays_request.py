@@ -51,6 +51,9 @@ def dispatch_calls(monkeypatch):
     monkeypatch.setenv("SKIP_CELERY", "False")
     monkeypatch.setattr("app.tasks.transcription.dispatch_transcription_pipeline", _spy)
     monkeypatch.setattr("app.api.endpoints.files.management.dispatch_transcription_pipeline", _spy)
+    monkeypatch.setattr(
+        "app.api.endpoints.files.bulk_rework_actions.dispatch_transcription_pipeline", _spy
+    )
     return calls
 
 

@@ -634,7 +634,7 @@ class TestSchemasDriveTheValidation:
 # pki_verify_revocation vs pki_ca_cert_path (issue #498)
 # --------------------------------------------------------------------------- #
 class TestRevocationCheckingRequiresACaCertificate:
-    """``core/config.py:_validate_pki_settings`` raises this at startup for the
+    """``core/auth_settings_checks.py:validate_pki_settings`` raises this at startup for the
     ``.env`` spelling and cannot see the DB copy.
 
     While the DB keys were inert that gap did not matter. Now that ``pki_auth``

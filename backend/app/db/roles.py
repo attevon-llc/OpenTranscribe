@@ -15,7 +15,6 @@ import logging
 import sys
 from collections.abc import Iterable
 
-from sqlalchemy import create_engine
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine import make_url
@@ -24,8 +23,7 @@ from app.core.config import settings
 from app.db.audit_protection import PRUNE_FUNCTION
 from app.db.audit_protection import ProtectedTable
 from app.db.audit_protection import all_protected_tables
-from app.db.migration_connection import migration_connect_args
-from app.db.migration_connection import migration_database_url
+from app.db.migration_connection import create_migration_engine
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +134,7 @@ def reconcile_from_settings() -> None:
     if not role:
         raise RuntimeError("database role split requested but no app role name is resolvable")
     provision = settings.POSTGRES_APP_ROLE_PROVISION and bool(settings.POSTGRES_APP_USER)
-    engine = create_engine(migration_database_url(), connect_args=migration_connect_args())
+    engine = create_migration_engine()
     try:
         with engine.begin() as conn:
             reconcile_app_role(

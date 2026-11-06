@@ -251,7 +251,7 @@ def _create_task_dict_from_media_file(
 def get_active_progress(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> list[dict[str, Any]]:
     """Get all active (running) task progress for the current user.
 
     Returns ProgressState dicts from Redis so the frontend can recover
@@ -300,7 +300,7 @@ def list_tasks(
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> PaginatedTaskResponse:
     """
     List tasks for the current user with server-side filtering and pagination.
 
@@ -437,7 +437,7 @@ def get_task(
     task_id: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
-):
+) -> Task:
     """Get a specific task by its ID.
 
     Accepts either form of id this API issues: a real Celery task id (what the

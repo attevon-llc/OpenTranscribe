@@ -742,14 +742,9 @@
   }
 
   // Bulk tagging — the Organize menu's add/remove entries. The uuids come
-  // straight from the shared selection.
-  //
-  // No `presentTagNames` is passed: `GET /files` carries no per-file tags at all
-  // (#326 keeps `tags` on `MediaFileDetail` only, since the list serializer would
-  // need a per-row tag query), so scoping the remove suggestions to the selection
-  // is not possible from here. BulkTagModal's documented fallback — offer every
-  // tag — is the behavior, and reading `f.tags` only ever produced an empty list
-  // while reading as though it did something.
+  // straight from the shared selection. No `presentTagNames` is passed: `GET /files`
+  // carries no per-file tags (#326), so BulkTagModal looks up the selection's tags
+  // itself.
   function openBulkTagModal(action: BulkTagAction) {
     if ($galleryState.selectedFiles.size === 0) return;
     bulkTagAction = action;

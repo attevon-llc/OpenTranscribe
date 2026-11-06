@@ -69,10 +69,10 @@ class AutoLabelService:
     def normalize_name(name: str) -> str:
         """Normalize a name for deduplication comparison.
 
-        Delegating alias for ``tag_service.normalize_tag_name``, which owns the
-        single definition (lowercase, strip, hyphens/underscores to spaces,
-        collapse whitespace). Kept so existing callers — including collection
-        names, which are not tags — keep working.
+        A pass-through to ``tag_service.normalize_tag_name``, which is the only
+        place tag-name normalization is defined. It is kept as a method because
+        callers use it for more than tag lookup: the batch grouping keys the
+        collections it creates by the normalized name.
         """
         return normalize_tag_name(name)
 
@@ -80,7 +80,8 @@ class AutoLabelService:
     def are_names_similar(a: str, b: str, threshold: float = FUZZY_MATCH_THRESHOLD) -> bool:
         """Check if two names are similar using SequenceMatcher.
 
-        Delegating alias for ``tag_service.names_are_similar``.
+        The comparison itself lives in ``tag_service.names_are_similar``; this
+        only forwards to it.
         """
         return names_are_similar(a, b, threshold)
 
@@ -148,10 +149,10 @@ class AutoLabelService:
         1. Exact normalized_name match (uses index)
         2. Fallback: SequenceMatcher scan of cached tags
 
-        Auto-labeling is the **only** path allowed to act on step 2 without a
-        human confirming it — the names come from the LLM, not from a person, so
-        there is no one to show a suggestion to. Every user-supplied path
-        resolves with normalized-exact matching only.
+        Acting on step 2 without anyone confirming it is reserved for this
+        service: the name came from the model, so there is no person to ask.
+        Paths that receive a name a person typed stop at step 1 and match
+        normalized-exact only.
         """
         normalized = self.normalize_name(suggested_name)
 
@@ -275,8 +276,8 @@ class AutoLabelService:
         self._announce_collection_joins(media_file, joined_collections)
 
         if retagged_file_ids:
-            # Auto-labeling is a back-door tag-mutation path that doesn't carry
-            # current_user, but the shared hook resolves the owner itself.
+            # No request user on this background path; the hook resolves the file owners on
+            # its own, so the owner's id stands in for the acting user.
             on_tags_changed(self.db, retagged_file_ids, user_id=int(media_file.user_id))
 
         logger.info(
@@ -380,8 +381,9 @@ class AutoLabelService:
         personal one, where it would follow them into every other tenant — and
         never becomes an ownerless (deployment-visible) row.
 
-        The fuzzy hit is applied automatically because this is the auto-labeling
-        path — the one path allowed to (see :meth:`find_existing_similar_tag`).
+        A fuzzy hit is reused here with no confirmation step, which is allowed
+        only because this is the auto-labeling path (see
+        :meth:`find_existing_similar_tag`).
         Creation itself delegates to the shared resolver so normalization, the
         length clamp, and the SAVEPOINT-guarded insert stay identical across
         every path.
@@ -456,10 +458,10 @@ class AutoLabelService:
         """Add a tag to a file if not already present.
 
         Returns:
-            True when a new association was written. The caller accumulates the
-            file ids and calls ``on_tags_changed`` once for the whole batch;
-            doing it here meant a global cache bust and a reindex enqueue per
-            tag, all of them describing the same single file.
+            True only if this call wrote a new file-tag row. The caller gathers
+            the ids of files that got one and runs ``on_tags_changed`` once for
+            the whole batch; running it per tag repeated a global cache
+            invalidation and a reindex enqueue for the same file.
         """
         existing = (
             self.db.query(FileTag)

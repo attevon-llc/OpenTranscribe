@@ -7,6 +7,8 @@ bad file never undoes or blocks the others. One reindex covers exactly the chang
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 from fixtures.tag_recorders import count_commits
 from fixtures.tag_recorders import record_reindex
@@ -36,6 +38,8 @@ from app.services.tag_bulk import resolve_bulk_tag
 from app.services.tag_service import InvalidTagNameError
 
 BULK = "/api/files/management/bulk-action"
+ROUTE_MODULE = "app.api.endpoints.files.bulk_actions"
+HANDLER_MODULE = "app.api.endpoints.files.bulk_action_handlers"
 
 
 def _bulk(client, headers, files, action: str, tag_name: str | None) -> list[dict]:
@@ -375,3 +379,194 @@ def test_a_lost_creation_race_never_deletes_the_winning_tag(
     db_session.expire_all()
     assert db_session.query(Tag).filter(Tag.id == winner.id).count() == 1
     assert db_session.query(Tag).filter(Tag.name == winner.name).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# The route's post-batch refresh and its failed-row envelope
+# ---------------------------------------------------------------------------
+
+
+def test_a_failing_post_batch_refresh_does_not_fail_the_committed_batch(
+    client, db_session, normal_user, user_token_headers, monkeypatch, caplog
+):
+    first, second = make_file(db_session, normal_user), make_file(db_session, normal_user)
+    name = word("Refresh Boom")
+    secret = "reindex-broker-secret-7f3a"
+
+    def exploding_refresh(*args, **kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(f"{ROUTE_MODULE}.refresh_tagged_files", exploding_refresh)
+
+    with caplog.at_level(logging.ERROR, logger=ROUTE_MODULE):
+        response = client.post(
+            BULK,
+            headers=user_token_headers,
+            json={
+                "file_uuids": [str(first.uuid), str(second.uuid)],
+                "action": "add_tag",
+                "tag_name": name,
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    rows = response.json()
+    assert [(r["file_uuid"], r["outcome"], r["success"]) for r in rows] == [
+        (str(first.uuid), "added", True),
+        (str(second.uuid), "added", True),
+    ]
+    assert secret not in response.text
+    created = db_session.query(Tag).filter(Tag.name == name).one()
+    assert [_tag_ids_on(db_session, f) for f in (first, second)] == [[created.id]] * 2
+    logged = [r for r in caplog.records if r.name == ROUTE_MODULE and r.levelno == logging.ERROR]
+    assert len(logged) == 1
+    assert "add_tag" in logged[0].getMessage()
+
+
+def _record_refresh(monkeypatch) -> list[dict]:
+    calls: list[dict] = []
+
+    def recorder(db, changed_file_uuids, *, user_id, created_tag_id=None):
+        calls.append(
+            {
+                "uuids": list(changed_file_uuids),
+                "user_id": user_id,
+                "created_tag_id": created_tag_id,
+            }
+        )
+        return []
+
+    monkeypatch.setattr(f"{ROUTE_MODULE}.refresh_tagged_files", recorder)
+    return calls
+
+
+def test_the_refresh_gets_only_changed_uuids_and_no_created_tag_for_an_existing_name(
+    client, db_session, normal_user, user_token_headers, monkeypatch
+):
+    calls = _record_refresh(monkeypatch)
+    tag = make_tag(db_session, word("Refresh Existing"), user_id=normal_user.id)
+    carrying = make_file(db_session, normal_user)
+    fresh_a, fresh_b = make_file(db_session, normal_user), make_file(db_session, normal_user)
+    attach(db_session, carrying, tag)
+
+    rows = _bulk(client, user_token_headers, [fresh_a, carrying, fresh_b], "add_tag", tag.name)
+
+    assert [r["outcome"] for r in rows] == ["added", "already_present", "added"]
+    assert calls == [
+        {
+            "uuids": [str(fresh_a.uuid), str(fresh_b.uuid)],
+            "user_id": normal_user.id,
+            "created_tag_id": None,
+        }
+    ]
+
+
+def test_the_refresh_gets_the_id_of_the_tag_the_batch_created(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    calls = _record_refresh(monkeypatch)
+    viewer_file = make_file(db_session, other_user)
+    own_file = make_file(db_session, normal_user)
+    share_file(db_session, other_user, normal_user, viewer_file, "viewer")
+    name = word("Refresh Fresh")
+
+    rows = _bulk(client, user_token_headers, [viewer_file, own_file], "add_tag", name)
+
+    assert [r["outcome"] for r in rows] == ["failed", "added"]
+    created = db_session.query(Tag).filter(Tag.name == name).one()
+    assert calls == [
+        {
+            "uuids": [str(own_file.uuid)],
+            "user_id": normal_user.id,
+            "created_tag_id": created.id,
+        }
+    ]
+
+
+def test_a_batch_that_changed_nothing_still_closes_with_one_refresh_of_no_uuids(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    calls = _record_refresh(monkeypatch)
+    strangers_file = make_file(db_session, other_user)
+    name = word("Refresh Empty")
+
+    rows = _bulk(client, user_token_headers, [strangers_file], "add_tag", name)
+
+    assert [r["outcome"] for r in rows] == ["failed"]
+    created = db_session.query(Tag).filter(Tag.name == name).one()
+    assert calls == [
+        {"uuids": [], "user_id": normal_user.id, "created_tag_id": created.id},
+    ]
+
+
+def test_a_non_tag_batch_never_refreshes_and_carries_no_outcome(
+    client, db_session, normal_user, user_token_headers, monkeypatch
+):
+    calls = _record_refresh(monkeypatch)
+    monkeypatch.setattr(f"{HANDLER_MODULE}.cancel_active_task", lambda db, file_id: True)
+    media_file = make_file(db_session, normal_user)
+
+    rows = _bulk(client, user_token_headers, [media_file], "cancel", None)
+
+    assert rows == [
+        {
+            "file_uuid": str(media_file.uuid),
+            "success": True,
+            "message": "Task cancelled successfully",
+            "error": None,
+            "outcome": None,
+        }
+    ]
+    assert calls == []
+
+
+def _failing_apply(db, **kwargs):
+    raise RuntimeError("tag mutation blew up")
+
+
+def test_every_failed_row_of_a_tag_batch_is_outcome_failed(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    """The permission refusal (HTTP_ERROR) and the unexpected error row share the envelope."""
+    monkeypatch.setattr(f"{ROUTE_MODULE}.refresh_tagged_files", lambda *a, **k: [])
+    viewer_file = make_file(db_session, other_user)
+    share_file(db_session, other_user, normal_user, viewer_file, "viewer")
+    own_file = make_file(db_session, normal_user)
+    name = word("Failed Rows")
+
+    refused = _bulk(client, user_token_headers, [viewer_file], "add_tag", name)
+    monkeypatch.setattr(f"{HANDLER_MODULE}.apply_tag_to_file", _failing_apply)
+    crashed = _bulk(client, user_token_headers, [own_file], "add_tag", name)
+
+    assert [(r["error"], r["outcome"], r["success"]) for r in refused] == [
+        ("HTTP_ERROR", "failed", False)
+    ]
+    assert crashed == [
+        {
+            "file_uuid": str(own_file.uuid),
+            "success": False,
+            "message": "Unexpected error (RuntimeError)",
+            "error": "UNEXPECTED_ERROR",
+            "outcome": "failed",
+        }
+    ]
+
+
+def test_every_failed_row_of_a_non_tag_batch_has_a_null_outcome(
+    client, db_session, normal_user, other_user, user_token_headers, monkeypatch
+):
+    viewer_file = make_file(db_session, other_user)
+    share_file(db_session, other_user, normal_user, viewer_file, "viewer")
+    own_file = make_file(db_session, normal_user)
+
+    def crash(db, file_id):
+        raise RuntimeError("cancel blew up")
+
+    monkeypatch.setattr(f"{HANDLER_MODULE}.cancel_active_task", crash)
+
+    rows = _bulk(client, user_token_headers, [viewer_file, own_file], "cancel", None)
+
+    assert [(r["error"], r["success"], r["outcome"]) for r in rows] == [
+        ("HTTP_ERROR", False, None),
+        ("UNEXPECTED_ERROR", False, None),
+    ]

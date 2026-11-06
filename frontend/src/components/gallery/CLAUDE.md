@@ -77,18 +77,20 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   and refetches. Don't add client-side array filtering/sorting — emit a change event and let the
   page re-query.
 - Virtual renderers manage their own scroll windowing — keep `scrollContainer` wiring intact.
-- **The gallery listing carries no per-file tags.** `tags` lives on the `MediaFileDetail` schema,
-  not the `MediaFile` one the paginated list returns, so `file.tags` is undefined here even though
-  the TS type allows it. `BulkTagModal` therefore loads the selection's tags itself
-  (`listTagsOnFiles`) and scopes its _remove_ suggestions to them; only when those per-file tags
-  cannot be loaded does it fall back to offering every tag, and it says so
-  (`removeHintScoped` / `removeHintAll`).
-- **Bulk tag results are outcomes, not booleans.** `already_present` / `not_present` are
-  _successful_ no-ops; only `failed` is a failure. Report changed and unchanged separately, and
-  never let one refused file read as a failed batch.
-- **A supplied tag name may not be the applied one** — tags resolve by normalized-exact match, so
-  `Interview` applies the existing `interview` across the whole selection. Any surface that
-  submits a typed name must name the tag that was actually applied.
+- **A gallery list item has no tags.** `GET /files` never sends them; `tags` exists only on
+  `MediaFileDetail` (`GET /files/{uuid}`), so reading `file.tags` from a list row is always
+  empty. That is why the page passes no `presentTagNames`: `BulkTagModal` fetches the
+  selection's tags itself (`listTagsOnFiles` → `GET /tags/for-files`), shows them as chips and
+  limits the Remove suggestions to them. Whenever that list is empty (and no names were
+  passed in) Remove offers the whole library, under the `removeHintAll` hint instead of
+  `removeHintScoped`. That covers the request failing, the selected files carrying no tags,
+  and the moment while the request is still running.
+- **Bulk tag results are judged per file, by `outcome`.** `already_present` and `not_present`
+  are successful no-ops; `failed` is the only failure. Count changed and unchanged files
+  separately, and never present a batch as failed because one file in it was refused.
+- **The applied tag is not necessarily the name that was typed.** The server matches names
+  normalized-exact, so a typed name can land on an existing tag spelled differently. Any
+  surface that submits a typed name has to show the tag that was actually applied.
 - **E2E-guarded selectors owned here** (`backend/tests/e2e/test_gallery_actions.py`,
   `test_tag_management.py`, `test_collection_management.py`, `test_chat.py`,
   `test_auth_buttons.py`, `test_visual_regression.py`): `.file-card` / `.file-list-row`

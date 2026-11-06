@@ -142,7 +142,7 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "redaction.reindex_all": {"queue": CeleryQueues.REDACTION},
     # Embedding Queue - Search indexing with embedding model (concurrency=1)
     "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},
-    # Access/tag index updates are lightweight OpenSearch writes (no GPU/embedding needed)
+    # Partial OpenSearch field writes: no GPU or embedding model needed, so utility pool.
     "update_file_access_index": {"queue": CeleryQueues.UTILITY},
     "update_file_tags_index": {"queue": CeleryQueues.UTILITY},
     # Opt-in speaker_id/profile_id backfill maintenance pass (search_indexing_task.py) —

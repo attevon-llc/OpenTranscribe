@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import ldap3
 import pytest
 
 from app.api.endpoints.auth_config_connection_tests import _test_ldap_connection
@@ -16,6 +17,7 @@ from app.auth import ldap_directory
 from app.auth.ldap_auth import LdapConfig
 from app.auth.ldap_directory import _connect_and_bind
 from app.auth.ldap_directory import _get_ldap_server
+from tests.fixtures.ldap_directory_fake import effective_ssl
 
 
 class _Conn:
@@ -98,3 +100,24 @@ def test_connection_test_names_the_ldap_url_ssl_contradiction() -> None:
     assert "ldaps://" in result.message
     assert "svc-secret-value" not in result.message
     assert not any("bind" in c.calls for c in _Conn.instances)
+
+
+@pytest.mark.parametrize(
+    ("host", "use_ssl"),
+    [
+        ("ldap://dir.example", True),
+        ("ldap://dir.example", False),
+        ("LDAP://dir.example", True),
+        ("ldaps://dir.example", False),
+        ("ldaps://dir.example", True),
+        ("  ldaps://dir.example", False),
+        ("dir.example", True),
+        ("dir.example", False),
+    ],
+)
+def test_the_fakes_scheme_rule_matches_real_ldap3(host: str, use_ssl: bool) -> None:
+    assert effective_ssl(host, use_ssl) is ldap3.Server(host, use_ssl=use_ssl).ssl
+
+
+def test_the_fakes_scheme_rule_makes_an_ldap_url_plaintext_despite_use_ssl() -> None:
+    assert effective_ssl("ldap://dir.example", True) is False

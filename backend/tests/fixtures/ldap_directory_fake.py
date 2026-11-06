@@ -23,6 +23,21 @@ SERVICE_CREDENTIAL = "svc-credential"
 SEARCH_BASE = "dc=test"
 
 
+def effective_ssl(host: str, use_ssl: Any) -> bool:
+    """The ``ssl`` value ldap3 2.9's ``Server(host, use_ssl=...)`` ends up with.
+
+    A URL scheme overrides ``use_ssl`` (``ldap3.core.server.Server.__init__``): ``ldaps://``
+    is always TLS, ``ldap://`` / ``ldapi://`` never are, and only a bare host follows the
+    flag. Every fake server takes its ``ssl`` from here so no fake can drift from ldap3.
+    """
+    url = host.strip().lower()
+    if url.startswith("ldaps://"):
+        return True
+    if url.startswith(("ldap://", "ldapi://")):
+        return False
+    return bool(use_ssl)
+
+
 class FakeAttr:
     def __init__(self, value: Any) -> None:
         self.value = value
@@ -85,14 +100,7 @@ class _Server:
         if directory.server_error is not None:
             raise directory.server_error
         self.host = host
-        # ldap3: an ldap:// or ldaps:// scheme overrides use_ssl; a bare host follows it.
-        lowered = host.lower()
-        if lowered.startswith("ldaps://"):
-            self.ssl = True
-        elif lowered.startswith("ldap://"):
-            self.ssl = False
-        else:
-            self.ssl = bool(kwargs.get("use_ssl"))
+        self.ssl = effective_ssl(host, kwargs.get("use_ssl"))
 
 
 class _Connection:

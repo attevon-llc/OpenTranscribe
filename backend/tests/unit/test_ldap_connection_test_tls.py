@@ -16,6 +16,7 @@ import pytest
 
 from app.api.endpoints.auth_config_connection_tests import _test_ldap_connection
 from app.auth import ldap_directory
+from tests.fixtures.ldap_directory_fake import effective_ssl
 
 GENERIC_FAILURE = "LDAP connection failed. Please verify server address, port, and credentials."
 
@@ -25,8 +26,7 @@ class _FakeServer:
         self.host = host
         self.kwargs = kwargs
         self.info = None
-        # ldap3 derives the effective transport from the scheme as well as use_ssl.
-        self.ssl = bool(kwargs.get("use_ssl")) or host.startswith("ldaps://")
+        self.ssl = effective_ssl(host, kwargs.get("use_ssl"))
 
 
 class _FakeConnection:
@@ -124,3 +124,8 @@ def test_anonymous_bind_still_negotiates_starttls(fake_ldap: type[_FakeConnectio
     (conn,) = fake_ldap.instances
     assert conn.calls == ["open", "start_tls", "bind", "unbind"]
     assert (conn.user, conn.password) == ("", "")
+
+
+def test_the_fake_server_treats_an_ldap_url_as_plaintext_whatever_use_ssl_says() -> None:
+    assert _FakeServer("ldap://ldap.example", use_ssl=True).ssl is False
+    assert _FakeServer("ldaps://ldap.example", use_ssl=False).ssl is True

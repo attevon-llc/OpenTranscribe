@@ -29,15 +29,25 @@
 #                                                   # optional explicit <sha> after it.
 #   ./scripts/run-backend-tests.sh --failures       # list failures, no re-run
 #   ./scripts/run-backend-tests.sh --log            # path to the full log
-#   ./scripts/run-backend-tests.sh --throwaway-db [pytest args]
+#   ./scripts/run-backend-tests.sh --throwaway-db [--keep] [pytest args]
 #                                                   # run against a private, disposable Postgres
 #                                                   # (container ot-testdb-<random-hex>, tmpfs,
-#                                                   # loopback port from 55432 up, random password,
-#                                                   # alembic upgrade head first) so no dev stack is
-#                                                   # needed. Accepted in ANY position; everything else
-#                                                   # is forwarded to pytest verbatim. Ignored by
+#                                                   # free loopback port, random password) migrated
+#                                                   # with THIS checkout's alembic, so no dev stack
+#                                                   # is needed and the schema matches the branch.
+#                                                   # Works from any git worktree: a worktree with no
+#                                                   # backend/venv borrows the main checkout's.
+#                                                   # Accepted in ANY position; everything else is
+#                                                   # forwarded to pytest verbatim. Ignored by
 #                                                   # --summary / --failures / --log (they run no tests).
-#                                                   # The container is stopped by its exact name on exit.
+#                                                   # The container and temp dir are removed on every
+#                                                   # exit (failure, INT, TERM); --keep leaves them and
+#                                                   # prints the removal command. Exit codes: 2 misuse,
+#                                                   # 3 precondition (docker, port, readiness), 4
+#                                                   # migration failed, otherwise pytest's. Only
+#                                                   # Postgres is provisioned; MinIO/OpenSearch tests
+#                                                   # skip (use `./opentr.sh start dev --fresh <name>`).
+#                                                   # Engine: scripts/lib/throwaway-pg.sh.
 
 set -uo pipefail
 
@@ -64,27 +74,13 @@ META="$OUT_DIR/last.meta"
 RUN_LOG="$OUT_DIR/run-$$.log"
 RUN_XML="$OUT_DIR/run-$$.xml"
 mkdir -p "$OUT_DIR"
+# shellcheck source=lib/throwaway-pg.sh
+source "$SCRIPT_DIR/lib/throwaway-pg.sh"
 # An interrupted run never reaches the publish step below, so its PID-scoped files were left
 # in $OUT_DIR for good (issue #1195). INT/TERM only, never EXIT: a finished run MOVES these
 # files to last.*, and an EXIT trap removing them first would delete the evidence.
-THROWAWAY_NAME=""
-THROWAWAY_TMP=""
-# Idempotent: INT/TERM call it and then `exit`, which fires the EXIT trap again. It stops ONLY the
-# container this run created, by its exact name; a name substring or label filter here could
-# select someone else's container.
-cleanup_throwaway() {
-    if [[ -n "$THROWAWAY_NAME" ]]; then
-        local name="$THROWAWAY_NAME"
-        THROWAWAY_NAME=""
-        docker stop "$name" >/dev/null 2>&1 || true
-    fi
-    if [[ -n "$THROWAWAY_TMP" ]]; then
-        rm -rf -- "$THROWAWAY_TMP"
-        THROWAWAY_TMP=""
-    fi
-}
-trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; cleanup_throwaway; exit 130' INT
-trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; cleanup_throwaway; exit 143' TERM
+trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; exit 130' INT
+trap 'rm -f -- "$RUN_LOG" "$RUN_XML"; exit 143' TERM
 
 # ── Reporting from the saved artifacts (no pytest) ─────────────────────────
 
@@ -202,10 +198,12 @@ PY
 # consumes the path as a commit and then runs the whole suite instead of the subset asked for.
 REQUIRE_FRESH=false
 THROWAWAY_DB=false
+KEEP_REQUESTED=false
 _ARGV=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --throwaway-db) THROWAWAY_DB=true; shift ;;
+        --keep) KEEP_REQUESTED=true; shift ;;
         --require-fresh)
             REQUIRE_FRESH=true
             shift
@@ -223,6 +221,11 @@ if $REQUIRE_FRESH && [[ -z "${REQUIRE_FRESH_SHA:-}" ]]; then
     [[ -n "$REQUIRE_FRESH_SHA" ]] || {
         echo -e "${RED}--require-fresh: not a git checkout and no sha given${NC}" >&2; exit 2; }
 fi
+
+if $KEEP_REQUESTED && ! $THROWAWAY_DB; then
+    echo -e "${RED}--keep only applies to --throwaway-db${NC}" >&2; exit 2
+fi
+$KEEP_REQUESTED && tpg_keep
 
 case "${1:-}" in
     --summary)  report_summary; exit $? ;;
@@ -270,6 +273,18 @@ else
     PY_CMD=("$REPO_ROOT/backend/venv/bin/pytest")
 fi
 
+# A worktree with no venv of its own borrows the main checkout's (the parent of the shared git
+# dir): same environment CI and the gate use, without a multi-gigabyte install per worktree.
+if [[ -z "${OT_TEST_PYTHON:-}" && ! -x "$REPO_ROOT/backend/venv/bin/pytest" ]]; then
+    MAIN_ROOT="$(dirname "$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)")"
+    if [[ -x "$MAIN_ROOT/backend/venv/bin/python" && "$MAIN_ROOT" != "$REPO_ROOT" ]] \
+        && "$MAIN_ROOT/backend/venv/bin/python" -c 'import pytest' 2>/dev/null; then
+        OT_TEST_PYTHON="$MAIN_ROOT/backend/venv/bin/python"
+        PY_CMD=("$OT_TEST_PYTHON" -m pytest)
+        echo -e "${BLUE}No backend/venv in this worktree; borrowing the main checkout's: $OT_TEST_PYTHON${NC}" >&2
+    fi
+fi
+
 PY="$REPO_ROOT/backend/venv/bin/pytest"
 if [[ -z "${OT_TEST_PYTHON:-}" && ! -x "$PY" ]]; then
     VENV_DIR="$REPO_ROOT/backend/venv"
@@ -305,6 +320,8 @@ if [[ -z "${OT_TEST_PYTHON:-}" && ! -x "$PY" ]]; then
         echo -e "    ${GREEN}venv/bin/pip install --no-deps -r requirements-nodeps.txt${NC}" >&2
         echo -e "    ${GREEN}venv/bin/pip install pre-commit mypy ruff bandit${NC}" >&2
     fi
+    # 3 = unmet precondition, the code --throwaway-db documents for "nothing to run with".
+    if $THROWAWAY_DB; then exit 3; fi
     exit 2
 fi
 
@@ -321,85 +338,14 @@ fi
 
 # ── Throwaway database (--throwaway-db) ────────────────────────────────────
 
-# Bound on retries after losing the probe-then-bind race to a concurrent run.
-THROWAWAY_PORT_ATTEMPTS=5
-
-# Probe with bash's /dev/tcp: succeeds only when something already listens there.
-port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
-
-start_throwaway_db() {
-    local slug port pw i attempt run_err platform platform_args=()
-    command -v docker >/dev/null || { echo -e "${RED}--throwaway-db needs docker${NC}" >&2; return 2; }
-    command -v openssl >/dev/null || { echo -e "${RED}--throwaway-db needs openssl${NC}" >&2; return 2; }
-    # Random per-run suffix: a name derived from the checkout directory is wrong from a git
-    # worktree, and a fixed one would make concurrent runs collide.
-    slug="$(openssl rand -hex 4)"
-    THROWAWAY_CANDIDATE="ot-testdb-${slug}"
-    if [[ -n "$(docker ps -a --filter "name=^${THROWAWAY_CANDIDATE}\$" --format '{{.Names}}')" ]]; then
-        echo -e "${RED}container ${THROWAWAY_CANDIDATE} already exists; refusing to touch it." >&2
-        echo -e "  If it is a stale leftover of an earlier run, stop it yourself by that exact name.${NC}" >&2
-        return 2
-    fi
-    port=55432
-    pw="$(openssl rand -hex 16)"
-    # Pin the image platform to the daemon's own (same idiom as gr_run_in_probe_image): a foreign
-    # -arch image left in the local store by a multi-arch build would otherwise be picked.
-    if platform="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null)" \
-        && [[ -n "$platform" && "$platform" != "/" ]]; then
-        platform_args=(--platform "$platform")
-    fi
-    # The probe-then-bind is not atomic: a concurrent run can take the port between the check and
-    # `docker run`. That one failure is retried on the next port (the daemon removes the
-    # container it failed to start, thanks to --rm, so the name is free again); any other
-    # failure is final.
-    for attempt in $(seq 1 "$THROWAWAY_PORT_ATTEMPTS"); do
-        while port_in_use "$port"; do
-            port=$((port + 1))
-            (( port < 55532 )) || { echo -e "${RED}no free port in 55432-55531${NC}" >&2; return 2; }
-        done
-        # The labels give the container its own compose-project namespace, so no project-scoped
-        # command against the live stack can match it, and nothing here can match the live stack.
-        if run_err="$(docker run -d --rm --name "$THROWAWAY_CANDIDATE" "${platform_args[@]}" \
-            --label "com.docker.compose.project=${THROWAWAY_CANDIDATE}" \
-            --label "org.opentranscribe.purpose=throwaway-test-db" \
-            --tmpfs /var/lib/postgresql/data \
-            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD="$pw" -e POSTGRES_DB=transcribe_test \
-            -p "127.0.0.1:${port}:5432" postgres:17.5-alpine 2>&1 >/dev/null)"; then
-            break
-        fi
-        if [[ "$run_err" == *"port is already allocated"* || "$run_err" == *"address already in use"* ]] \
-            && (( attempt < THROWAWAY_PORT_ATTEMPTS )); then
-            echo -e "${YELLOW}port ${port} was taken by a concurrent run; retrying on the next port${NC}" >&2
-            port=$((port + 1))
-            continue
-        fi
-        echo "$run_err" >&2
-        return 2
-    done
-    THROWAWAY_NAME="$THROWAWAY_CANDIDATE"
-    trap cleanup_throwaway EXIT
-    # -h 127.0.0.1: the init-time server listens on the unix socket only, so a TCP probe does not
-    # report ready until the real server is up.
-    for i in $(seq 1 60); do
-        docker exec "$THROWAWAY_NAME" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1 && break
-        sleep 1
-        if (( i == 60 )); then
-            echo -e "${RED}${THROWAWAY_NAME} did not become ready in 60s${NC}" >&2; return 2
-        fi
-    done
-    THROWAWAY_TMP="$(mktemp -d -t ot-throwaway-db.XXXXXX)"
-    mkdir -p "$THROWAWAY_TMP"/{data,models,temp}
-    export DATA_DIR="$THROWAWAY_TMP/data" MODELS_DIR="$THROWAWAY_TMP/models" TEMP_DIR="$THROWAWAY_TMP/temp"
-    # POSTGRES_HOST explicit: alembic does not import conftest and would resolve the compose name.
-    export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT="$port" POSTGRES_USER=postgres \
-           POSTGRES_PASSWORD="$pw" POSTGRES_DB=transcribe_test
-    export SKIP_S3=True SKIP_OPENSEARCH=True TESTING=True
-    echo -e "${BLUE}Throwaway DB ${THROWAWAY_NAME} on 127.0.0.1:${port}; running alembic upgrade head${NC}" >&2
-    "$PY_BIN" -m alembic upgrade head >&2 || { echo -e "${RED}alembic upgrade head failed${NC}" >&2; return 2; }
-}
-
 if $THROWAWAY_DB; then
-    start_throwaway_db || exit 2
+    # Installed before provisioning so a half-started container is still removed. The INT/TERM
+    # handlers above `exit`, which fires this too; tpg_cleanup is idempotent and removes ONLY the
+    # container this run created, by its exact name.
+    trap tpg_cleanup EXIT
+    tpg_provision "$PY_BIN" "$REPO_ROOT/backend"
+    rc=$?
+    (( rc == 0 )) || exit "$rc"
 fi
 
 # ── Run ────────────────────────────────────────────────────────────────────

@@ -36,7 +36,7 @@ this file is for.
   synthetic speech to PDF/DOCX and prints wall time, peak RSS, pages and size. MANUAL ONLY, never a
   test (a wall-clock budget is a flaky gate); run it on a quiet host, ideally inside the backend
   image where the real fonts live (`--font-dir` otherwise).
-- **Backend pytest from any worktree, no dev stack** — `test-in-worktree.sh [--services pg] [--keep] -- <pytest args>`: throwaway branch-migrated postgres on a free loopback port, removed on any exit. Details: `backend/tests/notes/db-tests-without-stack.md`.
+- **Backend pytest from any worktree, no dev stack** — `run-backend-tests.sh --throwaway-db [--keep] <pytest args>` (engine: `lib/throwaway-pg.sh`, the only one): throwaway branch-migrated postgres on a free loopback port, removed on any exit; a venv-less worktree borrows the main checkout's. Details: `backend/tests/notes/db-tests-without-stack.md`.
 - **Quick dev-cycle check** — `run-dev-tests.sh --full` (or `--fast`/`--backend-only`/`--e2e-only`/`--frontend-only`): chains the backend gate, e2e and the frontend check, auto-starting the overlays each phase needs. Full flag table, overlay reconciliation and the `run-backend-tests.sh --summary` runs-no-tests warning: `scripts/notes/dev-test-gate.md`.
 - **Pre-merge gate** — `run-integration-tests.sh` (`--coverage --e2e-smoke --search-quality --cleanup`).
   Runs the Unit/API suite, then the security suites **once** under `FIPS_MODE=true`, then

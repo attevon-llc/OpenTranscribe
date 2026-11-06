@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ratchet guards for file size, complexity and broad exception handlers, process ids in comments, API-layer boundaries, raw environment reads, suppressions without a reason, frontend lint warnings and frontend dead code or import cycles. Each compares a count with a committed baseline in `scripts/guards/baselines/`, fails when it grows, and is checked by a test that plants a violation. New import-linter contracts keep lower layers from importing the API, task or service layers.
+- Supply-chain and publication gates for running OpenTranscribe on the public internet: GitHub Actions are pinned to commit SHAs with least-privilege tokens and audited by zizmor; CodeQL, OpenSSF Scorecard, OSV and a scheduled dependency and image scan run in CI; a dependency review blocks pull requests that add a vulnerable or copyleft package and uploads a package-change report; `scripts/check-licenses.py` classifies every shipped Python and npm package against a permissive-only policy; Dependabot waits seven days before proposing a new release; a migration guard flags table-locking operations; and `scripts/public-smoke.sh`, `scripts/check-public-headers.py` and `scripts/zap-baseline.sh` check a deployed instance from outside.
+- `./scripts/run-backend-tests.sh --throwaway-db [--keep]` runs the backend tests against a disposable, labelled Postgres container that it migrates with the checkout's own migrations, so it works from the main checkout and from any git worktree with no dev stack, and removes the container and its temp directory on every exit (failure, interrupt and termination included; `--keep` leaves them). A worktree with no `backend/venv` borrows the main checkout's. The labels let `./opentr.sh test-cleanup` find a leftover from a killed run.
+- `scripts/check-venv-drift.py` names any host-venv package that differs from the pinned requirements; `scripts/smoke-container-free.sh` checks shell syntax, the app import, the route table, the OpenAPI and pipeline-docs drift checks and the compose dry-run without starting a container. A test now keeps the ruff and import-linter pre-commit pins equal to the requirements pins.
+
+### Changed
+
+- The ruff pre-commit hook moves to v0.16.7 and the import-linter hook is pinned to 2.15, matching `backend/requirements-dev.txt`. The test-timing baseline note in `CLAUDE.md` now says `baseline.xml` is untracked and local.
+- `nodeenv` is pinned to 1.12.0 in `backend/requirements-dev.txt`: 1.10.0, which pre-commit pulls in unpinned, crashes while reading Node's release index since it listed a Node 27 alpha, so the frontend hooks could not run.
+
+### Removed
+
+- `scripts/test-in-worktree.sh` (added in 0.6.1) is removed, together with its test. `./scripts/run-backend-tests.sh --throwaway-db` does the same job from any worktree and is the only throwaway-database runner.
+
 ### Fixed
 
 - **Migrations now work through connection proxies and poolers that reject libpq startup
@@ -21,6 +37,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   startup moves any such tag association onto the file organization's own tag of the same
   name (creating it if needed, deleting no tag). The bulk tag action reports a file it refuses
   for this reason with the new per-file error code `TAG_TENANT_MISMATCH`.
+
+### Security
+
+- **Production now requires a non-default Flower password and bundled-MinIO encryption.** The
+  backend will not start on a production install whose `.env` leaves `FLOWER_PASSWORD` unset or at
+  a default (`flower`, `changeme`, a `CHANGE_ME` placeholder), or leaves `MINIO_KMS_AUTO_ENCRYPTION`
+  off. Installs made by the current installer already have both. An older or hand-made `.env`
+  needs them added before `./opentranscribe.sh update` (which now stops with the exact lines to add
+  rather than leaving you with a crash-looping backend):
+  `FLOWER_PASSWORD=<openssl rand -hex 16>`,
+  `MINIO_KMS_SECRET_KEY=opentranscribe-key:<openssl rand -base64 32>` and
+  `MINIO_KMS_AUTO_ENCRYPTION=on`. **Back up the MinIO key**: objects written afterwards are
+  encrypted with it and are unreadable if it is lost. To store objects unencrypted on purpose, set
+  `ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead.
 
 ## [0.6.1] - 2026-11-03
 
@@ -446,17 +476,6 @@ off by default.
 
 - **Back up first** (`./opentranscribe.sh backup`, or `./opentr.sh backup` in a clone). The
   migration chain is one-way: rolling back means restoring that backup.
-- **Production now requires a non-default Flower password and bundled-MinIO encryption.** The
-  backend will not start on a production install whose `.env` leaves `FLOWER_PASSWORD` unset or at
-  a default (`flower`, `changeme`, a `CHANGE_ME` placeholder), or leaves `MINIO_KMS_AUTO_ENCRYPTION`
-  off. Installs made by the current installer already have both. An older or hand-made `.env`
-  needs them added before `./opentranscribe.sh update` (which now stops with the exact lines to add
-  rather than leaving you with a crash-looping backend):
-  `FLOWER_PASSWORD=<openssl rand -hex 16>`,
-  `MINIO_KMS_SECRET_KEY=opentranscribe-key:<openssl rand -base64 32>` and
-  `MINIO_KMS_AUTO_ENCRYPTION=on`. **Back up the MinIO key**: objects written afterwards are
-  encrypted with it and are unreadable if it is lost. To store objects unencrypted on purpose, set
-  `ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead.
 - **Amazon Transcribe now requires `AWS_TRANSCRIBE_BUCKET` (behaviour change, #1235).** If you use
   the AWS provider and never set it, the old fallback bucket `opentranscribe-tmp-<region>` was
   being used; it is gone. Create a private S3 bucket in your own AWS account (same region as
@@ -594,9 +613,6 @@ off by default.
 
 ### Added
 
-- Ratchet guards for file size, complexity and broad exception handlers, process ids in comments, API-layer boundaries, raw environment reads, suppressions without a reason, frontend lint warnings and frontend dead code or import cycles. Each compares a count with a committed baseline in `scripts/guards/baselines/`, fails when it grows, and is checked by a test that plants a violation. New import-linter contracts keep lower layers from importing the API, task or service layers.
-- Supply-chain and publication gates for running OpenTranscribe on the public internet: GitHub Actions are pinned to commit SHAs with least-privilege tokens and audited by zizmor; CodeQL, OpenSSF Scorecard, OSV and a scheduled dependency and image scan run in CI; a dependency review blocks pull requests that add a vulnerable or copyleft package and uploads a package-change report; `scripts/check-licenses.py` classifies every shipped Python and npm package against a permissive-only policy; Dependabot waits seven days before proposing a new release; a migration guard flags table-locking operations; and `scripts/public-smoke.sh`, `scripts/check-public-headers.py` and `scripts/zap-baseline.sh` check a deployed instance from outside.
-- `./scripts/run-backend-tests.sh --throwaway-db` runs the backend suite against a disposable, labelled Postgres container (stopped on exit) instead of the live dev database; `scripts/check-venv-drift.py` names any host-venv package that differs from the pinned requirements; `scripts/smoke-container-free.sh` checks shell syntax, the app import, the route table, the OpenAPI and pipeline-docs drift checks and the compose dry-run without starting a container. A test now keeps the ruff and import-linter pre-commit pins equal to the requirements pins.
 - **Restricted organization collections (#1275).** An organization collection is shared by every
   member, which is wrong for a legal matter or an HR review. The creator or an organization admin
   can now restrict one (**Edit collection**, or when creating it): only its creator, the
@@ -1178,7 +1194,6 @@ off by default.
   The offline docs and the backup guide reference the new image and client. NOTICE now
   attributes MinIO and Silo.
 
-- The ruff pre-commit hook moves to v0.16.7 and the import-linter hook is pinned to 2.15, matching `backend/requirements-dev.txt`. The test-timing baseline note in `CLAUDE.md` now says `baseline.xml` is untracked and local.
 - **Transitive dependencies are now pinned to the versions the release image was built and tested
   with.** 50 packages (the OpenTelemetry family, pyannote-core/metrics/pipeline, thinc/spacy
   support libraries, uvloop, tornado, pyjwt, ...) were unpinned, so every image build floated to

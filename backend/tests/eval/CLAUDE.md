@@ -78,5 +78,23 @@ Three things to know before touching it:
   `docs-site/docs/developer-guide/rag-evaluation.md`'s "Live chat-RAG HTTP probe" section — read it
   before pointing this at a fresh stack, or the first mutating request 403s with no obvious cause.
 
+## Summary-merge quality gate (`docs/design/summary_quality_eval_plan.md`)
+
+The instrument for "is the rewritten scope/merge rule set at least as good as the current one".
+Pure scorers in `harness/summary_{detectors,scoring,verdict,judge}.py`, run by
+`scripts/benchmark_summary.py` (package `scripts/summary_bench/`) through
+`scripts/run-summary-eval.sh`; the GPU window and the lead's arm files are the only things it
+needs that this repo does not hold.
+
+- **Arms are runtime inputs, never repo content.** Rule text lives in JSON files outside the repo
+  (`~/ot-cleanup-work/summary-eval/arms/`); a results file holds a SHA-256 and a length.
+  `test_summary_artifacts.py` runs a sentinel arm end to end and searches every file written.
+- **VOID is not a failure to read around.** A missing cell, an arm that never reached a system
+  message, a negative control (`sabotage`) that was not caught, or an A/A control that tripped a
+  rule voids the run; `summary_verdict.decide` decides that before comparing `new` to `old`.
+- **Gold comes from the NAS corpora** (`nxt_summaries.py`); `test_summary_gold.py` reproduces
+  the plan's counts and skips with a reason when `/mnt/nas/opentranscribe-benchmarks` is absent.
+- Tests that need a harness module use `tests/eval/summary_bench_support.py`.
+
 Methodology, the overlap->relevance rule, and the committed numbers:
 `docs-site/docs/developer-guide/rag-evaluation.md`.

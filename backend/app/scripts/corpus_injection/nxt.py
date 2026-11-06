@@ -42,6 +42,10 @@ from pathlib import Path
 from app.scripts.corpus_injection.model import Turn
 from app.scripts.corpus_injection.model import Word
 
+#: The parsed-element type, exported so other readers can annotate without importing the XML
+#: parser themselves (this module is the one place its trust note and suppression live).
+NxtElement = ET.Element
+
 # QMSum inline annotation markers: {disfmarker}, {vocalsound}, {gap}, {pause}, ...
 _MARKER_RE = re.compile(r"\{[^}]*\}")
 _TOKEN_CLEAN_RE = re.compile(r"[^a-z0-9']")
@@ -53,6 +57,15 @@ class TimedToken:
     start: float
     end: float
     surface: str
+
+
+def strip_markers(text: str) -> str:
+    """Drop QMSum's inline annotation markers (``{vocalsound}``, ``{disfmarker}``, ...).
+
+    Whitespace is collapsed so removing a marker never leaves a double space. Shares the one
+    marker pattern this module aligns with, so there is a single cleaning rule.
+    """
+    return " ".join(_MARKER_RE.sub(" ", text).split())
 
 
 def normalize_token(raw: str) -> str:

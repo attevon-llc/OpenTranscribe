@@ -58,6 +58,35 @@ describe('loadProtectedMediaAuthConfig', () => {
     });
   });
 
+  it('asks the protected-media endpoint and resolves to nothing', async () => {
+    mockAxiosInstance.get.mockResolvedValue({ data: CONFIG });
+
+    await expect(loadProtectedMediaAuthConfig()).resolves.toBeUndefined();
+
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/system/config/protected-media-auth');
+  });
+
+  it('treats a missing body as no configs, without refetching', async () => {
+    mockAxiosInstance.get.mockResolvedValue({ data: null });
+
+    await loadProtectedMediaAuthConfig();
+    await loadProtectedMediaAuthConfig();
+
+    expect(getAuthConfigForUrl(new URL('https://media.example.com'))).toBeNull();
+    expect(mockAxiosInstance.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a failed load', async () => {
+    const error = new Error('network down');
+    mockAxiosInstance.get.mockRejectedValue(error);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await loadProtectedMediaAuthConfig();
+
+    expect(log).toHaveBeenCalledWith(expect.any(String), error);
+    log.mockRestore();
+  });
+
   it('swallows a fetch failure, leaves configs empty, and still marks itself loaded (does not retry-loop)', async () => {
     mockAxiosInstance.get.mockRejectedValue(new Error('network down'));
 
@@ -104,6 +133,44 @@ describe('getAuthConfigForUrl', () => {
     expect(getAuthConfigForUrl(new URL('https://plain.example.com:443/view?m=1'))).not.toBeNull();
     expect(getAuthConfigForUrl(new URL('http://plain.example.com/view?m=1'))).not.toBeNull();
     expect(getAuthConfigForUrl(new URL('https://plain.example.com:8443/'))).toBeNull();
+  });
+
+  it('trims and case-folds a configured host, and refuses a space or percent-escape in it', async () => {
+    mockAxiosInstance.get.mockResolvedValue({
+      data: [
+        { hosts: ['  Media.Example.COM  '], auth_type: 'padded', fields: [] },
+        { hosts: ['media example.net', 'media%2eexample.net'], auth_type: 'refused', fields: [] },
+      ],
+    });
+    await loadProtectedMediaAuthConfig();
+
+    expect(getAuthConfigForUrl(new URL('https://media.example.com/view?m=1'))).toMatchObject({
+      auth_type: 'padded',
+    });
+    expect(getAuthConfigForUrl(new URL('https://media.example.net/view?m=1'))).toBeNull();
+  });
+
+  it('returns the first config listing the host and tolerates one without hosts', async () => {
+    mockAxiosInstance.get.mockResolvedValue({
+      data: [
+        { auth_type: 'no-hosts', fields: [] },
+        { hosts: ['media.example.com'], auth_type: 'first', fields: [] },
+        { hosts: ['media.example.com'], auth_type: 'second', fields: [] },
+      ],
+    });
+    await loadProtectedMediaAuthConfig();
+
+    expect(getAuthConfigForUrl(new URL('https://media.example.com/'))?.auth_type).toBe('first');
+  });
+
+  it('matches on the host alone, whatever the path', async () => {
+    mockAxiosInstance.get.mockResolvedValue({ data: CONFIG });
+    await loadProtectedMediaAuthConfig();
+
+    expect(getAuthConfigForUrl(new URL('https://media.example.com/'))?.auth_type).toBe('basic');
+    expect(getAuthConfigForUrl(new URL('https://user@media.example.com/view?m=1'))?.auth_type).toBe(
+      'basic'
+    );
   });
 
   it('returns null before anything has been loaded', () => {

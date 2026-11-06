@@ -64,11 +64,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   StartTLS connection (login, directory sync or the admin Test connection) checked the server
   certificate. The chain and the host name are now checked against the system CA store. New
   settings: `ldap_ca_cert_file` / `LDAP_CA_CERT_FILE` points at a PEM bundle for a private CA,
-  and `ldap_tls_skip_verify` / `LDAP_TLS_SKIP_VERIFY` (default off) restores the old behaviour
-  and logs a warning on every connection. A CA file that cannot be read refuses the
-  connection. **Upgrade note:** a directory with a private or self-signed certificate needs one
-  of these settings, and the server must be named by host name (ldap3 cannot verify an IP
-  address). LDAP referrals are no longer followed.
+  `ldap_tls_server_name` / `LDAP_TLS_SERVER_NAME` names the identity the certificate must carry
+  when it differs from the `ldap_server` address, and `ldap_tls_skip_verify` /
+  `LDAP_TLS_SKIP_VERIFY` (default off) restores the old behaviour and logs a warning on every
+  connection. The directory can be given as a host name or an IP address: the identity is
+  checked inside the TLS handshake by Python's `ssl` module, because ldap3's own name check
+  cannot match an IP address. A CA file that cannot be read refuses the connection. **Upgrade
+  note:** a directory with a private or self-signed certificate needs one of these settings.
+  LDAP referrals are no longer followed.
 
 ## [0.6.1] - 2026-11-03
 

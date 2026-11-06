@@ -22,6 +22,7 @@ restart; the `LDAP_*` environment variables remain a bootstrap seed and fallback
 | Use SSL (LDAPS) | `ldap_use_ssl` | `LDAP_USE_SSL` | `true` |
 | Use StartTLS | `ldap_use_tls` | `LDAP_USE_TLS` | `false` |
 | CA certificate file | `ldap_ca_cert_file` | `LDAP_CA_CERT_FILE` | — |
+| TLS server name | `ldap_tls_server_name` | `LDAP_TLS_SERVER_NAME` | — |
 | Skip certificate verification *(insecure)* | `ldap_tls_skip_verify` | `LDAP_TLS_SKIP_VERIFY` | `false` |
 | Bind DN | `ldap_bind_dn` | `LDAP_BIND_DN` | — |
 | Bind password *(sensitive)* | `ldap_bind_password` | `LDAP_BIND_PASSWORD` | — |
@@ -189,7 +190,9 @@ between the two directory paths.
 - The directory's TLS certificate is **verified by default**, for LDAPS and StartTLS, on logins,
   directory sync and **Test Connection**. For a private CA, set `ldap_ca_cert_file` to a PEM file
   readable inside the backend container (it replaces the system CA list, so include every CA you
-  need). Name the server by the host name in its certificate: ldap3 does not match IP addresses.
+  need). `ldap_server` may be a host name or an IP address; the certificate must list that name
+  or address. If you connect by IP address but the certificate lists only a host name, set
+  `ldap_tls_server_name` to that name and the certificate is checked against it instead.
   A missing or unreadable CA file refuses the connection. `ldap_tls_skip_verify` turns the check
   off and logs a warning per connection; it lets anyone on the network path impersonate the
   directory, so use it only for testing.
@@ -204,7 +207,7 @@ between the two directory paths.
 | Symptom | Check |
 |---|---|
 | Log: `LDAP service account bind was refused: check the bind DN, its password and the TLS settings` | Server, port, TLS settings and service-account credentials |
-| Log: `certificate verify failed` or `doesn't match any name` | The directory's certificate is not trusted (set `ldap_ca_cert_file`) or does not name the host in `ldap_server` |
+| Log: `certificate verify failed` (`unable to get local issuer certificate`, `Hostname mismatch` or `IP address mismatch`) | The directory's certificate is not trusted (set `ldap_ca_cert_file`) or does not list the host name or IP address in `ldap_server` (or the name in `ldap_tls_server_name`) |
 | Log: `The LDAP CA certificate file ... cannot be used` | `ldap_ca_cert_file` is missing, unreadable or not PEM; the path is inside the backend container |
 | Log: `LDAP user not found: <name>` | `ldap_search_base` and `ldap_user_search_filter` |
 | Log: `LDAP login refused for <name>: email attribute ... is missing or invalid` | `ldap_email_attr` is populated, with a valid address, for that account |

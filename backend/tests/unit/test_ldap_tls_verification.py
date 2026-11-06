@@ -6,6 +6,11 @@ StartTLS. ``_get_ldap_server`` therefore always passes a ``Tls``: ``CERT_REQUIRE
 ``ldap_ca_cert_file`` for a private CA, ``CERT_NONE`` only under ``ldap_tls_skip_verify`` (which
 warns on every connection). A CA file that cannot be used refuses the connection.
 
+The directory may be named by an IP address or a host name. ldap3's own post-handshake name check
+cannot match an IP address, so the identity is checked inside the TLS handshake by Python's
+``ssl`` (``check_hostname`` with the right ``server_hostname``), against the address in
+``ldap_server`` or, when set, ``ldap_tls_server_name``.
+
 Three layers: the ``Tls`` that gets built (real ldap3 ``Server``, no sockets), every connection
 path that must use it (login, directory sync, admin "Test connection"), and real handshakes
 against a local TLS listener, the only proof that ldap3 enforces what was configured.
@@ -87,14 +92,16 @@ class _Pki:
             .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         ).sign(ca_key, hashes.SHA256())
         leaf_key = _key()
-        leaf = _validity(
+        builder = _validity(
             x509.CertificateBuilder()
             .subject_name(_name("directory"))
             .issuer_name(ca_cert.subject)
             .public_key(leaf_key.public_key())
             .serial_number(x509.random_serial_number())
-            .add_extension(x509.SubjectAlternativeName(san), critical=False)
-        ).sign(ca_key, hashes.SHA256())
+        )
+        leaf = builder.add_extension(x509.SubjectAlternativeName(san), critical=False).sign(
+            ca_key, hashes.SHA256()
+        )
 
         self.ca_file = tmp_path / "ca.pem"
         self.ca_file.write_bytes(_pem(ca_cert))
@@ -120,6 +127,18 @@ def pki(tmp_path: Path) -> _Pki:
 def pki_ip(tmp_path: Path) -> _Pki:
     """A server certificate whose only name is the IP address ``127.0.0.1``."""
     return _Pki(tmp_path, san=[x509.IPAddress(ipaddress.ip_address("127.0.0.1"))])
+
+
+@pytest.fixture
+def pki_other_ip(tmp_path: Path) -> _Pki:
+    """A certificate from a trusted CA whose only name is an IP address that is not ours."""
+    return _Pki(tmp_path, san=[x509.IPAddress(ipaddress.ip_address("10.9.9.9"))])
+
+
+@pytest.fixture
+def pki_dns_only(tmp_path: Path) -> _Pki:
+    """A certificate that lists only a DNS name, for an admin who connects by IP address."""
+    return _Pki(tmp_path, san=[x509.DNSName("directory.example")])
 
 
 @pytest.fixture
@@ -159,12 +178,29 @@ def test_the_ca_file_is_handed_to_ldap3(pki):
     assert server.tls.ca_certs_file == str(pki.ca_file)
 
 
+def test_the_server_name_defaults_to_the_address_being_connected_to():
+    assert _get_ldap_server(_cfg()).tls.server_name == ""
+
+
+def test_the_server_name_is_handed_to_the_tls_object_trimmed():
+    server = _get_ldap_server(_cfg(tls_server_name="  directory.example  "))
+
+    assert server.tls.validate == ssl.CERT_REQUIRED
+    assert server.tls.server_name == "directory.example"
+
+
 def test_a_blank_ca_path_means_the_system_store(pki):
     assert _get_ldap_server(_cfg(ca_cert_file="   ")).tls.ca_certs_file is None
 
 
 def test_skipping_verification_is_the_only_way_to_cert_none():
     assert _get_ldap_server(_cfg(tls_skip_verify=True)).tls.validate == ssl.CERT_NONE
+
+
+def test_skipping_verification_ignores_the_server_name():
+    server = _get_ldap_server(_cfg(tls_skip_verify=True, tls_server_name="directory.example"))
+
+    assert server.tls.validate == ssl.CERT_NONE
 
 
 def test_skipping_verification_wins_over_a_ca_file(tmp_path):
@@ -280,6 +316,7 @@ def _env_settings(monkeypatch: pytest.MonkeyPatch, **overrides: Any) -> None:
         "LDAP_USERNAME_ATTR": "uid",
         "LDAP_USER_SEARCH_FILTER": "(uid={username})",
         "LDAP_CA_CERT_FILE": "",
+        "LDAP_TLS_SERVER_NAME": "",
         "LDAP_TLS_SKIP_VERIFY": False,
     }
     values.update(overrides)
@@ -312,6 +349,16 @@ def test_login_passes_the_ca_file_through(monkeypatch, pki):
 
     (kwargs,) = _servers_built(directory)
     assert kwargs["tls"].ca_certs_file == str(pki.ca_file)
+
+
+def test_login_passes_the_server_name_through(monkeypatch):
+    _env_settings(monkeypatch, LDAP_TLS_SERVER_NAME="directory.example")
+    directory = _login_directory(monkeypatch)
+
+    assert ldap_authenticate("alice", "alice-pw") is not None
+
+    (kwargs,) = _servers_built(directory)
+    assert kwargs["tls"].server_name == "directory.example"
 
 
 def test_login_with_an_unusable_ca_file_is_refused_before_any_connection(monkeypatch, tmp_path):
@@ -376,6 +423,19 @@ def test_the_connection_test_uses_the_submitted_ca_file(fake_connection, pki):
 
     assert result.success is True
     assert fake_connection.instances[0].server.tls.ca_certs_file == str(pki.ca_file)
+
+
+def test_the_connection_test_uses_the_submitted_server_name(fake_connection):
+    result = _test_ldap_connection(_test_request(ldap_tls_server_name="directory.example"))
+
+    assert result.success is True
+    assert fake_connection.instances[0].server.tls.server_name == "directory.example"
+
+
+def test_the_connection_test_without_a_server_name_checks_the_address(fake_connection):
+    assert _test_ldap_connection(_test_request(ldap_tls_server_name=None)).success is True
+
+    assert fake_connection.instances[0].server.tls.server_name == ""
 
 
 @pytest.mark.parametrize("submitted", [True, "true", "1", "yes"])
@@ -460,9 +520,10 @@ def tls_listener() -> Iterator[Any]:
 
 
 def _real_server(pki: _Pki, port: int, **overrides: Any) -> ldap3.Server:
-    server = _get_ldap_server(
-        _cfg(server="localhost", port=port, timeout=5, ca_cert_file=str(pki.ca_file), **overrides)
-    )
+    settings: dict[str, Any] = {"server": "localhost", "port": port, "timeout": 5}
+    settings.update(ca_cert_file=str(pki.ca_file))
+    settings.update(overrides)
+    server = _get_ldap_server(_cfg(**settings))
     server.get_info = ldap3.NONE  # reading the rootDSE would need a real directory
     return server
 
@@ -488,23 +549,106 @@ def test_ldaps_with_an_untrusted_certificate_is_refused(tls_listener, pki):
         _open(server)
 
 
-def test_ldap3_cannot_verify_a_connection_made_by_ip_address(tls_listener, pki_ip):
-    """ldap3's hostname check (``ldap3/utils/tls_backport.py``) "does not accept IP addresses".
+def test_ldaps_by_ip_address_verifies_against_the_ip_in_the_certificate(tls_listener, pki_ip):
+    """ldap3's own name check (``tls_backport.match_hostname``) rejects every IP address."""
+    conn = _open(_real_server(pki_ip, tls_listener.start(pki_ip), server="127.0.0.1"))
 
-    Python 3.12 removed ``ssl.match_hostname``, so ldap3 uses its backport, which only
-    compares DNS names. The documentation tells operators to name the server by host name.
-    """
+    assert isinstance(conn.socket, ssl.SSLSocket)
+    conn.unbind()
+
+
+def test_ldaps_url_by_ip_address_verifies_against_the_ip_in_the_certificate(tls_listener, pki_ip):
+    server = _real_server(pki_ip, tls_listener.start(pki_ip), server="ldaps://127.0.0.1")
+
+    conn = _open(server)
+
+    assert isinstance(conn.socket, ssl.SSLSocket)
+    conn.unbind()
+
+
+def test_ldaps_by_ip_address_is_refused_when_the_certificate_has_no_such_ip(
+    tls_listener, pki_other_ip
+):
+    port = tls_listener.start(pki_other_ip)
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _open(_real_server(pki_other_ip, port, server="127.0.0.1"))
+
+
+def test_ldaps_by_ip_address_is_refused_when_the_certificate_names_only_a_host(tls_listener, pki):
+    port = tls_listener.start(pki)
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _open(_real_server(pki, port, server="127.0.0.1"))
+
+
+def test_ldaps_by_host_name_is_refused_when_the_certificate_has_only_an_ip(tls_listener, pki_ip):
     port = tls_listener.start(pki_ip)
-    server = _real_server(pki_ip, port)
-    server.host = "127.0.0.1"
 
-    with pytest.raises(LDAPException, match="doesn't match any name"):
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _open(_real_server(pki_ip, port))
+
+
+def test_the_server_name_is_what_the_certificate_is_checked_against(tls_listener, pki_dns_only):
+    port = tls_listener.start(pki_dns_only)
+    server = _real_server(
+        pki_dns_only, port, server="127.0.0.1", tls_server_name="directory.example"
+    )
+
+    conn = _open(server)
+
+    assert isinstance(conn.socket, ssl.SSLSocket)
+    conn.unbind()
+
+
+def test_without_the_server_name_the_same_certificate_is_refused_by_ip(tls_listener, pki_dns_only):
+    port = tls_listener.start(pki_dns_only)
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _open(_real_server(pki_dns_only, port, server="127.0.0.1"))
+
+
+def test_a_server_name_the_certificate_does_not_carry_is_refused(tls_listener, pki_dns_only):
+    port = tls_listener.start(pki_dns_only)
+    server = _real_server(pki_dns_only, port, server="127.0.0.1", tls_server_name="evil.example")
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
         _open(server)
+
+
+def test_the_server_name_replaces_the_address_as_the_identity(tls_listener, pki_ip):
+    """The certificate lists the address connected to, but the pinned name is not in it."""
+    port = tls_listener.start(pki_ip)
+    server = _real_server(pki_ip, port, server="127.0.0.1", tls_server_name="directory.example")
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _open(server)
+
+
+def test_the_server_name_is_ignored_when_verification_is_off(tls_listener, pki_wrong_name):
+    port = tls_listener.start(pki_wrong_name)
+    server = _real_server(
+        pki_wrong_name, port, tls_skip_verify=True, tls_server_name="evil.example"
+    )
+
+    conn = _open(server)
+
+    assert isinstance(conn.socket, ssl.SSLSocket)
+    conn.unbind()
+
+
+def test_skipping_verification_accepts_a_certificate_for_another_ip(tls_listener, pki_other_ip):
+    port = tls_listener.start(pki_other_ip)
+
+    conn = _open(_real_server(pki_other_ip, port, server="127.0.0.1", tls_skip_verify=True))
+
+    assert isinstance(conn.socket, ssl.SSLSocket)
+    conn.unbind()
 
 
 def test_ldaps_with_a_certificate_for_another_name_is_refused(tls_listener, pki_wrong_name):
     port = tls_listener.start(pki_wrong_name)
-    with pytest.raises(LDAPException, match="doesn't match any name"):
+    with pytest.raises(LDAPException, match="certificate verify failed"):
         _open(_real_server(pki_wrong_name, port))
 
 
@@ -532,7 +676,10 @@ def _starttls(server: ldap3.Server) -> bool:
     try:
         return bool(conn.start_tls())
     finally:
-        conn.unbind()
+        try:
+            conn.unbind()
+        except LDAPException:  # the refused upgrade already closed the socket
+            pass
 
 
 def test_starttls_with_the_right_ca_upgrades(tls_listener, pki):
@@ -548,7 +695,7 @@ def test_starttls_with_an_untrusted_certificate_is_refused(tls_listener, pki):
     )
     server.get_info = ldap3.NONE
 
-    with pytest.raises(LDAPException):
+    with pytest.raises(LDAPException, match="certificate verify failed"):
         _starttls(server)
 
 
@@ -556,5 +703,51 @@ def test_starttls_with_a_certificate_for_another_name_is_refused(tls_listener, p
     port = tls_listener.start(pki_wrong_name, starttls=True)
     server = _real_server(pki_wrong_name, port, use_ssl=False, use_tls=True)
 
-    with pytest.raises(LDAPException):
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _starttls(server)
+
+
+def test_starttls_by_ip_address_verifies_against_the_ip_in_the_certificate(tls_listener, pki_ip):
+    port = tls_listener.start(pki_ip, starttls=True)
+    server = _real_server(pki_ip, port, server="127.0.0.1", use_ssl=False, use_tls=True)
+
+    assert _starttls(server) is True
+
+
+def test_starttls_by_ip_address_is_refused_when_the_certificate_has_no_such_ip(
+    tls_listener, pki_other_ip
+):
+    port = tls_listener.start(pki_other_ip, starttls=True)
+    server = _real_server(pki_other_ip, port, server="127.0.0.1", use_ssl=False, use_tls=True)
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
+        _starttls(server)
+
+
+def test_starttls_honours_the_server_name(tls_listener, pki_dns_only):
+    port = tls_listener.start(pki_dns_only, starttls=True)
+    server = _real_server(
+        pki_dns_only,
+        port,
+        server="127.0.0.1",
+        use_ssl=False,
+        use_tls=True,
+        tls_server_name="directory.example",
+    )
+
+    assert _starttls(server) is True
+
+
+def test_starttls_refuses_a_server_name_the_certificate_does_not_carry(tls_listener, pki_dns_only):
+    port = tls_listener.start(pki_dns_only, starttls=True)
+    server = _real_server(
+        pki_dns_only,
+        port,
+        server="127.0.0.1",
+        use_ssl=False,
+        use_tls=True,
+        tls_server_name="evil.example",
+    )
+
+    with pytest.raises(LDAPException, match="certificate verify failed"):
         _starttls(server)

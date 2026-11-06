@@ -158,6 +158,7 @@ ENV_TO_CONFIG_MAPPING = {
     "LDAP_USE_SSL": "ldap_use_ssl",
     "LDAP_USE_TLS": "ldap_use_tls",
     "LDAP_CA_CERT_FILE": "ldap_ca_cert_file",
+    "LDAP_TLS_SERVER_NAME": "ldap_tls_server_name",
     "LDAP_TLS_SKIP_VERIFY": "ldap_tls_skip_verify",
     "LDAP_BIND_DN": "ldap_bind_dn",
     "LDAP_BIND_PASSWORD": "ldap_bind_password",

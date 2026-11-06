@@ -153,6 +153,7 @@ class LDAPConfig(_CategoryConfig):
     ldap_use_ssl: bool = True
     ldap_use_tls: bool = False
     ldap_ca_cert_file: str = ""
+    ldap_tls_server_name: str = ""
     ldap_tls_skip_verify: bool = False
     ldap_bind_dn: str = ""
     ldap_bind_password: str | None = None  # Sensitive

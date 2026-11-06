@@ -153,6 +153,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             use_ssl=use_ssl,
             use_tls=use_tls,
             ca_cert_file=str(config.get("ldap_ca_cert_file") or ""),
+            tls_server_name=str(config.get("ldap_tls_server_name") or ""),
             tls_skip_verify=_flag(config.get("ldap_tls_skip_verify")),
             bind_dn=bind_dn,
             bind_password=bind_password,

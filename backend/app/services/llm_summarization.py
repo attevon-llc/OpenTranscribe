@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 # Without them a short trailing section (goodbyes, crosstalk) reports "no decisions"
 # and the merge adopts that as the verdict for the whole meeting (#941).
 SECTION_SCOPE_RULES = (
-    " You are reading one slice of a longer recording."
-    " The slice was cut by length, not at a natural break."
+    " This text is one cut-out piece of a longer recording."
+    " The piece was cut by length, not at a natural break."
     " Its first and last lines may stop mid-sentence."
-    " Report only what this slice contains."
+    " Summarize only the words that appear in this piece."
     " Do not make any claim about the whole recording."
-    " If this slice has no decision or action item, do not infer that the meeting had none."
-    " Do not call the slice partial, cut off or incomplete because of where it starts or ends."
+    " If this piece has no decision or action item, do not infer that the meeting had none."
+    " Do not call the piece partial, cut off or incomplete because of where it starts or ends."
     " Say the recording itself began abruptly only in section 1."
     " Say it ended abruptly only in the final section."
 )
@@ -30,7 +30,7 @@ SECTION_MERGE_RULES = (
     " The input is a list of section summaries from one recording."
     " The sections were summarized separately and are in time order."
     " Write one summary of the whole recording."
-    " Keep every topic, decision, action item and follow-up from every section."
+    " Keep every follow-up, action item, decision and topic that any section lists."
     " Merge an item that two sections both report."
     " A section with nothing to report is silent only about its own part of the recording."
     " Never let it remove, weaken or contradict what another section reported."

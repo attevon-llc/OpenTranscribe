@@ -12,7 +12,6 @@ injection needs one process, and the slicing is still the app's own chunker.
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -221,8 +220,6 @@ def make_chunker(max_tokens: int) -> Any:
     from app.services.llm_service import LLMService
     from app.services.llm_types import LLMConfig
 
-    logging.getLogger('app.services.llm_service').setLevel(logging.WARNING)
-    logging.getLogger('app.services.llm_chunking').setLevel(logging.WARNING)
     config = LLMConfig(
         provider=LLMProvider.VLLM,
         model='plan-slices',

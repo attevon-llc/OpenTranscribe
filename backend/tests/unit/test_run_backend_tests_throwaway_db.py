@@ -236,7 +236,14 @@ def test_the_temp_tree_is_one_the_test_data_sweep_recognises(fake_repo: Path) ->
 
 
 def test_exports_consistent_env_and_migrates_before_pytest(fake_repo: Path) -> None:
-    rc, out = _run(fake_repo, "--throwaway-db", "tests/x.py", "-n0")
+    ambient = {
+        "DATABASE_URL": "postgresql://live:pw@localhost:5176/opentranscribe",
+        "MIGRATION_DATABASE_URL": "postgresql://live:pw@localhost:5176/opentranscribe",
+        "POSTGRES_APP_USER": "ot_app",
+        "POSTGRES_APP_PASSWORD": "app-pw",
+        "POSTGRES_SSLMODE": "require",
+    }
+    rc, out = _run(fake_repo, "--throwaway-db", "tests/x.py", "-n0", **ambient)
     assert rc == 0, out
     env = _pytest_env(fake_repo)
     port = env["POSTGRES_PORT"]
@@ -247,10 +254,13 @@ def test_exports_consistent_env_and_migrates_before_pytest(fake_repo: Path) -> N
     assert env["SKIP_S3"] == "True"
     assert env["SKIP_OPENSEARCH"] == "True"
     assert env["TESTING"] == "True"
-    assert env["MIGRATION_DATABASE_URL"] == (
-        f"postgresql://{env['POSTGRES_USER']}:{env['POSTGRES_PASSWORD']}@127.0.0.1:{port}/{env['POSTGRES_DB']}"
-    )
-    assert env["DATABASE_URL"] == env["MIGRATION_DATABASE_URL"]
+    assert env["POSTGRES_USER"] == "postgres"
+    assert env["POSTGRES_DB"] == "transcribe_test"
+    assert len(env["POSTGRES_PASSWORD"]) >= 10
+    # Settings derives the URLs from POSTGRES_*; an exported or inherited URL would leak into
+    # every Settings() a unit test builds and could point the run at another database.
+    leaked = {var: env[var] for var in ambient if var in env}
+    assert leaked == {}, leaked
     for var in ("DATA_DIR", "MODELS_DIR", "TEMP_DIR"):
         assert "ot-throwaway-db." in env[var], (var, env[var])
     calls = [c for c in _calls(fake_repo) if not c.startswith("docker ")]

@@ -12,6 +12,29 @@ from app.db.migration_connection import set_audit_maintenance_on_connect
 
 _BASE = {"POSTGRES_HOST": "db.example", "POSTGRES_PORT": "5432", "POSTGRES_DB": "d"}
 
+# Every variable Settings._resolve_database_urls or migration_database_url() reads. The outcome
+# of these tests must not depend on what the runner exported (a throwaway-db run sets POSTGRES_*;
+# an exported MIGRATION_DATABASE_URL once turned three of them red).
+_DB_ENV_VARS = (
+    "DATABASE_URL",
+    "MIGRATION_DATABASE_URL",
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_USER",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_DB",
+    "POSTGRES_APP_USER",
+    "POSTGRES_APP_PASSWORD",
+    "POSTGRES_SSLMODE",
+    "AUDIT_LOG_RETENTION_DAYS",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_db_env(monkeypatch):
+    for key in _DB_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+
 
 def _settings(**kw):
     kw.setdefault("DATABASE_URL", "")
@@ -54,14 +77,8 @@ def test_explicit_database_url_alone_is_used_for_migrations_too():
     assert s.db_role_split_requested is False
 
 
-def _clean_db_env(monkeypatch):
-    for key in ("DATABASE_URL", "MIGRATION_DATABASE_URL", "POSTGRES_APP_USER", "POSTGRES_SSLMODE"):
-        monkeypatch.delenv(key, raising=False)
-
-
 def test_alembic_env_uses_the_migration_url_with_ssl_mode(monkeypatch):
     """F1: Alembic used to hand-build its URL from POSTGRES_*, ignoring DATABASE_URL and SSL."""
-    _clean_db_env(monkeypatch)
     monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://own:p%25w@h:5432/d")
     monkeypatch.setenv("POSTGRES_SSLMODE", "require")
     assert migration_database_url() == "postgresql://own:p%25w@h:5432/d?sslmode=require"
@@ -74,7 +91,6 @@ def test_alembic_env_uses_the_migration_url_with_ssl_mode(monkeypatch):
 
 def test_migration_url_follows_postgres_env_set_after_import(monkeypatch):
     """Per-call POSTGRES_* must retarget Alembic; the import-time settings must not pin it."""
-    _clean_db_env(monkeypatch)
     monkeypatch.setenv("POSTGRES_SSLMODE", "disable")
     for key, value in {
         "POSTGRES_HOST": "elsewhere.example",
@@ -88,7 +104,6 @@ def test_migration_url_follows_postgres_env_set_after_import(monkeypatch):
 
 
 def test_explicit_migration_url_still_beats_postgres_env(monkeypatch):
-    _clean_db_env(monkeypatch)
     monkeypatch.setenv("POSTGRES_SSLMODE", "disable")
     monkeypatch.setenv("POSTGRES_HOST", "ignored.example")
     monkeypatch.setenv("MIGRATION_DATABASE_URL", "postgresql://own:o@pinned.example/d")

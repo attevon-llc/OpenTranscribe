@@ -135,8 +135,9 @@ tpg_export_env() {
     export POSTGRES_HOST=127.0.0.1 POSTGRES_PORT="$TPG_PORT" POSTGRES_USER="$TPG_USER" \
            POSTGRES_PASSWORD="$TPG_PASSWORD" POSTGRES_DB="$TPG_DB"
     export SKIP_S3=True SKIP_OPENSEARCH=True TESTING=True
-    export DATABASE_URL="postgresql://${TPG_USER}:${TPG_PASSWORD}@127.0.0.1:${TPG_PORT}/${TPG_DB}"
-    export MIGRATION_DATABASE_URL="$DATABASE_URL"
+    # Settings derives both URLs from POSTGRES_*. An exported URL would leak into every Settings()
+    # a unit test builds, and an ambient one (or a role split) would point this run elsewhere.
+    unset DATABASE_URL MIGRATION_DATABASE_URL POSTGRES_APP_USER POSTGRES_APP_PASSWORD POSTGRES_SSLMODE
 }
 
 # tpg_provision <python> <backend_dir>

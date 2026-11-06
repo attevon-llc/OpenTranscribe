@@ -287,9 +287,11 @@ def _normalize_backend_path(path: str) -> tuple[str, ...]:
 #: character (`[\s\S]*?`, not `[^>(]*`) so a generic that itself nests angle
 #: brackets (`axiosInstance.get<Array<{ ... }>>(...)`) or spans multiple lines
 #: still resolves: `[^>(]*` stopped at the first inner `>`, which made every
-#: multi-line/nested-generic call invisible to the scanner.
+#: multi-line/nested-generic call invisible to the scanner. Whitespace is allowed
+#: before the `.` for the same reason: prettier breaks a promise chain as
+#: `axiosInstance\n  .get('/x')\n  .then(...)`, which a bare `\.` never matched.
 _AXIOS_CALL_RE = re.compile(
-    r"axiosInstance\.(?:get|post|put|patch|delete)(?:<[\s\S]*?>)?\("
+    r"axiosInstance\s*\.(?:get|post|put|patch|delete)(?:<[\s\S]*?>)?\("
     r"\s*(?:[`'\"]([^`'\"]*)[`'\"]|(\w+))"
 )
 
@@ -475,6 +477,21 @@ def test_scanner_finds_a_known_frontend_call() -> None:
         "AST scan found no frontend call to a route known to have a real UI "
         f"(groupMappings.ts). Parsed paths sample: {sorted(_FRONTEND_PATHS)[:10]}"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "axiosInstance\n    .get('/system/config/x')\n    .then((r) => r.data)",
+        "axiosInstance\n  .post<Resp>(`/system/config/x`, body)",
+        "axiosInstance.get('/system/config/x')",
+    ],
+    ids=["chained-on-new-line", "chained-with-generic", "inline"],
+)
+def test_scanner_reads_a_call_whatever_the_line_breaks(source: str) -> None:
+    """Prettier puts a promise chain's method on its own line; that call is still a caller."""
+    paths = [m.group(1) for m in _AXIOS_CALL_RE.finditer(source)]
+    assert paths == ["/system/config/x"]
 
 
 def test_scanner_finds_a_known_backend_route() -> None:

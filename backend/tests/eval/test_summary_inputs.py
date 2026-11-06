@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -147,6 +148,15 @@ class TestPlanSlices:
         if smaller >= bench.inputs.LONG_FLOOR_TOKENS:
             earlier, _ = bench.inputs.chunk_transcript(render.transcript, smaller)
             assert len(earlier) not in (4, 5)
+
+    def test_chunking_leaves_the_app_loggers_levels_alone(self, bench: SimpleNamespace) -> None:
+        # This module runs inside the backend test session: a level set here outlives the test
+        # and hid llm_service's DEBUG records from a later caplog test on the same worker.
+        names = ("app.services.llm_service", "app.services.llm_chunking")
+        before = {name: logging.getLogger(name).level for name in names}
+        chunks, _ = bench.inputs.chunk_transcript(_transcript(turns=50), 12_000)
+        assert chunks
+        assert {name: logging.getLogger(name).level for name in names} == before
 
 
 class TestLock:

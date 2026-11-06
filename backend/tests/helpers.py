@@ -14,9 +14,11 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from app.core.exceptions import DomainError
+from app.models.media import MediaFile
 
 #: A globally-routable literal, used as the answer for stubbed documentation hostnames.
 PUBLIC_TEST_ADDRESS = "93.184.216.34"
@@ -195,3 +197,13 @@ def reset_search_infrastructure_state() -> None:
     with search_infra._state_lock:
         search_infra._index_verified = False
         search_infra._verified_pipelines.clear()
+
+
+def media_file_count(db: Session, user_id: int) -> int:
+    """How many media files ``user_id`` owns.
+
+    Use this, not a table-wide ``query(MediaFile).count()``, to assert that a request created
+    no row: other xdist workers commit and delete media files in the same database, so a global
+    count taken before and after a request can move without the request doing anything.
+    """
+    return db.query(MediaFile).filter(MediaFile.user_id == user_id).count()

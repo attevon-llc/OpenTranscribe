@@ -21888,7 +21888,7 @@
                 "type": "null"
               }
             ],
-            "description": "Optional username for protected media sources. Used only for authenticated downloads of protected media URLs.",
+            "description": "Optional username for a protected media source (such as a MediaCMS site); used for this import only and overrides any stored username for that host",
             "title": "Media Username"
           },
           "min_speakers": {
@@ -48709,7 +48709,7 @@
     },
     "/api/system/config/protected-media-auth": {
       "get": {
-        "description": "Return public auth configuration for protected media providers.\n\nUsed by the frontend to decide when to prompt for username/password\n(or other credentials) when processing media URLs.",
+        "description": "List the protected-media login forms that apply to the caller.\n\nThe upload dialog reads this to decide, per pasted URL, whether to ask for a\nusername and password for an authenticated media site. Only host names and field\ndescriptors are returned; no stored credential ever leaves the server.",
         "operationId": "get_protected_media_auth_api_system_config_protected_media_auth_get",
         "responses": {
           "200": {

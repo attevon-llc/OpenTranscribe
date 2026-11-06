@@ -1079,9 +1079,10 @@ class Settings(BaseSettings):
     LDAP_SERVER: str = ""  # host name, or an ldap:// / ldaps:// URL (the scheme wins)
     LDAP_PORT: int = 636
     LDAP_USE_SSL: bool = True
-    # LDAP_USE_TLS enables StartTLS on non-SSL connections (port 389)
-    # Use LDAP_USE_SSL=true for LDAPS (port 636) - they are mutually exclusive
+    # LDAP_USE_TLS = StartTLS on non-SSL connections (port 389); exclusive with LDAP_USE_SSL (LDAPS)
     LDAP_USE_TLS: bool = False
+    LDAP_CA_CERT_FILE: str = ""  # PEM bundle of a private CA; replaces the system CAs
+    LDAP_TLS_SKIP_VERIFY: bool = False  # insecure: certificate not checked; warns per connection
     LDAP_BIND_DN: str = ""  # read-only service account used for searches
     LDAP_BIND_PASSWORD: str = ""
     LDAP_SEARCH_BASE: str = ""
@@ -1101,8 +1102,7 @@ class Settings(BaseSettings):
     LDAP_ADMIN_GROUPS: str = os.getenv("LDAP_ADMIN_GROUPS", "")
     # Semicolon-separated group DNs required to log in (empty = allow all)
     LDAP_USER_GROUPS: str = os.getenv("LDAP_USER_GROUPS", "")
-    # Enable recursive group membership (nested groups via LDAP_MATCHING_RULE_IN_CHAIN)
-    LDAP_RECURSIVE_GROUPS: bool = False
+    LDAP_RECURSIVE_GROUPS: bool = False  # nested groups via LDAP_MATCHING_RULE_IN_CHAIN
     # Attribute to check for group membership (default: memberOf for AD)
     LDAP_GROUP_ATTR: str = os.getenv("LDAP_GROUP_ATTR", "memberOf")
 

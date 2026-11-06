@@ -21,6 +21,8 @@ restart; the `LDAP_*` environment variables remain a bootstrap seed and fallback
 | Port | `ldap_port` | `LDAP_PORT` | `636` |
 | Use SSL (LDAPS) | `ldap_use_ssl` | `LDAP_USE_SSL` | `true` |
 | Use StartTLS | `ldap_use_tls` | `LDAP_USE_TLS` | `false` |
+| CA certificate file | `ldap_ca_cert_file` | `LDAP_CA_CERT_FILE` | — |
+| Skip certificate verification *(insecure)* | `ldap_tls_skip_verify` | `LDAP_TLS_SKIP_VERIFY` | `false` |
 | Bind DN | `ldap_bind_dn` | `LDAP_BIND_DN` | — |
 | Bind password *(sensitive)* | `ldap_bind_password` | `LDAP_BIND_PASSWORD` | — |
 | Search base | `ldap_search_base` | `LDAP_SEARCH_BASE` | — |
@@ -184,6 +186,13 @@ between the two directory paths.
   `ldaps://` address.
 - **Use LDAPS** (port 636, `ldap_use_ssl=true`) or StartTLS in production. Verify with
   `openssl s_client -connect ad-server:636`.
+- The directory's TLS certificate is **verified by default**, for LDAPS and StartTLS, on logins,
+  directory sync and **Test Connection**. For a private CA, set `ldap_ca_cert_file` to a PEM file
+  readable inside the backend container (it replaces the system CA list, so include every CA you
+  need). Name the server by the host name in its certificate: ldap3 does not match IP addresses.
+  A missing or unreadable CA file refuses the connection. `ldap_tls_skip_verify` turns the check
+  off and logs a warning per connection; it lets anyone on the network path impersonate the
+  directory, so use it only for testing.
 - Use a **read-only** service account for the bind DN.
 - Filter values are escaped against LDAP injection (`(`, `)`, `*`, `\`, NUL).
 - The bind password is encrypted at rest and **never returned by the API** — a sensitive key
@@ -195,6 +204,8 @@ between the two directory paths.
 | Symptom | Check |
 |---|---|
 | Log: `LDAP service account bind was refused: check the bind DN, its password and the TLS settings` | Server, port, TLS settings and service-account credentials |
+| Log: `certificate verify failed` or `doesn't match any name` | The directory's certificate is not trusted (set `ldap_ca_cert_file`) or does not name the host in `ldap_server` |
+| Log: `The LDAP CA certificate file ... cannot be used` | `ldap_ca_cert_file` is missing, unreadable or not PEM; the path is inside the backend container |
 | Log: `LDAP user not found: <name>` | `ldap_search_base` and `ldap_user_search_filter` |
 | Log: `LDAP login refused for <name>: email attribute ... is missing or invalid` | `ldap_email_attr` is populated, with a valid address, for that account |
 | User authenticates but is refused | `ldap_user_groups` — they are not in a required group. Turn on `ldap_recursive_groups` if membership is nested |

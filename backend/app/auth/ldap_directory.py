@@ -5,8 +5,9 @@ Everything that talks to the directory through ldap3 lives here, so the login
 one bind path and one set of group rules. ldap3's ``Server`` and ``Connection``
 are module globals looked up at call time: tests replace exactly those two names.
 
-ldap3 references used: ``Server(host, port=, use_ssl=, get_info=, connect_timeout=)``,
-``Connection(server, user=, password=, auto_bind=, receive_timeout=)``,
+ldap3 references used: ``Server(host, port=, use_ssl=, get_info=, connect_timeout=, tls=)``,
+``ldap3.Tls(validate=, ca_certs_file=)`` (``ldap3/core/tls.py``),
+``Connection(server, user=, password=, auto_bind=, receive_timeout=, auto_referrals=)``,
 ``Connection.open`` / ``start_tls`` / ``bind`` / ``search`` / ``unbind`` and
 ``ldap3.utils.conv.escape_filter_chars`` (RFC 4515), per the ldap3 2.9 documentation.
 """
@@ -14,6 +15,7 @@ ldap3 references used: ``Server(host, port=, use_ssl=, get_info=, connect_timeou
 from __future__ import annotations
 
 import logging
+import ssl
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -21,10 +23,12 @@ from ldap3 import ALL
 from ldap3 import BASE
 from ldap3 import Connection
 from ldap3 import Server
+from ldap3 import Tls
 from ldap3.abstract.entry import Entry
 from ldap3.core.exceptions import LDAPBindError
 from ldap3.core.exceptions import LDAPException
 from ldap3.core.exceptions import LDAPSocketReceiveError
+from ldap3.core.exceptions import LDAPSSLConfigurationError
 from ldap3.utils.conv import escape_filter_chars
 
 if TYPE_CHECKING:
@@ -51,6 +55,45 @@ def _escape_ldap_filter(value: str) -> str:
     return str(escape_filter_chars(value))
 
 
+class LdapCaFileError(LDAPSSLConfigurationError):
+    """The configured CA bundle cannot be used, so no TLS connection may be made."""
+
+
+def _build_tls(cfg: LdapConfig) -> Tls:
+    """Describe how the directory's certificate is checked.
+
+    ldap3's ``Tls`` defaults to ``validate=ssl.CERT_NONE`` (``ldap3/core/tls.py``,
+    ``Tls.__init__``) and a ``Server`` without one gets exactly that for both LDAPS and
+    StartTLS (``Connection.start_tls`` builds a bare ``Tls()`` when the server has none),
+    so a ``Tls`` is always passed. With ``CERT_REQUIRED`` ldap3 builds the context with
+    ``ssl.create_default_context`` (system CAs, or only ``ca_certs_file`` when one is
+    given) and, after the handshake, matches the certificate against the server host name
+    (``Tls.wrap_socket`` / ``check_hostname``).
+
+    Args:
+        cfg: Resolved LDAP configuration (``ca_cert_file``, ``tls_skip_verify``).
+
+    Returns:
+        The ``Tls`` object for the ``Server``.
+
+    Raises:
+        LdapCaFileError: ``ca_cert_file`` is set but missing, unreadable or not a PEM
+            bundle. Verification is never silently dropped.
+    """
+    if cfg.tls_skip_verify:
+        return Tls(validate=ssl.CERT_NONE)
+    ca_file = cfg.ca_cert_file.strip()
+    if ca_file:
+        try:
+            ssl.create_default_context(cafile=ca_file)
+        except (OSError, ssl.SSLError) as exc:
+            logger.error("The LDAP CA certificate file %r cannot be used: %s", ca_file, exc)
+            raise LdapCaFileError(
+                "The configured LDAP CA certificate file is missing, unreadable or not a PEM bundle"
+            ) from exc
+    return Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_file or None)
+
+
 def _get_ldap_server(cfg: LdapConfig) -> Server:
     """Build the ldap3 server object for one login or probe.
 
@@ -59,7 +102,11 @@ def _get_ldap_server(cfg: LdapConfig) -> Server:
 
     Returns:
         An ldap3 ``Server``. Construction opens no socket. Its ``ssl`` attribute is the
-        effective transport: a URL scheme in ``cfg.server`` overrides ``use_ssl``.
+        effective transport: a URL scheme in ``cfg.server`` overrides ``use_ssl``. Its
+        ``tls`` verifies the directory's certificate unless ``cfg.tls_skip_verify``.
+
+    Raises:
+        LdapCaFileError: ``cfg.ca_cert_file`` is set but unusable.
     """
     return Server(
         cfg.server,
@@ -67,6 +114,7 @@ def _get_ldap_server(cfg: LdapConfig) -> Server:
         use_ssl=cfg.use_ssl,
         get_info=ALL,
         connect_timeout=cfg.timeout,
+        tls=_build_tls(cfg),
     )
 
 
@@ -139,12 +187,22 @@ def _connect_and_bind(
         logger.error("LDAP bind refused before connecting: %s", problem)
         return None
 
+    if cfg.tls_skip_verify:
+        logger.warning(
+            "LDAP TLS certificate verification is DISABLED (ldap_tls_skip_verify): the "
+            "directory server's identity is not checked on this connection"
+        )
+
+    # Referrals are not followed: ldap3 would open a second connection to a host named in
+    # the reply, and a StartTLS referral target is upgraded with a default, non-verifying
+    # Tls (ldap3/strategy/base.py create_referral_connection -> Connection.start_tls).
     conn = Connection(
         server,
         user=user,
         password=password,
         auto_bind=False,
         receive_timeout=cfg.timeout,
+        auto_referrals=False,
     )
     bound = False
     try:

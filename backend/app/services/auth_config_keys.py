@@ -80,6 +80,7 @@ DATA_TYPE_MAPPING = {
     "ldap_port": "int",
     "ldap_use_ssl": "bool",
     "ldap_use_tls": "bool",
+    "ldap_tls_skip_verify": "bool",
     "ldap_timeout": "int",
     "ldap_recursive_groups": "bool",
     # OIDC settings
@@ -156,6 +157,8 @@ ENV_TO_CONFIG_MAPPING = {
     "LDAP_PORT": "ldap_port",
     "LDAP_USE_SSL": "ldap_use_ssl",
     "LDAP_USE_TLS": "ldap_use_tls",
+    "LDAP_CA_CERT_FILE": "ldap_ca_cert_file",
+    "LDAP_TLS_SKIP_VERIFY": "ldap_tls_skip_verify",
     "LDAP_BIND_DN": "ldap_bind_dn",
     "LDAP_BIND_PASSWORD": "ldap_bind_password",
     "LDAP_SEARCH_BASE": "ldap_search_base",

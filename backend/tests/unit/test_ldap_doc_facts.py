@@ -27,6 +27,8 @@ SETTINGS = (
     "LDAP_PORT",
     "LDAP_USE_SSL",
     "LDAP_USE_TLS",
+    "LDAP_CA_CERT_FILE",
+    "LDAP_TLS_SKIP_VERIFY",
     "LDAP_BIND_DN",
     "LDAP_BIND_PASSWORD",
     "LDAP_SEARCH_BASE",
@@ -53,9 +55,9 @@ FALSE_CLAIMS = {
     "the pre-widening auth_type column as the current schema": r"auth_type\s+VARCHAR\(10\)",
     "that SSL plus StartTLS prefers StartTLS": r"prefers?\s+StartTLS",
     "hand-written compose commands instead of ./opentr.sh": r"docker[ -]compose\s+-f",
+    "that LDAP_RECURSIVE_GROUPS reads booleans differently from the other settings": r"LDAP_RECURSIVE_GROUPS`?:\s+only\s+`?true",
     "that every LDAP setting is stored encrypted": r"(all|every)\s+LDAP\s+settings?\s+(are|is)\s+"
     r"(stored\s+)?encrypted",
-    "that LDAP_RECURSIVE_GROUPS reads booleans differently from the other settings": r"LDAP_RECURSIVE_GROUPS`?:\s+only\s+`?true",
 }
 
 #: Facts the doc must state (P3 spec section 8, items 2-14), as literal substrings.

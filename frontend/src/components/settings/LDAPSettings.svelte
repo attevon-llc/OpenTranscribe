@@ -13,6 +13,8 @@
     ldap_port: config.ldap_port ?? 389,
     ldap_use_ssl: config.ldap_use_ssl ?? false,
     ldap_use_tls: config.ldap_use_tls ?? true,
+    ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
+    ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? false,
     ldap_bind_dn: config.ldap_bind_dn ?? '',
     ldap_bind_password: config.ldap_bind_password ?? '',
     ldap_search_base: config.ldap_search_base ?? '',
@@ -38,6 +40,8 @@
       ldap_port: config.ldap_port ?? 389,
       ldap_use_ssl: config.ldap_use_ssl ?? false,
       ldap_use_tls: config.ldap_use_tls ?? true,
+      ldap_ca_cert_file: config.ldap_ca_cert_file ?? '',
+      ldap_tls_skip_verify: config.ldap_tls_skip_verify ?? false,
       ldap_bind_dn: config.ldap_bind_dn ?? '',
       ldap_bind_password: config.ldap_bind_password ?? '',
       ldap_search_base: config.ldap_search_base ?? '',
@@ -143,6 +147,32 @@
         <span>{$t('settings.ldap.useStartTls')}</span>
       </label>
     </div>
+
+    <div class="form-group">
+      <label for="ldap_ca_cert_file">{$t('settings.ldap.caCertFile')}</label>
+      <input
+        id="ldap_ca_cert_file"
+        type="text"
+        bind:value={formData.ldap_ca_cert_file}
+        on:input={handleChange}
+        placeholder="/etc/ssl/certs/directory-ca.pem"
+        disabled={!formData.ldap_enabled || formData.ldap_tls_skip_verify}
+      />
+      <span class="help-text">{$t('settings.ldap.caCertFileHelp')}</span>
+    </div>
+
+    <label class="checkbox-label">
+      <input
+        type="checkbox"
+        bind:checked={formData.ldap_tls_skip_verify}
+        on:change={handleChange}
+        disabled={!formData.ldap_enabled}
+      />
+      <span>{$t('settings.ldap.tlsSkipVerify')}</span>
+    </label>
+    {#if formData.ldap_tls_skip_verify}
+      <p class="insecure-warning" role="alert">{$t('settings.ldap.tlsSkipVerifyWarning')}</p>
+    {/if}
 
     <div class="form-group">
       <label for="ldap_timeout">{$t('settings.ldap.connectionTimeout')}</label>
@@ -434,6 +464,16 @@
     margin-top: 0.25rem;
     font-size: 0.75rem;
     color: var(--color-text-tertiary);
+  }
+
+  .insecure-warning {
+    margin: 0 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--font-size-sm);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-md);
+    background: var(--color-warning-bg);
+    color: var(--color-warning-text);
   }
 
   .checkbox-label {

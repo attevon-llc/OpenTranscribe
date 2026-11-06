@@ -18,6 +18,7 @@ from fastapi import status
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.env import is_truthy
 from app.core.exceptions import DomainError
 from app.models.user import User
 from app.schemas.auth_config import LDAP_TIMEOUT_MAX_SECONDS
@@ -65,6 +66,15 @@ async def test_auth_connection(
 
 
 _LDAP_TEST_FAILED = "LDAP connection failed. Please verify server address, port, and credentials."
+_LDAP_CA_FILE_UNUSABLE = (
+    "The LDAP CA certificate file is missing, unreadable or not a PEM bundle. "
+    "No connection was attempted."
+)
+
+
+def _flag(value: Any) -> bool:
+    """Read a submitted boolean; anything but a clear yes is off (verification stays on)."""
+    return value if isinstance(value, bool) else is_truthy(str(value or ""))
 
 
 def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
@@ -92,6 +102,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         from ldap3.core.exceptions import LDAPException
 
         from app.auth.ldap_auth import LdapConfig
+        from app.auth.ldap_directory import LdapCaFileError
         from app.auth.ldap_directory import _close_connection
         from app.auth.ldap_directory import _connect_and_bind
         from app.auth.ldap_directory import _get_ldap_server
@@ -141,6 +152,8 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             port=port,
             use_ssl=use_ssl,
             use_tls=use_tls,
+            ca_cert_file=str(config.get("ldap_ca_cert_file") or ""),
+            tls_skip_verify=_flag(config.get("ldap_tls_skip_verify")),
             bind_dn=bind_dn,
             bind_password=bind_password,
             timeout=timeout,
@@ -180,6 +193,9 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             details={"server_info": server_info},
         )
 
+    except LdapCaFileError:
+        logger.warning("LDAP connection test refused: the CA certificate file is unusable")
+        return AuthMethodTestResponse(success=False, message=_LDAP_CA_FILE_UNUSABLE)
     except LDAPException as e:
         logger.warning(f"LDAP connection test failed: {e}")
         return AuthMethodTestResponse(success=False, message=_LDAP_TEST_FAILED)

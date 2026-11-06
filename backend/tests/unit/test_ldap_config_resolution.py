@@ -14,8 +14,10 @@ import dataclasses
 import json
 import logging
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.auth.ldap_auth import LdapConfig
 from app.auth.ldap_auth import ldap_authenticate
@@ -26,13 +28,18 @@ from tests.fixtures.ldap_directory_fake import SERVICE_DN
 from tests.fixtures.ldap_directory_fake import FakeEntry
 from tests.fixtures.ldap_directory_fake import install
 
-#: setting name -> ``LdapConfig`` field. All eighteen, so a dropped mapping fails here.
+#: A stand-in session: the stored-settings lookup is replaced, so nothing ever queries it.
+_DB = MagicMock(spec=Session)
+
+#: setting name -> ``LdapConfig`` field. All twenty, so a dropped mapping fails here.
 SETTING_TO_FIELD = {
     "LDAP_ENABLED": "enabled",
     "LDAP_SERVER": "server",
     "LDAP_PORT": "port",
     "LDAP_USE_SSL": "use_ssl",
     "LDAP_USE_TLS": "use_tls",
+    "LDAP_CA_CERT_FILE": "ca_cert_file",
+    "LDAP_TLS_SKIP_VERIFY": "tls_skip_verify",
     "LDAP_BIND_DN": "bind_dn",
     "LDAP_BIND_PASSWORD": "bind_password",
     "LDAP_SEARCH_BASE": "search_base",
@@ -55,6 +62,8 @@ DISTINCT_VALUES: dict[str, Any] = {
     "LDAP_PORT": 1636,
     "LDAP_USE_SSL": False,
     "LDAP_USE_TLS": True,
+    "LDAP_CA_CERT_FILE": "/etc/ssl/directory-ca.pem",
+    "LDAP_TLS_SKIP_VERIFY": True,
     "LDAP_BIND_DN": "cn=reader,dc=test",
     "LDAP_BIND_PASSWORD": "reader-credential",
     "LDAP_SEARCH_BASE": "ou=people,dc=test",
@@ -94,7 +103,7 @@ class _StoredAuthSettings:
 def _from_db(monkeypatch, stored: dict[str, Any]) -> tuple[LdapConfig, _StoredAuthSettings]:
     fake = _StoredAuthSettings(stored)
     monkeypatch.setattr("app.core.auth_settings.get_auth_settings", lambda db: fake)
-    return LdapConfig.from_db(object()), fake
+    return LdapConfig.from_db(_DB), fake
 
 
 class TestFromEnv:
@@ -111,7 +120,7 @@ class TestFromEnv:
 
 
 class TestFromDb:
-    def test_it_asks_for_exactly_the_eighteen_ldap_keys(self, monkeypatch):
+    def test_it_asks_for_exactly_the_twenty_ldap_keys(self, monkeypatch):
         _patch_settings(monkeypatch, DISTINCT_VALUES)
 
         _, fake = _from_db(monkeypatch, {})
@@ -190,7 +199,7 @@ class TestFromDb:
         assert cfg.user_search_filter == "(uid={username})"
         # Not "memberOf": an explicitly stored empty group attribute disables group retrieval.
         assert cfg.group_attr == ""
-        for field in ("server", "bind_dn", "bind_password", "search_base"):
+        for field in ("server", "ca_cert_file", "bind_dn", "bind_password", "search_base"):
             assert getattr(cfg, field) == "", field
         for field in ("admin_users", "admin_groups", "user_groups"):
             assert getattr(cfg, field) == "", field
@@ -230,6 +239,7 @@ _NON_STRING_KEYS = {
     "ldap_port",
     "ldap_use_ssl",
     "ldap_use_tls",
+    "ldap_tls_skip_verify",
     "ldap_recursive_groups",
     "ldap_timeout",
 }
@@ -257,7 +267,7 @@ class TestLoginConfigSource:
         monkeypatch.setattr(LdapConfig, "from_db", classmethod(lambda cls, db: db_cfg))
         monkeypatch.setattr(LdapConfig, "from_env", classmethod(lambda cls: self._env_cfg()))
 
-        assert ldap_authenticate("alice", "alice-pw", db=object()) is not None
+        assert ldap_authenticate("alice", "alice-pw", db=_DB) is not None
         assert [c[1] for c in d.calls if c[0] == "server"] == ["db.test"]
 
     def test_a_failing_db_read_falls_back_to_the_environment_with_a_warning(
@@ -272,7 +282,7 @@ class TestLoginConfigSource:
         monkeypatch.setattr(LdapConfig, "from_env", classmethod(lambda cls: self._env_cfg()))
 
         with caplog.at_level(logging.WARNING):
-            result = ldap_authenticate("alice", "alice-pw", db=object())
+            result = ldap_authenticate("alice", "alice-pw", db=_DB)
 
         assert result is not None and result["username"] == "alice"
         assert [c[1] for c in d.calls if c[0] == "server"] == ["env.test"]
@@ -323,6 +333,8 @@ class TestEnvironmentParsing:
             "LDAP_PORT": 636,
             "LDAP_USE_SSL": True,
             "LDAP_USE_TLS": False,
+            "LDAP_CA_CERT_FILE": "",
+            "LDAP_TLS_SKIP_VERIFY": False,
             "LDAP_BIND_DN": "",
             "LDAP_BIND_PASSWORD": "",
             "LDAP_SEARCH_BASE": "",
@@ -346,6 +358,8 @@ class TestEnvironmentParsing:
             "LDAP_PORT": "389",
             "LDAP_USE_SSL": "false",
             "LDAP_USE_TLS": "true",
+            "LDAP_CA_CERT_FILE": "/etc/ssl/directory-ca.pem",
+            "LDAP_TLS_SKIP_VERIFY": "true",
             "LDAP_BIND_DN": "cn=reader,dc=test",
             "LDAP_BIND_PASSWORD": "reader-credential",
             "LDAP_SEARCH_BASE": "dc=test",
@@ -370,9 +384,11 @@ class TestEnvironmentParsing:
             False,
             True,
         )
+        assert got["LDAP_TLS_SKIP_VERIFY"] is True
         assert got["LDAP_RECURSIVE_GROUPS"] is True
         for name in (
             "LDAP_SERVER",
+            "LDAP_CA_CERT_FILE",
             "LDAP_BIND_DN",
             "LDAP_BIND_PASSWORD",
             "LDAP_SEARCH_BASE",
@@ -396,3 +412,9 @@ class TestEnvironmentParsing:
         )
 
         assert (got["LDAP_RECURSIVE_GROUPS"], got["LDAP_USE_TLS"]) == (expected, expected)
+
+    @pytest.mark.parametrize("name", ["LDAP_RECURSIVE_GROUPS", "LDAP_TLS_SKIP_VERIFY"])
+    def test_a_junk_boolean_stops_the_settings_load(self, run_in_clean_process, tmp_path, name):
+        """Every LDAP boolean, the nested-group one included, rejects a value it cannot read."""
+        with pytest.raises(AssertionError, match="bool_parsing"):
+            self._settings(run_in_clean_process, tmp_path, **{name: "maybe"})

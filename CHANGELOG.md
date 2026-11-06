@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **LDAP now verifies the directory's TLS certificate by default.** Until now no LDAPS or
+  StartTLS connection (login, directory sync or the admin Test connection) checked the server
+  certificate. The chain and the host name are now checked against the system CA store. New
+  settings: `ldap_ca_cert_file` / `LDAP_CA_CERT_FILE` points at a PEM bundle for a private CA,
+  and `ldap_tls_skip_verify` / `LDAP_TLS_SKIP_VERIFY` (default off) restores the old behaviour
+  and logs a warning on every connection. A CA file that cannot be read refuses the
+  connection. **Upgrade note:** a directory with a private or self-signed certificate needs one
+  of these settings, and the server must be named by host name (ldap3 cannot verify an IP
+  address). LDAP referrals are no longer followed.
+
 ### Fixed
+
+- `LDAP_RECURSIVE_GROUPS` no longer has a different default expression from the other LDAP
+  booleans; it is parsed by the same settings parser.
 
 - **Migrations now work through connection proxies and poolers that reject libpq startup
   parameters** (e.g. AWS RDS Proxy, PgBouncer in some modes). The migration runner, Alembic and

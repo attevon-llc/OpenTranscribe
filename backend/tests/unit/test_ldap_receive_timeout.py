@@ -50,7 +50,10 @@ def test_login_opens_both_connections_with_the_configured_read_timeout(monkeypat
     assert ldap_authenticate("alice", ALICE_PW) is not None
 
     assert [c[1] for c in d.calls if c[0] == "connection"] == [SERVICE_DN, "uid=alice,dc=test"]
-    assert d.connection_options == [{"receive_timeout": 7}, {"receive_timeout": 7}]
+    assert d.connection_options == [
+        {"receive_timeout": 7, "auto_referrals": False},
+        {"receive_timeout": 7, "auto_referrals": False},
+    ]
     assert [c[2]["connect_timeout"] for c in d.calls if c[0] == "server"] == [7]
 
 
@@ -60,7 +63,7 @@ def test_the_sweep_session_uses_the_same_read_timeout(monkeypatch):
     with ldap_directory_session(_cfg(timeout=3)):
         pass
 
-    assert d.connection_options == [{"receive_timeout": 3}]
+    assert d.connection_options == [{"receive_timeout": 3, "auto_referrals": False}]
 
 
 class _SilentConnection:

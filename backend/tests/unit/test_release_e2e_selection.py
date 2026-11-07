@@ -23,6 +23,7 @@ REQUIRED_JOURNEYS = {
     "test_plyr_playback.py",
     "test_rtl_privacy.py",
     "test_upload_tray_and_notifications.py",
+    "test_notification_missed_frames.py",
     "test_privacy_settings.py",
     "test_privacy_switch_keyboard.py",
     "test_privacy_voiceprint_hiding.py",

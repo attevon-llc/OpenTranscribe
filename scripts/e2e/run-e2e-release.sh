@@ -18,6 +18,7 @@ exec "$SCRIPT_DIR/run-e2e.sh" \
     backend/tests/e2e/test_plyr_playback.py \
     backend/tests/e2e/test_rtl_privacy.py \
     backend/tests/e2e/test_upload_tray_and_notifications.py \
+    backend/tests/e2e/test_notification_missed_frames.py \
     backend/tests/e2e/test_privacy_settings.py \
     backend/tests/e2e/test_privacy_switch_keyboard.py \
     backend/tests/e2e/test_privacy_voiceprint_hiding.py \

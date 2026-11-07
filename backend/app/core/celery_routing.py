@@ -157,6 +157,8 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "cleanup_expired_files": {"queue": CeleryQueues.UTILITY},
     "files.purge_trash": {"queue": CeleryQueues.UTILITY},
     "files.purge_trash_now": {"queue": CeleryQueues.UTILITY},
+    # The trash's index stamp converging (#1101): update_by_query calls only, no GPU/CPU work.
+    "search.availability_reconcile": {"queue": CeleryQueues.UTILITY},
     "cleanup.run_periodic_cleanup": {"queue": CeleryQueues.UTILITY},
     "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
     "cleanup.health_check": {"queue": CeleryQueues.UTILITY},

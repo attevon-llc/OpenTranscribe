@@ -81,6 +81,15 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute=45),
         "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
     },
+    "availability-reconcile": {
+        "task": "search.availability_reconcile",
+        # Quarter-hourly at :08/:23/:38/:53. Makes the index's trash stamp agree with Postgres
+        # (issue #1101): a stamp that failed in the trash/restore request, or a document a
+        # concurrent writer landed after it. Idempotent update_by_query calls that match
+        # nothing when the index already agrees.
+        "schedule": crontab(minute="8,23,38,53"),
+        "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+    },
     "scratch-janitor": {
         "task": "cleanup.scratch_janitor",
         "schedule": crontab(minute=15),  # Hourly at :15, offset from cleanup/maintenance
@@ -249,6 +258,7 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "gpu-stats-update": BeatEffect.READ_ONLY,  # refreshes the gpu_stats cache key only
     "cleanup-expired-files": BeatEffect.MUTATING,  # deletes files
     "purge-trash": BeatEffect.MUTATING,  # destroys trashed files past their window
+    "availability-reconcile": BeatEffect.MUTATING,  # rewrites index documents' trash stamp
     "scratch-janitor": BeatEffect.MUTATING,  # deletes scratch directories
     "orphan-upload-sweeper": BeatEffect.MUTATING,  # deletes abandoned PENDING uploads
     "watch-source-scan": BeatEffect.INGEST,  # imports media from watch sources

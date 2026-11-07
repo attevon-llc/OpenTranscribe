@@ -91,6 +91,10 @@ REPLAYABLE_TASKS: frozenset[str] = frozenset(
         "propagate_speaker_rename",
         "propagate_title_rename",
         "regenerate_rename_digests",
+        # The trash's index stamp (issue #1101): reads each file's current row and assigns
+        # the matching value, so a second run converges. Pinned by
+        # tests/unit/test_search_availability_task.py.
+        "search.availability_reconcile",
     }
 )
 

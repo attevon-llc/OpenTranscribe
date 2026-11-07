@@ -23,7 +23,7 @@ import this module.
     choke points (``uuid_helpers.get_file_by_uuid_with_permission``) turn into a 404.
   * :func:`unavailable_among` - which of a batch of uuids are unavailable, for the post-filters
     over index-backed results (search hits, chat evidence, aggregation, persisted citations).
-  * :func:`index_availability` / :func:`index_availability_by_id` -
+  * :func:`index_availability` / :func:`index_availability_by_id` / :func:`trashed_file_ids` -
     the value every OpenSearch writer stamps into a document's ``availability`` field
     (``search/availability_field``, issue #1101), so the index can exclude the trash itself.
     Index-side the field tracks the trash only: quarantine stays on its Postgres-resolved list.
@@ -182,6 +182,17 @@ def index_availability_by_id(db: Session, file_ids: Iterable[int]) -> dict[int, 
         return {}
     rows = db.query(MediaFile.id, MediaFile.deleted_at).filter(MediaFile.id.in_(ids)).all()
     return {int(row[0]): TRASHED if row[1] is not None else AVAILABLE for row in rows}
+
+
+def trashed_file_ids(db: Session) -> list[int]:
+    """Every trashed file's id, ascending: the set whose documents must read ``trashed``."""
+    rows = (
+        db.query(MediaFile.id)
+        .filter(unavailable_pred(include_quarantined=True))
+        .order_by(MediaFile.id)
+        .all()
+    )
+    return [int(row[0]) for row in rows]
 
 
 # --- WebSocket notification form --------------------------------------------------------------

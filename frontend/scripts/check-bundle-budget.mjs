@@ -68,8 +68,14 @@ export const ROOT_LAYOUT_CLOSURE_GZIP_BUDGET = 143 * 1024;
 export const ENTRY_CHUNKS_GZIP_BUDGET = 4352;
 /** Gzip bytes of the manifest first-load closure; measured 144,684 B on Kit 3, about 4% headroom. */
 export const FIRST_LOAD_GZIP_BUDGET = 147 * 1024;
-/** Gzip bytes of all JS under `_app/immutable`; measured 2,566,185 B, about 3% headroom. */
-export const TOTAL_JS_GZIP_BUDGET = 2580 * 1024;
+/**
+ * Gzip bytes of all JS under `_app/immutable`; measured 2,566,185 B, about 3% headroom.
+ * Re-measured 2026-11-07 (stock `nice -n 19 npx vite build`, gzip 9): 2,641,830 B on the tree
+ * before the comment composer, i.e. 90 B of headroom left, and 2,649,803 B with it. 7,733 B of
+ * that 7,973 B delta is translated copy in the 12 lazily loaded locale chunks (a user downloads
+ * one, about 650 B), so it is content, not a regression. Reset to about 3% above the new measure.
+ */
+export const TOTAL_JS_GZIP_BUDGET = 2666 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;

@@ -96,3 +96,17 @@ describe('keyFor / labelFor', () => {
     expect(labelFor(t, map, undefined)).toBe('');
   });
 });
+
+describe('ORG_AUDIT_EVENT_KEYS: scheduled erasure events (#1105)', () => {
+  it('labels the three scheduled-erasure events an organization admin now reads', () => {
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.scheduled']).toBe(
+      'orgAudit.event.erasureScheduled'
+    );
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.cancelled']).toBe(
+      'orgAudit.event.erasureCancelled'
+    );
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.execution_started']).toBe(
+      'orgAudit.event.erasureStarted'
+    );
+  });
+});

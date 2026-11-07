@@ -419,6 +419,105 @@ def test_every_task_the_pipeline_dispatches_is_replayable_or_excluded_for_a_reas
     assert not set(_NOT_REPLAYED_ON_PURPOSE) & tr.REPLAYABLE_TASKS
 
 
+#: User-triggered and download tasks that are deliberately NOT replayable, each with why. They
+#: are early-acked, so a worker death drops the message; this map is where that is decided
+#: instead of left to chance (issue #1159). Replay (``task_replay.py``) does not need
+#: ``acks_late``: it re-sends from its own heartbeat record. Adding ``acks_late`` on top would
+#: only add the broker's own redelivery after ``visibility_timeout`` (Celery docs, "Should I
+#: use retry or acks_late?": a late-acked task may run twice, so it must be idempotent), i.e.
+#: a second path to the same duplicate run.
+_USER_TASKS_NOT_REPLAYED = {
+    "process_speaker_merge_background": (
+        "not idempotent: step 1 averages the source voiceprint into the survivor and only a "
+        "later step deletes the source document, so a replay after the average averages it in "
+        "a second time (see test_user_task_replay_idempotence.py)"
+    ),
+    "process_speaker_update_background": (
+        "retroactive matching auto-applies speaker labels and rebuilds profile aggregates; "
+        "no evidence yet that a second pass is a fixed point (needs the live stack); the "
+        "committed label is in Postgres, so the loss is a stale search index, not lost data"
+    ),
+    "download.media_url": (
+        "success path dispatches the GPU transcription pipeline (a replay re-downloads and "
+        "double-dispatches it); one-shot credentials are discarded in finally; a download lost "
+        "with its worker leaves the file DOWNLOADING, which recover_stuck_downloading_files "
+        "already resets and re-queues"
+    ),
+    "download.media_playlist": (
+        "creates one placeholder MediaFile per video and fans out download.media_url; a replay "
+        "after a partial fan-out would create the placeholders again"
+    ),
+    "download.prepare_media": (
+        "builds an ephemeral derived asset and pushes the presigned URL to the waiting browser "
+        "over SSE; after a crash nobody is listening and pressing Download again is the retry"
+    ),
+    "download.prepare_bulk_subtitles": "ephemeral SSE-delivered archive; pressing Download again",
+    "download.prepare_transcript_document": (
+        "ephemeral SSE-delivered document; pressing Download again is the retry"
+    ),
+    "watch_source.scan_single": (
+        "holds a 3600 s per-source lock, so an immediate replay is refused as 'scan already "
+        "running'; the periodic scan re-lists the source on its next tick"
+    ),
+    "watch_source.stitch_and_import": (
+        "multi-GB download plus ffmpeg concat, then a tracking row and an ingest in one "
+        "transaction; before the commit nothing exists, and the parts stay unconsumed so the "
+        "next scan re-dispatches the group"
+    ),
+    "privacy.purge_voiceprints": (
+        "recovery is owned by the privacy purge ledger work (#1334 item 2), not by blind replay"
+    ),
+    "rediarize": "GPU run or a billed vendor job (pipeline exclusion above)",
+}
+
+
+def _user_triggered_and_download_task_names() -> set[str]:
+    """Every registered task that is CPU USER_TRIGGERED, a ``download.*`` task, or one of the
+    search field-update tasks, read from the Celery registry rather than a hand list.
+
+    ``CPUPriority.USER_TRIGGERED`` is the integer 4, which ``RedactionPriority.PIPELINE_AUTO``
+    shares; a task caught by that coincidence only has to be classified too, so the scan errs
+    towards listing more, never fewer.
+    """
+    from app.core.queues import CPUPriority
+
+    celery_app.loader.import_default_modules()
+    return {
+        name
+        for name, task in celery_app.tasks.items()
+        if getattr(task, "priority", None) == CPUPriority.USER_TRIGGERED
+        or name.startswith("download.")
+        or (
+            getattr(task, "__module__", "") == "app.tasks.search_file_field_tasks"
+            and name.startswith("update_file_")
+        )
+    }
+
+
+def test_every_user_triggered_and_download_task_is_replayable_or_excluded_for_a_reason():
+    """#1159: the guard above only sees what the pipeline modules dispatch, so the user-triggered
+    tasks (speaker edits, renames, downloads, watch imports) were neither covered nor excluded."""
+    scoped = _user_triggered_and_download_task_names()
+    # Guard against a scan that matches nothing and passes vacuously.
+    assert {
+        "download.media_url",
+        "process_speaker_merge_background",
+        "propagate_title_rename",
+        "update_file_access_index",
+        "watch_source.stitch_and_import",
+    } <= scoped
+
+    uncovered = sorted(
+        name
+        for name in scoped
+        if not tr.is_replayable(name) and name not in _USER_TASKS_NOT_REPLAYED
+    )
+    assert uncovered == []
+    assert not set(_USER_TASKS_NOT_REPLAYED) & tr.REPLAYABLE_TASKS
+    stale = sorted(set(_USER_TASKS_NOT_REPLAYED) - scoped)
+    assert stale == [], "an exclusion names a task that no longer exists or is out of scope"
+
+
 @pytest.mark.parametrize("name", ["media.generate_waveform", "redaction.detect"])
 def test_the_pipelines_waveform_and_redaction_runs_are_recorded_for_replay(fake_redis, name):
     tr.on_task_start(_task(name), "t-pipe", [11, "file-uuid"], {})

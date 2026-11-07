@@ -7,7 +7,7 @@
 import { vi } from 'vitest';
 import type { VideojsStore } from './videojsStore';
 
-export interface FakeTrack {
+interface FakeTrack {
   kind: string;
   mode: 'showing' | 'hidden' | 'disabled';
 }

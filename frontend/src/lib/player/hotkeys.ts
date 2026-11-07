@@ -16,7 +16,7 @@
  */
 import type { HotkeyProps } from '@videojs/html';
 
-export type PlayerHotkeyAction = HotkeyProps['action'];
+type PlayerHotkeyAction = HotkeyProps['action'];
 export type PlayerHotkeyScope = NonNullable<HotkeyProps['target']>;
 
 export interface PlayerHotkey {

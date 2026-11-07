@@ -209,6 +209,77 @@ class TestPermittedMutations:
 
 
 # --------------------------------------------------------------------------- #
+# Timed vs general comments                                                    #
+# --------------------------------------------------------------------------- #
+class TestGeneralAndTimedComments:
+    """A general comment (about the whole file) is one with ``timestamp: null``.
+
+    The comment composer creates one when its Timestamp box is unticked and its editor turns a
+    comment from one kind into the other, so the null has to survive the whole round trip: a
+    field that came back as ``0.0`` would show the comment as "at 0:00" instead of "General".
+    """
+
+    def _nested(self, media_file) -> str:
+        return f"{COMMENTS_PATH}/files/{media_file.uuid}/comments"
+
+    def test_a_general_comment_is_created_and_listed_with_a_null_timestamp(
+        self, client, owned_file, user_token_headers
+    ):
+        created = client.post(
+            self._nested(owned_file),
+            headers=user_token_headers,
+            json={"text": "about the whole file", "timestamp": None},
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["timestamp"] is None
+
+        listed = client.get(self._nested(owned_file), headers=user_token_headers)
+        assert listed.status_code == 200, listed.text
+        row = next(r for r in listed.json() if r["uuid"] == created.json()["uuid"])
+        assert row["timestamp"] is None
+
+    def test_omitting_the_timestamp_also_makes_a_general_comment(
+        self, client, owned_file, user_token_headers
+    ):
+        created = client.post(
+            self._nested(owned_file), headers=user_token_headers, json={"text": "no time"}
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["timestamp"] is None
+
+    def test_editing_can_clear_the_time_and_set_it_again(
+        self, client, own_comment, user_token_headers, db_session
+    ):
+        assert own_comment.timestamp == 12.5
+        path = f"{COMMENTS_PATH}/{own_comment.uuid}"
+
+        cleared = client.put(
+            path, headers=user_token_headers, json={"text": "now general", "timestamp": None}
+        )
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["timestamp"] is None
+        db_session.refresh(own_comment)
+        assert own_comment.timestamp is None
+
+        timed = client.put(
+            path, headers=user_token_headers, json={"text": "timed again", "timestamp": 47.25}
+        )
+        assert timed.status_code == 200, timed.text
+        assert timed.json()["timestamp"] == 47.25
+        db_session.refresh(own_comment)
+        assert own_comment.timestamp == 47.25
+
+    def test_editing_only_the_text_keeps_the_time(self, client, own_comment, user_token_headers):
+        edited = client.put(
+            f"{COMMENTS_PATH}/{own_comment.uuid}",
+            headers=user_token_headers,
+            json={"text": "text only"},
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["timestamp"] == 12.5
+
+
+# --------------------------------------------------------------------------- #
 # Not-found and validation                                                     #
 # --------------------------------------------------------------------------- #
 class TestNotFoundAndValidation:

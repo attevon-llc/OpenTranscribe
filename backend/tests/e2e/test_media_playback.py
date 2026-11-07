@@ -14,7 +14,8 @@ and app labels come from ``en.json``.
 Data: ``owned_transcribed_file`` (the committed 10 s speech WAV through the real pipeline,
 read-only) for audio; ``owned_video`` (the committed 5 s speech MP4, looped to 40 s so a 10 s
 arrow-key step is distinguishable from a jump to either end, uploaded and deleted by this
-module) for video; ``owned_media_factory`` for the one test that writes (a comment).
+module) for video; ``owned_late_speech_audio`` (the same WAV behind 3 s of silence) for the
+segment-click test; ``owned_media_factory`` for the one test that writes (a comment).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -47,6 +49,29 @@ COMMITTED_SAMPLE_VIDEO = COMMITTED_SAMPLE_MEDIA.with_name("sample_short.mp4")
 #: How many extra times the 5 s clip is looped into the uploaded video (5 s x 8 = 40 s).
 VIDEO_LOOPS = 7
 
+#: Silence put in front of the committed WAV, so its one segment starts well after 0 s.
+LEAD_SILENCE_MS = 3000
+
+
+def _upload_owned(backend_url: str, admin_token: str, path: Path, mime: str) -> str:
+    """Upload ``path`` under the owned prefix and return its uuid; the caller deletes it."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{path.suffix}"
+    with path.open("rb") as handle:
+        response = requests.post(
+            f"{backend_url}/api/files",
+            headers=headers,
+            files={"file": (name, handle, mime)},
+            timeout=300,
+        )
+    assert response.status_code == 200, f"upload failed: {response.text[:300]}"
+    return str(response.json()["uuid"])
+
+
+def _wait_until_processed(backend_url: str, admin_token: str, file_uuid: str) -> None:
+    status = wait_for_stable_completion(backend_url, admin_token, file_uuid, timeout_secs=600)
+    assert status == "completed", f"the owned upload never completed (status={status})"
+
 
 @pytest.fixture(scope="module")
 def owned_video(backend_url: str, admin_token: str) -> Iterator[dict[str, Any]]:
@@ -64,21 +89,36 @@ def owned_video(backend_url: str, admin_token: str) -> Iterator[dict[str, Any]]:
             "+faststart",
         ],
     )
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}.mp4"
-    with looped.open("rb") as handle:
-        response = requests.post(
-            f"{backend_url}/api/files",
-            headers=headers,
-            files={"file": (name, handle, "video/mp4")},
-            timeout=300,
-        )
-    assert response.status_code == 200, f"video upload failed: {response.text[:300]}"
-    file_uuid = str(response.json()["uuid"])
+    file_uuid = _upload_owned(backend_url, admin_token, looped, "video/mp4")
     try:
-        status = wait_for_stable_completion(backend_url, admin_token, file_uuid, timeout_secs=600)
-        assert status == "completed", f"the owned video never completed (status={status})"
+        _wait_until_processed(backend_url, admin_token, file_uuid)
         yield {"uuid": file_uuid}
+    finally:
+        delete_media_file(backend_url, admin_token, file_uuid)
+
+
+@pytest.fixture(scope="module")
+def owned_late_speech_audio(backend_url: str, admin_token: str) -> Iterator[dict[str, Any]]:
+    """The committed WAV behind 3 s of silence, put through the REAL pipeline, then deleted.
+
+    ``owned_transcribed_file`` cannot back the segment-click test: its clip is one voice
+    talking from 0.2 s, and the pipeline merges a speaker's consecutive sentences into one
+    segment (``app/utils/segment_postprocess.py``, ``merge_consecutive_segments``), so its
+    only segment starts at 0.2 s: a click on it seeks (with the 0.5 s lead-in) to 0 s, where
+    a freshly opened player already is. The silence moves the speech, and so the segment,
+    to ~3 s.
+    """
+    padded = _generate_media(
+        "sample_speech_3s_lead.wav",
+        ["-i", str(COMMITTED_SAMPLE_MEDIA), "-af", f"adelay={LEAD_SILENCE_MS}:all=1"],
+    )
+    file_uuid = _upload_owned(backend_url, admin_token, padded, "audio/wav")
+    try:
+        _wait_until_processed(backend_url, admin_token, file_uuid)
+        headers = {"Authorization": f"Bearer {admin_token}"}
+        detail = requests.get(f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30)
+        assert detail.status_code == 200, detail.text[:300]
+        yield {"uuid": file_uuid, "segments": list(detail.json().get("transcript_segments") or [])}
     finally:
         delete_media_file(backend_url, admin_token, file_uuid)
 
@@ -193,14 +233,16 @@ class TestAudioPlayback:
         player.wait_until_near(max(0.0, duration * 0.5 - 0.5), 0.75)
 
     def test_segment_click_seeks_and_the_highlight_follows_playback(
-        self, browser_page: Page, base_url: str, owned_transcribed_file: dict
+        self, browser_page: Page, base_url: str, owned_late_speech_audio: dict
     ) -> None:
-        segments = [s for s in owned_transcribed_file["segments"] if s["start_time"] >= 1.0]
+        segments = [s for s in owned_late_speech_audio["segments"] if s["start_time"] >= 1.0]
         assert segments, "the owned transcript has no segment starting after 1 s to click"
         target = max(segments, key=lambda s: s["start_time"])
-        player = _open_file(browser_page, base_url, owned_transcribed_file["uuid"])
+        player = _open_file(browser_page, base_url, owned_late_speech_audio["uuid"])
 
         row = browser_page.locator(f'[data-segment-id="{target["uuid"]}"]')
+        # Not highlighted before the playhead reaches it, so the check below can fail.
+        expect(row).not_to_have_class(re.compile(r"\bactive-segment\b"))
         row.locator("button.segment-content").first.click()
         player.wait_until_near(max(0.0, target["start_time"] - 0.5), 0.3)
 

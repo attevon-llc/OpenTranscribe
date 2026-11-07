@@ -89,13 +89,14 @@ export default tseslint.config(
       'svelte/no-useless-mustaches': 'warn',
       'svelte/no-immutable-reactive-statements': 'warn',
       'svelte/no-reactive-reassign': 'warn',
-      // Repo convention is the $lib/$components/$stores aliases. Assets have no alias.
+      // Repo convention is the $lib/$components/$stores aliases. Assets and the build scripts
+      // in frontend/scripts (imported by the src/bundleBudget*.test.ts gate tests) have no alias.
       'no-restricted-imports': [
         'warn',
         {
           patterns: [
             {
-              group: ['../*', '!../assets', '!../assets/*'],
+              group: ['../*', '!../assets', '!../assets/*', '!../scripts', '!../scripts/*'],
               message:
                 'Use the $lib, $components or $stores alias instead of a relative ../ import.',
             },

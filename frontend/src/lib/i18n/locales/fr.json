@@ -2184,7 +2184,7 @@
   "settings.mediaSources.loading": "Chargement des sources médias...",
   "settings.mediaSources.noSources": "Aucune source média configurée",
   "settings.mediaSources.noSourcesHint": "Ajoutez une source multimédia pour activer les téléchargements authentifiés depuis des serveurs protégés. Partagez-les avec votre équipe pour qu'ils puissent les utiliser aussi.",
-  "settings.mediaSources.hostname": "Nom d'hôte",
+  "settings.mediaSources.hostname": "Adresse",
   "settings.mediaSources.label": "Nom d'affichage",
   "settings.mediaSources.labelPlaceholder": "ex. Serveur Média d'Entreprise",
   "settings.mediaSources.username": "Nom d'utilisateur",

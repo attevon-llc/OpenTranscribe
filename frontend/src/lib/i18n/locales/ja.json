@@ -275,7 +275,7 @@
   "settings.mediaSources.loading": "メディアソースを読み込み中...",
   "settings.mediaSources.noSources": "メディアソースが設定されていません",
   "settings.mediaSources.noSourcesHint": "メディアソースを追加して、保護されたサーバーからの認証済みダウンロードを有効にします。チームと共有して、他のメンバーも使用できるようにしましょう。",
-  "settings.mediaSources.hostname": "ホスト名",
+  "settings.mediaSources.hostname": "アドレス",
   "settings.mediaSources.label": "表示名",
   "settings.mediaSources.labelPlaceholder": "例：企業メディアサーバー",
   "settings.mediaSources.username": "ユーザー名",

@@ -304,7 +304,7 @@
   "settings.mediaSources.loading": "جارٍ تحميل مصادر الوسائط...",
   "settings.mediaSources.noSources": "لا توجد مصادر وسائط مُكوَّنة",
   "settings.mediaSources.noSourcesHint": "أضف مصدر وسائط لتفعيل التنزيلات الموثّقة من الخوادم المحمية. شاركها مع فريقك ليتمكنوا من استخدامها أيضًا.",
-  "settings.mediaSources.hostname": "اسم المضيف",
+  "settings.mediaSources.hostname": "العنوان",
   "settings.mediaSources.label": "اسم العرض",
   "settings.mediaSources.labelPlaceholder": "مثال: خادم الوسائط المؤسسي",
   "settings.mediaSources.username": "اسم المستخدم",

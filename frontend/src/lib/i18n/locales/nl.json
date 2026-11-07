@@ -304,7 +304,7 @@
   "settings.mediaSources.loading": "Mediabronnen laden...",
   "settings.mediaSources.noSources": "Geen mediabronnen geconfigureerd",
   "settings.mediaSources.noSourcesHint": "Voeg een mediabron toe om geauthenticeerde downloads van beveiligde servers mogelijk te maken. Deel ze met uw team zodat zij ze ook kunnen gebruiken.",
-  "settings.mediaSources.hostname": "Hostnaam",
+  "settings.mediaSources.hostname": "Adres",
   "settings.mediaSources.label": "Weergavenaam",
   "settings.mediaSources.labelPlaceholder": "bijv. Bedrijfsmediaserver",
   "settings.mediaSources.username": "Gebruikersnaam",

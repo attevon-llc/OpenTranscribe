@@ -77,7 +77,9 @@
         provider_type: newProviderType,
         username: newUsername,
         password: newPassword,
-        verify_ssl: newVerifySsl,
+        // An http:// source has no TLS to verify; send the default so the saved value
+        // (and the "not verified" badge) never reflects a hidden, stale checkbox.
+        verify_ssl: isPlainHttpSource(newHostname) ? true : newVerifySsl,
         label: newLabel.trim(),
       });
       sources = [...sources, created];
@@ -113,7 +115,7 @@
         hostname: editHostname.trim().toLowerCase(),
         label: editLabel.trim(),
         username: editUsername,
-        verify_ssl: editVerifySsl,
+        verify_ssl: isPlainHttpSource(editHostname) ? true : editVerifySsl,
       };
       // Only send password if user typed something new
       if (editPassword) {
@@ -206,10 +208,12 @@
                 </div>
               </div>
               <div class="form-row">
+                {#if !isPlainHttpSource(editHostname)}
                 <label class="toggle-row-inline">
                   <input type="checkbox" bind:checked={editVerifySsl} />
                   <span>{$t('settings.mediaSources.verifySsl')}</span>
                 </label>
+                {/if}
               </div>
               <div class="form-actions-inline">
                 <button type="button" class="btn btn-sm btn-secondary" on:click={cancelEdit} disabled={saving}>{$t('common.cancel')}</button>
@@ -381,10 +385,12 @@
                 <option value="mediacms">MediaCMS</option>
               </select>
             </div>
+            {#if !isPlainHttpSource(newHostname)}
             <label class="toggle-row-inline">
               <input type="checkbox" bind:checked={newVerifySsl} />
               <span>{$t('settings.mediaSources.verifySsl')}</span>
             </label>
+            {/if}
           </div>
           <div class="form-actions-inline">
             <button type="button" class="btn btn-sm btn-secondary" on:click={resetAddForm} disabled={saving}>{$t('common.cancel')}</button>

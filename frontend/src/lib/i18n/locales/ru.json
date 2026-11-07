@@ -304,7 +304,7 @@
   "settings.mediaSources.loading": "Загрузка медиаисточников...",
   "settings.mediaSources.noSources": "Медиаисточники не настроены",
   "settings.mediaSources.noSourcesHint": "Добавьте медиаисточник, чтобы скачивать файлы с защищённых серверов. Поделитесь им с командой, чтобы им могли пользоваться и другие.",
-  "settings.mediaSources.hostname": "Имя хоста",
+  "settings.mediaSources.hostname": "Адрес",
   "settings.mediaSources.label": "Отображаемое имя",
   "settings.mediaSources.labelPlaceholder": "например, корпоративный медиасервер",
   "settings.mediaSources.username": "Имя пользователя",

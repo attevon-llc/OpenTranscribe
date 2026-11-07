@@ -275,7 +275,7 @@
   "settings.mediaSources.loading": "正在加载媒体源...",
   "settings.mediaSources.noSources": "未配置媒体源",
   "settings.mediaSources.noSourcesHint": "添加媒体来源以启用从受保护服务器的认证下载。与您的团队共享，让他们也能使用。",
-  "settings.mediaSources.hostname": "主机名",
+  "settings.mediaSources.hostname": "地址",
   "settings.mediaSources.label": "显示名称",
   "settings.mediaSources.labelPlaceholder": "例如：企业媒体服务器",
   "settings.mediaSources.username": "用户名",

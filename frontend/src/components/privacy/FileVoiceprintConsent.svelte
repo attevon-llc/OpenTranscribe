@@ -13,6 +13,7 @@
   import {
     PrivacyApi,
     PURGE_REASON_FILES_PROTECTED,
+    PURGE_REASON_INTERRUPTED,
     isTerminalPurgeState,
     type FileVoiceprintConsentState } from '$lib/api/privacy';
   import { resetEffectivePrivacy } from '$stores/privacyPolicy';
@@ -51,6 +52,8 @@
           toastStore.success($t('file.voiceprintConsent.purgeDone'));
         } else if (status.reason === PURGE_REASON_FILES_PROTECTED) {
           toastStore.error($t('file.voiceprintConsent.purgeProtected'));
+        } else if (status.reason === PURGE_REASON_INTERRUPTED) {
+          toastStore.error($t('file.voiceprintConsent.purgeInterrupted'));
         } else {
           toastStore.error($t('file.voiceprintConsent.purgeFailed'));
         }

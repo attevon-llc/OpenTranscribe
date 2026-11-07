@@ -281,6 +281,24 @@ describe('PurgeConfirmDialog', () => {
       expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
     });
 
+    it('tells the admin to run an interrupted purge again', async () => {
+      status.mockResolvedValue(
+        done(null, {
+          status: 'failed',
+          reason: 'interrupted',
+          residual: null,
+          residual_ok: null,
+          audit: [],
+        })
+      );
+      await runToTheEnd();
+
+      expect(await screen.findByTestId('purge-interrupted')).toHaveTextContent(
+        'Run the deletion again.'
+      );
+      expect(screen.getByRole('dialog')).not.toHaveTextContent('The deletion failed');
+    });
+
     it('behaves as before when the skip counters are zero', async () => {
       status.mockResolvedValue(
         done({

@@ -255,6 +255,10 @@ and marks a purge that never reached its second pass as failed with the reason `
 instead of leaving it in progress. If you see that reason, run the purge again.
 
 The upgrade itself needs nothing from you. A purge interrupted before the upgrade is not in the
-new table, so the check cannot find it. Running an organization purge again removes leftover
-cluster data labelled with that organization; a personal purge cannot see it, because nothing in
-the database names it any more.
+new table, so the scheduled check cannot find it. The voiceprint orphan sweep removes those
+leftovers: it deletes any voice-cluster entry in the search index whose cluster no longer exists
+in the database, for personal and organization purges alike. It does not run on a schedule; run
+it once after upgrading, from a backend container:
+`python -m app.scripts.sweep_orphan_voiceprints` for a dry run that only counts, then
+`python -m app.scripts.sweep_orphan_voiceprints --apply` to delete. If the database cannot be
+read, the sweep stops without deleting anything.

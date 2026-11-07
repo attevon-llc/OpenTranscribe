@@ -97,8 +97,11 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                 completed=True,
             )
 
+            # A fileless row (e.g. a privacy purge) has no file status to reconcile.
+            if task.media_file_id is None:
+                return True
+
             # Check if we need to update the media file status
-            assert task.media_file_id is not None  # media-processing task always has a file
             media_file = get_refreshed_object(db, MediaFile, int(task.media_file_id))
             if not media_file:
                 logger.error(f"Media file {task.media_file_id} not found for task {task.id}")

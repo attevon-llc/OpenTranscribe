@@ -50,13 +50,3 @@ export function setPage(pathOrUrl: string, extra: Partial<MockPageState> = {}): 
 export function resetAppStores(): void {
   Object.assign(page, pageStateFor(DEFAULT_URL));
 }
-
-export const navigating = {
-  from: null,
-  to: null,
-  type: null,
-  willUnload: null,
-  delta: null,
-  complete: null,
-};
-export const updated = { current: false, check: () => Promise.resolve(false) };

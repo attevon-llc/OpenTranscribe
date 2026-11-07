@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
+  import { pageStore } from '$stores/pageStore';
   import axiosInstance from '$lib/axios';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
@@ -14,7 +14,7 @@
   let success = false;
   let showPassword = false;
 
-  $: tokenParam = page.url.searchParams.get('token') || '';
+  $: tokenParam = $pageStore.url.searchParams.get('token') || '';
 
   function togglePasswordVisibility() {
     showPassword = !showPassword;

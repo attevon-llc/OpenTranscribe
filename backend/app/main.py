@@ -1,7 +1,5 @@
 # Telemetry opt-outs must be in os.environ before anything can import pyannote or
 # huggingface_hub (both read them at import). Keep this the first import.
-from app.core.env import env_bool
-
 from app.core import privacy_env  # noqa: F401  # isort: skip
 
 # isort: split
@@ -28,6 +26,7 @@ from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
+from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.exceptions import EmailDeliveryError

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatDuration } from '$lib/utils/formatting';
   import { goto } from "$app/navigation";
-  import { page } from '$app/state';
+  import { pageStore } from '$stores/pageStore';
   import { user, logout } from "../stores/auth";
   import { onMount, onDestroy } from "svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -56,7 +56,7 @@
   let mobileMenuOpen = false;
 
   // Close mobile menu on route change
-  $: if (page.url.pathname) mobileMenuOpen = false;
+  $: if ($pageStore.url.pathname) mobileMenuOpen = false;
 
   // Reactive recording state from store - use store directly
   $: hasActiveRecording = $recordingStore.hasActiveRecording;
@@ -67,7 +67,7 @@
   $: recordedBlob = $recordingStore.recordedBlob;
 
   // Reactive statements for active page detection
-  $: currentPath = page.url.pathname;
+  $: currentPath = $pageStore.url.pathname;
   $: isGalleryActive = currentPath === '/' || (currentPath as string) === '';
   $: isSpeakersActive = currentPath === '/speakers' || currentPath.startsWith('/speakers/');
   $: isChatActive = currentPath.startsWith('/chat');

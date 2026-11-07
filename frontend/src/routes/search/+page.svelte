@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { page } from '$app/state';
+  import { pageStore } from '$stores/pageStore';
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
@@ -136,7 +136,7 @@
   }
 
   // Read initial state from URL
-  $: urlState = parseSearchUrl(page.url.searchParams);
+  $: urlState = parseSearchUrl($pageStore.url.searchParams);
   $: urlQuery = urlState.query;
   $: urlPage = urlState.page;
   $: urlSort = urlState.sort;

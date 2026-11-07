@@ -1,13 +1,13 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
+  import { pageStore } from '$stores/pageStore';
   import UserFileStatus from '$components/UserFileStatus.svelte';
   import { settingsReturnFromUrl } from '$lib/settings/returnToSettings';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import { t } from '$stores/locale';
 
   // Only present when the user arrived through a Settings panel's "Open full screen" link.
-  $: backTarget = settingsReturnFromUrl(page.url);
+  $: backTarget = settingsReturnFromUrl($pageStore.url);
 
   async function backToSettings() {
     if (!backTarget) return;

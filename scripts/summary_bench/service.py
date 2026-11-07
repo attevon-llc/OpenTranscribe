@@ -157,7 +157,9 @@ def build_service_class() -> type:
             started = time.monotonic()
             self._tl.last_usage = None
             try:
-                response = super().chat_completion(messages, **kwargs)
+                # An offline measurement run is not a product feature: the per-user token limits
+                # need the application database, which a bench host does not have.
+                response = super().chat_completion(messages, enforce_budget=False, **kwargs)
             finally:
                 record.latency_s = round(time.monotonic() - started, 3)
                 usage = getattr(self._tl, 'last_usage', None) or {}

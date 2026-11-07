@@ -12,7 +12,7 @@ export type LlmFeatureEventType =
   | 'speaker_id.tokens'
   | 'redaction.tokens';
 
-export interface LlmTokenBucket {
+interface LlmTokenBucket {
   events: number;
   prompt_tokens: number;
   completion_tokens: number;
@@ -20,11 +20,11 @@ export interface LlmTokenBucket {
   estimated_cost_usd: number | null;
 }
 
-export interface LlmFeatureUsage extends LlmTokenBucket {
+interface LlmFeatureUsage extends LlmTokenBucket {
   event_type: string;
 }
 
-export interface UsageBudget {
+interface UsageBudget {
   user_daily_tokens: number;
   used_today: number;
   day_resets_at: string;

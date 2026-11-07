@@ -1,4 +1,4 @@
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export async function getPrivateHosts(): Promise<string[]> {
   const response = await axiosInstance.get<{ hosts: string[] }>('/admin/media-private-hosts');

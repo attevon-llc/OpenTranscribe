@@ -196,12 +196,17 @@ def _source_counts(
 
 
 def _drop_quarantined_search_hits(
-    db: Session, response: Any, *, include_quarantined: bool = False
+    db: Session,
+    response: Any,
+    *,
+    include_quarantined: bool = False,
+    hidden_uuids: frozenset[str] = frozenset(),
 ) -> Any:
-    """Remove unavailable files from a search response.
+    """Remove unavailable files, and the caller's hidden ones, from a search response.
 
     Trashed files always go; quarantined ones stay only with ``include_quarantined`` (the
-    reviewer's list exemption, ``unavailable_list_exempt``).
+    reviewer's list exemption, ``unavailable_list_exempt``). ``hidden_uuids`` (issue #1102)
+    is the belt behind the query's own exclusion of the caller's hidden files.
 
     The hidden files 404 on detail/stream anyway (the per-resource gate), so this
     just keeps them out of the result list/snippets too — the search-snippet
@@ -225,6 +230,7 @@ def _drop_quarantined_search_hits(
     quarantined = unavailable_among(
         db, (getattr(h, "file_uuid", None) for h in hits), include_quarantined=include_quarantined
     )
+    quarantined |= {str(h.file_uuid) for h in hits if str(h.file_uuid) in hidden_uuids}
     if not quarantined:
         return response
     kept = [h for h in hits if str(h.file_uuid) not in quarantined]
@@ -259,6 +265,7 @@ def _summary_search_payload(
     language: str | None = None,
     title_filter: str | None = None,
     file_uuid: str | None = None,
+    exclude_file_uuids: list[str] | None = None,
 ) -> dict[str, Any]:
     r"""Build the ``summary_results``/``summary_total`` pair for issue #462, #963.
 
@@ -371,6 +378,7 @@ def _summary_search_payload(
             language=language,
             title_filter=title_filter,
             file_uuid=file_uuid,
+            exclude_file_uuids=exclude_file_uuids,
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e

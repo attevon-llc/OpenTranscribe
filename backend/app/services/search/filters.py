@@ -11,6 +11,7 @@ from typing import Any
 from app.core.constants import FILE_TYPE_MIME_PREFIXES
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.search.access_filter import access_filter_clause
+from app.services.search.hidden_exclusion import exclude_files_clauses
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +148,7 @@ def _build_filters(
     organization_id: int | None = None,
     file_uuid: str | None = None,
     file_uuids: list[str] | None = None,
+    exclude_file_uuids: list[str] | None = None,
     plane_clause: dict[str, Any] | None = None,
     speaker_field: str = "speaker",
 ) -> list[dict[str, Any]]:
@@ -169,6 +171,10 @@ def _build_filters(
     whose scope (files / collections / tags) is resolved to file uuids in
     Postgres first, so share and quarantine semantics are decided there
     rather than trusting the denormalized fields on the OpenSearch doc.
+
+    ``exclude_file_uuids`` drops the caller's hidden files (issue #1102,
+    ``search/hidden_exclusion.py``); the caller leaves it empty for a request
+    scoped to files it picked.
     """
     from app.services.search.tenant_scope import org_filter_clauses
 
@@ -187,6 +193,7 @@ def _build_filters(
     if file_uuids is not None:
         # An empty resolved scope must match nothing, NOT everything.
         filters.append({"terms": {"file_uuid": list(file_uuids)}})
+    filters.extend(exclude_files_clauses(exclude_file_uuids))
     if speakers:
         filters.append({"terms": {speaker_field: speakers}})
     if tags:

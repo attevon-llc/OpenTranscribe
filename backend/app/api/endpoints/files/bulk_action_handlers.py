@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.files.crud import delete_media_file
+from app.core.constants import HIDDEN_MEDIA_PER_USER_CAP
 from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -391,3 +392,52 @@ def _redact_if_enabled(
 ) -> BulkActionResult:
     _require_redaction_enabled(db, db_file, current_user, bypass, organization_id)
     return _handle_redact_action(db, file_uuid, file_id)
+
+
+#: The per-user hide verbs (issue #1102). Read access is enough: hiding changes only the
+#: caller's own view, so it does not take the "editor" pre-check the other verbs do.
+HIDE_ACTIONS = frozenset({"hide", "unhide"})
+
+
+def _handle_hide_action(
+    db: Session,
+    file_uuid: str,
+    current_user: User,
+    bypass: PlatformBypass,
+    organization_id: OrgScope,
+    *,
+    hide: bool,
+) -> BulkActionResult:
+    """Hide or unhide one file for the caller. A file they cannot read raises the 404.
+
+    A refusal at the per-user cap is this file's result (``HIDDEN_LIMIT``), not the batch's.
+    """
+    from app.services import hidden_media_service
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
+
+    media_file = get_file_by_uuid_with_permission(
+        db,
+        file_uuid,
+        current_user.id,
+        bypass=bypass,
+        organization_id=organization_id,
+        conceal_inaccessible=True,
+    )
+    file_ids = [int(media_file.id)]
+    if not hide:
+        hidden_media_service.unhide(db, current_user.id, file_ids)
+        db.commit()
+        return BulkActionResult(file_uuid=file_uuid, success=True, message="File unhidden")
+    try:
+        hidden_media_service.hide(db, current_user.id, file_ids)
+    except hidden_media_service.HiddenLimitError:
+        # Nothing was written, so there is nothing to roll back; the advisory lock ends with
+        # the batch's next commit or the session's close.
+        return BulkActionResult(
+            file_uuid=file_uuid,
+            success=False,
+            message=f"You can hide at most {HIDDEN_MEDIA_PER_USER_CAP} files",
+            error=hidden_media_service.HIDDEN_LIMIT_ERROR_CODE,
+        )
+    db.commit()
+    return BulkActionResult(file_uuid=file_uuid, success=True, message="File hidden")

@@ -761,3 +761,9 @@ TELEMETRY_JITTER_SECONDS = 3600
 TELEMETRY_TIMEOUT_SECONDS = 5.0
 #: The event name the receiver files the report under.
 TELEMETRY_EVENT_NAME = "opentranscribe_heartbeat"
+
+# --- Per-user hide of media files (issue #1102) -----------------------------------------
+#: Most files one user may hide. Search excludes a user's hidden files with one OpenSearch
+#: ``terms`` clause, and this cap keeps that clause far below ``index.max_terms_count``
+#: (65,536). A constant, not a setting: raising it is a capacity decision about the index.
+HIDDEN_MEDIA_PER_USER_CAP = 10_000

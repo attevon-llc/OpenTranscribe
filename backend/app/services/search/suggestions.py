@@ -8,6 +8,7 @@ from app.core.exceptions import ServiceUnavailableError
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
 from app.services.opensearch_service import client as _client
 from app.services.search.access_filter import access_filter_clause
+from app.services.search.hidden_exclusion import exclude_files_clauses
 from app.services.search.quarantine_exclusion import _quarantined_file_uuids
 from app.services.search.search_infra import _chunks_index_verified
 
@@ -20,6 +21,7 @@ def get_suggestions(
     limit: int = 8,
     organization_id: int | None = None,
     is_admin: bool = False,
+    exclude_file_uuids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Get auto-complete suggestions.
 
@@ -31,6 +33,8 @@ def get_suggestions(
         is_admin: When True, skip the quarantine exclusion on both legs —
             matches the admin review bypass ``get_available_filters`` and
             the results page already apply.
+        exclude_file_uuids: The caller's hidden files (issue #1102), dropped from
+            both legs.
 
     Returns:
         List of suggestion dicts with type, text, and optional metadata.
@@ -62,6 +66,7 @@ def get_suggestions(
         # digest section pollutes title autocomplete and contributes a bogus
         # speaker bucket — derived text offered as if somebody had said it.
         chunk_plane_clause(),
+        *exclude_files_clauses(exclude_file_uuids),
     ]
 
     # Quarantine is Postgres-only (`takedown_service.quarantine_file` never
@@ -145,7 +150,10 @@ def get_suggestions(
 
 
 def get_available_filters(
-    user_id: int, organization_id: int | None = None, is_admin: bool = False
+    user_id: int,
+    organization_id: int | None = None,
+    is_admin: bool = False,
+    exclude_file_uuids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Return available filter options for the current user.
 
@@ -155,6 +163,8 @@ def get_available_filters(
         is_admin: When True, skip the quarantine exclusion — matches the
             admin review bypass ``search.py``'s ``_drop_quarantined_search_hits``
             already applies on the results page beside this endpoint.
+        exclude_file_uuids: The caller's hidden files (issue #1102), left out of
+            every facet.
 
     Returns:
         Dict with speakers, tags, and date_range.
@@ -182,6 +192,7 @@ def get_available_filters(
         # digest sections would inflate every speaker and
         # tag bucket by a file-shaped amount.
         chunk_plane_clause(),
+        *exclude_files_clauses(exclude_file_uuids),
     ]
     query_must_not: list[dict[str, Any]] = []
 

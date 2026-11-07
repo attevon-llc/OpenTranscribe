@@ -1,7 +1,8 @@
 """``POST /files/management/bulk-action``: one verb applied to many files.
 
 ``_process_single_file_action`` is the per-file funnel: it resolves the file under the
-caller's permission (``min_permission="editor"``, except delete, which has its own rule),
+caller's permission (``min_permission="editor"``, except delete, which has its own rule, and
+hide/unhide, which need only read access because they change the caller's own view),
 applies the legal processing gate, and dispatches to the handlers. The route resolves a
 tag once for the batch, then reports each file's outcome without echoing exception text.
 """
@@ -20,11 +21,13 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.api.endpoints.files.bulk_action_handlers import HIDE_ACTIONS
 from app.api.endpoints.files.bulk_action_handlers import BulkActionResult
 from app.api.endpoints.files.bulk_action_handlers import RedactionNotEnabledError
 from app.api.endpoints.files.bulk_action_handlers import _apply_batch_tag
 from app.api.endpoints.files.bulk_action_handlers import _handle_cancel_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_delete_action
+from app.api.endpoints.files.bulk_action_handlers import _handle_hide_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_identify_speakers_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_recover_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_summarize_action
@@ -58,7 +61,7 @@ class BulkActionRequest(BaseModel):
 
     file_uuids: list[str]
     # delete | retry | cancel | recover | reprocess | summarize | redact
-    # | identify_speakers | add_tag | remove_tag
+    # | identify_speakers | add_tag | remove_tag | hide | unhide
     action: str
     force: bool = False
     reset_retry_count: bool = False
@@ -118,6 +121,11 @@ def _process_single_file_action(
         # org admin with no share on a member's file must (issue #1103).
         return _handle_delete_action(
             db, file_uuid, current_user, force, is_admin, bypass, organization_id, is_org_admin
+        )
+    if action in HIDE_ACTIONS:
+        # Hide is the caller's own view preference (issue #1102): read access is enough.
+        return _handle_hide_action(
+            db, file_uuid, current_user, bypass, organization_id, hide=action == "hide"
         )
 
     db_file = get_media_file_by_uuid(

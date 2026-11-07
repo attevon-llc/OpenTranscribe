@@ -33,6 +33,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.file_availability import unavailable_list_exempt
+from app.services.hidden_media_service import hidden_uuids
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,10 @@ def search_transcripts(
     # behavior byte-for-byte, including its default.
     explicit_sources, source_set = _resolve_source_set(sources, result_type)
 
+    # The caller's hidden files (issue #1102) leave every leg's query, count and pill, except
+    # when the request is scoped to one file the caller picked: hide is not access control.
+    hidden = [] if file_uuid else hidden_uuids(db, ctx.user.id)
+
     # OR-union (issue #760, J-760-10): a file matches if it matches ANY
     # selected source. The transcript leg and the summary leg are two
     # independent OpenSearch queries (§PC5 — content/title/speaker are FIELD
@@ -212,13 +217,17 @@ def search_transcripts(
             organization_id=ctx.org_id,
             file_uuid=file_uuid,
             sources=transcript_sources if explicit_sources else None,
+            exclude_file_uuids=hidden,
         )
 
         # The transcript index carries no takedown field, so drop unavailable files from
         # the result page against the DB (page-sized, one IN query). An exempt reviewer
         # keeps quarantined hits; a trashed file is dropped for everyone.
         search_response = _drop_quarantined_search_hits(
-            db, search_response, include_quarantined=unavailable_list_exempt(ctx.bypass)
+            db,
+            search_response,
+            include_quarantined=unavailable_list_exempt(ctx.bypass),
+            hidden_uuids=frozenset(hidden),
         )
 
         payload = _search_response_to_schema(search_response)
@@ -270,6 +279,7 @@ def search_transcripts(
                     language=language,
                     title_filter=title_filter,
                     file_uuid=file_uuid,
+                    exclude_file_uuids=hidden,
                 )
             )
         except (HTTPException, DomainError) as e:
@@ -344,6 +354,7 @@ def search_transcripts(
             language=language,
             title_filter=title_filter,
             file_uuid=file_uuid,
+            exclude_file_uuids=hidden,
         )
 
     return payload
@@ -403,6 +414,9 @@ def search_match_count(
             file_uuid=file_uuid,
             organization_id=ctx.org_id,
             is_admin=unavailable_list_exempt(ctx.bypass),
+            # A whole-corpus count leaves out the caller's hidden files (issue #1102); a
+            # count inside one file the caller opened does not.
+            exclude_file_uuids=None if file_uuid else hidden_uuids(db, ctx.user.id),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match get_available_filters' raise below; this module
@@ -418,6 +432,7 @@ def search_match_count(
 def search_suggestions(
     q: str = Query(..., min_length=2, description="Search prefix"),
     limit: int = Query(8, ge=1, le=20, description="Max suggestions"),
+    db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> list[dict[str, Any]]:
@@ -457,6 +472,7 @@ def search_suggestions(
             limit=limit,
             organization_id=ctx.org_id,
             is_admin=unavailable_list_exempt(ctx.bypass),
+            exclude_file_uuids=hidden_uuids(db, ctx.user.id),
         )
     except QuarantineExclusionUnavailableError as e:
         raise HTTPException(
@@ -467,6 +483,7 @@ def search_suggestions(
 
 @router.get("/filters")
 def get_available_filters(
+    db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
 ) -> dict[str, Any]:
@@ -498,6 +515,7 @@ def get_available_filters(
             user_id=ctx.user.id,
             organization_id=ctx.org_id,
             is_admin=unavailable_list_exempt(ctx.bypass),
+            exclude_file_uuids=hidden_uuids(db, ctx.user.id),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match _summary_search_payload's masking-outage raise

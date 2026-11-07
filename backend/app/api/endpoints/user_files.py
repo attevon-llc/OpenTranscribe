@@ -36,6 +36,7 @@ from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
+from app.services.hidden_media_service import exclude_hidden_for
 from app.services.request_context import RequestContext
 from app.services.task_recovery_service import task_recovery_service
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
@@ -155,6 +156,9 @@ def get_user_file_status(
         problem_query = exclude_unavailable(
             problem_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
         )
+        # A file the caller hid stays out of their dashboard lists too (issue #1102); the
+        # status counts above stay whole, because hiding is not deleting.
+        problem_query = exclude_hidden_for(problem_query, user_id)
 
         problem_files = []
         for file in problem_query.all():
@@ -201,8 +205,11 @@ def get_user_file_status(
         # The real leak this item fixes: a file quarantined within the last 24h of
         # upload would otherwise still report its filename/status/duration here.
         # Applied BEFORE `.limit()` — SQLAlchemy refuses `.filter()` after a LIMIT.
-        recent_query = exclude_unavailable(
-            recent_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
+        recent_query = exclude_hidden_for(
+            exclude_unavailable(
+                recent_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
+            ),
+            user_id,
         ).limit(10)
 
         recent_files = []

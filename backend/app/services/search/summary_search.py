@@ -157,6 +157,7 @@ def search_summaries(
     language: str | None = None,
     title_filter: str | None = None,
     file_uuid: str | None = None,
+    exclude_file_uuids: list[str] | None = None,
 ) -> SummarySearchResult:
     """Hybrid (BM25 + kNN) search over the OpenSearch summary plane (issue #963).
 
@@ -223,6 +224,7 @@ def search_summaries(
         title_filter=title_filter,
         file_uuid=file_uuid,
         quarantined_file_uuids=quarantined,
+        exclude_file_uuids=exclude_file_uuids,
     )
 
     results: list[SummaryHit] = []

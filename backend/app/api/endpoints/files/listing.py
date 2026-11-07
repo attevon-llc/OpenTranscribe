@@ -31,6 +31,9 @@ from app.schemas.user import UserSearchResult
 from app.services.delete_permissions import can_delete_file
 from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
+from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
+from app.services.hidden_media_service import apply_hidden_mode
+from app.services.hidden_media_service import hidden_file_ids_among
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
 
@@ -105,12 +108,13 @@ def _sort_and_page(
 
 
 def _format_list_page(db: Session, result: list[MediaFile], ctx: RequestContext) -> list:
-    """Format one gallery page: presigned URLs, speaker chips and the delete capability."""
+    """Format one gallery page: presigned URLs, speaker chips, delete capability, hidden mark."""
     current_user = ctx.user
     org_scope = ctx.org_id
     # One privacy view for the page: the speaker chips ask the voiceprint policy per FILE
     # scope, and a page of files spans a handful of scopes, not one per speaker (#1280).
     privacy = PrivacyView(db)
+    hidden_ids = hidden_file_ids_among(db, current_user.id, (f.id for f in result))
 
     # Format each file with URLs and formatted fields
     formatted_files = []
@@ -127,6 +131,7 @@ def _format_list_page(db: Session, result: list[MediaFile], ctx: RequestContext)
             is_org_admin=ctx.is_org_admin,
             bypass=ctx.bypass,
         )
+        formatted_file.is_hidden = file.id in hidden_ids
         formatted_files.append(formatted_file)
     return formatted_files
 
@@ -162,6 +167,12 @@ def list_media_files(
         None
     ),  # ['pending', 'processing', 'completed', 'error', 'cancelling', 'cancelled', 'orphaned']
     transcript_search: str | None = None,  # Search in transcript content
+    # Per-user hide (issue #1102): the caller's hidden files are left out by default.
+    hidden: str = Query(
+        "exclude",
+        pattern=HIDDEN_MODE_PATTERN,
+        description="Your hidden files: 'exclude' (default), 'include', or 'only'",
+    ),
     # Sort parameters (after filters to avoid parameter shifting)
     sort_by: str = Query(
         "upload_time",
@@ -242,6 +253,8 @@ def list_media_files(
     base_query = exclude_unavailable(
         base_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
     )
+    # The caller's own view preference, applied after availability (which always wins).
+    base_query = apply_hidden_mode(base_query, user_id, hidden)
 
     # Prepare filters dictionary
     filters: dict[str, Any] = {
@@ -293,6 +306,11 @@ def get_metadata_filters_endpoint(
     owner: list[UUID] | None = Query(
         None, description="Filter to specific owner UUID(s); repeatable (issue #966)"
     ),
+    hidden: str = Query(
+        "exclude",
+        pattern=HIDDEN_MODE_PATTERN,
+        description="Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+    ),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate
@@ -305,6 +323,7 @@ def get_metadata_filters_endpoint(
         organization_id=ctx.org_id,
         include_quarantined=unavailable_list_exempt(ctx.bypass),
         owner_user_ids=resolve_owner_user_ids(db, owner),
+        hidden=hidden,
     )
 
 

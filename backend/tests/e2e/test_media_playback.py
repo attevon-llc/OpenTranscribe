@@ -19,7 +19,6 @@ module) for video; ``owned_media_factory`` for the one test that writes (a comme
 
 from __future__ import annotations
 
-import json
 import re
 import uuid
 from collections.abc import Iterator
@@ -32,6 +31,7 @@ from conftest import OWNED_MEDIA_PREFIX
 from conftest import _generate_media
 from conftest import delete_media_file
 from conftest import wait_for_stable_completion
+from media_player import CONTROL_NAMES
 from media_player import MediaPlayer
 from media_player import app_label
 from media_player import speed_name
@@ -353,13 +353,9 @@ class TestVideoPlayback:
 
         captions_before = player.captions_on()
         keys.press("c")
-        expect(player.control("captions").first).to_have_attribute(
-            "aria-pressed", json.dumps(not captions_before)
-        )
+        player.wait_for_captions(not captions_before)
         keys.press("c")
-        expect(player.control("captions").first).to_have_attribute(
-            "aria-pressed", json.dumps(captions_before)
-        )
+        player.wait_for_captions(captions_before)
 
         keys.press("l")
         player.wait_for("m.loop")
@@ -393,6 +389,88 @@ class TestVideoPlayback:
         assert player.captions_on() == captions_before
         # Nothing was submitted: the comment exists only in the textarea.
         box.fill("")
+
+
+# ---------------------------------------------------------------------------
+# What the replacement adds over Plyr (#1327 lane C): each of these fails on Plyr
+# ---------------------------------------------------------------------------
+
+#: Any Arabic letter: a control named in Arabic, not in English.
+ARABIC = re.compile(r"[\u0600-\u06ff]")
+
+
+class TestPlayerLanguageAndAccessibility:
+    def test_controls_are_named_in_arabic_in_the_arabic_ui(
+        self, browser_page: Page, base_url: str, owned_video: dict
+    ) -> None:
+        """Plyr's controls were English in every locale (plan PC2); these follow the UI."""
+        page = browser_page
+        page.context.add_init_script("window.localStorage.setItem('locale', 'ar')")
+        player = _open_file(page, base_url, owned_video["uuid"])
+        expect(page.locator("html")).to_have_attribute("dir", "rtl")
+        expect(player.container.get_by_role("button", name=ARABIC).first).to_be_visible(
+            timeout=15_000
+        )
+        expect(player.control("play")).to_have_count(0)
+        _no_console_errors(page)
+
+    def test_settings_menu_mirrors_in_rtl(
+        self, browser_page: Page, base_url: str, owned_video: dict
+    ) -> None:
+        """A menu row runs from the inline start: icon then label then value, right to left in RTL.
+
+        Measured on the Speed row's first and last parts (its icon and its current-value hint).
+        Plyr's menu never mirrored (plan PC1).
+        """
+        page = browser_page
+        player = _open_file(page, base_url, owned_video["uuid"])
+        row_js = """el => {
+          const first = el.firstElementChild.getBoundingClientRect();
+          const last = el.lastElementChild.getBoundingClientRect();
+          return {first: first.x, last: last.x};
+        }"""
+
+        player.open_settings()
+        speed = page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"]).first
+        ltr = speed.evaluate(row_js)
+        assert ltr["first"] < ltr["last"], ltr
+        page.keyboard.press("Escape")
+        expect(speed).to_be_hidden()
+
+        # What the app's locale store does for Arabic (stores/locale.ts).
+        page.evaluate("() => { document.documentElement.dir = 'rtl'; }")
+        player.open_settings()
+        rtl = speed.evaluate(row_js)
+        assert rtl["first"] > rtl["last"], rtl
+
+    def test_play_is_announced_to_screen_readers(
+        self, browser_page: Page, base_url: str, owned_video: dict
+    ) -> None:
+        player = _open_file(browser_page, base_url, owned_video["uuid"])
+        player.click_play_toggle()
+        expect(player.status_region().first).to_contain_text("Playing", timeout=5_000)
+        player.pause_media()
+
+    def test_phone_viewport_plays_on_tap_and_offers_fullscreen(
+        self, browser: Any, shared_auth_state: str, base_url: str, owned_video: dict
+    ) -> None:
+        context = browser.new_context(
+            storage_state=shared_auth_state,
+            viewport={"width": 390, "height": 844},
+            is_mobile=True,
+            has_touch=True,
+            ignore_https_errors=True,
+        )
+        page = context.new_page()
+        try:
+            player = _open_file(page, base_url, owned_video["uuid"])
+            expect(player.control("fullscreen").first).to_be_visible()
+            player.control("play").last.tap()
+            player.wait_for("!m.paused", timeout=20_000)
+            player.pause_media()
+        finally:
+            page.close()
+            context.close()
 
 
 # ---------------------------------------------------------------------------

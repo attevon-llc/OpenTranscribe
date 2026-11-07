@@ -20,10 +20,9 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
-from pydantic_settings import BaseSettings
-from pydantic_settings import SettingsConfigDict
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.base import get_db
 
 logger = logging.getLogger(__name__)
@@ -35,16 +34,8 @@ _MAX_ALERTS = 10
 _MAX_TEXT = 200
 
 
-class _WebhookSettings(BaseSettings):
-    """The webhook's own secret, kept out of ``Settings`` (``app/core/config.py`` is at its size cap)."""
-
-    model_config = SettingsConfigDict(extra="ignore")
-
-    ALERTMANAGER_WEBHOOK_TOKEN: str = ""
-
-
 def _authenticated(request: Request) -> bool:
-    expected = _WebhookSettings().ALERTMANAGER_WEBHOOK_TOKEN
+    expected = settings.ALERTMANAGER_WEBHOOK_TOKEN
     if not expected:
         return False
     header = request.headers.get("authorization", "")

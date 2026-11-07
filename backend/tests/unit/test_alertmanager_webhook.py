@@ -34,7 +34,7 @@ PAYLOAD = {
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("ALERTMANAGER_WEBHOOK_TOKEN", TOKEN)
+    monkeypatch.setattr(mod.settings, "ALERTMANAGER_WEBHOOK_TOKEN", TOKEN)
     app = FastAPI()
     app.include_router(mod.router)
     app.dependency_overrides[get_db] = lambda: MagicMock()
@@ -56,7 +56,7 @@ def test_missing_or_wrong_token_is_refused_and_notifies_nobody(client):
 
 
 def test_unset_token_fails_closed_even_for_an_empty_bearer(client, monkeypatch):
-    monkeypatch.setenv("ALERTMANAGER_WEBHOOK_TOKEN", "")
+    monkeypatch.setattr(mod.settings, "ALERTMANAGER_WEBHOOK_TOKEN", "")
     with patch("app.services.backup_alerts._notify_admins") as notify:
         assert (
             client.post(PATH, json=PAYLOAD, headers={"Authorization": "Bearer "}).status_code == 401

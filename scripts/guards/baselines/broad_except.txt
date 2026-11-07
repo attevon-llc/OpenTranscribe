@@ -294,7 +294,7 @@ backend/app/tasks/summary_retry.py	4	ratchet: may only go down
 backend/app/tasks/tenant_backfill_task.py	3	ratchet: may only go down
 backend/app/tasks/thumbnail.py	2	ratchet: may only go down
 backend/app/tasks/thumbnail_migration.py	4	ratchet: may only go down
-backend/app/tasks/topic_extraction.py	6	ratchet: may only go down
+backend/app/tasks/topic_extraction.py	5	ratchet: may only go down
 backend/app/tasks/transcript_document.py	3	ratchet: may only go down
 backend/app/tasks/transcription/cloud_asr.py	2	ratchet: may only go down
 backend/app/tasks/transcription/context.py	2	ratchet: may only go down

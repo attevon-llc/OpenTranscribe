@@ -10,6 +10,7 @@ from app import models
 from app.api.deps_context import get_base_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.user_settings_common import _upsert_user_setting
+from app.core.env import env_bool
 from app.core.env import is_truthy
 from app.db.base import get_db
 from app.schemas.speaker_attribute_settings import SpeakerAttributeSettings
@@ -139,11 +140,10 @@ def get_speaker_attribute_system_defaults(
     current_user: models.User = Depends(get_current_active_user),
 ) -> SpeakerAttributeSystemDefaults:
     """Get system-level speaker attribute defaults."""
-    import os
 
     from app.services.system_settings_service import get_settings_map
 
-    env_enabled = os.environ.get("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", "true").lower() == "true"
+    env_enabled = env_bool("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", True)
 
     # Single SELECT for all four keys instead of four round-trips.
     vals = get_settings_map(

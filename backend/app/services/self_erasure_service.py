@@ -28,6 +28,7 @@ from app.core.constants import DEFAULT_GDPR_SELF_ERASURE_GRACE_DAYS
 from app.core.constants import GDPR_SELF_ERASURE_ENABLED_KEY
 from app.core.constants import GDPR_SELF_ERASURE_GRACE_DAYS_KEY
 from app.core.constants import MAX_GDPR_SELF_ERASURE_GRACE_DAYS
+from app.core.env import is_truthy
 from app.models.erasure import ErasureLedgerEntry
 from app.models.user import User
 from app.services import erasure_ledger_service as ledger
@@ -54,7 +55,7 @@ def is_enabled(db: Session) -> bool:
     raw = get_setting(db, GDPR_SELF_ERASURE_ENABLED_KEY, None)
     if raw is None:
         return DEFAULT_GDPR_SELF_ERASURE_ENABLED
-    return str(raw).strip().lower() in ("1", "true", "yes", "on")
+    return is_truthy(str(raw))
 
 
 def grace_days(db: Session) -> int:

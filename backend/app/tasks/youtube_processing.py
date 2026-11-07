@@ -25,6 +25,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services import youtube_policy
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.transcription import dispatch_transcription_pipeline
@@ -481,7 +482,7 @@ def process_youtube_url_task(
                 if (
                     is_retriable
                     and self.request.retries < self.max_retries
-                    and settings.YOUTUBE_AUTO_RETRY_ENABLED
+                    and youtube_policy.current_youtube_policy().auto_retry_enabled
                 ):
                     # Calculate backoff: 30s, 120s, 480s
                     countdown = 30 * (2**self.request.retries)

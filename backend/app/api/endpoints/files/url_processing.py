@@ -27,7 +27,6 @@ from app.api.endpoints.files.url_video_import import _create_media_file_record
 from app.api.endpoints.files.url_video_import import _dispatch_url_video_task
 from app.api.endpoints.files.url_video_import import _extract_video_info
 from app.api.endpoints.files.url_video_import import _notify_url_file_created
-from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
@@ -247,9 +246,11 @@ def process_media_url(
     require_processing_allowed(db, owner_user_id=int(current_user.id), organization_id=ctx.org_id)
     try:
         # Check rate limit before processing
+        from app.services.youtube_policy import current_youtube_policy
         from app.services.youtube_rate_limiter import youtube_rate_limiter
 
-        if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+        rate_limited = current_youtube_policy().user_rate_limit_enabled
+        if rate_limited:
             allowed, reason, retry_after_seconds = youtube_rate_limiter.check_rate_limit(
                 current_user.id
             )
@@ -267,7 +268,7 @@ def process_media_url(
         transcription_options = _build_transcription_options(request_data, http_request)
 
         # Record download attempt after rate check passes
-        if settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+        if rate_limited:
             youtube_rate_limiter.record_download(current_user.id)
 
         # Handle playlist processing (early return) - currently YouTube only

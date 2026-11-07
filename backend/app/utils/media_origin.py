@@ -133,6 +133,19 @@ def resolve_same_origin_url(base_url: str, server_value: str) -> str | None:
     return resolved
 
 
+def _private_host_allowed(url: str) -> bool:
+    """True when a super administrator allowed this exact origin to be a private address."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.utils.media_private_hosts import is_private_host_allowed
+
+    try:
+        return is_private_host_allowed(url)
+    except SQLAlchemyError:
+        logger.warning("Private media host allowlist unreadable; treating %r as public-only", url)
+        return False
+
+
 def _pin_media_url(url: str, *, purpose: str) -> PinnedTarget:
     """Validate *url* and pin it to the exact address that was validated.
 
@@ -167,7 +180,7 @@ def _pin_media_url(url: str, *, purpose: str) -> PinnedTarget:
             distinguishes "private IP" from "cannot resolve" and would turn this endpoint
             into a network scanner if returned to the caller.
     """
-    target, reason = resolve_pinned_target(url)
+    target, reason = resolve_pinned_target(url, allow_private=_private_host_allowed(url))
     if target is None:
         logger.warning("Blocked %s to %r: %s", purpose, url, reason)
         raise InvalidInputError(

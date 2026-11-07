@@ -198,7 +198,7 @@ services:
     image: davidamacey/opentranscribe-docs:latest
     pull_policy: never  # Use pre-loaded image — no internet required
     ports:
-      - "${DOCS_BIND_HOST:-127.0.0.1}:${DOCS_PORT:-3030}:8080"
+      - "${DOCS_BIND_HOST:-127.0.0.1}:${DOCS_PORT:-5183}:8080"
 
   # GPU Scaled Worker - Offline overrides
   # NOTE: No 'scale' parameter here - base has scale: 0, gpu-scale.yml sets scale: 1

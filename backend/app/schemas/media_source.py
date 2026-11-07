@@ -55,6 +55,29 @@ def normalise_source_address(v: str) -> str:
     return f"{scheme}://{authority}"
 
 
+#: The 422 text for a refused address. The ``media_source_private_host`` code lets the SPA show
+#: the translated explanation; the wording is identical for a private and an unresolvable name
+#: on purpose, so this endpoint cannot be used to tell which internal names exist.
+PRIVATE_HOST_REFUSED = (
+    "media_source_private_host: This address is not publicly reachable (it is private, "
+    "loopback or does not resolve). A super administrator can allow it under "
+    "Settings > Media Sources > Private media hosts."
+)
+
+
+def _private_host_allowed(address: str) -> bool:
+    """True when a super administrator listed this origin; a database error reads as no."""
+    from sqlalchemy.exc import SQLAlchemyError
+
+    from app.utils.media_private_hosts import is_private_host_allowed
+
+    try:
+        return is_private_host_allowed(address)
+    except SQLAlchemyError:
+        logger.warning("Private media host allowlist unreadable; refusing %r", address)
+        return False
+
+
 def _validated_hostname(v: str) -> str:
     """Normalise a media source address and refuse anything not publicly reachable.
 
@@ -83,14 +106,15 @@ def _validated_hostname(v: str) -> str:
     """
     v = normalise_source_address(v)
     safe, reason = is_safe_url(v)
+    if not safe and _private_host_allowed(v):
+        # Lifts the private-address block for this exact origin only; the cloud-metadata
+        # carve-out in url_validation still applies.
+        safe, reason = is_safe_url(v, allow_private=True)
     if not safe:
         # The reason distinguishes "private address" from "cannot resolve", which would
         # turn this endpoint into a network scanner. Logged, never returned.
         logger.warning("Blocked media source hostname %r: %s", v, reason)
-        raise ValueError(
-            "Hostname must be a publicly reachable fully qualified domain name "
-            "(e.g., media.example.com)"
-        )
+        raise ValueError(PRIVATE_HOST_REFUSED)
     if v.startswith("http://"):
         logger.warning(
             "Media source %s is configured for plain http: its credentials will be sent "

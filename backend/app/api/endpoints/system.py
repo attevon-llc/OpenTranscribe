@@ -1,7 +1,6 @@
 """System endpoints accessible to all authenticated users."""
 
 import logging
-import os
 import platform
 from typing import Any
 from typing import TypedDict
@@ -23,6 +22,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
 from app.core.capabilities import require_capability
 from app.core.config import settings
+from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.core.version import APP_VERSION
 from app.db.base import get_db
@@ -106,7 +106,7 @@ def _device_mode_info(gpu_stats: list[dict[str, Any]]) -> dict[str, Any]:
     via FORCE_CPU_MODE" from "host has no working GPU" so the UI can
     show the right reason text.
     """
-    force_cpu = os.getenv("FORCE_CPU_MODE", "false").strip().lower() == "true"
+    force_cpu = env_bool("FORCE_CPU_MODE", False)
     first_gpu = gpu_stats[0] if gpu_stats else {}
     gpu_available = first_gpu.get("available") is True
     # On fresh GPU-host startup, get_gpu_usage() returns

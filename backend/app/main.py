@@ -1,5 +1,7 @@
 # Telemetry opt-outs must be in os.environ before anything can import pyannote or
 # huggingface_hub (both read them at import). Keep this the first import.
+from app.core.env import env_bool
+
 from app.core import privacy_env  # noqa: F401  # isort: skip
 
 # isort: split
@@ -287,7 +289,7 @@ def _resolve_docs_urls() -> tuple[str | None, str | None, str | None]:
     Returns:
         The three URLs, or ``(None, None, None)`` when the docs are disabled.
     """
-    opted_in = os.getenv("ENABLE_API_DOCS", "").strip().lower() in ("1", "true", "yes")
+    opted_in = env_bool("ENABLE_API_DOCS", False)
     if settings.is_hardened and not opted_in:
         return None, None, None
     return (

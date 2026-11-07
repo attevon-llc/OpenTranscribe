@@ -27,6 +27,7 @@ import pytest
 
 from app.core.config import settings
 from app.services import youtube_rate_limiter as yrl
+from tests.helpers import set_youtube_policy
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _REDIS_HOST = "127.0.0.1"
@@ -125,7 +126,7 @@ class TestGracefulDegradation:
     """The two documented "fail open" paths, exercised without touching a real Redis."""
 
     def test_a_disabled_feature_never_even_looks_at_redis(self, monkeypatch):
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", False)
+        set_youtube_policy(monkeypatch, user_rate_limit_enabled=False)
         limiter = yrl.YouTubeRateLimiter()
 
         def _poisoned(_self):
@@ -143,14 +144,14 @@ class TestGracefulDegradation:
         }
 
     def test_an_unreachable_redis_allows_the_request(self, monkeypatch):
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", True)
+        set_youtube_policy(monkeypatch, user_rate_limit_enabled=True)
         limiter = yrl.YouTubeRateLimiter()
         monkeypatch.setattr(type(limiter), "redis", property(lambda self: None))
 
         assert limiter.check_rate_limit(123) == (True, "", None)
 
     def test_an_unreachable_redis_reports_the_unlimited_sentinel(self, monkeypatch):
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", True)
+        set_youtube_policy(monkeypatch, user_rate_limit_enabled=True)
         limiter = yrl.YouTubeRateLimiter()
         monkeypatch.setattr(type(limiter), "redis", property(lambda self: None))
 
@@ -182,9 +183,12 @@ class TestSlidingWindowAgainstRealRedis:
         monkeypatch.setattr(settings, "REDIS_HOST", _REDIS_HOST)
         monkeypatch.setattr(settings, "REDIS_PORT", str(_REDIS_PORT))
         monkeypatch.setattr(settings, "REDIS_PASSWORD", _REDIS_PASSWORD or "")
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", True)
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 3)
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_PER_DAY", 5)
+        set_youtube_policy(
+            monkeypatch,
+            user_rate_limit_enabled=True,
+            user_rate_limit_per_hour=3,
+            user_rate_limit_per_day=5,
+        )
 
         limiter = yrl.YouTubeRateLimiter()
         # A synthetic NEGATIVE user id: real user ids are positive auto-increment
@@ -224,7 +228,12 @@ class TestSlidingWindowAgainstRealRedis:
 
     def test_daily_limit_blocks_even_with_hourly_headroom(self, limiter_env, monkeypatch):
         limiter, user_id = limiter_env
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_PER_HOUR", 1000)
+        set_youtube_policy(
+            monkeypatch,
+            user_rate_limit_enabled=True,
+            user_rate_limit_per_hour=1000,
+            user_rate_limit_per_day=5,
+        )
         for _ in range(5):  # the configured daily limit
             limiter.record_download(user_id)
 
@@ -268,7 +277,7 @@ class TestSlidingWindowAgainstRealRedis:
 
     def test_disabled_record_download_leaves_no_trace(self, limiter_env, monkeypatch):
         limiter, user_id = limiter_env
-        monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", False)
+        set_youtube_policy(monkeypatch, user_rate_limit_enabled=False)
 
         limiter.record_download(user_id)
 

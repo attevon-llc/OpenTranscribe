@@ -17,6 +17,7 @@ from typing import Any
 
 from app.core import stage_timing
 from app.core.enums import TranscriptionStage
+from app.core.env import env_bool
 from app.core.worker_shutdown import shutdown_requested
 
 if TYPE_CHECKING:
@@ -87,11 +88,10 @@ def _overlap_diarization_enabled(tc: TranscriptionConfig) -> bool:
     on base_url serves both call sites. The cheap config/env checks here still run first so
     the probe fires only when it can actually change the answer.
     """
-    import os
 
     if tc.diarizer_backend.lower() != "native":
         return False
-    if os.environ.get("DIAR_OVERLAP", "1").lower() in ("0", "false", "no"):
+    if not env_bool("DIAR_OVERLAP", True):
         return False
 
     from app.transcription.diar_sidecar_status import sidecar_ready

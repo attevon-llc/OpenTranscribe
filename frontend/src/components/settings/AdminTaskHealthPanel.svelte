@@ -17,6 +17,7 @@
   import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
+  import YouTubePolicySettings from '$components/settings/YouTubePolicySettings.svelte';
   import RecoveryActionRow from '$components/settings/RecoveryActionRow.svelte';
   import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
   import Badge from '$components/ui/Badge.svelte';
@@ -232,6 +233,7 @@
 
   <div class="settings-form">
     <RetrySettings />
+    <YouTubePolicySettings />
 
     {#if taskHealthLoading}
       <SettingsSkeleton variant="dashboard" label={$t('settings.taskHealth.loadingMessage')} />

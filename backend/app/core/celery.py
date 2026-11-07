@@ -338,10 +338,7 @@ celery_app.conf.update(
     worker_soft_shutdown_timeout=env_float("CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT", 30.0),
     # Also wait (and so also requeue cleanly) when the worker holds only reserved or
     # ETA-scheduled messages and runs nothing.
-    worker_enable_soft_shutdown_on_idle=os.getenv(
-        "CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE", "true"
-    ).lower()
-    in ("1", "true", "yes"),
+    worker_enable_soft_shutdown_on_idle=env_bool("CELERY_WORKER_SOFT_SHUTDOWN_ON_IDLE", True),
     # Explicitly OFF. On Redis an unacked message survives a dropped connection in the
     # broker's `unacked` hash and the worker can still ack it after reconnecting; turning
     # this on would kill every running transcription on a transient broker blip and leave

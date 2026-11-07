@@ -170,8 +170,8 @@ describe('Recovery tab: lists and page consistency', () => {
   it('draws the retries card and the actions card with the same card component', async () => {
     const { container } = await renderLoaded();
     const cards = container.querySelectorAll('.tx-form .settings-section');
-    // retries + actions + stuck tasks + inconsistent files
-    expect(cards).toHaveLength(4);
+    // retries + youtube policy + actions + stuck tasks + inconsistent files
+    expect(cards).toHaveLength(5);
     for (const card of cards) {
       expect(card.querySelector('h3.section-title')).not.toBeNull();
     }

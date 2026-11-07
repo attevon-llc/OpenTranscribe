@@ -12,7 +12,9 @@
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
+  import { user } from '$stores/auth';
   import Spinner from '../ui/Spinner.svelte';
+  import TranscriptionDefaultsCard from './TranscriptionDefaultsCard.svelte';
   import SettingsCard from './transcription/SettingsCard.svelte';
   import FormActions from './transcription/FormActions.svelte';
   import AccuracyAdvancedCards from './transcription/AccuracyAdvancedCards.svelte';
@@ -40,6 +42,8 @@
   let originalHallucinationEnabled = false;
   let originalHallucinationValue = 2.0;
   let originalRepetitionPenalty = 1.0;
+
+  $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
 
   // Deployment-owned: hidden here, and the server ignores writes to them.
   $: advancedEnabled = isCapabilityEnabled($capabilities, 'transcription.advanced');
@@ -231,6 +235,10 @@
           bind:repetitionPenalty
           {systemDefaults}
         />
+      {/if}
+
+      {#if isAdmin}
+        <TranscriptionDefaultsCard />
       {/if}
 
       <FormActions

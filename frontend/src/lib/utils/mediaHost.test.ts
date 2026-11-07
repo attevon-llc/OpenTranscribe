@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { hostIdentity, isPlainHttpSource, sourceOrigin } from '$lib/utils/mediaHost';
+import {
+  hostIdentity,
+  isPlainHttpSource,
+  isPrivateHostRefusal,
+  sourceOrigin,
+} from '$lib/utils/mediaHost';
 
 describe('hostIdentity', () => {
   it('lower-cases the hostname and fills in the default port for the protocol', () => {
@@ -52,5 +57,31 @@ describe('isPlainHttpSource', () => {
     expect(isPlainHttpSource(' HTTP://media.example.com')).toBe(true);
     expect(isPlainHttpSource('https://media.example.com')).toBe(false);
     expect(isPlainHttpSource('media.example.com')).toBe(false);
+  });
+});
+
+describe('isPrivateHostRefusal', () => {
+  const refusal = {
+    response: {
+      data: {
+        detail: [
+          { type: 'value_error', msg: 'Value error, media_source_private_host: not reachable' },
+        ],
+      },
+    },
+  };
+
+  it('recognises the stable code inside a 422 validation detail', () => {
+    expect(isPrivateHostRefusal(refusal)).toBe(true);
+  });
+
+  it('ignores other validation errors and non-API errors', () => {
+    expect(
+      isPrivateHostRefusal({
+        response: { data: { detail: [{ msg: 'Value error, Invalid port number' }] } },
+      })
+    ).toBe(false);
+    expect(isPrivateHostRefusal(new Error('network'))).toBe(false);
+    expect(isPrivateHostRefusal(undefined)).toBe(false);
   });
 });

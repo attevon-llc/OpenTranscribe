@@ -34,10 +34,6 @@ from app.core.constants import DEFAULT_REPETITION_PENALTY
 from app.core.constants import DEFAULT_SPEAKER_PROMPT_BEHAVIOR
 from app.core.constants import DEFAULT_TRANSCRIPTION_MAX_SPEAKERS
 from app.core.constants import DEFAULT_TRANSCRIPTION_MIN_SPEAKERS
-from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
-from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
-from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
-from app.core.constants import DEFAULT_VAD_THRESHOLD
 from app.core.constants import TRANSCRIPTION_SETTING_GROUPS
 from app.core.constants import VALID_DIARIZATION_SOURCES
 from app.core.constants import VALID_SPEAKER_PROMPT_BEHAVIORS
@@ -52,6 +48,7 @@ from app.schemas.transcription_settings import TranscriptionSettings
 from app.schemas.transcription_settings import TranscriptionSettingsUpdate
 from app.schemas.transcription_settings import TranscriptionSystemDefaults
 from app.services import system_settings_service
+from app.services.transcription_defaults import get_deployment_vad_defaults
 from app.utils.lite_mode import is_lite_deployment
 
 logger = logging.getLogger(__name__)
@@ -156,6 +153,7 @@ def get_transcription_settings(
         str(DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"]),
     )
 
+    deployment = get_deployment_vad_defaults(db)
     # Build response with user values or defaults
     return TranscriptionSettings(
         min_speakers=int(min_speakers_value),
@@ -171,16 +169,16 @@ def get_transcription_settings(
         == "true",
         llm_output_language=llm_output_language_value,
         vad_threshold=float(
-            settings_map.get("transcription_vad_threshold", str(DEFAULT_VAD_THRESHOLD))
+            settings_map.get("transcription_vad_threshold", str(deployment.vad_threshold))
         ),
         vad_min_silence_ms=int(
-            settings_map.get("transcription_vad_min_silence_ms", str(DEFAULT_VAD_MIN_SILENCE_MS))
+            settings_map.get("transcription_vad_min_silence_ms", str(deployment.vad_min_silence_ms))
         ),
         vad_min_speech_ms=int(
-            settings_map.get("transcription_vad_min_speech_ms", str(DEFAULT_VAD_MIN_SPEECH_MS))
+            settings_map.get("transcription_vad_min_speech_ms", str(deployment.vad_min_speech_ms))
         ),
         vad_speech_pad_ms=int(
-            settings_map.get("transcription_vad_speech_pad_ms", str(DEFAULT_VAD_SPEECH_PAD_MS))
+            settings_map.get("transcription_vad_speech_pad_ms", str(deployment.vad_speech_pad_ms))
         ),
         hallucination_silence_threshold=(
             float(settings_map["transcription_hallucination_silence_threshold"])
@@ -363,6 +361,7 @@ def reset_transcription_settings(
 
     # Return defaults including system-level speaker settings
     garbage_default = system_settings_service.get_garbage_cleanup_config(db)
+    deployment = get_deployment_vad_defaults(db)
     default_settings = {
         "min_speakers": app_settings.MIN_SPEAKERS,
         "max_speakers": app_settings.MAX_SPEAKERS,
@@ -372,10 +371,10 @@ def reset_transcription_settings(
         "source_language": DEFAULT_TRANSCRIPTION_SETTINGS["source_language"],
         "translate_to_english": DEFAULT_TRANSCRIPTION_SETTINGS["translate_to_english"],
         "llm_output_language": DEFAULT_TRANSCRIPTION_SETTINGS["llm_output_language"],
-        "vad_threshold": DEFAULT_VAD_THRESHOLD,
-        "vad_min_silence_ms": DEFAULT_VAD_MIN_SILENCE_MS,
-        "vad_min_speech_ms": DEFAULT_VAD_MIN_SPEECH_MS,
-        "vad_speech_pad_ms": DEFAULT_VAD_SPEECH_PAD_MS,
+        "vad_threshold": deployment.vad_threshold,
+        "vad_min_silence_ms": deployment.vad_min_silence_ms,
+        "vad_min_speech_ms": deployment.vad_min_speech_ms,
+        "vad_speech_pad_ms": deployment.vad_speech_pad_ms,
         "hallucination_silence_threshold": DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
         "repetition_penalty": DEFAULT_REPETITION_PENALTY,
     }
@@ -408,6 +407,7 @@ def get_transcription_system_defaults(
         garbage cleanup defaults, valid behavior options, and language options
     """
     garbage_default = system_settings_service.get_garbage_cleanup_config(db)
+    deployment = get_deployment_vad_defaults(db)
     return TranscriptionSystemDefaults(
         min_speakers=app_settings.MIN_SPEAKERS,
         max_speakers=app_settings.MAX_SPEAKERS,
@@ -417,10 +417,10 @@ def get_transcription_system_defaults(
         available_source_languages=WHISPER_LANGUAGES,
         available_llm_output_languages=LLM_OUTPUT_LANGUAGES,
         common_languages=COMMON_LANGUAGES,
-        vad_threshold=DEFAULT_VAD_THRESHOLD,
-        vad_min_silence_ms=DEFAULT_VAD_MIN_SILENCE_MS,
-        vad_min_speech_ms=DEFAULT_VAD_MIN_SPEECH_MS,
-        vad_speech_pad_ms=DEFAULT_VAD_SPEECH_PAD_MS,
+        vad_threshold=deployment.vad_threshold,
+        vad_min_silence_ms=deployment.vad_min_silence_ms,
+        vad_min_speech_ms=deployment.vad_min_speech_ms,
+        vad_speech_pad_ms=deployment.vad_speech_pad_ms,
         hallucination_silence_threshold=DEFAULT_HALLUCINATION_SILENCE_THRESHOLD,
         repetition_penalty=DEFAULT_REPETITION_PENALTY,
         diarization_source_default=DEFAULT_DIARIZATION_SOURCE,

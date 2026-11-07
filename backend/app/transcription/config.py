@@ -12,6 +12,7 @@ from typing import Any
 from typing import ClassVar
 
 from app.core.config import settings
+from app.core.env import env_bool
 from app.core.env import env_int
 
 logger = logging.getLogger(__name__)
@@ -46,13 +47,6 @@ DEFAULT_PER_TASK_HOST_MB = 2048
 # once per worker process — without this, every transcription task would
 # re-emit the same advice into the worker logs.
 _CPU_MODE_WARNING_EMITTED = False
-
-
-def _parse_optional_float(value: str) -> float | None:
-    """Parse a string to float, returning None for empty/whitespace."""
-    if not value or not value.strip():
-        return None
-    return float(value.strip())
 
 
 @dataclass
@@ -182,28 +176,18 @@ class TranscriptionConfig:
             device=transcription_device,
             diarization_device=diarization_device,
             device_index=whisperx_config.get("device_index", 0),
-            source_language=os.getenv("SOURCE_LANGUAGE", "auto"),
             translate_to_english=False,
-            enable_dedup=os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true",
+            enable_dedup=env_bool("ENABLE_SEGMENT_DEDUP", True),
             min_speakers=settings.MIN_SPEAKERS,
             max_speakers=settings.MAX_SPEAKERS,
             num_speakers=None,
             hf_token=get_hf_token(),
-            enable_native_embeddings=os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower()
-            == "true",
-            enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()
-            == "true",
+            enable_native_embeddings=env_bool("USE_NATIVE_SPEAKER_EMBEDDINGS", True),
+            enable_overlap_detection=env_bool("ENABLE_OVERLAP_DETECTION", True),
             overlap_min_duration=float(os.getenv("OVERLAP_MIN_DURATION", "0.25")),
-            # VAD settings
-            vad_threshold=float(os.getenv("VAD_THRESHOLD", "0.5")),
-            vad_min_silence_ms=int(os.getenv("VAD_MIN_SILENCE_MS", "2000")),
-            vad_min_speech_ms=int(os.getenv("VAD_MIN_SPEECH_MS", "250")),
-            vad_speech_pad_ms=int(os.getenv("VAD_SPEECH_PAD_MS", "400")),
-            # Accuracy settings
-            hallucination_silence_threshold=_parse_optional_float(
-                os.getenv("WHISPER_HALLUCINATION_THRESHOLD", "")
-            ),
-            repetition_penalty=float(os.getenv("WHISPER_REPETITION_PENALTY", "1.0")),
+            # Language, VAD and accuracy settings are per job: the task supplies them as
+            # overrides (user or deployment settings), so the dataclass defaults are only
+            # a fallback for callers that never transcribe.
             concurrent_requests=cls._resolve_concurrent_requests(),
             diarizer_backend=cls._resolve_diarizer_backend(),
         )

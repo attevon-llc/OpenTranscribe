@@ -396,9 +396,9 @@ def periodic_health_check_task(self: Any) -> dict[str, Any]:
             # YouTube downloads use a strict per-cycle cap to stay within
             # rate limits and avoid bans.  Transcription retries are less
             # sensitive so they get a larger batch.
-            from app.core.config import settings as _settings
+            from app.services.youtube_policy import get_youtube_policy
 
-            yt_batch = _settings.YOUTUBE_RECOVERY_BATCH_SIZE  # default 3
+            yt_batch = get_youtube_policy(db).recovery_batch_size  # default 3
             transcription_batch = 20
 
             yt_retries, tx_retries = task_detection_service.identify_retriable_error_files_split(

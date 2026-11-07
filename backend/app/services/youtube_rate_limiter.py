@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.redis import redis_tls_kwargs
+from app.services import youtube_policy
 
 if TYPE_CHECKING:
     from redis import Redis
@@ -112,7 +113,8 @@ class YouTubeRateLimiter:
             when it could not be determined (e.g. the zset raced empty between
             the count and this lookup).
         """
-        if not settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+        policy = youtube_policy.current_youtube_policy()
+        if not policy.user_rate_limit_enabled:
             return (True, "", None)
 
         try:
@@ -134,10 +136,10 @@ class YouTubeRateLimiter:
             # Count current hour
             hourly_count = client.zcount(hour_key, hour_ago, now)
 
-            if hourly_count >= settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR:
+            if hourly_count >= policy.user_rate_limit_per_hour:
                 return (
                     False,
-                    f"Hourly limit exceeded ({settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR}/hour). "
+                    f"Hourly limit exceeded ({policy.user_rate_limit_per_hour}/hour). "
                     f"Try again in a few minutes.",
                     self._seconds_until_oldest_expires(client, hour_key, 3600, now),
                 )
@@ -149,10 +151,10 @@ class YouTubeRateLimiter:
             client.zremrangebyscore(day_key, 0, day_ago)
             daily_count = client.zcount(day_key, day_ago, now)
 
-            if daily_count >= settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY:
+            if daily_count >= policy.user_rate_limit_per_day:
                 return (
                     False,
-                    f"Daily limit exceeded ({settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY}/day). "
+                    f"Daily limit exceeded ({policy.user_rate_limit_per_day}/day). "
                     f"Try again tomorrow.",
                     self._seconds_until_oldest_expires(client, day_key, 86400, now),
                 )
@@ -193,7 +195,7 @@ class YouTubeRateLimiter:
 
     def record_download(self, user_id: int) -> None:
         """Record a download attempt with timestamp."""
-        if not settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+        if not youtube_policy.current_youtube_policy().user_rate_limit_enabled:
             return
 
         try:
@@ -218,7 +220,8 @@ class YouTubeRateLimiter:
 
     def get_remaining_quota(self, user_id: int) -> dict:
         """Get remaining downloads for user."""
-        if not settings.YOUTUBE_USER_RATE_LIMIT_ENABLED:
+        policy = youtube_policy.current_youtube_policy()
+        if not policy.user_rate_limit_enabled:
             return {
                 "hourly_remaining": -1,  # -1 = unlimited
                 "daily_remaining": -1,
@@ -257,12 +260,10 @@ class YouTubeRateLimiter:
                 # trips), and a value of exactly -1 is byte-identical to the sentinel
                 # this function uses elsewhere in this file to mean "unlimited" —
                 # which GET /files/youtube/quota documents as the -1 contract.
-                "hourly_remaining": max(
-                    0, settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR - hourly_count
-                ),
-                "daily_remaining": max(0, settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY - daily_count),
-                "hourly_limit": settings.YOUTUBE_USER_RATE_LIMIT_PER_HOUR,
-                "daily_limit": settings.YOUTUBE_USER_RATE_LIMIT_PER_DAY,
+                "hourly_remaining": max(0, policy.user_rate_limit_per_hour - hourly_count),
+                "daily_remaining": max(0, policy.user_rate_limit_per_day - daily_count),
+                "hourly_limit": policy.user_rate_limit_per_hour,
+                "daily_limit": policy.user_rate_limit_per_day,
             }
         except Exception as e:
             logger.warning(f"Failed to get quota: {e}")

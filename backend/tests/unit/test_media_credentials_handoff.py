@@ -26,6 +26,7 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.tasks import youtube_processing
 from app.tasks.youtube_processing import process_youtube_url_task
+from tests.helpers import set_youtube_policy
 
 CTX = "media-cred:1:file-a"
 SECRET = "hunter2-very-secret"
@@ -201,7 +202,7 @@ class _Service:
 @pytest.fixture
 def seams(monkeypatch, db_session):
     monkeypatch.setattr(youtube_processing.settings, "YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", False)
-    monkeypatch.setattr(youtube_processing.settings, "YOUTUBE_AUTO_RETRY_ENABLED", True)
+    set_youtube_policy(monkeypatch, auto_retry_enabled=True)
 
     @contextlib.contextmanager
     def _scope():

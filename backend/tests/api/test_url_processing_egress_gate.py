@@ -19,10 +19,10 @@ from fastapi import status
 import app.api.endpoints.files.url_processing as url_processing
 import app.api.endpoints.files.url_video_import as url_video_import
 import app.utils.url_validation as url_validation
-from app.core.config import settings
 from app.models.media import MediaFile
 from app.services.media_download_service import MediaDownloadService
 from tests.helpers import media_file_count
+from tests.helpers import set_youtube_policy
 
 INVALID = "Invalid URL. Please enter a valid HTTP or HTTPS URL."
 PUBLIC_IP = "93.184.216.34"
@@ -33,7 +33,7 @@ _real_getaddrinfo = socket.getaddrinfo
 @pytest.fixture
 def gate(monkeypatch):
     """Record extraction and both dispatch seams; let tests map test hostnames to IPs."""
-    monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", False)
+    set_youtube_policy(monkeypatch, user_rate_limit_enabled=False)
     extracted: list[str] = []
     tasks: list[dict] = []
     playlists: list[dict] = []

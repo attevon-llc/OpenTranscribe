@@ -17,12 +17,14 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
+from app.core.env import env_bool
+
 logger = logging.getLogger(__name__)
 
 
 def is_profiling_enabled() -> bool:
     """Check if VRAM profiling is enabled via environment variable."""
-    return os.getenv("ENABLE_VRAM_PROFILING", "false").lower() == "true"
+    return env_bool("ENABLE_VRAM_PROFILING", False)
 
 
 class VRAMProfiler:

@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
+from app.core.env import env_bool
 from app.services.audio_segment_utils import extract_audio_segment_np
 
 if TYPE_CHECKING:
@@ -45,7 +46,7 @@ def _max_concurrency() -> int:
 
 
 def _is_gpu_worker() -> bool:
-    return os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+    return env_bool("PRELOAD_GPU_MODELS", False)
 
 
 _model_users_lock = threading.Lock()

@@ -25,6 +25,8 @@ from __future__ import annotations
 from typing import Any
 from typing import Protocol
 
+from app.services.search.availability_field import AVAILABLE
+
 # ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------
@@ -100,8 +102,13 @@ class SearchService(Protocol):
         embedding: list[float] | None = None,
         *,
         organization_id: int | None,
+        availability: str = AVAILABLE,
     ) -> None:
-        """Index a transcript for full-text and optional vector search."""
+        """Index a transcript for full-text and optional vector search.
+
+        ``availability`` is the file's trash/quarantine state stamped on the document
+        (``services/search/availability_field``); readers exclude by it.
+        """
         ...
 
     def remove_speaker_embedding(self, speaker_uuid: str) -> bool:

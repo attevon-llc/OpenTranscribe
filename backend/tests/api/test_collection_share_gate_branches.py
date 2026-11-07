@@ -140,8 +140,14 @@ def test_the_transcript_search_is_scoped_to_the_tenant_and_owner(client, gov, mo
 
     seen: list[dict] = []
 
-    def record(query, transcript_search, user_id=None, *, organization_id):
-        seen.append({"user_id": user_id, "organization_id": organization_id})
+    def record(query, transcript_search, user_id=None, *, organization_id, include_quarantined):
+        seen.append(
+            {
+                "user_id": user_id,
+                "organization_id": organization_id,
+                "include_quarantined": include_quarantined,
+            }
+        )
         return query
 
     monkeypatch.setattr(filtering, "apply_transcript_search_filter", record)
@@ -155,7 +161,9 @@ def test_the_transcript_search_is_scoped_to_the_tenant_and_owner(client, gov, mo
         assert (
             client.get(f"/api/collections/{personal.uuid}/media", params=params).status_code == 200
         )
+    # Neither caller holds the quarantine review exemption, so neither index query may
+    # reopen a taken-down file.
     assert seen == [
-        {"user_id": None, "organization_id": gov.org.id},
-        {"user_id": gov.alice.id, "organization_id": None},
+        {"user_id": None, "organization_id": gov.org.id, "include_quarantined": False},
+        {"user_id": gov.alice.id, "organization_id": None, "include_quarantined": False},
     ]

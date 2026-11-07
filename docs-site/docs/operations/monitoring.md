@@ -67,10 +67,12 @@ This loads `docker-compose.monitoring.yml` and brings up:
 |---------|-----|-------|
 | Prometheus | http://localhost:5186 | 15s scrape of `backend:8080/metrics`; 15-day retention |
 | Grafana | http://localhost:5185 | Login `admin` / `$GRAFANA_PASSWORD` (default `admin`) |
+| Alertmanager | http://localhost:5188 | Delivers the alerting rules below; override the port with `ALERTMANAGER_PORT` |
+| node-exporter | internal only | Host filesystem metrics for the disk alert |
 
-Both containers run `no-new-privileges`, `restart: unless-stopped`, with read-only config mounts and named data volumes. Grafana anonymous access and self-signup are disabled. Override the host ports with `PROMETHEUS_PORT` / `GRAFANA_PORT` and the password with `GRAFANA_PASSWORD` in `.env`.
+All containers run `no-new-privileges`, `restart: unless-stopped`, with read-only config mounts and named data volumes. Grafana anonymous access and self-signup are disabled. Override the host ports with `PROMETHEUS_PORT` / `GRAFANA_PORT` and the password with `GRAFANA_PASSWORD` in `.env`.
 
-Both host ports are published on **`127.0.0.1` only**, matching how the base compose file treats everything that isn't the app itself. Prometheus has no authentication at all (and runs with `--web.enable-lifecycle`), and Grafana's fallback password is `admin`, so neither belongs on `0.0.0.0`. To reach them from another machine, put them behind a reverse proxy that does authentication — don't change the binding.
+The host ports are published on **`127.0.0.1` only**, matching how the base compose file treats everything that isn't the app itself. Prometheus has no authentication at all (and runs with `--web.enable-lifecycle`), and Grafana's fallback password is `admin`, so neither belongs on `0.0.0.0`. To reach them from another machine, put them behind a reverse proxy that does authentication — don't change the binding.
 
 Under `./opentr.sh start dev --fresh <name> --port-offset N --with-monitoring`, the containers become `otfresh-<name>-prometheus` / `-grafana` and both ports are offset by `N`, so a throwaway stack gets its own monitoring instead of colliding with the main one.
 
@@ -102,8 +104,9 @@ Two dashboards are auto-provisioned into the **OpenTranscribe** folder:
 The backend's `/metrics` sees queues, not tasks. Set `WORKER_METRICS_PORT` and every Celery worker
 serves `celery_task_total{task, outcome}` and `celery_task_runtime_seconds{task}` on that port (see
 [Environment variables → Worker Task Metrics](../configuration/environment-variables.md#worker-task-metrics)).
-The bundled Prometheus does not scrape the workers; add a job per worker service, for example
-`celery-cpu-worker:9808`. Useful queries:
+The bundled Prometheus scrapes `:9808` on every worker service under the job `opentranscribe-workers`,
+so set `WORKER_METRICS_PORT=9808` and recreate the workers to see them; with it unset those targets are
+simply down. Useful queries:
 
 - failure ratio per task: `sum by (task) (rate(celery_task_total{outcome="failure"}[15m])) / sum by (task) (rate(celery_task_total[15m]))`
 - p95 run time per task: `histogram_quantile(0.95, sum by (task, le) (rate(celery_task_runtime_seconds_bucket[1h])))`
@@ -687,6 +690,43 @@ Configure Docker's logging driver to forward to syslog or a centralized log coll
 }
 ```
 
+## Alerting rules and Alertmanager
+
+The monitoring overlay ships working alerting, not just metrics. Prometheus loads
+`monitoring/prometheus/rules/opentranscribe.yml`
+([alerting rules](https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/)) and
+sends firing alerts to the bundled Alertmanager
+([configuration](https://prometheus.io/docs/alerting/latest/configuration/)).
+
+| Alert | Fires when |
+|-------|-----------|
+| `BackendDown`, `HostMetricsDown`, `AlertmanagerDown` | `up == 0` for the backend, node-exporter or Alertmanager job |
+| `WorkerMetricsTargetDown` | a worker stops answering on `WORKER_METRICS_PORT` while other workers still do (quiet when the port is not enabled at all) |
+| `DiskSpaceLow` | under 10% free on a real filesystem for 10 minutes |
+| `CeleryQueueBacklog`, `CeleryQueueStarved` | a queue holds more than 50 pending tasks for 15 minutes, or its oldest message has waited over 30 minutes |
+| `SecurityStateDegraded` | `security_state_degraded_total` increased in the last 10 minutes |
+| `AuditOutboxStuck` | `audit_outbox_stuck_events > 0` for 5 minutes (see [Governance audit outbox](#governance-audit-outbox)) |
+
+**Delivery.** Alertmanager posts to the backend at `/internal/alertmanager/webhook`, which turns
+firing alerts into notifications for every admin. Because one request notifies every admin, the
+endpoint requires `Authorization: Bearer <token>`. Set `ALERTMANAGER_WEBHOOK_TOKEN` in `.env`
+(`openssl rand -hex 32`); the same value reaches Alertmanager as a compose secret and the backend as
+an environment variable. With it unset the endpoint refuses every request. The proxy in
+`nginx/site.conf.template` denies `/internal/` outright, and Alertmanager reaches the backend over the
+compose network. Add further receivers (email, Slack, PagerDuty) in `monitoring/alertmanager/alertmanager.yml`.
+
+**Testing the rules.** Every alert has a [`promtool test rules`](https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/)
+case that fires and one that stays quiet (`monitoring/prometheus/tests/`). Run
+`scripts/check-prometheus-rules.sh` to run `promtool check config`, `check rules`, `test rules` and
+`amtool check-config` from the same digest-pinned images the overlay deploys; CI runs it in the
+pre-commit job.
+
+**Health probes.** The backend container's Docker healthcheck calls `/health/ready`, so it reports
+unhealthy when PostgreSQL or Redis is unreachable, not only when the process is down.
+
+**Request ids in logs.** Every log line carries the request id, in both `LOG_FORMAT=text`
+(`[<request id>]`, `-` outside a request) and `LOG_FORMAT=json` (`request_id`).
+
 ## Alerting Recommendations
 
 Set up alerts for these critical conditions:
@@ -696,7 +736,7 @@ Set up alerts for these critical conditions:
 | Service container down | Critical | Docker health check fails 3x | Auto-restart (Docker handles this), page if persists >5 min |
 | GPU OOM | High | `torch.cuda.OutOfMemoryError` in GPU worker logs | Reduce `BATCH_SIZE`, check for concurrent diarization |
 | Disk space under 10% | High | `df -h` or node exporter | Archive media, expand storage |
-| `gpu` queue >50 tasks | Medium | Flower API or Redis `LLEN gpu` | Scale GPU workers, prioritize batches |
+| `gpu` queue >50 tasks | Medium | `celery_queue_depth{queue="gpu"} > 50` (the `CeleryQueueBacklog` rule) | Scale GPU workers, prioritize batches |
 | OpenSearch red status | Critical | `_cluster/health` API | Check disk space, review shard allocation |
 | PostgreSQL connections >80% | Medium | `pg_stat_activity` | Increase `PG_MAX_CONNECTIONS`, check connection leaks |
 | Redis memory >80% | Medium | `redis-cli info memory` | Increase maxmemory, review eviction policy |

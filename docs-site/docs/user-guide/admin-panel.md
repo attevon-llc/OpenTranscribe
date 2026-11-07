@@ -344,7 +344,11 @@ The `content.*` events record who opened a recording, asked for its media or exp
 transcript. They are written in large numbers, so they are **off by default**: a **super admin**
 turns them on with **Content access auditing** at the top of the Audit Logs section, with no
 environment variable and no restart (it takes effect within about 30 seconds). Collection
-visibility and membership changes (and legal holds) are always recorded, whatever this switch says.
+visibility and membership changes (and legal holds) are not governed by this switch: they are
+recorded whether it is on or off. That is not a delivery guarantee. Each event is written after the
+change itself has committed, on a best-effort basis: if the audit write fails, the change stands and
+the event is missing from the trail, with only an error line in the server log. This includes the
+`content.transcript.edit` event for an edit to a held file.
 
 - A repeat view of the same recording, or a repeat request for its stream URL, by the same person
   within 15 minutes is recorded once. Downloads and exports are never collapsed: each is a copy
@@ -426,7 +430,7 @@ readable, searchable and playable.
   the hold ids.
 - **Platform staff cannot place or release an organization's hold** through the product, even a super
   admin: the screen and its API are for that organization's administrators, with no platform bypass.
-- **Audit:** placing and releasing a hold are always recorded (`content.hold.place`,
+- **Audit:** placing and releasing a hold are recorded whatever the content-auditing switch says (`content.hold.place`,
   `content.hold.release`), and so is a refused delete, cancel-upload, reprocess, retry, collection
   delete or removal from a held collection (`content.hold.refused`: the action and who holds it).
   See [Audit Log Viewer](#audit-log-viewer).

@@ -20,7 +20,7 @@ There is no button for any of this. Erasure is irreversible and is driven by API
 | A user (account-wide) | `POST /api/admin/gdpr/erase-user/{user_uuid}` | super_admin | Every recording, profile, voiceprint, chat and setting the user owns in every tenant, then the account |
 | A member inside one organization | `POST /api/org-admin/gdpr/erase-user/{user_uuid}` | organization admin, scheduled (see below) | Only the rows stamped with that organization. The account and personal data stay |
 | One recording | `POST /api/admin/gdpr/erase-file/{file_uuid}` or `POST /api/org-admin/gdpr/erase-file/{file_uuid}` | super_admin, or an organization admin for a file of their own organization | The recording, its transcript and index documents, objects and caches |
-| An organization | `POST /api/org-admin/gdpr/erase-organization?confirm=true` | organization admin, scheduled (see below) | Everything the organization owns, then the organization. Members keep their accounts |
+| An organization | `POST /api/org-admin/gdpr/erase-organization?confirm=true` | the organization's owner, scheduled (see below) | Everything the organization owns, then the organization. Members keep their accounts |
 
 Every call is recorded in the erasure ledger before anything is destroyed, comes back with a
 `ledger_uuid` and a `receipt`, and is idempotent. A request that cannot finish (a legal hold, an
@@ -31,6 +31,20 @@ unreachable store) stays open and the reconciliation sweep retries it.
 An organization admin's member or organization erasure does not run when it is asked for. It is
 recorded and runs after a delay, so a mistaken or hostile request can be stopped:
 
+- **Who.** A member erasure is open to any organization admin. Erasing the whole organization is
+  for its **owner** alone: another admin gets `403 org_owner_only`, and an organization without
+  an owner (its owner's account was deleted) gets `409 org_owner_required` until a new owner is
+  named. The owner is the earliest organization admin at the time the feature was added, and can
+  hand the role to another admin of the same organization:
+
+  ```bash
+  curl -s -b cookies.txt -X POST "$API/api/org-admin/ownership/transfer" \
+    -H 'Content-Type: application/json' -d '{"to_user_uuid": "..."}'
+  ```
+
+  The target must be an admin of the same organization (`409 not_an_org_admin` otherwise,
+  including for an unknown account), and the hand-over is recorded as `org.owner.change`. The
+  platform operator can name an owner where there is none.
 - **Re-authentication.** The request body carries the admin's password, or a current code from
   their authenticator app: `{"password": "..."}` or `{"mfa_code": "123456"}`. A wrong value is
   `403 reauth_required`; an account that has neither (single sign-on without MFA) gets
@@ -43,7 +57,8 @@ recorded and runs after a delay, so a mistaken or hostile request can be stopped
   wait longer than 21 days (the self-service cap), so a delay plus one retry stays inside the
   one-month deadline, which starts at the request.
 - **Cancel.** Any admin of the organization can list the open requests and withdraw one before
-  `scheduled_for`; after that the answer is `409 already_executing`:
+  `scheduled_for`; after that the answer is `409 already_executing`. The same list, with a Cancel
+  button, is in Settings, Scheduled erasures (requesting one is API-only):
 
   ```bash
   curl -s -b cookies.txt "$API/api/org-admin/gdpr/erasures"
@@ -56,7 +71,8 @@ recorded and runs after a delay, so a mistaken or hostile request can be stopped
   `409 request_exists`; a member erasure and the same person's own account-erasure request can
   both be open.
 - **Audit.** The organization's audit log shows `gdpr.erasure.scheduled`,
-  `gdpr.erasure.cancelled` and `gdpr.erasure.execution_started`, then the erasure's own
+  `gdpr.erasure.cancelled` and `gdpr.erasure.execution_started`, plus `org.owner.change` when the
+  owner changes, then the erasure's own
   `admin.user.delete` records. The super_admin routes still erase at once.
 
 ## The receipt

@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import svelte from 'eslint-plugin-svelte';
 import prettier from 'eslint-config-prettier';
 import globals from 'globals';
-import svelteConfig from './svelte.config.js';
+import { kitConfig } from './kit.config.js';
 
 /**
  * Flat ESLint config for Svelte 5 + TypeScript.
@@ -47,7 +47,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         parser: tseslint.parser,
-        svelteConfig,
+        svelteConfig: kitConfig,
       },
     },
     rules: {

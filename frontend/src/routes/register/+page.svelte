@@ -31,7 +31,7 @@
 
       if (!registrationAllowed) {
         toastStore.error($t('auth.registrationDisabled'));
-        goto('/login', { replaceState: true });
+        goto('/login', { replace: true });
       }
     })();
   });

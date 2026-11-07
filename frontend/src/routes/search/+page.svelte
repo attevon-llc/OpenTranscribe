@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from 'svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { goto, beforeNavigate } from '$app/navigation';
   import axiosInstance, { isRequestCancelled } from '$lib/axios';
   import { t } from '$stores/locale';
@@ -136,7 +136,7 @@
   }
 
   // Read initial state from URL
-  $: urlState = parseSearchUrl($page.url.searchParams);
+  $: urlState = parseSearchUrl(page.url.searchParams);
   $: urlQuery = urlState.query;
   $: urlPage = urlState.page;
   $: urlSort = urlState.sort;
@@ -245,7 +245,7 @@
     // Update URL without navigation
     const params = buildPageUrlParams(query, pageNum, $searchStore);
 
-    goto(`/search?${params.toString()}`, { replaceState: true, keepFocus: true });
+    goto(`/search?${params.toString()}`, { replace: true, reset: false });
 
     try {
       const res = await axiosInstance.get('/search', {
@@ -287,7 +287,7 @@
     const url = new URL(window.location.href);
     url.searchParams.delete('q');
     url.searchParams.delete('page');
-    goto(url.toString(), { replaceState: true });
+    goto(url.toString(), { replace: true });
   }
 
   function handlePageChange(event: CustomEvent<number>) {

@@ -56,7 +56,7 @@ const privacyApi = vi.hoisted(() => ({ getEffective: vi.fn() }));
 vi.mock('$lib/api/privacy', () => ({ PrivacyApi: privacyApi }));
 
 import Page from './+page.svelte';
-import { setPage } from '../../test-mocks/app-stores';
+import { setPage } from '../../test-mocks/app-state.svelte';
 import { apiCache } from '$lib/apiCache';
 import { loadEffectivePrivacy, resetEffectivePrivacy } from '$stores/privacyPolicy';
 

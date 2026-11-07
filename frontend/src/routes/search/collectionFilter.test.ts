@@ -31,19 +31,13 @@ vi.mock('$stores/locale', () => ({
 const mockGoto = vi.hoisted(() => vi.fn());
 vi.mock('$app/navigation', () => ({ goto: mockGoto, beforeNavigate: vi.fn() }));
 
-vi.mock('$app/stores', () => {
-  const url = new URL(
-    'http://localhost/search?q=roadmap&collection=01a1719e-0000-7000-8000-00000000c011'
-  );
-  return {
-    page: {
-      subscribe: (run: (value: { url: URL }) => void) => {
-        run({ url });
-        return () => {};
-      },
-    },
-  };
-});
+vi.mock('$app/state', () => ({
+  page: {
+    url: new URL(
+      'http://localhost/search?q=roadmap&collection=01a1719e-0000-7000-8000-00000000c011'
+    ),
+  },
+}));
 
 vi.mock('$lib/api/mediaUrl', () => ({
   getMediaStreamUrl: vi.fn(),

@@ -4,7 +4,7 @@
   import i18next from 'i18next';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { afterNavigate } from '$app/navigation';
   import { reopenSettingsAfterBack } from '$lib/settings/returnToSettings';
   import { user as userStore } from '$stores/auth';
@@ -97,7 +97,7 @@
   // Close modal when the user navigates to a different page
   let _prevPath = '';
   $: {
-    const newPath = $page.url.pathname;
+    const newPath = page.url.pathname;
     if (isOpen && _prevPath && newPath !== _prevPath) {
       closeModal();
     }

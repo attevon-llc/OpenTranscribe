@@ -36,7 +36,9 @@ export interface SearchUrlState {
  * Issue #760: `sources=` (repeated) replaces the exclusive `type=` param. The legacy `type=` is
  * still read so links already in history/docs resolve, mapped through the old two-value scheme.
  */
-export function parseSourcesParam(searchParams: URLSearchParams): SearchSource[] | null {
+export function parseSourcesParam(
+  searchParams: Pick<URLSearchParams, 'get' | 'getAll'>
+): SearchSource[] | null {
   const raw = searchParams.getAll('sources');
   if (raw.length) {
     const valid = raw.filter((s): s is SearchSource =>
@@ -51,7 +53,9 @@ export function parseSourcesParam(searchParams: URLSearchParams): SearchSource[]
   return null;
 }
 
-export function parseSearchUrl(searchParams: URLSearchParams): SearchUrlState {
+export function parseSearchUrl(
+  searchParams: Pick<URLSearchParams, 'get' | 'getAll'>
+): SearchUrlState {
   return {
     query: searchParams.get('q') || '',
     page: parseInt(searchParams.get('page') || '1'),

@@ -1,7 +1,7 @@
 /**
  * Post-build gate on the CSP SvelteKit emits into `dist/index.html` (issue #1028).
  *
- * `kit.csp` in svelte.config.js is rendered into a `<meta http-equiv>` at build time, so
+ * `csp` in kit.config.js is rendered into a `<meta http-equiv>` at build time, so
  * the built file — not the config — is what browsers enforce. This fails the build when
  * that meta is missing or when any directive carries a bare network scheme source
  * (`ws:`, `wss:`, `http:`, `https:`): a scheme-wide source allows a request or socket to

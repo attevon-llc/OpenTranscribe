@@ -8,7 +8,7 @@
   "project": ["src/**/*.{ts,js,svelte}"],
   "ignoreDependencies": [],
   "svelte": {
-    "config": ["svelte.config.js"]
+    "config": ["kit.config.js"]
   },
   "vite": {
     "config": ["vite.config.ts", "vitest.config.ts"]

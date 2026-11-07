@@ -1,5 +1,5 @@
 /**
- * Stub for SvelteKit's `$app/stores` under Vitest.
+ * Stub for SvelteKit's `$app/state` under Vitest.
  *
  * Companion to `app-navigation.ts`. `$app/*` modules are injected by the
  * SvelteKit Vite plugin, which `vitest.config.ts` deliberately does not load.
@@ -9,13 +9,11 @@
  * including every unauthenticated route (`login`, `reset-password`,
  * `verify-email`, `accept-invite`) and the auth-bootstrap `+layout.svelte`.
  *
- * `page` is a real writable store so a test can drive route-dependent
- * behaviour (`setPage('/login')`) instead of mocking the module per file.
- * Call `resetAppStores()` in a `beforeEach` — module state is shared across
- * tests in the same file.
+ * `page` is a real `$state` object (as in Kit's `$app/state`) so a test can drive
+ * route-dependent behaviour (`setPage('/login')`) instead of mocking the module per file;
+ * components read `page.url` and re-run when `setPage` mutates it. Call `resetAppStores()`
+ * in a `beforeEach` — module state is shared across tests in the same file.
  */
-
-import { writable, readable, type Writable } from 'svelte/store';
 
 export interface MockPageState {
   url: URL;
@@ -41,23 +39,24 @@ function pageStateFor(url: string): MockPageState {
   };
 }
 
-export const page: Writable<MockPageState> = writable(pageStateFor(DEFAULT_URL));
+export const page: MockPageState = $state(pageStateFor(DEFAULT_URL));
 
-/** Point `$page.url` at `pathOrUrl` (accepts a path or an absolute URL). */
+/** Point `page.url` at `pathOrUrl` (accepts a path or an absolute URL). */
 export function setPage(pathOrUrl: string, extra: Partial<MockPageState> = {}): void {
-  page.set({ ...pageStateFor(pathOrUrl), ...extra });
+  Object.assign(page, pageStateFor(pathOrUrl), extra);
 }
 
 /** Restore the default route state. Use in `beforeEach`. */
 export function resetAppStores(): void {
-  page.set(pageStateFor(DEFAULT_URL));
+  Object.assign(page, pageStateFor(DEFAULT_URL));
 }
 
-export const navigating = readable(null);
-export const updated = Object.assign(readable(false), {
-  check: () => Promise.resolve(false),
-});
-
-export function getStores() {
-  return { page, navigating, updated };
-}
+export const navigating = {
+  from: null,
+  to: null,
+  type: null,
+  willUnload: null,
+  delta: null,
+  complete: null,
+};
+export const updated = { current: false, check: () => Promise.resolve(false) };

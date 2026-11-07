@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto, preloadCode } from '$app/navigation';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { login, getAuthMethods, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
@@ -8,7 +8,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { loadPasswordPolicy, buildPasswordRequirements, FALLBACK_PASSWORD_POLICY, type PasswordPolicy } from '$lib/passwordPolicy';
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import { isCloudEdition } from '$lib/edition';
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
@@ -57,7 +57,7 @@
   /** Show the "signing in" screen, then navigate home. */
   function redirectHome() {
     loginSuccess = true;
-    setTimeout(() => goto('/', { replaceState: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+    setTimeout(() => goto('/', { replace: true }), SIGNED_IN_REDIRECT_DELAY_MS);
   }
 
   // MFA state. `mfaToken` is a short-lived half-token: memory only, never
@@ -452,7 +452,7 @@
     // Navigate immediately rather than through the usual "signing in"
     // flourish: the hold has already dropped, so the shell would render its
     // redirect placeholder over this page for the whole delay.
-    goto('/', { replaceState: true });
+    goto('/', { replace: true });
   }
 
   /** Abandon the forced change: end the session and return to the sign-in form. */

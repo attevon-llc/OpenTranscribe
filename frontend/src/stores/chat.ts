@@ -563,7 +563,7 @@ function createChatStore() {
       }));
       if (wasActive) {
         this.newConversation();
-        await goto('/chat', { replaceState: true });
+        await goto('/chat', { replace: true });
       }
     },
 
@@ -677,7 +677,7 @@ function createChatStore() {
               ...s.conversations,
             ],
           }));
-          await goto(`/chat/${created.uuid}`, { replaceState: true, noScroll: true });
+          await goto(`/chat/${created.uuid}`, { replace: true, reset: false });
         } catch {
           setStatus('error');
           update((s) => ({ ...s, error: 'send' }));

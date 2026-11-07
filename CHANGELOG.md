@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The frontend uses SvelteKit 3, adapter-static 4 and TypeScript 6 (#1326).
 - Environment variables that nothing read are removed from `.env.example` and the code (including the `VAD_*`, `WHISPER_HALLUCINATION_*`, `SOURCE_LANGUAGE` and `MODELS_DIRECTORY` entries), and boolean environment values are parsed by one function. A test fails when an advertised variable is unread or always overridden by an admin setting (#566, #1206).
 - The chat context estimate uses the conversation's pinned model (#1364).
+- The search indexes gain a small `availability` field, added automatically at startup; no reindex is needed. A background task re-applies a file's trash state to the index every 15 minutes, so a trash or restore that could not reach the search service at that moment is corrected (#1101).
 
 ### Removed
 
@@ -124,6 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An interrupted voiceprint purge shows its own message asking you to run it again.
 - Log records no longer run an import to look up the request id, which every log line did in text mode.
 - Gender detection reports that its model is not loaded instead of failing with a `NoneType` error.
+- Files moved to the trash no longer appear in search results, counts, filters, suggestions, summary search or chat answers, and their speakers are no longer matched or suggested; restoring a file brings it all back. Excluding trashed files does not depend on a list of file ids, so search keeps working however many files are in the trash (#1101).
 
 ### Security
 

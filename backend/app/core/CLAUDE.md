@@ -177,6 +177,36 @@ should import `app.api` or `app.services` at module scope.
   so `middleware`, `auth`, `core` and the Celery hooks can all import it without a cycle.
 - `metrics.py`, `db_metrics.py`, `celery_metrics.py`, `backup_metrics.py`, `route_template.py` —
   Prometheus collectors on the default registry, plus the bounded route-label resolver.
+- `inert.py` + `inert_reach.py` (+ `app/api/inert_routes.py`, the Starlette-aware half, kept
+  in the HTTP layer by `guard-api-boundary`) — **assert-inert** (#898): proves a visit cannot
+  start background work, the public demo's acceptance test (#628, exit criterion E1). Three parts,
+  and a verdict of `INERT` (exit 0), `NOT INERT` (1) or **`NOT MEASURED` (3)**:
+  1. **Publish counter.** The one `before_task_publish` receiver in `celery.py` calls
+     `inert.record_task_published(sender)` *before* the queue-wait stamp, incrementing
+     `celery_tasks_published_total{task}`. `PublishWindow` diffs it around a crawl, after
+     sending a self-test publish (`task="opentranscribe.inert.probe"`) through the same
+     signal. If the count does not move the result is `NOT MEASURED`, never a zero: Celery's
+     `Signal.send` swallows receiver exceptions, so a broken counter is otherwise silent. The
+     counter is per process: the API process counts what requests published.
+  2. **Route model** (`api/inert_routes.model_routes`). Branches on the Starlette route type:
+     `Route` (has methods), `WebSocketRoute` (reported as `WEBSOCKET`, `bypasses_http_middleware=True`:
+     `BaseHTTPMiddleware` passes non-`http` scopes straight through, so a demo guard written
+     as HTTP middleware cannot cover `/api/ws`), `Mount` (recursed), anything else fails
+     closed as `unmodelled`. Per route it walks the endpoint and its dependency tree through
+     `app.*` code by AST (module globals, in-function imports, `self.`) to a
+     `.delay`/`.apply_async`/`send_task` or a `BackgroundTasks.add_task` (in-process, so the
+     runtime counter cannot see it), and prints the chain with `file:line`.
+     It is **flow-insensitive and a lower bound**: an `if DEMO_MODE: return` guard does not
+     clear a route, and a call through a local variable is not followed. The runtime counter
+     is the proof; the model names what a crawl must hit.
+  3. **Beat plane.** `celery_beat.BEAT_ENTRY_EFFECT` classifies every entry as `read-only`,
+     `mutating` or `ingest` (a separate table because `celery.beat.ScheduleEntry(**entry)`
+     rejects unknown keys). Adding a beat entry means classifying it here.
+  Gate: `tests/unit/test_inert_checker.py` + `test_beat_entry_effects.py`.
+  `GET_ROUTES_THAT_ENQUEUE` there is a **ratchet**: a new safe-method route that reaches a
+  publish fails it; a route made inert leaves the fixture in the same change. On a deployment:
+  `python -m app.scripts.assert_inert [--json]` inside the backend container (`app.core` may not
+  import `app.main`, so the entry point lives in `app/scripts/`).
 - `tenancy.py` — `UNSCOPED` sentinel + `OrgScope`; stdlib-only so any layer can import it.
   `tenant_limits.py` — per-org limit resolver hooks (community no-op).
 

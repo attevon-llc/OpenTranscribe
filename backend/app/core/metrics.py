@@ -95,6 +95,7 @@ db_queries_per_request: Histogram
 cache_operations_total: Counter
 security_state_degraded_total: Counter
 celery_queue_depth: Gauge
+celery_tasks_published_total: Counter
 celery_queue_reserved: Gauge
 celery_queue_orphaned: Gauge
 celery_queue_oldest_unacked_age_seconds: Gauge
@@ -129,6 +130,7 @@ def _register() -> None:
     global cache_operations_total
     global security_state_degraded_total
     global celery_queue_depth
+    global celery_tasks_published_total
     global celery_queue_reserved
     global celery_queue_orphaned
     global celery_queue_oldest_unacked_age_seconds
@@ -200,6 +202,16 @@ def _register() -> None:
         "celery_queue_depth",
         "Pending tasks per Celery queue (priority sub-lists summed).",
         ["queue"],
+    )
+    # Incremented by the ``before_task_publish`` receiver in ``app/core/celery.py`` (issue
+    # #898), so each process counts what IT published: on the API process, that is work a
+    # request started. ``app.core.inert`` reads it to prove a route crawl published nothing.
+    celery_tasks_published_total = Counter(
+        "celery_tasks_published_total",
+        "Celery task messages published by this process, by task name. On the API process "
+        "this is background work started by requests. task='"
+        "opentranscribe.inert.probe' is the inertness checker's self-test, not real work.",
+        ["task"],
     )
     celery_queue_reserved = Gauge(
         "celery_queue_reserved",

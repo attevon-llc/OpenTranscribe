@@ -1,5 +1,11 @@
-"""The celery-beat schedule (installed as ``beat_schedule`` by ``core/celery.py``)."""
+"""The celery-beat schedule (installed as ``beat_schedule`` by ``core/celery.py``).
 
+Every entry also carries a :class:`BeatEffect` in :data:`BEAT_ENTRY_EFFECT`, read by the
+inertness checker (``app/core/inert.py``, issue #898) and enforced by
+``tests/unit/test_inert_checker.py``: an entry added here without a classification fails it.
+"""
+
+from enum import StrEnum
 from typing import Any
 
 from celery.schedules import crontab
@@ -176,4 +182,47 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute="7,22,37,52"),
         "options": {"queue": CeleryQueues.CPU, "priority": 8},  # CPUPriority.MAINTENANCE
     },
+}
+
+
+class BeatEffect(StrEnum):
+    """What a scheduled entry does to state that outlives one visit to the app."""
+
+    #: Writes no application data (rows, objects, index documents); may refresh a cache or
+    #: a metric. Safe to keep running on a deployment that must stay unchanged.
+    READ_ONLY = "read-only"
+    #: Changes, deletes, repairs or re-dispatches persisted state, or copies it elsewhere.
+    MUTATING = "mutating"
+    #: Brings new content or identities in from a source outside the app.
+    INGEST = "ingest"
+
+
+# A separate table, not a key inside each BEAT_SCHEDULE entry: celery.beat builds a
+# ScheduleEntry(**entry) per item, whose __init__ takes no extra keyword, so a marker key
+# there would stop beat from starting.
+BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
+    "periodic-health-check": BeatEffect.MUTATING,  # recovers stuck tasks and files
+    "reclaim-orphaned-deliveries": BeatEffect.MUTATING,  # requeues broker messages
+    "reclaim-lost-tasks": BeatEffect.MUTATING,  # replays tasks a dead worker lost
+    "search-index-maintenance": BeatEffect.MUTATING,  # dispatches reindexing
+    "search-index-sweep": BeatEffect.MUTATING,  # re-dispatches failed indexing
+    "neural-search-bootstrap": BeatEffect.MUTATING,  # registers/deploys the OpenSearch model
+    "opensearch-orphan-cleanup": BeatEffect.MUTATING,  # deletes index documents
+    "embedding-consistency-check": BeatEffect.MUTATING,  # dispatches GPU repair batches
+    "gpu-stats-update": BeatEffect.READ_ONLY,  # refreshes the gpu_stats cache key only
+    "cleanup-expired-files": BeatEffect.MUTATING,  # deletes files
+    "scratch-janitor": BeatEffect.MUTATING,  # deletes scratch directories
+    "orphan-upload-sweeper": BeatEffect.MUTATING,  # deletes abandoned PENDING uploads
+    "watch-source-scan": BeatEffect.INGEST,  # imports media from watch sources
+    "watch-source-temp-cleanup": BeatEffect.MUTATING,  # deletes temp downloads
+    "backup-check-schedule": BeatEffect.MUTATING,  # stamps settings, starts a backup
+    "chat-retention-sweep": BeatEffect.MUTATING,  # deletes chat history
+    "account-inactivity-sweep": BeatEffect.MUTATING,  # disables accounts
+    "gdpr-erasure-reconcile": BeatEffect.MUTATING,  # erases subjects' data
+    "legal-acceptance-retention-sweep": BeatEffect.MUTATING,  # deletes acceptance records
+    "audit-retention-sweep": BeatEffect.MUTATING,  # deletes audit rows
+    "voiceprint-retention-sweep": BeatEffect.MUTATING,  # deletes voiceprints
+    "session-cap-sweep": BeatEffect.MUTATING,  # revokes sessions
+    "media-mirror-check-schedule": BeatEffect.MUTATING,  # stamps settings, copies media out
+    "directory-sync-check-schedule": BeatEffect.INGEST,  # pulls users from the directory
 }

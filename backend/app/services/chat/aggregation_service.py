@@ -56,9 +56,9 @@ from app.services.chat.aggregation_queries import _files_in_period
 from app.services.chat.aggregation_queries import _files_matching
 from app.services.chat.aggregation_queries import _flag_enabled
 from app.services.chat.aggregation_queries import _occurrence_count
-from app.services.chat.aggregation_queries import _quarantined_among
 from app.services.chat.aggregation_queries import _short_session
 from app.services.chat.aggregation_queries import _temporal_bounds
+from app.services.chat.aggregation_queries import _unavailable_among
 from app.services.chat.aggregation_speakers import _SETTING_SPEAKER_STATS_ENABLED
 from app.services.chat.aggregation_speakers import _run_speaker_facet
 from app.services.chat.aggregation_speakers import _run_speaker_stats
@@ -196,7 +196,7 @@ def answer_aggregation(
         # taken-down file's uuid and TITLE would otherwise reach
         # `format_counted_block`'s `<counted>` block and, per base rule 10, be
         # reported to the user as fact.
-        quarantined = _quarantined_among(session_factory, (uuid for uuid, _title in matched))
+        quarantined = _unavailable_among(session_factory, (uuid for uuid, _title in matched))
         if quarantined:
             matched = [(uuid, title) for uuid, title in matched if uuid not in quarantined]
         return AggregationResult(

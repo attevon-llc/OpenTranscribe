@@ -322,7 +322,7 @@ def speaker_edit_collaborators(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Everything ``update_segment_speaker`` touches except the audit path, faked."""
     file, segment = _file(), _segment()
     monkeypatch.setattr(transcript_segments, "get_by_uuid", lambda *a, **k: segment)
-    monkeypatch.setattr("app.services.takedown_service.is_hidden_for", lambda *a, **k: False)
+    monkeypatch.setattr("app.services.file_availability.is_unavailable", lambda *a, **k: False)
     monkeypatch.setattr(transcript_segments, "_resource_in_tenant_scope", lambda *a: True)
     monkeypatch.setattr(transcript_segments, "_get_new_speaker_id", lambda *a, **k: None)
     monkeypatch.setattr(transcript_segments, "_handle_speaker_change", lambda *a, **k: None)

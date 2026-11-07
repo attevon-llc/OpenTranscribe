@@ -289,7 +289,7 @@ ignore_imports = [
   "app.utils.transcript_comparison -> app.models.media",  # upward import, module level: removal planned (layering)
   "app.utils.transcript_comparison -> app.models.speaker",  # upward import, module level: removal planned (layering)
   "app.utils.user_settings_helpers -> app.models.prompt",  # upward import, module level: removal planned (layering)
-  "app.utils.websocket_notify -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.websocket_notify -> app.services.file_availability",  # upward import, function level: removal planned (layering)
   "app.utils.whisper_model_choice -> app.services.asr.model_discovery",  # upward import, function level: removal planned (layering)
   "app.utils.whisper_model_choice -> app.transcription.config",  # upward import, module level: removal planned (layering)
 ]
@@ -331,7 +331,7 @@ ignore_imports = [
   "app.utils.task_utils -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
   "app.utils.task_utils -> app.services.task_row_supersede",  # upward import, module level: removal planned (layering)
   "app.utils.transcript_builders -> app.services.redaction.service",  # upward import, function level: removal planned (layering)
-  "app.utils.websocket_notify -> app.services.takedown_service",  # upward import, function level: removal planned (layering)
+  "app.utils.websocket_notify -> app.services.file_availability",  # upward import, function level: removal planned (layering)
   "app.utils.whisper_model_choice -> app.services.asr.model_discovery",  # upward import, function level: removal planned (layering)
 ]
 

@@ -18,6 +18,8 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.services.clustering.gender import compute_gender_composition
+from app.services.file_availability import available_pred
+from app.services.file_availability import is_unavailable
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.utils.sql_like import escape_like
@@ -138,7 +140,7 @@ def list_clusters(
             )
             .join(Speaker, SpeakerClusterMember.speaker_id == Speaker.id)
             .join(MediaFile, MediaFile.id == Speaker.media_file_id)
-            .filter(SpeakerClusterMember.cluster_id.in_(cluster_ids))
+            .filter(SpeakerClusterMember.cluster_id.in_(cluster_ids), available_pred())
             .group_by(
                 SpeakerClusterMember.cluster_id,
                 Speaker.predicted_gender,
@@ -259,7 +261,13 @@ def get_cluster_detail(
     if not self._privacy.voiceprints_for_scope(user_id, cluster.organization_id).enabled:
         return None
 
-    members = cluster.members
+    # A member whose file is unavailable (trashed or quarantined) is not listed: its row
+    # would name the file (uuid, title) that every other read surface hides.
+    members = [
+        m
+        for m in cluster.members
+        if m.speaker and m.speaker.media_file and not is_unavailable(m.speaker.media_file)
+    ]
     member_speakers = [m.speaker for m in members if m.speaker]
     redact_speaker_rows(self._privacy, member_speakers)
 

@@ -42,11 +42,11 @@ from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import stage_content_event
 from app.services.content_hold_queries import held_by_collection_hold
+from app.services.file_availability import exclude_unavailable
+from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
-from app.services.takedown_service import exclude_quarantined
-from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 from app.services.uuid_helpers import validate_uuids
@@ -353,9 +353,9 @@ def get_collection_media(
 
     # Abuse/DMCA: quarantined files are hidden from every read surface for
     # non-admins — the paginated collection-media list included (matches the
-    # collection detail's is_hidden_for gate and the visible member counts).
-    base_query = exclude_quarantined(
-        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    # collection detail's is_unavailable gate and the visible member counts).
+    base_query = exclude_unavailable(
+        base_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
     )
 
     # Prepare filters dictionary

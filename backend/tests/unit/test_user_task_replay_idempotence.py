@@ -212,7 +212,7 @@ def test_digest_regeneration_replay_issues_the_same_index_calls(monkeypatch):
         ("app.services.search.pipelines", "is_neural_pipeline_available"): lambda: False,
         ("app.db.session_utils", "session_scope"): scope,
         (search_indexing_task, "extract_file_index_metadata"): lambda *_a: meta,
-        ("app.services.takedown_service", "filter_suppressed_file_uuids"): lambda f, _u: f,
+        ("app.services.file_availability", "filter_suppressed_file_uuids"): lambda f, _u: f,
         ("app.utils.websocket_notify", "send_ws_event_for_file"): lambda *_a, **_k: None,
     }
     for (target, attr), stub in stubs.items():

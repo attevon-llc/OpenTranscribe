@@ -112,7 +112,7 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     #: Authoritative takedown flag (issue #570/#576 wire contract). The gallery loads
     #: this schema whole for every page, so this is the one field cheap enough to put
     #: here; the reason/timestamp/hold detail live on `MediaFileDetail` only. A
-    #: non-admin can never SEE a quarantined row at all (`takedown_service.is_hidden_for`),
+    #: non-admin can never SEE a quarantined row at all (`file_availability.is_unavailable`),
     #: so this can only ever be `False` in a non-admin response — no admin-only
     #: serialization branch is needed or added.
     is_quarantined: bool = False

@@ -26,10 +26,10 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
+from app.services.file_availability import exclude_unavailable
 from app.services.redaction.export_policy import export_masking_is_pending
 from app.services.redaction.export_policy import resolve_export_reveal
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
-from app.services.takedown_service import exclude_quarantined
 from app.services.takedown_service import is_review_admin
 from app.services.transcript_document.blocks import build_blocks
 from app.services.transcript_document.model import Block
@@ -111,7 +111,7 @@ def prepare_document(
         logger.error("Document export has no requesting user; refusing to build it")
         raise DocumentExportRefusedError("unavailable")
 
-    media_file = exclude_quarantined(
+    media_file = exclude_unavailable(
         db.query(MediaFile).filter(MediaFile.id == file_id),
         include_quarantined=is_review_admin(db, user_id),
     ).first()

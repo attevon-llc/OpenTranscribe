@@ -256,12 +256,12 @@ def export_conversation(
     # Must run BEFORE `db.close()` below: it needs the session to check
     # `MediaFile.is_quarantined`.
     from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
-    from app.services.takedown_service import quarantine_list_exempt
+    from app.services.file_availability import unavailable_list_exempt
 
     filtered_citation_lists = drop_quarantined_citations_bulk(
         db,
         [m.citations for m in raw_messages],
-        include_quarantined=quarantine_list_exempt(ctx.bypass),
+        include_quarantined=unavailable_list_exempt(ctx.bypass),
     )
     raw_messages = [
         dataclasses.replace(m, citations=citations)

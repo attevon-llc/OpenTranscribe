@@ -166,7 +166,7 @@ indexing → WebSocket notification.
   (issue #908). `send_ws_event` has no notion of quarantine at all — a filename, title, or
   speaker-display-name event pushed with it can disclose a taken-down file to a non-admin
   recipient even though the file already 404s on every read surface. The wrapper consults
-  `takedown_service.is_notification_suppressed` (by file id), `_for_uuid` (by UUID — most
+  `file_availability.is_notification_suppressed` (by file id), `_for_uuid` (by UUID — most
   tasks here hold only a UUID), or `filter_suppressed_file_uuids` (a multi-file event); pass
   exactly one of `file_id=`/`file_uuid=`/`file_uuids=` or it raises `TypeError`.
   `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate — an
@@ -174,7 +174,7 @@ indexing → WebSocket notification.
   (admin-migration progress counters, cache invalidation) that carry no single file's identity.
 - **A task that re-reads a `MediaFile` by id must re-apply the quarantine gate.**
   `media_download.py`'s two tasks are the worked examples (issue #818):
-  `prepare_media_download_task` wraps its file read in `takedown_service.exclude_quarantined`,
+  `prepare_media_download_task` wraps its file read in `file_availability.exclude_unavailable`,
   and `prepare_bulk_subtitles_task` passes `include_quarantined` through to
   `SubtitleService.build_subtitle_archive`, which skips a taken-down file rather than
   exporting it. Both re-resolve the admin bypass at RUN time via

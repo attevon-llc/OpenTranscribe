@@ -10,7 +10,7 @@ default), plus the filename, the display title and segment timestamps.
 That is the same class #817 fixed for the thumbnail route, one router over, and with
 a worse payload: a thumbnail is a frame, this is the recording. The guarded sibling
 is ``speakers.get_speaker_cross_media_occurrences``, which already calls
-``takedown_service.is_hidden_for`` for exactly this reason; the copy in
+``file_availability.is_unavailable`` for exactly this reason; the copy in
 ``speaker_clusters.py`` simply never got it.
 
 404, not 403 — matching every other takedown surface, because "this file exists but
@@ -100,7 +100,7 @@ def test_an_admin_can_still_reach_a_quarantined_files_preview(
     client, admin_token_headers, admin_user, db_session
 ):
     """An admin who cannot see a quarantined file cannot review or release it —
-    the same bypass ``is_hidden_for`` grants on every other takedown surface."""
+    the same bypass ``is_unavailable`` grants on every other takedown surface."""
     _media_file, speaker = _make_file_and_speaker(db_session, admin_user, is_quarantined=True)
 
     response = client.get(

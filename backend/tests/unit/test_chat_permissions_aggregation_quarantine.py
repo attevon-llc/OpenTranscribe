@@ -229,7 +229,7 @@ def test_speaker_facet_excludes_a_quarantined_files_session_from_the_tally(db_se
     speaker's attendance tally."""
     blocked = _make_file(db_session, normal_user, quarantined=True, title="Blocked")
     # Bo's two ordinary sessions — real (non-existent-in-DB) uuids, since
-    # `_quarantined_among` runs a real Postgres `.in_(...)` query against the
+    # `_unavailable_among` runs a real Postgres `.in_(...)` query against the
     # `MediaFile.uuid` column, which is UUID-typed: a non-uuid placeholder
     # string like "f1" would raise `invalid input syntax for type uuid`
     # rather than simply not match.

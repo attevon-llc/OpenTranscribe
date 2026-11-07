@@ -103,8 +103,8 @@ def generate_thumbnail_task(self: Any, file_id: int, user_id: int, storage_path:
             # real thumbnail mid-processing (no refresh). Matches the frontend
             # file_updated handler in routes/+page.svelte.
             try:
+                from app.services.file_availability import is_notification_suppressed
                 from app.services.notification_service import send_task_notification
-                from app.services.takedown_service import is_notification_suppressed
 
                 # Abuse/DMCA (issue #817): check quarantine BEFORE minting the
                 # presigned URL, not just before the notification — a quarantined

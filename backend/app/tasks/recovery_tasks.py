@@ -291,8 +291,8 @@ def media_duration_backfill(self: Any, user_id: int | None = None, dry_run: bool
     from sqlalchemy import func
 
     from app.models.media import TranscriptSegment
+    from app.services.file_availability import exclude_unavailable
     from app.services.hold_guard import not_held_pred
-    from app.services.takedown_service import exclude_quarantined
 
     summary = {
         "examined": 0,
@@ -325,7 +325,7 @@ def media_duration_backfill(self: Any, user_id: int | None = None, dry_run: bool
                 < _OVERWRITE_SIGNATURE_TOLERANCE_SECONDS,
             )
         )
-        query = exclude_quarantined(query)
+        query = exclude_unavailable(query)
         if user_id is not None:
             query = query.filter(MediaFile.user_id == user_id)
 

@@ -286,7 +286,7 @@ def task_env(db_session, monkeypatch):
     monkeypatch.setattr(sat, "_dispatch_llm_speaker_identification", lambda file_uuid: None)
     monkeypatch.setattr(sat, "send_ws_event_for_file", lambda *a, **kw: None)
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        "app.services.file_availability.is_notification_suppressed_for_uuid",
         lambda *a, **kw: False,
     )
     minio = MagicMock()

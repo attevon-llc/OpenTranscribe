@@ -48,6 +48,10 @@ if TYPE_CHECKING:
 #: speakers agreed (a recorded claim, never verified); ``declined`` = no voiceprints for this file.
 VOICEPRINT_CONSENT_STATES = ("unspecified", "granted", "declined")
 
+#: Who moved a file to the trash (issue #1101, v463): ``user`` = a person deleted it. ``retention``
+#: is allowed by the CHECK but not written today: retention expiry hard-deletes.
+TRASH_ORIGINS = ("user", "retention")
+
 
 class MediaFile(Base):
     __tablename__ = "media_file"
@@ -380,6 +384,18 @@ class MediaFile(Base):
         Integer, ForeignKey("user.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Trash state (issue #1101, v463). NULL ``deleted_at`` = live. Read only through
+    # ``app.services.file_availability`` (``tests/unit/test_file_availability_single_source.py``):
+    # a trashed file is unavailable on every normal read surface, for everyone.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("user.id", ondelete="SET NULL", name="fk_media_file_deleted_by_user"),
+        nullable=True,
+    )
+    purge_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trash_origin: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     if TYPE_CHECKING:
         # Non-persisted, TYPE_CHECKING-only: `takedown_service.quarantine_file`/
         # `release_file` stamp these plain (non-`Mapped`) attributes onto the
@@ -440,6 +456,22 @@ class MediaFile(Base):
         CheckConstraint(
             "takedown_origin IS NULL OR takedown_origin IN ('platform', 'organization')",
             name="ck_media_file_takedown_origin_valid",
+        ),
+        CheckConstraint(
+            "trash_origin IS NULL OR trash_origin IN ('user', 'retention')",
+            name="ck_media_file_trash_origin",
+        ),
+        CheckConstraint(
+            "(deleted_at IS NULL AND purge_after IS NULL AND trash_origin IS NULL "
+            "AND deleted_by_user_id IS NULL) "
+            "OR (deleted_at IS NOT NULL AND purge_after IS NOT NULL AND trash_origin IS NOT NULL)",
+            name="ck_media_file_trash_state",
+        ),
+        # Built after the upgrade by the runner (app.db.trash_indexes), not by v463.
+        Index(
+            "ix_media_file_trash_due",
+            "purge_after",
+            postgresql_where=text("deleted_at IS NOT NULL"),
         ),
         CheckConstraint(
             "recorded_date_source IS NULL OR recorded_date_source IN "

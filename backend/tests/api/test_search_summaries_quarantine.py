@@ -5,7 +5,7 @@ Sibling of ``tests/api/test_search_count_quarantine.py``. Before the fix,
 already computed ``total`` over the whole (unfiltered) result set, so a taken-down
 file whose hit sorted onto a later page still inflated ``summary_total`` — the same
 content-oracle class #876 closed for ``/search/count``. The fix moved the quarantine
-predicate INSIDE ``search_summaries`` as a pre-filter (``exclude_quarantined``), so
+predicate INSIDE ``search_summaries`` as a pre-filter (``exclude_unavailable``), so
 ``summary_total`` and ``total_pages`` are now computed over what the caller can
 actually see.
 

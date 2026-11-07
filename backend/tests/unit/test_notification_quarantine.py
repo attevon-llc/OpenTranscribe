@@ -5,7 +5,7 @@ through, and it auto-attaches ``filename``/``content_type``/``file_size`` for an
 it is given. Before this fix that funnel had no idea a file was quarantined, so a
 ``file_updated``/``summarization_status`` toast could still name a taken-down file for a
 non-admin recipient — the exact disclosure the read-surface quarantine gate
-(``exclude_quarantined``/``is_hidden_for``) exists to prevent, reached through a different
+(``exclude_unavailable``/``is_unavailable``) exists to prevent, reached through a different
 door.
 
 The load-bearing test in this file is ``test_the_dmca_takedown_notice_is_still_delivered``
@@ -26,9 +26,9 @@ import pytest
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_availability import is_notification_suppressed
 from app.services.notification_service import send_task_notification
 from app.services.takedown_service import TakedownActor
-from app.services.takedown_service import is_notification_suppressed
 from app.services.takedown_service import quarantine_file
 from app.services.takedown_service import release_file
 

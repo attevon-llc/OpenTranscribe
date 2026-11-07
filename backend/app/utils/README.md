@@ -118,8 +118,6 @@ def bulk_update[T](db, model, updates, id_field="id") -> bool
 def get_file_with_transcript_count(...)
 def get_user_speakers(db, user_id) -> list[Speaker]
 def get_unique_speakers_for_file(db, file_id) -> list[Speaker]
-def get_files_by_status(db, user_id, status) -> list[MediaFile]
-def get_user_file_stats(db, user_id) -> dict
 ```
 Tag creation and attachment live in `services/tag_service.py` and `services/tag_bulk.py`, not here.
 

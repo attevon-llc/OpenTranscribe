@@ -224,7 +224,7 @@ def update_task_env(db_session, monkeypatch):
     # a second session, so this session-lifetime suite stays focused on what
     # it actually measures (scope depth), not quarantine visibility.
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        "app.services.file_availability.is_notification_suppressed_for_uuid",
         lambda *a, **kw: False,
     )
     monkeypatch.setattr(
@@ -393,7 +393,7 @@ def merge_task_env(db_session, monkeypatch):
     # a second session, so this session-lifetime suite stays focused on what
     # it actually measures (scope depth), not quarantine visibility.
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        "app.services.file_availability.is_notification_suppressed_for_uuid",
         lambda *a, **kw: False,
     )
     monkeypatch.setattr(

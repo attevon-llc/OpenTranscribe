@@ -32,8 +32,8 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services.collection_visibility import resolve_collection_filter
+from app.services.file_availability import unavailable_list_exempt
 from app.services.request_context import RequestContext
-from app.services.takedown_service import quarantine_list_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -214,11 +214,12 @@ def search_transcripts(
             sources=transcript_sources if explicit_sources else None,
         )
 
-        # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
-        # drop any taken-down files from the result page against the DB (page-sized,
-        # one IN query). Admins keep visibility for review.
-        if not quarantine_list_exempt(ctx.bypass):
-            search_response = _drop_quarantined_search_hits(db, search_response)
+        # The transcript index carries no takedown field, so drop unavailable files from
+        # the result page against the DB (page-sized, one IN query). An exempt reviewer
+        # keeps quarantined hits; a trashed file is dropped for everyone.
+        search_response = _drop_quarantined_search_hits(
+            db, search_response, include_quarantined=unavailable_list_exempt(ctx.bypass)
+        )
 
         payload = _search_response_to_schema(search_response)
         _attach_visible_collections(db, ctx, payload["results"])
@@ -401,7 +402,7 @@ def search_match_count(
             user_id=ctx.user.id,
             file_uuid=file_uuid,
             organization_id=ctx.org_id,
-            is_admin=quarantine_list_exempt(ctx.bypass),
+            is_admin=unavailable_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match get_available_filters' raise below; this module
@@ -455,7 +456,7 @@ def search_suggestions(
             user_id=ctx.user.id,
             limit=limit,
             organization_id=ctx.org_id,
-            is_admin=quarantine_list_exempt(ctx.bypass),
+            is_admin=unavailable_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         raise HTTPException(
@@ -496,7 +497,7 @@ def get_available_filters(
         return search_service.get_available_filters(
             user_id=ctx.user.id,
             organization_id=ctx.org_id,
-            is_admin=quarantine_list_exempt(ctx.bypass),
+            is_admin=unavailable_list_exempt(ctx.bypass),
         )
     except QuarantineExclusionUnavailableError as e:
         # Literal 503 to match _summary_search_payload's masking-outage raise

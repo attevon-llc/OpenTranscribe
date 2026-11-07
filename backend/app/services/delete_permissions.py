@@ -114,7 +114,7 @@ def get_deletable_file(
     loaded file, so in multi-tenant mode an admin outside the file's tenant is
     refused like anyone else.
     """
-    from app.services.takedown_service import is_hidden_for
+    from app.services.file_availability import is_unavailable
     from app.services.uuid_helpers import _resource_in_tenant_scope
     from app.services.uuid_helpers import get_file_by_uuid
 
@@ -129,7 +129,7 @@ def get_deletable_file(
     ):
         return file
 
-    if is_hidden_for(file, is_admin=False):
+    if is_unavailable(file):
         raise ResourceNotFoundError("File not found")
 
     if not _resource_in_tenant_scope(file, organization_id):

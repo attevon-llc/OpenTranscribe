@@ -16,6 +16,7 @@ from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerProfile
+from app.services.file_availability import exclude_unavailable
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import SpeakerImpact
@@ -27,7 +28,6 @@ from app.services.speaker_identity_rules import blocking_profile_ids_named
 from app.services.speaker_identity_rules import lift_profile_blacklist
 from app.services.speaker_identity_rules import speaker_blocked_from_profile
 from app.services.speaker_profile_activity import touch_profile_interaction
-from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_BATCH_ASSIGN
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
@@ -88,7 +88,7 @@ def get_unverified_speakers(
     # pagination would leak the true total and silently shorten pages, rather
     # than actually excluding the quarantined speaker from the inbox.
     query = query.join(MediaFile, Speaker.media_file_id == MediaFile.id)
-    query = exclude_quarantined(query, include_quarantined=include_quarantined)
+    query = exclude_unavailable(query, include_quarantined=include_quarantined)
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
         query = query.filter(tenant_pred)

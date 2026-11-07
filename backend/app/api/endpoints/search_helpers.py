@@ -13,10 +13,10 @@ from app.schemas.search import RESULT_TYPE_TO_SOURCES
 from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SEARCH_SOURCES
 from app.services.collection_visibility import collections_on_files
+from app.services.file_availability import unavailable_among
+from app.services.file_availability import unavailable_list_exempt
 from app.services.request_context import RequestContext
 from app.services.search.search_types import SearchResponse
-from app.services.takedown_predicates import quarantined_among
-from app.services.takedown_service import quarantine_list_exempt
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +169,7 @@ def _source_counts(
                 q,
                 user_id=ctx.user.id,
                 organization_id=ctx.org_id,
-                is_admin=quarantine_list_exempt(ctx.bypass),
+                is_admin=unavailable_list_exempt(ctx.bypass),
                 fields=fields,
                 count_files=True,
                 **filter_kwargs,
@@ -178,7 +178,7 @@ def _source_counts(
             logger.warning("source_counts: %s count unavailable", source)
 
     try:
-        quarantined = [] if quarantine_list_exempt(ctx.bypass) else _quarantined_file_uuids()
+        quarantined = [] if unavailable_list_exempt(ctx.bypass) else _quarantined_file_uuids()
         _hits, total = service.search_summary_plane(
             q,
             ctx.user.id,
@@ -195,8 +195,13 @@ def _source_counts(
     return counts
 
 
-def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
-    """Remove quarantined files from a search response (non-admin).
+def _drop_quarantined_search_hits(
+    db: Session, response: Any, *, include_quarantined: bool = False
+) -> Any:
+    """Remove unavailable files from a search response.
+
+    Trashed files always go; quarantined ones stay only with ``include_quarantined`` (the
+    reviewer's list exemption, ``unavailable_list_exempt``).
 
     The hidden files 404 on detail/stream anyway (the per-resource gate), so this
     just keeps them out of the result list/snippets too — the search-snippet
@@ -217,7 +222,9 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
     hits = getattr(response, "results", None) or []
     if not hits:
         return response
-    quarantined = quarantined_among(db, (getattr(h, "file_uuid", None) for h in hits))
+    quarantined = unavailable_among(
+        db, (getattr(h, "file_uuid", None) for h in hits), include_quarantined=include_quarantined
+    )
     if not quarantined:
         return response
     kept = [h for h in hits if str(h.file_uuid) not in quarantined]
@@ -277,7 +284,7 @@ def _summary_search_payload(
     (one JSONB blob per file, per `search_summaries`' own docstring).
 
     **The same argument covers ACCESS, not only takedown.** Both authorities on
-    this surface — `get_accessible_file_ids_subquery` and `exclude_quarantined`
+    this surface — `get_accessible_file_ids_subquery` and `exclude_unavailable`
     — are PRE-filters inside the query (#818 moved quarantine there so `total`
     and the page offsets stay honest). A pre-filter's verdict is therefore baked
     into the page, with no post-filter left downstream to re-apply it: unlike
@@ -350,7 +357,7 @@ def _summary_search_payload(
             page=page,
             page_size=page_size,
             redaction_cfg=cfg,
-            include_quarantined=quarantine_list_exempt(ctx.bypass),
+            include_quarantined=unavailable_list_exempt(ctx.bypass),
             speakers=speakers,
             tags=tags,
             date_from=date_from,

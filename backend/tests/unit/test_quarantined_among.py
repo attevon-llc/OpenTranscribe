@@ -1,4 +1,4 @@
-"""``takedown_predicates.quarantined_among`` and the four post-filters built on it.
+"""``file_availability.unavailable_among`` and the four post-filters built on it.
 
 The search results page, chat's ranked evidence, chat's counted aggregation shapes and the
 replay of persisted chat citations all drop index-backed hits whose file is quarantined, and
@@ -27,10 +27,10 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations
 from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
 from app.api.endpoints.search_helpers import _drop_quarantined_search_hits
-from app.services.chat.aggregation_queries import _quarantined_among
+from app.services.chat.aggregation_queries import _unavailable_among
 from app.services.chat.evidence import _drop_quarantined_hits
+from app.services.file_availability import unavailable_among
 from app.services.search.chunk_retrieval import ChunkHit
-from app.services.takedown_predicates import quarantined_among
 
 pytestmark = pytest.mark.unit
 
@@ -67,7 +67,7 @@ def test_returns_only_the_quarantined_uuids_as_strings(db_session, normal_user):
     blocked = _make_file(db_session, normal_user, quarantined=True)
     visible = _make_file(db_session, normal_user, quarantined=False)
 
-    found = quarantined_among(db_session, [str(blocked.uuid), str(visible.uuid)])
+    found = unavailable_among(db_session, [str(blocked.uuid), str(visible.uuid)])
 
     assert found == {str(blocked.uuid)}
 
@@ -75,13 +75,13 @@ def test_returns_only_the_quarantined_uuids_as_strings(db_session, normal_user):
 def test_accepts_uuid_objects_and_skips_falsy_ids(db_session, normal_user):
     blocked = _make_file(db_session, normal_user, quarantined=True)
 
-    found = quarantined_among(db_session, [blocked.uuid, None, ""])
+    found = unavailable_among(db_session, [blocked.uuid, None, ""])
 
     assert found == {str(blocked.uuid)}
 
 
 def test_an_unknown_uuid_is_not_reported(db_session):
-    assert quarantined_among(db_session, [str(uuid_pkg.uuid4())]) == set()
+    assert unavailable_among(db_session, [str(uuid_pkg.uuid4())]) == set()
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ def _kept_by_every_caller(session: MagicMock, *file_uuids: str) -> dict[str, lis
     bulk = drop_quarantined_citations_bulk(
         session, [[_citation(u) for u in file_uuids]], include_quarantined=False
     )
-    dropped = _quarantined_among(_factory(session), file_uuids)
+    dropped = _unavailable_among(_factory(session), file_uuids)
     return {
         "evidence": [hit.file_uuid for hit in evidence],
         "search": [hit.file_uuid for hit in search.results],
@@ -169,8 +169,8 @@ def test_no_caller_queries_for_an_input_without_uuids(file_uuids):
     assert drop_quarantined_citations_bulk(session, [citations], include_quarantined=False) == [
         citations
     ]
-    assert _quarantined_among(_factory(session), file_uuids) == frozenset()
-    assert quarantined_among(session, file_uuids) == set()
+    assert _unavailable_among(_factory(session), file_uuids) == frozenset()
+    assert unavailable_among(session, file_uuids) == set()
     assert session.query.call_count == 0
 
 
@@ -199,8 +199,8 @@ def test_a_query_error_fails_the_citation_drop():
 
 def test_a_query_error_fails_the_aggregation_post_filter():
     with pytest.raises(OperationalError):
-        _quarantined_among(_factory(_broken()), [BLOCKED])
+        _unavailable_among(_factory(_broken()), [BLOCKED])
 
 
 def test_aggregation_declines_without_a_session():
-    assert _quarantined_among(None, [BLOCKED]) == frozenset()
+    assert _unavailable_among(None, [BLOCKED]) == frozenset()

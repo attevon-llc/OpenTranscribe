@@ -38,6 +38,7 @@ from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.schemas.chat import ChatScope
+from app.services.file_availability import exclude_unavailable
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -67,7 +68,8 @@ def _visible_files_query(db: Session, ctx: RequestContext) -> Query[Any]:
     else:
         query = query.filter(MediaFile.organization_id.is_(None))
 
-    # Quarantined files are invisible here to EVERYONE, admins included — no
+    # Unavailable (trashed or quarantined) files are invisible here to EVERYONE, admins
+    # included. Quarantine has no exemption here
     # exception, unlike the review surfaces (issue #262g originally carved one
     # out; a later adversarial review removed it). Chat is a retrieval surface,
     # not a review one (see this module's docstring and `_resolve_explicit_files`
@@ -81,7 +83,7 @@ def _visible_files_query(db: Session, ctx: RequestContext) -> Query[Any]:
     # is the exact "two access rules disagreeing" shape this module's admin
     # bypasses were already removed for. Admins keep the ordinary admin review
     # UI (`GET /admin/files/quarantined`) for quarantined content.
-    query = query.filter(MediaFile.is_quarantined.is_(False))
+    query = exclude_unavailable(query)
 
     return query
 

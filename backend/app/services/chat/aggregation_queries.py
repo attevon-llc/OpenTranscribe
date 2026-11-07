@@ -1,7 +1,7 @@
 """Scoped I/O primitives for the aggregation shapes: sessions, access predicate, searches.
 
 The tenant and quarantine chokepoints live here: :func:`_accessible_scoped_files` (the Postgres
-predicate every Postgres-backed shape builds through) and :func:`_quarantined_among` (the
+predicate every Postgres-backed shape builds through) and :func:`_unavailable_among` (the
 post-filter for the OpenSearch-backed shapes, whose index carries no quarantine field). Both are
 shared by :mod:`app.services.chat.aggregation_service`,
 :mod:`app.services.chat.aggregation_speakers` and :mod:`app.services.chat.recurrence_service`.
@@ -23,7 +23,8 @@ from app.core.enums import RecordedDateSource
 from app.services.chat.aggregation import MAX_BUCKETS
 from app.services.chat.aggregation import buckets
 from app.services.chat.router import TemporalHint
-from app.services.takedown_predicates import quarantined_among
+from app.services.file_availability import available_pred
+from app.services.file_availability import unavailable_among
 from app.utils.sql_like import escape_like
 
 if TYPE_CHECKING:
@@ -134,7 +135,7 @@ def _accessible_scoped_files(
     Postgres read in this package.
 
     Also excludes quarantined files, unconditionally — the Postgres-side
-    counterpart of `_quarantined_among` below, which does the same job for the
+    counterpart of `_unavailable_among` below, which does the same job for the
     shapes that read OpenSearch instead. Chat has no admin bypass on quarantine
     anywhere else (`context_resolver._visible_files_query`,
     `evidence._drop_quarantined_hits`), so this predicate would otherwise be the
@@ -153,7 +154,7 @@ def _accessible_scoped_files(
     accessible = PermissionService.get_accessible_file_ids_subquery(
         db, user_id, organization_id=organization_id
     )
-    predicate = MediaFile.id.in_(select(accessible.c[0])) & MediaFile.is_quarantined.is_(False)
+    predicate = MediaFile.id.in_(select(accessible.c[0])) & available_pred()
     if file_uuids is not None:
         predicate = predicate & MediaFile.uuid.in_(list(file_uuids))
     return predicate
@@ -258,7 +259,7 @@ def _search(client: SearchClient, index: str, body: dict[str, Any]) -> dict[str,
     return response
 
 
-def _quarantined_among(
+def _unavailable_among(
     session_factory: SessionFactory | None, file_uuids: Iterable[str]
 ) -> frozenset[str]:
     """Which of ``file_uuids`` belong to a quarantined file — the aggregation
@@ -286,7 +287,7 @@ def _quarantined_among(
     with _short_session(session_factory) as db:
         if db is None:
             return frozenset()
-        return frozenset(quarantined_among(db, ids))
+        return frozenset(unavailable_among(db, ids))
 
 
 def _files_matching(
@@ -302,7 +303,7 @@ def _files_matching(
     and a second query per answer would break the one-search worst case. A file
     whose documents carry no title yields ``""`` — never a fabricated name.
 
-    Callers must post-filter the result through ``_quarantined_among`` — this
+    Callers must post-filter the result through ``_unavailable_among`` — this
     function is index-only and the index carries no quarantine field at all.
     """
     body = {
@@ -335,7 +336,7 @@ def _speaker_tally(
     """``(speaker, distinct file uuids)`` per speaker — index-only, unfiltered.
 
     Returns the raw file-uuid set per speaker rather than a count so the caller
-    can drop quarantined files (via ``_quarantined_among``) BEFORE counting —
+    can drop quarantined files (via ``_unavailable_among``) BEFORE counting —
     counting first and subtracting after would be right for the common case but
     wrong the moment a subtraction pushed two speakers into a tie the pre-filter
     count did not have.

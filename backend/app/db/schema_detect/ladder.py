@@ -22,11 +22,13 @@ from typing import TYPE_CHECKING
 
 from app.db.schema_detect import auth_identity
 from app.db.schema_detect import cloud_seams
+from app.db.schema_detect import data_safety
 from app.db.schema_detect import governance
 from app.db.schema_detect import ingest_tenancy
 from app.db.schema_detect import legacy
 from app.db.schema_detect.auth_identity import AuthIdentityFacts
 from app.db.schema_detect.cloud_seams import CloudSeamsFacts
+from app.db.schema_detect.data_safety import DataSafetyFacts
 from app.db.schema_detect.governance import GovernanceFacts
 from app.db.schema_detect.ingest_tenancy import IngestTenancyFacts
 from app.db.schema_detect.legacy import LegacyFacts
@@ -45,6 +47,7 @@ class SchemaFacts:
     auth: AuthIdentityFacts
     tenancy: IngestTenancyFacts
     governance: GovernanceFacts
+    data_safety: DataSafetyFacts
 
 
 #: One ladder entry: a predicate over the facts, and the revision to stamp when it holds.
@@ -61,9 +64,15 @@ def collect_facts(conn: Connection, tables: list[str]) -> SchemaFacts:
         auth=auth_identity.probe(conn, tables, has_auth_config=legacy_facts.has_auth_config),
         tenancy=ingest_tenancy.probe(conn, tables),
         governance=governance.probe(conn, tables),
+        data_safety=data_safety.probe(conn, tables),
     )
 
 
 LADDER: tuple[Arm, ...] = (
-    governance.ARMS + ingest_tenancy.ARMS + auth_identity.ARMS + cloud_seams.ARMS + legacy.ARMS
+    data_safety.ARMS
+    + governance.ARMS
+    + ingest_tenancy.ARMS
+    + auth_identity.ARMS
+    + cloud_seams.ARMS
+    + legacy.ARMS
 )

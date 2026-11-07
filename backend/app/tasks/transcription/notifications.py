@@ -85,7 +85,7 @@ def send_notification_via_redis(
     try:
         # Checked BEFORE the metadata load below, so a quarantined file's
         # filename is never even read off the DB for this purpose (issue #908).
-        from app.services.takedown_service import is_notification_suppressed
+        from app.services.file_availability import is_notification_suppressed
 
         if is_notification_suppressed(file_id, user_id):
             # The notification itself is withheld, but the gallery/status page
@@ -174,7 +174,7 @@ def send_notification_with_retry(
             # between each, then logging an "after 3 attempts" error, fired on
             # every progress tick of every quarantined file for no reason: the
             # send was never going to succeed, because it was never meant to.
-            from app.services.takedown_service import is_notification_suppressed
+            from app.services.file_availability import is_notification_suppressed
 
             if is_notification_suppressed(file_id, user_id):
                 logger.debug(
@@ -246,7 +246,7 @@ def send_transcript_ready_notification(user_id: int, file_id: int) -> None:
     try:
         # Checked before the metadata load, same as send_notification_via_redis —
         # a quarantined file's filename is never read off the DB for this purpose.
-        from app.services.takedown_service import is_notification_suppressed
+        from app.services.file_availability import is_notification_suppressed
 
         if is_notification_suppressed(file_id, user_id):
             logger.debug(f"transcript_ready notification suppressed for file {file_id}")
@@ -309,7 +309,7 @@ def send_completion_notification(
         # Hoisted above the file_data assembly (issue #908): a quarantined
         # file's title/author/thumbnail must never be read off the DB for
         # this purpose, matching the other two notifications in this module.
-        from app.services.takedown_service import is_notification_suppressed
+        from app.services.file_availability import is_notification_suppressed
 
         if is_notification_suppressed(file_id, user_id):
             logger.debug(f"file_updated notification suppressed for file {file_id}")

@@ -28,7 +28,7 @@ def identification_task(db_session, monkeypatch):
     # this test's savepoint-isolated rows.
     monkeypatch.setattr("app.services.post_processing_status.report", lambda *a, **kw: False)
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed", lambda *a, **kw: False
+        "app.services.file_availability.is_notification_suppressed", lambda *a, **kw: False
     )
 
     def _unreadable(user_id):

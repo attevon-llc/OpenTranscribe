@@ -3,7 +3,7 @@
 ``PlatformBypass.user_is_admin`` is the bare role; ``allows()`` is whether that role may
 act on THIS row (single mode: any admin; multi mode: only under a grant for the row's
 tenant). Every quarantine read decision goes through ``takedown_predicates.quarantine_exempt``
-/ ``is_quarantine_hidden`` / ``quarantine_list_exempt``; nothing derives the exemption from
+/ ``is_unavailable_for`` / ``unavailable_list_exempt``; nothing derives the exemption from
 the bare role.
 """
 
@@ -19,19 +19,20 @@ import pytest
 
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_availability import is_unavailable_for
+from app.services.file_availability import unavailable_list_exempt
 from app.services.platform_access import TenancyMode
 from app.services.platform_bypass import PlatformBypass
 from app.services.platform_bypass import SupportGrantView
-from app.services.takedown_predicates import is_quarantine_hidden
 from app.services.takedown_predicates import quarantine_exempt
-from app.services.takedown_predicates import quarantine_list_exempt
 
 APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 
 
-def _file(*, quarantined=True, org=7, owner=1) -> MediaFile:
+def _file(*, quarantined=True, org=7, owner=1, trashed=False) -> MediaFile:
     return MediaFile(
         is_quarantined=quarantined,
+        deleted_at=datetime.now(UTC) if trashed else None,
         organization_id=org,
         user_id=owner,
         uuid="f-1",
@@ -65,35 +66,43 @@ class TestRuleTable:
     def test_single_mode_admin_is_exempt(self):
         bypass = PlatformBypass(user=_admin(), mode=TenancyMode.SINGLE)
         assert quarantine_exempt(bypass, _file()) is True
-        assert is_quarantine_hidden(bypass, _file()) is False
+        assert is_unavailable_for(bypass, _file()) is False
 
     def test_multi_mode_admin_without_a_grant_is_not_exempt(self):
         bypass = PlatformBypass(user=_admin(), mode=TenancyMode.MULTI)
         assert bypass.user_is_admin is True
         assert quarantine_exempt(bypass, _file()) is False
-        assert is_quarantine_hidden(bypass, _file()) is True
+        assert is_unavailable_for(bypass, _file()) is True
 
     def test_multi_mode_grant_exempts_only_its_own_tenant(self):
         bypass = PlatformBypass(user=_admin(), mode=TenancyMode.MULTI, grant=_grant(7))
-        assert is_quarantine_hidden(bypass, _file(org=7)) is False
-        assert is_quarantine_hidden(bypass, _file(org=8)) is True
+        assert is_unavailable_for(bypass, _file(org=7)) is False
+        assert is_unavailable_for(bypass, _file(org=8)) is True
 
     def test_a_non_admin_is_never_exempt(self):
         user = User(id=5, role="user")
         bypass = PlatformBypass(user=user, mode=TenancyMode.SINGLE)
-        assert is_quarantine_hidden(bypass, _file()) is True
+        assert is_unavailable_for(bypass, _file()) is True
 
     def test_a_file_that_is_not_quarantined_is_never_hidden(self):
         bypass = PlatformBypass.none()
-        assert is_quarantine_hidden(bypass, _file(quarantined=False)) is False
+        assert is_unavailable_for(bypass, _file(quarantined=False)) is False
+
+    def test_a_trashed_file_is_unavailable_even_to_a_reached_platform_role(self):
+        """The trash has no review exemption: only the trash routes reach a trashed file."""
+        single = PlatformBypass(user=_admin(), mode=TenancyMode.SINGLE)
+        granted = PlatformBypass(user=_admin(), mode=TenancyMode.MULTI, grant=_grant(7))
+        for bypass in (single, granted, PlatformBypass.none()):
+            assert is_unavailable_for(bypass, _file(quarantined=False, trashed=True)) is True
+            assert is_unavailable_for(bypass, _file(quarantined=True, trashed=True)) is True
 
     def test_list_form_follows_the_bypass_list_reach(self):
         single = PlatformBypass(user=_admin(), mode=TenancyMode.SINGLE)
         multi_bare = PlatformBypass(user=_admin(), mode=TenancyMode.MULTI)
         multi_org = PlatformBypass(user=_admin(), mode=TenancyMode.MULTI, grant=_grant(7))
-        assert quarantine_list_exempt(single) is True
-        assert quarantine_list_exempt(multi_bare) is False
-        assert quarantine_list_exempt(multi_org) is True
+        assert unavailable_list_exempt(single) is True
+        assert unavailable_list_exempt(multi_bare) is False
+        assert unavailable_list_exempt(multi_org) is True
 
 
 class TestSetFileUrls:
@@ -117,7 +126,7 @@ class TestSetFileUrls:
         assert row.thumbnail_url == "/api/files/f-1/thumbnail"
 
 
-_EXEMPTION_KWARGS = {"is_admin", "include_quarantined"}
+_EXEMPTION_KWARGS = {"is_admin", "include_quarantined", "platform_reached"}
 
 
 def _mentions_user_is_admin(node: ast.AST, tainted: set[str]) -> bool:
@@ -176,23 +185,24 @@ def test_no_quarantine_predicate_takes_its_exemption_from_the_bare_role():
             offenders.append(f"{path.relative_to(APP_ROOT)}:{line} {name}")
     assert offenders == [], (
         "derive the exemption with takedown_predicates.quarantine_exempt / "
-        f"is_quarantine_hidden / quarantine_list_exempt, not user_is_admin: {offenders}"
+        "file_availability.is_unavailable_for / unavailable_list_exempt, or pass "
+        f"platform_reached=bypass.allows(...), not user_is_admin: {offenders}"
     )
 
 
 class TestGuardDetector:
     def test_fires_on_a_direct_attribute(self):
-        src = "def f(ctx, m):\n    return is_hidden_for(m, is_admin=ctx.bypass.user_is_admin)\n"
-        assert find_role_derived_quarantine_args(src) == [(2, "is_hidden_for(is_admin=)")]
+        src = "def f(ctx, m):\n    return is_unavailable(m, is_admin=ctx.bypass.user_is_admin)\n"
+        assert find_role_derived_quarantine_args(src) == [(2, "is_unavailable(is_admin=)")]
 
     def test_fires_through_a_local_variable(self):
         src = (
             "def f(ctx, q):\n"
             "    allowed = ctx.bypass.user_is_admin\n"
-            "    return exclude_quarantined(q, include_quarantined=allowed)\n"
+            "    return exclude_unavailable(q, include_quarantined=allowed)\n"
         )
         assert find_role_derived_quarantine_args(src) == [
-            (3, "exclude_quarantined(include_quarantined=)")
+            (3, "exclude_unavailable(include_quarantined=)")
         ]
 
     def test_fires_on_a_conditional_that_skips_the_quarantine_lookup(self):
@@ -210,10 +220,14 @@ class TestGuardDetector:
             (2, "files_for_tag(include_quarantined=)")
         ]
 
+    def test_fires_on_the_platform_reached_keyword(self):
+        src = "def f(ctx, m):\n    return is_unavailable(m, platform_reached=ctx.bypass.user_is_admin)\n"
+        assert find_role_derived_quarantine_args(src) == [(2, "is_unavailable(platform_reached=)")]
+
     def test_stays_quiet_for_the_shared_helper_and_literals(self):
         src = (
             "def f(ctx, q, m):\n"
-            "    a = is_hidden_for(m, is_admin=False)\n"
-            "    return exclude_quarantined(q, include_quarantined=quarantine_list_exempt(ctx.bypass))\n"
+            "    a = is_unavailable(m)\n"
+            "    return exclude_unavailable(q, include_quarantined=unavailable_list_exempt(ctx.bypass))\n"
         )
         assert find_role_derived_quarantine_args(src) == []

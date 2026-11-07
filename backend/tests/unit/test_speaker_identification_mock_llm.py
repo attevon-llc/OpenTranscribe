@@ -56,7 +56,7 @@ def identify(db_session, normal_user, monkeypatch: pytest.MonkeyPatch, mock_llm_
     # cannot see this test's savepointed rows.
     monkeypatch.setattr("app.services.post_processing_status.report", lambda *a, **kw: False)
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed", lambda *a, **kw: False
+        "app.services.file_availability.is_notification_suppressed", lambda *a, **kw: False
     )
     # Nothing here reindexes: the rename tracker's flush would dispatch Celery work.
     monkeypatch.setattr(

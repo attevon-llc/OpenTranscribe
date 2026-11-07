@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Files now have a trash state (database revision v463). Nothing moves a file to the trash yet; the read side is ready, so a trashed file will be hidden from the gallery, file details, search, chat, exports, speaker views and live notifications for everyone, platform administrators included (#1101).
 - Ratchet guards for file size, complexity and broad exception handlers, process ids in comments, API-layer boundaries, raw environment reads, suppressions without a reason, frontend lint warnings and frontend dead code or import cycles. Each compares a count with a committed baseline in `scripts/guards/baselines/`, fails when it grows, and is checked by a test that plants a violation. New import-linter contracts keep lower layers from importing the API, task or service layers.
 - Supply-chain and publication gates for running OpenTranscribe on the public internet: GitHub Actions are pinned to commit SHAs with least-privilege tokens and audited by zizmor; CodeQL, OpenSSF Scorecard, OSV and a scheduled dependency and image scan run in CI; a dependency review blocks pull requests that add a vulnerable or copyleft package and uploads a package-change report; `scripts/check-licenses.py` classifies every shipped Python and npm package against a permissive-only policy; Dependabot waits seven days before proposing a new release; a migration guard flags table-locking operations; and `scripts/public-smoke.sh`, `scripts/check-public-headers.py` and `scripts/zap-baseline.sh` check a deployed instance from outside.
 - `./scripts/run-backend-tests.sh --throwaway-db [--keep]` runs the backend tests against a disposable, labelled Postgres container that it migrates with the checkout's own migrations, so it works from the main checkout and from any git worktree with no dev stack, and removes the container and its temp directory on every exit (failure, interrupt and termination included; `--keep` leaves them). A worktree with no `backend/venv` borrows the main checkout's. The labels let `./opentr.sh test-cleanup` find a leftover from a killed run.
@@ -63,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A file under takedown no longer shows up in five places that still revealed it to its owner: the owner filter in the gallery, the "already in these collections" check when organizing selected files, the stuck-files list, speaker profile file and appearance counts, and the member list of a speaker cluster (#1101).
 - `LDAP_RECURSIVE_GROUPS` no longer has a different default expression from the other LDAP
   booleans; it is parsed by the same settings parser.
 - `POST /api/chat/context/estimate` no longer reports a made-up 8192-token window when the model's context size is unknown: it returns `context_window: null`, `context_window_source: "unknown"` and a reason code, logs a warning, and the file picker shows "context size unknown". Callers may pass `assumed_context_window` to choose a window; it never overrides a known one.

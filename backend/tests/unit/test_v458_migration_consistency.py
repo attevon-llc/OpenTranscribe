@@ -289,7 +289,7 @@ def test_run_migrations_builds_the_index_and_survives_a_held_transaction(monkeyp
             monkeypatch.setattr(concurrent_indexes, "BUILD_LOCK_TIMEOUT_SECONDS", 2)
 
             def start() -> None:
-                monkeypatch.setattr(migrations, "_speaker_index_retry_done", False)
+                monkeypatch.setattr(migrations, "_concurrent_index_retry_done", False)
                 migrations.run_migrations()
 
             start()  # empty database: the whole chain, then the runner builds the index

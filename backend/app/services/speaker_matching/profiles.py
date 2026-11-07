@@ -8,10 +8,10 @@ from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
+from app.services.file_availability import exclude_unavailable
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_profile_activity import touch_profile_interaction
-from app.services.takedown_service import exclude_quarantined
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import record_human_identity
@@ -116,7 +116,7 @@ def find_speaker_occurrences(
         .join(MediaFile, Speaker.media_file_id == MediaFile.id)
         .filter(Speaker.profile_id == profile_id, Speaker.user_id == user_id)
     )
-    query = exclude_quarantined(query, include_quarantined=include_quarantined)
+    query = exclude_unavailable(query, include_quarantined=include_quarantined)
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
         query = query.filter(tenant_pred)

@@ -24,6 +24,7 @@ from app.schemas.speaker_cluster import ClusterSplitRequest
 from app.schemas.speaker_cluster import ClusterUnassignRequest
 from app.schemas.speaker_cluster import ReclusterRequest
 from app.schemas.speaker_cluster import SpeakerClusterUpdate
+from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.playback_rendition import resolve_playback
@@ -35,7 +36,6 @@ from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_clustering_service import SpeakerClusteringService
-from app.services.takedown_service import quarantine_list_exempt
 from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
@@ -178,7 +178,7 @@ def get_unverified_inbox(
         user_id=current_user.id,
         page=page,
         per_page=per_page,
-        include_quarantined=quarantine_list_exempt(ctx.bypass),
+        include_quarantined=unavailable_list_exempt(ctx.bypass),
         organization_id=ctx.org_id,
     )
 
@@ -250,9 +250,9 @@ def get_speaker_media_preview(
     # and title. Same class as the thumbnail gate (issue #817), worse payload. Mirrors
     # `speakers.get_speaker_cross_media_occurrences`, which already does this.
     # 404 not 403: "it exists but you may not see it" is itself a disclosure.
-    from app.services.takedown_service import is_quarantine_hidden
+    from app.services.file_availability import is_unavailable_for
 
-    if is_quarantine_hidden(ctx.bypass, media_file):
+    if is_unavailable_for(ctx.bypass, media_file):
         raise HTTPException(status_code=404, detail="Speaker not found")
 
     # Presigned URL for source media (shared media-streaming TTL)

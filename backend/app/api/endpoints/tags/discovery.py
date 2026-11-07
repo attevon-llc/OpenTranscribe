@@ -23,6 +23,7 @@ from app.schemas.tag import TagCollisionCluster
 from app.schemas.tag import TagFileList
 from app.schemas.tag import TaggedFile
 from app.schemas.tag import TagOnSelection
+from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
 from app.services.request_context import RequestContext
 from app.services.tag_collisions import files_for_tag
@@ -30,7 +31,6 @@ from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
 from app.services.tag_scope import tag_ownership
 from app.services.tag_scope import visible_to
-from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
@@ -128,7 +128,7 @@ def list_files_for_tag(
         user_id=current_user.id,
         organization_id=ctx.org_id,
         limit=limit,
-        include_quarantined=quarantine_list_exempt(ctx.bypass),
+        include_quarantined=unavailable_list_exempt(ctx.bypass),
     )
     return TagFileList(
         total=total,

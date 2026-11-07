@@ -158,7 +158,7 @@ def regenerate_rename_digests(
     # touches many files at once and the speakers page needs one "propagation
     # finished" signal to invalidate its cache and clear a progress indicator,
     # not one toast per file.
-    from app.services.takedown_service import filter_suppressed_file_uuids
+    from app.services.file_availability import filter_suppressed_file_uuids
 
     for user_id, files_for_user in owners.items():
         try:

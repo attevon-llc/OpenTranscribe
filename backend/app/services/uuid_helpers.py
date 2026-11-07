@@ -290,32 +290,33 @@ def get_file_by_uuid_with_permission(
     Raises:
         DomainError: 404 if not found, 403 if no permission
     """
+    from app.services.file_availability import is_unavailable
     from app.services.permission_service import PERMISSION_LEVELS
     from app.services.permission_service import PermissionService
-    from app.services.takedown_service import is_hidden_for
 
     file = get_file_by_uuid(db, uuid)
 
     # Platform bypass, decided against the loaded row's own tenant (incl. quarantined
     # files, for review). Multi-tenant mode: nothing without a support-access grant.
-    if bypass.allows(
+    platform_reached = bypass.allows(
         org_id=file.organization_id,
         owner_id=file.user_id,
         need="read" if min_permission == "viewer" else "write",
         resource_type="media_file",
         resource_uuid=str(file.uuid),
-    ):
-        return file
+    )
 
-    # Abuse/DMCA takedown: a quarantined file is invisible to non-admins on EVERY
-    # read surface (detail, stream, download, thumbnail). 404 (not 403) so a
-    # taken-down file is indistinguishable from a missing one — even the owner
-    # and public-share viewers are blocked. An admin's review visibility was already granted
-    # above, by ``bypass.allows`` on the row's own tenant; an admin it did not reach (multi
-    # mode, no grant) is not exempt here, or a PUBLIC quarantined file of another tenant would
-    # be served to them by the branch below. Same rule as the speaker chokepoint.
-    if is_hidden_for(file, is_admin=False):
+    # Availability (file_availability): a trashed file is 404 for EVERYONE here, the platform
+    # role included (only the trash routes reach it, through their own lookup). A quarantined
+    # file is 404 on every read surface (detail, stream, download, thumbnail), even for the
+    # owner and public-share viewers, unless the platform role reached this row above; an admin
+    # it did not reach (multi mode, no grant) is not exempt, or a PUBLIC quarantined file of
+    # another tenant would be served by the branch below. 404, not 403: indistinguishable from
+    # a missing file. Same rule as the speaker chokepoint.
+    if is_unavailable(file, platform_reached=platform_reached):
         raise ResourceNotFoundError("File not found")
+    if platform_reached:
+        return file
 
     # Public files are accessible regardless of tenant scope (intentional).
     if allow_public and file.is_public:
@@ -515,25 +516,27 @@ def require_speaker_access(
             tenants); 403 when the caller has no access in this tenant or holds a
             lower permission than ``min_permission``.
     """
+    from app.services.file_availability import is_unavailable
     from app.services.permission_service import PERMISSION_LEVELS
     from app.services.permission_service import PermissionService
-    from app.services.takedown_service import is_hidden_for
 
     speaker = get_speaker_by_uuid(db, speaker_uuid)
     media_file = speaker.media_file
     # A speaker's tenant is its file's; the speaker row's own organization_id is never stamped.
-    if bypass.allows(
+    platform_reached = bypass.allows(
         org_id=media_file.organization_id,
         owner_id=media_file.user_id,
         need="read" if min_permission == "viewer" else "write",
         resource_type="speaker",
         resource_uuid=str(speaker.uuid),
-    ):
+    )
+    # Trashed: 404 for everyone. Quarantined: 404 unless the platform role reached the row.
+    if is_unavailable(media_file, platform_reached=platform_reached):
+        raise ResourceNotFoundError("Speaker not found")
+    if platform_reached:
         return speaker
 
-    if is_hidden_for(media_file, is_admin=False) or not _resource_in_tenant_scope(
-        media_file, organization_id
-    ):
+    if not _resource_in_tenant_scope(media_file, organization_id):
         raise ResourceNotFoundError("Speaker not found")
 
     permission = PermissionService.get_file_permission(

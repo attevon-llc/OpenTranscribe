@@ -17,7 +17,7 @@ so keep heavy imports lazy.
   with no notion of whether the payload names a taken-down file. **Anything that identifies a
   `MediaFile`** (filename, title, thumbnail, a speaker tied to a recording) must go through
   `send_ws_event_for_file(user_id, type, data, *, file_id=… | file_uuid=… | file_uuids=…)`
-  instead (issue #908) — it consults `takedown_service.is_notification_suppressed` /
+  instead (issue #908) — it consults `file_availability.is_notification_suppressed` /
   `is_notification_suppressed_for_uuid` / `filter_suppressed_file_uuids` before ever calling
   the raw primitive, so a quarantined file cannot be disclosed over a live WS push even though
   the same file already 404s on every read surface. Exactly one selector is required — passing

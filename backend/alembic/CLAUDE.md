@@ -19,7 +19,8 @@ renumbering across four places per revision.
 
 | Lane | Branch | Holds | **Take** |
 |---|---|---|---|
-| Document ingestion (the only lane still open) | `feat/doc-ingestion` | v394–v399 (v394–v396 renumbered from v393–v395, see note 3) | not applicable to master: this branch already uses `v397`–`v399`, and `master` ALSO has a `v397` (`v397_add_platform_super_admin_link_authorized`) — a number collision to resolve when the branch merges |
+| v0.7.0 data-safety cluster (#1091, plan `docs/design/1091_data_safety_cluster_plan.md`) | `v070/dsafety-*` | v463 trash (L1), v464 erasure grace index (L6), v465 hidden media (L5), v466 organization owner (L7); v462 is the identity-history lane's | the number your lane holds; chain after the derived head, the coordinator re-chains at merge |
+| Document ingestion | `feat/doc-ingestion` | v394–v399 (v394–v396 renumbered from v393–v395, see note 3) | not applicable to master: this branch already uses `v397`–`v399`, and `master` ALSO has a `v397` (`v397_add_platform_super_admin_link_authorized`) — a number collision to resolve when the branch merges |
 
 The RAG / chat lane (`feat/rag-corpus-scale-403`, v390–v392) and the test-hardening lane
 (`chore/test-suite-perf-and-quality-overhaul`, v389) have both **merged**; those branches no longer

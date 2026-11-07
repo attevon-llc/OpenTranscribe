@@ -105,7 +105,7 @@ def _people_agg_real_uuids(*pairs: tuple[str, int]) -> dict[str, Any]:
     """Like ``test_chat_aggregation._people_agg`` but with REAL uuid4 file
     ids instead of ``"{name}-{n}"`` placeholders — this module always runs
     against a real Postgres ``session_factory`` (the flag read needs one), so
-    ``_quarantined_among``'s ``MediaFile.uuid IN (...)`` query would otherwise
+    ``_unavailable_among``'s ``MediaFile.uuid IN (...)`` query would otherwise
     raise ``invalid input syntax for type uuid`` on the placeholder strings."""
     return {
         "aggregations": {

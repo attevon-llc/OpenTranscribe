@@ -62,7 +62,7 @@ def send_task_notification(
         # (the DMCA §512(g) owner notices) never pass `file_id` — they carry the
         # file's identity in `extra` instead — so they are never suppressed by
         # this branch and the owner always learns about their own takedown.
-        from app.services.takedown_service import is_notification_suppressed
+        from app.services.file_availability import is_notification_suppressed
 
         if is_notification_suppressed(file_id, user_id):
             return False

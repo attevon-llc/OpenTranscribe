@@ -31,13 +31,13 @@ from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.file_availability import exclude_unavailable
 from app.services.tag_scope import accessible_file_ids_subquery
 from app.services.tag_scope import owned_or_system
 from app.services.tag_scope import system_tag
 from app.services.tag_scope import tag_ownership
 from app.services.tag_scope import visible_to
 from app.services.tag_service import normalize_tag_name
-from app.services.takedown_service import exclude_quarantined
 
 logger = logging.getLogger(__name__)
 
@@ -345,14 +345,14 @@ def files_for_tag(
     """The accessible files carrying a tag, newest first, and their true total.
 
     Quarantined files are left out unless ``include_quarantined``: the caller's review
-    visibility, ``quarantine_list_exempt(bypass)``, never the bare admin role.
+    visibility, ``unavailable_list_exempt(bypass)``, never the bare admin role.
 
     Returns:
         At most ``limit`` files, and the count of all matching files.
     """
     accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
     carrying = select(FileTag.media_file_id).where(FileTag.tag_id == tag_id)
-    query = exclude_quarantined(
+    query = exclude_unavailable(
         db.query(MediaFile).filter(MediaFile.id.in_(carrying), MediaFile.id.in_(accessible)),
         include_quarantined=include_quarantined,
     )

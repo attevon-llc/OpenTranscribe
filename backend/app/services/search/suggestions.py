@@ -189,7 +189,7 @@ def get_available_filters(
     # never touches OpenSearch — so without this, a quarantined file's speaker
     # names, tag names and upload-time date range keep appearing in these facets
     # for everyone who had access before the takedown, including the file's own
-    # owner (who takedown_service.is_hidden_for says must not see it at all).
+    # owner (who file_availability.is_unavailable says must not see it at all).
     # search.py's search_summaries already post-filters quarantined HITS off a
     # results page; there is no equivalent hit list here to post-filter, since
     # this endpoint returns aggregated buckets, not documents — so the exclusion

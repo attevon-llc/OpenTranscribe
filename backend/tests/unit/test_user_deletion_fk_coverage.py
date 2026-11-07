@@ -257,6 +257,14 @@ _ACTOR: dict[str, Disposition] = {
         "v454. Records which account stated a file's voiceprint consent; the state itself "
         "stays with the file when that account is deleted.",
     ),
+    "media_file.deleted_by_user_id": Disposition(
+        SET_NULL,
+        "MediaFile",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v463. Actor of a trash; the trashed row must outlive the actor's account, and the "
+        "trash state CHECK allows a trashed row with no actor.",
+    ),
     "auth_config_audit.changed_by": Disposition(
         SET_NULL,
         "AuthConfigAudit",

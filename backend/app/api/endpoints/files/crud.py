@@ -17,6 +17,7 @@ from app.models.user import User
 from app.schemas.media import MediaFileUpdate
 from app.schemas.transcript import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import TranscriptSegmentUpdate
+from app.services.file_availability import is_unavailable
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.platform_bypass import PlatformBypass
@@ -103,13 +104,14 @@ def get_media_file_by_id(
         HTTPException: If file not found
     """
     db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
-    if db_file is None or not bypass.allows(
+    platform_reached = db_file is not None and bypass.allows(
         org_id=db_file.organization_id,
         owner_id=db_file.user_id,
         need="read",
         resource_type="media_file",
         resource_uuid=str(db_file.uuid),
-    ):
+    )
+    if not platform_reached:
         db_file = (
             db.query(MediaFile)
             .filter(MediaFile.id == file_id)
@@ -117,7 +119,9 @@ def get_media_file_by_id(
             .first()
         )
 
-    if not db_file:
+    # Same availability rule as the uuid choke point: trashed is not found for anyone,
+    # quarantined is not found unless the platform role reached the row.
+    if not db_file or is_unavailable(db_file, platform_reached=platform_reached):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
     return db_file  # type: ignore[no-any-return]

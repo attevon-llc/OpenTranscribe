@@ -310,7 +310,7 @@ def test_oom_retry_frame_carries_prepare():
 def captured(monkeypatch):
     sent: list[dict] = []
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed", lambda *a, **k: False
+        "app.services.file_availability.is_notification_suppressed", lambda *a, **k: False
     )
     monkeypatch.setattr(
         notif,

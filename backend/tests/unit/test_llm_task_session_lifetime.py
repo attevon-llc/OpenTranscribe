@@ -211,7 +211,7 @@ def identification_env(db_session, monkeypatch):
     # session, keeping this suite focused on scope depth.
     monkeypatch.setattr("app.services.post_processing_status.report", lambda *a, **kw: False)
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed",
+        "app.services.file_availability.is_notification_suppressed",
         lambda *a, **kw: False,
     )
 

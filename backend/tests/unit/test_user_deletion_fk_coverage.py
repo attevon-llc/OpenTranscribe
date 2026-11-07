@@ -328,6 +328,15 @@ _ACTOR: dict[str, Disposition] = {
         "operator who recorded it; only the attribution goes, and handled_by_user_uuid keeps "
         "a pseudonymous snapshot of who it was.",
     ),
+    "organization.owner_user_id": Disposition(
+        SET_NULL,
+        "Organization",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v468 (#1105). An organization outlives its owner's account; ownership then falls "
+        "back to none, and an organization administrator cannot schedule the organization's "
+        "erasure until a new owner is named (409 org_owner_required).",
+    ),
     "content_hold.placed_by_user_id": Disposition(
         SET_NULL,
         "ContentHold",

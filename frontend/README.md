@@ -121,7 +121,7 @@ are not routes; they are sections of `components/SettingsModal.svelte`, loaded l
 ### Path aliases
 
 Use `$lib` (`src/lib`), `$components` (`src/components`) and `$stores` (`src/stores`) instead of
-relative `../../` paths. They are defined in `svelte.config.js` and mirrored in
+relative `../../` paths. They are defined in `kit.config.js` and mirrored in
 `vitest.config.ts`.
 
 ## Internationalization

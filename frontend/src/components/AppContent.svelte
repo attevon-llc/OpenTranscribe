@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
 
   // Track if we're on a full-bleed page (own layout, no wrapper padding)
-  $: isFullBleedPage = $page.url.pathname === '/' || ($page.url.pathname as string) === '' || $page.url.pathname === '/search';
+  $: isFullBleedPage = page.url.pathname === '/' || (page.url.pathname as string) === '' || page.url.pathname === '/search';
 </script>
 
 <!-- id="main-content" is the skip link's target (+layout.svelte); tabindex="-1" lets it

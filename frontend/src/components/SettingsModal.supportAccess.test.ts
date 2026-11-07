@@ -42,7 +42,7 @@ import SettingsModal from './SettingsModal.svelte';
 import { user as mockUser } from '$stores/auth';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { capabilities } from '$stores/capabilities';
-import { resetAppStores } from '../test-mocks/app-stores';
+import { resetAppStores } from '../test-mocks/app-state.svelte';
 import { sectionLoaders } from '$lib/settings/sectionLoaders';
 
 function setUser(role: 'user' | 'admin' | 'super_admin') {

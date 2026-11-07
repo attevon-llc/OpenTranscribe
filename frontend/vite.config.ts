@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import { kitConfig } from './kit.config.js';
 import { defineConfig, loadEnv } from 'vite';
 import { fileURLToPath } from 'url';
 import { createHash } from 'crypto';
@@ -44,7 +45,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
-      sveltekit(),
+      sveltekit(kitConfig),
       ...(analyze
         ? [
             // adapter-static empties dist/ during finalization (after the Vite
@@ -151,7 +152,6 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
-      emptyOutDir: true,
       // Sourcemaps ONLY in dev/preview — shipping them to production exposes
       // the entire source tree (variable names, API endpoints, error messages,
       // business logic) to any visitor via DevTools or automated crawlers.
@@ -176,7 +176,6 @@ export default defineConfig(({ mode }) => {
       // bind-mounts this code while the backend image's baked sha lags it.
       __GIT_SHA__: JSON.stringify(process.env.GIT_SHA?.trim() || 'unknown'),
     },
-    base: '/',
     optimizeDeps: {
       exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
     },

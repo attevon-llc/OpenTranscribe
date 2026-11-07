@@ -3,8 +3,8 @@
  *
  * DEFECT THIS CATCHES: an unresolvable import is not a test failure under
  * vitest — the file fails to *transform*, vitest reports "no tests" and moves
- * on, and coverage silently drops the file from its denominator. `$app/stores`
- * and `$app/environment` were unaliased for the life of the suite, which made
+ * on, and coverage silently drops the file from its denominator. `$app/state`
+ * and `$app/env` were unaliased for the life of the suite, which made
  * 12 files untestable and invisible: the four unauthenticated routes
  * (login / reset-password / verify-email / accept-invite), the auth-bootstrap
  * `+layout.svelte` route guard, SettingsModal, Navbar, search, `+error`,
@@ -17,7 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-/** Every source file that imports `$app/stores` or `$app/environment`. */
+/** Every source file that imports `$app/state` or `$app/env`. */
 const APP_MODULE_CONSUMERS: Array<[string, () => Promise<unknown>]> = [
   ['routes/login/+page.svelte', () => import('../routes/login/+page.svelte')],
   ['routes/reset-password/+page.svelte', () => import('../routes/reset-password/+page.svelte')],
@@ -57,18 +57,16 @@ describe('$app/* alias coverage', () => {
     ROUTE_GRAPH_IMPORT_TIMEOUT_MS
   );
 
-  it('$app/stores page store exposes a URL, so route-guard code can be driven', async () => {
-    const { page, setPage, resetAppStores } = await import('./app-stores');
+  it('$app/state page exposes a URL, so route-guard code can be driven', async () => {
+    const { page, setPage, resetAppStores } = await import('./app-state.svelte');
     setPage('/login');
-    let seen: URL | null = null;
-    const unsub = page.subscribe((p) => (seen = p.url));
-    unsub();
-    expect(seen!.pathname).toBe('/login');
+    expect(page.url.pathname).toBe('/login');
     resetAppStores();
+    expect(page.url.pathname).toBe('/');
   });
 
-  it('$app/environment reports browser=true so SSR branches are never the tested path', async () => {
-    const { browser, building } = await import('./app-environment');
+  it('$app/env reports browser=true so SSR branches are never the tested path', async () => {
+    const { browser, building } = await import('./app-env');
     expect(browser).toBe(true);
     expect(building).toBe(false);
   });

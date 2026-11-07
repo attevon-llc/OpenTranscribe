@@ -18,10 +18,7 @@ vi.mock('$stores/supportSession', async () => {
   const { writable } = await import('svelte/store');
   return { supportSessionGate: writable({ active: false, readOnly: false }) };
 });
-vi.mock('$app/stores', async () => {
-  const { readable } = await import('svelte/store');
-  return { page: readable({ url: new URL('http://localhost/') }) };
-});
+vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$stores/auth', async () => {
   const { writable } = await import('svelte/store');

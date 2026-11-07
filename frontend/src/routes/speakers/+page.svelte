@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import ClustersSection from '$components/speakers/ClustersSection.svelte';
@@ -29,7 +29,7 @@
   // which links here as `/speakers?tab=profiles` so a labeled speaker's
   // profile is one click from where it was noticed rather than a manual
   // tab switch + hunt.
-  const initialTab = $page.url.searchParams.get('tab');
+  const initialTab = page.url.searchParams.get('tab');
   let activeTab: Tab = initialTab === 'profiles' || initialTab === 'inbox' ? initialTab : 'clusters';
 
   // The Clusters tab owns its list and flows; the page needs its total (tab badge) and a handle.

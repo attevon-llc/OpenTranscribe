@@ -5,7 +5,7 @@ import path from 'node:path';
 
 /**
  * Dedicated Vitest config (kept separate from vite.config.ts so the SvelteKit build
- * config stays clean). Aliases MUST mirror svelte.config.js — keep in sync, and so
+ * config stays clean). Aliases MUST mirror kit.config.js — keep in sync, and so
  * must `define`: a component importing a build constant that only vite.config.ts
  * defines would throw ReferenceError under jsdom.
  */
@@ -31,7 +31,7 @@ export default defineConfig({
       // in file" rather than a failure — so the file is silently excluded from
       // both the suite and the coverage denominator.
       //
-      // ADDED 2026-08-12: `$app/stores` and `$app/environment` were missing, which
+      // ADDED 2026-08-12: `$app/stores` and `$app/environment` (now `$app/state` / `$app/env`) were missing, which
       // made 12 files untestable and invisible to coverage — SettingsModal (1711
       // LOC), login/+page (1654), Navbar (1356), search/+page (1146),
       // stores/gallery (566), accept-invite, reset-password, verify-email,
@@ -39,8 +39,8 @@ export default defineConfig({
       // AppContent. That is the entire unauthenticated attack surface. Any new
       // `$app/*` import needs a stub here the same day it lands.
       '$app/navigation': path.resolve('./src/test-mocks/app-navigation.ts'),
-      '$app/stores': path.resolve('./src/test-mocks/app-stores.ts'),
-      '$app/environment': path.resolve('./src/test-mocks/app-environment.ts'),
+      '$app/state': path.resolve('./src/test-mocks/app-state.svelte.ts'),
+      '$app/env': path.resolve('./src/test-mocks/app-env.ts'),
     },
   },
   test: {

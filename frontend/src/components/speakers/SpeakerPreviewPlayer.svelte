@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from '$stores/locale';
-  import { browser } from '$app/environment';
+  import { browser } from '$app/env';
   import type { SpeakerMediaPreviewData } from '$lib/api/speakerClusters';
 
   export let speakerPreviewData: SpeakerMediaPreviewData | null = null;

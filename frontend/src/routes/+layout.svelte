@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, type Component } from "svelte";
   import { goto, afterNavigate, preloadCode } from "$app/navigation";
-  import { page } from "$app/stores";
+  import { page } from '$app/state';
+  import type { RouteId } from '$app/types';
   import { get } from 'svelte/store';
 
   // Import theme styles
@@ -84,12 +85,12 @@
   let routePrefetchScheduled = false;
   $: if ($isAuthenticated && !lifecycleHold && $capabilities.loaded && !routePrefetchScheduled) {
     routePrefetchScheduled = true;
-    const routes = ["/search", "/speakers", "/files/_", "/file-status"];
-    if (isCapabilityEnabled($capabilities, "chat.rag")) routes.push("/chat");
+    const routes: RouteId[] = ["/search", "/speakers", "/files/[id]", "/file-status"];
+    if (isCapabilityEnabled($capabilities, "chat.rag")) routes.push("/chat/[[conversationId]]");
     // A short timer, not `whenIdle`: a live page (websocket retries, thumbnails) rarely reports
     // idle before its 4 s timeout, and the first nav click usually lands sooner than that.
     setTimeout(() => {
-      // One call per route: `preloadCode` takes a single pathname.
+      // One call per route: `preloadCode` takes a single route id (Kit 3), not a pathname.
       for (const route of routes) void preloadCode(route).catch(() => {});
     }, 600);
   }
@@ -237,20 +238,20 @@
         if (authFailed) throw authError;
 
         const isAuth = get(isAuthenticated);
-        const currentPath = $page.url.pathname;
+        const currentPath = page.url.pathname;
 
         // Cloud edition: the hosted IdP owns login/registration/forgot-password
         // (its sign-in component on /login handles sign-up + recovery inline), so
         // the local credential routes are dead — redirect any hit to /login.
         if (isCloudEdition && LOCAL_CREDENTIAL_PATHS.includes(currentPath)) {
-          goto("/login", { replaceState: true });
+          goto("/login", { replace: true });
         } else {
           const isPublicPath = PUBLIC_PATHS.includes(currentPath);
 
           if (!isAuth && !isPublicPath) {
-            goto("/login", { replaceState: true });
+            goto("/login", { replace: true });
           } else if (isAuth && isPublicPath) {
-            goto("/", { replaceState: true });
+            goto("/", { replace: true });
           }
         }
 
@@ -264,9 +265,9 @@
         }
       } catch (error) {
         console.error('Layout: onMount - Error during initAuth or subsequent logic:', error);
-        const currentPath = $page.url.pathname;
+        const currentPath = page.url.pathname;
         if (currentPath !== "/login" && currentPath !== "/register") {
-          goto("/login", { replaceState: true });
+          goto("/login", { replace: true });
         }
       }
     })();
@@ -284,8 +285,8 @@
   // A lifecycle hold can land on any page (an admin can force a password change
   // mid-session). Bounce to /login, which owns both remedy screens. `goto` keeps
   // this an SPA navigation — a full reload would drop the in-memory reason.
-  $: if ($authReady && lifecycleHold && $page.url.pathname !== '/login') {
-    goto('/login', { replaceState: true });
+  $: if ($authReady && lifecycleHold && page.url.pathname !== '/login') {
+    goto('/login', { replace: true });
   }
 
 </script>
@@ -295,7 +296,7 @@
 {#if $authReady && $localeReady}
   <!-- PUBLIC_PATHS is defined once, in the script block, and shared with the
        imperative guard above. Do not reintroduce a second copy here. -->
-  {@const isPublicPath = PUBLIC_PATHS.includes($page.url.pathname)}
+  {@const isPublicPath = PUBLIC_PATHS.includes(page.url.pathname)}
 
   <!-- Classification Banner (FedRAMP AC-8) - shows on all pages when enabled -->
   {#if bannerEnabled && $isAuthenticated && ClassificationBanner}
@@ -374,7 +375,7 @@
        skeleton (no account data, none of the real app's selectors); /login gets the brand mark.
        The real app and the login form still render only once authReady, so nothing
        authenticated can reach a logged-out visitor. -->
-  <SessionCheckScreen shell={!PUBLIC_PATHS.includes($page.url.pathname)} />
+  <SessionCheckScreen shell={!PUBLIC_PATHS.includes(page.url.pathname)} />
 {/if}
 
 <style>

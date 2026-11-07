@@ -12,7 +12,7 @@ vi.mock('$components/UserFileStatus.svelte', async () => ({
 }));
 
 import Page from './+page.svelte';
-import { setPage } from '../../test-mocks/app-stores';
+import { setPage } from '../../test-mocks/app-state.svelte';
 import { gotoCalls } from '../../test-mocks/app-navigation';
 import { settingsModalStore } from '$stores/settingsModalStore';
 import { stampSettingsReturn } from '$lib/settings/returnToSettings';

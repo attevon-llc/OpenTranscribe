@@ -44,8 +44,8 @@ there is no server-side rendering of app data.
 - **Warm route code from the layout, not with `data-sveltekit-preload-code="eager"`.** SvelteKit scans
   for those attributes once per navigation, and the navbar only exists after auth resolves, so the
   scan misses the nav links until the first click, which is the click that needs the chunks.
-  `+layout.svelte` calls `preloadCode(route)` (**one call per route**: it takes a single pathname,
-  extra arguments are ignored) 600 ms after sign-in for search, speakers, chat (capability-gated),
+  `+layout.svelte` calls `preloadCode(route)` (**one call per route**: it takes a single route id such as
+  `/files/[id]`, not a pathname, since Kit 3) 600 ms after sign-in for search, speakers, chat (capability-gated),
   a file page and file-status. A short timer, not `whenIdle`: a live page rarely reports idle before
   its 4 s timeout. Measured on a prod build, Search/Chat click-to-content 160 -> 125 / 164 -> 115 ms.
 - **The file page's first `GET /files/{id}` joins the gallery's hover prefetch** (`apiCache`,

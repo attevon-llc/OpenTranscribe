@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 import type { MediaFile } from '$lib/types/media';
 
 // LocalStorage key for view mode persistence

@@ -36,16 +36,8 @@ const mockGoto = vi.hoisted(() => vi.fn());
 const mockBeforeNavigate = vi.hoisted(() => vi.fn());
 vi.mock('$app/navigation', () => ({ goto: mockGoto, beforeNavigate: mockBeforeNavigate }));
 
-const mockPageStore = vi.hoisted(() => {
-  const url = new URL('http://localhost/search?q=roadmap');
-  return {
-    subscribe: (run: (value: { url: URL }) => void) => {
-      run({ url });
-      return () => {};
-    },
-  };
-});
-vi.mock('$app/stores', () => ({ page: mockPageStore }));
+const mockPageState = vi.hoisted(() => ({ url: new URL('http://localhost/search?q=roadmap') }));
+vi.mock('$app/state', () => ({ page: mockPageState }));
 
 vi.mock('$lib/api/mediaUrl', () => ({
   getMediaStreamUrl: vi.fn(),

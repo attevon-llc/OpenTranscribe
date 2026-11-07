@@ -161,7 +161,7 @@ Instructions:
 1. Read each file mentioned in the errors
 2. Fix ONLY the specific errors shown above
 3. Do NOT change functionality, refactor, or add comments
-4. Do NOT modify tsconfig.json or svelte.config.js
+4. Do NOT modify tsconfig.json or kit.config.js
 5. Make the minimal change needed to resolve each error" \
         2>&1 || claude_exit=$?
 

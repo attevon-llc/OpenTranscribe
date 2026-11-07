@@ -10,12 +10,12 @@
  * file pins the config that produces it and the checker's own parsing.
  */
 import { describe, expect, it } from 'vitest';
-import config from '../svelte.config.js';
+import { kitConfig } from '../kit.config.js';
 import { bareSchemeSources, extractMetaCsp, parseCsp } from '../scripts/check-built-csp.mjs';
 
-const directives = config.kit?.csp?.directives as Record<string, string[]>;
+const directives = kitConfig.csp?.directives as Record<string, string[]>;
 
-describe('kit.csp directives (svelte.config.js)', () => {
+describe('kit.csp directives (kit.config.js)', () => {
   it('connect-src is exactly self', () => {
     expect(directives['connect-src']).toEqual(['self']);
   });

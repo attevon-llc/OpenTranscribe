@@ -59,7 +59,9 @@ export interface SettingsReturnTarget {
 }
 
 /** The target named by the current URL's query, or null when the user did not come from Settings. */
-export function settingsReturnFromUrl(url: URL): SettingsReturnTarget | null {
+export function settingsReturnFromUrl(url: {
+  searchParams: Pick<URLSearchParams, 'get'>;
+}): SettingsReturnTarget | null {
   if (url.searchParams.get('from') !== 'settings') return null;
   const section = url.searchParams.get('section') ?? '';
   if (!/^[a-z][a-z-]*$/.test(section)) return null;

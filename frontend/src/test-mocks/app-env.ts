@@ -1,5 +1,5 @@
 /**
- * Stub for SvelteKit's `$app/environment` under Vitest.
+ * Stub for SvelteKit's `$app/env` under Vitest.
  *
  * `browser` is `true`: vitest runs every file under jsdom on purpose (see
  * frontend/CLAUDE.md), so a module branching on `!browser` would otherwise take

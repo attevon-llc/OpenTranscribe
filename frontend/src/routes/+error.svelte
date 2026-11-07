@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { t } from '$stores/locale';
 
   // SvelteKit renders this on load/navigation errors and for unmatched routes.
-  $: status = $page.status;
+  $: status = page.status;
   $: isNotFound = status === 404;
-  $: errorMessage = $page.error?.message ?? '';
+  $: errorMessage = page.error?.message ?? '';
 
   $: heading = isNotFound ? $t('errorPage.notFoundTitle') : $t('errorPage.title');
   // Prefer the framework-provided message; fall back to a friendly translated one.

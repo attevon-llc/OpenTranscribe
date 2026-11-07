@@ -82,7 +82,7 @@ def list_source_files(
         .limit(page_size)
         .all()
     )
-    from app.services.takedown_service import is_hidden_for
+    from app.services.file_availability import is_unavailable
 
     files = []
     for r in rows:
@@ -90,7 +90,7 @@ def list_source_files(
         # owner's import history, not a review surface (admins review through
         # /admin/files/quarantined), and every surface the uuid would open 404s anyway.
         linked = r.media_file
-        if linked is not None and is_hidden_for(linked, is_admin=False):
+        if linked is not None and is_unavailable(linked):
             linked = None
         files.append(
             {

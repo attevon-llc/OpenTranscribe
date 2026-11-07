@@ -19,9 +19,9 @@ from app.models.media import MediaFile
 from app.services.audio_extraction import NoAudioTrackError
 from app.services.download_events import publish_download_event
 from app.services.download_events import release_download_prep_guard
+from app.services.file_availability import exclude_unavailable
 from app.services.minio_bucket_admin import MinIOService
 from app.services.redaction.export_policy import ExportRedactionNotReadyError
-from app.services.takedown_service import exclude_quarantined
 from app.services.takedown_service import is_review_admin
 from app.services.video_processing_service import VideoProcessingService
 
@@ -60,7 +60,7 @@ def prepare_media_download_task(
         # escapes: the scope closes before any MinIO/ffmpeg work starts.
         with session_scope() as db:
             review_admin = is_review_admin(db, user_id)
-            row = exclude_quarantined(
+            row = exclude_unavailable(
                 db.query(MediaFile.uuid, MediaFile.filename, MediaFile.storage_path).filter(
                     MediaFile.id == file_id
                 ),
@@ -68,7 +68,7 @@ def prepare_media_download_task(
             ).first()
             if not row:
                 # A quarantined file falls into this branch too — deliberately
-                # indistinguishable from a deleted one, matching `is_hidden_for`'s
+                # indistinguishable from a deleted one, matching `is_unavailable`'s
                 # 404 semantics. Do not add a quarantine-specific message or a
                 # different SSE event: the prepare endpoint already permission-filtered
                 # this file at dispatch, and a takedown landing before the worker runs

@@ -125,7 +125,7 @@ def tracking_env(db_session, monkeypatch):
     # savepoint release is not visible across connections) — stub the check
     # itself rather than bridge a second session.
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        "app.services.file_availability.is_notification_suppressed_for_uuid",
         lambda *a, **kw: False,
     )
     monkeypatch.setattr("app.services.minio_service.minio_client", _FakeMinio())

@@ -169,7 +169,7 @@ def test_thumbnail_quarantined_private_file_404s_for_its_owner(
 ):
     """Quarantine hides the file from its OWNER too — 404, not 403.
 
-    Matches ``takedown_service.is_hidden_for``: a taken-down file must be
+    Matches ``file_availability.is_unavailable``: a taken-down file must be
     indistinguishable from a missing one for every non-admin, the owner included.
     """
     media_file = _make_file(

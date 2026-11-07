@@ -1,7 +1,7 @@
 """``GET /api/speakers/{speaker_uuid}`` must hide a quarantined file's speaker (#817).
 
 Its sibling ``get_speaker_cross_media_occurrences`` (same file, ``:1267``) already
-calls ``takedown_service.is_hidden_for`` after resolving the speaker, guarded by
+calls ``file_availability.is_unavailable`` after resolving the speaker, guarded by
 this exact comment: "A quarantined file is hidden from its own owner ... without
 this a non-admin whose OWN file got taken down could still reach its speaker's
 [data] through this endpoint even though the file itself 404s." This endpoint,

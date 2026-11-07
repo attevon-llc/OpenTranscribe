@@ -14,12 +14,12 @@ level):
     anonymous callers on public files), so this module's gate tests say nothing
     about it. That was a false coverage claim here for as long as issue #817 was
     open, during which a taken-down public file streamed its thumbnail to
-    unauthenticated callers. It now calls ``is_hidden_for`` directly, and the
+    unauthenticated callers. It now calls ``is_unavailable`` directly, and the
     route-level regression tests for it live beside the other thumbnail tests in
     ``tests/api/test_files_streaming.py`` — not here.
   * An ADMIN still resolves the quarantined file (for review).
   * Releasing restores access for the owner and clears the legal-hold.
-  * ``exclude_quarantined`` drops the file from a list/gallery query for normal
+  * ``exclude_unavailable`` drops the file from a list/gallery query for normal
     users but leaves it for the admin "see all" branch.
   * Community invariance: a never-quarantined file is unaffected.
   * DMCA §512(g) owner notices (issue #262 item f): the OWNER is notified on
@@ -35,9 +35,9 @@ import pytest
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_availability import exclude_unavailable
+from app.services.file_availability import is_unavailable
 from app.services.takedown_service import TakedownActor
-from app.services.takedown_service import exclude_quarantined
-from app.services.takedown_service import is_hidden_for
 from app.services.takedown_service import quarantine_file
 from app.services.takedown_service import release_file
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
@@ -184,10 +184,10 @@ class TestQuarantineState:
         assert file.is_quarantined is True
         assert file.legal_hold is False
 
-    def test_is_hidden_for_helper(self, world):
+    def test_is_unavailable_helper(self, world):
         db, _owner, admin, file = world
         # Not quarantined: visible to everyone.
-        assert is_hidden_for(file, is_admin=False) is False
+        assert is_unavailable(file) is False
         quarantine_file(
             db,
             file,
@@ -197,8 +197,8 @@ class TestQuarantineState:
             operator_action_reason="operator action (test)",
         )
         # Quarantined: hidden from non-admin, visible to admin.
-        assert is_hidden_for(file, is_admin=False) is True
-        assert is_hidden_for(file, is_admin=True) is False
+        assert is_unavailable(file) is True
+        assert is_unavailable(file, platform_reached=True) is False
 
 
 class TestExcludeQuarantinedPredicate:
@@ -215,7 +215,7 @@ class TestExcludeQuarantinedPredicate:
         )
 
         base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
-        visible = exclude_quarantined(base).all()
+        visible = exclude_unavailable(base).all()
         ids = {f.id for f in visible}
         assert file.id not in ids
 
@@ -232,7 +232,7 @@ class TestExcludeQuarantinedPredicate:
         )
 
         base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
-        visible = exclude_quarantined(base, include_quarantined=True).all()
+        visible = exclude_unavailable(base, include_quarantined=True).all()
         ids = {f.id for f in visible}
         assert file.id in ids
 
@@ -240,7 +240,7 @@ class TestExcludeQuarantinedPredicate:
         """Community invariance: a normal file passes the exclusion unchanged."""
         db, owner, _admin, file = world
         base = db.query(MediaFile).filter(MediaFile.user_id == owner.id)
-        ids = {f.id for f in exclude_quarantined(base).all()}
+        ids = {f.id for f in exclude_unavailable(base).all()}
         assert file.id in ids
 
 

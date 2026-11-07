@@ -197,19 +197,19 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   row was superseded by a newer completed run of the same step for the same file": the health-check sweep,
   the `task_rows_superseded_active` gauge, `create_task_record`'s supersede-on-start and the `v448`
   migration all apply it. See `app/tasks/CLAUDE.md`.
-- **Abuse takedown / quarantine** — `takedown_service.py` is the one place quarantine lives
-  (a facade since #1253: `takedown_predicates` = the read side, `takedown_authority` = who may
-  act, `takedown_notices` = owner notices + audit). `exclude_quarantined`/`is_hidden_for` gate
-  reads, `quarantine_file`/`release_file` take a `TakedownActor` (platform or organization;
-  "platform wins", see `takedown_authority`). Patch `app.services.takedown_notices.audit_logger`,
-  not the service module's, in tests. Its `is_notification_suppressed` / `is_notification_suppressed_for_uuid` /
-  `filter_suppressed_file_uuids` are the WS-push-side twin of that same gate (issue #908) —
-  `app/utils/websocket_notify.py:send_ws_event_for_file` is the **required** call site for any
-  WebSocket event naming a `MediaFile`; `send_ws_event` itself has no notion of quarantine at
-  all. `tests/unit/test_ws_event_quarantine_discipline.py` is the structural gate that fails a
-  new unguarded call site. …and `exclude_quarantined` is re-applied on the ASYNC export plane
-  (`tasks/media_download.py`) because a dispatch-time authorization does not survive a
-  takedown landing before the worker runs.
+- **File availability** — `file_availability.py` is the ONE read rule: unavailable = trashed
+  (`deleted_at`, #1101; for everyone, platform role included) or quarantined where the platform
+  role did not reach the row. Lists: `exclude_unavailable`/`available_pred`
+  (`include_quarantined=unavailable_list_exempt(bypass)`); per row: `is_unavailable_for`/
+  `is_unavailable(platform_reached=)`; index post-filters: `unavailable_among`; WS twin (#908):
+  `is_notification_suppressed*`/`filter_suppressed_file_uuids`, called from
+  `utils/websocket_notify.send_ws_event_for_file`, the required site for any event naming a file.
+  Never filter the flags by hand (`test_file_availability_single_source.py`); erasure/purge must
+  not use the rule (`test_erasure_ignores_availability.py`). Re-applied on the async export plane.
+- **Abuse takedown / quarantine** — `takedown_service.py` is where quarantine is SET (facade,
+  #1253: `takedown_predicates` = review reach, `takedown_authority` = who may act,
+  `takedown_notices` = owner notices + audit; "platform wins"). Patch
+  `app.services.takedown_notices.audit_logger`, not the service module's, in tests.
   **Notice records (issue #1254):** `quarantine_file` requires `notice=` XOR `operator_action_reason=` and writes
   the `takedown_notice_file` link BEFORE its first commit (a failure rolls the flags back), `release_file` closes
   the links in the same commit. Write side `takedown_notice_service` (never commits), reads

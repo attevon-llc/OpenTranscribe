@@ -348,7 +348,7 @@ def test_cross_media_on_a_quarantined_speakers_own_file_is_404(
     """Adversarial-review follow-up (A2's leak class): the anchor speaker's own
     file is quarantined. ``PermissionService.get_file_permission`` has no
     notion of quarantine (ownership/sharing only) and would have returned
-    ``"owner"`` here, so without an explicit ``is_hidden_for`` check the
+    ``"owner"`` here, so without an explicit ``is_unavailable`` check the
     caller's own quarantined file's speaker data — filenames, titles, upload
     times of every occurrence — stayed fully reachable through this endpoint
     even though the file itself 404s everywhere else, for its own owner."""

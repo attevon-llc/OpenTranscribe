@@ -448,7 +448,7 @@ class SubtitleService:
     ) -> set[int]:
         """Which of file_ids must not be exported because of an abuse/DMCA takedown.
 
-        The complement of takedown_service.exclude_quarantined over the same ids, so the
+        The complement of file_availability.exclude_unavailable over the same ids, so the
         quarantine predicate keeps exactly one spelling in the codebase. A file DELETED
         between dispatch and execution also lands here — it cannot be proven visible.
 
@@ -456,13 +456,13 @@ class SubtitleService:
         land AFTER dispatch and before the worker runs — the whole reason quarantine is a
         run-time predicate, not a dispatch-time one.
         """
-        from app.services.takedown_service import exclude_quarantined
+        from app.services.file_availability import exclude_unavailable
 
         if include_quarantined or not file_ids:
             return set()
         visible = {
             int(row[0])
-            for row in exclude_quarantined(
+            for row in exclude_unavailable(
                 db.query(MediaFile.id).filter(MediaFile.id.in_(file_ids))
             ).all()
         }

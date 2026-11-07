@@ -13,6 +13,7 @@ from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
+from app.services.file_availability import unavailable_pred
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
@@ -209,8 +210,8 @@ def _get_unique_speakers_for_filter(
     base_filter = [] if include_unnamed else [has_human_name]
     base_filter.append(Speaker.media_file_id.in_(scope_files))
 
-    quarantined_ids = select(MediaFile.id).where(MediaFile.is_quarantined.is_(True))
-    base_filter.append(~Speaker.media_file_id.in_(quarantined_ids))
+    unavailable_ids = select(MediaFile.id).where(unavailable_pred())
+    base_filter.append(~Speaker.media_file_id.in_(unavailable_ids))
 
     if q and q.strip():
         # Search the offered label, not display_name alone — otherwise typing

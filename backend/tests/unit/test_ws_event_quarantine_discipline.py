@@ -3,7 +3,7 @@
 Issue #908 found 20 ``send_ws_event`` call sites that carry ``MediaFile`` identity
 (filename, title, thumbnail, a speaker tied to a recording) but bypassed the one
 existing chokepoint (``notification_service.send_task_notification`` +
-``takedown_service.is_notification_suppressed``) — so a live WebSocket push could
+``file_availability.is_notification_suppressed``) — so a live WebSocket push could
 still name a quarantined file to a non-admin recipient even though the same file
 404s on every read surface. ``app/utils/websocket_notify.py:send_ws_event_for_file``
 is the fix; this module is the gate that keeps a new unguarded call site from
@@ -122,7 +122,7 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
     "services/notification_service.py::send_task_notification": (
         1,
         "this IS the pre-#908 quarantine chokepoint — it calls "
-        "takedown_service.is_notification_suppressed itself before this line",
+        "file_availability.is_notification_suppressed itself before this line",
     ),
     "services/notification_service.py::send_file_cache_invalidation": (
         1,
@@ -214,7 +214,7 @@ _RAW_PUBLISH_ALLOWLIST: dict[str, tuple[int, str]] = {
     "services/video_processing_service.py::_send_download_progress": (
         1,
         "issue #908 finding A fix: guarded inline via "
-        "takedown_service.is_notification_suppressed(file_id, user_id) "
+        "file_availability.is_notification_suppressed(file_id, user_id) "
         "before this publish call, in the same function",
     ),
     "services/progress_tracker.py::emit_progress_notification": (

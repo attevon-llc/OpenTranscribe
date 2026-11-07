@@ -34,6 +34,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.file_consent import FileVoiceprintConsent
 from app.schemas.file_consent import FileVoiceprintConsentUpdate
+from app.services.file_availability import is_unavailable
 from app.services.hold_guard import hold_state
 from app.services.hold_guard import refusal_detail
 from app.services.privacy import file_consent
@@ -71,7 +72,7 @@ def set_file_voiceprint_consent(
         .filter(MediaFile.uuid == file_uuid, MediaFile.user_id == current_user.id)
         .first()
     )
-    if row is None or row.is_quarantined:
+    if row is None or is_unavailable(row):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 
     # Refused before anything is written: a held file's voiceprints are kept, so recording

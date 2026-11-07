@@ -294,12 +294,12 @@ def update_segment_speaker(
     # different speaker by the file's own owner (issue #817), the same class
     # of bypass already fixed for the speaker-cluster media-preview route.
     # Checked BEFORE the ownership check below: quarantine 404 must win over
-    # ownership 403, matching the chokepoint's own ordering (`is_hidden_for`
+    # ownership 403, matching the chokepoint's own ordering (`is_unavailable`
     # runs before the tenant/ownership checks in
     # `get_file_by_uuid_with_permission`).
-    from app.services.takedown_service import is_quarantine_hidden
+    from app.services.file_availability import is_unavailable_for
 
-    if is_quarantine_hidden(ctx.bypass, media_file):
+    if is_unavailable_for(ctx.bypass, media_file):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Transcript segment not found"
         )

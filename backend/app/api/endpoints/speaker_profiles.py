@@ -23,6 +23,7 @@ from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
+from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import PermissionService
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
@@ -32,7 +33,6 @@ from app.services.request_context import RequestContext
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
-from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_resource_owner
@@ -465,7 +465,7 @@ def get_speaker_profile_occurrences(
         occurrences = matching_service.find_speaker_occurrences(
             int(profile_id),
             current_user.id,
-            include_quarantined=quarantine_list_exempt(ctx.bypass),
+            include_quarantined=unavailable_list_exempt(ctx.bypass),
             organization_id=ctx.org_id,
         )
 

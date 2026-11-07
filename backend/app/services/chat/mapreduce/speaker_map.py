@@ -197,6 +197,7 @@ def scope_speaker_digest_hits(
 
     from app.models.file_facts import FileFacts
     from app.models.media import MediaFile
+    from app.services.file_availability import available_pred
     from app.services.search.chunk_retrieval import ChunkHit
     from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 
@@ -219,7 +220,7 @@ def scope_speaker_digest_hits(
             db.query(*columns)
             .outerjoin(FileFacts, FileFacts.media_file_id == MediaFile.id)
             .filter(MediaFile.uuid.in_(list(file_uuids)))
-            .filter(MediaFile.is_quarantined.is_(False))
+            .filter(available_pred())
             .all()
         )
     except Exception:  # noqa: BLE001 — a missing map degrades the answer, never breaks it

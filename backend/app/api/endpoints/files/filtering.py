@@ -22,6 +22,7 @@ from app.models.speaker import Speaker
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
+from app.services.file_availability import available_pred
 from app.services.platform_bypass import PlatformBypass
 from app.utils.sql_like import escape_like
 
@@ -611,12 +612,8 @@ def get_metadata_filters(
         )
         file_filter = MediaFile.id.in_(select(accessible_sq))
 
-    if not include_quarantined:
-        # Mirrors `services/takedown_service.exclude_quarantined` — that helper
-        # takes a Query, and `file_filter` here is a bare predicate combined
-        # into two different queries below, so the same condition is applied
-        # directly rather than reshaping this function around a Query object.
-        file_filter = and_(file_filter, MediaFile.is_quarantined.is_(False))
+    # A bare predicate, combined into two different queries below.
+    file_filter = and_(file_filter, available_pred(include_quarantined=include_quarantined))
 
     if owner_user_ids is not None:
         file_filter = and_(file_filter, MediaFile.user_id.in_(owner_user_ids))

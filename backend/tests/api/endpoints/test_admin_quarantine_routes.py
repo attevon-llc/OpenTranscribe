@@ -1,7 +1,7 @@
 """Functional (HTTP) tests for the admin quarantine/takedown routes (``admin.py``).
 
 ``backend/tests/test_takedown_quarantine.py`` is thorough but calls
-``quarantine_file()`` / ``release_file()`` / ``exclude_quarantined()`` directly as
+``quarantine_file()`` / ``release_file()`` / ``exclude_unavailable()`` directly as
 service functions — it never issues a real request. This file closes that gap for
 the three HTTP endpoints:
 

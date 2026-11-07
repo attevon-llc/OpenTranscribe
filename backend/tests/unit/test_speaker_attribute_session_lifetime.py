@@ -111,7 +111,7 @@ def tracked(db_session, monkeypatch):
     # savepoint-isolated MediaFile — stub the check itself rather than bridge
     # a second session, keeping this suite focused on scope depth.
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed_for_uuid",
+        "app.services.file_availability.is_notification_suppressed_for_uuid",
         lambda *a, **kw: False,
     )
 

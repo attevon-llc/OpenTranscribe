@@ -4,7 +4,7 @@
 exists anywhere in ``takedown_service.py`` — so before this fix a quarantined
 file's speaker names, tag names and upload-time date range kept appearing in
 this endpoint's facet aggregation for anyone who had access before the
-takedown, including the file's own owner (whom ``takedown_service.is_hidden_for``
+takedown, including the file's own owner (whom ``file_availability.is_unavailable``
 says must be treated as if the file no longer exists).
 
 ``search.py``'s sibling ``search_summaries``/``_drop_quarantined_search_hits``

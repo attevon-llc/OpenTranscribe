@@ -90,7 +90,7 @@ def test_no_presigned_url_is_minted_for_a_quarantined_file(
     # need it to report "suppressed" so the task's behaviour around that verdict is what's
     # under test.
     monkeypatch.setattr(
-        "app.services.takedown_service.is_notification_suppressed", lambda *_a, **_kw: True
+        "app.services.file_availability.is_notification_suppressed", lambda *_a, **_kw: True
     )
     send_task_notification = MagicMock(return_value=False)
     monkeypatch.setattr(

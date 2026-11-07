@@ -233,7 +233,7 @@ def _assert_comment_file_in_scope(
     your own quarantined file stayed fully readable/editable/deletable here
     while the file itself 404s everywhere else.
     """
-    from app.services.takedown_service import is_hidden_for
+    from app.services.file_availability import is_unavailable
 
     media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
     if media_file is not None and ctx.bypass.allows(
@@ -252,7 +252,7 @@ def _assert_comment_file_in_scope(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=forbidden_detail,
         )
-    if media_file is not None and is_hidden_for(media_file, is_admin=False):
+    if media_file is not None and is_unavailable(media_file):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Comment not found")
 
 

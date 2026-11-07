@@ -191,12 +191,12 @@ def get_collection(
     # Extract media files from collection members. Abuse/DMCA: quarantined
     # files are hidden from every read surface for non-admins — collection
     # detail included (matches the gallery, search, and per-file 404 gate).
-    from app.services.takedown_service import is_quarantine_hidden
+    from app.services.file_availability import is_unavailable_for
 
     media_files = [
         member.media_file
         for member in collection.collection_members
-        if not is_quarantine_hidden(ctx.bypass, member.media_file)
+        if not is_unavailable_for(ctx.bypass, member.media_file)
     ]
 
     # Build response with prompt info

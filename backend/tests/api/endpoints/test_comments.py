@@ -342,7 +342,7 @@ class TestQuarantineHidesCommentByUuid:
         self, client, db_session, normal_user, admin_token_headers
     ):
         """Control: admins retain review access, matching every other
-        quarantine gate (``is_hidden_for`` bypasses on ``is_admin``)."""
+        quarantine gate (``is_unavailable`` bypasses on ``is_admin``)."""
         hidden = _make_file(db_session, normal_user, quarantined=True)
         comment = _make_comment(db_session, hidden, normal_user)
         response = client.get(f"{COMMENTS_PATH}/{comment.uuid}", headers=admin_token_headers)

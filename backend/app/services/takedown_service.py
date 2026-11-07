@@ -11,10 +11,9 @@ service is the takedown.
 
 The module is a facade over four, split by concern (issue #1253):
 
-  * :mod:`app.services.takedown_predicates` — the read side: ``exclude_quarantined``,
-    ``is_hidden_for``, ``quarantined_among``, ``is_review_admin`` and the WebSocket
-    suppression twins.
-    Re-exported here, so every existing import keeps working.
+  * :mod:`app.services.takedown_predicates` — review reach: ``quarantine_exempt`` and
+    ``is_review_admin`` (re-exported here). The read rule itself, quarantine and trash, is
+    :mod:`app.services.file_availability`.
   * :mod:`app.services.takedown_authority` — who may take a file down or release it
     (``platform`` or ``organization``, "platform wins").
   * :mod:`app.services.takedown_notices` — the §512(g) owner notices and the audit
@@ -27,8 +26,8 @@ The module is a facade over four, split by concern (issue #1253):
     nor has a held file's retention clock restarted (issue #824).
 
 Community-edition invariance: nothing quarantines automatically, the columns
-default to the not-quarantined state, and ``exclude_quarantined``/``is_hidden_for``
-are behavior-preserving no-ops for files that were never taken down.
+default to the not-quarantined state, and the ``file_availability`` read rule is a
+behavior-preserving no-op for files that were never taken down.
 """
 
 import logging
@@ -61,16 +60,8 @@ from app.services.takedown_notices import OWNER_TAKEDOWN_EVENT
 from app.services.takedown_notices import audit_takedown
 from app.services.takedown_notices import notify_owner_release
 from app.services.takedown_notices import notify_owner_takedown
-from app.services.takedown_predicates import exclude_quarantined
-from app.services.takedown_predicates import filter_suppressed_file_uuids
-from app.services.takedown_predicates import is_hidden_for
-from app.services.takedown_predicates import is_notification_suppressed
-from app.services.takedown_predicates import is_notification_suppressed_for_uuid
-from app.services.takedown_predicates import is_quarantine_hidden
 from app.services.takedown_predicates import is_review_admin
 from app.services.takedown_predicates import quarantine_exempt
-from app.services.takedown_predicates import quarantine_list_exempt
-from app.services.takedown_predicates import quarantined_among
 
 __all__ = [
     "OWNER_RELEASE_EVENT",
@@ -78,17 +69,9 @@ __all__ = [
     "TakedownActor",
     "TakedownRefusedError",
     "apply_processing_status",
-    "exclude_quarantined",
-    "filter_suppressed_file_uuids",
-    "is_hidden_for",
-    "is_quarantine_hidden",
-    "is_notification_suppressed",
-    "is_notification_suppressed_for_uuid",
     "is_review_admin",
-    "quarantined_among",
     "quarantine_exempt",
     "quarantine_file",
-    "quarantine_list_exempt",
     "release_file",
     "stamp_completion_time",
 ]
@@ -357,7 +340,7 @@ def quarantine_file(
 
     # A takedown changes what the searchable/chat-retrievable corpus may serve —
     # exactly the event `bump_corpus_version` exists for (its own docstring names
-    # this scenario). The per-request post-filters (`exclude_quarantined`,
+    # this scenario). The per-request post-filters (`exclude_unavailable`,
     # `_drop_quarantined_search_hits`, chat's quarantine visibility rule) are the
     # actual enforcement; this only stops a cached page/retrieval from outliving
     # them for the rest of its TTL. Never raises by construction — no try/except.

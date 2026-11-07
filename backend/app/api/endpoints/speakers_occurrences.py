@@ -18,12 +18,13 @@ from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.user import User
+from app.services.file_availability import exclude_unavailable
+from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hide_machine_identities
 from app.services.request_context import RequestContext
-from app.services.takedown_service import quarantine_list_exempt
 from app.services.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
@@ -120,8 +121,7 @@ def _get_profile_based_occurrences(
     )
     if not bypass.sees_all_in_scope:
         query = query.filter(Speaker.user_id == current_user.id)
-    if not quarantine_list_exempt(bypass):
-        query = query.filter(MediaFile.is_quarantined.is_(False))
+    query = exclude_unavailable(query, include_quarantined=unavailable_list_exempt(bypass))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
         query = query.filter(tenant_pred)
@@ -184,8 +184,7 @@ def _get_display_name_based_occurrences(
     )
     if not bypass.sees_all_in_scope:
         similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-    if not quarantine_list_exempt(bypass):
-        similar_q = similar_q.filter(MediaFile.is_quarantined.is_(False))
+    similar_q = exclude_unavailable(similar_q, include_quarantined=unavailable_list_exempt(bypass))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
     if tenant_pred is not None:
         similar_q = similar_q.filter(tenant_pred)

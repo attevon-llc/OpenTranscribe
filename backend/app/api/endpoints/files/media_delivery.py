@@ -460,7 +460,7 @@ def get_thumbnail(
     Note: For gallery/list views, use the presigned thumbnail_url returned in the
     file listing response. This endpoint is a fallback for direct access.
     """
-    from app.services.takedown_service import is_hidden_for
+    from app.services.file_availability import is_unavailable
     from app.services.uuid_helpers import get_file_by_uuid
 
     db_file = get_file_by_uuid(db, file_uuid)
@@ -489,7 +489,7 @@ def get_thumbnail(
     # Abuse/DMCA takedown (issue #817): before the public branch, which skips every other
     # check. An admin the bypass did not reach (another tenant, multi mode, no grant) is not
     # exempt. 404 (not 403) keeps a taken-down file indistinguishable from a missing one.
-    if not platform_allowed and is_hidden_for(db_file, is_admin=False):
+    if not platform_allowed and is_unavailable(db_file):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="File not found",

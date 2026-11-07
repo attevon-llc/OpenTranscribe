@@ -17,8 +17,8 @@ from app.services.chat.aggregation_queries import SearchClient
 from app.services.chat.aggregation_queries import SessionFactory
 from app.services.chat.aggregation_queries import _accessible_scoped_files
 from app.services.chat.aggregation_queries import _flag_enabled
-from app.services.chat.aggregation_queries import _quarantined_among
 from app.services.chat.aggregation_queries import _speaker_tally
+from app.services.chat.aggregation_queries import _unavailable_among
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label
 
@@ -83,7 +83,7 @@ def _run_speaker_facet(
     # the counts after tallying would be right for the common case and wrong the
     # moment a subtraction created a tie the pre-filter numbers did not have.
     all_uuids = {uuid for _speaker, uuids in raw for uuid in uuids}
-    quarantined = _quarantined_among(session_factory, all_uuids)
+    quarantined = _unavailable_among(session_factory, all_uuids)
     tally = [
         (speaker, len(uuids) - sum(1 for uuid in uuids if uuid in quarantined))
         for speaker, uuids in raw

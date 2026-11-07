@@ -92,7 +92,7 @@ class TestConfirmSpeakerGender:
         # bridge a second session.
         with (
             patch(
-                "app.services.takedown_service.is_notification_suppressed_for_uuid",
+                "app.services.file_availability.is_notification_suppressed_for_uuid",
                 return_value=False,
             ),
             patch("app.utils.websocket_notify.send_ws_event") as mock_send_ws_event,

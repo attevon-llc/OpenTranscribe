@@ -27,6 +27,7 @@ from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.services.chat.speaker_name_text import _FUZZY_MAX_LENGTH_DELTA
 from app.services.chat.speaker_name_text import _normalize
+from app.services.file_availability import available_pred
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hidden_suggestion_clause
 from app.services.privacy.redact_view import machine_identity_clauses
@@ -219,7 +220,7 @@ def _accessible_speaker_query(db: Session, accessible_sq: Any, file_uuids: list[
     ).join(MediaFile, MediaFile.id == Speaker.media_file_id)
     base_query = base_query.filter(
         Speaker.media_file_id.in_(select(accessible_sq)),
-        MediaFile.is_quarantined.is_(False),
+        available_pred(),
     )
     if file_uuids is not None:
         base_query = base_query.filter(MediaFile.uuid.in_(file_uuids))

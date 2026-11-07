@@ -116,7 +116,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             # reach a non-admin over this path either, even though no filename is
             # included: the fact that a download for that id exists and is
             # progressing is itself the disclosure a takedown is supposed to hide.
-            from app.services.takedown_service import is_notification_suppressed
+            from app.services.file_availability import is_notification_suppressed
 
             if is_notification_suppressed(file_id, user_id):
                 logger.debug(f"download_progress notification suppressed for file {file_id}")

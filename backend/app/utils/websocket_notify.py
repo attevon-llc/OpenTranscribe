@@ -10,7 +10,7 @@ is deliberately exempt — see ``takedown_service``'s module docstring).
 ``send_ws_event_for_file`` is **required** for anything that names a ``MediaFile``
 (filename, title, thumbnail, a speaker tied to a recording, a digest/transcript
 excerpt): it consults the same quarantine-suppression predicates the read
-surfaces (``exclude_quarantined``/``is_hidden_for``) already enforce, so a live WS
+surfaces (``exclude_unavailable``/``is_unavailable``) already enforce, so a live WS
 push cannot disclose what a taken-down file's 404 already hides (issue #908).
 
 The Redis subscriber in ``app.api.websockets`` picks up the published message and
@@ -118,7 +118,7 @@ def send_ws_event_for_file(
     bulk speaker-rename propagation): the caller MUST have already filtered
     the list — and any payload field mirroring it (a ``file_uuids`` array, a
     recomputed count) — through
-    ``takedown_service.filter_suppressed_file_uuids``. If ANY uuid passed here
+    ``file_availability.filter_suppressed_file_uuids``. If ANY uuid passed here
     is still suppressed for this recipient, the WHOLE event is dropped rather
     than partially rewritten — there is no way for this function to know
     which payload fields would need to change to remove just the hidden file.
@@ -136,7 +136,7 @@ def send_ws_event_for_file(
         True if published, False if suppressed OR the underlying publish
         failed. The two are deliberately indistinguishable here — a caller
         that needs to tell them apart (e.g. to decide whether to retry)
-        should consult ``takedown_service.is_notification_suppressed`` (or
+        should consult ``file_availability.is_notification_suppressed`` (or
         its UUID/batch siblings) itself, rather than retry a suppression.
 
     Raises:
@@ -155,15 +155,15 @@ def send_ws_event_for_file(
     # into notification_service for the DMCA owner notices), and it keeps this
     # seam monkeypatchable per-call in tests, matching the existing pattern in
     # test_thumbnail_task_quarantine.py.
-    from app.services import takedown_service
+    from app.services import file_availability
 
     if file_id is not None:
-        suppressed = takedown_service.is_notification_suppressed(file_id, user_id)
+        suppressed = file_availability.is_notification_suppressed(file_id, user_id)
     elif file_uuid is not None:
-        suppressed = takedown_service.is_notification_suppressed_for_uuid(file_uuid, user_id)
+        suppressed = file_availability.is_notification_suppressed_for_uuid(file_uuid, user_id)
     else:
         assert file_uuids is not None  # narrowed by the selector-count check above
-        visible = takedown_service.filter_suppressed_file_uuids(file_uuids, user_id)
+        visible = file_availability.filter_suppressed_file_uuids(file_uuids, user_id)
         suppressed = len(visible) != len(list(file_uuids))
 
     if suppressed:

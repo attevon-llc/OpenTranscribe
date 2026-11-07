@@ -18,8 +18,8 @@ import pytest
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
-from app.services.takedown_service import filter_suppressed_file_uuids
-from app.services.takedown_service import is_notification_suppressed_for_uuid
+from app.services.file_availability import filter_suppressed_file_uuids
+from app.services.file_availability import is_notification_suppressed_for_uuid
 from app.utils.websocket_notify import send_ws_event_for_file
 
 

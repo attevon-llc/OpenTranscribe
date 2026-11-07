@@ -160,13 +160,13 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
             thumbnail URL is capped to a few minutes (issue #1122).
     """
     from app.core.config import settings
+    from app.services.file_availability import is_unavailable_for
     from app.services.minio_service import get_file_url
-    from app.services.takedown_service import is_quarantine_hidden
 
     # Fail closed: a taken-down file gets no media URLs here, whoever called. Callers filter
     # quarantined rows first, but this is the one place a thumbnail URL is minted for a list
     # or detail response, so the check lives here too and a new caller cannot forget it.
-    if is_quarantine_hidden(bypass, db_file):
+    if is_unavailable_for(bypass, db_file):
         db_file.download_url = None
         db_file.thumbnail_url = None
         return

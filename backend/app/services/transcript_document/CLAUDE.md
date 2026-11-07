@@ -111,7 +111,7 @@ Whose policy applies (the **requesting user**, not the file owner) and when it i
 QUARANTINE at run time.** Both entry points are permission-filtered at dispatch, but a
 takedown can land in the gap — `build_subtitle_archive` takes `include_quarantined` and
 *skips* a taken-down file like any other unusable entry (one file must not fail the other
-99), while `prepare_media_download_task` wraps its own file read in `exclude_quarantined` so
+99), while `prepare_media_download_task` wraps its own file read in `exclude_unavailable` so
 a taken-down file is refused exactly as a deleted one is. Sharing/tenant scope is still
 decided once, at the endpoint; only the abuse gate, which is time-varying by design, is
 re-applied.

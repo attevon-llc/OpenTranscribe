@@ -304,8 +304,8 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
 #: an admin reveal unredacted text (``reveal-widener``), keyed ``rel::function``. A widener in a
 #: function that is not listed is ``UNCLASSIFIED``: a new widener is a new decision.
 SCOPE_WIDENER_SITES: dict[str, str] = {
-    "services/takedown_predicates.py::quarantine_list_exempt": (
-        "decides only whether a list may include quarantined rows; the list's own tenant and organization predicates are applied by the caller"
+    "services/file_availability.py::unavailable_list_exempt": (
+        "decides only whether a list may include quarantined rows (never trashed ones); the list's own tenant and organization predicates are applied by the caller"
     ),
     "api/endpoints/files/listing.py::list_media_files": (
         "widens a list to every user's rows; the gallery list drops the owner filter but keeps the organization predicate"
@@ -374,7 +374,7 @@ REVEAL_WIDENER_SITES: dict[str, str] = {
 #: ``test_every_scope_widener_still_applies_its_tenant_predicate``. An empty tuple means the
 #: tenant gate is applied by the caller, and the site's reason says where.
 TENANT_MARKERS: dict[str, tuple[str, ...]] = {
-    "services/takedown_predicates.py::quarantine_list_exempt": (),
+    "services/file_availability.py::unavailable_list_exempt": (),
     "api/endpoints/files/listing.py::list_media_files": ("org_pred",),
     "api/endpoints/files/filtering.py::get_accessible_owners": ("org_pred",),
     "api/endpoints/search_reindex.py::get_degraded_embeddings": ("org_scope_pred",),

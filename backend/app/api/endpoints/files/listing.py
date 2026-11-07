@@ -29,10 +29,10 @@ from app.models.user import User
 from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.user import UserSearchResult
 from app.services.delete_permissions import can_delete_file
+from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
-from app.services.takedown_service import quarantine_list_exempt
 
 from .detail_response import set_file_urls
 from .filtering import LIST_SPEAKER_COLUMNS
@@ -196,7 +196,7 @@ def list_media_files(
     else:
         org_pred = MediaFile.organization_id.is_(None)
 
-    from app.services.takedown_service import exclude_quarantined
+    from app.services.file_availability import exclude_unavailable
 
     # Admin users can see all files regardless of ownership param (still org-gated).
     # Admins also see quarantined (taken-down) files so they can review them; for
@@ -239,8 +239,8 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_quarantined(
-        base_query, include_quarantined=quarantine_list_exempt(ctx.bypass)
+    base_query = exclude_unavailable(
+        base_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
     )
 
     # Prepare filters dictionary
@@ -303,7 +303,7 @@ def get_metadata_filters_endpoint(
         ctx.user.id,
         ownership=ownership,
         organization_id=ctx.org_id,
-        include_quarantined=quarantine_list_exempt(ctx.bypass),
+        include_quarantined=unavailable_list_exempt(ctx.bypass),
         owner_user_ids=resolve_owner_user_ids(db, owner),
     )
 

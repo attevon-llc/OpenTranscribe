@@ -24,8 +24,8 @@ from app.services.chat.trace import Outcome as TraceOutcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
+from app.services.file_availability import unavailable_among
 from app.services.search.chunk_retrieval import ChunkHit
-from app.services.takedown_predicates import quarantined_among
 
 if TYPE_CHECKING:
     from app.services.chat.aggregation_queries import SessionFactory
@@ -52,7 +52,7 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     (``aggregation_service.answer_aggregation``) runs a whole phase EARLIER, at
     phase 2, and is a separate code path this function never touches:
     ``aggregation_queries._accessible_scoped_files`` and
-    ``aggregation_queries._quarantined_among`` are the enforcement points for
+    ``aggregation_queries._unavailable_among`` are the enforcement points for
     that tier, on the Postgres and OpenSearch shapes respectively. The
     map-reduce overview's bounded-scope leg (``mapreduce.scope_digest_hits``)
     is a third, independent enforcement point for the same reason — it re-reads
@@ -60,7 +60,7 @@ def _drop_quarantined_hits(db: Session, hits: list[ChunkHit]) -> list[ChunkHit]:
     """
     if not hits:
         return hits
-    quarantined = quarantined_among(db, (hit.file_uuid for hit in hits))
+    quarantined = unavailable_among(db, (hit.file_uuid for hit in hits))
     if not quarantined:
         return hits
     return [hit for hit in hits if hit.file_uuid not in quarantined]

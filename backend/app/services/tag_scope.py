@@ -36,6 +36,7 @@ from app.models.media import MediaFile
 from app.models.sharing import TagShare
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.file_availability import available_pred
 from app.services.permission_service import PermissionService
 
 TagOwnership = Literal["mine", "system", "shared_with_me"]
@@ -186,7 +187,7 @@ def visible_to(db: Session, user_id: int, organization_id: int | None) -> Column
 
     The tenant's own tags and system tags are always readable. A tag of the
     same tenant created by someone else is readable when it was shared with the
-    caller, or when it sits on a non-quarantined file the caller may open. A
+    caller, or when it sits on an available file the caller may open (``file_availability``). A
     share or a shared file never carries a tag across the tenant boundary.
     """
     accessible = accessible_file_ids_subquery(db, user_id, organization_id)
@@ -195,7 +196,7 @@ def visible_to(db: Session, user_id: int, organization_id: int | None) -> Column
         .join(MediaFile, MediaFile.id == FileTag.media_file_id)
         .where(
             FileTag.media_file_id.in_(select(accessible)),
-            MediaFile.is_quarantined.is_not(True),
+            available_pred(),
         )
     )
     return or_(

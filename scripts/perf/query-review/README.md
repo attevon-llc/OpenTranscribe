@@ -26,6 +26,6 @@ reasoning. All artifacts go to `~/ot-cleanup-work/1337/perf/<run-id>/`, never `/
 8. For a before/after, restore the same dump, `ANALYZE`, change one thing, repeat 4-7.
 
 `queries/<id>.sql` ids match plan section 3; `<id>.after.sql` is the rewritten form. Present:
-C1-C3, G7, G8, G13 (+after), T1, T3, P3, K4, V13, A2. The rest are added during the baseline from
+C1-C3, G7, G8, G13 (+after), T1, T3, P3, K4, V13, A2, S1, T4, V7, P8, P9. The rest are added during the baseline from
 `auto_explain.log` literals (plan 4.3 step 5). V13 and A2 filter on `completed_at`, which the
 seed leaves NULL: set realistic values inside the same rolled-back transaction first.

@@ -19,7 +19,7 @@ FILES = sorted(QUERIES.glob("*.sql"))
 def test_the_expected_controls_and_hypotheses_are_present():
     names = {p.stem for p in FILES}
 
-    assert {"C1", "C2", "C3", "G7", "G13", "G13.after", "P3"} <= names
+    assert {"C1", "C2", "C3", "G7", "G13", "G13.after", "P3", "S1", "T4", "V7", "P8", "P9"} <= names
 
 
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.stem)

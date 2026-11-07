@@ -3033,6 +3033,7 @@
   "notifications.analyticsUpdate": "분석 업데이트",
   "notifications.backupUpdate": "데이터베이스 백업",
   "notifications.mediaMirrorUpdate": "미디어 미러링",
+  "notifications.monitoringAlert": "모니터링 경고",
   "notifications.downloadProgress": "다운로드 진행률",
   "notifications.audioExtraction": "오디오 추출",
   "notifications.fileUpload": "파일 업로드",

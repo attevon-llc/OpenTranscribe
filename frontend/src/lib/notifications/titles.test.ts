@@ -20,6 +20,7 @@ const EXPECTED_TITLE_KEYS: Record<string, string> = {
   analytics_status: 'notifications.analyticsUpdate',
   backup_status: 'notifications.backupUpdate',
   media_mirror_status: 'notifications.mediaMirrorUpdate',
+  monitoring_alert: 'notifications.monitoringAlert',
   audio_extraction_status: 'notifications.audioExtraction',
   download_progress: 'notifications.downloadProgress',
   file_upload: 'notifications.fileUpload',

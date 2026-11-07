@@ -3003,6 +3003,7 @@
   "notifications.analyticsUpdate": "分析更新",
   "notifications.backupUpdate": "データベースバックアップ",
   "notifications.mediaMirrorUpdate": "メディアミラー",
+  "notifications.monitoringAlert": "監視アラート",
   "notifications.downloadProgress": "ダウンロード進行状況",
   "notifications.audioExtraction": "音声抽出",
   "notifications.fileUpload": "ファイルアップロード",

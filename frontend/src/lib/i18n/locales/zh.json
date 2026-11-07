@@ -3003,6 +3003,7 @@
   "notifications.analyticsUpdate": "分析更新",
   "notifications.backupUpdate": "数据库备份",
   "notifications.mediaMirrorUpdate": "媒体镜像",
+  "notifications.monitoringAlert": "监控告警",
   "notifications.downloadProgress": "下载进度",
   "notifications.audioExtraction": "音频提取",
   "notifications.fileUpload": "文件上传",

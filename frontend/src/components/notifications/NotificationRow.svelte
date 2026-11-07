@@ -36,7 +36,12 @@
 >
   <div class="notification-main">
     <h4 class="notification-title">{notification.title}</h4>
-    <p class="notification-message">{notification.message}</p>
+    <p
+      class="notification-message"
+      {...notification.type === 'monitoring_alert' ? { dir: 'ltr' } : {}}
+    >
+      {notification.message}
+    </p>
 
     {#if notification.progress && processing}
       <NotificationProgress

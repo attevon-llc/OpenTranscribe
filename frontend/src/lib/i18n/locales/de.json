@@ -1009,6 +1009,7 @@
   "notifications.analyticsUpdate": "Analyse-Update",
   "notifications.backupUpdate": "Datenbank-Backup",
   "notifications.mediaMirrorUpdate": "Medien-Spiegel",
+  "notifications.monitoringAlert": "Überwachungsalarm",
   "notifications.audioExtraction": "Audio-Extraktion",
   "notifications.clearAll": "Alle Benachrichtigungen löschen",
   "notifications.closePanel": "Benachrichtigungsfeld schließen",

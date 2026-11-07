@@ -55,6 +55,7 @@ export const NOTIFICATION_TYPES = [
   'post_processing_status',
   'file_takedown',
   'file_takedown_released',
+  'monitoring_alert',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

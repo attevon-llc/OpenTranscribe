@@ -3041,6 +3041,7 @@
   "notifications.analyticsUpdate": "Aggiornamento analisi",
   "notifications.backupUpdate": "Backup del database",
   "notifications.mediaMirrorUpdate": "Mirror multimediale",
+  "notifications.monitoringAlert": "Allarme di monitoraggio",
   "notifications.downloadProgress": "Avanzamento download",
   "notifications.audioExtraction": "Estrazione audio",
   "notifications.fileUpload": "Caricamento file",

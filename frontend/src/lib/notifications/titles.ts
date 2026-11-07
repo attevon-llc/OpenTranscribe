@@ -30,6 +30,8 @@ export function notificationTitle(type: string, translate: Translate): string {
       return translate('notifications.backupUpdate');
     case 'media_mirror_status':
       return translate('notifications.mediaMirrorUpdate');
+    case 'monitoring_alert':
+      return translate('notifications.monitoringAlert');
     case 'audio_extraction_status':
       return translate('notifications.audioExtraction');
     case 'download_progress':

@@ -459,12 +459,16 @@ def configure_celery_logging(**kwargs):
 #
 # The same handler stamps the publish time the queue-wait metrics read (issue #1172,
 # app/core/queue_wait.py). One receiver for both: they are two headers on the same message.
+# It also counts the publish for the inertness checker (issue #898, app/core/inert.py),
+# first, so a failure in the header work cannot hide a publish from the count.
 @before_task_publish.connect
-def inject_request_id_header(headers=None, **kwargs):
-    """Stamp the request_id (if any) and the publish time onto outgoing task headers."""
+def inject_request_id_header(sender=None, headers=None, **kwargs):
+    """Count the publish, then stamp the request_id (if any) and publish time onto headers."""
+    from app.core.inert import record_task_published
     from app.core.queue_wait import stamp_published_at
     from app.middleware.audit import get_request_id
 
+    record_task_published(sender)
     stamp_published_at(headers)
     request_id = get_request_id()
     if request_id and headers is not None:

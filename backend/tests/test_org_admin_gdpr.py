@@ -193,6 +193,19 @@ def _no_receipt_measurement():
         ),
         patch("app.services.gdpr_erasure_service.receipt_flow.finish"),
         patch("app.services.gdpr_erasure_service.erase_extras"),
+        # purge_media_file reaches the real MinIO client through here; with no store reachable
+        # each file spent ~12 s in urllib3 retry backoff (#1368). Tests that assert on storage
+        # outcomes patch this themselves, which takes precedence.
+        patch("app.services.minio_service.delete_file", return_value=True),
+        patch(
+            "app.services.video_processing_service.VideoProcessingService."
+            "_ensure_cache_bucket_exists",
+            return_value=None,
+        ),
+        patch(
+            "app.services.video_processing_service.VideoProcessingService.clear_derived_cache",
+            return_value=None,
+        ),
     ):
         yield
 
@@ -812,6 +825,9 @@ class TestEraseOrganization:
             patch("app.services.chat.retrieval_cache.bump_corpus_version"),
             patch("app.services.takedown_service.notify_owner_takedown"),
             patch("app.services.takedown_service.audit_takedown"),
+            # Setup only: revoking media reaches the presign identity / MinIO (~12 s of
+            # retry backoff with no store). The erasure under test is below.
+            patch("app.services.takedown_service.settle_file"),
         ):
             quarantine_file(
                 db,

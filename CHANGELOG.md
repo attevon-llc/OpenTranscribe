@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings > Audio Extraction**: the file-size field now sits directly under the "Extract Audio from Videos" switch it depends on (label above the field), instead of between the other two choices.
 - **Settings > Recording** is now titled "Microphone Recording" and says it applies when you record from your microphone in the web page, not to uploaded files (all 12 languages).
 - **Settings > AI usage matches the other settings pages**: its cards were missing the shared settings form styling, so headings looked bold and unlike the sibling sections.
 - In Arabic and other right-to-left languages, the player's time readout showed total time before elapsed time and touched the volume slider; it now reads "elapsed / total" with a gap.

@@ -21,7 +21,13 @@
   <media-text class="visually-hidden" token="menu.settings">Settings</media-text>
 </button>
 <media-tooltip trigger={id} side="top" class="tip"><media-text token="menu.settings">Settings</media-text></media-tooltip>
-<media-menu id={menuId} side="top" align="end" class="settings-menu">
+<media-menu
+  id={menuId}
+  side="top"
+  align="end"
+  boundary={audio ? 'viewport' : undefined}
+  class="settings-menu"
+>
   <media-menu-content class="menu-view">
     <media-menu-item commandfor={speedId} class="menu-row">
       <media-icon name="speed" class="menu-icon"></media-icon>

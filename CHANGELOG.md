@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The audio player's settings menu opened only 29 pixels tall, cutting off Speed; it now opens to its full height above the player.
 - The gallery's grid and list views showed a file's status in English (for example "Completed") in every language; they now use the interface language.
 - In Arabic and other right-to-left languages, the player's time readout showed total time before elapsed time and touched the volume slider; it now reads "elapsed / total" with a gap.
 - The file player's settings menu no longer lays out its closed Speed and Captions lists under the main list, where screen readers found a second "Speed" item.

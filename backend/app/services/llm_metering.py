@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 from typing import Any
 
+from app.services import llm_call_events
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMResponse
@@ -113,10 +114,12 @@ class LLMMeteringMixin(LLMHost):
         try:
             response = self._chat_completion_untracked(messages, call, **kwargs)
         except Exception:
-            self._account_call(messages, call, reservation, success=False)
+            self._account_call(
+                messages, call, reservation, success=False, feature_call=enforce_budget
+            )
             raise
         call.content = response.content
-        self._account_call(messages, call, reservation, success=True)
+        self._account_call(messages, call, reservation, success=True, feature_call=enforce_budget)
         return response
 
     def _account_call(
@@ -126,6 +129,7 @@ class LLMMeteringMixin(LLMHost):
         reservation: Reservation,
         *,
         success: bool,
+        feature_call: bool = True,
     ) -> None:
         from app.services import llm_budget
         from app.services import llm_usage
@@ -138,6 +142,16 @@ class LLMMeteringMixin(LLMHost):
             success=success,
             local=self.is_local,
         )
+        if feature_call:
+            llm_call_events.record_unscoped_call(
+                budget_user_id=self.budget_user_id,
+                provider=self.config.provider.value,
+                model=self.config.model,
+                messages=messages,
+                call=call,
+                success=success,
+                local=self.is_local,
+            )
         prompt, completion, _ = llm_usage.call_tokens(messages, call)
         llm_budget.settle(reservation, prompt + completion)
 

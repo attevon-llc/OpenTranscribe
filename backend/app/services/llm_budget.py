@@ -75,7 +75,11 @@ _CHARS_PER_TOKEN = 4
 #: ``usage_event.event_type`` values that are LLM tokens, i.e. that a counter is seeded from.
 #: ``chat.tokens`` is ``services.chat.usage.EVENT_TYPE_CHAT_TOKENS``, spelled out because the
 #: chat package imports this module's caller; a unit test pins the two together.
-TOKEN_EVENT_TYPES: tuple[str, ...] = ("chat.tokens", *STAGE_EVENT_TYPES.values())
+TOKEN_EVENT_TYPES: tuple[str, ...] = (
+    "chat.tokens",
+    "chat.prep.tokens",
+    *STAGE_EVENT_TYPES.values(),
+)
 
 Scope = Literal["user_day", "instance_month"]
 

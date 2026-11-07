@@ -19,12 +19,11 @@ that introduced them, and both are invisible at the point of failure:
    the SSE contract, or the output redactor, none of which are wrong. That misdirection is
    what these tests exist to stop: a mismatched double now fails HERE, by name.
 
-Metering deliberately does **not** appear in (1). The planner/enrichment/rewrite tokens
-reach ``record_chat_usage`` through ``meta["extra_llm_prompt_tokens"]`` /
-``meta["extra_llm_completion_tokens"]``, which ``stream_reply`` folds onto the turn — the
-uuid is not the carrier, so an omitted uuid cannot lose usage recording. That is asserted
-below rather than asserted *about*, because it is the half of the "is a default safe?"
-question that is easy to get wrong from the parameter name alone.
+Metering deliberately does **not** appear in (1). The planner/enrichment/rewrite calls are
+recorded by the LLM seam (``services/llm_call_events.py``) under ``chat_call_scope``, which
+``stream_reply`` opens — the uuid is not the carrier, so an omitted uuid cannot lose usage
+recording. That is asserted below rather than asserted *about*, because it is the half of
+the "is a default safe?" question that is easy to get wrong from the parameter name alone.
 """
 
 from __future__ import annotations
@@ -36,6 +35,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services import llm_call_events
 from app.services.chat import service as chat_service
 from app.services.chat import turn as chat_turn
 from app.services.chat.redactor import MaskedChunk
@@ -107,11 +107,11 @@ def _chunk() -> MaskedChunk:
 async def _run_turn(monkeypatch) -> dict:
     """Drive the real ``stream_reply`` and return the kwargs ``_prepare_context`` saw."""
     seen: dict = {}
-    extra_tokens = {"extra_llm_prompt_tokens": 11, "extra_llm_completion_tokens": 7}
 
     def _capture(*_args, **kwargs):
         seen.update(kwargs)
-        meta = {"retrieved": 1, "files_searched": "all", **extra_tokens}
+        seen["call_scope"] = llm_call_events._scope.get()
+        meta = {"retrieved": 1, "files_searched": "all"}
         return [_chunk()], meta, None, None, "", ""
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _null_session)
@@ -175,20 +175,16 @@ async def test_the_real_streaming_caller_passes_the_turns_assistant_message_uuid
 
 
 @pytest.mark.asyncio
-async def test_the_uuid_is_not_how_extra_llm_usage_reaches_metering(monkeypatch):
+async def test_the_uuid_is_not_how_prep_llm_usage_reaches_metering(monkeypatch):
     """The control for the decision to default the parameter.
 
-    "It is needed for cancellation *and* metering" is the reading that makes a default
-    look unsafe. Metering does not travel on the uuid — the planner/enrichment/rewrite
-    tokens ride ``meta``, which ``stream_reply`` folds onto the turn before
-    ``_finalize_turn`` calls ``record_chat_usage``. So an omitted uuid can cost a
-    cancellation check and cannot cost a usage record.
+    Prep-call metering travels on the user and tenant scope ``stream_reply`` opens around
+    ``_prepare_context``, not on the uuid, so an omitted uuid can cost a cancellation check
+    and cannot cost a usage record.
     """
     seen = await _run_turn(monkeypatch)
-    turn = seen["turn"]
 
-    assert turn.extra_prompt_tokens == 11
-    assert turn.extra_completion_tokens == 7
+    assert seen["call_scope"] == (1, None)
 
 
 def test_omitting_the_uuid_fails_open_rather_than_reading_a_real_turns_cancel_flag(monkeypatch):

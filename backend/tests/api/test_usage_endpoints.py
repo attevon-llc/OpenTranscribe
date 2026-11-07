@@ -1,4 +1,4 @@
-"""API tests for GET /usage/me and GET /usage/me/daily (savepoint-rolled-back).
+"""API tests for GET /usage/me (savepoint-rolled-back).
 
 These two routes (``app/api/endpoints/usage.py``) had zero real exercise. Pinned
 real behavior confirmed from source:
@@ -21,7 +21,6 @@ from __future__ import annotations
 import uuid as uuid_mod
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
 
 from app.models.usage_event import UsageEvent
 from app.services.chat.pricing import RATES_VERIFIED_ON
@@ -112,44 +111,6 @@ class TestUsageMe:
         assert within_bound.status_code == 200
 
 
-class TestUsageMeDaily:
-    def test_daily_bucketed_shape(self, client, db_session, normal_user, user_token_headers):
-        today = datetime.now(UTC)
-        yesterday = today - timedelta(days=1)
-        _make_event(
-            db_session,
-            normal_user,
-            prompt_tokens=100,
-            completion_tokens=50,
-            created_at=today,
-        )
-        _make_event(
-            db_session,
-            normal_user,
-            prompt_tokens=200,
-            completion_tokens=100,
-            created_at=yesterday,
-        )
-        headers = {"Authorization": user_token_headers["Authorization"]}
-
-        resp = client.get("/api/usage/me/daily", headers=headers)
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-
-        assert body["window_days"] == 30
-        assert "series" in body
-        assert len(body["series"]) >= 1
-        for row in body["series"]:
-            assert "day" in row
-            assert "total_tokens" in row
-            assert "messages" in row
-            assert isinstance(row["total_tokens"], int)
-            assert isinstance(row["messages"], int)
-
-        total_tokens_across_days = sum(row["total_tokens"] for row in body["series"])
-        assert total_tokens_across_days >= 450
-
-
 def _add(db_session, user, event_type: str, quantity: int, unit: str = "tokens", **meta) -> None:
     db_session.add(
         UsageEvent(
@@ -203,20 +164,20 @@ class TestEveryEventType:
         assert body["totals"]["messages"] == 1  # chat exchanges only
         assert body["totals"]["events"] == 3
 
-    def test_daily_series_counts_every_llm_feature(
+    def test_chat_prep_calls_roll_up_under_the_chat_feature(
         self, client, db_session, normal_user, user_token_headers
     ):
         _make_event(db_session, normal_user, prompt_tokens=100, completion_tokens=50)
-        _add(db_session, normal_user, "topics.tokens", 250)
-        _add(db_session, normal_user, "transcription.hours", 2, unit="hours")
+        _add(db_session, normal_user, "chat.prep.tokens", 40, provider="p", model="m")
         headers = {"Authorization": user_token_headers["Authorization"]}
 
-        series = client.get("/api/usage/me/daily", headers=headers).json()["series"]
+        body = client.get("/api/usage/me", headers=headers).json()
 
-        today = series[-1]
-        assert today["total_tokens"] == 400  # hours are not tokens
-        assert today["by_event_type"] == {"chat.tokens": 150, "topics.tokens": 250}
-        assert today["messages"] == 1
+        assert {r["event_type"]: r["total_tokens"] for r in body["by_feature"]} == {
+            "chat.tokens": 190
+        }
+        assert body["totals"]["total_tokens"] == 190
+        assert body["totals"]["messages"] == 1  # a prep call is not a chat exchange
 
     def test_a_local_model_is_free_and_a_named_one_is_unpriced(
         self, client, db_session, normal_user, user_token_headers

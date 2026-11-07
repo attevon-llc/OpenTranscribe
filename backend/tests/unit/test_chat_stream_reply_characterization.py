@@ -159,8 +159,6 @@ async def test_a_context_turn_streams_exactly_this(monkeypatch):
         "files_searched": "all",
         "speaker_resolution": {"ambiguous": ["Dana Ames", "Dana Bell"]},
         "plan": {"failed": True},
-        "extra_llm_prompt_tokens": 5,
-        "extra_llm_completion_tokens": 2,
     }
     record = _harness(monkeypatch, prepare=lambda: _prepared(meta))
     monkeypatch.setattr("app.services.chat.planner.needs_plan", lambda **_k: True)
@@ -242,7 +240,6 @@ async def test_a_context_turn_streams_exactly_this(monkeypatch):
     }
     assert (turn.answer, turn.reasoning) == ("Four buttons [1].", "Checking excerpt one.")
     assert (turn.prompt_tokens, turn.completion_tokens) == (10, 20)
-    assert (turn.extra_prompt_tokens, turn.extra_completion_tokens) == (5, 2)
     assert (turn.finish_reason, turn.error, turn.error_code) == ("stop", None, None)
     assert turn.offered_citations == citations
     assert turn.metadata["chunks_used"] == 1

@@ -34,6 +34,7 @@ from app.services.chat.pricing import estimate_cost_usd
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
 from app.services.llm_budget import TOKEN_EVENT_TYPES
 from app.services.llm_budget import status_for
+from app.services.llm_call_events import FEATURE_OF_EVENT_TYPE
 from app.services.request_context import RequestContext
 from app.utils.db_helpers import org_stamp_is
 
@@ -153,7 +154,8 @@ def get_my_usage(
         key = _model_key(meta)
         model_bucket = by_model.setdefault(key, _token_bucket(provider=key[0], model=key[1]))
         model_bucket.setdefault("messages", 0)
-        feature_bucket = by_feature.setdefault(event_type, _token_bucket(event_type=event_type))
+        feature = FEATURE_OF_EVENT_TYPE.get(event_type, event_type)
+        feature_bucket = by_feature.setdefault(feature, _token_bucket(event_type=feature))
 
         prompt = int(meta.get("prompt_tokens") or 0)
         completion = int(meta.get("completion_tokens") or 0)

@@ -451,8 +451,23 @@ exportable and downloadable, and anyone who can see one can still add a comment.
   in force.
 
 API: `GET/POST /api/org-admin/holds`, `GET /api/org-admin/holds/{uuid}`,
-`POST /api/org-admin/holds/{uuid}/release`. The difference between a quarantine, the operator's hold
+`POST /api/org-admin/holds/{uuid}/release`. The full explanation for users and administrators, including how a hold differs from quarantine, trash and erasure, is in [Legal holds](./legal-holds.md). The difference between a quarantine, the operator's hold
 and an organization hold is set out in [Abuse and takedown](https://github.com/attevon-llc/OpenTranscribe/blob/master/docs/abuse-and-takedown.md).
+
+### Operator legal holds
+
+In a self-hosted install (and for the service operator in any deployment) a platform administrator
+(`admin` or `super_admin`) can hold files or a collection **without quarantining them**, so the
+owner keeps reading them. An operator hold freezes the content, blocks deletion, retention,
+account and GDPR erasure and reprocessing, exactly as an organization hold does, and is released
+with a reason by a platform administrator. Organization administrators cannot release it and
+platform administrators cannot release an organization's hold. It has no capability gate (an
+operator must always be able to act on a legal demand) and is refused under a support-access grant.
+
+API: `GET/POST /api/admin/holds`, `GET /api/admin/holds/{uuid}`,
+`POST /api/admin/holds/{uuid}/release`. Place with `scope` `file` (up to 500 `file_uuids`, any
+tenant) or `collection` (`collection_uuid`), a `reason` of 10 to 2,000 characters and an optional
+`matter_ref`. See [Legal holds](./legal-holds.md#for-administrators).
 
 ## Search Settings
 

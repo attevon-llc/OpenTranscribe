@@ -129,7 +129,7 @@ index on its own retention.
 | The audit trail: audit events that name the subject, in OpenSearch and in the fallback file | Art. 17(3)(b)/(e): the record that the erasure and other actions happened. Counted, never deleted | `os.audit` |
 | The erasure ledger and its journal | Surrogate ids only, no address or name; it must outlive the data to prove the erasure | `pg.erasure_ledger` |
 | Acceptance records of legal documents | Pseudonymised (the account link, address and browser string are removed; document, version, hash, time, scope and organization remain) and kept until the retention date, `legal.acceptance_retention_days`. The operator states the lawful basis | `pg.legal_acceptance` (counted as de-attributed) |
-| A recording under a legal hold, and the account that owns it | Art. 17(3)(e). The erasure is `deferred` and retried when the hold lifts | `pg.media_file.legal_hold`, `pg.user` |
+| A recording under a legal hold (see [Legal holds](../user-guide/legal-holds.md)), and the account that owns it | Art. 17(3)(e). The erasure is `deferred` and retried when the hold lifts | `pg.media_file.legal_hold`, `pg.user` |
 | Database backups and OpenSearch snapshots | Until they rotate. A restore is reconciled: the ledger journal re-erases a subject that comes back | `backup.pg_dumps` |
 | An organization's tags and collections the subject created | They belong to the tenant and sit on colleagues' files. They stay with the subject removed | `pg.tag.org`, `pg.collection.org` |
 

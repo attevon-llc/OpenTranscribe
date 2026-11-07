@@ -60,6 +60,7 @@ The filter sidebar (on the Search page and in the gallery, where it can be colla
 - **Tags**: custom labels
 - **Collections**: grouped media files
 - **Language**: shown when your library has more than one language
+- **Legal hold** (gallery only): shown when you have recordings under a [legal hold](./legal-holds.md); shows only those
 - **Ownership** (gallery only): **All Files**, **My Files** or **Shared with Me**, plus an owner picker
 
 **Reset** clears every filter. In the gallery, the filename and title search box is in the toolbar above the file list rather than in the sidebar.
@@ -167,6 +168,7 @@ Comments are listed general first, then timed comments in playback order.
   switch a comment between timed and general.
 - **Delete**: Click the **Delete** link on your own comment and confirm the deletion
 - Only the comment author can edit or delete their comments
+- On a recording under a [legal hold](./legal-holds.md), existing comments cannot be edited or deleted; new comments can still be added
 - A confirmation dialog appears before deletion to prevent accidental removal
 
 ### Comments in Exports

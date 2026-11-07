@@ -127,6 +127,10 @@ Renaming to a name that already belongs to another tag is a **merge**, and says 
 before applying anything. Merging is the least reversible action here, so when you
 merge a collision cluster the surviving name is always chosen explicitly.
 
+## Files under a legal hold
+
+A file under a [legal hold](./legal-holds.md) is listed under a locked **Legal hold** entry that the application works out for you. It is not a real tag: you cannot rename, delete or apply it, and it goes away when the last hold is released. You also cannot add tags to, or remove tags from, a held file, and a tag that a held file carries cannot be merged away or deleted.
+
 ## Tags and search
 
 Filtering by a tag and searching for it return the same files. If they ever disagree

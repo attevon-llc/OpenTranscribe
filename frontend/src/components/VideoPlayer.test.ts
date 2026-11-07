@@ -28,21 +28,16 @@ import { render } from '@testing-library/svelte';
 // (yet, or ever) resolved) without depending on Svelte's effect-scheduling
 // order to land a real unit test in the right window. The seam is mocked, not
 // the library behind it (issue #1327).
-vi.mock('$lib/player/plyrHandle', () => ({
-  createPlyrPlayer: () => {
+vi.mock('$lib/player/videojsPlayer', () => ({
+  createVideojsPlayer: () => {
     throw new Error('the player never constructs in this test — player stays null');
   },
-  viewerTurnedCaptionsOff: () => false,
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => {
+  const { readable } = await import('svelte/store');
+  return { t: readable((key: string) => key), locale: readable('en') };
+});
 
 import VideoPlayer from './VideoPlayer.svelte';
 

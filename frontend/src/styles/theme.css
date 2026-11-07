@@ -335,6 +335,18 @@
   --dark-input-bg: #334155;
   --dark-text: #f8fafc;
 
+  /* Media player chrome drawn OVER the picture (issue #1327). The video frame is the
+     background in both themes, so these hold one value each; the audio player and the
+     settings menu sit on app surfaces and use the ordinary tokens instead. */
+  --player-on-media: #ffffff;
+  --player-scrim: rgba(0, 0, 0, 0.7);
+  --player-scrim-solid: #000000;
+  --player-control-hover: rgba(255, 255, 255, 0.25);
+  --player-track: rgba(255, 255, 255, 0.3);
+  --player-buffer: rgba(255, 255, 255, 0.45);
+  --player-caption-bg: rgba(0, 0, 0, 0.78);
+  --player-caption-speaker: #ffe58a;
+
   /* Font stacks */
   --font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-family-sans: var(--font-family);

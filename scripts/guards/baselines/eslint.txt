@@ -72,8 +72,6 @@ frontend/src/components/UserFileStatus.svelte::prefer-const	1	lint: burn-down pl
 frontend/src/components/UserFileStatus.svelte::svelte/infinite-reactive-loop	2	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/VideoPlayer.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
-frontend/src/components/VideoPlayer.svelte::svelte/no-unused-svelte-ignore	2	lint: burn-down planned
 frontend/src/components/WaveformPlayer.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/WaveformPlayer.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/WaveformPlayer.svelte::no-useless-assignment	2	lint: burn-down planned

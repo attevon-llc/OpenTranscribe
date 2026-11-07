@@ -36,6 +36,15 @@ const THEME_INVARIANT: Record<string, string> = {
   '--dark-border': 'named for dark mode and used inside dark-scoped rules',
   '--dark-input-bg': 'named for dark mode and used inside dark-scoped rules',
   '--dark-text': 'named for dark mode and used inside dark-scoped rules',
+  '--player-on-media':
+    'player icons and text drawn over the video frame, which is the backdrop in both themes',
+  '--player-scrim': 'gradient behind the controls over the video frame',
+  '--player-scrim-solid': 'the frame colour the scrim is composited over (contrast rows)',
+  '--player-control-hover': 'hover wash on a control over the video frame',
+  '--player-track': 'time and volume track over the video frame',
+  '--player-buffer': 'buffered range over the video frame',
+  '--player-caption-bg': 'caption box over the video frame',
+  '--player-caption-speaker': 'speaker name inside the caption box',
 };
 
 const COLOUR_VALUE = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|^\d+\s*,\s*\d+\s*,\s*\d+$/;

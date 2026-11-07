@@ -122,6 +122,22 @@ const PAIRS: Pair[] = [
     themes: BOTH,
     reason: 'dark label on the amber fill (white is 2.15:1)',
   })),
+  // media player chrome over the picture (issue #1327): composited over black, the darkest
+  // frame. A bright frame lowers these, which is why the scrim and the caption box exist.
+  ...['--player-scrim', '--player-caption-bg'].map((tint) => ({
+    fg: '--player-on-media',
+    bg: { tint, over: '--player-scrim-solid' },
+    min: TEXT,
+    themes: BOTH,
+    reason: 'player label or caption text over the video',
+  })),
+  {
+    fg: '--player-caption-speaker',
+    bg: { tint: '--player-caption-bg', over: '--player-scrim-solid' },
+    min: TEXT,
+    themes: BOTH,
+    reason: 'the caption speaker name inside the caption box',
+  },
   // non-text
   ...['--focus-ring-color', '--control-border'].flatMap((fg) =>
     ['--surface-color', '--background-color'].map((bg) => ({

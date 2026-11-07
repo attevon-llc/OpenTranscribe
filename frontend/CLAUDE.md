@@ -172,14 +172,14 @@ only if that is impossible does the PR raise the base, stating the new measureme
 about the same percentage of headroom. A budget is never raised to hide a regression.
 
 `scripts/check-bundle-budget.mjs` runs from `postbuild` after `vite build` and gates the root
-layout node (`nodes/0.*.js`, 22 KiB gzip) and its static import closure (136 KiB gzip), because
+layout node (`nodes/0.*.js`, 22 KiB gzip) and its static import closure (143 KiB gzip), because
 every page load pays for them, `/login` included. Heavy, conditionally shown components must be
 loaded with a dynamic `import()`.
 
 Issue #794 adds checks computed from Vite's build manifest (`.svelte-kit/output/client/.vite/manifest.json`,
 `scripts/bundle-manifest.mjs`): **no locale JSON in the first-load static closure** (start and app entries,
-root layout and error nodes; no budget, no allowance), an entry-chunk budget (5 KiB gzip), a first-load
-closure budget (142 KiB gzip) and a total-JS budget (2580 KiB gzip). Measurements and date are in the
+root layout and error nodes; no budget, no allowance), an entry-chunk budget (4.25 KiB gzip), a first-load
+closure budget (147 KiB gzip) and a total-JS budget (2793 KiB gzip; values in the script). Measurements and date are in the
 `check-bundle-budget.mjs` header. A missing manifest fails the gate. Tests: `src/bundleBudget.manifest.test.ts`.
 Issue #1327 adds two text checks with no budget: **no React runtime anywhere in `_app/immutable`**
 (`Symbol.for("react.`; `@videojs/store` installs `react` for bindings the HTML player never uses)

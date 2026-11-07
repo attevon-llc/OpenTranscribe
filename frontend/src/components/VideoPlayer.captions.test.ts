@@ -11,25 +11,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
-const { fetchCaptionTrack, captionsOff } = vi.hoisted(() => ({
+const { fetchCaptionTrack } = vi.hoisted(() => ({
   fetchCaptionTrack: vi.fn(),
-  captionsOff: vi.fn(() => false),
 }));
 
-vi.mock('$lib/player/plyrHandle', async () => {
+vi.mock('$lib/player/videojsPlayer', async () => {
   const { createFakePlayer } = await import('$lib/player/fakePlayer');
-  return { createPlyrPlayer: createFakePlayer, viewerTurnedCaptionsOff: () => captionsOff() };
+  return { createVideojsPlayer: createFakePlayer };
 });
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, opts?: Record<string, string>) => string) => void) => {
-      run((key: string, opts?: Record<string, string>) =>
-        key === 'speaker.localizedLabel' ? `Speaker ${opts?.number}` : key
-      );
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => {
+  const { readable } = await import('svelte/store');
+  return {
+    t: readable((key: string, opts?: Record<string, string>) =>
+      key === 'speaker.localizedLabel' ? `Speaker ${opts?.number}` : key
+    ),
+    locale: readable('en'),
+  };
+});
 
 vi.mock('$lib/api/captions', () => ({
   fetchCaptionTrack: (...args: unknown[]) => fetchCaptionTrack(...args),
@@ -44,7 +42,7 @@ const LONG_SEGMENT_TEXT = 'word '.repeat(200).trim();
 
 const file = {
   uuid: 'file-uuid-1',
-  status: 'completed',
+  status: 'completed' as const,
   content_type: 'video/mp4',
   transcript_segments: [
     { start_time: 0, end_time: 90, text: LONG_SEGMENT_TEXT, speaker_label: 'SPEAKER_00' },
@@ -57,7 +55,6 @@ beforeEach(() => {
   fakePlayers.length = 0;
   blobs = [];
   fetchCaptionTrack.mockReset();
-  captionsOff.mockReturnValue(false);
   vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob | MediaSource) => {
     blobs.push(blob as Blob);
     return `blob:captions-${blobs.length}`;
@@ -142,38 +139,46 @@ describe('caption track', () => {
 });
 
 /**
- * Captions come on by default once the track loads, unless the viewer switched them off in an
- * earlier session. Both go through the player seam (`captionsVisible`,
- * `setCaptionsVisible`), never the library directly (issue #1327).
+ * Whether the track shows is no longer decided here: `$lib/player/prefs` turns captions on
+ * unless the viewer switched them off (and carries a choice made under Plyr over), tested in
+ * `prefs.test.ts` and end to end in `test_media_playback.py`. The player only loads the cues.
  */
-describe('captions on by default', () => {
-  async function loadTrack() {
+describe('loading the cues', () => {
+  it('loads the server track once the player is ready, with no delay', async () => {
+    fetchCaptionTrack.mockResolvedValue(SERVER_VTT);
+    const { container } = await mountPlayer();
+
+    fakePlayers[0].ready();
+    await flush();
+
+    expect(fetchCaptionTrack).toHaveBeenCalledTimes(1);
+    const track = container.querySelector('track[kind="captions"]') as HTMLTrackElement;
+    expect(track.getAttribute('src') ?? track.src).toBe('blob:captions-1');
+  });
+
+  it('leaves the track mode alone: the remembered caption choice owns it', async () => {
     fetchCaptionTrack.mockResolvedValue(SERVER_VTT);
     const { component, container } = await mountPlayer();
     const track = container.querySelector('track[kind="captions"]') as HTMLTrackElement;
-    // jsdom has no TextTrack; the player only reads and sets its mode.
     const textTrack = { mode: 'disabled' };
     Object.defineProperty(track, 'track', { value: textTrack });
 
     await (component as unknown as { updateSubtitles: () => Promise<void> }).updateSubtitles();
     track.dispatchEvent(new Event('load'));
-    return { player: fakePlayers[0], textTrack };
-  }
 
-  it('turns captions on through the player once the track has loaded', async () => {
-    const { player, textTrack } = await loadTrack();
-
-    expect(player.setCaptionsVisible).toHaveBeenCalledExactlyOnceWith(true);
-    expect(player.captionsVisible).toBe(true);
-    expect(textTrack.mode).toBe('hidden');
+    expect(textTrack.mode).toBe('disabled');
+    expect(fakePlayers[0].setCaptionsVisible).not.toHaveBeenCalled();
   });
 
-  it('leaves them off when the viewer switched them off', async () => {
-    captionsOff.mockReturnValue(true);
-    const { player, textTrack } = await loadTrack();
+  it('revokes the previous blob when the cues are reloaded after an edit', async () => {
+    fetchCaptionTrack.mockResolvedValue(SERVER_VTT);
+    const { component } = await mountPlayer();
+    const update = (component as unknown as { updateSubtitles: () => Promise<void> })
+      .updateSubtitles;
 
-    expect(player.setCaptionsVisible).not.toHaveBeenCalled();
-    expect(player.captionsVisible).toBe(false);
-    expect(textTrack.mode).toBe('hidden');
+    await update();
+    await update();
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:captions-1');
   });
 });

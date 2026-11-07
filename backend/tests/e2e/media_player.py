@@ -7,15 +7,21 @@ playback tests must not know which one is on the page. They talk to this object 
   file page, the element inside ``.sticky-preview`` for the floating preview). Every library
   keeps a real media element, so these reads survive the swap unchanged.
 * **Controls** are found by ARIA role and accessible name, never by a library class name.
-  The names live in ONE table, :data:`CONTROL_NAMES`. Today they are Plyr's own English
-  labels, because Plyr's controls are not translated (plan, PC2). The lane that replaces the
-  controls points this table at the app's own ``en.json`` keys; no test changes.
+  The names live in ONE table, :data:`CONTROL_NAMES`, and match the English UI. The file-page
+  player is Video.js 10, whose labels are translated with the UI language (so a test that
+  needs English names runs in the English UI, the default); the floating preview is still
+  Plyr until #1327 lane D. Both libraries' English labels match the same patterns: "Play",
+  "Pause", "Enable/Disable captions", "Settings", "Speed", "Enter picture-in-picture" /
+  "PIP", "Enter fullscreen".
 * **App-owned labels** (search preview, speaker preview, waveform) are read from
   ``frontend/src/lib/i18n/locales/en.json`` through :func:`app_label`, so a copy change in the
   app cannot silently break a selector.
 * **Captions** are located by the ``.speaker`` element the server's WebVTT carries
-  (``<c.speaker>Name</c>``), inside the app's own ``.video-player-container``. Plyr renders
-  cues as HTML and keeps that class; so does the replacement's caption overlay.
+  (``<c.speaker>Name</c>``), inside the app's own ``.video-player-container``: the caption
+  overlay (``components/player/CaptionOverlay.svelte``) draws cues as HTML and keeps that
+  class. Whether captions are on is read from the media element (a caption track ``showing``),
+  not from a button attribute: Video.js's CC button reports its state by label, not
+  ``aria-pressed``.
 """
 
 from __future__ import annotations
@@ -142,8 +148,27 @@ class MediaPlayer:
         state = "pause" if not self.state()["paused"] else "play"
         self.control(state).last.click()
 
+    _CAPTIONS_SHOWING = (
+        "Array.from(m.textTracks).some(t => "
+        "(t.kind === 'captions' || t.kind === 'subtitles') && t.mode === 'showing')"
+    )
+
     def captions_on(self) -> bool:
-        return self.control("captions").first.get_attribute("aria-pressed") == "true"
+        """Whether a caption track is showing on the media element."""
+        return bool(
+            self.page.evaluate(
+                f"() => {{ const m = {self._js_media()}; return {self._CAPTIONS_SHOWING}; }}"
+            )
+        )
+
+    def wait_for_captions(self, on: bool, timeout: int = 5_000) -> None:
+        """Wait until captions are showing (``on``) or not."""
+        predicate = self._CAPTIONS_SHOWING if on else f"!({self._CAPTIONS_SHOWING})"
+        self.wait_for(predicate, timeout=timeout)
+
+    def status_region(self) -> Locator:
+        """The player's screen-reader status region (a ``role="status"`` live region)."""
+        return self.container.get_by_role("status")
 
     def caption_speaker(self) -> Locator:
         """The speaker name rendered in the current caption cue."""
@@ -165,8 +190,17 @@ class MediaPlayer:
         self.open_speed_menu()
         self.page.get_by_role("menuitemradio", name=speed_name(rate)).click()
 
-    def open_speed_menu(self) -> None:
+    def open_settings(self) -> Locator:
+        """Open the settings menu and return the visible menu listing the Speed item."""
         self.control("settings").first.click()
+        menu = self.page.get_by_role("menu").filter(
+            has=self.page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"])
+        )
+        menu.first.wait_for(state="visible")
+        return menu.first
+
+    def open_speed_menu(self) -> None:
+        self.open_settings()
         self.page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"]).click()
 
     def blur(self) -> None:

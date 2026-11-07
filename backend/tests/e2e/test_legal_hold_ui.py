@@ -128,6 +128,13 @@ def test_admin_places_and_releases_a_hold_from_the_ui(
         expect(banner).to_contain_text("The service operator placed it.")
         expect(banner).not_to_contain_text(reason)
         expect(page.get_by_role("button", name="Edit display name")).to_be_disabled()
+        # The frozen action notes widen the buttons beside the media heading; the heading
+        # once gave way and broke mid-word ("Vide" / "o"). It must stay on one line.
+        heading_lines = page.locator(".video-header h4").evaluate(
+            """h => { const r = document.createRange(); r.selectNodeContents(h);
+                      return new Set([...r.getClientRects()].map(x => Math.round(x.top))).size; }"""
+        )
+        assert heading_lines == 1, heading_lines
         banner.get_by_role("button", name="What does a legal hold do?").click()
         expect(banner).to_contain_text("Still works:")
 

@@ -945,8 +945,12 @@
     gap: 12px;
   }
 
+  /* The actions wrap under the heading when they do not fit beside it; the heading never
+     gives way (it broke mid-word as "Vide" / "o" on a held file). */
   .video-header {
     display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0px;
@@ -954,6 +958,7 @@
   }
 
   .video-column h4 {
+    flex-shrink: 0;
     margin: 0;
     font-size: 18px;
     font-weight: 600;

@@ -117,15 +117,19 @@ def pending_suggestion_ids(
 
     With ``tenant_scoped`` only suggestions on files of tenant ``organization_id``
     (None = org-less files) are returned, so a run started in one workspace never
-    labels files that belong to another.
+    labels files that belong to another. Suggestions on held files are never returned.
     """
+
     from app.models.media import MediaFile
     from app.models.topic import TopicSuggestion
+    from app.services.hold_guard import unheld_file_ids
     from app.utils.db_helpers import org_stamp_is
 
     query = db.query(TopicSuggestion.id).filter(
         TopicSuggestion.user_id == user_id,
         TopicSuggestion.auto_apply_completed_at.is_(None),
+        # A held file's labels are preserved as they were (legal-hold freeze).
+        TopicSuggestion.media_file_id.in_(unheld_file_ids()),
     )
     if tenant_scoped:
         query = query.join(MediaFile, MediaFile.id == TopicSuggestion.media_file_id).filter(

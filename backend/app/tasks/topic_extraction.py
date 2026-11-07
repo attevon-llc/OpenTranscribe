@@ -43,6 +43,7 @@ from app.services.redaction.llm_guard import RedactionNotReadyError
 from app.services.redaction.llm_guard import defer_for_redaction
 from app.services.redaction.llm_guard import resolve_llm_masking
 from app.services.topic_extraction_service import TopicExtractionService
+from app.tasks.hold_skip import SKIPPED_LEGAL_HOLD
 from app.utils.task_utils import task_error_text
 
 logger = logging.getLogger(__name__)
@@ -295,6 +296,13 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
     if refusal is not None:
         return skipped_result(refusal)
 
+    from app.tasks.hold_skip import file_is_frozen
+    from app.tasks.hold_skip import skipped_for_hold
+
+    # A held file's suggestions are preserved as they were (legal-hold freeze).
+    if file_is_frozen(file_uuid=file_uuid):
+        return skipped_for_hold("extract_topics_task", file_uuid=file_uuid)
+
     try:
         # Phase 1a — read (DB session open, Postgres only).
         context = _load_file_context(file_uuid)
@@ -471,7 +479,7 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
                 results["completed"] = int(results["completed"]) + 1  # type: ignore[arg-type]
             elif result["status"] == "failed":
                 results["failed"] = int(results["failed"]) + 1  # type: ignore[arg-type]
-            elif result["status"] == "skipped":
+            elif result["status"] in ("skipped", SKIPPED_LEGAL_HOLD):
                 results["skipped"] = int(results["skipped"]) + 1  # type: ignore[arg-type]
 
             details_list = results["details"]

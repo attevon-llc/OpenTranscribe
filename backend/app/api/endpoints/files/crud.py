@@ -182,6 +182,11 @@ def update_media_file(
     )
     file_id = db_file.id  # Get internal ID for OpenSearch update
 
+    # Every field here is part of the held record (title, filename, date, language, ...).
+    from app.api.hold_refusal import refuse_if_frozen
+
+    refuse_if_frozen(db, int(file_id), actor=current_user, action="file_update")
+
     # Track if title was updated for OpenSearch reindexing
     update_data = media_file_update.model_dump(exclude_unset=True)
     title_updated = "title" in update_data and update_data["title"] != db_file.title
@@ -335,8 +340,8 @@ def update_single_transcript_segment(
         current_user: Current user
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
         bypass: The request's platform bypass (``ctx.bypass``).
-        request: The HTTP request, for the audit event written when the file is under a legal
-            hold (issue #1307). None is allowed.
+        request: The HTTP request, for the ``content.hold.refused`` event written when the
+            file is under a legal hold. None is allowed.
 
     Returns:
         Updated TranscriptSegmentSchema object with all formatted fields
@@ -350,6 +355,11 @@ def update_single_transcript_segment(
         min_permission="editor",
     )
     file_id = db_file.id  # Get internal ID for segment query
+
+    # A held file's transcript is preserved as it was (legal-hold freeze): refused, audited.
+    from app.api.hold_refusal import refuse_if_frozen
+
+    refuse_if_frozen(db, int(file_id), actor=current_user, action="segment_edit", request=request)
 
     # Find the specific segment by UUID with speaker eagerly loaded
     segment = (
@@ -392,26 +402,8 @@ def update_single_transcript_segment(
 
         RedactionService.redetect_edited_segment(db, db_file, segment)
 
-    # Editing a held file is allowed, but it is audited (issues #1307, #1329). Staged in the
-    # edit's own transaction, so the edit and its record commit or roll back together; stages
-    # nothing for a file nobody holds.
-    from app.services import audit_outbox
-    from app.services.content_hold_service import record_edit_on_held_file
-
-    record_edit_on_held_file(
-        db,
-        request,
-        current_user,
-        db_file,
-        kind="segment_edit",
-        segment_uuid=str(segment.uuid),
-        fields=[f for f in mutable_segment_fields if f in update_fields],
-        bypass=bypass,
-    )
-
     db.commit()
     db.refresh(segment)
-    audit_outbox.deliver_staged(db)
 
     # The text is what search/RAG chunk documents are built from — a stale
     # index otherwise serves the pre-edit wording indefinitely (issue #666).

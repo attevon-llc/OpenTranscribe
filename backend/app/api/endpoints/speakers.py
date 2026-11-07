@@ -16,10 +16,11 @@ from app.api.endpoints import speakers_merge
 from app.api.endpoints import speakers_occurrences
 from app.api.endpoints import speakers_suggestions
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.api.endpoints.speakers_list import list_speakers
 from app.api.endpoints.speakers_profile_workflow import _get_media_file_uuid
 from app.api.endpoints.speakers_profile_workflow import _handle_profile_action
+from app.api.hold_refusal import refuse_if_frozen
+from app.api.hold_refusal import refuse_reprocess_if_held
 from app.db.base import get_db
 from app.models.speaker import Speaker
 from app.models.user import User
@@ -82,6 +83,7 @@ def create_speaker(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="speaker_create")
 
     # Generate a UUID for the new speaker
     speaker_uuid = str(uuid.uuid4())
@@ -312,6 +314,8 @@ def update_speaker(
         forbidden_detail="Requires editor permission",
         bypass=ctx.bypass,
     )
+
+    refuse_if_frozen(db, int(speaker.media_file_id), actor=current_user, action="speaker_update")
 
     speaker_id = speaker.id
     old_profile_id = int(speaker.profile_id) if speaker.profile_id else None

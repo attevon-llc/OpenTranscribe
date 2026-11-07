@@ -10,6 +10,7 @@ from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerProfile
+from app.services.hold_guard import hold_states
 from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
@@ -133,9 +134,12 @@ def promote_cluster_to_profile(
             | {int(s.profile_id) for s in speakers_by_id.values() if s.profile_id},
         )
 
+        # A member on a held file stays in the cluster but is not linked or renamed: its
+        # file's content is preserved as it was (legal-hold freeze, plan §3.5).
+        held_files = hold_states(self.db, member_file_ids)
         for member in members:
             speaker = speakers_by_id.get(int(member.speaker_id))
-            if speaker:
+            if speaker and int(speaker.media_file_id) not in held_files:
                 touch_profile_interaction(
                     self.db, [int(profile.id), speaker.profile_id], "human_link"
                 )
@@ -212,6 +216,10 @@ def unassign_speakers(
         )
         .all()
     )
+    # A speaker on a held file keeps its cluster, profile and name (legal-hold freeze).
+    held_files = hold_states(self.db, {int(s.media_file_id) for s in speakers_to_remove})
+    held_skipped = sum(1 for s in speakers_to_remove if int(s.media_file_id) in held_files)
+    speakers_to_remove = [s for s in speakers_to_remove if int(s.media_file_id) not in held_files]
     if not speakers_to_remove:
         raise ValueError("No valid speakers found")
 
@@ -239,4 +247,5 @@ def unassign_speakers(
     return {
         "unassigned_count": len(speakers_to_remove),
         "message": f"Unassigned {len(speakers_to_remove)} speaker(s) from cluster",
+        "held_skipped": held_skipped,
     }

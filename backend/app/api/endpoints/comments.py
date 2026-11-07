@@ -6,12 +6,14 @@ from typing import Literal
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.hold_refusal import refuse_if_frozen
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
@@ -22,6 +24,8 @@ from app.schemas.media import Comment as CommentSchema
 from app.schemas.media import CommentCreate
 from app.schemas.media import CommentCreateStandalone
 from app.schemas.media import CommentUpdate
+from app.services import audit_outbox
+from app.services.content_hold_service import record_hold_annotation
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
 from app.services.request_context import RequestContext
@@ -81,10 +85,32 @@ def get_comments_for_file_nested(
     return comments
 
 
+def _annotate_if_held(
+    db: Session,
+    request: Request,
+    current_user: User,
+    media_file: MediaFile,
+    comment: Comment,
+    ctx: RequestContext,
+) -> None:
+    """A new comment on a held file is allowed and recorded (``content.hold.annotation``)."""
+    record_hold_annotation(
+        db, request, current_user, media_file, str(comment.uuid), bypass=ctx.bypass
+    )
+
+
+def _refuse_if_comment_frozen(
+    db: Session, comment: Comment, current_user: User, *, action: str
+) -> None:
+    """An existing comment on a held file is part of its preserved record (legal-hold freeze)."""
+    refuse_if_frozen(db, int(comment.media_file_id), actor=current_user, action=action)
+
+
 @router.post("/files/{file_uuid}/comments", response_model=CommentSchema)
 def create_comment_for_file_nested(
     file_uuid: str,
     comment: CommentCreate,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -106,8 +132,11 @@ def create_comment_for_file_nested(
         user_id=current_user.id,
     )
     db.add(db_comment)
+    db.flush()
+    _annotate_if_held(db, request, current_user, media_file, db_comment, ctx)
     db.commit()
     db.refresh(db_comment)
+    audit_outbox.deliver_staged(db)
 
     # Reload with relationships for UUID mapping
     db_comment_reloaded = (
@@ -160,6 +189,7 @@ def get_comments_for_file(
 @router.post("", response_model=CommentSchema)
 def create_comment_standalone(
     comment: CommentCreateStandalone,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -188,8 +218,11 @@ def create_comment_standalone(
     )
 
     db.add(db_comment)
+    db.flush()
+    _annotate_if_held(db, request, current_user, media_file, db_comment, ctx)
     db.commit()
     db.refresh(db_comment)
+    audit_outbox.deliver_staged(db)
 
     # Reload with relationships for UUID mapping
     db_comment_reloaded = (
@@ -313,6 +346,7 @@ def update_comment(
         org_id=comment_file_org,
         resource_type="comment",
     )
+    _refuse_if_comment_frozen(db, comment, current_user, action="comment_edit")
 
     # Update fields
     for field, value in comment_update.model_dump(exclude_unset=True).items():
@@ -356,6 +390,7 @@ def delete_comment(
         forbidden_detail="You do not have permission to delete this comment",
         need="write",
     )
+    _refuse_if_comment_frozen(db, comment, current_user, action="comment_delete")
 
     # Allow deletion by the platform role (single-tenant mode), on the comment's file
     file_row = (

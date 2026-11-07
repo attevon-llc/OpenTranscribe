@@ -620,6 +620,13 @@ def identify_speakers_llm_task(self, file_uuid: str):
         logger.info(f"Speaker identification of {file_uuid} refused: {refusal.message}")
         return skipped_result(refusal)
 
+    from app.tasks.hold_skip import file_is_frozen
+    from app.tasks.hold_skip import skipped_for_hold
+
+    # A held file's speaker suggestions are preserved as they were (legal-hold freeze).
+    if file_is_frozen(file_uuid=file_uuid):
+        return skipped_for_hold("identify_speakers_llm_task", file_uuid=file_uuid)
+
     try:
         # Phase 1 — read (DB session open, Postgres only).
         inputs = _load_identification_inputs(file_uuid, task_id)

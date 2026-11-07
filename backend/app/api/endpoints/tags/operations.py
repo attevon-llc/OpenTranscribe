@@ -22,6 +22,7 @@ from app.api.endpoints.tags._common import _translated_tag_errors
 from app.api.endpoints.tags._common import _writable_tag_ids
 from app.api.endpoints.tags._common import _write_rights
 from app.api.endpoints.tags._common import router
+from app.api.hold_refusal import raise_hold_refusal
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.tag import TagImpact
@@ -29,6 +30,7 @@ from app.schemas.tag import TagMergeRequest
 from app.schemas.tag import TagMutationResult
 from app.schemas.tag import TagPromoteRequest
 from app.schemas.tag import TagRenameRequest
+from app.services.hold_guard import HoldRefusedError
 from app.services.platform_access import TenancyMode
 from app.services.request_context import RequestContext
 from app.services.tag_operations import delete_tags
@@ -90,14 +92,17 @@ def promote_tags_endpoint(
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )
-    with _translated_tag_errors():
-        outcome = promote_tags_to_shared(
-            db,
-            tag_ids,
-            user_id=current_user.id,
-            organization_id=ctx.org_id,
-            fold_across_tenants=ctx.bypass.mode is TenancyMode.SINGLE,
-        )
+    try:
+        with _translated_tag_errors():
+            outcome = promote_tags_to_shared(
+                db,
+                tag_ids,
+                user_id=current_user.id,
+                organization_id=ctx.org_id,
+                fold_across_tenants=ctx.bypass.mode is TenancyMode.SINGLE,
+            )
+    except HoldRefusedError as exc:
+        raise_hold_refusal(db, exc, actor=current_user, action="tag_merge")
     return _mutation_response(outcome, _write_rights(ctx, current_user.id))
 
 
@@ -127,15 +132,18 @@ def rename_tag_endpoint(
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )
-    with _translated_tag_errors():
-        outcome = rename_tag(
-            db,
-            tag_id,
-            payload.name,
-            confirm_merge=payload.confirm_merge,
-            user_id=current_user.id,
-            organization_id=ctx.org_id,
-        )
+    try:
+        with _translated_tag_errors():
+            outcome = rename_tag(
+                db,
+                tag_id,
+                payload.name,
+                confirm_merge=payload.confirm_merge,
+                user_id=current_user.id,
+                organization_id=ctx.org_id,
+            )
+    except HoldRefusedError as exc:
+        raise_hold_refusal(db, exc, actor=current_user, action="tag_merge")
     return _mutation_response(outcome, _write_rights(ctx, current_user.id))
 
 
@@ -168,10 +176,13 @@ def merge_tags_endpoint(
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )
-    with _translated_tag_errors():
-        outcome = merge_tags(
-            db, target_id, source_ids, user_id=current_user.id, organization_id=ctx.org_id
-        )
+    try:
+        with _translated_tag_errors():
+            outcome = merge_tags(
+                db, target_id, source_ids, user_id=current_user.id, organization_id=ctx.org_id
+            )
+    except HoldRefusedError as exc:
+        raise_hold_refusal(db, exc, actor=current_user, action="tag_merge")
     return _mutation_response(outcome, _write_rights(ctx, current_user.id))
 
 
@@ -195,6 +206,9 @@ def delete_tags_endpoint(
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )
-    with _translated_tag_errors():
-        outcome = delete_tags(db, tag_ids, user_id=current_user.id, organization_id=ctx.org_id)
+    try:
+        with _translated_tag_errors():
+            outcome = delete_tags(db, tag_ids, user_id=current_user.id, organization_id=ctx.org_id)
+    except HoldRefusedError as exc:
+        raise_hold_refusal(db, exc, actor=current_user, action="tag_delete")
     return _mutation_response(outcome, _write_rights(ctx, current_user.id))

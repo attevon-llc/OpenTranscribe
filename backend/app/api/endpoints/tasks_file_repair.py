@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.hold_refusal import refuse_reprocess_if_held
 from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
@@ -150,6 +151,7 @@ def retry_file_processing(
 
         file_id = media_file.id
         require_processing_allowed_for_file(db, media_file)
+        refuse_reprocess_if_held(db, int(file_id), actor=current_user, action="retry")
 
         # Check if the file is in a state where retry makes sense. A NULL status fails this
         # membership test and lands here, where `.status.value` would raise AttributeError

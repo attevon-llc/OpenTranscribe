@@ -597,6 +597,13 @@ def rediarize_task(
             logger.info("Speaker re-detection of %s refused: %s", file_uuid, refusal.message)
             return skipped_result(refusal)
 
+        from app.tasks.hold_skip import file_is_held
+        from app.tasks.hold_skip import skipped_for_hold
+
+        # Backstop: every entry point refuses a held file first (reprocess, 409).
+        if file_is_held(file_uuid=file_uuid):
+            return skipped_for_hold("rediarize_task", file_uuid=file_uuid)
+
     try:
         meta = _start(file_uuid, task_id, engine)
         file_id, user_id = meta["file_id"], meta["user_id"]

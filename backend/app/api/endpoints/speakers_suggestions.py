@@ -16,6 +16,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.speakers_profile_workflow import _get_media_file_uuid
 from app.api.endpoints.speakers_profile_workflow import _handle_profile_embedding_updates
 from app.api.error_handlers import ErrorHandler
+from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -79,6 +80,7 @@ def verify_speaker_identification(
             min_permission="editor",
             bypass=ctx.bypass,
         )
+        refuse_if_frozen(db, speaker.media_file_id, actor=current_user, action="speaker_verify")
 
         profile_id = _resolve_profile_uuid_to_id(profile_uuid, speaker, current_user, db, ctx)
 
@@ -144,6 +146,7 @@ def confirm_speaker_gender(
         forbidden_detail="Requires editor permission",
         bypass=ctx.bypass,
     )
+    refuse_if_frozen(db, speaker.media_file_id, actor=current_user, action="speaker_gender")
 
     speaker.predicted_gender = gender
     speaker.gender_confirmed_by_user = True

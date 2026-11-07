@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.files.reprocess_clear import clear_selective_data
 from app.api.endpoints.files.reprocess_dispatch import dispatch_selective_tasks
 from app.api.endpoints.files.reprocess_dispatch import start_reprocessing_task
+from app.api.hold_refusal import refuse_reprocess_if_held
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -124,46 +125,6 @@ def refuse_unrunnable_rerun(
     )
     if code is not None:
         raise plan_refusal(code)
-
-
-def refuse_reprocess_if_held(
-    db: Session,
-    file_id: int,
-    *,
-    actor: User | None = None,
-    action: str = "reprocess",
-    message: str | None = None,
-) -> None:
-    """409 ``FILE_UNDER_LEGAL_HOLD`` when the file is held by the platform or an organization.
-
-    Reprocessing replaces the transcript, speakers and search copies, which a hold exists to
-    keep. Raised before anything is cancelled or cleared. Names who holds the file but never
-    the organization's hold uuids: the caller may be any editor.
-    """
-    from app.services.hold_guard import REPROCESS_REFUSAL
-    from app.services.hold_guard import hold_state
-    from app.services.hold_guard import refusal_detail
-
-    state = hold_state(db, file_id)
-    if state.held:
-        if actor is not None:
-            from app.services.content_audit import AuditedResource
-            from app.services.content_hold_service import record_hold_refusal
-
-            row = db.get(MediaFile, file_id)
-            if row is not None:
-                record_hold_refusal(
-                    db,
-                    None,
-                    actor,
-                    AuditedResource.file(row),
-                    action=action,
-                    held_by=state.held_by,
-                )
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=refusal_detail(state, reveal_uuids=False, message=message or REPROCESS_REFUSAL),
-        )
 
 
 def _reset_file_for_reprocess(db: Session, file_id: int) -> None:

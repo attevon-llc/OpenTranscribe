@@ -322,6 +322,13 @@ def detect_speaker_attributes_task(self: Any, file_uuid: str, user_id: int) -> d
     # killed it. Resolve the file up front so the row exists before the slow
     # work starts, matching every sibling post-processing task.
     task_id = self.request.id
+    from app.tasks.hold_skip import file_is_frozen
+    from app.tasks.hold_skip import skipped_for_hold
+
+    # A held file's speakers keep the attributes they had when held (legal-hold freeze); the
+    # run in flight when the hold landed is not frozen and finishes.
+    if file_is_frozen(file_uuid=file_uuid):
+        return skipped_for_hold("detect_speaker_attributes_task", file_uuid=file_uuid)
     file_id = _resolve_file_id_for_tracking(file_uuid)
     if file_id is not None:
         _create_and_start_task_record(task_id, user_id, file_id)

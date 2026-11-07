@@ -32,6 +32,8 @@ from app.services import audit_outbox
 from app.services.collection_visibility import usable_collections
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import stage_content_event
+from app.services.hold_guard import frozen_states
+from app.services.hold_guard import is_frozen
 from app.services.permission_service import PermissionService
 from app.services.tag_scope import owned_or_system
 from app.services.tag_scope import tenant_first
@@ -224,6 +226,11 @@ class AutoLabelService:
             "failed_tags": [],
             "failed_collections": [],
         }
+        # A held file's tags and collections are preserved as they were (legal-hold freeze).
+        # The suggestion is not stamped, so the labels can be applied once the hold is released.
+        if is_frozen(self.db, int(media_file.id)):
+            logger.info(f"Auto-label skipped for file {media_file.id}: under a legal hold")
+            return result
 
         def apply_tag(name: str, confidence: float) -> int | None:
             # The tag lands in the FILE's tenant (issue #1050), credited to the file
@@ -544,6 +551,25 @@ class AutoLabelService:
     # Batch Grouping
     # =========================================================================
 
+    def _files_by_suggested_tag(
+        self, files: list[MediaFile], suggestion_by_file: dict[Any, TopicSuggestion]
+    ) -> dict[tuple[int | None, str], list[MediaFile]]:
+        """``(tenant, normalized tag) -> files`` suggesting it, each file once per key."""
+        tag_files: dict[tuple[int | None, str], list[MediaFile]] = {}
+        for mf in files:
+            suggestion = suggestion_by_file.get(mf.id)
+            if not suggestion or not suggestion.suggested_tags:
+                continue
+            for tag_data in suggestion.suggested_tags:
+                normalized = self.normalize_name(tag_data.get("name", ""))
+                if not normalized:
+                    continue
+                key = (mf.organization_id, normalized)
+                bucket = tag_files.setdefault(key, [])
+                if mf not in bucket:
+                    bucket.append(mf)
+        return tag_files
+
     def group_batch_by_topics(self, batch_id: int, user_id: int) -> dict:
         """Create shared collections for files in a batch that share topics.
 
@@ -573,20 +599,11 @@ class AutoLabelService:
         # Collect (tenant, tag)->files mapping. Grouped per tenant (issue #1051):
         # a batch's files normally share one, but a collection must never hold
         # files of two tenants, so the grouping cannot assume it.
-        tag_files: dict[tuple[int | None, str], list[MediaFile]] = {}
-        for mf in batch_files:
-            suggestion = suggestion_by_file.get(mf.id)
-            if not suggestion or not suggestion.suggested_tags:
-                continue
-            for tag_data in suggestion.suggested_tags:
-                normalized = self.normalize_name(tag_data.get("name", ""))
-                if not normalized:
-                    continue
-                key = (mf.organization_id, normalized)
-                if key not in tag_files:
-                    tag_files[key] = []
-                if mf not in tag_files[key]:
-                    tag_files[key].append(mf)
+        # A held file joins no new collection (legal-hold freeze).
+        frozen = frozen_states(self.db, batch_file_ids)
+        tag_files = self._files_by_suggested_tag(
+            [mf for mf in batch_files if int(mf.id) not in frozen], suggestion_by_file
+        )
 
         # Create collections for shared topics (2+ files)
         collections_created = 0

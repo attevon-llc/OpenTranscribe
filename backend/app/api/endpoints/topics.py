@@ -26,6 +26,8 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.api.hold_refusal import audit_hold_refusals
+from app.api.hold_refusal import refuse_if_frozen
 from app.core.constants import DEFAULT_AUTO_LABEL_CONFIDENCE_THRESHOLD
 from app.core.exceptions import DomainError
 from app.db.base import get_db
@@ -79,10 +81,12 @@ def batch_extract_topics(
         Acknowledgment that batch processing has been triggered
     """
     # Import here to avoid circular imports
+    from app.services.hold_guard import hold_states
     from app.tasks.topic_extraction import batch_extract_topics_task
 
     # Verify all files exist and belong to user
     verified_uuids = []
+    verified_ids: dict[str, int] = {}
     for file_uuid in file_uuids:
         try:
             media_file = get_file_by_uuid_with_permission(
@@ -95,10 +99,19 @@ def batch_extract_topics(
             )
             if media_file.transcript_segments:
                 verified_uuids.append(file_uuid)
+                verified_ids[file_uuid] = int(media_file.id)
             else:
                 logger.warning(f"Skipping file {file_uuid} - no transcript available")
         except (HTTPException, DomainError) as e:
             logger.warning(f"Skipping file {file_uuid} - {e.detail}")
+
+    # A held file's suggestions are preserved as they were (legal-hold freeze): skipped and
+    # counted, or refused outright when every file asked for is held.
+    held = hold_states(db, verified_ids.values())
+    if held and len(held) == len(verified_ids):
+        refuse_if_frozen(db, held.keys(), actor=current_user, action="topic_extract")
+    audit_hold_refusals(db, held, actor=current_user, action="topic_extract")
+    verified_uuids = [u for u in verified_uuids if verified_ids[u] not in held]
 
     if not verified_uuids:
         raise HTTPException(
@@ -166,6 +179,7 @@ def batch_extract_topics(
         "task_id": task.id,
         "file_count": len(verified_uuids),
         "files": verified_uuids,
+        "held_skipped": len(held),
     }
     if batch_uuid_str:
         result["upload_batch_id"] = batch_uuid_str
@@ -263,6 +277,7 @@ def auto_label_single_file(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="auto_label")
 
     from app.services.auto_label_service import AutoLabelService
     from app.services.auto_label_settings import get_user_auto_label_settings
@@ -418,6 +433,7 @@ def extract_topics(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="topic_extract")
     require_processing_allowed_for_file(db, media_file)
 
     # Check if file has transcript
@@ -500,6 +516,7 @@ def apply_topic_suggestions(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="topic_apply")
     file_id = media_file.id
 
     # Get suggestion
@@ -559,6 +576,7 @@ def dismiss_topic_suggestions(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="topic_dismiss")
     file_id = media_file.id
 
     # Get suggestion

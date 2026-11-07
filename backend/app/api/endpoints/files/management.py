@@ -18,6 +18,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.files import bulk_actions
 from app.api.endpoints.files.crud import delete_media_file
 from app.api.endpoints.files.crud import get_media_file_by_uuid
+from app.api.hold_refusal import refuse_reprocess_if_held
 from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
@@ -242,8 +243,6 @@ def retry_file_processing(
                 detail=f"File cannot be retried in current status: {db_file.status}",
             )
 
-        from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
-
         refuse_reprocess_if_held(db, int(file_id), actor=current_user, action="retry")
 
         # Resetting the retry count bypasses the admin-tunable ceiling entirely,
@@ -336,6 +335,7 @@ def recover_file(
         )
         file_id = db_file.id  # Get internal ID for task operations
         require_processing_allowed_for_file(db, db_file)
+        refuse_reprocess_if_held(db, int(file_id), actor=current_user, action="recover")
 
         success = recover_stuck_file(db, file_id)
         if not success:

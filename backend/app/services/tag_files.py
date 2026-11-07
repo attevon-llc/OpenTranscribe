@@ -2,6 +2,10 @@
 
 Callers decide who may change a file's tags; these helpers only stage the
 change in the session. The caller flushes (or commits) it.
+
+A held file's tags are part of its preserved record (legal-hold freeze): both writers raise
+``HoldRefusedError`` for one. A route refuses (and audits) before it gets here; this is the
+backstop every caller shares.
 """
 
 from __future__ import annotations
@@ -11,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.constants import TAG_SOURCE_MANUAL
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.hold_guard import assert_content_mutable
 
 
 def add_file_tag(db: Session, file_id: int, tag_id: int) -> bool:
@@ -20,7 +25,11 @@ def add_file_tag(db: Session, file_id: int, tag_id: int) -> bool:
 
     Returns:
         True when an association was staged.
+
+    Raises:
+        HoldRefusedError: The file is under a legal hold.
     """
+    assert_content_mutable(db, [file_id])
     present = (
         db.query(FileTag.id)
         .filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag_id)
@@ -37,7 +46,11 @@ def remove_file_tag(db: Session, file_id: int, tag_id: int) -> bool:
 
     Returns:
         True when an association was staged for deletion.
+
+    Raises:
+        HoldRefusedError: The file is under a legal hold.
     """
+    assert_content_mutable(db, [file_id])
     link = (
         db.query(FileTag).filter(FileTag.media_file_id == file_id, FileTag.tag_id == tag_id).first()
     )

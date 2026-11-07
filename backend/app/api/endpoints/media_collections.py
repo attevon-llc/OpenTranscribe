@@ -35,6 +35,7 @@ from app.api.endpoints.media_collections_access import _get_prompt_info
 from app.api.endpoints.media_collections_access import _hold_refusal
 from app.api.endpoints.media_collections_access import _resolve_prompt_uuid
 from app.api.endpoints.media_collections_listing import list_collections
+from app.api.hold_refusal import refuse_if_frozen
 from app.auth.audit_events import AuditEventType
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED
 from app.db.base import get_db
@@ -428,6 +429,8 @@ def delete_collection(
         .filter(CollectionMember.collection_id == collection.id)
         .all()
     ]
+    # Deleting the collection would take a held member out of it (legal-hold freeze).
+    refuse_if_frozen(db, file_ids, actor=current_user, action="delete_collection")
 
     db.delete(collection)
     db.commit()

@@ -92,6 +92,7 @@ def redaction_detect_task(
     from app.legal.processing_gate import check_processing_allowed_for_file
     from app.legal.processing_gate import skipped_result
     from app.models.media import MediaFile
+    from app.services.hold_guard import is_frozen
     from app.services.redaction.service import RedactionService
     from app.utils.task_utils import create_task_record
     from app.utils.task_utils import update_task_status
@@ -115,6 +116,11 @@ def redaction_detect_task(
             refusal = check_processing_allowed_for_file(db, media)
             if refusal is not None:
                 return skipped_result(refusal)
+            # A RESCAN of a held file would replace the spans it displays and exports with
+            # (legal-hold freeze, plan §3.4); its FIRST scan is allowed, or a file where
+            # masking is mandated could never be read again.
+            if media.redaction_model_version is not None and is_frozen(db, file_id):
+                return {"status": "skipped", "reason": "legal_hold"}
             owner_id = int(media.user_id)
             effective_user_id = user_id or owner_id
 
@@ -184,16 +190,18 @@ def redaction_reindex_all_task(
 
     Used on first rollout and after a detector model upgrade. ``only_stale`` skips files
     already detected at the current REDACTION_MODEL_VERSION. Chunked dispatch — each file
-    is processed by its own ``redaction.detect`` for isolation/retry.
+    is processed by its own ``redaction.detect`` for isolation/retry. Held files are left out:
+    a rescan would change what a held file displays (legal-hold freeze, plan §3.4).
     """
     from app.core.enums import FileStatus
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile
+    from app.services.hold_guard import not_held_pred
 
     dispatched = 0
     with session_scope() as db:
         q = db.query(MediaFile.id, MediaFile.user_id).filter(
-            MediaFile.status == FileStatus.COMPLETED
+            MediaFile.status == FileStatus.COMPLETED, not_held_pred()
         )
         if only_stale:
             q = q.filter(

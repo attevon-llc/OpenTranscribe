@@ -123,14 +123,29 @@ def test_deleting_an_unheld_files_speaker_works(
     assert db_session.query(Speaker).filter(Speaker.uuid == speaker_uuid).count() == 0
 
 
-@pytest.mark.parametrize("held", [True, False])
-def test_dismissing_topic_suggestions_keeps_the_data_either_way(
-    client, user_token_headers, normal_user, db_session, held
+def test_dismissing_a_held_files_topic_suggestions_is_refused(
+    client, user_token_headers, normal_user, db_session, events
 ):
-    """Dismissal only flips a status and keeps the suggestion, so it is not a destroy path."""
+    """Dismissal keeps the suggestion but changes its status: on a held file that is frozen."""
     from app.models.topic import TopicSuggestion
 
-    mf = _file(db_session, normal_user, held=held)
+    mf = _file(db_session, normal_user, held=True)
+    db_session.add(TopicSuggestion(media_file_id=mf.id, user_id=normal_user.id, status="pending"))
+    db_session.commit()
+    _refused(client.delete(f"/api/files/{mf.uuid}/suggestions", headers=user_token_headers))
+    row = db_session.query(TopicSuggestion).filter(TopicSuggestion.media_file_id == mf.id).one()
+    db_session.refresh(row)
+    assert row.status == "pending"
+    refused = _refusals(events, "topic_dismiss")
+    assert len(refused) == 1 and refused[0]["resource_uuid"] == str(mf.uuid)
+
+
+def test_dismissing_an_unheld_files_topic_suggestions_keeps_the_data(
+    client, user_token_headers, normal_user, db_session
+):
+    from app.models.topic import TopicSuggestion
+
+    mf = _file(db_session, normal_user, held=False)
     db_session.add(TopicSuggestion(media_file_id=mf.id, user_id=normal_user.id, status="pending"))
     db_session.commit()
     response = client.delete(f"/api/files/{mf.uuid}/suggestions", headers=user_token_headers)

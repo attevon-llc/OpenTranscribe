@@ -16,6 +16,7 @@ from app.api.endpoints import speaker_profiles_collections
 from app.api.endpoints import speaker_profiles_matching
 from app.api.endpoints.auth import get_current_active_user
 from app.api.error_handlers import ErrorHandler
+from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -35,6 +36,7 @@ from app.services.request_context import RequestContext
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
+from app.services.speaker_profile_rename import held_member_count
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_resource_owner
@@ -387,6 +389,7 @@ def update_speaker_profile(
 
         profile_id = profile.id
         renames: list[tuple[str, str]] = []
+        held_skipped = 0
 
         if name:
             # Check for name conflicts
@@ -419,6 +422,7 @@ def update_speaker_profile(
                 restrict_to_user_id=None if ctx.bypass.sees_all_in_scope else current_user.id,
                 organization_id=profile.organization_id,
             )
+            held_skipped = held_member_count(db, int(profile_id))
 
         if description is not None:
             profile.description = description  # type: ignore[assignment]
@@ -442,6 +446,7 @@ def update_speaker_profile(
             "name": profile.name,
             "description": profile.description,
             "updated_at": profile.updated_at.isoformat(),
+            "held_skipped": held_skipped,
         }
 
     except (HTTPException, DomainError):
@@ -530,6 +535,14 @@ def delete_speaker_profile(
         profile_name = str(profile.name)
 
         speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
+        # Deleting the profile unlinks (and may rename) a held file's speaker: refused while
+        # any member's file is held (legal-hold freeze).
+        refuse_if_frozen(
+            db,
+            {s.media_file_id for s in speakers},
+            actor=current_user,
+            action="profile_delete",
+        )
         impact = capture_speaker_impact(
             db, [int(s.id) for s in speakers], removed=False, reindex=False
         )

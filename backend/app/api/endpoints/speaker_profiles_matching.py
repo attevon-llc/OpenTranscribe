@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.error_handlers import ErrorHandler
+from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
@@ -105,6 +106,7 @@ def assign_speaker_to_profile(
             forbidden_detail="Not authorized to access this speaker",
             bypass=ctx.bypass,
         )
+        refuse_if_frozen(db, speaker.media_file_id, actor=current_user, action="speaker_link")
         speaker_id = speaker.id
         # Read before the assignment writes over it — the task's re-score gate
         # compares old against new to tell an attach from a no-op.

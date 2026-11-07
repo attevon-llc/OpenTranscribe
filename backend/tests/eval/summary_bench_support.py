@@ -21,6 +21,7 @@ def load_bench() -> SimpleNamespace:
     from summary_bench import config
     from summary_bench import inputs
     from summary_bench import planner
+    from summary_bench import replay
     from summary_bench import report
     from summary_bench import runner
     from summary_bench import scoring
@@ -32,6 +33,7 @@ def load_bench() -> SimpleNamespace:
         config=config,
         inputs=inputs,
         planner=planner,
+        replay=replay,
         report=report,
         runner=runner,
         scoring=scoring,

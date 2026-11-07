@@ -81,6 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument('--arm', action='append', default=[], metavar='NAME=@module|PATH.json')
     replay.add_argument('--run-dir', required=True)
     replay.add_argument('--lock', default=None)
+    replay.add_argument(
+        '--concurrency',
+        type=int,
+        default=1,
+        help='merge calls in flight at once within one merge arm (default 1). Rows are '
+        'checkpointed to replay.jsonl as they finish and a rerun skips them',
+    )
 
     judge = sub.add_parser('judge', help='LLM-as-judge pass over a finished run')
     _common(judge)

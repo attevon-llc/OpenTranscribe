@@ -196,6 +196,7 @@ def support_world(
     db_session.add(
         OrganizationMembership(organization_id=org.id, user_id=other_user.id, role="org:admin")
     )
+    org.owner_user_id = other_user.id  # the org admin owns the org (v468)
     db_session.commit()
 
     world = SupportWorld(

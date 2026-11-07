@@ -13593,6 +13593,34 @@
         "title": "OwnerTakedownOut",
         "type": "object"
       },
+      "OwnershipReceipt": {
+        "properties": {
+          "owner_user_uuid": {
+            "format": "uuid",
+            "title": "Owner User Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_user_uuid"
+        ],
+        "title": "OwnershipReceipt",
+        "type": "object"
+      },
+      "OwnershipTransfer": {
+        "properties": {
+          "to_user_uuid": {
+            "format": "uuid",
+            "title": "To User Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "to_user_uuid"
+        ],
+        "title": "OwnershipTransfer",
+        "type": "object"
+      },
       "PaginatedMediaFileResponse": {
         "description": "Paginated response for media file listings.",
         "properties": {
@@ -44895,7 +44923,7 @@
     },
     "/api/org-admin/gdpr/erase-organization": {
       "post": {
-        "description": "Schedule the GDPR erasure of the caller's ENTIRE organization (irreversible once it runs).\n\nWhen it runs: org-stamped media, member-owned org data, the org's voiceprints and the\norganization row itself. Members keep their personal accounts. Requires ``confirm=true`` and\nre-authentication; answers 202 with the request receipt.",
+        "description": "Schedule the GDPR erasure of the caller's ENTIRE organization (irreversible once it runs).\n\nWhen it runs: org-stamped media, member-owned org data, the org's voiceprints and the\norganization row itself. Members keep their personal accounts. Owner only: 403\n``org_owner_only`` for another admin, 409 ``org_owner_required`` while the organization has no\nowner. Requires ``confirm=true`` and re-authentication; answers 202 with the request receipt.",
         "operationId": "erase_own_organization_api_org_admin_gdpr_erase_organization_post",
         "parameters": [
           {
@@ -45380,6 +45408,53 @@
           }
         ],
         "summary": "Release Org Hold",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/ownership/transfer": {
+      "post": {
+        "description": "Hand the organization's ownership to another administrator of it (owner only).",
+        "operationId": "transfer_ownership_api_org_admin_ownership_transfer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OwnershipTransfer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnershipReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Transfer Ownership",
         "tags": [
           "org-admin"
         ]

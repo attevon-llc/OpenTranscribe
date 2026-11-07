@@ -69,6 +69,7 @@ def org_admin_request(org, normal_user, user_token_headers, org_context, db_sess
     db_session.add(
         OrganizationMembership(organization_id=org.id, user_id=normal_user.id, role="org:admin")
     )
+    org.owner_user_id = normal_user.id  # organization erasure is the owner's alone (v468)
     db_session.commit()
     org_context(org_id=org.id, org_role="org:admin", only_for=normal_user.id)
     return user_token_headers

@@ -2,7 +2,8 @@
 
 * ``POST /gdpr/erase-user/{user_uuid}``: schedule the erasure of one member's data in the
   caller's organization. **202** with the request receipt; nothing is destroyed now.
-* ``POST /gdpr/erase-organization?confirm=true``: schedule the erasure of the whole organization.
+* ``POST /gdpr/erase-organization?confirm=true``: schedule the erasure of the whole organization
+  (the organization's OWNER only, v468).
 * ``GET  /gdpr/erasures``: the organization's open scheduled erasures.
 * ``POST /gdpr/erasures/{ledger_uuid}/cancel``: withdraw one before it runs. Any organization
   admin may cancel: more people able to stop a destructive act is the safe direction.
@@ -14,7 +15,7 @@ executor runs them. There is no immediate option here; a platform super administ
 are unchanged.
 
 Gated like the rest of ``/org-admin``: the ``organizations`` capability (404 in the community
-edition), ``require_org_admin`` on every route, and refused under a support access grant.
+edition), ``require_org_admin`` on every route (``require_org_owner`` on the organization erasure), and refused under a support access grant.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import require_org_admin
+from app.api.deps_context import require_org_owner
 from app.api.endpoints.org_admin import org_id_of
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
@@ -155,13 +157,14 @@ def erase_own_organization(
     confirm: bool = Query(False, description="Must be true to schedule the irreversible erasure"),
     body: OrgErasureConfirm | None = None,
     db: Session = Depends(get_db),
-    ctx: RequestContext = Depends(require_org_admin),
+    ctx: RequestContext = Depends(require_org_owner),
 ) -> ScheduledErasureReceipt:
     """Schedule the GDPR erasure of the caller's ENTIRE organization (irreversible once it runs).
 
     When it runs: org-stamped media, member-owned org data, the org's voiceprints and the
-    organization row itself. Members keep their personal accounts. Requires ``confirm=true`` and
-    re-authentication; answers 202 with the request receipt.
+    organization row itself. Members keep their personal accounts. Owner only: 403
+    ``org_owner_only`` for another admin, 409 ``org_owner_required`` while the organization has no
+    owner. Requires ``confirm=true`` and re-authentication; answers 202 with the request receipt.
     """
     if not confirm:
         raise HTTPException(

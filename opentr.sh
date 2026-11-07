@@ -4283,8 +4283,8 @@ case "$1" in
           shift
           ;;
         *)
-          echo "⚠️  rebuild-backend: ignoring unknown arg '$1'"
-          shift
+          echo "❌ rebuild-backend: unknown option '$1' (it rebuilds the default dev stack only; for a --fresh stack re-run: ./opentr.sh start dev --fresh <name>)" >&2
+          exit 2
           ;;
       esac
     done
@@ -4367,12 +4367,11 @@ case "$1" in
     ;;
 
   rebuild-frontend)
+    # Takes no options: an ignored --fresh/--dry-run used to rebuild the DEFAULT stack for real.
+    shift || true
+    [ $# -eq 0 ] || { echo "❌ rebuild-frontend takes no options (got: $*); for a --fresh stack re-run: ./opentr.sh start dev --fresh <name>" >&2; exit 2; }
     echo "🔨 Rebuilding frontend + docs services..."
-    # Frontend/docs don't use NAS volumes, but keep --no-deps for symmetry
-    # with rebuild-backend so data containers are untouched. docs rides along
-    # so the two never drift apart the way they did before this was added —
-    # a rebuilt frontend with a stale docs image looks fine until someone
-    # reads a stale changelog/auth-setup page for a feature that already shipped.
+    # --no-deps keeps data containers untouched; docs rides along so the two images never drift.
     # Same exit-code gap as rebuild-backend above -- check it explicitly.
     if ! docker compose up -d --build --no-deps frontend docs; then
       echo "❌ Frontend/docs rebuild failed (docker compose build/up exited non-zero) -- see the output above."

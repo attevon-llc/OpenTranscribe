@@ -10,18 +10,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
-vi.mock('$lib/player/plyrHandle', async () => {
+vi.mock('$lib/player/videojsPlayer', async () => {
   const { createFakePlayer } = await import('$lib/player/fakePlayer');
-  return { createPlyrPlayer: createFakePlayer, viewerTurnedCaptionsOff: () => false };
+  return { createVideojsPlayer: createFakePlayer };
 });
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => {
+  const { readable } = await import('svelte/store');
+  return { t: readable((key: string) => key), locale: readable('en') };
+});
 
 import VideoPlayer from './VideoPlayer.svelte';
 import { fakePlayers } from '$lib/player/fakePlayer';

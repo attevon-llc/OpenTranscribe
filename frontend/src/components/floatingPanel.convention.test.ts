@@ -32,8 +32,6 @@ const ALLOWED: Record<string, string> = {
     'a dialog pinned to the chat header with its own viewport-bounded max-height and internal scroll; the header is at the top of the page so there is always room below',
   'components/chat/ChatTracePanel.svelte':
     'a docked full-height side drawer (top/right/bottom: 0), not a panel anchored to a trigger',
-  'components/VideoPlayer.svelte':
-    'styles the third-party Plyr control menus via :global(); Plyr positions and sizes them',
   'components/transcript/SpeakerEditorPanel.svelte':
     'two hover-only informational popups (legend, match preview) revealed by CSS :hover, not interactive menus',
   'components/settings/LLMConfigModal.svelte':

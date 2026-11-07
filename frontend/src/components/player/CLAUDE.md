@@ -53,6 +53,11 @@ elements' API: they render their own `<video>`/`<audio>` and take a `PlayerHandl
   `guides/internationalization`, "Set text direction"). Logical properties only.
 - An unavailable control gets the `hidden` attribute; `.control[hidden]` must stay
   `display: none` because `.control` sets a display.
+  The same trap applies to a closed settings submenu: `.menu-view[hidden]` must stay
+  `display: none` because `.menu-view` sets `display: grid`.
+- The time readout (`.time`) is `direction: ltr` with `unicode-bidi: isolate`: inheriting RTL
+  reorders it to "total / elapsed" and moves its start margin against the volume slider
+  (`test_time_readout_stays_elapsed_then_total_in_rtl`).
 - Menus and tooltips are positioned by the library (Popover API top layer); never give them a
   `position` (`floatingPanel.convention.test.ts`).
 - Tests: jsdom runs these elements and their store. `VideoPlayer.controls.test.ts` and

@@ -498,6 +498,32 @@ class TestPlayerLanguageAndAccessibility:
         rtl = speed.evaluate(row_js)
         assert rtl["first"] > rtl["last"], rtl
 
+    def test_time_readout_stays_elapsed_then_total_in_rtl(
+        self, browser_page: Page, base_url: str, owned_video: dict
+    ) -> None:
+        """In RTL the readout must not reorder to "total / elapsed" or touch the volume slider."""
+        page = browser_page
+        page.context.add_init_script("window.localStorage.setItem('locale', 'ar')")
+        player = _open_file(page, base_url, owned_video["uuid"])
+        expect(page.locator("html")).to_have_attribute("dir", "rtl")
+        layout = player.container.evaluate(
+            """el => {
+              const sel = {current: 'media-time[data-type="current"]',
+                           duration: 'media-time[data-type="duration"]',
+                           volume: 'media-volume-slider media-slider-thumb', time: '.time'};
+              const missing = Object.entries(sel).filter(([, s]) => !el.querySelector(s));
+              if (missing.length) return {missing: missing.map(([k, s]) => s),
+                                          html: (el.querySelector('.time') || el).outerHTML.slice(0, 900)};
+              const b = Object.fromEntries(Object.entries(sel).map(
+                ([k, s]) => [k, el.querySelector(s).getBoundingClientRect()]));
+              return {missing: [], current: b.current.x, duration: b.duration.x,
+                      gap: Math.max(b.time.left - b.volume.right, b.volume.left - b.time.right)};
+            }"""
+        )
+        assert layout["missing"] == [], layout
+        assert layout["current"] < layout["duration"], layout
+        assert layout["gap"] >= 4, layout
+
     def test_play_is_announced_to_screen_readers(
         self, browser_page: Page, base_url: str, owned_video: dict
     ) -> None:

@@ -167,7 +167,11 @@
   display: none;
 }
 
+/* A timestamp reads "elapsed / total" left to right in every locale. Inheriting RTL would
+   reorder it to "total / elapsed" and put the start margin against the volume slider. */
 .media-player .time {
+  direction: ltr;
+  unicode-bidi: isolate;
   display: inline-flex;
   gap: var(--space-1);
   margin-inline-start: var(--space-2);

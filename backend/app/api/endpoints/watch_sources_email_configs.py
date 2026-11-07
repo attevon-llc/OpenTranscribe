@@ -226,11 +226,13 @@ def test_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> EmailTestResponse:
-    """Send a live test message through one email config (super_admin only).
+    """Test the connection and login of one email config (super_admin only).
 
     Consumed by the admin Settings UI's "Test" button and by ops verifying a mailer
-    after a credential rotation. Talks to the real SMTP / Graph / Exchange endpoint,
-    so it is slow and has an external side effect.
+    after a credential rotation. Connects and authenticates against the real SMTP /
+    Graph / Exchange endpoint (no message is sent), so it is slow and reaches an
+    external service; a successful test proves reachability and credentials, not
+    that a message is accepted for delivery.
 
     The outcome is persisted onto the config (``last_tested_at``, ``test_status``,
     ``test_message``) so the UI can show the last known state without re-testing.

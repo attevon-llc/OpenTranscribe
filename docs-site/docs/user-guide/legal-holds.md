@@ -149,7 +149,7 @@ end of this section).
 - **From the gallery:** select one or more files and choose **Place legal hold** from the selection
   actions. A dialog shows how many files are affected, asks for the reason and an optional matter
   reference, and explains what a hold does. It is offered to administrators only.
-- **From the file page:** use the **Place legal hold** action in the header menu of the file.
+- **From the file page:** use the **Place legal hold** button in the file's header.
 - **By file ID:** in **Settings > Legal holds**, choose **Place a hold**, choose **Specific files**,
   and paste one file ID per line (use **Copy file ID** on each file page to get them).
 - **By collection:** in the same dialog choose **A whole collection** and pick the collection.
@@ -227,13 +227,6 @@ else: not in a file response, an audit event, a notification or a refusal.
 `content.transcript.edit` was recorded for edits to held files before 0.7.0 and is no longer
 written; earlier rows stay and keep their label. To see everything that happened to one file, filter
 the audit log by its file ID (see [Audit Log Viewer](./admin-panel.md#audit-log-viewer)).
-
-:::note Interface wording to verify
-The interface of the hold actions was being built when this page was written. The menu labels and
-dialog wording under "Placing a hold in the application" (**Place legal hold**, the selection
-action, the platform administrators' **Settings > Legal holds** section, the file page action and banner, **Copy file ID**, the **Legal hold** chip and list entry)
-follow the design and should be checked against the released interface.
-:::
 
 ## Related
 

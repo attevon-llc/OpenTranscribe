@@ -263,6 +263,39 @@ def _retry_object_key_indexes() -> None:
         engine.dispose()
 
 
+_speaker_index_retry_done = False
+
+
+def _retry_speaker_indexes() -> None:
+    """Build the v458 ``speaker`` index (once per process) without ever blocking startup.
+
+    The revision builds nothing itself; this is where the index comes from. A build that cannot
+    get its locks within ``BUILD_LOCK_TIMEOUT_SECONDS`` is logged and retried on the next start.
+    Never raises.
+    """
+    global _speaker_index_retry_done
+    if _speaker_index_retry_done:
+        return
+    _speaker_index_retry_done = True
+    from app.db import concurrent_indexes
+    from app.db.speaker_indexes import SPEAKER_INDEXES
+
+    engine = create_migration_engine()
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            if inspect(conn).has_table("speaker"):
+                outcome = concurrent_indexes.ensure_concurrently(conn, SPEAKER_INDEXES)
+                pending = sorted(n for n, o in outcome.items() if o not in ("exists", "built"))
+                if pending:
+                    logger.warning(
+                        "speaker index(es) still pending, retried next start: %s", pending
+                    )
+    except SQLAlchemyError:
+        logger.error("Could not check the speaker indexes", exc_info=True)
+    finally:
+        engine.dispose()
+
+
 def _check_column_exists(conn: Connection, table: str, column: str) -> bool:
     """Check if a column exists in a table."""
     result = conn.execute(
@@ -433,6 +466,7 @@ def run_migrations() -> None:
         _repair_skipped_v230(config)
 
         _retry_object_key_indexes()
+        _retry_speaker_indexes()
 
         # Layer 2 of audit protection: re-apply the app role's grants on EVERY start (this
         # also repairs a `--no-acl` restore). No-op unless the role split was requested.

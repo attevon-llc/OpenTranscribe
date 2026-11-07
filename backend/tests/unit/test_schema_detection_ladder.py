@@ -456,6 +456,10 @@ _MODERN_CHAIN: list[Step] = [
             ("trigger_def", "trg_audit_guard_erasure_ledger", "index_checked_at"),
         },
     ),
+    step(
+        "v458_speaker_machine_identity_index",
+        markers={("index", "ix_speaker_machine_identity_media_file")},
+    ),
 ]
 
 
@@ -547,8 +551,8 @@ def test_every_ladder_revision_is_pinned_by_a_test_above():
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 58
-    assert len(pinned) == 102
+    assert len(_MODERN_CHAIN) == 59
+    assert len(pinned) == 103
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -632,7 +636,7 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "FROM user_setting s",  # v434
         "conname = 'speaker_identity_source_user_id_fkey'",  # v449
         "conname = 'ck_legal_acceptance_subject'",  # v451
-        "LIKE '%index_checked_at%'",  # v457, the last probe
+        "indexname = 'ix_speaker_machine_identity_media_file'",  # v458, the last probe
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]
     assert positions == sorted(positions), f"probe eras ran out of order: {positions}"

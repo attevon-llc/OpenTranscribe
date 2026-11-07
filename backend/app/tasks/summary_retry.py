@@ -7,10 +7,13 @@ similar to the transcription retry mechanism in utils/file_retry.py
 
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
 from app.services.llm_service import is_llm_available
+from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.tasks.summarization import summarize_transcript_task
 
 logger = logging.getLogger(__name__)
@@ -79,9 +82,15 @@ async def check_llm_availability() -> bool:
 
     Returns:
         True if LLM is available, False otherwise
+
+    Raises:
+        SQLAlchemyError: the settings could not be read; an outage is not "unavailable".
     """
     try:
         return await is_llm_available()
+    except SQLAlchemyError:
+        logger.warning(LLM_SETTINGS_UNREADABLE_MESSAGE)
+        raise
     except Exception as e:
         logger.debug(f"Error checking LLM availability: {e}")
         return False
@@ -107,7 +116,10 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     # every call from that endpoint raised `RuntimeError: asyncio.run()
     # cannot be called from a running event loop`, so the retry-summary
     # endpoint's success path has never worked (issue #474).
-    llm_available = await check_llm_availability()
+    # An unreadable settings DB raises a 503 here, before any file row is read or reset, so
+    # the retry is skipped for this cycle and no file's status changes.
+    with llm_settings_outage_as_503():
+        llm_available = await check_llm_availability()
 
     # Get internal ID for logging. get_by_uuid_optional, not get_file_by_uuid --
     # see the matching comment in reset_summary_for_retry above.

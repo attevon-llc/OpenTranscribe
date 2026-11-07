@@ -24,6 +24,7 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
+from app.services.hidden_media_service import hidden_mode_pred
 from app.services.platform_bypass import PlatformBypass
 from app.utils.sql_like import escape_like
 
@@ -566,6 +567,7 @@ def get_metadata_filters(
     organization_id: OrgScope = UNSCOPED,
     include_quarantined: bool = False,
     owner_user_ids: list[int] | None = None,
+    hidden: str = "exclude",
 ) -> dict:
     """
     Get available metadata filters for the user's accessible files.
@@ -587,6 +589,8 @@ def get_metadata_filters(
             the ownership-scoped predicate below via ``resolve_owner_user_ids``
             — so the facet counts this returns match what ``GET /files``
             itself would return for the same ``owner`` selection.
+        hidden: The caller's hide rows (issue #1102), ``exclude`` (default) / ``include`` /
+            ``only``, the same mode ``GET /files`` takes.
 
     Returns:
         Dictionary of available filter options
@@ -618,6 +622,10 @@ def get_metadata_filters(
 
     # A bare predicate, combined into two different queries below.
     file_filter = and_(file_filter, available_pred(include_quarantined=include_quarantined))
+    # The caller's own hide rows (issue #1102), so the facets describe the list they filter.
+    hidden_pred = hidden_mode_pred(user_id, hidden)
+    if hidden_pred is not None:
+        file_filter = and_(file_filter, hidden_pred)
 
     if owner_user_ids is not None:
         file_filter = and_(file_filter, MediaFile.user_id.in_(owner_user_ids))

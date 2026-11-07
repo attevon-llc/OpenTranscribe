@@ -121,6 +121,43 @@ def test_a_users_token_counters_are_counted_and_go_with_the_user(db_session, nor
     assert left == 1
 
 
+def test_a_users_hide_rows_and_the_hide_rows_on_their_files_are_counted(
+    db_session, normal_user, other_user
+):
+    """Per-user hide (v465, #1102): the subject's own rows, and anyone's on a destroyed file."""
+    from app.models.hidden_media import UserHiddenMedia
+    from app.models.media import MediaFile
+
+    store = next(s for s in STORES if s.key == "pg.user_hidden_media")
+    files = []
+    for owner in (normal_user, other_user):
+        row = MediaFile(
+            filename="x.wav",
+            storage_path=f"media/test/hidden-{owner.id}.wav",
+            content_type="audio/wav",
+            file_size=1,
+            status="completed",
+            user_id=owner.id,
+        )
+        db_session.add(row)
+        files.append(row)
+    db_session.flush()
+    mine, theirs = files
+    db_session.add_all(
+        [
+            UserHiddenMedia(user_id=normal_user.id, media_file_id=theirs.id),
+            UserHiddenMedia(user_id=other_user.id, media_file_id=mine.id),
+            UserHiddenMedia(user_id=other_user.id, media_file_id=theirs.id),
+        ]
+    )
+    db_session.flush()
+    scope = ErasureScope("user", user_id=normal_user.id)
+
+    assert store.count(scope, Captured(file_ids=[mine.id]), db_session) == 2
+    file_scope = ErasureScope("file", file_ids=(mine.id,))
+    assert store.count(file_scope, Captured(file_ids=[mine.id]), db_session) == 1
+
+
 def test_every_postgres_store_has_a_reason_when_it_keeps_data():
     keeping = [s for s in PG_STORES if s.disposition in ("retained", "de_attributed")]
     assert len(keeping) >= 4, "the stores that keep data on purpose are not being found"

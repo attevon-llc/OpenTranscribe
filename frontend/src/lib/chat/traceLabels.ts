@@ -131,10 +131,11 @@ export const OUTCOME_MARKERS: Record<TraceOutcome, string> = {
  *
  * `FILTERED` fires twice per turn — quarantine and masking — and two rows both
  * reading "Filtered" with different numbers looks like a bug rather than two
- * different filters. Anything not listed here is already unambiguous from its
- * stage, and labelling every node would just add noise.
+ * different filters. An "All transcripts" turn that left out the caller's hidden
+ * files (issue #1102) adds a third. Anything not listed here is already
+ * unambiguous from its stage, and labelling every node would just add noise.
  */
-const SUBJECT_NODES = new Set(['quarantine', 'masking']);
+const SUBJECT_NODES = new Set(['quarantine', 'masking', 'hidden']);
 
 export const subjectLabelKey = (nodeId: string | null): string | null =>
   nodeId && SUBJECT_NODES.has(nodeId) ? `chat.trace.node.${nodeId}` : null;

@@ -25,6 +25,7 @@ from app.schemas.tag import TaggedFile
 from app.schemas.tag import TagOnSelection
 from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
+from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
 from app.services.request_context import RequestContext
 from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
@@ -110,6 +111,11 @@ def _status_text(value: Any) -> str | None:
 def list_files_for_tag(
     tag_uuid: UUID,
     limit: int = Query(50, ge=1, le=200, description="Most files to return."),
+    hidden: str = Query(
+        "exclude",
+        pattern=HIDDEN_MODE_PATTERN,
+        description="Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -129,6 +135,7 @@ def list_files_for_tag(
         organization_id=ctx.org_id,
         limit=limit,
         include_quarantined=unavailable_list_exempt(ctx.bypass),
+        hidden=hidden,
     )
     return TagFileList(
         total=total,

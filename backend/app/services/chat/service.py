@@ -390,6 +390,7 @@ class ChatService:
         history: list[dict[str, str]],
         file_uuids: list[str] | None,
         speakers: list[str] | None,
+        hidden_file_uuids: frozenset[str] = frozenset(),
         scope_files_dropped: int = 0,
         settings: ChatSettings,
         use_context: bool,
@@ -416,6 +417,8 @@ class ChatService:
             history: Prior turns, oldest first.
             file_uuids: Resolved scope; None = all accessible transcripts.
             speakers: Restrict retrieval to these speakers' turns.
+            hidden_file_uuids: The caller's hidden files (issue #1102), resolved by the
+                route for an unscoped turn only; dropped from the ranked evidence.
             scope_files_dropped: How many of the caller's EXPLICIT file picks
                 (never collections/tags) `resolve_scope_file_uuids` could not
                 resolve into `file_uuids` — inaccessible, deleted, or
@@ -508,6 +511,7 @@ class ChatService:
                             history=history,
                             settings=settings,
                             file_uuids=file_uuids,
+                            hidden_file_uuids=hidden_file_uuids,
                             speakers=speakers,
                             search_mode=search_mode,
                             llm=llm,

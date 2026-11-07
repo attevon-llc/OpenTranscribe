@@ -10194,6 +10194,17 @@
             ],
             "title": "Imohash"
           },
+          "is_hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Hidden"
+          },
           "is_quarantined": {
             "default": false,
             "title": "Is Quarantined",
@@ -10834,6 +10845,17 @@
               }
             ],
             "title": "Imohash"
+          },
+          "is_hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Hidden"
           },
           "is_quarantined": {
             "default": false,
@@ -36034,6 +36056,19 @@
               "title": "Collection Uuid",
               "type": "string"
             }
+          },
+          {
+            "description": "Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+            "in": "query",
+            "name": "hidden",
+            "required": false,
+            "schema": {
+              "default": "exclude",
+              "description": "Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+              "pattern": "^(exclude|include|only)$",
+              "title": "Hidden",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -36428,6 +36463,19 @@
                 }
               ],
               "title": "Transcript Search"
+            }
+          },
+          {
+            "description": "Your hidden files: 'exclude' (default), 'include', or 'only'",
+            "in": "query",
+            "name": "hidden",
+            "required": false,
+            "schema": {
+              "default": "exclude",
+              "description": "Your hidden files: 'exclude' (default), 'include', or 'only'",
+              "pattern": "^(exclude|include|only)$",
+              "title": "Hidden",
+              "type": "string"
             }
           },
           {
@@ -38199,6 +38247,19 @@
             }
           },
           {
+            "description": "Your hidden files: 'exclude' (default), 'include', or 'only'",
+            "in": "query",
+            "name": "hidden",
+            "required": false,
+            "schema": {
+              "default": "exclude",
+              "description": "Your hidden files: 'exclude' (default), 'include', or 'only'",
+              "pattern": "^(exclude|include|only)$",
+              "title": "Hidden",
+              "type": "string"
+            }
+          },
+          {
             "description": "Field to sort by: upload_time, completed_at, filename, duration, file_size",
             "in": "query",
             "name": "sort_by",
@@ -38704,6 +38765,19 @@
               ],
               "description": "Filter to specific owner UUID(s); repeatable (issue #966)",
               "title": "Owner"
+            }
+          },
+          {
+            "description": "Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+            "in": "query",
+            "name": "hidden",
+            "required": false,
+            "schema": {
+              "default": "exclude",
+              "description": "Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+              "pattern": "^(exclude|include|only)$",
+              "title": "Hidden",
+              "type": "string"
             }
           }
         ],
@@ -40161,6 +40235,99 @@
         "summary": "Force Delete File",
         "tags": [
           "file-management"
+        ]
+      }
+    },
+    "/api/files/{file_uuid}/hidden": {
+      "delete": {
+        "description": "Show a hidden file in the caller's views again. A file that was not hidden is a no-op.",
+        "operationId": "unhide_file_api_files__file_uuid__hidden_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such file, or not one the caller can read."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Unhide File",
+        "tags": [
+          "files",
+          "files"
+        ]
+      },
+      "put": {
+        "description": "Hide one file from the caller's gallery, lists, search and corpus-wide chat.",
+        "operationId": "hide_file_api_files__file_uuid__hidden_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "No such file, or not one the caller can read."
+          },
+          "409": {
+            "description": "HIDDEN_LIMIT: the caller already hides the most files allowed."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Hide File",
+        "tags": [
+          "files",
+          "files"
         ]
       }
     },
@@ -51164,6 +51331,19 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+            "in": "query",
+            "name": "hidden",
+            "required": false,
+            "schema": {
+              "default": "exclude",
+              "description": "Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+              "pattern": "^(exclude|include|only)$",
+              "title": "Hidden",
+              "type": "string"
             }
           }
         ],

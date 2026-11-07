@@ -120,6 +120,10 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     # of its organization, or a platform admin (issue #1103). Set by the gallery
     # list endpoint; None where a response does not compute it.
     can_delete: bool | None = None
+    # Whether the CALLER has hidden this file from their own views (issue #1102). A per-user
+    # view preference: another user's response never reflects it. Set by the gallery and
+    # collection list endpoints; None where a response does not compute it.
+    is_hidden: bool | None = None
 
     # Technical metadata
     media_format: str | None = None

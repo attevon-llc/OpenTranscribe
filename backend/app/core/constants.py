@@ -779,3 +779,9 @@ MIN_TRASH_RETENTION_DAYS = 1
 MAX_TRASH_RETENTION_DAYS = 90
 #: Most files one purge tick destroys; the rest wait for the next tick.
 TRASH_PURGE_BATCH_SIZE = 200
+
+# --- Per-user hide of media files (issue #1102) -----------------------------------------
+#: Most files one user may hide. Search excludes a user's hidden files with one OpenSearch
+#: ``terms`` clause, and this cap keeps that clause far below ``index.max_terms_count``
+#: (65,536). A constant, not a setting: raising it is a capacity decision about the index.
+HIDDEN_MEDIA_PER_USER_CAP = 10_000

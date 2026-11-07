@@ -188,3 +188,16 @@ def _record_retrieval_diagnostics(
         meta["speakers_filtered"] = list(speakers)
     timings = meta.setdefault("timings_ms", {})
     timings.update(result.timings_ms)
+
+
+def _drop_hidden_hits(hits: list[ChunkHit], hidden_file_uuids: frozenset[str]) -> list[ChunkHit]:
+    """Drop the hits of the caller's hidden files (issue #1102), in memory.
+
+    Only for an UNSCOPED turn ("All transcripts"): a file the caller picked, or one inside a
+    collection they picked, is kept, because hide is a view preference and not access control.
+    A tag scope already left hidden files out in ``context_resolver._resolve_tags``. The set is
+    resolved by the chat route, so this phase opens no session for it.
+    """
+    if not hits or not hidden_file_uuids:
+        return hits
+    return [hit for hit in hits if str(hit.file_uuid) not in hidden_file_uuids]

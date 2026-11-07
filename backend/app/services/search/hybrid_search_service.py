@@ -33,6 +33,7 @@ from app.services.search import two_phase_search
 from app.services.search.filters import _collect_filters_applied
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import search_pipeline_id
+from app.services.search.hidden_exclusion import exclusion_fingerprint
 from app.services.search.quarantine_exclusion import SearchCountUnavailableError
 from app.services.search.quarantine_exclusion import _quarantined_file_uuids
 from app.services.search.query_building import _parse_query_operators
@@ -149,6 +150,7 @@ class HybridSearchService:
         file_uuid: str | None = None,
         fusion: FusionConfig | None = None,
         sources: frozenset[str] | None = None,
+        exclude_file_uuids: list[str] | None = None,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
@@ -170,6 +172,8 @@ class HybridSearchService:
             sort_by: Sort field - relevance, upload_time, completed_at, filename, duration, file_size.
             sort_order: Sort direction - asc or desc.
             title_filter: Optional filename/title substring filter.
+            exclude_file_uuids: The caller's hidden files (issue #1102), dropped
+                before ranking. Its fingerprint is part of the cache key.
 
         Returns:
             SearchResponse with grouped results.
@@ -225,6 +229,7 @@ class HybridSearchService:
             # for, or toggling a pill re-serves the previous page for
             # SEARCH_CACHE_TTL_SECONDS.
             sources=sorted(sources) if sources is not None else None,
+            hidden_files=exclusion_fingerprint(exclude_file_uuids),
         )
         cached = _get_cached_response(cache_key)
         if cached:
@@ -260,6 +265,7 @@ class HybridSearchService:
             title_filter=title_filter,
             organization_id=organization_id,
             file_uuid=file_uuid,
+            exclude_file_uuids=exclude_file_uuids,
         )
         filters_applied = _collect_filters_applied(
             speakers=speakers,
@@ -444,6 +450,7 @@ class HybridSearchService:
         max_file_size: int | None = None,
         language: str | None = None,
         title_filter: str | None = None,
+        exclude_file_uuids: list[str] | None = None,
     ) -> int:
         """Count transcript chunks matching ``query`` (optionally within one file).
 
@@ -488,6 +495,8 @@ class HybridSearchService:
                 on the page it labels, not the whole unfiltered corpus. All
                 default to None (unfiltered), matching the find bar's original
                 behaviour when the caller passes none of them.
+            exclude_file_uuids: The caller's hidden files (issue #1102), so a pill
+                count matches the page it labels.
 
         Returns:
             The exact matching-chunk count, or (``count_files=True``) the
@@ -525,6 +534,7 @@ class HybridSearchService:
             title_filter=title_filter,
             file_uuid=file_uuid,
             organization_id=organization_id,
+            exclude_file_uuids=exclude_file_uuids,
         )
         # Same posture as `get_available_filters`: quarantine is Postgres-only,
         # so an unscoped (whole-corpus) count has to exclude taken-down files

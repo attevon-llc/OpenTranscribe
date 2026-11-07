@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from app.services.chat import planner
+from app.services.chat.evidence import _drop_hidden_hits
 from app.services.chat.evidence import _drop_quarantined_hits
 from app.services.chat.evidence import _emit_expansion
 from app.services.chat.evidence import _merge_evidence
@@ -344,8 +345,13 @@ def _drop_quarantined(
     session_scope: SessionFactory,
     meta: dict[str, Any],
     recorder: TraceRecorder | None,
+    hidden_file_uuids: frozenset[str] = frozenset(),
 ) -> None:
-    """Phase 3.5 of ``_prepare_context``: drop quarantined ranked hits, in place."""
+    """Phase 3.5 of ``_prepare_context``: drop unavailable ranked hits, in place.
+
+    ``hidden_file_uuids`` (non-empty only for an unscoped turn, resolved by the chat route)
+    also drops the caller's hidden files (issue #1102), counted apart from the quarantine drop.
+    """
     # --- Phase 3.5: drop quarantined hits before anything downstream sees
     # them (its own short session). See `_drop_quarantined_hits` for what this
     # does and does NOT cover — retrieval itself has no quarantine predicate,
@@ -354,6 +360,12 @@ def _drop_quarantined(
     with session_scope() as db:
         result.chunks = _drop_quarantined_hits(db, result.chunks)
         result.digests = _drop_quarantined_hits(db, result.digests)
+    hidden_dropped = 0
+    if hidden_file_uuids:
+        kept_before = len(result.chunks)
+        result.chunks = _drop_hidden_hits(result.chunks, hidden_file_uuids)
+        result.digests = _drop_hidden_hits(result.digests, hidden_file_uuids)
+        hidden_dropped = kept_before - len(result.chunks)
     # `result.retrieved` feeds the `no_context` warning's contract (documented
     # in `frames._grounding_frames` and in `services/chat/CLAUDE.md`): non-zero means
     # masking failed closed on every chunk. A quarantined chunk never reaches
@@ -364,18 +376,33 @@ def _drop_quarantined(
     # keeps `retrieved` meaning "chunks that could have reached masking", and
     # the drop still has its own named counter so a quarantine cause is never
     # read as a bare "search returned less".
-    chunks_dropped_quarantined = chunks_before - len(result.chunks)
+    chunks_dropped_quarantined = chunks_before - hidden_dropped - len(result.chunks)
     emit_trace(
         recorder,
         QueryStage.FILTERED,
         node_id="quarantine",
         source="postgres",
-        kept=len(result.chunks),
+        kept=len(result.chunks) + hidden_dropped,
         dropped=chunks_dropped_quarantined,
     )
     if chunks_dropped_quarantined:
         result.retrieved = max(0, result.retrieved - chunks_dropped_quarantined)
         meta["chunks_dropped_quarantined"] = chunks_dropped_quarantined
+
+    # The caller's hidden files (issue #1102) have their own counter and trace row, so a hide
+    # is never read as a takedown. The row appears only when a hide removed something: most
+    # turns hide nothing, and the filter is the caller's own preference, not a pipeline stage.
+    if hidden_dropped:
+        emit_trace(
+            recorder,
+            QueryStage.FILTERED,
+            node_id="hidden",
+            source="postgres",
+            kept=len(result.chunks),
+            dropped=hidden_dropped,
+        )
+        result.retrieved = max(0, result.retrieved - hidden_dropped)
+        meta["chunks_dropped_hidden"] = hidden_dropped
 
 
 def _mask_evidence(
@@ -472,6 +499,7 @@ def _prepare_context(
     rewrite_enabled: bool,
     assistant_message_uuid: str = "",
     recorder: TraceRecorder | None = None,
+    hidden_file_uuids: frozenset[str] = frozenset(),
 ) -> tuple[list[MaskedChunk], dict[str, Any], Any, Any, str, str]:
     """Run the blocking RAG stages: rewrite → route → count → retrieve → mask.
 
@@ -600,7 +628,14 @@ def _prepare_context(
         recorder=recorder,
     )
 
-    _drop_quarantined(result, session_scope=session_scope, meta=meta, recorder=recorder)
+    _drop_quarantined(
+        result,
+        session_scope=session_scope,
+        meta=meta,
+        recorder=recorder,
+        # Empty unless the turn is unscoped ("All transcripts"): a chosen scope keeps them.
+        hidden_file_uuids=hidden_file_uuids if file_uuids is None else frozenset(),
+    )
 
     masked, digest_masked, _digest_mask_kwargs = _mask_evidence(
         result,

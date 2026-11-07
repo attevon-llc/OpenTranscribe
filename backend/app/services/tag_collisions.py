@@ -32,6 +32,7 @@ from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.file_availability import exclude_unavailable
+from app.services.hidden_media_service import apply_hidden_mode
 from app.services.tag_scope import accessible_file_ids_subquery
 from app.services.tag_scope import owned_or_system
 from app.services.tag_scope import system_tag
@@ -341,11 +342,14 @@ def files_for_tag(
     organization_id: OrgScope = UNSCOPED,
     limit: int = 50,
     include_quarantined: bool = False,
+    hidden: str = "exclude",
 ) -> tuple[list[MediaFile], int]:
     """The accessible files carrying a tag, newest first, and their true total.
 
     Quarantined files are left out unless ``include_quarantined``: the caller's review
     visibility, ``unavailable_list_exempt(bypass)``, never the bare admin role.
+    ``hidden`` applies the caller's own hide rows (issue #1102): ``exclude`` (default),
+    ``include`` or ``only``.
 
     Returns:
         At most ``limit`` files, and the count of all matching files.
@@ -356,6 +360,7 @@ def files_for_tag(
         db.query(MediaFile).filter(MediaFile.id.in_(carrying), MediaFile.id.in_(accessible)),
         include_quarantined=include_quarantined,
     )
+    query = apply_hidden_mode(query, user_id, hidden)
     total = query.count()
     files = (
         query.order_by(MediaFile.upload_time.desc().nulls_last(), MediaFile.id.desc())

@@ -39,6 +39,8 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.schemas.chat import ChatScope
 from app.services.file_availability import exclude_unavailable
+from app.services.hidden_media_service import exclude_hidden_for
+from app.services.hidden_media_service import hidden_uuids
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
@@ -190,14 +192,16 @@ def _resolve_tags(db: Session, ctx: RequestContext, tag_names: list[str]) -> set
     accessible_files = PermissionService.get_accessible_file_ids_subquery(
         db, ctx.user.id, organization_id=ctx.org_id
     )
-    rows = (
+    # A tag is a wide net, not a pick: the caller's hidden files stay out of it (issue
+    # #1102), exactly as they stay out of the tag's file list. A file picked by uuid is kept.
+    rows = exclude_hidden_for(
         _visible_files_query(db, ctx)
         .join(FileTag, FileTag.media_file_id == MediaFile.id)
         .join(Tag, Tag.id == FileTag.tag_id)
         .filter(Tag.name.in_(tag_names))
-        .filter(MediaFile.id.in_(select(accessible_files)))
-        .all()
-    )
+        .filter(MediaFile.id.in_(select(accessible_files))),
+        ctx.user.id,
+    ).all()
     return {str(row[0]) for row in rows}
 
 
@@ -227,8 +231,9 @@ def resolve_scope_file_uuids(
 
     Returns:
         ``None`` when the scope is empty — meaning "every transcript the caller
-        can access", enforced downstream by the ``accessible_user_ids`` term
-        rather than by an enumerated list. Otherwise the union of the resolved
+        can access" (minus the caller's hidden files, dropped at phase 3.5 by
+        ``context_prep._drop_quarantined``), enforced downstream by the
+        ``accessible_user_ids`` term rather than by an enumerated list. Otherwise the union of the resolved
         files (possibly empty, which correctly matches nothing).
 
     Raises:
@@ -264,6 +269,21 @@ def resolve_scope_file_uuids(
     return sorted(resolved)
 
 
+def unscoped_hidden_file_uuids(
+    db: Session, ctx: RequestContext, file_uuids: list[str] | None
+) -> frozenset[str]:
+    """The caller's hidden files to leave out of THIS turn's evidence (issue #1102).
+
+    Only an unscoped turn (``file_uuids is None``, "All transcripts") leaves them out: a
+    chosen scope keeps every file in it, because hide is a view preference and not access
+    control. Resolved here, in the route's session, so the turn's phases open none for it;
+    ``context_prep._drop_quarantined`` filters the ranked hits by it in memory.
+    """
+    if file_uuids is not None:
+        return frozenset()
+    return frozenset(hidden_uuids(db, ctx.user.id))
+
+
 def count_scope_files(db: Session, ctx: RequestContext, scope: ChatScope) -> int:
     """File count for a scope, for the context-size estimator.
 
@@ -285,8 +305,12 @@ def count_scope_files(db: Session, ctx: RequestContext, scope: ChatScope) -> int
         accessible = PermissionService.get_accessible_file_ids_subquery(
             db, ctx.user.id, organization_id=ctx.org_id
         )
+        # Hidden files are left out of "All transcripts" (issue #1102), so count them out.
         return int(
-            _visible_files_query(db, ctx).filter(MediaFile.id.in_(select(accessible))).count()
+            exclude_hidden_for(
+                _visible_files_query(db, ctx).filter(MediaFile.id.in_(select(accessible))),
+                ctx.user.id,
+            ).count()
         )
 
     # Count without enforcing the 500-file ceiling: the estimator exists to WARN

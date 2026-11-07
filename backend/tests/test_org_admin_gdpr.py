@@ -997,6 +997,37 @@ class TestOrgScopedErasure:
         assert db.query(Comment).filter(Comment.id == in_tenant_id).first() is None
         assert db.query(Comment).filter(Comment.id == personal_id).first() is not None
 
+    def test_erase_org_member_data_removes_their_hide_rows_on_the_tenants_files(self, two_orgs):
+        """Which of the organization's recordings a member hid is data about them (#1102).
+
+        Their account outlives an org-scoped erasure, so the CASCADE from ``user`` never
+        fires; the hide row on their own PERSONAL file is the control.
+        """
+        from app.models.hidden_media import UserHiddenMedia
+
+        w = two_orgs
+        db = w.db
+        colleague_file = _mk_file(db, user=w.admin_a, org_id=int(w.org_a.id))
+        personal_file = _mk_file(db, user=w.member_a, org_id=None)
+        db.add_all(
+            [
+                UserHiddenMedia(user_id=w.member_a.id, media_file_id=colleague_file.id),
+                UserHiddenMedia(user_id=w.member_a.id, media_file_id=personal_file.id),
+                UserHiddenMedia(user_id=w.admin_a.id, media_file_id=colleague_file.id),
+            ]
+        )
+        db.commit()
+
+        from app.services.gdpr_erasure_service import erase_org_member_data
+
+        summary = erase_org_member_data(db, int(w.member_a.id), int(w.org_a.id))
+
+        assert summary["hidden_media_deleted"] == 1
+        left = {(r.user_id, r.media_file_id) for r in db.query(UserHiddenMedia).all()}
+        assert (w.member_a.id, colleague_file.id) not in left
+        assert (w.member_a.id, personal_file.id) in left
+        assert (w.admin_a.id, colleague_file.id) in left, "another user's hide is theirs"
+
     def test_erase_org_member_data_records_voiceprint_failure(self, two_orgs, fake_opensearch):
         """The org-scoped erasure reports a failed biometric sweep too — the
         (user, org) voiceprint docs are the only copy no relational CASCADE
@@ -1036,6 +1067,33 @@ class TestOrgScopedErasure:
         assert db.query(MediaFile).filter(MediaFile.id == w.file_a.id).first() is None
         assert summary["users_deleted"] == 0
         assert db.query(User).filter(User.id == w.member_a.id).first() is not None
+
+    def test_erase_user_removes_their_hide_rows_even_when_a_hold_keeps_the_account(self, two_orgs):
+        """The CASCADE from ``user`` cannot fire while a hold keeps the row (#1102)."""
+        from app.models.hidden_media import UserHiddenMedia
+
+        w = two_orgs
+        db = w.db
+        held = _mk_file(db, user=w.member_a, org_id=None)
+        held.legal_hold = True
+        colleague_file = _mk_file(db, user=w.admin_a, org_id=int(w.org_a.id))
+        db.add_all(
+            [
+                UserHiddenMedia(user_id=w.member_a.id, media_file_id=held.id),
+                UserHiddenMedia(user_id=w.member_a.id, media_file_id=colleague_file.id),
+                UserHiddenMedia(user_id=w.admin_a.id, media_file_id=colleague_file.id),
+            ]
+        )
+        db.commit()
+
+        from app.services.gdpr_erasure_service import erase_user
+
+        summary = erase_user(db, int(w.member_a.id))
+
+        assert summary["users_deleted"] == 0, "control: the hold kept the account"
+        assert summary["hidden_media_deleted"] == 2
+        left = {(r.user_id, r.media_file_id) for r in db.query(UserHiddenMedia).all()}
+        assert left == {(w.admin_a.id, colleague_file.id)}
 
 
 # --------------------------------------------------------------------------- #

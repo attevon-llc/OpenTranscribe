@@ -45,6 +45,9 @@ from app.services.content_hold_queries import held_by_collection_hold
 from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
+from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
+from app.services.hidden_media_service import apply_hidden_mode
+from app.services.hidden_media_service import hidden_file_ids_among
 from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_collection_by_uuid_with_permission
@@ -300,6 +303,12 @@ def get_collection_media(
     file_type: list[str] | None = Query(None),
     status: list[str] | None = Query(None),
     transcript_search: str | None = None,
+    # Per-user hide (issue #1102), the same modes as the gallery list.
+    hidden: str = Query(
+        "exclude",
+        pattern=HIDDEN_MODE_PATTERN,
+        description="Your hidden files: 'exclude' (default), 'include', or 'only'",
+    ),
     # Sort parameters
     sort_by: str = Query(
         "upload_time",
@@ -357,6 +366,7 @@ def get_collection_media(
     base_query = exclude_unavailable(
         base_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
     )
+    base_query = apply_hidden_mode(base_query, current_user.id, hidden)
 
     # Prepare filters dictionary
     filters: dict[str, Any] = {
@@ -409,12 +419,14 @@ def get_collection_media(
 
     # One privacy view for the page (see the main list endpoint, #1280).
     privacy = PrivacyView(db)
+    hidden_ids = hidden_file_ids_among(db, current_user.id, (f.id for f in result))
 
     # Format each file with URLs and formatted fields
     formatted_files = []
     for file in result:
         set_file_urls(file, ctx.bypass)
         formatted_file = FormattingService.format_media_file(file, file.speakers, privacy=privacy)
+        formatted_file.is_hidden = file.id in hidden_ids
         formatted_files.append(formatted_file)
 
     # Calculate pagination metadata

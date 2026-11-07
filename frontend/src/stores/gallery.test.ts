@@ -250,6 +250,7 @@ describe('saveFilters / resetFilters', () => {
   });
 
   it('resetFilters restores every filter field to its default', () => {
+    galleryStore.setHiddenMode('only');
     galleryStore.saveFilters({
       searchQuery: 'q',
       selectedTags: ['a'],
@@ -272,7 +273,21 @@ describe('saveFilters / resetFilters', () => {
     expect(state.filterSelectedTags).toEqual([]);
     expect(state.filterOwnershipFilter).toBe('all');
     expect(state.filterSelectedOwners).toEqual([]);
+    expect(state.filterHiddenMode).toBe('exclude');
     expect(state.filterSortOrder).toBe('desc');
+  });
+
+  it('sets the hidden-files mode, reloads the list, and reset clears it (issue #1102)', () => {
+    const reloads: number[] = [];
+    const unsubscribe = galleryStore.onHiddenChanged((v) => reloads.push(v));
+
+    galleryStore.setHiddenMode('only');
+    expect(get(galleryStore).filterHiddenMode).toBe('only');
+    expect(reloads).toHaveLength(1);
+
+    galleryStore.resetFilters();
+    expect(get(galleryStore).filterHiddenMode).toBe('exclude');
+    unsubscribe();
   });
 });
 

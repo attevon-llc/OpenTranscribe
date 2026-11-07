@@ -1118,6 +1118,9 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Page-specific sections after the shared facets (the gallery's hidden-files chips). -->
+  <slot />
 </div>
 
 <style>

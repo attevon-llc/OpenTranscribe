@@ -9,6 +9,7 @@ This module contains the refactored files endpoint split into modular components
 - listing.py: The gallery list, its metadata filters and the owner facet
 - single_file.py: Single-file detail, info, update and the presigned stream URL
 - media_delivery.py: Download preparation, the download SSE stream and the thumbnail
+- hidden.py: Per-user hide / unhide of one file (issue #1102)
 """
 
 import logging
@@ -49,6 +50,7 @@ from app.utils.whisper_model_choice import require_servable_whisper_model
 
 from . import cancel_upload
 from . import complete_upload
+from . import hidden
 from . import listing
 from . import media_delivery
 from . import multipart
@@ -138,6 +140,7 @@ router.include_router(trash.router, prefix="", tags=["files"])
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
 router.include_router(voiceprint_consent.router, prefix="", tags=["files"])
+router.include_router(hidden.router, prefix="", tags=["files"])
 router.include_router(complete_upload.router, prefix="", tags=["files"])
 router.include_router(multipart.router, prefix="", tags=["files"])
 router.include_router(subtitles_router, prefix="", tags=["subtitles"])

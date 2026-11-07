@@ -517,6 +517,12 @@ _REGISTERED_LIST_DIVERGENCES: dict[str, str] = {
         "has no legal-hold branch — it always deletes the user row — so the CASCADE "
         "always runs there."
     ),
+    "UserHiddenMedia": (
+        "GDPR only, for the same reason as ChatConversation: which recordings the subject "
+        "hid from their own views (v465, #1102) is data about them and must go even when a "
+        "legal hold keeps the user row. Admin's path always deletes the user row, so "
+        "user_hidden_media.user_id's ON DELETE CASCADE always runs there."
+    ),
 }
 
 

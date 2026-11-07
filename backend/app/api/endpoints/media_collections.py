@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import status
 from sqlalchemy import and_
@@ -51,6 +52,7 @@ from app.services.collection_visibility import members_without_access
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import stage_content_event
 from app.services.content_hold_queries import collection_has_active_hold
+from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
 from app.services.permission_service import PermissionService
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_collection_by_uuid_with_permission
@@ -159,6 +161,11 @@ def create_collection(
 @router.get("/{collection_uuid}", response_model=CollectionResponse)
 def get_collection(
     collection_uuid: str,
+    hidden: str = Query(
+        "exclude",
+        pattern=HIDDEN_MODE_PATTERN,
+        description="Your hidden files: 'exclude' (default), 'include', or 'only' (issue #1102)",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -192,12 +199,19 @@ def get_collection(
     # files are hidden from every read surface for non-admins — collection
     # detail included (matches the gallery, search, and per-file 404 gate).
     from app.services.file_availability import is_unavailable_for
+    from app.services.hidden_media_service import hidden_file_ids_among
 
-    media_files = [
+    available = [
         member.media_file
         for member in collection.collection_members
         if not is_unavailable_for(ctx.bypass, member.media_file)
     ]
+    # The caller's own hide rows (issue #1102), the same default the member list applies.
+    media_files = available
+    if hidden != "include":
+        hidden_ids = hidden_file_ids_among(db, current_user.id, (f.id for f in available))
+        want_hidden = hidden == "only"
+        media_files = [f for f in available if (f.id in hidden_ids) == want_hidden]
 
     # Build response with prompt info
     result = CollectionResponse.model_validate(collection)

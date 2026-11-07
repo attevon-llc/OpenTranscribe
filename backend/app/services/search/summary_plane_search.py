@@ -43,6 +43,7 @@ def search_summary_plane(
     title_filter: str | None = None,
     file_uuid: str | None = None,
     quarantined_file_uuids: list[str] | None = None,
+    exclude_file_uuids: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Search the summary plane of ``transcript_chunks`` (issue #963).
 
@@ -62,6 +63,9 @@ def search_summary_plane(
     the chunks index carries no ``is_quarantined`` field — and applied
     here as a ``must_not`` PRE-filter, so ``total`` and the page are
     consistent with each other (#818: a post-filter cannot correct either).
+
+    ``exclude_file_uuids`` (the caller's hidden files, issue #1102) is a
+    pre-filter for the same reason.
 
     Returns:
         ``(hits, total)`` where each hit is a raw dict:
@@ -92,6 +96,7 @@ def search_summary_plane(
         title_filter=title_filter,
         organization_id=organization_id,
         file_uuid=file_uuid,
+        exclude_file_uuids=exclude_file_uuids,
         plane_clause=summary_plane_clause(),
         speaker_field="speakers",
     )

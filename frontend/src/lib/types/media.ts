@@ -94,6 +94,9 @@ export interface MediaFile {
   // Whether the caller may permanently delete this file (owner, org admin of its
   // organization, or platform admin). Set by the gallery list; absent elsewhere.
   can_delete?: boolean | null;
+  // Whether the CALLER has hidden this file from their own views (issue #1102). Set by the
+  // gallery and collection lists; never reflects another user's choice.
+  is_hidden?: boolean | null;
 
   // Formatted fields from backend
   formatted_duration?: string;

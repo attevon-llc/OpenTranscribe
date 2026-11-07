@@ -145,10 +145,7 @@ class TestAudioPlayback:
 
         # Seek with the real progress control to ~70% and confirm the element followed.
         duration = player.state()["d"]
-        seek_bar = player.container.get_by_role("slider").first
-        box = seek_bar.bounding_box()
-        assert box is not None, "the seek bar has no layout box"
-        seek_bar.click(position={"x": box["width"] * 0.7, "y": box["height"] / 2})
+        player.click_seek_bar(0.7)
         player.wait_until_near(duration * 0.7, duration * 0.1)
 
         # Speed through the settings menu: 1.5x must reach the media element.

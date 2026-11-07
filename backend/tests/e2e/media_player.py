@@ -10,7 +10,7 @@ playback tests must not depend on the library. They talk to this object instead:
   The names live in ONE table, :data:`CONTROL_NAMES`, and match the English UI. Both players
   are Video.js 10, whose labels are translated with the UI language (so a test that needs
   English names runs in the English UI, the default). The English labels are "Play", "Pause",
-  "Enable/Disable captions", "Settings", "Speed", "Enter picture-in-picture" / "PIP",
+  "Enable/Disable captions", "Settings", "Speed", "Seek", "Enter picture-in-picture" / "PIP",
   "Enter fullscreen".
 * **App-owned labels** (search preview, speaker preview, waveform) are read from
   ``frontend/src/lib/i18n/locales/en.json`` through :func:`app_label`, so a copy change in the
@@ -43,6 +43,7 @@ CONTROL_NAMES: dict[str, re.Pattern[str]] = {
     "captions": re.compile(r"captions", re.IGNORECASE),
     "settings": re.compile(r"^settings$", re.IGNORECASE),
     "speed_menu": re.compile(r"^speed", re.IGNORECASE),
+    "seek": re.compile(r"^seek$", re.IGNORECASE),
     "pip": re.compile(r"\bpip\b|picture.in.picture", re.IGNORECASE),
     "fullscreen": re.compile(r"fullscreen", re.IGNORECASE),
 }
@@ -141,6 +142,30 @@ class MediaPlayer:
     def control(self, name: str) -> Locator:
         """A player button by its accessible name (see :data:`CONTROL_NAMES`)."""
         return self.container.get_by_role("button", name=CONTROL_NAMES[name])
+
+    def seek_bar(self) -> Locator:
+        """The timeline's ``slider`` (the volume control is a slider too, so match by name)."""
+        return self.container.get_by_role("slider", name=CONTROL_NAMES["seek"])
+
+    def click_seek_bar(self, fraction: float) -> None:
+        """Click the timeline ``fraction`` of the way along, as a viewer would.
+
+        The ``slider`` role is not always on the whole bar: a native range input is the bar,
+        but Video.js 10 puts it on the 12 px thumb inside the track. So the click goes to the
+        slider's own box when that spans the bar, else to its nearest ancestor that does.
+        """
+        box = self.seek_bar().evaluate(
+            """el => {
+              let bar = el;
+              while (bar.parentElement && bar.getBoundingClientRect().width < 100) {
+                bar = bar.parentElement;
+              }
+              const r = bar.getBoundingClientRect();
+              return {x: r.x, y: r.y, width: r.width, height: r.height};
+            }"""
+        )
+        assert box["width"] >= 100, f"the seek bar has no usable layout box: {box}"
+        self.page.mouse.click(box["x"] + box["width"] * fraction, box["y"] + box["height"] / 2)
 
     def click_play_toggle(self) -> None:
         """Press the control bar's play/pause button, whichever it currently is."""

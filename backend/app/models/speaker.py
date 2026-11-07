@@ -236,6 +236,12 @@ class Speaker(Base):
             "('human', 'voiceprint', 'voiceprint_link')",
             name="ck_speaker_identity_source",
         ),
+        # v458 (#1328); the privacy sweeps' lookup of voiceprint-named speakers.
+        Index(
+            "ix_speaker_machine_identity_media_file",
+            "media_file_id",
+            postgresql_where=text("identity_source IN ('voiceprint', 'voiceprint_link')"),
+        ),
     )
 
     # Relationships

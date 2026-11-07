@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import Plyr from 'plyr';
-  import 'plyr/dist/plyr.css';
   import WaveformPlayer from '$components/WaveformPlayer.svelte';
   import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
+  import { createPlyrPlayer } from '$lib/player/plyrHandle';
+  import { listenToMedia, mediaDuration } from '$lib/player/mediaEvents';
+  import type { OwnedPlayer, PlayerHandle } from '$lib/player/types';
 
   export let mediaUrl: string;
   export let contentType: string;
@@ -16,7 +17,8 @@
   const dispatch = createEventDispatcher();
 
   let mediaElement: HTMLVideoElement | HTMLAudioElement;
-  let player: Plyr | null = null;
+  let player: OwnedPlayer | null = null;
+  let stopListening: (() => void) | null = null;
   let seeking = true;
   let playerCurrentTime = 0;
   let playerDuration = 0;
@@ -45,24 +47,16 @@
     destroyPlayer();
     seeking = true;
 
-    mediaElement.load();
+    const media = mediaElement;
+    media.load();
     activeSrc = mediaUrl;
 
-    const audioControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'volume', 'settings'];
-    const videoControls = ['play', 'current-time', 'duration', 'progress', 'mute', 'settings', 'fullscreen'];
-
-    player = new Plyr(mediaElement, {
-      controls: isVideo ? videoControls : audioControls,
-      settings: isVideo ? ['captions', 'speed'] : ['speed'],
-      iconUrl: '/plyr.svg',
-      // Plyr's default points at cdn.plyr.io and is requested by the browser whenever a
-      // player is destroyed or its source changes; serve it locally so no third party is hit.
-      blankVideo: '/plyr-blank.mp4',
-      keyboard: { global: false },
-      tooltips: { controls: true },
-      captions: { active: true, language: 'auto', update: true },
-      fullscreen: { iosNative: false, fallback: true },
+    const newPlayer = createPlyrPlayer(media, {
+      variant: 'mini',
+      audio: !isVideo,
+      onReady: () => dispatch('ready'),
     });
+    player = newPlayer;
 
     // Issue the initial seek immediately rather than gating it on `canplay`
     // (readyState >= HAVE_FUTURE_DATA). That was STRICTER than the
@@ -70,37 +64,37 @@
     // buffering data at position 0 that the seek is about to discard anyway —
     // with no fallback if `canplay` never fired (#649). `applySeek` below
     // issues the raw `currentTime` assignment up front and only awaits
-    // metadata to resync Plyr's own clock, same as VideoPlayer.seekToTime.
+    // metadata to resync the player's own clock, same as VideoPlayer.seekToTime.
     applySeek(startTime, { play: autoplay });
-
-    player.on('timeupdate', () => {
-      if (player) {
-        playerCurrentTime = player.currentTime;
-        playerDuration = player.duration || 0;
-        dispatch('timeupdate', { currentTime: player.currentTime });
-
-        if (endTime > 0 && player.currentTime >= endTime) {
-          player.pause();
-        }
-      }
-    });
 
     // Persistent (not `{ once: true }`) handlers so a later `hotSwapSource`
     // seek still clears the spinner — the previous once-only raw media
     // listeners were consumed by the FIRST seek, so a hot-swapped presigned
     // URL fell back to the 15s timer every time after that (#649).
-    player.on('playing', () => { seeking = false; dispatch('play'); });
-    player.on('seeked', () => { seeking = false; });
-    player.on('pause', () => { dispatch('pause'); });
-    player.on('error', () => { seeking = false; });
-    player.on('ready', () => { dispatch('ready'); });
-    player.on('ended', () => { dispatch('pause'); dispatch('ended'); });
+    stopListening = listenToMedia(media, {
+      timeupdate: () => {
+        playerCurrentTime = media.currentTime;
+        playerDuration = mediaDuration(media);
+        dispatch('timeupdate', { currentTime: media.currentTime });
+
+        if (endTime > 0 && media.currentTime >= endTime) {
+          newPlayer.pause();
+        }
+      },
+      playing: () => { seeking = false; dispatch('play'); },
+      seeked: () => { seeking = false; },
+      pause: () => { dispatch('pause'); },
+      error: () => { seeking = false; },
+      ended: () => { dispatch('pause'); dispatch('ended'); },
+    });
 
     // Fallback: clear spinner after timeout
     fallbackTimeout = setTimeout(() => { seeking = false; }, 15000);
   }
 
   function destroyPlayer() {
+    stopListening?.();
+    stopListening = null;
     if (player) {
       try { player.destroy(); } catch {}
       player = null;
@@ -111,9 +105,9 @@
   // without waiting for metadata — assigning `currentTime` before
   // `loadedmetadata` is NOT discarded per spec, so the previous
   // wait-then-seek order only delayed the browser's own range request for no
-  // benefit (the #645/#647 bug, unfixed here until now). Plyr's OWN
-  // `currentTime` setter still bails while its internal duration is 0, so we
-  // resync `player.currentTime` once metadata lands purely to keep its
+  // benefit (the #645/#647 bug, unfixed here until now). The player's OWN
+  // clock can still miss a seek issued while its duration is 0, so we
+  // resync through `player.seek` once metadata lands purely to keep its
   // progress bar honest — that resync is what waits, never the seek itself.
   async function applySeek(time: number, { play }: { play: boolean }) {
     if (!player || !mediaElement) return;
@@ -140,17 +134,14 @@
 
     if (!player) return;
     if (time > 0) {
-      if (Math.abs((player.currentTime ?? 0) - time) > 0.05) {
-        player.currentTime = time;
+      if (Math.abs((player.media.currentTime ?? 0) - time) > 0.05) {
+        player.seek(time);
       }
       if (!appliedDirectly) media.currentTime = time;
     }
 
     if (play) {
-      const playResult = player.play();
-      if (playResult && typeof playResult.catch === 'function') {
-        playResult.catch(() => { seeking = false; });
-      }
+      player.play().catch(() => { seeking = false; });
     } else {
       seeking = false;
     }
@@ -176,13 +167,13 @@
     applySeek(time, { play: false });
   }
 
-  export function getPlayer(): Plyr | null {
+  export function getPlayer(): PlayerHandle | null {
     return player;
   }
 
   function handleWaveformSeek(event: CustomEvent<{ time: number }>) {
     if (player && event.detail?.time != null) {
-      player.currentTime = event.detail.time;
+      player.seek(event.detail.time);
     }
   }
 

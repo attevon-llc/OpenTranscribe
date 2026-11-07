@@ -11,29 +11,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 
-const { FakePlyr, plyrInstances, fetchCaptionTrack } = vi.hoisted(() => {
-  const instances: unknown[] = [];
-  class Fake {
-    media: HTMLMediaElement;
-    captions = { toggled: false };
-    handlers: Record<string, Array<() => void>> = {};
-    toggleCaptions = (on: boolean) => {
-      this.captions.toggled = on;
-    };
-    constructor(media: HTMLMediaElement) {
-      this.media = media;
-      instances.push(this);
-    }
-    on(event: string, cb: () => void) {
-      (this.handlers[event] ||= []).push(cb);
-    }
-    destroy() {}
-  }
-  return { FakePlyr: Fake, plyrInstances: instances, fetchCaptionTrack: vi.fn() };
-});
+const { fetchCaptionTrack, captionsOff } = vi.hoisted(() => ({
+  fetchCaptionTrack: vi.fn(),
+  captionsOff: vi.fn(() => false),
+}));
 
-vi.mock('plyr', () => ({ default: FakePlyr }));
-vi.mock('plyr/dist/plyr.css', () => ({}));
+vi.mock('$lib/player/plyrHandle', async () => {
+  const { createFakePlayer } = await import('$lib/player/fakePlayer');
+  return { createPlyrPlayer: createFakePlayer, viewerTurnedCaptionsOff: () => captionsOff() };
+});
 vi.mock('$stores/locale', () => ({
   t: {
     subscribe: (run: (value: (key: string, opts?: Record<string, string>) => string) => void) => {
@@ -50,6 +36,7 @@ vi.mock('$lib/api/captions', () => ({
 }));
 
 import VideoPlayer from './VideoPlayer.svelte';
+import { fakePlayers } from '$lib/player/fakePlayer';
 
 const SERVER_VTT =
   'WEBVTT\n\n1\n00:00:00.000 --> 00:00:03.000\n<v Alice><c.speaker>Alice</c>: So what we found\n';
@@ -67,9 +54,10 @@ const file = {
 let blobs: Blob[] = [];
 
 beforeEach(() => {
-  plyrInstances.length = 0;
+  fakePlayers.length = 0;
   blobs = [];
   fetchCaptionTrack.mockReset();
+  captionsOff.mockReturnValue(false);
   vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob | MediaSource) => {
     blobs.push(blob as Blob);
     return `blob:captions-${blobs.length}`;
@@ -84,7 +72,7 @@ afterEach(() => {
 async function mountPlayer(props: Record<string, unknown> = {}) {
   const result = render(VideoPlayer, { props: { videoUrl: 'blob:video', file, ...props } });
   await tick();
-  expect(plyrInstances).toHaveLength(1);
+  expect(fakePlayers).toHaveLength(1);
   return result;
 }
 
@@ -150,5 +138,42 @@ describe('caption track', () => {
     await (component as unknown as { updateSubtitles: () => Promise<void> }).updateSubtitles();
 
     expect(fetchCaptionTrack).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Captions come on by default once the track loads, unless the viewer switched them off in an
+ * earlier session. Both go through the player seam (`captionsVisible`,
+ * `setCaptionsVisible`), never the library directly (issue #1327).
+ */
+describe('captions on by default', () => {
+  async function loadTrack() {
+    fetchCaptionTrack.mockResolvedValue(SERVER_VTT);
+    const { component, container } = await mountPlayer();
+    const track = container.querySelector('track[kind="captions"]') as HTMLTrackElement;
+    // jsdom has no TextTrack; the player only reads and sets its mode.
+    const textTrack = { mode: 'disabled' };
+    Object.defineProperty(track, 'track', { value: textTrack });
+
+    await (component as unknown as { updateSubtitles: () => Promise<void> }).updateSubtitles();
+    track.dispatchEvent(new Event('load'));
+    return { player: fakePlayers[0], textTrack };
+  }
+
+  it('turns captions on through the player once the track has loaded', async () => {
+    const { player, textTrack } = await loadTrack();
+
+    expect(player.setCaptionsVisible).toHaveBeenCalledExactlyOnceWith(true);
+    expect(player.captionsVisible).toBe(true);
+    expect(textTrack.mode).toBe('hidden');
+  });
+
+  it('leaves them off when the viewer switched them off', async () => {
+    captionsOff.mockReturnValue(true);
+    const { player, textTrack } = await loadTrack();
+
+    expect(player.setCaptionsVisible).not.toHaveBeenCalled();
+    expect(player.captionsVisible).toBe(false);
+    expect(textTrack.mode).toBe('hidden');
   });
 });

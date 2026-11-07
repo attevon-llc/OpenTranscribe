@@ -20,7 +20,7 @@ CRITERIA = REPO_ROOT / "scripts" / "release" / "release-criteria.yaml"
 REQUIRED_JOURNEYS = {
     "test_about_dialog.py",
     "test_export_downloads.py",
-    "test_plyr_playback.py",
+    "test_media_playback.py",
     "test_rtl_privacy.py",
     "test_upload_tray_and_notifications.py",
     "test_notification_missed_frames.py",

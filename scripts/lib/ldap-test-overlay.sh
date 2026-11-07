@@ -9,7 +9,8 @@
 # add_flag_overlay WITH_LDAP_TEST_FLAG.
 add_ldap_test_trust_overlay() {
   [ -n "${WITH_LDAP_TEST_FLAG:-}" ] || return 0
-  [ -f docker-compose.ldap-test.yml ] || return 0 # add_flag_overlay already warned
+  # Only when add_flag_overlay really added the LDAP overlay (it warns when the file is missing).
+  [[ " ${COMPOSE_FILES:-} " == *" docker-compose.ldap-test.yml "* ]] || return 0
   local trust_file="docker-compose.ldap-test-trust.yml"
   if [ ! -f "$trust_file" ]; then
     echo "⚠️  --with-ldap-test specified but $trust_file not found"

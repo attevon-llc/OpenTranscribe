@@ -92,13 +92,16 @@ reusable() {
   [ -f "$crt" ] && [ -f "$key" ] || return 1
   openssl verify -CAfile "${CA_DIR}/ca.crt" "$crt" >/dev/null 2>&1 || return 1
   openssl x509 -in "$crt" -noout -checkend "$RENEW_WITHIN_SECONDS" >/dev/null 2>&1 || return 1
-  local san value
+  local san value result
   for san in "${sans[@]}"; do
     value="${san#*:}"
+    # Capture, then match: `openssl ... | grep -q` under pipefail can report a miss for a match.
     case "$san" in
-      DNS:*) openssl x509 -in "$crt" -noout -checkhost "$value" 2>/dev/null | grep -q 'does match' || return 1 ;;
-      IP:*) openssl x509 -in "$crt" -noout -checkip "$value" 2>/dev/null | grep -q 'does match' || return 1 ;;
+      DNS:*) result="$(openssl x509 -in "$crt" -noout -checkhost "$value" 2>/dev/null)" || return 1 ;;
+      IP:*) result="$(openssl x509 -in "$crt" -noout -checkip "$value" 2>/dev/null)" || return 1 ;;
+      *) continue ;;
     esac
+    [[ "$result" == *"does match"* ]] || return 1
   done
 }
 

@@ -28,6 +28,8 @@
   import { openExportJobStream, type ExportJobStream } from '$lib/export/exportJobStream';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
+  import { moveFilesToTrash } from '$lib/api/trash';
+  import { createUndo, summarizeTrashResults, trashConfirmMessage } from '$lib/trash/galleryTrash';
   import SelectiveReprocessModal from '$components/SelectiveReprocessModal.svelte';
   import GalleryFilterPanel from '$components/gallery/GalleryFilterPanel.svelte';
   import GalleryHeader from '$components/gallery/GalleryHeader.svelte';
@@ -47,6 +49,7 @@
     isOpen: confirmOpen,
     title: confirmTitle,
     message: confirmMessage,
+    confirmText: confirmButtonText,
   } = confirmDialog;
 
   let showBulkTagModal = false;
@@ -171,35 +174,6 @@
   // Observe the sentinel element when it becomes available (after files load)
   $: if (infiniteScrollSentinel && intersectionObserver) {
     intersectionObserver.observe(infiniteScrollSentinel);
-  }
-
-  /**
-   * Handle force delete of processing files
-   */
-  async function handleForceDelete(conflictFileIds: string[]) {
-    try {
-      // Try force deletion for conflicted files
-      const forceResponse = await axiosInstance.post('/files/management/bulk-action', {
-        file_uuids: conflictFileIds,  // Use file_uuids (UUIDs)
-        action: 'delete',
-        force: true
-      });
-
-      const forceResults = forceResponse.data;
-      const forceSuccessful = forceResults.filter((r: any) => r.success);
-
-      if (forceSuccessful.length > 0) {
-        toastStore.success($t('gallery.forceDeletedSuccess', { count: forceSuccessful.length }));
-        // Remove force deleted files smoothly
-        const forceSuccessfulIds = forceSuccessful.map((r: any) => r.file_uuid);  // Use file_uuid from response
-        removeFilesSmooth(forceSuccessfulIds);
-      }
-    } catch (forceErr) {
-      console.error('Error force deleting files:', forceErr);
-      toastStore.error($t('gallery.forceDeleteFailed'));
-    }
-
-    clearSelection();
   }
 
   // Build query parameters for API calls
@@ -643,79 +617,42 @@
     fetchFiles(false, true);
   }
 
-  // Delete selected files with enhanced error handling
+  // Delete moves the selection to the trash (#1101); the confirmation says for how long.
   async function deleteSelectedFiles() {
     if (selectedFiles.size === 0) return;
-
     confirmDialog.request(
-      $t('gallery.deleteConfirmTitle'),
-      $t('gallery.deleteConfirmMessage', { count: selectedFiles.size }),
-      () => executeDeleteSelectedFiles()
+      $t('gallery.trashConfirmTitle'),
+      await trashConfirmMessage($t),
+      () => executeDeleteSelectedFiles(),
+      $t('gallery.trashConfirmButton')
     );
   }
 
-  /**
-   * Execute delete selected files after confirmation
-   */
   async function executeDeleteSelectedFiles() {
     try {
-      // Don't show loading state - use smooth animations instead
-
-      // Use bulk action API for better error handling
-      const response = await axiosInstance.post('/files/management/bulk-action', {
-        file_uuids: Array.from(selectedFiles),  // Use file_uuids (UUIDs)
-        action: 'delete',
-        force: false
-      });
-
-      const results = response.data;
-      const successful = results.filter((r: any) => r.success);
-      const failed = results.filter((r: any) => !r.success);
-
-      // Handle conflicts (files that can't be deleted)
-      const conflicts = failed.filter((r: any) => r.error === 'HTTP_ERROR' && r.message.includes('FILE_NOT_SAFE_TO_DELETE'));
-
-      if (conflicts.length > 0) {
-        const conflictFileIds = conflicts.map((c: any) => c.file_uuid);  // Use file_uuid from response
-        confirmDialog.request(
-          $t('gallery.forceDeleteTitle'),
-          $t('gallery.forceDeleteMessage', { count: conflicts.length }),
-          () => handleForceDelete(conflictFileIds)
-        );
-        return; // Exit early to wait for user confirmation
+      const outcome = summarizeTrashResults(await moveFilesToTrash(Array.from(selectedFiles)));
+      if (outcome.trashed.length > 0) {
+        removeFilesSmooth(outcome.trashed);
+        const undo = createUndo(outcome.trashed);
+        const onUndo = async () => {
+          const restored = await undo();
+          if (restored === null) return;
+          if (restored) toastStore.success($t('gallery.undoDone'));
+          else toastStore.error($t('gallery.undoFailed'));
+          fetchFiles(false, true);
+        };
+        toastStore.show($t('gallery.trashedSuccess', { count: outcome.trashed.length }), 'success', 8000, {
+          action: { label: $t('gallery.undo'), onClick: () => void onUndo() },
+        });
       }
-
-      // Report on regular deletion results
-      if (successful.length > 0) {
-        toastStore.success($t('gallery.deleteSuccess', { count: successful.length }));
-        // Remove successfully deleted files smoothly
-        const successfulIds = successful.map((r: any) => r.file_uuid);  // Use file_uuid from response
-        removeFilesSmooth(successfulIds);
-      }
-
-      // Files the caller may see but not delete (not the owner, not an org admin).
-      const forbidden = failed.filter((r: any) => r.error === 'FORBIDDEN');
-      // Files a legal hold keeps (issue #1276): a deliberate refusal, not a failure to retry.
-      const held = failed.filter((r: any) => r.error === 'FILE_UNDER_LEGAL_HOLD');
-      const otherFailed = failed.length - forbidden.length - held.length;
-      if (forbidden.length > 0) {
-        toastStore.error($t('gallery.deleteForbidden', { count: forbidden.length }));
-      }
-      if (held.length > 0) {
-        toastStore.error($t('gallery.deleteHeld', { count: held.length }));
-      }
-      if (otherFailed > 0) {
-        toastStore.error($t('gallery.deleteFailed', { count: otherFailed }));
-      }
-
+      // Files the caller may see but not delete, and files a legal hold keeps (issue #1276).
+      if (outcome.forbidden > 0) toastStore.error($t('gallery.deleteForbidden', { count: outcome.forbidden }));
+      if (outcome.held > 0) toastStore.error($t('gallery.deleteHeld', { count: outcome.held }));
+      if (outcome.other > 0) toastStore.error($t('gallery.deleteFailed', { count: outcome.other }));
       clearSelection();
-
     } catch (err: unknown) {
       console.error('Error deleting files:', err);
-      const errorMessage = getErrorMessage(err, $t('gallery.deleteError'));
-      toastStore.error(errorMessage);
-    } finally {
-      // No need to set loading = false since we didn't set it to true
+      toastStore.error(getErrorMessage(err, $t('gallery.deleteError')));
     }
   }
 
@@ -1264,6 +1201,14 @@
 
     window.addEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
     window.addEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
+    // Trashed or restored by another tab, person or the Undo ($lib/websocket/frameRouting).
+    const handleFileTrashed = (event: Event) => {
+      const id = (event as CustomEvent<{ file_id?: string }>).detail?.file_id;
+      if (id && fileMap.has(String(id))) removeFileSmooth(String(id));
+    };
+    const handleFileRestored = () => fetchFiles(false, true);
+    window.addEventListener('file-trashed', handleFileTrashed);
+    window.addEventListener('file-restored', handleFileRestored);
 
     // On back navigation, restore files from store instead of re-fetching
     const savedScrollTop = $galleryState.scrollTop;
@@ -1310,6 +1255,8 @@
     return () => {
       window.removeEventListener('openAddMediaModal', handleOpenModalEvent as EventListener);
       window.removeEventListener('uploadRecordedFile', handleUploadRecordedFile as EventListener);
+      window.removeEventListener('file-trashed', handleFileTrashed);
+      window.removeEventListener('file-restored', handleFileRestored);
       if (intersectionObserver) {
         intersectionObserver.disconnect();
       }
@@ -1599,7 +1546,7 @@
   bind:isOpen={$confirmOpen}
   title={$confirmTitle}
   message={$confirmMessage}
-  confirmText={$t('gallery.confirmButton')}
+  confirmText={$confirmButtonText || $t('gallery.confirmButton')}
   cancelText={$t('gallery.cancelButton')}
   confirmButtonClass="modal-delete-button"
   cancelButtonClass="modal-cancel-button"

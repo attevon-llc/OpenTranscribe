@@ -160,18 +160,7 @@ _SUPPORT_ACCESS_REASON = (
     "Strict xfail so the entry is deleted the moment the SPA calls the route."
 )
 
-_TRASH_UI_REASON = (
-    "Issue #1101 lane L2: the trash API ships before its UI. Lane L4 builds the /trash page "
-    "(list, restore, delete forever, empty trash) against this contract; strict xfail so the "
-    "entry is deleted the moment the SPA calls the route."
-)
-
 _NOT_YET_VERIFIED: dict[str, str] = {
-    # --- the trash (#1101): backend lands first, the SPA follows in L4 ---
-    "/api/files/trash": _TRASH_UI_REASON,
-    "/api/files/trash/empty": _TRASH_UI_REASON,
-    "/api/files/{file_uuid}/restore": _TRASH_UI_REASON,
-    "/api/files/{file_uuid}/purge": _TRASH_UI_REASON,
     # --- support-access grants (#1122): backend lands first, the SPA follows ---
     "/api/support-access/grants/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
     "/api/org-admin/support-access": _SUPPORT_ACCESS_REASON,

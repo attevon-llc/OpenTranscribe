@@ -17,7 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 
-/** Every source file that imports `$app/state` or `$app/env`. */
+/** Every source file that imports `$app/state`, `$app/env` or `$app/paths`. */
 const APP_MODULE_CONSUMERS: Array<[string, () => Promise<unknown>]> = [
   ['routes/login/+page.svelte', () => import('../routes/login/+page.svelte')],
   ['routes/reset-password/+page.svelte', () => import('../routes/reset-password/+page.svelte')],
@@ -34,6 +34,12 @@ const APP_MODULE_CONSUMERS: Array<[string, () => Promise<unknown>]> = [
     () => import('$components/speakers/SpeakerPreviewPlayer.svelte'),
   ],
   ['stores/gallery.ts', () => import('$stores/gallery')],
+  // `$app/paths` (resolve)
+  ['routes/trash/+page.svelte', () => import('../routes/trash/+page.svelte')],
+  [
+    'components/gallery/GalleryHeader.svelte',
+    () => import('$components/gallery/GalleryHeader.svelte'),
+  ],
 ];
 
 /**

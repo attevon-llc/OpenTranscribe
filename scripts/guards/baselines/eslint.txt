@@ -356,7 +356,7 @@ frontend/src/routes/+layout.svelte::no-restricted-imports	16	lint: burn-down pla
 frontend/src/routes/+layout.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/routes/+layout.svelte::svelte/infinite-reactive-loop	8	v0.6.1 merge: release lazy ErasureRequestBanner follows the sibling Component<any> lazy-load pattern; typed loader planned
 frontend/src/routes/+layout.svelte::svelte/no-navigation-without-resolve	5	lint: burn-down planned
-frontend/src/routes/+page.svelte::@typescript-eslint/no-explicit-any	24	lint: burn-down planned
+frontend/src/routes/+page.svelte::@typescript-eslint/no-explicit-any	15	lint: burn-down planned
 frontend/src/routes/+page.svelte::prefer-const	4	lint: burn-down planned
 frontend/src/routes/+page.svelte::svelte/prefer-svelte-reactivity	7	lint: burn-down planned
 frontend/src/routes/accept-invite/+page.svelte::no-restricted-imports	1	lint: burn-down planned

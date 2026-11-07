@@ -24,6 +24,9 @@ there is no server-side rendering of app data.
   banner, the MFA challenge and the forced-MFA-enrolment step.
   `accept-invite/` redeems an admin invitation — for an external `auth_type` it collects no
   password at all and hands the user to the identity provider.
+- `trash/+page.svelte` — the trash (#1101): list, restore, delete forever, empty trash. Rows and buttons
+  come only from `GET /files/trash` (`can_restore`/`can_purge`); rows are `$components/trash/TrashTable`,
+  day counting is `$lib/trash/rowState`. Reloads on the `file-trashed`/`file-restored` window events.
 - `+layout.svelte` — app shell (navbar, theme, toasts, websocket wiring).
 - `+error.svelte` — error/404 boundary; renders `$page.status`/`$page.error`, friendly i18n copy.
 

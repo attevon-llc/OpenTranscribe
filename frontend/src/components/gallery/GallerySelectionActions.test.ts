@@ -106,12 +106,12 @@ describe('GallerySelectionActions — actions that need a selection are disabled
 
   it('disables Delete with no selection and enables it with one', async () => {
     const { unmount } = render(GallerySelectionActions, { props: { files: [] } });
-    expect(screen.getByTitle('Permanently delete the selected files')).toBeDisabled();
+    expect(screen.getByTitle('Move the selected files to the trash')).toBeDisabled();
     unmount();
 
     selectFiles(['a']);
     render(GallerySelectionActions, { props: { files: completed as never } });
-    expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
+    expect(screen.getByTitle('Move the selected files to the trash')).not.toBeDisabled();
   });
 });
 
@@ -138,6 +138,6 @@ describe('GallerySelectionActions — Delete follows can_delete (issue #1103)', 
         ] as never,
       },
     });
-    expect(screen.getByTitle('Permanently delete the selected files')).not.toBeDisabled();
+    expect(screen.getByTitle('Move the selected files to the trash')).not.toBeDisabled();
   });
 });

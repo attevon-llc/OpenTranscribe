@@ -13,7 +13,10 @@ the alias, v3, v4 and the legacy v3 backup):
   no ``speaker`` row has that uuid;
 * a **profile** document (``document_type: profile``, id = ``profile_<uuid>``) is an
   orphan when no ``speaker_profile`` row has that uuid;
-* anything else (cluster centroids, future document types) is never touched.
+* a **cluster centroid** document (``document_type: cluster``, id = ``cluster_<uuid>``) is
+  an orphan when no ``speaker_cluster`` row has that uuid (what a purge interrupted before
+  ``privacy_purge_pending`` existed left behind);
+* anything else (future document types) is never touched.
 
 It is a **dry run by default** and counts before it deletes. Unlike the scheduled
 ``opensearch_orphan_cleanup`` sweep, it also covers profile documents and the v3 / v3
@@ -44,6 +47,7 @@ logger = logging.getLogger(__name__)
 _DELETE_BATCH = 500
 
 _PROFILE_ID_PREFIX = "profile_"
+_CLUSTER_ID_PREFIX = "cluster_"
 
 
 def _db_speaker_uuids() -> set[str]:
@@ -62,11 +66,26 @@ def _db_profile_uuids() -> set[str]:
         return {str(u) for (u,) in db.query(SpeakerProfile.uuid).all()}
 
 
-def _classify(hit: dict[str, Any], speakers: set[str], profiles: set[str]) -> str | None:
-    """``"speaker"`` / ``"profile"`` when ``hit`` is an orphan of that kind, else None."""
+def _db_cluster_uuids() -> set[str]:
+    from app.db.session_utils import session_scope
+    from app.models.speaker import SpeakerCluster
+
+    with session_scope() as db:
+        return {str(u) for (u,) in db.query(SpeakerCluster.uuid).all()}
+
+
+def _classify(
+    hit: dict[str, Any], speakers: set[str], profiles: set[str], clusters: set[str]
+) -> str | None:
+    """``"speaker"`` / ``"profile"`` / ``"cluster"`` when ``hit`` is an orphan, else None."""
     doc_id = str(hit["_id"])
     source = hit.get("_source") or {}
     doc_type = source.get("document_type")
+    if doc_type == "cluster":
+        cluster_uuid = source.get("cluster_uuid") or (
+            doc_id[len(_CLUSTER_ID_PREFIX) :] if doc_id.startswith(_CLUSTER_ID_PREFIX) else None
+        )
+        return "cluster" if cluster_uuid and str(cluster_uuid) not in clusters else None
     if doc_type == "profile":
         profile_uuid = source.get("profile_uuid") or (
             doc_id[len(_PROFILE_ID_PREFIX) :] if doc_id.startswith(_PROFILE_ID_PREFIX) else None
@@ -102,7 +121,7 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
     Returns:
         ``{"dry_run", "force", "refused", "db_speakers", "db_profiles", "orphans_found",
         "deleted", "surviving_orphans", "indices": {index: {"docs_scanned",
-        "orphan_speaker_docs", "orphan_profile_docs", "deleted", "surviving"}}}``.
+        "orphan_speaker_docs", "orphan_profile_docs", "orphan_cluster_docs", "deleted", "surviving"}}}``.
 
     Raises:
         RuntimeError: OpenSearch is not configured/reachable. Never reported as "no
@@ -119,6 +138,9 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
 
     speakers = _db_speaker_uuids()
     profiles = _db_profile_uuids()
+    # A failed read raises here, before any scan or delete: an unreadable table must never
+    # look like "no clusters", which would make every centroid an orphan.
+    clusters = _db_cluster_uuids()
     report: dict[str, Any] = {
         "dry_run": dry_run,
         "force": force,
@@ -137,6 +159,7 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
             "docs_scanned": 0,
             "orphan_speaker_docs": 0,
             "orphan_profile_docs": 0,
+            "orphan_cluster_docs": 0,
             "deleted": 0,
             "surviving": 0,
         }
@@ -149,11 +172,11 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
             client,
             index=idx,
             query={"query": {"match_all": {}}},
-            _source=["document_type", "profile_uuid"],
+            _source=["document_type", "profile_uuid", "cluster_uuid"],
             size=1000,
         ):
             stats["docs_scanned"] += 1
-            kind = _classify(hit, speakers, profiles)
+            kind = _classify(hit, speakers, profiles, clusters)
             if kind:
                 stats[f"orphan_{kind}_docs"] += 1
                 orphan_ids.append(str(hit["_id"]))

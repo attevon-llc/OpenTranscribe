@@ -1,4 +1,4 @@
-"""Schema detection, v463 onward: the data-safety cluster (trash, hide, scheduled erasure, owner).
+"""Schema detection, v463 onward: the data-safety cluster (trash, hide, scheduled erasure, holds).
 
 v461 closed the governance era (``governance.py``); this era builds on its top rung
 (``governance.matches_v462``). ``probe()`` issues this era's queries after every older era's;
@@ -6,8 +6,8 @@ v461 closed the governance era (``governance.py``); this era builds on its top r
 top of it.
 
 A rung requires every earlier probe of this era except an index the runner builds concurrently
-after the upgrade: v463's ``ix_media_file_trash_due`` is not a probe at all, its detection keys on
-``ck_media_file_trash_state``, which the revision itself creates last.
+after the upgrade: v463's ``ix_media_file_trash_due`` and v467's ``ix_content_hold_platform_active``
+are not probes at all; their detection keys on a CHECK the revision itself creates last.
 """
 
 from __future__ import annotations
@@ -33,6 +33,7 @@ class DataSafetyFacts:
     has_media_file_trash: bool
     has_erasure_grace_subject_index: bool
     has_user_hidden_media: bool
+    has_content_hold_authority: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
@@ -56,6 +57,12 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
         has_user_hidden_media=_check_exists(
             "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'pk_user_hidden_media')"
         ),
+        # v467: who placed a content hold (organization or platform). Keyed on the CHECK the
+        # revision creates last; v467's partial index is built after the upgrade, never probed.
+        has_content_hold_authority=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+            "WHERE conname = 'ck_content_hold_authority_org')"
+        ),
     )
 
 
@@ -71,7 +78,12 @@ def matches_v465(f: SchemaFacts) -> bool:
     return matches_v464(f) and f.data_safety.has_user_hidden_media
 
 
+def matches_v467(f: SchemaFacts) -> bool:
+    return matches_v465(f) and f.data_safety.has_content_hold_authority
+
+
 ARMS: tuple[Arm, ...] = (
+    (matches_v467, "v467_add_content_hold_authority"),
     (matches_v465, "v465_add_user_hidden_media"),
     (matches_v464, "v464_generalise_erasure_grace_index"),
     (matches_v463, "v463_add_media_file_trash"),

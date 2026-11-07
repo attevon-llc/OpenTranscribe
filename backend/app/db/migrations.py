@@ -269,8 +269,9 @@ _concurrent_index_retry_done = False
 def _retry_concurrent_indexes() -> None:
     """Build the post-upgrade indexes (once per process) without ever blocking startup.
 
-    v458's ``speaker`` index and v463's ``media_file`` trash index: their revisions build
-    nothing themselves; this is where the indexes come from. A build that cannot get its locks
+    v458's ``speaker`` index, v463's ``media_file`` trash index and v467's ``content_hold``
+    platform index: their revisions build nothing themselves; this is where the indexes come
+    from. A build that cannot get its locks
     within ``BUILD_LOCK_TIMEOUT_SECONDS`` is logged and retried on the next start. Never raises.
     """
     global _concurrent_index_retry_done
@@ -278,6 +279,7 @@ def _retry_concurrent_indexes() -> None:
         return
     _concurrent_index_retry_done = True
     from app.db import concurrent_indexes
+    from app.db.hold_indexes import HOLD_INDEXES
     from app.db.speaker_indexes import SPEAKER_INDEXES
     from app.db.trash_indexes import TRASH_INDEXES
 
@@ -289,6 +291,7 @@ def _retry_concurrent_indexes() -> None:
             for table, specs, column in (
                 ("speaker", SPEAKER_INDEXES, "identity_source"),
                 ("media_file", TRASH_INDEXES, "deleted_at"),
+                ("content_hold", HOLD_INDEXES, "authority"),
             ):
                 if not _check_column_exists(conn, table, column):
                     continue

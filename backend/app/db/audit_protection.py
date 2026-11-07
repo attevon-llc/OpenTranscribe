@@ -165,6 +165,7 @@ PROTECTED_TABLES: tuple[ProtectedTable, ...] = (
 EXEMPT_TABLES: dict[str, str] = {
     "content_hold": (
         "tenant data that goes with its organization on erasure (organization_id is CASCADE); "
+        "a platform hold (v467) has no organization and is the operator's own record; "
         "placement and release are already in the OpenSearch audit stream"
     ),
     "content_hold_file": "child of content_hold, same reason",

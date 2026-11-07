@@ -323,8 +323,11 @@
   font-size: var(--font-size-md);
 }
 
-/* One view at a time: the root list, or the open submenu. */
-.media-player .menu-view[data-child-open] {
+/* One view at a time: the root list, or the open submenu. A closed submenu carries
+   `hidden`, which the `display: grid` below would otherwise override: it stayed laid out
+   under the list and its back row (named like the list's row) stayed in the a11y tree. */
+.media-player .menu-view[data-child-open],
+.media-player .menu-view[hidden] {
   display: none;
 }
 

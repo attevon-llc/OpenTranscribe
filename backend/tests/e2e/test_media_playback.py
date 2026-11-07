@@ -31,6 +31,7 @@ from conftest import OWNED_MEDIA_PREFIX
 from conftest import _generate_media
 from conftest import delete_media_file
 from conftest import wait_for_stable_completion
+from media_player import CONTROL_NAMES
 from media_player import MediaPlayer
 from media_player import app_label
 from media_player import speed_name
@@ -157,7 +158,13 @@ class TestAudioPlayback:
         self, browser_page: Page, base_url: str, owned_transcribed_file: dict
     ) -> None:
         player = _open_file(browser_page, base_url, owned_transcribed_file["uuid"])
-        player.open_speed_menu()
+        player.open_settings()
+        # One "Speed" row: the speed list's back row (same name) stays out of the
+        # accessibility tree until that list opens.
+        expect(
+            browser_page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"])
+        ).to_have_count(1)
+        player.speed_menu_item().click()
         for rate in (0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 4):
             expect(browser_page.get_by_role("menuitemradio", name=speed_name(rate))).to_have_count(
                 1

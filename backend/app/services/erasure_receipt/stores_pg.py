@@ -225,7 +225,6 @@ EXEMPT_TABLES: dict[str, str] = {
     "watch_source_email": "removed by ON DELETE CASCADE with the watch source (pg.watch_source)",
     "group_mapping": "directory mapping owned by a group, not by the data subject",
     "usage_event": "FK SET NULL: usage metering counts, detached from the file and the user",
-    "llm_token_budget": _CASCADE_USER,
     "content_hold": _COMPLIANCE,
     "takedown_notice": _COMPLIANCE,
     "takedown_notice_file": _COMPLIANCE,

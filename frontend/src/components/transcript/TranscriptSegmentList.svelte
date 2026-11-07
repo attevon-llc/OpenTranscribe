@@ -11,6 +11,7 @@
   import { formatClock } from '$lib/utils/formatting';
   import { t } from '$stores/locale';
   import { translateSpeakerLabel } from '$lib/i18n';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let file: any = null;
   export let groupedTranscriptSegments: GroupedSegmentView[] = [];
@@ -25,6 +26,9 @@
   // set it is read-only rather than editable (page.test.ts pins this default-deny
   // shape for the sibling FileActionButtons component).
   export let editable: boolean = false;
+  // A held file's segments are frozen (legal-hold plan, Lane D): Edit stays visible, disabled,
+  // pointing at the note above the transcript that says why.
+  const frozen = fileFrozen();
 
   // Search props
   export let searchQuery: string = '';
@@ -413,6 +417,15 @@
                 >
                   {$t('common.edit')}
                 </button>
+                {:else if $frozen}
+                <button
+                  class="edit-button"
+                  disabled
+                  title={$t('holds.frozenControl')}
+                  aria-describedby="transcript-frozen-note"
+                >
+                  {$t('common.edit')}
+                </button>
                 {/if}
               </div>
             {/if}
@@ -504,6 +517,15 @@
               class="edit-button"
               on:click|stopPropagation={() => editSegment(segment)}
               title={$t('transcript.editSegment')}
+            >
+              {$t('common.edit')}
+            </button>
+            {:else if $frozen}
+            <button
+              class="edit-button"
+              disabled
+              title={$t('holds.frozenControl')}
+              aria-describedby="transcript-frozen-note"
             >
               {$t('common.edit')}
             </button>

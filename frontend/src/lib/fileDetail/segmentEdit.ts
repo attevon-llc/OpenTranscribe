@@ -12,6 +12,7 @@ import { getErrorStatus } from '$lib/utils/apiError';
 import { t } from '$stores/locale';
 import { toastStore } from '$stores/toast';
 import { transcriptStore } from '$stores/transcriptStore';
+import { reportHoldRefusal } from '$lib/legalHold/refusal';
 import { patchSegmentInFile, type SegmentBearingFile } from './segmentSync';
 
 /** Which segment is open in the editor, its current text, and the text it opened with. */
@@ -116,7 +117,9 @@ export function createSegmentEditor(ctx: SegmentEditorContext) {
       }
     } catch (error: unknown) {
       console.error('Error saving segment:', error);
-      toastStore.error(get(t)(segmentSaveErrorKey(getErrorStatus(error))));
+      // A hold placed since the page loaded: the translated refusal, and the editor closes.
+      if (reportHoldRefusal(error)) cancel();
+      else toastStore.error(get(t)(segmentSaveErrorKey(getErrorStatus(error))));
     } finally {
       ctx.setSaving(false);
     }

@@ -345,6 +345,13 @@ export const HOLD_BADGE_TITLE_KEYS: Record<string, string> = {
   'organization,platform': 'holds.badgeTitle.both',
 };
 
+/** Who placed the hold, on the held-file banner (legal-hold plan, Lane D). Never why. */
+export const HOLD_BANNER_KEYS: Record<string, string> = {
+  organization: 'holds.banner.byOrganization',
+  platform: 'holds.banner.byPlatform',
+  'organization,platform': 'holds.banner.byBoth',
+};
+
 /** The key a `held_by` list selects in :data:`HOLD_REFUSAL_KEYS` / :data:`HOLD_BADGE_TITLE_KEYS`. */
 export const holdAuthorityKey = (heldBy: readonly string[] | null | undefined): string =>
   [...(heldBy ?? [])].sort().join(',');

@@ -15,6 +15,7 @@
   import { toastStore } from '$stores/toast';
   import { addTagToFile, listTags, removeTagFromFile } from '$lib/api/tags';
   import { getErrorCode, getErrorMessage, getErrorStatus } from '$lib/utils/apiError';
+  import { reportHoldRefusal } from '$lib/legalHold/refusal';
   import {
     clampTagNameInput,
     cleanTagName,
@@ -126,6 +127,7 @@
     } catch (error: unknown) {
       console.error('[TagsEditor] Failed to add tag:', error);
       const detail = detailText(error);
+      if (reportHoldRefusal(error)) return false;
       if (getErrorStatus(error) === 401) toastStore.error($t('tags.unauthorizedLogin'));
       else if (detail) toastStore.error($t('tags.failedToCreateWithDetail', { detail }));
       else toastStore.error($t('tags.failedToCreate'));
@@ -187,7 +189,7 @@
       if (!tags.some((existing) => existing.uuid === added.uuid)) addToFile(added);
     } catch (error: unknown) {
       console.error('[TagsEditor] Failed to add existing tag:', error);
-      toastStore.error(
+      if (!reportHoldRefusal(error)) toastStore.error(
         getErrorStatus(error) === 401 ? $t('tags.unauthorizedLogin') : $t('tags.failedToAdd')
       );
     } finally {
@@ -209,6 +211,7 @@
       }
     } catch (error: unknown) {
       console.error('[TagsEditor] Failed to remove tag:', error);
+      if (reportHoldRefusal(error)) return;
       if (getErrorStatus(error) === 401) toastStore.error($t('tags.unauthorizedLogin'));
       else if (getErrorCode(error) === 'ERR_NETWORK') toastStore.error($t('tags.networkError'));
       else toastStore.error($t('tags.failedToRemove'));

@@ -6,6 +6,7 @@
   import { formatClock, formatDate } from '$lib/utils/formatting';
   import TruncatedText from '$components/TruncatedText.svelte';
   import CommentTimeField from './CommentTimeField.svelte';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
 
   export let comment: {
     uuid: string;
@@ -16,6 +17,8 @@
   };
   /** Whether the viewer wrote this comment (only the author edits or deletes it). */
   export let isAuthor = false;
+  /** The file is under a legal hold: an existing comment can be neither edited nor deleted. */
+  export let frozen = false;
   /** Live playback position, used when an edit turns a general comment into a timed one. */
   export let currentTime = 0;
   /** Media length in seconds when known, so an edited time cannot point past the end. */
@@ -24,6 +27,7 @@
   export let save: (payload: { text: string; timestamp: number | null }) => Promise<boolean>;
 
   const id = domId('comment-item');
+  const frozenNoteId = `${id}-frozen`;
   const dispatch = createEventDispatcher<{ seekTo: { time: number }; delete: void }>();
 
   let editing = false;
@@ -136,7 +140,9 @@
           type="button"
           class="edit-button"
           on:click={startEdit}
-          title={$t('comments.editHint')}
+          disabled={frozen}
+          aria-describedby={frozen ? frozenNoteId : undefined}
+          title={frozen ? $t('holds.frozenControl') : $t('comments.editHint')}
         >
           {$t('comments.edit')}
         </button>
@@ -144,10 +150,15 @@
           type="button"
           class="delete-button"
           on:click={() => dispatch('delete')}
-          title={$t('comments.deleteHint')}
+          disabled={frozen}
+          aria-describedby={frozen ? frozenNoteId : undefined}
+          title={frozen ? $t('holds.frozenControl') : $t('comments.deleteHint')}
         >
           {$t('comments.delete')}
         </button>
+        {#if frozen}
+          <FrozenNote id={frozenNoteId} />
+        {/if}
       </div>
     {/if}
   {/if}
@@ -283,5 +294,16 @@
 
   .delete-button {
     color: var(--error-text);
+  }
+
+  .comment-actions {
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .edit-button:disabled,
+  .delete-button:disabled {
+    color: var(--text-secondary);
+    cursor: not-allowed;
   }
 </style>

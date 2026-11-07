@@ -17,6 +17,9 @@ toasts). Children receive props and report up; they never call the API.
 - `CommentItem.svelte` — one listed comment: a time chip that seeks (`seekTo`) or a **General**
   label; the editor reuses the Timestamp box and `CommentTimeField`, so editing keeps the kind
   unless the user changes it, and always sends `timestamp` explicitly (`null` = general).
+- On a file under a legal hold (`fileFrozen()` context) the composer stays enabled with
+  `holds.commentHint` (a new comment is recorded as `content.hold.annotation`); `CommentItem`
+  takes `frozen` and shows Edit/Delete disabled with a `FrozenNote`.
 - `CommentKindHelp.svelte` — the info button + panel explaining the two kinds.
 - `commentOrder.ts` — the one ordering rule: general first (oldest first), then timed in time
   order. Do not sort with `a.timestamp - b.timestamp`: `null` reads as 0 and mixes the kinds.

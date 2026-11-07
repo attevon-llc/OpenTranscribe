@@ -6,6 +6,8 @@
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let file: MediaFileDetail | null = null;
   export let diarizationDisabled: boolean = false;
@@ -55,6 +57,10 @@
   function exportTranscript(format: string) {
     dispatch('exportTranscript', { format });
   }
+
+  // Speaker edits on a held file are refused (legal-hold plan, Lane D): the editor stays
+  // reachable to close, never to open, and the reason is printed under the bar.
+  const frozen = fileFrozen();
 
   function toggleSpeakerEditor() {
     dispatch('toggleSpeakerEditor');
@@ -157,7 +163,9 @@
   <button
     class="edit-speakers-button"
     on:click={toggleSpeakerEditor}
-    title={$t('transcript.editSpeakersTitle')}
+    disabled={$frozen && !isEditingSpeakers}
+    aria-describedby={$frozen ? 'transcript-actions-frozen-note' : undefined}
+    title={$frozen ? $t('holds.frozenControl') : $t('transcript.editSpeakersTitle')}
   >
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 20h9"></path>
@@ -238,6 +246,9 @@
   {/if}
 
 </div>
+{#if $frozen && !diarizationDisabled && !$supportSessionGate.readOnly}
+  <FrozenNote id="transcript-actions-frozen-note" />
+{/if}
 
 <style>
   .transcript-actions {

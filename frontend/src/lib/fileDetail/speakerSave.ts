@@ -15,6 +15,7 @@ import { transcriptStore } from '$stores/transcriptStore';
 import { clearProcessedVideoCache } from './segmentEdit';
 import { renameSpeakersInFile, type SegmentBearingFile } from './segmentSync';
 import type { SpeakerLoaderContext } from './speakerLoader';
+import { reportHoldRefusal } from '$lib/legalHold/refusal';
 import {
   renameProfileSuggestions,
   savedSpeakerRenames,
@@ -155,7 +156,9 @@ export function createSpeakerSaveFlow(ctx: SpeakerSaveContext) {
       // Undo the optimistic write. Leaving it would render the new name across the
       // transcript, subtitles, modal and exports as though it had saved.
       applySpeakerRename(speakerUuid, speakerLabel, previousName);
-      toastStore.error(tr('speakerProfile.saveFailedReverted', { error: errorMessage }));
+      if (!reportHoldRefusal(error)) {
+        toastStore.error(tr('speakerProfile.saveFailedReverted', { error: errorMessage }));
+      }
     }
   }
 
@@ -315,7 +318,7 @@ export function createSpeakerSaveFlow(ctx: SpeakerSaveContext) {
       await performBulkSave(speakersToUpdate);
     } catch (error) {
       console.error('Error saving speaker names:', error);
-      toastStore.error(tr('speakerProfile.saveAllFailed'));
+      if (!reportHoldRefusal(error)) toastStore.error(tr('speakerProfile.saveAllFailed'));
       ctx.setSavingSpeakers(false);
     }
   }
@@ -327,7 +330,7 @@ export function createSpeakerSaveFlow(ctx: SpeakerSaveContext) {
       resetBulkState();
     } catch (error) {
       console.error('Error in bulk save with decisions:', error);
-      toastStore.error(tr('speakerProfile.saveAllFailed'));
+      if (!reportHoldRefusal(error)) toastStore.error(tr('speakerProfile.saveAllFailed'));
       ctx.setSavingSpeakers(false);
       resetBulkState();
     }

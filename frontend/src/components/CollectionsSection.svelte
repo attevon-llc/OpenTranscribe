@@ -5,6 +5,8 @@
   import CollectionsEditor from './CollectionsEditor.svelte';
   import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let collections: Collection[] = [];
   export let isExpanded: boolean = false;
@@ -12,6 +14,8 @@
   export let aiCollectionSuggestions: Array<{name: string, confidence: number, rationale?: string, description?: string}> = [];
 
   const dispatch = createEventDispatcher();
+  // A held file's collections are part of its preserved record (legal-hold plan, Lane D).
+  const frozen = fileFrozen();
 
   function toggleExpanded() {
     isExpanded = !isExpanded;
@@ -54,7 +58,14 @@
 
   {#if isExpanded && !$supportSessionGate.readOnly}
     <div class="collections-content" transition:slide={{ duration: 200 }}>
-      {#if fileId}
+      {#if $frozen}
+        <div class="collections-frozen">
+          {#each collections as collection (collection.uuid)}
+            <span class="collection-chip">{collection.name || $t('collectionsSection.unnamed')}</span>
+          {/each}
+          <FrozenNote id="collections-frozen-note" />
+        </div>
+      {:else if fileId}
         <CollectionsEditor
           {fileId}
           {collections}
@@ -69,6 +80,13 @@
 </div>
 
 <style>
+  .collections-frozen {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
   .collections-dropdown-section {
     margin-bottom: 0;
   }

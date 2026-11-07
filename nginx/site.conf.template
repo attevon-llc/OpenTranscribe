@@ -152,6 +152,15 @@ server {
         return 404;
     }
 
+    # Alertmanager webhook (issue #791): a POST fans out to every admin, so it is
+    # bearer-authenticated by the backend AND unreachable from outside. Alertmanager
+    # reaches backend:8080 directly over the compose network, never through here.
+    # ^~ so no regex location can take precedence over the deny.
+    location ^~ /internal/ {
+        deny all;
+        return 404;
+    }
+
     # Backend REST API
     location /api/ {
         proxy_pass http://backend:8080/api/;

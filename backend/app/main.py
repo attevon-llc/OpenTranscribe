@@ -22,6 +22,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.responses import Response
 
+from app.api.endpoints.alertmanager_webhook import router as alertmanager_webhook_router
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
@@ -417,6 +418,9 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # typ
 from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
+
+# Alertmanager webhook, also at ROOT: bearer-authenticated, nginx denies /internal/.
+app.include_router(alertmanager_webhook_router)
 
 # SCIM 2.0 provisioning, mounted at ROOT rather than under API_PREFIX: RFC 7644 §3.1
 # fixes the base path, and every IdP connector appends "/Users" to whatever base URL

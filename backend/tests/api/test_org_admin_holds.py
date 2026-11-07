@@ -394,6 +394,7 @@ def test_placing_and_releasing_are_audited_without_the_reason_or_matter(
         assert event["resource_uuid"] == hold_uuid
         assert event["user_id"] == gov.admin.id
         assert event["details"] == {
+            "authority": "organization",
             "scope": "file",
             "file_count": 1,
             "file_uuids": [str(f.uuid)],

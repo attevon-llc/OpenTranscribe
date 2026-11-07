@@ -8,14 +8,58 @@
  * `by` is present only for the file's owner, an administrator of the file's organization and a
  * platform administrator; any other viewer gets `source` and `at`. The whole object is `null`
  * when the origin is unknown (written before it was recorded) or withheld because a voiceprint
- * made it and the file's voiceprints are off. Only the current state is kept; the change
- * history is a later release.
+ * made it and the file's voiceprints are off. This is the current state; every change is in
+ * the speaker's identity history (`SpeakerIdentityEvent`).
  */
 export interface SpeakerIdentity {
   source: 'human' | 'voiceprint' | 'voiceprint_link';
   at?: string | null; // ISO timestamp
   by?: { uuid: string; name?: string | null } | null;
   detail?: Record<string, unknown> | null; // ids and identifiers only, never a name
+}
+
+/** The kinds of change the identity history records (backend `EVENT_KINDS`). */
+export type SpeakerIdentityEventKind =
+  | 'rename'
+  | 'name_cleared'
+  | 'link'
+  | 'unlink'
+  | 'suggested'
+  | 'suggestion_accepted'
+  | 'suggestion_rejected'
+  | 'suggestion_cleared'
+  | 'confirmed'
+  | 'skipped'
+  | 'merge'
+  | 'purge';
+
+/** The fields one change touched, before or after it (only those it touched are present). */
+export interface SpeakerIdentityEventValues {
+  name?: string | null;
+  profile?: { uuid: string | null; name: string | null; deleted?: boolean } | null;
+  suggested_name?: string | null;
+  suggestion_source?: string | null;
+  identity_source?: string | null;
+  merged_name?: string | null;
+  /** Fields whose previous value a voiceprint wrote; it is kept only in the voiceprint's entry. */
+  withheld?: string[];
+}
+
+/** One entry of a speaker's identity history (backend `SpeakerIdentityEvent`, issue #1336). */
+export interface SpeakerIdentityEvent {
+  uuid: string;
+  kind: SpeakerIdentityEventKind;
+  at: string; // ISO timestamp
+  actor: {
+    kind: 'user' | 'system';
+    // Named only for the viewers who see `identity.by`; null otherwise.
+    user?: { uuid: string | null; name?: string | null; erased?: boolean } | null;
+  };
+  origin?: string | null;
+  model?: string | null;
+  confidence?: number | null;
+  before?: SpeakerIdentityEventValues | null;
+  after?: SpeakerIdentityEventValues | null;
 }
 
 /** Where the CURRENT recommendation in `suggested_name` came from (backend `SpeakerSuggestion`). */

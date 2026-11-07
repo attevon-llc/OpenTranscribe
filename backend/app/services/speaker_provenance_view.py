@@ -119,6 +119,38 @@ def _erased_user_ids(session: Session, users: dict[int, dict[str, Any]]) -> set[
     }
 
 
+def visible_actors(
+    session: Session,
+    viewer: ProvenanceViewer | None,
+    file_row: tuple[Any, Any, Any],
+    user_ids: Iterable[int],
+) -> dict[int, dict[str, Any]]:
+    """The people among ``user_ids`` this viewer may see named on one file, by id.
+
+    The same rule as ``identity.by``: nobody unless the viewer may learn who acted on this file;
+    an account an erasure request names reads as the ``erased`` marker. Asks the platform role
+    only when there is somebody to name (asking is itself an audited act).
+
+    Args:
+        session: An open session.
+        viewer: The viewer.
+        file_row: ``(owner_user_id, organization_id, file uuid)``.
+        user_ids: The people recorded on the file's rows.
+    """
+    wanted = {int(u) for u in user_ids}
+    if not wanted or not _can_see_actor(viewer, file_row):
+        return {}
+    actors = {
+        int(u.id): {"uuid": u.uuid, "name": u.full_name or u.email}
+        for u in session.query(User.id, User.uuid, User.full_name, User.email)
+        .filter(User.id.in_(wanted))
+        .all()
+    }
+    for erased in _erased_user_ids(session, actors):
+        actors[erased] = {"uuid": None, "name": None, "erased": True}
+    return actors
+
+
 def attach_speaker_provenance(
     db: Session,
     speakers: Iterable[Speaker],

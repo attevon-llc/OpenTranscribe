@@ -85,6 +85,34 @@ class SpeakerIdentityActor(BaseModel):
     erased: bool = False  # the account is being erased: no uuid, name or email is given
 
 
+class SpeakerIdentityEventActor(BaseModel):
+    """Who made one recorded change: ``user`` (named only to who may see it) or ``system``."""
+
+    kind: str  # "user" | "system"
+    user: SpeakerIdentityActor | None = None
+
+
+class SpeakerIdentityEvent(BaseModel):
+    """One entry of a speaker's identity history (read-only; issue #1336).
+
+    ``before`` / ``after`` hold only the fields the change touched: ``name``, ``profile``
+    (``{uuid, name}``, or ``{deleted: true}`` once the profile is gone), ``suggested_name``,
+    ``suggestion_source``, ``identity_source``, ``merged_name`` (a speaker merge). ``withheld``
+    lists the fields whose previous value a voiceprint wrote: that value is kept only in the
+    voiceprint's own entry.
+    """
+
+    uuid: UUID
+    kind: str
+    at: datetime
+    actor: SpeakerIdentityEventActor
+    origin: str | None = None
+    model: str | None = None
+    confidence: float | None = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+
+
 class SpeakerIdentity(BaseModel):
     """How the speaker's CURRENT identity came to be (read-only; issue #1280).
 
@@ -94,7 +122,7 @@ class SpeakerIdentity(BaseModel):
     viewer gets ``source`` and ``at``. ``null`` for
     the whole object means unknown (written before the record existed, or never named) or
     withheld because a voiceprint made it and the file's voiceprints are off. Only the current
-    state is kept; the full change history is tracked in issue #1336.
+    state is here; every change is in the speaker's identity history (``SpeakerIdentityEvent``).
     """
 
     source: str  # "human" | "voiceprint" | "voiceprint_link"

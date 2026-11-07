@@ -1,4 +1,4 @@
-"""Speaker identity history (issue #1336): the bulk writer and the purge's delete.
+"""Speaker identity history (issue #1336): the bulk writer, the purge's delete, and the reader.
 
 ORM writes of a speaker's name, link or suggestion are recorded by the flush listener in
 :mod:`app.models.speaker_identity_event`. A bulk ``UPDATE speaker`` bypasses the flush, so the
@@ -111,3 +111,102 @@ def forget_voiceprint_events(db: Session, speaker_ids: Select[Any]) -> int:
         text("SELECT set_config(:name, :value, true)"), {"name": PURGE_SWITCH, "value": previous}
     )
     return int(getattr(result, "rowcount", 0) or 0)
+
+
+def _profile_refs(db: Session, events: list[SpeakerIdentityEvent]) -> dict[int, dict[str, Any]]:
+    """``profile_id`` -> ``{"uuid", "name"}`` for every profile the events name that still exists."""
+    from app.models.speaker import SpeakerProfile
+
+    wanted = {
+        int(value["profile_id"])
+        for e in events
+        for value in (e.before_value, e.after_value)
+        if value and isinstance(value.get("profile_id"), int)
+    }
+    if not wanted:
+        return {}
+    return {
+        int(r[0]): {"uuid": str(r[1]), "name": r[2]}
+        for r in db.query(SpeakerProfile.id, SpeakerProfile.uuid, SpeakerProfile.name)
+        .filter(SpeakerProfile.id.in_(wanted))
+        .all()
+    }
+
+
+def _public_values(
+    value: dict[str, Any] | None, profiles: dict[int, dict[str, Any]]
+) -> dict[str, Any] | None:
+    """A stored before/after, with the internal profile id replaced by the profile's uuid/name."""
+    if value is None:
+        return None
+    out = {k: v for k, v in value.items() if k != "profile_id"}
+    if "profile_id" in value:
+        pid = value["profile_id"]
+        out["profile"] = (
+            profiles.get(int(pid), {"uuid": None, "name": None, "deleted": True})
+            if pid is not None
+            else None
+        )
+    return out
+
+
+def list_identity_history(
+    db: Session, speaker: Any, viewer: Any, *, limit: int = 50
+) -> list[dict[str, Any]]:
+    """The speaker's history, newest first, as the viewer may see it.
+
+    The caller has authorized the speaker (``require_speaker_access``: tenant, quarantine, share,
+    platform grant). Here:
+
+    * while the file's voiceprints are off, the ``voiceprint`` rows are withheld, exactly like
+      the name, link and suggestion they describe (``hides_provenance``);
+    * the person who acted is named only to a viewer who may see ``identity.by``
+      (:func:`app.services.speaker_provenance_view.visible_actors`); otherwise ``actor.user`` is
+      ``null`` and only ``actor.kind`` is given.
+
+    Args:
+        db: The request's session.
+        speaker: The authorized speaker row.
+        viewer: A ``ProvenanceViewer``.
+        limit: At most this many rows.
+    """
+    from app.models.media import MediaFile
+    from app.services.privacy.redact_view import PrivacyView
+    from app.services.speaker_provenance_view import visible_actors
+
+    query = db.query(SpeakerIdentityEvent).filter(SpeakerIdentityEvent.speaker_id == speaker.id)
+    if not PrivacyView(db).voiceprints(int(speaker.media_file_id)).enabled:
+        query = query.filter(SpeakerIdentityEvent.voiceprint.is_(False))
+    events = (
+        query.order_by(SpeakerIdentityEvent.created_at.desc(), SpeakerIdentityEvent.id.desc())
+        .limit(limit)
+        .all()
+    )
+    if not events:
+        return []
+    file_row = (
+        db.query(MediaFile.user_id, MediaFile.organization_id, MediaFile.uuid)
+        .filter(MediaFile.id == speaker.media_file_id)
+        .one()
+    )
+    actors = visible_actors(
+        db, viewer, tuple(file_row), (e.actor_user_id for e in events if e.actor_user_id)
+    )
+    profiles = _profile_refs(db, events)
+    out: list[dict[str, Any]] = []
+    for e in events:
+        user = actors.get(int(e.actor_user_id)) if e.actor_user_id is not None else None
+        out.append(
+            {
+                "uuid": e.uuid,
+                "kind": e.kind,
+                "at": e.created_at,
+                "actor": {"kind": e.actor_kind, "user": user},
+                "origin": e.origin,
+                "model": e.model,
+                "confidence": e.confidence,
+                "before": _public_values(e.before_value, profiles),
+                "after": _public_values(e.after_value, profiles),
+            }
+        )
+    return out

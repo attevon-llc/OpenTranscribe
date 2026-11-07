@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints import speakers_debug
+from app.api.endpoints import speakers_history
 from app.api.endpoints import speakers_merge
 from app.api.endpoints import speakers_occurrences
 from app.api.endpoints import speakers_suggestions
@@ -144,6 +145,7 @@ router.include_router(speakers_debug.router)
 router.include_router(speakers_occurrences.router)
 router.include_router(speakers_suggestions.router)
 router.include_router(speakers_merge.router)
+router.include_router(speakers_history.router)
 
 
 # --- SECTION: SINGLE-PARAM ROUTES (catch-all, must come last) ---

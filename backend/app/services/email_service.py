@@ -127,7 +127,7 @@ def _shell(heading: str, inner: str) -> str:
             {inner}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
             <p style="color: #6b7280; font-size: 12px;">
-                This is an automated message from {settings.PROJECT_NAME}.
+                This is an automated message from {html.escape(settings.PROJECT_NAME)}.
             </p>
         </body>
         </html>
@@ -137,9 +137,9 @@ def _shell(heading: str, inner: str) -> str:
 def _button(url: str, label: str) -> str:
     """Render the call-to-action button carrying a single-use link."""
     return (
-        f'<p><a href="{url}" style="display: inline-block; padding: 12px 24px; '
+        f'<p><a href="{html.escape(url)}" style="display: inline-block; padding: 12px 24px; '
         "background-color: #4f46e5; color: white; text-decoration: none; "
-        f'border-radius: 6px;">{label}</a></p>'
+        f'border-radius: 6px;">{html.escape(label)}</a></p>'
     )
 
 
@@ -170,8 +170,9 @@ class EmailService:
                 HTTP response uniform so a mail outage cannot become an
                 account-existence oracle.
         """
+        project = html.escape(settings.PROJECT_NAME)
         inner = (
-            f"<p>You requested a password reset for your {settings.PROJECT_NAME} account.</p>"
+            f"<p>You requested a password reset for your {project} account.</p>"
             "<p>Click the link below to reset your password. This link expires in 1 hour.</p>"
             + _button(reset_url, "Reset Password")
             + "<p>If you didn't request this, you can safely ignore this email.</p>"
@@ -222,8 +223,8 @@ class EmailService:
             "no password is stored here."
         )
         inner = (
-            f"<p>{inviter} invited you to create an account.</p>"
-            f"<p>{credential_line} This link expires in {expires_in_hours} hours and "
+            f"<p>{html.escape(inviter)} invited you to create an account.</p>"
+            f"<p>{html.escape(credential_line)} This link expires in {expires_in_hours} hours and "
             "can only be used once.</p>"
             + _button(accept_url, "Accept Invitation")
             + "<p>If you weren't expecting this, you can safely ignore this email.</p>"
@@ -240,7 +241,7 @@ class EmailService:
         self._send_email(
             to_email,
             f"{settings.PROJECT_NAME} - You've been invited",
-            _shell(f"You've been invited to {settings.PROJECT_NAME}", inner),
+            _shell(f"You've been invited to {html.escape(settings.PROJECT_NAME)}", inner),
             text_body,
             sensitive=True,
             credential_link=accept_url,
@@ -261,7 +262,7 @@ class EmailService:
         """
         inner = (
             "<p>Confirm this address to finish setting up your "
-            f"{settings.PROJECT_NAME} account.</p>"
+            f"{html.escape(settings.PROJECT_NAME)} account.</p>"
             f"<p>This link expires in {expires_in_hours} hours.</p>"
             + _button(verify_url, "Verify Email")
             + "<p>If you didn't create this account, you can safely ignore this email.</p>"
@@ -292,7 +293,7 @@ class EmailService:
         Args:
             to_email: Recipient — for an email change this is the OLD address.
             subject: Short subject line.
-            message: Plain-text body; rendered into the HTML template as-is.
+            message: Plain-text body; HTML-escaped when rendered into the template.
 
         Raises:
             EmailDeliveryError: The notice was not handed to a transport.
@@ -300,7 +301,7 @@ class EmailService:
                 a failed notice must never block the change it describes.
         """
         inner = (
-            f"<p>{message}</p>"
+            f"<p>{html.escape(message)}</p>"
             "<p>If you did not make this change, contact your administrator immediately.</p>"
         )
         text_body = (
@@ -310,7 +311,7 @@ class EmailService:
         self._send_email(
             to_email,
             f"{settings.PROJECT_NAME} - {subject}",
-            _shell(subject, inner),
+            _shell(html.escape(subject), inner),
             text_body,
         )
 

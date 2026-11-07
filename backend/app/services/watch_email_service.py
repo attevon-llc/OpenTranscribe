@@ -18,6 +18,7 @@ here at send time. All functions are best-effort and return ``(ok, message)``.
 from __future__ import annotations
 
 import contextlib
+import html
 import logging
 import smtplib
 import ssl
@@ -224,8 +225,8 @@ def _test_m365(config: EmailNotificationConfig) -> tuple[bool, str]:
 def build_scan_summary_html(source_name: str, summary: dict) -> str:
     """Render a compact HTML scan-summary email body."""
     rows = "".join(
-        f"<tr><td style='padding:4px 12px;'>{label}</td>"
-        f"<td style='padding:4px 12px;text-align:right;'><b>{value}</b></td></tr>"
+        f"<tr><td style='padding:4px 12px;'>{html.escape(label)}</td>"
+        f"<td style='padding:4px 12px;text-align:right;'><b>{html.escape(str(value))}</b></td></tr>"
         for label, value in (
             ("Files found", summary.get("found", 0)),
             ("Imported", summary.get("imported", 0)),
@@ -237,7 +238,7 @@ def build_scan_summary_html(source_name: str, summary: dict) -> str:
     return (
         "<div style='font-family:Arial,sans-serif;color:#222;'>"
         "<h2 style='margin:0 0 8px;'>OpenTranscribe — Watch Source Scan</h2>"
-        f"<p style='margin:0 0 12px;'>Source: <b>{source_name}</b></p>"
+        f"<p style='margin:0 0 12px;'>Source: <b>{html.escape(source_name)}</b></p>"
         f"<table style='border-collapse:collapse;'>{rows}</table>"
         "<p style='color:#888;font-size:12px;margin-top:16px;'>"
         "This is an automated notification from OpenTranscribe.</p>"

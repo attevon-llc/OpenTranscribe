@@ -4,13 +4,14 @@
 and ``@setup_logging.connect`` in ``app.core.celery`` (workers). It is
 idempotent — safe to call more than once.
 
-- ``LOG_FORMAT="text"`` (default): the historical human-readable format
-  (equivalent to ``logging.basicConfig(level=INFO)``).
+- ``LOG_FORMAT="text"`` (default): the human-readable format with the request id in
+  square brackets (``-`` outside a request).
 - ``LOG_FORMAT="json"``: ``pythonjsonlogger.json.JsonFormatter`` with
   ``asctime`` renamed to ``timestamp`` and ``levelname`` to ``level``; ``extra``
   fields (e.g. the access log's ``route``/``db_query_count``) are emitted as
-  structured keys. A :class:`RequestIdFilter` injects ``request_id`` onto EVERY
-  record (read from the audit ContextVar) so all JSON lines — not just access
+  structured keys.
+- In both modes a :class:`RequestIdFilter` injects ``request_id`` onto EVERY
+  record (read from the audit ContextVar) so all lines — not just access
   logs — are correlatable across the HTTP→Celery boundary.
 """
 
@@ -19,7 +20,7 @@ import logging
 from app.core.config import settings
 
 _JSON_FMT = "%(asctime)s %(levelname)s %(name)s %(message)s"
-_TEXT_FMT = "%(asctime)s %(levelname)s:%(name)s:%(message)s"
+_TEXT_FMT = "%(asctime)s %(levelname)s:%(name)s:[%(request_id)s] %(message)s"
 
 _configured = False
 
@@ -47,9 +48,11 @@ def _build_handler() -> logging.Handler:
                 rename_fields={"asctime": "timestamp", "levelname": "level"},
             )
         )
-        handler.addFilter(RequestIdFilter())
     else:
         handler.setFormatter(logging.Formatter(_TEXT_FMT))
+    # Both branches: the text format references %(request_id)s, and the default
+    # LOG_FORMAT is text, so a JSON-only filter left most deployments uncorrelated.
+    handler.addFilter(RequestIdFilter())
     return handler
 
 

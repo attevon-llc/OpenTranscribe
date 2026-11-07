@@ -18,6 +18,7 @@ idempotent — safe to call more than once.
 import logging
 
 from app.core.config import settings
+from app.core.request_context import get_request_id
 
 _JSON_FMT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _TEXT_FMT = "%(asctime)s %(levelname)s:%(name)s:[%(request_id)s] %(message)s"
@@ -29,9 +30,6 @@ class RequestIdFilter(logging.Filter):
     """Attach the current request id (or ``"-"``) to every log record."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        # Lazy import keeps this module importable before middleware is wired.
-        from app.middleware.audit import get_request_id
-
         record.request_id = get_request_id() or "-"
         return True
 

@@ -18,8 +18,18 @@ from app.core.logging_config import _JSON_FMT
 from app.core.logging_config import _TEXT_FMT
 from app.core.logging_config import RequestIdFilter
 from app.core.logging_config import configure_logging
+from app.core.request_context import request_id_var
+from app.core.request_context import set_request_id
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _unbound_request_id():
+    """Each test binds the real request-id context variable; put it back afterwards."""
+    token = request_id_var.set("")
+    yield
+    request_id_var.reset(token)
 
 
 @pytest.fixture(autouse=True)
@@ -186,7 +196,7 @@ def test_configure_logging_json_formatter_renames_asctime_and_levelname(monkeypa
 
 def test_configure_logging_json_request_id_filter_injects_request_id(monkeypatch):
     monkeypatch.setattr("app.core.logging_config.settings.LOG_FORMAT", "json")
-    monkeypatch.setattr("app.middleware.audit.get_request_id", lambda: "req-abc-123", raising=False)
+    set_request_id("req-abc-123")
 
     root = configure_logging_and_get_root()
     handler = root.handlers[0]
@@ -207,7 +217,7 @@ def test_configure_logging_json_request_id_filter_injects_request_id(monkeypatch
 # RequestIdFilter, in isolation
 # =============================================================================
 def test_request_id_filter_attaches_dash_when_no_request_id(monkeypatch):
-    monkeypatch.setattr("app.middleware.audit.get_request_id", lambda: None, raising=False)
+    set_request_id("")
     record = _make_record()
     filt = RequestIdFilter()
 
@@ -218,7 +228,7 @@ def test_request_id_filter_attaches_dash_when_no_request_id(monkeypatch):
 
 
 def test_request_id_filter_attaches_the_real_request_id(monkeypatch):
-    monkeypatch.setattr("app.middleware.audit.get_request_id", lambda: "req-xyz-789", raising=False)
+    set_request_id("req-xyz-789")
     record = _make_record()
     filt = RequestIdFilter()
 
@@ -229,7 +239,7 @@ def test_request_id_filter_attaches_the_real_request_id(monkeypatch):
 
 def test_request_id_filter_treats_empty_string_as_missing(monkeypatch):
     # get_request_id() or "-" — an empty string is falsy and must fall through too.
-    monkeypatch.setattr("app.middleware.audit.get_request_id", lambda: "", raising=False)
+    set_request_id("")
     record = _make_record()
     filt = RequestIdFilter()
 
@@ -243,7 +253,7 @@ def test_text_mode_log_line_carries_the_request_id(monkeypatch):
     import io
 
     monkeypatch.setattr("app.core.logging_config.settings.LOG_FORMAT", "text")
-    monkeypatch.setattr("app.middleware.audit.get_request_id", lambda: "req-text-42", raising=False)
+    set_request_id("req-text-42")
     root = configure_logging_and_get_root()
     handler = root.handlers[0]
     assert isinstance(handler, logging.StreamHandler)

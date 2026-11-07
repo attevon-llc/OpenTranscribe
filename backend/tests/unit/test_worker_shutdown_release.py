@@ -73,17 +73,26 @@ class TestReleaseWorkerResources:
 
         import builtins
 
-        def _raise(*args, **kwargs):
-            raise AssertionError(
-                "release_worker_resources attempted a real import — the sys.modules "
-                "gate must use .get(), never `import`"
-            )
+        real_import = builtins.__import__
+        attempted: list[str] = []
 
-        monkeypatch.setattr(builtins, "__import__", _raise)
+        def _record(name, *args, **kwargs):
+            attempted.append(name)
+            return real_import(name, *args, **kwargs)
 
-        started = time.monotonic()
-        ws.release_worker_resources()
-        elapsed = time.monotonic() - started
+        # Record, then restore before asserting: raising inside a patched __import__ also
+        # broke pytest's own failure reporting, which crashed the xdist worker and hid this
+        # message.
+        with monkeypatch.context() as patch:
+            patch.setattr(builtins, "__import__", _record)
+            started = time.monotonic()
+            ws.release_worker_resources()
+            elapsed = time.monotonic() - started
+
+        assert attempted == [], (
+            f"release_worker_resources attempted real imports {attempted}: the sys.modules "
+            "gate, and the logging it goes through, must use lookups, never `import`"
+        )
 
         assert elapsed < 0.05, (
             f"release took {elapsed:.4f}s with nothing loaded — should be near-instant "

@@ -28,6 +28,17 @@
  *   first-load closure (45 chunks)           139,858 B
  *   total JS (251 files under _app/immutable) 2,566,185 B
  * Ratchet: a budget moves only in a reviewed PR that states a new measurement.
+ *
+ * SvelteKit 3 upgrade (issue #1326), same command on the same tree before/after, gzip level 9:
+ *   static closure          135,006 B (42 files) -> 140,252 B (43 files)
+ *   first-load closure      139,969 B (45 chunks) -> 144,684 B (46 chunks)
+ *   entry chunks              4,167 B -> 3,649 B
+ *   total JS              2,582,108 B -> 2,585,192 B
+ * The ~5 KB growth is the Kit 3 client runtime (the old 25.3 KB runtime chunk is now two chunks
+ * totalling ~39 KB, with the rest of the delta in svelte/vite chunking); the app's own root layout
+ * node is unchanged (16,884 -> 16,909 B). It cannot be removed from app code, so the two closure
+ * budgets are raised by the measured delta plus the usual ~4% headroom, and the entry-chunk
+ * budget is lowered to follow the measured drop.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
@@ -51,12 +62,12 @@ export const ROOT_LAYOUT_GZIP_BUDGET = 22 * 1024;
  * Gzip bytes of the node plus its static import closure. Same policy: about 4% above the
  * measured 130,981 B (the closure is large, so a smaller fraction is the same absolute room).
  */
-export const ROOT_LAYOUT_CLOSURE_GZIP_BUDGET = 136 * 1024;
+export const ROOT_LAYOUT_CLOSURE_GZIP_BUDGET = 143 * 1024;
 
-/** Gzip bytes of the entry chunks (start + app); measured 4,173 B, about 20% headroom (tiny chunk, so a larger fraction is still small). */
-export const ENTRY_CHUNKS_GZIP_BUDGET = 5120;
-/** Gzip bytes of the manifest first-load closure; measured 139,858 B, about 4% headroom. */
-export const FIRST_LOAD_GZIP_BUDGET = 142 * 1024;
+/** Gzip bytes of the entry chunks (start + app); measured 3,649 B on Kit 3, about 19% headroom (tiny chunk, so a larger fraction is still small). */
+export const ENTRY_CHUNKS_GZIP_BUDGET = 4352;
+/** Gzip bytes of the manifest first-load closure; measured 144,684 B on Kit 3, about 4% headroom. */
+export const FIRST_LOAD_GZIP_BUDGET = 147 * 1024;
 /** Gzip bytes of all JS under `_app/immutable`; measured 2,566,185 B, about 3% headroom. */
 export const TOTAL_JS_GZIP_BUDGET = 2580 * 1024;
 

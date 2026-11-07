@@ -48,6 +48,9 @@ from pathlib import Path
 
 import pytest
 
+#: Test value in the format MinIO accepts; never a key of any deployment.
+TEST_KMS_LINE = "MINIO_KMS_SECRET_KEY=opentranscribe-key:" + "A" * 43 + "=\n"
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
 COMMON = REPO_ROOT / "scripts" / "common.sh"
@@ -237,9 +240,10 @@ def _make_checkout(
     (checkout / "VERSION").write_text("0.0.0-test\n", encoding="utf-8")
     # `opentr.sh start` refuses to run without a .env (#961a) rather than letting a
     # container crash-loop on an empty interpolation. This sandbox never needs a value from
-    # it (the one override under test arrives through the process environment), so an
-    # empty file satisfies the check.
-    (checkout / ".env").write_text("", encoding="utf-8")
+    # it (the one override under test arrives through the process environment). Like a real
+    # install it carries a MinIO KMS key: encryption is on by default, and `start` refuses a
+    # key-less .env (pinned in test_opentr_minio_kms_first_run.py).
+    (checkout / ".env").write_text(TEST_KMS_LINE, encoding="utf-8")
     shutil.copy2(OPENTR, checkout / "opentr.sh")
     (checkout / "opentr.sh").chmod(0o755)
     shutil.copy2(COMMON, checkout / "scripts" / "common.sh")

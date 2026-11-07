@@ -92,6 +92,9 @@ def _make_arm64_install(
         "DEPLOYMENT_MODE=full",
         "OT_IMAGE_TAG=v0.5.0",
         "HUGGINGFACE_TOKEN=hf_dummy",
+        # A real install has a KMS key; `start` refuses a key-less .env while encryption is
+        # on (pinned in test_opentr_minio_kms_first_run.py). Test value only.
+        "MINIO_KMS_SECRET_KEY=opentranscribe-key:" + "A" * 43 + "=",
     ]
     (install / ".env").write_text("\n".join(default_env + list(env_lines)) + "\n", encoding="utf-8")
 

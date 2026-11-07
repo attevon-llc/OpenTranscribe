@@ -788,6 +788,7 @@
         <CommentSection
           fileId={file?.uuid ? String(file.uuid) : ''}
           {currentTime}
+          duration={file?.duration ?? null}
           on:seekTo={handleSeekTo}
           on:commentsChanged={(e) => (commentCount = e.detail.count)}
         />

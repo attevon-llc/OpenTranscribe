@@ -144,6 +144,22 @@ export function formatClock(totalSeconds: number | null | undefined): string {
 }
 
 /**
+ * The inverse of {@link formatClock}: `"83"`, `"1:23"`, `"01:23"`, `"1:02:03"` and
+ * `"1:23.5"` -> seconds. Minutes and seconds after the first part must be under 60.
+ * Arabic-Indic digits are accepted. Anything else -> `null`.
+ */
+export function parseClock(input: string): number | null {
+  const text = input
+    .trim()
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[٫]/g, '.');
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(text)) return null;
+  const parts = text.split(':').map(Number);
+  if (parts.slice(1).some((p) => p >= 60)) return null;
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+/**
  * Local wall-clock time (hour and minute, no seconds) of an ISO-8601 instant, in the
  * user's locale. An unparseable value is returned unchanged.
  */

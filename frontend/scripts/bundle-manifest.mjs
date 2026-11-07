@@ -96,3 +96,28 @@ export function localeOffenders(manifest, closure, readChunk, sentinels) {
   }
   return bad;
 }
+
+/**
+ * Text every React runtime build carries: its element and memo-cache symbols are created with
+ * `Symbol.for("react.…")`, a registry key that minifiers cannot rename. `@videojs/store` lists
+ * `react` and `react-compiler-runtime` as dependencies for its React bindings (issue #1327);
+ * the HTML player never imports them, and this keeps it that way.
+ */
+export const REACT_RUNTIME_MARKER = 'Symbol.for("react.';
+
+/**
+ * Text Video.js 10 modules carry (`Symbol("@videojs/…")` state keys, `"@videojs/…"` ids). The
+ * player is route-scoped, so any of it in a first-load chunk means a static import leaked.
+ */
+export const VIDEOJS_MARKER = '@videojs/';
+
+/**
+ * Files whose text contains *marker*.
+ * @param {string[]} files
+ * @param {(file: string) => string} read
+ * @param {string} marker
+ * @returns {string[]}
+ */
+export function filesContaining(files, read, marker) {
+  return files.filter((file) => read(file).includes(marker));
+}

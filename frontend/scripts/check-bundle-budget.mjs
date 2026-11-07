@@ -23,6 +23,10 @@
  * the total JS shipped. The locale check has no budget and no allowance: a locale in first load
  * is always a defect (they are `import.meta.glob` lazy loaders, `src/lib/i18n/index.ts`).
  *
+ * Issue #1327 adds two text checks, also without budget or allowance: no React runtime anywhere
+ * in `_app/immutable` (`@videojs/store` installs `react` for bindings the HTML player never uses),
+ * and no Video.js code in the first-load closure (the player is route-scoped).
+ *
  * Measured 2026-11-06 on a stock `nice -n 19 npx vite build` in `frontend/` (gzip level 9):
  *   entry chunks (entry/start + entry/app)     4,173 B
  *   first-load closure (45 chunks)           139,858 B
@@ -41,10 +45,13 @@
  * budget is lowered to follow the measured drop.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, normalize } from 'node:path';
+import { dirname, join, normalize, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
+  REACT_RUNTIME_MARKER,
+  VIDEOJS_MARKER,
+  filesContaining,
   firstLoadRoots,
   localeOffenders,
   localeSentinels,
@@ -424,7 +431,8 @@ function manifestChecks({ root, manifestPath, localeDir, extra, allowance }) {
     );
   const entry = evaluate(size(entries), extra.entry);
   const first = evaluate(size(closure), extra.firstLoad + allowance.closureBytes);
-  const totalSize = jsFiles(root).reduce((sum, f) => sum + gzipSize(readFileSync(f)), 0);
+  const allJs = jsFiles(root);
+  const totalSize = allJs.reduce((sum, f) => sum + gzipSize(readFileSync(f)), 0);
   const total = evaluate(totalSize, extra.totalJs + allowance.closureBytes);
   const lines = [
     metricLine('entry chunks', entry, extra.entry, 0),
@@ -444,6 +452,28 @@ function manifestChecks({ root, manifestPath, localeDir, extra, allowance }) {
   ].filter(Boolean);
   if (over.length > 0)
     errors.push(`check-bundle-budget: FAILED, over budget: ${over.join(', ')}. ${HINT}`);
+  const react = filesContaining(allJs, (f) => readFileSync(f, 'utf8'), REACT_RUNTIME_MARKER);
+  if (react.length > 0) {
+    const rel = react.map((f) => relative(dist, f)).sort();
+    errors.push(
+      `check-bundle-budget: FAILED, React runtime in the client bundle: ${rel.join(
+        ', '
+      )}. Import Video.js from @videojs/html only, never a React entry point (issue #1327).`
+    );
+  } else {
+    lines.push('check-bundle-budget: no React runtime in the client bundle');
+  }
+  const firstLoadFiles = [...new Set(closure.map((k) => manifest[k].file))];
+  const vjs = filesContaining(firstLoadFiles, readChunk, VIDEOJS_MARKER);
+  if (vjs.length > 0) {
+    errors.push(
+      `check-bundle-budget: FAILED, Video.js code in the first-load closure: ${vjs
+        .sort()
+        .join(', ')}. The player is route-scoped; load it with a dynamic import() (issue #1327).`
+    );
+  } else {
+    lines.push('check-bundle-budget: no Video.js code in the first-load closure');
+  }
   if (localeDir) {
     const bad = localeOffenders(manifest, closure, readChunk, localeSentinels(localeDir));
     if (bad.length > 0) {

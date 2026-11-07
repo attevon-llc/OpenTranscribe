@@ -7,7 +7,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { manifestClosure } from '../scripts/bundle-manifest.mjs';
+import {
+  REACT_RUNTIME_MARKER,
+  VIDEOJS_MARKER,
+  manifestClosure,
+} from '../scripts/bundle-manifest.mjs';
 import { run } from '../scripts/check-bundle-budget.mjs';
 
 const SENTENCE = 'Welcome back to the transcription workspace today';
@@ -121,5 +125,45 @@ describe('manifestClosure', () => {
       c: { file: 'c.js' },
     };
     expect(manifestClosure(m, ['a']).sort()).toEqual(['a', 'b']);
+  });
+});
+
+/**
+ * Issue #1327: Video.js 10's `@videojs/store` depends on `react` (for its React bindings), so
+ * `react` and `react-compiler-runtime` are installed with the player. They must never reach
+ * the client, and the player itself must stay out of first load (it is route-scoped).
+ */
+describe('player bundle checks', () => {
+  const lazyChunk = (f: ReturnType<typeof fixture>, body: string) =>
+    writeFileSync(join(f.root, 'chunks', 'player.js'), body);
+  const REACT_CODE = `const e=${REACT_RUNTIME_MARKER}transitional.element");export{e};`;
+  const VJS_CODE = `const s=Symbol("${VIDEOJS_MARKER}default-playback-rates");export{s};`;
+
+  it('passes the Video.js runtime in a lazily loaded chunk', () => {
+    const f = fixture(false);
+    lazyChunk(f, VJS_CODE);
+    const r = run(f);
+    expect(r.stderr).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(r.stdout.join('\n')).toContain('no React runtime in the client bundle');
+    expect(r.stdout.join('\n')).toContain('no Video.js code in the first-load closure');
+  });
+
+  it('fails when the React runtime is anywhere in the client bundle, lazy chunks included', () => {
+    const f = fixture(false);
+    lazyChunk(f, REACT_CODE);
+    const r = run(f);
+    expect(r.code).toBe(1);
+    expect(r.stderr.join('\n')).toContain('React runtime in the client bundle');
+    expect(r.stderr.join('\n')).toContain('_app/immutable/chunks/player.js');
+  });
+
+  it('fails when Video.js code is in a first-load chunk', () => {
+    const f = fixture(false);
+    writeFileSync(join(f.root, 'chunks', 'rt.js'), VJS_CODE);
+    const r = run(f);
+    expect(r.code).toBe(1);
+    expect(r.stderr.join('\n')).toContain('Video.js code in the first-load closure');
+    expect(r.stderr.join('\n')).toContain('_app/immutable/chunks/rt.js');
   });
 });

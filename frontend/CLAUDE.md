@@ -181,6 +181,10 @@ Issue #794 adds checks computed from Vite's build manifest (`.svelte-kit/output/
 root layout and error nodes; no budget, no allowance), an entry-chunk budget (5 KiB gzip), a first-load
 closure budget (142 KiB gzip) and a total-JS budget (2580 KiB gzip). Measurements and date are in the
 `check-bundle-budget.mjs` header. A missing manifest fails the gate. Tests: `src/bundleBudget.manifest.test.ts`.
+Issue #1327 adds two text checks with no budget: **no React runtime anywhere in `_app/immutable`**
+(`Symbol.for("react.`; `@videojs/store` installs `react` for bindings the HTML player never uses)
+and **no Video.js code in the first-load closure** (`@videojs/`; the player is route-scoped).
+See `src/lib/player/CLAUDE.md`.
 
 - **Headroom is printed for both metrics on every run, pass or fail**, with a `LOW` marker under
   512 B. A failing run still shows the passing metric's margin. Exit codes: `0` pass, `1` over

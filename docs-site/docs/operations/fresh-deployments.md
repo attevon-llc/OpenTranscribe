@@ -61,6 +61,7 @@ fresh mode, even when `.env` defines storage paths.**
 ./opentr.sh stop   --fresh test1   # stop containers (named volumes kept)
 ./opentr.sh status --fresh test1   # show this deployment's containers
 ./opentr.sh fresh-list             # list all fresh deployments + their volumes
+./opentr.sh fresh-list --names     # bare names, one per line (for scripts)
 ./opentr.sh fresh-destroy test1    # remove containers AND volumes (y/N confirm)
 ./opentr.sh fresh-destroy test1 --yes   # skip the prompt (required without a tty)
 ```

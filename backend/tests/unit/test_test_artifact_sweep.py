@@ -652,3 +652,14 @@ def test_the_registration_scanner_fires_on_each_plane() -> None:
     assert [(p, _registered(p, s)) for p, s, _ in minted_store_names(registered)] == [
         ("index", True)
     ]
+
+
+@pytest.mark.unit
+def test_the_red_check_tree_shape_is_swept_only_when_exactly_named_and_old() -> None:
+    me = os.getuid()
+    # `mktemp -d -t ot-redcheck.XXXXXX` -- the root CLAUDE.md red-first recipe.
+    assert sweep.classify_tmp("ot-redcheck.aB3dE9", me, _OLD, _LATE, me).tier == sweep.TIER_A
+    assert sweep.classify_tmp("ot-redcheck.aB3dE9", me, _LATE - 1, _LATE, me).tier is None
+    assert sweep.classify_tmp("ot-redcheck.aB3dE9", me + 1, _OLD, _LATE, me).tier is None
+    assert sweep.classify_tmp("ot-redcheck.aB3dE9extra", me, _OLD, _LATE, me).tier is None
+    assert sweep.classify_tmp("redcheck907", me, _OLD, _LATE, me).tier is None

@@ -105,6 +105,11 @@ test stage" and "Lessons learned"). Library and flag reference: `scripts/CLAUDE.
 A release is a repo milestone: tidy, then start the next task. Everything here is scoped and
 non-destructive by default; anything marked "owner" needs David's word.
 
+**The mechanical half is `scripts/release-tidy.sh`** (dry-run by default; `--yes` acts). It handles merged
+local branches (`git branch -d`), `rel-*` fresh stacks (`./opentr.sh fresh-destroy`) and, per `--project P`,
+`./opentr.sh test-cleanup`; it only lists worktrees and `/tmp/ot-redcheck.*` trees. Run it without `--yes`
+first and read the list; the steps below remain the reference for what it covers and for the parts it does not.
+
 1. **git**
    - `gh pr create --base master --head release/prep-X.Y.Z` and merge with a MERGE commit (never squash);
      then `git fetch origin && git merge-base --is-ancestor vX.Y.Z origin/master && echo ok`.

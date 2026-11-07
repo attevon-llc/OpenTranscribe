@@ -170,6 +170,21 @@ if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null 2>&1; t
     # Idempotent: on the patch path the branch already exists. Skip creation
     # and assert the STRONGER property below instead of re-creating it.
     echo -e "${YELLOW}${RELEASE_BRANCH} already exists on origin — this is a patch, not the first cut${NC}" >&2
+    # Issue #1371: a patch is tagged on its prep branch, which is a DESCENDANT of the release
+    # branch's tip, so the tag is not yet an ancestor of it. Advance the branch to the tag
+    # ourselves, but only as a plain fast-forward: no --force, and a branch that has moved
+    # elsewhere is left alone for the ancestry check below to refuse.
+    git fetch --quiet origin "$RELEASE_BRANCH"
+    if ! git merge-base --is-ancestor "$VERSION" "origin/${RELEASE_BRANCH}" \
+        && git merge-base --is-ancestor "origin/${RELEASE_BRANCH}" "${VERSION}^{commit}"; then
+        echo -e "${YELLOW}fast-forwarding ${RELEASE_BRANCH} to ${VERSION}${NC}" >&2
+        if ! git push origin "refs/tags/${VERSION}^{}:refs/heads/${RELEASE_BRANCH}"; then
+            record release-branch-tracks-tag fail \
+                "fast-forward push of ${RELEASE_BRANCH} to ${VERSION} was refused" \
+                "git fetch origin ${RELEASE_BRANCH} && git log --oneline ${VERSION}..origin/${RELEASE_BRANCH}"
+            fail_out 1
+        fi
+    fi
 else
     echo -e "${YELLOW}cutting ${RELEASE_BRANCH} from ${VERSION}${NC}" >&2
     # Push the tag's own COMMIT straight to a new branch ref on origin. No

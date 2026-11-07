@@ -119,7 +119,7 @@ rather than silently ignored.
 | `build` | Local images with the version build-args — **pushes nothing** | no |
 | `scan` | Trivy/Grype against the **locally built** images, plus `scripts/check-image-hygiene.sh` on every per-leg tag (`images-carry-no-dev-artifacts`: a leaked `mutants/`, test DB, cache, key or `.env` fails; an image it cannot inspect is `not-measured`) | no |
 | `rehearse` | Cold-cache model download, then fresh-install, upgrade and lite-mode scenarios; **needs the live stack stopped** (it can stop and restore it for you, with approval) | no |
-| `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD, or at an ancestor with only evidence-neutral paths changed since** (`artifacts-match-tagged-commit`; the per-stage neutral set is `evidence_neutral_paths` in `release-criteria.yaml`: CHANGELOG, `docs/**` and root `*.md` for all four, plus `docs-site/**` and `.release/**` for `test`/`rehearse` only because the docs image bakes `docs-site/` in; every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts (or confirms) `release/<major>.<minor>` from the tag | **yes** |
+| `tag` | Refuses unless the ledger's `test`/`build`/`scan`/`rehearse` steps are `done` or `overridden` **at HEAD, or at an ancestor with only evidence-neutral paths changed since** (`artifacts-match-tagged-commit`; the per-stage neutral set is `evidence_neutral_paths` in `release-criteria.yaml`: CHANGELOG, `docs/**` and root `*.md` for all four, plus `docs-site/**` and `.release/**` for `test`/`rehearse` only because the docs image bakes `docs-site/` in; every stale stage named; `--force-tag "reason"` overrides). Then annotated tag + push; cuts `release/<major>.<minor>` from the tag, or on a patch fast-forwards it to the tag (plain push, never forced; a branch that has diverged is refused with exit 1) | **yes** |
 | `publish` | Pushes the **already-built** legs (`docker push`, no rebuild, no re-scan) and assembles the `:vX.Y.Z` indexes; `:vX.Y.Z` only | **yes** |
 | `smoke` | Install from Docker Hub; verify each image's capability (CUDA vs CPU) and architecture; **needs the live stack stopped** | no |
 | `promote` | Move `:latest` **by digest** — refuses to move it backwards on a backport | **yes** |
@@ -166,7 +166,7 @@ data, so its verdict does not depend on what a long-lived database happens to ho
 preflight, the parallelism rule (`test` may run beside `build` then `scan`), detached runs, waivers and the
 evidence-neutral rules are in the release skill, `.claude/skills/release/SKILL.md` ("Running the stages");
 this page keeps the explanations. Closing a release (git, docker, scratch, records, milestone) is the skill's
-"Closing the release" checklist.
+"Closing the release" checklist; its mechanical half is `scripts/release-tidy.sh`, which lists by default and acts only with `--yes`, delegating every deletion to `git branch -d`, `./opentr.sh fresh-destroy` (`rel-*` stacks only) and `./opentr.sh test-cleanup`.
 
 ### Lessons learned (v0.6.1)
 

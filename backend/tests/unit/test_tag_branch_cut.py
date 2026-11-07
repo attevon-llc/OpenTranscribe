@@ -245,3 +245,58 @@ def test_a_tag_cut_from_somewhere_else_fails_the_ancestry_check(work: Path, orig
     assert _remote_rev(origin, "refs/heads/release/0.9") != _remote_rev(
         origin, "refs/tags/v0.9.5^{}"
     )
+
+
+@pytest.mark.unit
+def test_patch_tag_on_a_descendant_fast_forwards_the_release_branch(
+    work: Path, origin: Path
+) -> None:
+    """Issue #1371: a patch is tagged on a prep branch AHEAD of release/0.5, which has not
+    been advanced yet. The stage must fast-forward the branch to the tag itself."""
+    first = _run_tag(work, "v0.5.0")
+    assert first.returncode == 0, first.stderr
+    old_tip = _remote_rev(origin, "refs/heads/release/0.5")
+
+    (work / "CHANGELOG.md").write_text(_changelog("0.5.0", "0.5.1"))
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", "prep 0.5.1 (not pushed to release/0.5)")
+
+    proc = _run_tag(work, "v0.5.1")
+
+    assert proc.returncode == 0, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    new_tip = _remote_rev(origin, "refs/heads/release/0.5")
+    assert new_tip != old_tip
+    assert new_tip == _remote_rev(origin, "refs/tags/v0.5.1^{}")
+    # Strictly a fast-forward: the old tip is still an ancestor.
+    assert (
+        subprocess.run(
+            [GIT, "-C", str(origin), "merge-base", "--is-ancestor", old_tip, new_tip]
+        ).returncode
+        == 0
+    )
+
+
+@pytest.mark.unit
+def test_patch_tag_never_moves_a_diverged_release_branch(work: Path, origin: Path) -> None:
+    """Non-fast-forward: release/0.5 has a commit the tag does not contain. The stage must
+    refuse (exit 1) and leave the branch exactly where it was."""
+    first = _run_tag(work, "v0.5.0")
+    assert first.returncode == 0, first.stderr
+
+    _git(work, "checkout", "-q", "-b", "side", "v0.5.0")
+    (work / "hotfix-only.txt").write_text("only on release/0.5")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", "hotfix only on the release branch")
+    _git(work, "push", "-q", "origin", "HEAD:refs/heads/release/0.5")
+    diverged_tip = _remote_rev(origin, "refs/heads/release/0.5")
+
+    _git(work, "checkout", "-q", "master")
+    (work / "CHANGELOG.md").write_text(_changelog("0.5.0", "0.5.1"))
+    _git(work, "add", "-A")
+    _git(work, "commit", "-q", "-m", "prep 0.5.1 from master")
+
+    proc = _run_tag(work, "v0.5.1")
+
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "cut from somewhere else" in proc.stderr
+    assert _remote_rev(origin, "refs/heads/release/0.5") == diverged_tip

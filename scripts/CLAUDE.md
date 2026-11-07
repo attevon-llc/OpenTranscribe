@@ -355,3 +355,9 @@ The tag grammar (capability in the repository, restated in the tag, issue #680),
   gitignored but present on disk.
 - Most `benchmark_*` / `vram-probe-*` / `spike-*` files are accreted one-off experiments;
   `run_benchmark.py` (via `./opentr.sh bench`) is the maintained orchestrator.
+
+- `release-tidy.sh` (issue #1370) — dry-run by default, `--yes` acts; every deletion is delegated
+  (`git branch -d` for merged branches, `./opentr.sh fresh-list --names` + `fresh-destroy` for `rel-*`
+  stacks only, `test-cleanup --project P`, and `cleanup-test-data.py --planes tmp` for registered
+  `/tmp` shapes incl. `ot-redcheck.*`). A failing `fresh-list --names` aborts with exit 1 rather than
+  listing nothing.

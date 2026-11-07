@@ -108,6 +108,7 @@ exemptions (below).
 ./opentr.sh start dev --fresh test1 [--port-offset 100] [--seed-benchmark]
 ./opentr.sh stop|status --fresh test1        # stop keeps volumes
 ./opentr.sh fresh-list                       # list fresh deployments + volumes
+./opentr.sh fresh-list --names               # bare names, one per line (scripts/release-tidy.sh)
 ./opentr.sh fresh-destroy test1              # containers+volumes (y/N; the ONLY destructive fresh op)
 ./opentr.sh data-paths                       # resolved LIVE data paths — CHECK before deleting anything
 ./opentr.sh start dev --dry-run              # print compose files + command, start nothing

@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In right-to-left languages the floating preview player on the search and speakers pages stayed in the bottom-right corner, over the filter sidebar; it now sits in the bottom-left corner, mirrored like the rest of the page.
 - The floating preview player on the search and speakers pages showed its time as "0:04 // 0:05", and in right-to-left languages as total before elapsed; it now reads "0:04 / 0:05" in every language.
 - The audio player's settings menu opened only 29 pixels tall, cutting off Speed; it now opens to its full height above the player.
 - The gallery's grid and list views showed a file's status in English (for example "Completed") in every language; they now use the interface language.

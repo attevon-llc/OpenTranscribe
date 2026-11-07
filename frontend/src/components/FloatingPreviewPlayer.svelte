@@ -106,8 +106,8 @@
   /* Sticky Floating Preview Player */
   .sticky-preview {
     position: fixed;
-    bottom: 1rem;
-    right: 1rem;
+    inset-block-end: var(--space-4);
+    inset-inline-end: var(--space-4);
     width: 400px;
     max-width: calc(100vw - 2rem);
     background: var(--surface-color, #fff);
@@ -196,7 +196,7 @@
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
-    margin-left: 0.5rem;
+    margin-inline-start: var(--space-2);
   }
 
   .preview-detail-link {
@@ -238,8 +238,8 @@
   @media (max-width: 768px) {
     .sticky-preview {
       width: calc(100vw - 1rem);
-      right: 0.5rem;
-      bottom: 0.5rem;
+      inset-inline-end: var(--space-2);
+      inset-block-end: var(--space-2);
     }
 
     .preview-header {
@@ -248,7 +248,7 @@
     }
 
     .preview-actions {
-      margin-left: 0;
+      margin-inline-start: 0;
     }
   }
 </style>

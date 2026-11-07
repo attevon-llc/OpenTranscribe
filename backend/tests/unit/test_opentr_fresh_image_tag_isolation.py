@@ -214,26 +214,19 @@ def _make_stubs(tmp_path: Path) -> Path:
     return bin_dir
 
 
-_BASE_PORTS = range(5173, 5184)
+def _make_port_probe(tmp_path: Path, *, busy: bool) -> Path:
+    """An ``OT_PORT_PROBE`` stub: logs every port it is asked about, then answers.
 
-
-def _free_port_offset(start: int) -> str:
-    """The first ``--port-offset`` at or after ``start`` whose shifted ports nothing on this host holds.
-
-    The offsets used to be literals (4100/4200/4300). On a host that runs other projects one of them
-    lands on a bound port (4300 + 5181 = 9481 is another application's gateway here) and the
-    opentr.sh port-collision guard refuses the dry run, failing a test that is about image tags.
+    The image-tag tests are about tags, so the port-collision guard must not read the real
+    host (another project holding a shifted port used to fail them).
     """
-    import socket
-
-    for offset in range(start, start + 4000, 100):
-        for base in _BASE_PORTS:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-                if probe.connect_ex(("127.0.0.1", base + offset)) == 0:
-                    break
-        else:
-            return str(offset)
-    raise AssertionError(f"no free --port-offset found from {start}")
+    probe = tmp_path / "port_probe.sh"
+    probe.write_text(
+        f'#!/usr/bin/env bash\necho "$1" >> "{tmp_path}/probed_ports"\nexit {0 if busy else 1}\n',
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+    return probe
 
 
 def _dry_run(tmp_path: Path, args: list[str], *, extra_env: dict[str, str] | None = None) -> str:
@@ -242,6 +235,7 @@ def _dry_run(tmp_path: Path, args: list[str], *, extra_env: dict[str, str] | Non
     env = {
         "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
         "HOME": str(tmp_path),
+        "OT_PORT_PROBE": str(_make_port_probe(tmp_path, busy=False)),
         **(extra_env or {}),
     }
     proc = subprocess.run(
@@ -291,7 +285,7 @@ def test_fresh_dry_run_resolves_to_a_project_scoped_tag(tmp_path: Path):
             "--fresh",
             "tagiso",
             "--port-offset",
-            _free_port_offset(4100),
+            "4100",
             "--dry-run",
         ],
     )
@@ -330,14 +324,37 @@ def test_two_different_fresh_names_resolve_to_two_different_tags(tmp_path: Path)
     """Two independent fresh stacks must not collide with each other either."""
     stdout_a = _dry_run(
         tmp_path / "a",
-        ["start", "dev", "--fresh", "alpha", "--port-offset", _free_port_offset(4200), "--dry-run"],
+        ["start", "dev", "--fresh", "alpha", "--port-offset", "4200", "--dry-run"],
     )
     stdout_b = _dry_run(
         tmp_path / "b",
-        ["start", "dev", "--fresh", "bravo", "--port-offset", _free_port_offset(4300), "--dry-run"],
+        ["start", "dev", "--fresh", "bravo", "--port-offset", "4300", "--dry-run"],
     )
     tag_a = _dry_run_tag(stdout_a)
     tag_b = _dry_run_tag(stdout_b)
     assert tag_a == "otfresh-alpha"
     assert tag_b == "otfresh-bravo"
     assert tag_a != tag_b
+
+
+def test_port_probe_hook_is_what_the_collision_guard_consults(tmp_path: Path):
+    """Proves the stub is live: a probe that reports every port busy must make the fresh
+    guard refuse, and the ports it was asked about must be the offset ones."""
+    checkout = _make_checkout(tmp_path)
+    bin_dir = _make_stubs(tmp_path)
+    probe = _make_port_probe(tmp_path, busy=True)
+    proc = subprocess.run(
+        ["./opentr.sh", "start", "dev", "--fresh", "probed", "--port-offset", "4100", "--dry-run"],
+        cwd=str(checkout),
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "HOME": str(tmp_path),
+            "OT_PORT_PROBE": str(probe),
+        },
+        timeout=120,
+    )
+    assert proc.returncode != 0, proc.stdout
+    asked = (tmp_path / "probed_ports").read_text().split()
+    assert "9273" in asked, asked

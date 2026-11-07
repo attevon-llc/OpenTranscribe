@@ -22,6 +22,8 @@
 
   export let isOpen = false;
   export let scope: ChatScope = emptyScope();
+  /** The conversation's pinned model; the estimate measures against its window (#1364). */
+  export let llmConfigUuid: string | null = null;
 
   const dispatch = createEventDispatcher<{ confirm: ChatScope; close: void }>();
 
@@ -66,7 +68,7 @@
     clearTimeout(estimateTimer);
     estimateTimer = setTimeout(async () => {
       try {
-        estimate = await estimateContext(draft);
+        estimate = await estimateContext(draft, llmConfigUuid);
       } catch {
         estimate = null;
       }

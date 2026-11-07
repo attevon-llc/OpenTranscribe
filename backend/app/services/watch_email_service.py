@@ -27,6 +27,9 @@ from email.mime.text import MIMEText
 from typing import TYPE_CHECKING
 
 from app.utils.encryption import decrypt_api_key
+from app.utils.smtp_transport import SMTP_DEFAULT_PORT
+from app.utils.smtp_transport import SMTP_IMPLICIT_SSL_PORT
+from app.utils.smtp_transport import smtp_transport_problem
 
 if TYPE_CHECKING:
     from app.models.email_notification_config import EmailNotificationConfig
@@ -87,7 +90,7 @@ def _smtp_params(
     """Return (host, port, use_tls, username, password) for SMTP/Exchange."""
     if config.provider == "exchange":
         host = config.exchange_server
-        port = config.smtp_port or 587
+        port = config.smtp_port or SMTP_DEFAULT_PORT
         use_tls = True
         username = config.exchange_username
         password = (
@@ -99,7 +102,7 @@ def _smtp_params(
             username = f"{config.exchange_domain}\\{username}"
     else:
         host = config.smtp_host
-        port = config.smtp_port or 587
+        port = config.smtp_port or SMTP_DEFAULT_PORT
         use_tls = bool(config.smtp_use_tls)
         username = config.smtp_username
         password = (
@@ -113,7 +116,7 @@ def _smtp_params(
 def _smtp_connect(
     host: str, port: int, use_tls: bool, timeout: int = DEFAULT_TIMEOUT
 ) -> smtplib.SMTP:
-    if port == 465:
+    if port == SMTP_IMPLICIT_SSL_PORT:
         return smtplib.SMTP_SSL(host, port, timeout=timeout, context=ssl.create_default_context())
     smtp = smtplib.SMTP(host, port, timeout=timeout)
     if use_tls:
@@ -131,6 +134,9 @@ def _send_smtp(
     host, port, use_tls, username, password = _smtp_params(config)
     if not host:
         return False, "SMTP host not configured"
+    problem = smtp_transport_problem(host, port, use_tls, bool(username and password))
+    if problem:
+        return False, problem
     sender = config.from_address or username or "noreply@opentranscribe"
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -153,6 +159,9 @@ def _test_smtp(config: EmailNotificationConfig) -> tuple[bool, str]:
     host, port, use_tls, username, password = _smtp_params(config)
     if not host:
         return False, "Host not configured"
+    problem = smtp_transport_problem(host, port, use_tls, bool(username and password))
+    if problem:
+        return False, problem
     smtp = _smtp_connect(host, port, use_tls)
     try:
         if username and password:

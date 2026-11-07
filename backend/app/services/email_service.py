@@ -43,6 +43,9 @@ from app.core.constants import AUTH_EMAIL_CONFIG_SETTING_KEY
 from app.core.constants import DEFAULT_AUTH_EMAIL_CONFIG_UUID
 from app.core.constants import DEFAULT_FRONTEND_URL
 from app.core.exceptions import EmailDeliveryError
+from app.services import watch_email_service
+from app.utils.smtp_transport import SMTP_IMPLICIT_SSL_PORT
+from app.utils.smtp_transport import smtp_transport_problem
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -55,9 +58,6 @@ logger = logging.getLogger(__name__)
 #: blocks the worker thread that is servicing a login/reset request.
 SMTP_TIMEOUT = 10
 
-#: Implicit-SSL submission port. Unlike STARTTLS the session is wrapped in TLS
-#: from the first byte, so it needs SMTP_SSL rather than SMTP + starttls().
-SMTP_IMPLICIT_SSL_PORT = 465
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]*\w")
 
@@ -449,8 +449,6 @@ class EmailService:
         config: EmailNotificationConfig, to: str, subject: str, html_body: str
     ) -> None:
         """Send through the designated DB-backed provider."""
-        from app.services import watch_email_service
-
         ok, detail = watch_email_service.send_email(
             config, [to], subject, html_body, timeout=SMTP_TIMEOUT
         )
@@ -479,6 +477,14 @@ class EmailService:
 
         server = None
         try:
+            problem = smtp_transport_problem(
+                settings.SMTP_HOST,
+                settings.SMTP_PORT,
+                bool(settings.SMTP_USE_TLS),
+                bool(settings.SMTP_USER),
+            )
+            if problem:
+                raise EmailDeliveryError(problem)
             server = _env_smtp_connect()
             if settings.SMTP_USER:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)

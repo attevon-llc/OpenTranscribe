@@ -32,6 +32,8 @@ from app.schemas.email_notification import EmailTestResponse
 from app.services.auth_mail_config_service import IN_USE_MESSAGE
 from app.services.auth_mail_config_service import is_designated
 from app.utils.encryption import encrypt_api_key
+from app.utils.smtp_transport import SMTP_DEFAULT_PORT
+from app.utils.smtp_transport import smtp_transport_problem
 
 router = APIRouter()
 
@@ -147,6 +149,12 @@ def create_email_config(
     return _email_to_response(cfg)
 
 
+#: Fields that decide whether credentials or mail would cross the wire unencrypted.
+_SMTP_TRANSPORT_FIELDS = frozenset(
+    {"smtp_host", "smtp_port", "smtp_use_tls", "smtp_username", "smtp_password"}
+)
+
+
 @router.put("/email-configs/{config_uuid}", response_model=EmailConfigResponse)
 def update_email_config(
     config_uuid: str,
@@ -176,6 +184,18 @@ def update_email_config(
     # them altogether, visible only as an ERROR log. Refuse and name the remedy.
     if payload.get("is_enabled") is False and is_designated(db, str(cfg.uuid)):
         raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
+    if cfg.provider == "smtp" and _SMTP_TRANSPORT_FIELDS & payload.keys():
+        problem = smtp_transport_problem(
+            payload.get("smtp_host", cfg.smtp_host),
+            payload.get("smtp_port", cfg.smtp_port) or SMTP_DEFAULT_PORT,
+            bool(payload.get("smtp_use_tls", cfg.smtp_use_tls)),
+            bool(
+                payload.get("smtp_username", cfg.smtp_username)
+                and (payload.get("smtp_password") or cfg.encrypted_smtp_password)
+            ),
+        )
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
     secret_map = {
         "smtp_password": "encrypted_smtp_password",
         "m365_client_secret": "encrypted_m365_client_secret",

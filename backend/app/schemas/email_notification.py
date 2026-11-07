@@ -8,6 +8,9 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import model_validator
 
+from app.utils.smtp_transport import SMTP_DEFAULT_PORT
+from app.utils.smtp_transport import smtp_transport_problem
+
 
 class EmailProvider(StrEnum):
     """Supported email notification providers."""
@@ -49,6 +52,14 @@ class EmailConfigCreate(BaseModel):
         if self.provider == EmailProvider.SMTP:
             if not self.smtp_host:
                 raise ValueError("SMTP provider requires smtp_host")
+            problem = smtp_transport_problem(
+                self.smtp_host,
+                self.smtp_port or SMTP_DEFAULT_PORT,
+                self.smtp_use_tls,
+                bool(self.smtp_username and self.smtp_password),
+            )
+            if problem:
+                raise ValueError(problem)
         elif self.provider == EmailProvider.M365:
             missing = [f for f in ("m365_tenant_id", "m365_client_id") if not getattr(self, f)]
             if missing:

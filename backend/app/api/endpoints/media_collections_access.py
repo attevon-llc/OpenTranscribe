@@ -19,9 +19,9 @@ from app.models.collection import Collection
 from app.models.prompt import SummaryPrompt
 from app.schemas.content_hold import HoldSummary
 from app.services.content_audit import AuditedResource
+from app.services.content_hold_queries import collection_hold_states
 from app.services.content_hold_queries import collection_hold_summaries
 from app.services.content_hold_service import record_hold_refusal
-from app.services.hold_guard import HELD_BY_ORGANIZATION
 from app.services.hold_guard import HoldState
 from app.services.hold_guard import refusal_detail
 from app.services.request_context import RequestContext
@@ -76,10 +76,17 @@ def _tenant_scope(collection: Collection) -> str:
 
 
 def _collection_held(db: Session, collection: Collection, ctx: RequestContext) -> HoldSummary:
-    """The hold badge facts for one collection (hold uuids only for its organization's admin)."""
-    return collection_hold_summaries(db, [collection.id], reveal_uuids=ctx.is_org_admin).get(
-        int(collection.id), HoldSummary()
-    )
+    """The hold badge facts for one collection.
+
+    Organization hold uuids only for its organization's admin, platform ones only for an
+    instance administrator.
+    """
+    return collection_hold_summaries(
+        db,
+        [collection.id],
+        reveal_uuids=ctx.is_org_admin,
+        reveal_platform_uuids=ctx.user.is_admin,
+    ).get(int(collection.id), HoldSummary())
 
 
 def _hold_refusal(
@@ -87,24 +94,26 @@ def _hold_refusal(
 ) -> HTTPException:
     """409 ``FILE_UNDER_LEGAL_HOLD`` for a collection change a hold forbids (and audit it).
 
-    ``held_by`` is for everybody; the hold uuids only for the holding organization's admin.
+    ``held_by`` is for everybody; the organization hold uuids only for the holding
+    organization's admin, the platform ones only for an instance administrator.
     """
+    state = collection_hold_states(db, [collection.id]).get(
+        int(collection.id), HoldState(platform_flag=False)
+    )
     record_hold_refusal(
         db,
         None,
         ctx.user,
         AuditedResource.collection(collection),
         action=action,
-        held_by=[HELD_BY_ORGANIZATION],
-    )
-    actual = collection_hold_summaries(db, [collection.id], reveal_uuids=True).get(
-        int(collection.id), HoldSummary()
+        held_by=state.held_by,
     )
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
         detail=refusal_detail(
-            HoldState(platform=False, org_hold_uuids=tuple(actual.hold_uuids)),
+            state,
             reveal_uuids=ctx.is_org_admin,
+            reveal_platform_uuids=ctx.user.is_admin,
             message=message,
         ),
     )

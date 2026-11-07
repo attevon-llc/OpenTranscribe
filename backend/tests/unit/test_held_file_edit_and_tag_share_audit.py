@@ -96,7 +96,7 @@ def _events(log: MagicMock) -> list[dict[str, Any]]:
 
 def test_an_edit_on_an_org_held_file_stages_a_transcript_edit_event(monkeypatch, staged):
     file = _file()
-    _hold(monkeypatch, file.id, HoldState(platform=False, org_hold_uuids=("hold-1",)))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=False, org_hold_uuids=("hold-1",)))
 
     written = record_edit_on_held_file(
         MagicMock(),
@@ -125,7 +125,7 @@ def test_an_edit_on_an_org_held_file_stages_a_transcript_edit_event(monkeypatch,
 
 def test_a_platform_hold_is_recorded_as_such(monkeypatch, staged):
     file = _file(organization_id=None)
-    _hold(monkeypatch, file.id, HoldState(platform=True))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=True))
 
     record_edit_on_held_file(
         MagicMock(), None, _actor(), file, kind="segment_speaker", segment_uuid="seg-2"
@@ -150,7 +150,7 @@ def test_an_edit_on_a_free_file_stages_nothing(monkeypatch, staged):
 
 def test_the_event_never_carries_text_titles_or_values(monkeypatch, staged):
     file = _file()
-    _hold(monkeypatch, file.id, HoldState(platform=False, org_hold_uuids=("h",)))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=False, org_hold_uuids=("h",)))
 
     record_edit_on_held_file(
         MagicMock(),
@@ -171,7 +171,7 @@ def test_the_event_never_carries_text_titles_or_values(monkeypatch, staged):
 def test_a_sink_outage_never_reaches_the_edit(monkeypatch, audit_log):
     """Staging writes a row in the edit's transaction; the sink is not touched until later."""
     file = _file()
-    _hold(monkeypatch, file.id, HoldState(platform=True))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=True))
     deliver = MagicMock(name="deliver", side_effect=RuntimeError("down"))
     monkeypatch.setattr(audit_outbox.audit_logger, "deliver", deliver)
     db = MagicMock(name="db")
@@ -205,7 +205,7 @@ def test_a_failing_hold_lookup_fails_the_edit_instead_of_committing_it_unrecorde
 
 def test_a_failing_stage_fails_the_edit(monkeypatch):
     file = _file()
-    _hold(monkeypatch, file.id, HoldState(platform=True))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=True))
     monkeypatch.setattr(audit_outbox, "stage", MagicMock(side_effect=RuntimeError("no insert")))
     with pytest.raises(RuntimeError, match="no insert"):
         record_edit_on_held_file(
@@ -255,7 +255,7 @@ def _edit_text(monkeypatch, file: Any, segment: Any):
 
 def test_editing_segment_text_on_a_held_file_stages_an_audit_event(monkeypatch, staged):
     file, segment = _file(), _segment()
-    _hold(monkeypatch, file.id, HoldState(platform=False, org_hold_uuids=("hold-1",)))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=False, org_hold_uuids=("hold-1",)))
 
     result = _edit_text(monkeypatch, file, segment)
 
@@ -289,7 +289,7 @@ def _order_recorder(monkeypatch: pytest.MonkeyPatch, db: MagicMock) -> list[str]
 
 def test_the_segment_text_event_is_staged_before_the_edit_commits(monkeypatch):
     file, segment = _file(), _segment()
-    _hold(monkeypatch, file.id, HoldState(platform=True))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=True))
     monkeypatch.setattr(crud, "get_media_file_by_uuid", lambda *a, **k: file)
     db = MagicMock(name="db")
     db.query.return_value.options.return_value.filter.return_value.first.return_value = segment
@@ -334,7 +334,7 @@ def test_reassigning_a_speaker_on_a_held_file_stages_an_audit_event_before_the_c
     monkeypatch, speaker_edit_collaborators
 ):
     file, segment = speaker_edit_collaborators
-    _hold(monkeypatch, file.id, HoldState(platform=True))
+    _hold(monkeypatch, file.id, HoldState(platform_flag=True))
     db = MagicMock(name="db")
     db.query.return_value.filter.return_value.first.return_value = file
     ctx = RequestContext(user=cast("Any", _actor()), org_id=7, org_role=None)

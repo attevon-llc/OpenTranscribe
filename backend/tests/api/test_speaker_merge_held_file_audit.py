@@ -53,7 +53,7 @@ def _merge(client, headers, db_session, normal_user, seams, monkeypatch, *, held
         )
     )
     db_session.commit()
-    state = {file_a.id: HoldState(platform=True)} if held else {}
+    state = {file_a.id: HoldState(platform_flag=True)} if held else {}
     monkeypatch.setattr(content_hold_service, "hold_states", lambda db, ids: state)
     ids = (str(file_a.uuid), str(source.uuid), str(target.uuid))
     headers = {k: v for k, v in headers.items() if not k.startswith("_")}

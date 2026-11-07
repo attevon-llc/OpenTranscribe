@@ -256,3 +256,32 @@ def test_email_config_list_reports_how_many_sources_use_each_config(
     by_uuid = {c["uuid"]: c for c in response.json()["configs"]}
     assert by_uuid[str(config.uuid)]["linked_source_count"] == 2
     assert by_uuid[str(unused.uuid)]["linked_source_count"] == 0
+
+
+def test_a_failed_send_is_logged_with_provider_and_config_not_discarded(
+    db_session, normal_user, caplog, _scoped_session
+):
+    """``send_email`` reports failure as ``(False, reason)``; the task used to drop it.
+
+    An administrator whose mail never arrives had no signal anywhere. The warning names
+    the config and provider and carries the reason with recipient addresses masked.
+    """
+    source = _make_source(db_session, normal_user)
+    config = _make_email_config(db_session, default_recipients="ops@example.com")
+    _link(db_session, source, config)
+
+    with (
+        patch(
+            "app.services.watch_email_service.send_email",
+            return_value=(False, "refused for ops@example.com"),
+        ),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = watch_source_tasks.send_notification(source.id, {"errors": 0, "imported": 1})
+
+    assert result == {"sent": 0}
+    failures = [r.getMessage() for r in caplog.records if "was not delivered" in r.getMessage()]
+    assert len(failures) == 1
+    assert config.name in failures[0]
+    assert "smtp" in failures[0]
+    assert "ops@example.com" not in failures[0]

@@ -32,6 +32,8 @@ from app.schemas.email_notification import EmailTestResponse
 from app.services.auth_mail_config_service import IN_USE_MESSAGE
 from app.services.auth_mail_config_service import is_designated
 from app.utils.encryption import encrypt_api_key
+from app.utils.smtp_transport import SMTP_DEFAULT_PORT
+from app.utils.smtp_transport import smtp_transport_problem
 
 router = APIRouter()
 
@@ -147,6 +149,12 @@ def create_email_config(
     return _email_to_response(cfg)
 
 
+#: Fields that decide whether credentials or mail would cross the wire unencrypted.
+_SMTP_TRANSPORT_FIELDS = frozenset(
+    {"smtp_host", "smtp_port", "smtp_use_tls", "smtp_username", "smtp_password"}
+)
+
+
 @router.put("/email-configs/{config_uuid}", response_model=EmailConfigResponse)
 def update_email_config(
     config_uuid: str,
@@ -176,6 +184,18 @@ def update_email_config(
     # them altogether, visible only as an ERROR log. Refuse and name the remedy.
     if payload.get("is_enabled") is False and is_designated(db, str(cfg.uuid)):
         raise HTTPException(status_code=409, detail=IN_USE_MESSAGE)
+    if cfg.provider == "smtp" and _SMTP_TRANSPORT_FIELDS & payload.keys():
+        problem = smtp_transport_problem(
+            payload.get("smtp_host", cfg.smtp_host),
+            payload.get("smtp_port", cfg.smtp_port) or SMTP_DEFAULT_PORT,
+            bool(payload.get("smtp_use_tls", cfg.smtp_use_tls)),
+            bool(
+                payload.get("smtp_username", cfg.smtp_username)
+                and (payload.get("smtp_password") or cfg.encrypted_smtp_password)
+            ),
+        )
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
     secret_map = {
         "smtp_password": "encrypted_smtp_password",
         "m365_client_secret": "encrypted_m365_client_secret",
@@ -226,11 +246,13 @@ def test_email_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> EmailTestResponse:
-    """Send a live test message through one email config (super_admin only).
+    """Test the connection and login of one email config (super_admin only).
 
     Consumed by the admin Settings UI's "Test" button and by ops verifying a mailer
-    after a credential rotation. Talks to the real SMTP / Graph / Exchange endpoint,
-    so it is slow and has an external side effect.
+    after a credential rotation. Connects and authenticates against the real SMTP /
+    Graph / Exchange endpoint (no message is sent), so it is slow and reaches an
+    external service; a successful test proves reachability and credentials, not
+    that a message is accepted for delivery.
 
     The outcome is persisted onto the config (``last_tested_at``, ``test_status``,
     ``test_message``) so the UI can show the last known state without re-testing.

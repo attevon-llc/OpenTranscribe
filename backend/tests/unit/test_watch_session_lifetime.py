@@ -149,7 +149,7 @@ def test_send_notification_sends_mail_outside_the_session(db_session, normal_use
     sends: list[tuple] = []
     lazy_loads: list[str] = []
 
-    def _send_email(cfg, recipients, subject, html_body, timeout=30):
+    def _send_email(cfg, recipients, subject, html_body, timeout=30, text_body=None):
         # SMTP/Graph round trip: 30 s timeout per config.
         tracker.observe("send_email")
         # Reading a column off the detached config must still work...

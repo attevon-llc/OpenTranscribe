@@ -426,6 +426,62 @@ def _skip_celery_dispatch():
         yield
 
 
+@pytest.fixture
+def auth_mail_dispatches(monkeypatch):
+    """Record every ``auth_mail.*`` task dispatch without running or publishing it.
+
+    Returns the list ``[(task_name, args, kwargs), ...]``. The password-reset,
+    verification, invitation and security-notice mail all leave the request through these
+    tasks, so what a request dispatched is what it did about mail.
+    """
+    from types import SimpleNamespace
+
+    from app.core.celery import celery_app
+
+    calls: list[tuple[str, tuple, dict]] = []
+
+    def fake_send_task(name, args=None, kwargs=None, **_options):
+        if name.startswith("auth_mail."):
+            calls.append((name, tuple(args or ()), dict(kwargs or {})))
+        return SimpleNamespace(id="auth-mail-test-task")
+
+    monkeypatch.setattr(celery_app, "send_task", fake_send_task)
+    return calls
+
+
+@pytest.fixture
+def run_auth_mail_inline(monkeypatch, db_session):
+    """Run ``auth_mail.*`` tasks in-process at dispatch time (other tasks stay no-ops).
+
+    For round-trip tests that need the mail the task builds, e.g. to read the single-use
+    token out of it. Retries run eagerly, without the backoff delay. The tasks share the
+    test's own session, because the request under test has not committed its rows to any
+    other connection.
+    """
+    import contextlib
+    import importlib
+
+    from app.core.celery import celery_app
+
+    importlib.import_module("app.tasks.auth_mail_tasks")  # registers the tasks on celery_app
+
+    @contextlib.contextmanager
+    def shared_scope():
+        yield db_session
+        db_session.commit()
+
+    monkeypatch.setattr("app.tasks.auth_mail_tasks.session_scope", shared_scope)
+
+    other = celery_app.send_task
+
+    def send_task(name, args=None, kwargs=None, **options):
+        if name.startswith("auth_mail."):
+            return celery_app.tasks[name].apply(args=args, kwargs=kwargs, throw=True)
+        return other(name, args, kwargs, **options)
+
+    monkeypatch.setattr(celery_app, "send_task", send_task)
+
+
 @pytest.fixture(autouse=True)
 def _release_burst_connections():
     """Close the idle connections a concurrent test left in the shared app engine's pool.

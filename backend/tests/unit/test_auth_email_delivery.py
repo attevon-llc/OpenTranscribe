@@ -129,13 +129,14 @@ class RecordingWatchMailer:
         self.calls = []
         self.result = result
 
-    def send_email(self, config, recipients, subject, html_body, timeout=30):
+    def send_email(self, config, recipients, subject, html_body, timeout=30, text_body=None):
         self.calls.append(
             {
                 "config": config,
                 "recipients": recipients,
                 "subject": subject,
                 "html": html_body,
+                "text": text_body,
                 "timeout": timeout,
             }
         )
@@ -471,6 +472,9 @@ class _CallerSession:
     def add(self, row):
         self.added.append(row)
 
+    def delete(self, row):
+        self.added.remove(row)
+
     def commit(self):
         self.commits += 1
 
@@ -484,14 +488,13 @@ class _FakeUser:
         self.email_verified = False
 
 
-class TestCallersOnAntiEnumerationPathsAbsorb:
-    """A mail outage must not become an account-existence oracle.
+class TestDeliveryTasksAbsorb:
+    """A mail outage must not escape the delivery bodies the auth-mail tasks run.
 
-    ``request_password_reset`` and ``resend_verification`` return silently for an
-    unknown address, so if a *known* address raised past them the response codes
-    would differ (200 vs 500) and disclose which accounts exist. The sender is
-    deliberately loud (see ``TestFailureIsVisibleWithoutDisclosingTheAddress``);
-    these two callers are the ones that must swallow it.
+    The request only dispatches a task, so the response cannot depend on delivery at all;
+    what remains is that a permanent failure is logged and absorbed, and that a transient
+    one is re-raised for the task to retry until the last attempt, where it is absorbed.
+    The sender is deliberately loud (see ``TestFailureIsVisibleWithoutDisclosingTheAddress``).
     """
 
     def test_password_reset_swallows_a_delivery_failure(self, monkeypatch, caplog):
@@ -504,7 +507,7 @@ class TestCallersOnAntiEnumerationPathsAbsorb:
         caplog.set_level(logging.ERROR)
         session = _CallerSession(_FakeUser())
 
-        password_reset.request_password_reset(cast(Any, session), RECIPIENT, "203.0.113.5")
+        password_reset.deliver_password_reset(cast(Any, session), 7, "203.0.113.5")
 
         # The token was still persisted, so a later retry/manual send works.
         assert session.commits == 1
@@ -520,12 +523,42 @@ class TestCallersOnAntiEnumerationPathsAbsorb:
         caplog.set_level(logging.ERROR)
         session = _CallerSession(_FakeUser())
 
-        email_verification.issue_verification_token(
-            cast(Any, session), cast(Any, _FakeUser()), "203.0.113.5"
-        )
+        email_verification.deliver_verification(cast(Any, session), 7, "203.0.113.5")
 
         assert session.commits == 1
         assert any("could not be delivered" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.parametrize(
+        ("module_name", "sender", "call"),
+        [
+            ("password_reset", "send_password_reset", "deliver_password_reset"),
+            ("email_verification", "send_email_verification", "deliver_verification"),
+        ],
+    )
+    def test_a_transient_failure_retries_until_the_last_attempt(
+        self, monkeypatch, module_name, sender, call
+    ):
+        import importlib
+
+        from app.core.exceptions import EmailTransientError
+
+        module = importlib.import_module(f"app.auth.{module_name}")
+
+        def flaky(*_args, **_kwargs):
+            raise EmailTransientError("connection reset")
+
+        monkeypatch.setattr(module.email_service, sender, flaky)
+        deliver = getattr(module, call)
+
+        retried = _CallerSession(_FakeUser())
+        with pytest.raises(EmailTransientError):
+            deliver(cast(Any, retried), 7, "203.0.113.5", final_attempt=False)
+        # The undelivered token is dropped so the retry does not spend the hourly budget.
+        assert retried.added == []
+
+        last = _CallerSession(_FakeUser())
+        deliver(cast(Any, last), 7, "203.0.113.5", final_attempt=True)
+        assert last.added == []
 
     def test_invitation_does_not_absorb(self, no_env_smtp):
         """The counterpoint: an admin issuing an invite must learn it never went."""

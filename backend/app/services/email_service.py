@@ -33,8 +33,6 @@ import re
 import smtplib
 import ssl
 from collections.abc import Callable
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import TYPE_CHECKING
 
 from app.auth.utils import mask_identifier as _mask_email
@@ -43,6 +41,10 @@ from app.core.constants import AUTH_EMAIL_CONFIG_SETTING_KEY
 from app.core.constants import DEFAULT_AUTH_EMAIL_CONFIG_UUID
 from app.core.constants import DEFAULT_FRONTEND_URL
 from app.core.exceptions import EmailDeliveryError
+from app.core.exceptions import EmailTransientError
+from app.services import watch_email_service
+from app.utils.smtp_transport import SMTP_IMPLICIT_SSL_PORT
+from app.utils.smtp_transport import smtp_transport_problem
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -55,9 +57,6 @@ logger = logging.getLogger(__name__)
 #: blocks the worker thread that is servicing a login/reset request.
 SMTP_TIMEOUT = 10
 
-#: Implicit-SSL submission port. Unlike STARTTLS the session is wrapped in TLS
-#: from the first byte, so it needs SMTP_SSL rather than SMTP + starttls().
-SMTP_IMPLICIT_SSL_PORT = 465
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]*\w")
 
@@ -66,10 +65,16 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]*\w")
 #: lives in ``core/exceptions`` with the rest of the hierarchy because
 #: ``main.py`` maps it to a 503 — an undeliverable message is a service failure,
 #: not a bug in the request.
-__all__ = ["EmailDeliveryError", "EmailService", "email_service", "load_auth_mail_config"]
+__all__ = [
+    "EmailDeliveryError",
+    "EmailService",
+    "email_service",
+    "load_auth_mail_config",
+    "scrub_addresses",
+]
 
 
-def _scrub(detail: str) -> str:
+def scrub_addresses(detail: str) -> str:
     """Mask any email address embedded in a provider/SMTP error string.
 
     ``SMTPRecipientsRefused`` and Graph error bodies quote the recipient back at
@@ -127,7 +132,7 @@ def _shell(heading: str, inner: str) -> str:
             {inner}
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;">
             <p style="color: #6b7280; font-size: 12px;">
-                This is an automated message from {settings.PROJECT_NAME}.
+                This is an automated message from {html.escape(settings.PROJECT_NAME)}.
             </p>
         </body>
         </html>
@@ -137,9 +142,9 @@ def _shell(heading: str, inner: str) -> str:
 def _button(url: str, label: str) -> str:
     """Render the call-to-action button carrying a single-use link."""
     return (
-        f'<p><a href="{url}" style="display: inline-block; padding: 12px 24px; '
+        f'<p><a href="{html.escape(url)}" style="display: inline-block; padding: 12px 24px; '
         "background-color: #4f46e5; color: white; text-decoration: none; "
-        f'border-radius: 6px;">{label}</a></p>'
+        f'border-radius: 6px;">{html.escape(label)}</a></p>'
     )
 
 
@@ -164,14 +169,13 @@ class EmailService:
 
         Raises:
             EmailDeliveryError: The message was not handed to a transport. The
-                error names no address, but note that this call is only reached
-                for an account that exists — the caller
-                (``auth/password_reset.request_password_reset``) owns keeping the
-                HTTP response uniform so a mail outage cannot become an
-                account-existence oracle.
+                error names no address. It is raised inside the ``auth_mail``
+                Celery task, never in the HTTP request, so a mail outage cannot
+                become an account-existence oracle.
         """
+        project = html.escape(settings.PROJECT_NAME)
         inner = (
-            f"<p>You requested a password reset for your {settings.PROJECT_NAME} account.</p>"
+            f"<p>You requested a password reset for your {project} account.</p>"
             "<p>Click the link below to reset your password. This link expires in 1 hour.</p>"
             + _button(reset_url, "Reset Password")
             + "<p>If you didn't request this, you can safely ignore this email.</p>"
@@ -222,8 +226,8 @@ class EmailService:
             "no password is stored here."
         )
         inner = (
-            f"<p>{inviter} invited you to create an account.</p>"
-            f"<p>{credential_line} This link expires in {expires_in_hours} hours and "
+            f"<p>{html.escape(inviter)} invited you to create an account.</p>"
+            f"<p>{html.escape(credential_line)} This link expires in {expires_in_hours} hours and "
             "can only be used once.</p>"
             + _button(accept_url, "Accept Invitation")
             + "<p>If you weren't expecting this, you can safely ignore this email.</p>"
@@ -240,7 +244,7 @@ class EmailService:
         self._send_email(
             to_email,
             f"{settings.PROJECT_NAME} - You've been invited",
-            _shell(f"You've been invited to {settings.PROJECT_NAME}", inner),
+            _shell(f"You've been invited to {html.escape(settings.PROJECT_NAME)}", inner),
             text_body,
             sensitive=True,
             credential_link=accept_url,
@@ -261,7 +265,7 @@ class EmailService:
         """
         inner = (
             "<p>Confirm this address to finish setting up your "
-            f"{settings.PROJECT_NAME} account.</p>"
+            f"{html.escape(settings.PROJECT_NAME)} account.</p>"
             f"<p>This link expires in {expires_in_hours} hours.</p>"
             + _button(verify_url, "Verify Email")
             + "<p>If you didn't create this account, you can safely ignore this email.</p>"
@@ -292,7 +296,7 @@ class EmailService:
         Args:
             to_email: Recipient — for an email change this is the OLD address.
             subject: Short subject line.
-            message: Plain-text body; rendered into the HTML template as-is.
+            message: Plain-text body; HTML-escaped when rendered into the template.
 
         Raises:
             EmailDeliveryError: The notice was not handed to a transport.
@@ -300,7 +304,7 @@ class EmailService:
                 a failed notice must never block the change it describes.
         """
         inner = (
-            f"<p>{message}</p>"
+            f"<p>{html.escape(message)}</p>"
             "<p>If you did not make this change, contact your administrator immediately.</p>"
         )
         text_body = (
@@ -310,9 +314,23 @@ class EmailService:
         self._send_email(
             to_email,
             f"{settings.PROJECT_NAME} - {subject}",
-            _shell(subject, inner),
+            _shell(html.escape(subject), inner),
             text_body,
         )
+
+    def require_credential_mail(self, link: str) -> None:
+        """Raise unless a message carrying ``link`` could be handed to a transport.
+
+        Decided from configuration alone, before anything is queued, so the admin who
+        issues an invitation learns synchronously that it cannot be sent.
+
+        Raises:
+            EmailDeliveryError: No transport is configured, or ``link`` is built from
+                the ``FRONTEND_URL`` default.
+        """
+        if not self.has_transport():
+            raise EmailDeliveryError("No mail transport is configured; the message was not sent")
+        self._assert_link_is_deliverable(link, "invitation")
 
     def has_transport(self) -> bool:
         """Whether a message would be handed to a transport (designated config or env SMTP).
@@ -415,7 +433,7 @@ class EmailService:
             self._assert_link_is_deliverable(credential_link, subject)
 
         if config is not None:
-            self._send_via_config(config, to, subject, html_body)
+            self._send_via_config(config, to, subject, html_body, text_body)
             return
         self._send_via_env_smtp(to, subject, html_body, text_body)
 
@@ -445,18 +463,16 @@ class EmailService:
 
     @staticmethod
     def _send_via_config(
-        config: EmailNotificationConfig, to: str, subject: str, html_body: str
+        config: EmailNotificationConfig, to: str, subject: str, html_body: str, text_body: str
     ) -> None:
         """Send through the designated DB-backed provider."""
-        from app.services import watch_email_service
-
         ok, detail = watch_email_service.send_email(
-            config, [to], subject, html_body, timeout=SMTP_TIMEOUT
+            config, [to], subject, html_body, timeout=SMTP_TIMEOUT, text_body=text_body
         )
         if ok:
             logger.info("Sent %r to %s via email config %r", subject, _mask_email(to), config.name)
             return
-        reason = _scrub(detail)
+        reason = scrub_addresses(detail)
         logger.error(
             "Failed to send %r to %s via email config %r: %s",
             subject,
@@ -464,35 +480,56 @@ class EmailService:
             config.name,
             reason,
         )
-        raise EmailDeliveryError(f"Could not send {subject!r}: {reason}")
+        # The config path reports failure as text, so it cannot tell a refusal from a
+        # network fault; treat it as retryable (the retry count is bounded).
+        raise EmailTransientError(f"Could not send {subject!r}: {reason}")
 
     @staticmethod
     def _send_via_env_smtp(to: str, subject: str, html_body: str, text_body: str) -> None:
         """Send through the env-configured SMTP server (STARTTLS or implicit SSL)."""
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.SMTP_FROM
-        msg["To"] = to
-        msg.attach(MIMEText(text_body, "plain"))
-        msg.attach(MIMEText(html_body, "html"))
+        msg = watch_email_service.build_message(
+            settings.SMTP_FROM, to, subject, html_body, text_body
+        )
 
         server = None
         try:
+            problem = smtp_transport_problem(
+                settings.SMTP_HOST,
+                settings.SMTP_PORT,
+                bool(settings.SMTP_USE_TLS),
+                bool(settings.SMTP_USER),
+            )
+            if problem:
+                raise EmailDeliveryError(problem)
             server = _env_smtp_connect()
             if settings.SMTP_USER:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_FROM, [to], msg.as_string())
+            server.send_message(msg, from_addr=settings.SMTP_FROM, to_addrs=[to])
         except Exception as e:
             # Never fall back to logging the body: for a password reset that body
             # is a live single-use credential.
-            reason = _scrub(str(e))
+            reason = scrub_addresses(str(e))
             logger.error("Failed to send %r to %s: %s", subject, _mask_email(to), reason)
+            if _is_transient(e):
+                raise EmailTransientError(f"Could not send {subject!r}: {reason}") from e
             raise EmailDeliveryError(f"Could not send {subject!r}: {reason}") from e
         finally:
             if server is not None:
                 with contextlib.suppress(Exception):
                     server.quit()
         logger.info("Sent %r to %s", subject, _mask_email(to))
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether a later attempt could succeed: a network fault or a 4xx reply.
+
+    A policy refusal, a rejected recipient and a 5xx reply will fail the same way again.
+    """
+    if isinstance(exc, EmailDeliveryError | smtplib.SMTPRecipientsRefused):
+        return False
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return exc.smtp_code < 500
+    return isinstance(exc, OSError)
 
 
 def _env_smtp_connect() -> smtplib.SMTP:

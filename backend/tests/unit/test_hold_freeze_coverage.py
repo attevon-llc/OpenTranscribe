@@ -1088,6 +1088,10 @@ TASK_EXEMPT: dict[str, str] = {
             "tasks/recovery_tasks.py::youtube_metadata_fetch",
             "tasks/watch_source_tasks.py::send_notification",
             "tasks/watch_source_tasks.py::cleanup_temp",
+            "tasks/auth_mail_tasks.py::send_password_reset_mail",
+            "tasks/auth_mail_tasks.py::send_email_verification_mail",
+            "tasks/auth_mail_tasks.py::send_invitation_mail",
+            "tasks/auth_mail_tasks.py::send_security_notice_mail",
         )
     },
     **{

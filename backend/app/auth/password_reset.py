@@ -17,8 +17,11 @@ from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.password_policy import validate_password
 from app.auth.token_service import token_service
+from app.core.auth_mail import RESET_MAIL_TASK
+from app.core.auth_mail import dispatch_auth_mail
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
+from app.core.exceptions import EmailTransientError
 from app.core.security import get_password_hash
 from app.models.password_reset import PasswordResetToken
 from app.models.user import User
@@ -70,10 +73,13 @@ def _audit_reset_request(
 
 
 def request_password_reset(db: Session, email: str, ip_address: str) -> None:
-    """Request a password reset token.
+    """Request a password reset link.
 
-    Anti-enumeration: always returns without error regardless of whether
-    the email exists. Only local auth users can reset passwords.
+    Anti-enumeration: every address gets exactly the same work here, one account lookup
+    and one task dispatch, so neither the response nor its duration says whether the
+    account exists. Eligibility, the rate limit, the token and the SMTP round trip all
+    happen in :func:`deliver_password_reset`, run by the ``auth_mail.password_reset``
+    task. Only local auth users can reset passwords.
 
     Args:
         db: Database session.
@@ -81,6 +87,30 @@ def request_password_reset(db: Session, email: str, ip_address: str) -> None:
         ip_address: Client IP address for audit logging.
     """
     user = db.query(User).filter(User.email == email).first()
+    dispatch_auth_mail(RESET_MAIL_TASK, int(user.id) if user is not None else None, ip_address)
+
+
+def deliver_password_reset(
+    db: Session, user_id: int | None, ip_address: str, *, final_attempt: bool = True
+) -> None:
+    """Issue a reset token for ``user_id`` and mail the link (runs in a Celery task).
+
+    Every exit path writes one ``AUTH_PASSWORD_RESET_REQUEST`` audit event, as the
+    synchronous version did. The raw token is created here and goes only into the
+    message: it is never a task argument and never logged.
+
+    Args:
+        db: Database session.
+        user_id: Account to reset, or ``None`` when the requested address has none.
+        ip_address: Requesting client's IP, for the audit record.
+        final_attempt: True on the last permitted attempt. A transient send failure
+            re-raises (so the task retries) until then, and is audited as a failed
+            delivery on the final attempt.
+
+    Raises:
+        EmailTransientError: The send failed transiently and attempts remain.
+    """
+    user = db.query(User).filter(User.id == user_id).first() if user_id is not None else None
 
     if not user or user.auth_type != AUTH_TYPE_LOCAL:
         logger.debug("Password reset requested for non-existent or non-local user")
@@ -127,12 +157,18 @@ def request_password_reset(db: Session, email: str, ip_address: str) -> None:
     db.commit()
 
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={raw_token}"
-    # Every early return above is silent, so a delivery failure must be silent
-    # too: this call is only reached for an address that exists, and letting the
-    # exception escape would turn a mail outage into an account-existence oracle
-    # (existing address -> 500, unknown address -> 200).
     try:
         email_service.send_password_reset(str(user.email), reset_url)
+    except EmailTransientError:
+        # Nothing was delivered, so the token is unusable: drop it so the retry (which
+        # mints a new one) does not spend the user's hourly budget.
+        db.delete(reset_token)
+        db.commit()
+        if not final_attempt:
+            raise
+        logger.error("Password reset for user %s could not be delivered after retries", user.id)
+        _audit_reset_request(AuditOutcome.PARTIAL, "DELIVERY_FAILED", ip_address, user)
+        return
     except EmailDeliveryError:
         logger.error("Password reset for user %s was generated but could not be delivered", user.id)
         _audit_reset_request(AuditOutcome.PARTIAL, "DELIVERY_FAILED", ip_address, user)

@@ -176,6 +176,12 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "watch_source.stitch_and_import": {"queue": CeleryQueues.CPU},
     "watch_source.send_notification": {"queue": CeleryQueues.UTILITY},
     "watch_source.cleanup_temp": {"queue": CeleryQueues.UTILITY},
+    # Credential-bearing auth mail (reset / verification / invitation / security notice):
+    # one SMTP or Graph round trip each, off the request path. Utility, never gpu.
+    "auth_mail.password_reset": {"queue": CeleryQueues.UTILITY},
+    "auth_mail.email_verification": {"queue": CeleryQueues.UTILITY},
+    "auth_mail.invitation": {"queue": CeleryQueues.UTILITY},
+    "auth_mail.security_notice": {"queue": CeleryQueues.UTILITY},
     # Scheduled database backups (Feature C)
     "backup.check_schedule": {"queue": CeleryQueues.UTILITY},
     "backup.run": {"queue": CeleryQueues.UTILITY},

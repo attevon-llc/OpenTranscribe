@@ -5,8 +5,36 @@ from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel
+from pydantic import EmailStr
 from pydantic import Field
+from pydantic import TypeAdapter
+from pydantic import field_validator
 from pydantic import model_validator
+
+from app.utils.smtp_transport import SMTP_DEFAULT_PORT
+from app.utils.smtp_transport import smtp_transport_problem
+
+_ADDRESS = TypeAdapter(EmailStr)
+
+
+def _check_address(value: str | None) -> str | None:
+    """Require a single email address (``None`` and blank pass through as given)."""
+    if value is None or not value.strip():
+        return value
+    return str(_ADDRESS.validate_python(value.strip()))
+
+
+def _check_address_csv(value: str | None) -> str | None:
+    """Require a comma-separated list of email addresses; return it normalised.
+
+    Each entry goes into a mail header and an SMTP envelope, so anything that is not an
+    address (including a value carrying a line break) is refused here rather than at send.
+    """
+    if value is None or not value.strip():
+        return value
+    return ", ".join(
+        str(_ADDRESS.validate_python(part.strip())) for part in value.split(",") if part.strip()
+    )
 
 
 class EmailProvider(StrEnum):
@@ -44,11 +72,29 @@ class EmailConfigCreate(BaseModel):
     exchange_username: str | None = None
     exchange_password: str | None = None
 
+    @field_validator("default_recipients")
+    @classmethod
+    def _recipients_are_addresses(cls, value: str | None) -> str | None:
+        return _check_address_csv(value)
+
+    @field_validator("from_address")
+    @classmethod
+    def _from_is_an_address(cls, value: str | None) -> str | None:
+        return _check_address(value)
+
     @model_validator(mode="after")
     def _validate_per_provider(self) -> "EmailConfigCreate":
         if self.provider == EmailProvider.SMTP:
             if not self.smtp_host:
                 raise ValueError("SMTP provider requires smtp_host")
+            problem = smtp_transport_problem(
+                self.smtp_host,
+                self.smtp_port or SMTP_DEFAULT_PORT,
+                self.smtp_use_tls,
+                bool(self.smtp_username and self.smtp_password),
+            )
+            if problem:
+                raise ValueError(problem)
         elif self.provider == EmailProvider.M365:
             missing = [f for f in ("m365_tenant_id", "m365_client_id") if not getattr(self, f)]
             if missing:
@@ -79,6 +125,16 @@ class EmailConfigUpdate(BaseModel):
     exchange_domain: str | None = None
     exchange_username: str | None = None
     exchange_password: str | None = None
+
+    @field_validator("default_recipients")
+    @classmethod
+    def _recipients_are_addresses(cls, value: str | None) -> str | None:
+        return _check_address_csv(value)
+
+    @field_validator("from_address")
+    @classmethod
+    def _from_is_an_address(cls, value: str | None) -> str | None:
+        return _check_address(value)
 
 
 class EmailConfigResponse(BaseModel):

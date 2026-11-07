@@ -278,7 +278,7 @@ def test_9_an_admin_cannot_redirect_a_password_reset_by_rewriting_the_target_ema
 
 
 def test_10_a_legitimate_email_change_still_completes_the_reset_chain(
-    client, user_token_headers, normal_user, db_session, monkeypatch
+    client, user_token_headers, normal_user, db_session, monkeypatch, run_auth_mail_inline
 ):
     """Control: a REAL email change through the one authorized self-service path
     (``PUT /users/me``, password-proven) must still let a password reset reach the NEW
@@ -494,7 +494,7 @@ def test_the_new_address_is_actually_unverified_at_login(
 
 
 def test_a_re_verification_link_is_mailed_when_the_deployment_requires_it(
-    client, user_token_headers, normal_user, db_session, monkeypatch
+    client, user_token_headers, normal_user, db_session, monkeypatch, run_auth_mail_inline
 ):
     """When the deployment requires verification, a mailbox change must send a
     fresh link to the NEW address. Negative control: with verification not

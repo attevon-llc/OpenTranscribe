@@ -88,7 +88,7 @@ class TestPasswordResetIsAudited:
         """Every exit path emits, so the audit write is not itself a timing oracle."""
         db = _EmptySession()
         with patch.object(pr_module.audit_logger, "log") as log:
-            pr_module.request_password_reset(cast(Session, db), "nobody@example.com", "10.0.0.1")
+            pr_module.deliver_password_reset(cast(Session, db), None, "10.0.0.1")
 
         assert log.called
         assert log.call_args.kwargs["event_type"] == AuditEventType.AUTH_PASSWORD_RESET_REQUEST
@@ -98,7 +98,7 @@ class TestPasswordResetIsAudited:
         """An attacker-supplied string is a log-injection surface with no value here."""
         db = _EmptySession()
         with patch.object(pr_module.audit_logger, "log") as log:
-            pr_module.request_password_reset(cast(Session, db), "nobody@example.com", "10.0.0.1")
+            pr_module.deliver_password_reset(cast(Session, db), None, "10.0.0.1")
 
         assert log.call_args.kwargs["username"] is None
         assert log.call_args.kwargs["user_id"] is None
@@ -109,7 +109,7 @@ class TestPasswordResetIsAudited:
             patch.object(pr_module.audit_logger, "log") as log,
             patch.object(pr_module.email_service, "send_password_reset"),
         ):
-            pr_module.request_password_reset(cast(Session, db), "user@example.com", "10.0.0.1")
+            pr_module.deliver_password_reset(cast(Session, db), 1, "10.0.0.1")
 
         assert log.call_args.kwargs["outcome"] == pr_module.AuditOutcome.SUCCESS
         assert log.call_args.kwargs["error_code"] is None

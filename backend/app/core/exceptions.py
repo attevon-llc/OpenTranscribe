@@ -78,6 +78,14 @@ class EmailDeliveryError(OpenTranscribeError):
     """
 
 
+class EmailTransientError(EmailDeliveryError):
+    """An email send failed in a way a later attempt may fix (network, timeout, 4xx).
+
+    The auth-mail Celery tasks retry on this class with backoff; every other
+    :class:`EmailDeliveryError` (no transport, refused policy, 5xx rejection) is final.
+    """
+
+
 class ExternalProviderNotAdmittedError(OpenTranscribeError):
     """A registry-based provider's ``auth_type`` is not admitted by the database.
 

@@ -277,11 +277,11 @@ def test_admin_password_reset_also_emits_the_admin_user_update_event(
 # ── notify_email_changed: swallows delivery failure ─────────────────────────────────
 
 
-def test_notify_email_changed_swallows_email_service_failures(monkeypatch):
-    import app.services.email_service as email_service_module
+def test_notify_email_changed_swallows_dispatch_failures(monkeypatch):
+    from app.core.celery import celery_app
 
-    send_mock = Mock(side_effect=RuntimeError("smtp connection refused"))
-    monkeypatch.setattr(email_service_module.email_service, "send_security_notice", send_mock)
+    send_mock = Mock(side_effect=RuntimeError("broker unreachable"))
+    monkeypatch.setattr(celery_app, "send_task", send_mock)
 
     try:
         account_security_service.notify_email_changed("old@example.com", "new@example.com")
@@ -289,9 +289,12 @@ def test_notify_email_changed_swallows_email_service_failures(monkeypatch):
         pytest.fail(f"notify_email_changed propagated {exc!r} instead of swallowing it")
 
     send_mock.assert_called_once_with(
-        "old@example.com",
-        "Your account email address was changed",
-        "The email address on your account was changed to new@example.com.",
+        "auth_mail.security_notice",
+        args=[
+            "old@example.com",
+            "Your account email address was changed",
+            "The email address on your account was changed to new@example.com.",
+        ],
     )
 
 

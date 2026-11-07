@@ -91,6 +91,9 @@ class RecordingMailer:
         self.invitations: list[dict] = []
         self.verifications: list[str] = []
 
+    def require_credential_mail(self, link: str) -> None:
+        return None
+
     def send_password_reset(self, to_email: str, reset_url: str) -> None:
         self.resets.append(reset_url)
 
@@ -106,7 +109,7 @@ class RecordingMailer:
 
 
 @pytest.fixture
-def mailer(monkeypatch) -> RecordingMailer:
+def mailer(monkeypatch, run_auth_mail_inline) -> RecordingMailer:
     """Replace the mail transport in all three recovery services.
 
     Not merely convenience: with no transport configured ``send_invitation``

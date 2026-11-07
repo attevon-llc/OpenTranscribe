@@ -231,6 +231,7 @@ celery_app = Celery(
         "app.tasks.embedding_migration_v4_finalize",
         "app.tasks.imohash_recompute",
         "app.tasks.watch_source_tasks",
+        "app.tasks.auth_mail_tasks",
         "app.tasks.speaker_embedding_migration",
         "app.tasks.baseline_export",
         "app.tasks.rediarize_task",

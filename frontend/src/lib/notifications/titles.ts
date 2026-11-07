@@ -85,6 +85,24 @@ export function notificationTitle(type: string, translate: Translate): string {
   }
 }
 
+/**
+ * The translated reason an AI task was refused by the LLM token limits (issue #790), or
+ * `undefined` when the frame is not such a refusal. The backend's message is a fixed English
+ * sentence; the `error_code` (and `budget_scope`) are what the client translates.
+ */
+export function llmBudgetMessage(
+  data: Readonly<Record<string, unknown>>,
+  translate: Translate
+): string | undefined {
+  if (data.error_code === 'llm_budget_unavailable') {
+    return translate('notifications.llmBudgetUnavailable');
+  }
+  if (data.error_code !== 'llm_budget_exceeded') return undefined;
+  return data.budget_scope === 'instance_month'
+    ? translate('notifications.llmBudgetExceededMonth')
+    : translate('notifications.llmBudgetExceededDay');
+}
+
 // Compose a localized message for types rendered client-side from payload
 // fields (instead of the backend's English fallback message). Currently the
 // DMCA takedown / release owner notices (§512(g)): the quarantined file 404s
@@ -95,6 +113,8 @@ export function composeClientMessage(
   data: NotificationData,
   translate: Translate
 ): string | undefined {
+  const refused = llmBudgetMessage(data, translate);
+  if (refused) return refused;
   if (type !== 'file_takedown' && type !== 'file_takedown_released') return undefined;
   const filename = data.filename || '';
   if (type === 'file_takedown_released') {

@@ -13,6 +13,7 @@ from .endpoints import admin_audit_logs
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
 from .endpoints import admin_identity
+from .endpoints import admin_llm_budget
 from .endpoints import admin_maintenance
 from .endpoints import admin_quarantine
 from .endpoints import admin_scim_tokens
@@ -489,6 +490,7 @@ include_router_with_consistency(
 )
 include_router_with_consistency(topics.router, prefix="/files", tags=["topics"])
 include_router_with_consistency(usage.router, prefix="/usage", tags=["usage"])
+include_router_with_consistency(admin_llm_budget.router, prefix="/admin/llm-budget", tags=["admin"])
 include_router_with_consistency(
     transcript_segments.router, prefix="/transcripts", tags=["transcript-segments"]
 )

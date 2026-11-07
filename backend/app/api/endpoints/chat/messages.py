@@ -635,6 +635,7 @@ def estimate_context(
     assumed_context_window: int | None = Query(
         default=None, ge=LLM_CONTEXT_WINDOW_MIN, le=LLM_CONTEXT_WINDOW_MAX
     ),
+    llm_config_uuid: str | None = Query(default=None, max_length=64),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> ContextEstimate:
@@ -647,14 +648,23 @@ def estimate_context(
     says so (``context_window`` null, ``warning_level`` ``unknown``) rather than
     measuring against a guess. ``assumed_context_window`` lets an API caller choose
     a window for that case; it is ignored whenever a model window is known.
+
+    ``llm_config_uuid`` is the conversation's pinned model, the one its turns use; omitted
+    means the account default (the same choice ``_prepare_turn`` and ``answer-budget`` make).
+    A config the caller may not use is a 404.
     """
+    config_id = resolve_llm_config_id(db, ctx, llm_config_uuid)
     file_count = count_scope_files(db, ctx, body)
     window: int | None = None
     source: Literal["model", "assumed", "unknown"] = "unknown"
     unknown_reason: Literal["llm_not_configured", "llm_config_unusable"] | None = None
     with llm_settings_outage_as_503():
         try:
-            llm = LLMService.create_from_settings(user_id=ctx.user.id, raise_on_unusable=True)
+            llm = (
+                LLMService.create_from_config_id(ctx.user.id, config_id)
+                if config_id is not None
+                else LLMService.create_from_settings(user_id=ctx.user.id, raise_on_unusable=True)
+            )
         except LLMConfigurationError:
             llm = None
             unknown_reason = "llm_config_unusable"

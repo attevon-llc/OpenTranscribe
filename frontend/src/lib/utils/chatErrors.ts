@@ -17,6 +17,8 @@ const CHAT_ERROR_CODE_SET: Record<ChatErrorCode, true> = {
   connection_interrupted: true,
   export_failed: true,
   transcript_not_ready: true,
+  llm_budget_exceeded: true,
+  llm_budget_unavailable: true,
 };
 
 export const CHAT_ERROR_CODES = Object.keys(CHAT_ERROR_CODE_SET) as ChatErrorCode[];

@@ -40,6 +40,7 @@ import contextvars
 import logging
 import threading
 import uuid
+from collections.abc import Callable
 from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
@@ -129,6 +130,14 @@ class LLMUsageRun:
     tokens_estimated: bool = False
     provider: str | None = None
     model: str | None = None
+    #: Answers whether the calls went to a model on this deployment (pricing reads it: only
+    #: a local model is free). Asked once, when the run is written: the check may resolve the
+    #: endpoint's host name, which must not happen inside a provider call.
+    local_probe: Callable[[], bool] | None = field(default=None, repr=False)
+    #: The token-limit refusal of a call in this run. Re-raised when the run closes, so a
+    #: feature that swallows a failed call still ends as a refused task, never a success.
+    refusal: Exception | None = None
+    _owner: tuple[int | None, int | None] | None = field(default=None, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
@@ -145,6 +154,18 @@ def _estimate(chars: int) -> int:
     return max(1, chars // _CHARS_PER_TOKEN) if chars else 0
 
 
+def call_tokens(messages: list[dict[str, Any]], call: CallUsage) -> tuple[int, int, bool]:
+    """``(prompt, completion, estimated)`` for one call: as reported, else chars / 4.
+
+    The one count both the usage record and the token limits (``llm_budget.settle``) use.
+    """
+    usage = call.usage
+    if usage is not None and usage.reported:
+        return usage.prompt_tokens or 0, usage.completion_tokens or 0, False
+    prompt = _estimate(sum(len(str(m.get("content", ""))) for m in messages))
+    return prompt, _estimate(len(call.content or "")), True
+
+
 def note_call(
     *,
     provider: str | None,
@@ -152,27 +173,53 @@ def note_call(
     messages: list[dict[str, Any]],
     call: CallUsage,
     success: bool,
+    local: Callable[[], bool] | None = None,
 ) -> None:
     """Fold one provider call into the open run. No-op outside a run (e.g. chat)."""
     run = _current_run.get()
     if run is None:
         return
     usage = call.usage
+    prompt, completion, estimated = call_tokens(messages, call)
     with run._lock:
         run.calls += 1
         if not success:
             run.failed_calls += 1
         run.provider = provider or run.provider
         run.model = model or run.model
-        if usage is not None and usage.reported:
-            run.prompt_tokens += usage.prompt_tokens or 0
-            run.completion_tokens += usage.completion_tokens or 0
+        if local is not None and run.local_probe is None:
+            run.local_probe = local
+        run.prompt_tokens += prompt
+        run.completion_tokens += completion
+        if estimated:
+            run.tokens_estimated = True
+        elif usage is not None:
             run.cache_read_tokens += usage.cache_read_tokens
             run.cache_write_tokens += usage.cache_write_tokens
-        else:
-            run.tokens_estimated = True
-            run.prompt_tokens += _estimate(sum(len(str(m.get("content", ""))) for m in messages))
-            run.completion_tokens += _estimate(len(call.content or ""))
+
+
+def note_refusal(exc: Exception) -> None:
+    """Record that the token limits refused a call of the open run. No-op outside a run."""
+    run = _current_run.get()
+    if run is not None:
+        with run._lock:
+            run.refusal = run.refusal or exc
+
+
+def current_run_owner() -> int | None:
+    """The owner of the open run's file (whose daily token limit applies), or ``None``.
+
+    Read once per run from the ``media_file`` row, the same tenancy rule the usage record uses.
+    """
+    run = _current_run.get()
+    if run is None or run.file_id is None:
+        return None
+    if run._owner is None:
+        from app.db.session_utils import session_scope
+
+        with session_scope() as db:
+            run._owner = _resolve_owner(db, run.file_id)
+    return run._owner[0]
 
 
 def _resolve_owner(db: Any, file_id: int | None) -> tuple[int | None, int | None]:
@@ -196,6 +243,12 @@ def _flush(run: LLMUsageRun) -> None:
     from app.services.usage_service import record_event
 
     total = run.prompt_tokens + run.completion_tokens
+    local: bool | None = None
+    if run.local_probe is not None:
+        try:
+            local = bool(run.local_probe())
+        except (AttributeError, OSError, ValueError):  # unknown locality: shown unpriced
+            logger.warning("Could not classify the %s run's LLM endpoint as local", run.stage)
     with session_scope() as db:
         user_id, org_id = _resolve_owner(db, run.file_id)
         record_event(
@@ -216,6 +269,7 @@ def _flush(run: LLMUsageRun) -> None:
                 "cache_read_tokens": run.cache_read_tokens,
                 "cache_write_tokens": run.cache_write_tokens,
                 "tokens_estimated": run.tokens_estimated,
+                "local": local,
                 "llm_calls": run.calls,
                 "failed_calls": run.failed_calls,
                 # False when the run raised or any call failed: the row still carries what
@@ -245,13 +299,17 @@ def llm_usage_run(
     Written on the failure path too (``finally``), so a run that spent tokens and
     then raised still records them. A recording failure is logged at ERROR and
     swallowed: accounting never fails the task. A run that made no provider call
-    (no LLM configured) writes nothing.
+    (no LLM configured, or every call refused by the token limits) writes nothing.
 
     Args:
         stage: Key of :data:`STAGE_EVENT_TYPES`.
         file_id: The media file the run works on; owner and organization are read
             from its row.
         run_id: Stable identity of the run. Defaults to the current Celery task id.
+
+    Raises:
+        llm_budget.LLMBudgetExceededError: A call of the run was refused by the token
+            limits, even if the feature code caught that call's error.
     """
     if stage not in STAGE_EVENT_TYPES:
         raise ValueError(f"Unknown LLM usage stage {stage!r}")
@@ -271,3 +329,7 @@ def llm_usage_run(
                     file_id,
                     run.run_id,
                 )
+    # Only reached when the body did not raise: a feature that caught the refused call and
+    # carried on (a summary section, a redaction segment) must still end as refused.
+    if run.refusal is not None:
+        raise run.refusal

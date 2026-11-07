@@ -23,6 +23,7 @@ import {
   createConversation,
   createProject,
   deleteConversation,
+  estimateContext,
   exportConversation,
   listConversations,
   listMessages,
@@ -131,5 +132,27 @@ describe('representative CRUD calls', () => {
     const result = await createProject(payload);
     expect(mockInstance.post).toHaveBeenCalledWith('/chat/projects', payload);
     expect(result.name).toBe('Project X');
+  });
+});
+
+describe('estimateContext', () => {
+  const scope = { file_uuids: [], collection_uuids: [], tag_names: [], speakers: [] };
+
+  it("measures against the conversation's pinned model (#1364)", async () => {
+    const estimate = { context_window: 200_000, warning_level: 'ok' };
+    mockInstance.post.mockResolvedValue({ data: estimate });
+    expect(await estimateContext(scope, UUID)).toEqual(estimate);
+    expect(mockInstance.post).toHaveBeenCalledWith('/chat/context/estimate', scope, {
+      params: { llm_config_uuid: UUID },
+    });
+  });
+
+  it('sends no model when none is pinned, so the account default applies', async () => {
+    const estimate = { context_window: 8192, warning_level: 'ok' };
+    mockInstance.post.mockResolvedValue({ data: estimate });
+    expect(await estimateContext(scope)).toEqual(estimate);
+    expect(mockInstance.post).toHaveBeenCalledWith('/chat/context/estimate', scope, {
+      params: undefined,
+    });
   });
 });

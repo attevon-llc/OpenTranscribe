@@ -1,8 +1,8 @@
 backend/app/core/config.py	1519	v0.6.1 merge: release growth; split by concern planned
-backend/app/services/llm_service.py	1251	v0.6.1 merge: release growth; split by concern planned
+backend/app/services/llm_service.py	1232	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FileUploader.svelte::script	827	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FilterSidebar.svelte::script	756	oversize: split by concern planned
-frontend/src/components/SettingsModal.svelte::script	998	oversize: split by concern planned
+frontend/src/components/SettingsModal.svelte::script	982	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1400	v0.6.1 merge: release growth; split by concern planned
 frontend/src/routes/+page.svelte::script	1459	v0.6.1 merge: release growth; split by concern planned
 opentr.sh	4881	v0.6.1 merge: release growth; split by concern planned

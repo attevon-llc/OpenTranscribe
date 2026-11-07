@@ -34,6 +34,8 @@ from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
 from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
+from app.services.llm_budget import notification_extra
+from app.services.llm_budget import refusal_of
 from app.services.llm_usage import llm_usage_run
 from app.services.post_processing_status import announce_started
 from app.services.post_processing_status import tracks_post_processing
@@ -59,11 +61,12 @@ def send_topic_extraction_notification(
     message: str,
     suggestion_id: str | None = None,
     duration_seconds: float | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> bool:
     """Send AI suggestion extraction status notification via WebSocket."""
     from app.services.notification_service import send_task_notification
 
-    extra: dict[str, Any] = {}
+    extra = dict(extra or {})
     if status == "completed" and suggestion_id:
         extra["suggestion_id"] = suggestion_id
     if duration_seconds is not None:
@@ -231,6 +234,8 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
     from app.services.uuid_helpers import get_file_by_uuid
 
     logger.error(f"Error extracting topics for file {file_uuid}: {task_error_text(e)}")
+    # A token-limit refusal keeps its own code and sentence: it is not an extraction fault.
+    refusal = refusal_of(e)
 
     try:
         with session_scope() as db:
@@ -249,14 +254,15 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
                 user_id=notify[0],
                 file_id=notify[1],
                 status="failed",
-                message=_EXTRACTION_FAILED,
+                message=refusal.user_message if refusal is not None else _EXTRACTION_FAILED,
+                extra=notification_extra(refusal) if refusal is not None else None,
             )
         except Exception as notify_err:
             logger.debug(f"Failed to send topic extraction failure notification: {notify_err}")
 
     return {
         "status": "failed",
-        "error": _EXTRACTION_ERROR_CODE,
+        "error": refusal.code if refusal is not None else _EXTRACTION_ERROR_CODE,
     }
 
 
@@ -420,7 +426,12 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         _mark_task_status(task_id, "failed", error_message=task_error_text(e))
         return _handle_task_error(e, file_uuid)
     except Exception as e:
-        _mark_task_status(task_id, "failed", error_message=task_error_text(e))
+        budget_refusal = refusal_of(e)
+        _mark_task_status(
+            task_id,
+            "failed",
+            error_message=budget_refusal.code if budget_refusal is not None else task_error_text(e),
+        )
         return _handle_task_error(e, file_uuid)
 
 

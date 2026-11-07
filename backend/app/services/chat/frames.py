@@ -39,6 +39,9 @@ PROVIDER_UNAVAILABLE_MESSAGE = (
 
 
 PROVIDER_ERROR_MESSAGE = "The AI provider could not generate a response. Please try again."
+#: The token limits refused the turn before anything was sent (``services/llm_budget.py``).
+BUDGET_EXCEEDED_MESSAGE = "The AI token limit has been reached. Try again after it resets."
+BUDGET_UNAVAILABLE_MESSAGE = "The AI token limit could not be checked. Please try again."
 
 
 GENERATION_FAILED_MESSAGE = "Generation failed."
@@ -217,6 +220,18 @@ def _provider_error_frame(turn: ChatTurn, event: LLMStreamEvent, conversation_uu
         event.transient,
         event.message,
     )
+    # Refused by the token limits before anything was sent: not a provider fault. Literal
+    # slugs on purpose (the SSE contract test refuses a computed error code).
+    if event.code == "llm_budget_exceeded":
+        turn.error = BUDGET_EXCEEDED_MESSAGE
+        turn.error_code = "llm_budget_exceeded"
+        turn.metadata["error_code"] = turn.error_code
+        return sse("error", {"code": "llm_budget_exceeded", "message": turn.error})
+    if event.code == "llm_budget_unavailable":
+        turn.error = BUDGET_UNAVAILABLE_MESSAGE
+        turn.error_code = "llm_budget_unavailable"
+        turn.metadata["error_code"] = turn.error_code
+        return sse("error", {"code": "llm_budget_unavailable", "message": turn.error})
     if event.transient:
         turn.error = PROVIDER_UNAVAILABLE_MESSAGE
         turn.error_code = "provider_unavailable"

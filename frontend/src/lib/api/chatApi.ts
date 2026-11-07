@@ -126,8 +126,14 @@ export async function exportConversation(
   return { blob: response.data as Blob, filename };
 }
 
-export async function estimateContext(scope: ChatScope): Promise<ContextEstimate> {
-  const { data } = await axiosInstance.post<ContextEstimate>('/chat/context/estimate', scope);
+/** Estimate against the conversation's pinned model, or the account default when null. */
+export async function estimateContext(
+  scope: ChatScope,
+  llmConfigUuid: string | null = null
+): Promise<ContextEstimate> {
+  const { data } = await axiosInstance.post<ContextEstimate>('/chat/context/estimate', scope, {
+    params: llmConfigUuid ? { llm_config_uuid: llmConfigUuid } : undefined,
+  });
   return data;
 }
 

@@ -86,6 +86,13 @@ const initialState: ChatState = {
   rateLimitedUntil: null,
 };
 
+/** The model a turn would use: the open conversation's pin, else the draft's (null = default). */
+export function pinnedModel(state: ChatState): string | null {
+  return state.activeConversation
+    ? state.activeConversation.llm_config_uuid ?? null
+    : state.draftLlmConfigUuid;
+}
+
 function createChatStore() {
   const { subscribe, set, update } = writable<ChatState>({ ...initialState });
 
@@ -609,18 +616,21 @@ function createChatStore() {
       const uuid = get({ subscribe }).activeConversationId;
       if (!uuid) {
         update((s) => ({ ...s, draftLlmConfigUuid: llmConfigUuid }));
+        await this.refreshEstimate();
         return;
       }
       const updated = await chatApi.updateConversation(uuid, {
         llm_config_uuid: llmConfigUuid,
       });
       update((s) => ({ ...s, activeConversation: updated }));
+      await this.refreshEstimate();
     },
 
     async refreshEstimate(): Promise<void> {
-      const scope = get({ subscribe }).scope;
+      const state = get({ subscribe });
       try {
-        const estimate = await chatApi.estimateContext(scope);
+        // The pinned model's window, not the account default's (#1364).
+        const estimate = await chatApi.estimateContext(state.scope, pinnedModel(state));
         update((s) => ({ ...s, contextEstimate: estimate }));
       } catch {
         update((s) => ({ ...s, contextEstimate: null }));

@@ -8504,6 +8504,91 @@
         "title": "InvitationResponse",
         "type": "object"
       },
+      "LLMBudgetSettings": {
+        "description": "The token limits (``0`` = unlimited) and this instance's standing against them.",
+        "properties": {
+          "day_resets_at": {
+            "format": "date-time",
+            "title": "Day Resets At",
+            "type": "string"
+          },
+          "instance_monthly_tokens": {
+            "title": "Instance Monthly Tokens",
+            "type": "integer"
+          },
+          "instance_used_this_month": {
+            "title": "Instance Used This Month",
+            "type": "integer"
+          },
+          "local_unlimited": {
+            "title": "Local Unlimited",
+            "type": "boolean"
+          },
+          "month_resets_at": {
+            "format": "date-time",
+            "title": "Month Resets At",
+            "type": "string"
+          },
+          "user_daily_tokens": {
+            "title": "User Daily Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_daily_tokens",
+          "instance_monthly_tokens",
+          "local_unlimited",
+          "instance_used_this_month",
+          "month_resets_at",
+          "day_resets_at"
+        ],
+        "title": "LLMBudgetSettings",
+        "type": "object"
+      },
+      "LLMBudgetUpdate": {
+        "description": "Only the provided fields change.",
+        "properties": {
+          "instance_monthly_tokens": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instance Monthly Tokens"
+          },
+          "local_unlimited": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Local Unlimited"
+          },
+          "user_daily_tokens": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Daily Tokens"
+          }
+        },
+        "title": "LLMBudgetUpdate",
+        "type": "object"
+      },
       "LLMProvider": {
         "description": "Supported LLM providers",
         "enum": [
@@ -28531,6 +28616,78 @@
         ]
       }
     },
+    "/api/admin/llm-budget": {
+      "get": {
+        "description": "The token limits and this instance's tokens this month.",
+        "operationId": "get_llm_budget_api_admin_llm_budget_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMBudgetSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Llm Budget",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Change the token limits (only the provided fields).",
+        "operationId": "update_llm_budget_api_admin_llm_budget_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LLMBudgetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LLMBudgetSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Llm Budget",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/local-models": {
       "get": {
         "description": "The catalog with what is downloaded, the download in flight and the free disk space.",
@@ -33912,7 +34069,7 @@
     },
     "/api/chat/context/estimate": {
       "post": {
-        "description": "Estimate how much of the model's context a selection would occupy.\n\nAdvisory only — the prompt builder enforces the real budget. This exists so\nthe picker can warn before someone selects 400 recordings.\n\nWhen the caller has no usable model the window is unknown, and the response\nsays so (``context_window`` null, ``warning_level`` ``unknown``) rather than\nmeasuring against a guess. ``assumed_context_window`` lets an API caller choose\na window for that case; it is ignored whenever a model window is known.",
+        "description": "Estimate how much of the model's context a selection would occupy.\n\nAdvisory only — the prompt builder enforces the real budget. This exists so\nthe picker can warn before someone selects 400 recordings.\n\nWhen the caller has no usable model the window is unknown, and the response\nsays so (``context_window`` null, ``warning_level`` ``unknown``) rather than\nmeasuring against a guess. ``assumed_context_window`` lets an API caller choose\na window for that case; it is ignored whenever a model window is known.\n\n``llm_config_uuid`` is the conversation's pinned model, the one its turns use; omitted\nmeans the account default (the same choice ``_prepare_turn`` and ``answer-budget`` make).\nA config the caller may not use is a 404.",
         "operationId": "estimate_context_api_chat_context_estimate_post",
         "parameters": [
           {
@@ -33931,6 +34088,23 @@
                 }
               ],
               "title": "Assumed Context Window"
+            }
+          },
+          {
+            "in": "query",
+            "name": "llm_config_uuid",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Llm Config Uuid"
             }
           }
         ],
@@ -50868,7 +51042,7 @@
     },
     "/api/usage/me": {
       "get": {
-        "description": "Summarize the caller's own chat LLM usage in the active tenant over a trailing window.\n\nCosts are **estimates**. They are computed from a rate table that a vendor can\nchange at any time, they ignore any negotiated discount, and they are omitted\nentirely for models with no known rate — an honest blank beats a confident\n$0.00. ``rates_verified_on`` is returned so a stale table is visible.\n\nAggregation happens in Python rather than SQL because the per-model breakdown\nlives in a JSONB column and the row count per user per month is small. If that\nstops being true, this becomes a grouped query over generated columns.",
+        "description": "Summarize the caller's own usage in the active tenant over a trailing window.\n\nEvery event type is returned in ``by_event_type`` (count and quantity in its own\nunit). LLM token events (``chat.tokens``, ``summary.tokens``, ``topics.tokens``,\n``speaker_id.tokens``, ``redaction.tokens``) are also broken down in ``totals``,\n``by_feature`` and ``by_model``. ``totals.messages`` counts chat exchanges only;\n``totals.events`` counts every LLM token event.\n\nCosts are **estimates**. They are computed from a rate table that a vendor can\nchange at any time, they ignore any negotiated discount, and they are omitted\nentirely for models with no known rate — an honest blank beats a confident\n$0.00. A model on this deployment is free only when its event recorded that it\nwas local. ``rates_verified_on`` is returned so a stale table is visible.\n\nAggregation happens in Python rather than SQL because the per-model breakdown\nlives in a JSONB column and the row count per user per month is small. If that\nstops being true, this becomes a grouped query over generated columns.",
         "operationId": "get_my_usage_api_usage_me_get",
         "parameters": [
           {
@@ -50921,7 +51095,7 @@
     },
     "/api/usage/me/daily": {
       "get": {
-        "description": "Daily token totals for the caller — the series behind a usage chart.\n\nGrouped in SQL: this one only needs the date and the quantity, both of which\nare real columns, so there is no reason to pull every row into Python.",
+        "description": "Daily LLM token totals for the caller, over every LLM feature — the series behind a chart.\n\nGrouped in SQL: this one only needs the date, the event type and the quantity, all\nreal columns, so there is no reason to pull every row into Python. ``messages`` counts\nchat exchanges, ``events`` every LLM token event, and ``by_event_type`` splits the day's\ntokens by feature.",
         "operationId": "get_my_daily_usage_api_usage_me_daily_get",
         "parameters": [
           {

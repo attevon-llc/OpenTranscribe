@@ -79,6 +79,9 @@ class ChatCompletionContext:
     # useful signal for telling a heavy legitimate user apart from someone using the
     # deployment as a general-purpose chatbot, and it costs nothing to record.
     use_context: bool = True
+    # Whether the model runs on this deployment. Pricing treats only a local model as free;
+    # a vllm/ollama endpoint on a hosted service is priced as unknown, not $0.
+    local: bool | None = None
 
 
 BeforeMessageHook = Callable[[ChatDispatchContext], None]

@@ -64,21 +64,24 @@ _ANTHROPIC_RATES: dict[str, ModelRate] = {
     "claude-haiku-4-5": _r("1", "5", "0.1", "1.25"),
 }
 
-#: Local/self-hosted runtimes cost nothing per token — the operator already paid for
-#: the hardware. Recording them as explicitly free is what lets the UI distinguish
-#: "free" from "unpriced".
-_FREE_PROVIDERS = frozenset({"ollama", "vllm"})
-
 #: Providers whose model IDs are the first-party Anthropic strings.
 _ANTHROPIC_PROVIDERS = frozenset({"anthropic", "claude"})
 
 
-def get_rate(provider: str, model: str) -> ModelRate | None:
-    """Look up the rate for a provider/model pair, or None when unpriced."""
+def get_rate(provider: str, model: str, *, local: bool | None = None) -> ModelRate | None:
+    """Look up the rate for a provider/model pair, or None when unpriced.
+
+    A model on this deployment (``local`` True, recorded on the usage event from
+    ``redaction.llm_guard.is_local_provider``) costs nothing per token: the operator already
+    paid for the hardware, and saying "free" rather than "unpriced" is what lets the UI tell
+    them apart. Locality is decided by where the endpoint is, never by the provider name: a
+    ``vllm`` or ``ollama`` configuration pointed at a hosted service bills per token like any
+    other API, so without a recorded ``local`` flag it is unpriced, not $0 (issue #790).
+    """
     provider = (provider or "").lower()
     model = (model or "").strip()
 
-    if provider in _FREE_PROVIDERS:
+    if local is True:
         return _r("0", "0")
 
     if provider in _ANTHROPIC_PROVIDERS:
@@ -104,14 +107,17 @@ def estimate_cost_usd(
     completion_tokens: int,
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
+    local: bool | None = None,
 ) -> Decimal | None:
     """Estimate the USD cost of one exchange, or None when the model is unpriced.
+
+    ``local`` is the event's recorded locality (see :func:`get_rate`).
 
     ``prompt_tokens`` is treated as the *uncached* input count. Providers report
     cache reads and writes separately from it, so they are added on their own
     lines rather than assumed to be included.
     """
-    rate = get_rate(provider, model)
+    rate = get_rate(provider, model, local=local)
     if rate is None:
         return None
 

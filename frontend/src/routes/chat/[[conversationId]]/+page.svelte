@@ -17,7 +17,7 @@
   import { t } from '$stores/locale';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { llmStatusStore, isLLMSettingsUnavailable } from '$stores/llmStatus';
-  import { chatStore } from '$stores/chat';
+  import { chatStore, pinnedModel } from '$stores/chat';
   import { estimateContext, getProject, listProjects } from '$lib/api/chatApi';
   import {
     emptyScope,
@@ -279,7 +279,7 @@
     // contribution, so confirm rather than let the user discover it from a
     // vague answer.
     try {
-      const estimate = await estimateContext(scope);
+      const estimate = await estimateContext(scope, pinnedModel(state));
       if (estimate.warning_level === 'over') {
         pendingScope = scope;
         chatStore.setScope(scope);
@@ -605,6 +605,7 @@
   <FilePickerModal
     isOpen={pickerOpen}
     scope={state.scope}
+    llmConfigUuid={pinnedModel(state)}
     on:confirm={handleScopeConfirm}
     on:close={() => (pickerOpen = false)}
   />

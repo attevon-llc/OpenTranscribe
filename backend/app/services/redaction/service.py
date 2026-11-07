@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
+from app.services.llm_budget import LLMBudgetExceededError
 from app.services.llm_usage import llm_usage_run
 from app.services.redaction.config import detection_config_for_all
 from app.services.redaction.config import detector_language_support
@@ -585,6 +586,14 @@ class RedactionService:
         except SQLAlchemyError:
             RedactionService._return_to_pending(db, media, "LLM provider settings unreadable")
             raise
+        except LLMBudgetExceededError as refused:
+            # The token limits refused the detector: it did not examine the text, so the scan
+            # records the gap exactly like any other detector failure (fail closed).
+            logger.warning(
+                "LLM redaction detection for file %s refused: %s", media.id, refused.code
+            )
+            failures.append("llm")
+            return {}
         except Exception as exc:  # noqa: BLE001
             logger.warning("LLM redaction detection failed for file %s: %s", media.id, exc)
             failures.append("llm")

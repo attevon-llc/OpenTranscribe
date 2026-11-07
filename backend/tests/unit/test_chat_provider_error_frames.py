@@ -195,3 +195,27 @@ async def test_an_exception_in_the_stream_does_not_persist_its_text(monkeypatch)
     ]
     assert "secret internal detail" not in (turn.error or "")
     assert turn.metadata["error_code"] == "provider_error"
+
+
+class _RefusedLLM(_FailingLLM):
+    """``LLMService.chat_completion_stream`` when the token limits refuse the turn (#790)."""
+
+    def __init__(self, code: str):
+        super().__init__("You have reached your daily AI token limit.", transient=False)
+        self._event = LLMStreamEvent(type="error", message="refused", code=code)
+
+
+@pytest.mark.parametrize("code", ["llm_budget_exceeded", "llm_budget_unavailable"])
+@pytest.mark.asyncio
+async def test_a_token_limit_refusal_keeps_its_own_code(monkeypatch, code):
+    """Not a provider fault: the client needs the limit's code to say why and until when."""
+    frames, turn = await _run(monkeypatch, _RefusedLLM(code))
+
+    errors = _error_frames(frames)
+    assert [e["code"] for e in errors] == [code]
+    assert errors[0]["message"] not in (
+        chat_frames.PROVIDER_ERROR_MESSAGE,
+        chat_frames.PROVIDER_UNAVAILABLE_MESSAGE,
+    )
+    assert turn.error_code == code
+    assert turn.metadata["error_code"] == code

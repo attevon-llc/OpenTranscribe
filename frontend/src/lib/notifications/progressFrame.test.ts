@@ -196,3 +196,20 @@ describe('progressFields: progress and ETA', () => {
     expect(formatEtaSeconds(undefined)).toBeUndefined();
   });
 });
+
+describe('a progressive frame refused by the LLM token limits (#790)', () => {
+  it('shows the translated refusal, not the backend sentence', () => {
+    const f = progressFields(
+      'summarization_status',
+      {
+        file_id: 'f1',
+        status: 'failed',
+        message: 'You have reached your daily AI token limit.',
+        error_code: 'llm_budget_exceeded',
+        budget_scope: 'user_day',
+      },
+      echo
+    );
+    expect(f.currentStep).toBe('notifications.llmBudgetExceededDay');
+  });
+});

@@ -10,6 +10,7 @@
  */
 import type { Translate } from '$lib/i18n';
 import type { ChatErrorCode, SearchMode } from '$lib/types/chat';
+import type { LlmFeatureEventType } from '$lib/api/llmUsage';
 import type { DerivedSource } from '$lib/types/media';
 import type { ContextWindowStatus, ReasoningOffSwitch } from '$lib/api/llmSettings';
 import type { GrantableRole } from '$lib/api/groupMappings';
@@ -78,12 +79,23 @@ export const CHAT_STATE_ERROR_KEYS: Record<
   connection_interrupted: 'chat.errors.connection_interrupted',
   export_failed: 'chat.errors.export_failed',
   transcript_not_ready: 'chat.errors.transcript_not_ready',
+  llm_budget_exceeded: 'chat.errors.llm_budget_exceeded',
+  llm_budget_unavailable: 'chat.errors.llm_budget_unavailable',
   send: 'chat.errors.send',
   conversationNotFound: 'chat.errors.conversationNotFound',
   loadConversations: 'chat.errors.loadConversations',
   loadMessages: 'chat.errors.loadMessages',
 };
 export const CHAT_STATE_ERROR_FALLBACK = 'chat.message.errorGeneric';
+
+/** The AI feature behind a usage record (`GET /usage/me` `by_feature`). */
+export const LLM_FEATURE_KEYS: Record<LlmFeatureEventType, string> = {
+  'chat.tokens': 'settings.llmUsage.feature.chat',
+  'summary.tokens': 'settings.llmUsage.feature.summary',
+  'topics.tokens': 'settings.llmUsage.feature.topics',
+  'speaker_id.tokens': 'settings.llmUsage.feature.speakerId',
+  'redaction.tokens': 'settings.llmUsage.feature.redaction',
+};
 
 export const PROVENANCE_SOURCE_KEYS: Record<DerivedSource | 'unresolved', string> = {
   container: 'provenance.source.container',

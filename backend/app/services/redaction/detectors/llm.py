@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.services.llm_budget import LLMBudgetExceededError
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
 from app.services.redaction.spans import map_char_span_to_words
@@ -119,6 +120,9 @@ def _detect_one(
             temperature=0.0,
         )
         items = _parse_json_array(resp.content)
+    except LLMBudgetExceededError:
+        # Every later segment would be refused too: stop the scan here.
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.debug("LLM redaction detection failed for a segment: %s", exc)
         _report(failures)

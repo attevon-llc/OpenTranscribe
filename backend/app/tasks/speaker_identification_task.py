@@ -33,6 +33,7 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
+from app.services.llm_budget import refusal_of
 from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.llm_usage import llm_usage_run
@@ -655,7 +656,7 @@ def identify_speakers_llm_task(self, file_uuid: str):
             _mark_identification_failed(task_id, error_msg)
             return {
                 "status": "error",
-                "error_code": "llm_identification_failed",
+                "error_code": predictions.get("error_code", "llm_identification_failed"),
                 "message": error_msg,
                 "file_id": file_id,
             }
@@ -750,6 +751,11 @@ def _generate_predictions(
         return predictions
 
     except Exception as e:
+        refusal = refusal_of(e)
+        if refusal is not None:
+            # Refused by the token limits before anything was sent: recorded with its code.
+            logger.warning(f"Speaker identification for file {file_id} refused: {refusal.code}")
+            return {"speaker_predictions": [], "error": refusal.code, "error_code": refusal.code}
         logger.error(f"LLM speaker identification failed: {type(e).__name__}: {e}")
         logger.error("Full traceback:", exc_info=True)
         return {

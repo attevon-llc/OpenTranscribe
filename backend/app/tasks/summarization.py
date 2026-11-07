@@ -41,6 +41,8 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
+from app.services.llm_budget import notification_extra
+from app.services.llm_budget import refusal_of
 from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.llm_usage import llm_usage_run
@@ -155,6 +157,17 @@ def _handle_llm_error(
     Opens its **own** short session rather than borrowing the caller's: the
     caller is mid-provider-call and holds no session by design.
     """
+    refusal = refusal_of(e)
+    if refusal is not None:
+        # Refused by the token limits before anything was sent: a failed run with the
+        # limit's code, never a "content too long" guess from the message text.
+        logger.warning(f"AI summary for file {file_id} refused: {refusal.code} ({refusal.scope})")
+        _mark_summary_failed(file_id)
+        send_summary_notification(
+            user_id, file_id, "failed", refusal.user_message, 0, extra=notification_extra(refusal)
+        )
+        raise refusal
+
     error_type = type(e).__name__
     error_msg = str(e)
     logger.error(f"LLM summarization failed with {error_type}: {error_msg}")
@@ -211,11 +224,12 @@ def send_summary_notification(
     progress: int = 0,
     summary_data: dict[str, Any] | str | None = None,
     duration_seconds: float | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> bool:
     """Send summary status notification via WebSocket."""
     from app.services.notification_service import send_task_notification
 
-    extra: dict[str, Any] = {}
+    extra = dict(extra or {})
     if status == "completed" and summary_data:
         extra["summary"] = summary_data
     if duration_seconds is not None:
@@ -372,7 +386,8 @@ def _handle_task_error(
     from app.utils.task_utils import update_task_status
 
     error_type = type(e).__name__
-    error_msg = task_error_text(e)
+    refusal = refusal_of(e)
+    error_msg = refusal.code if refusal is not None else task_error_text(e)
     logger.error(f"Error summarizing file {file_id}: {error_type}: {e}")
     logger.error("Full error traceback:", exc_info=True)
 
@@ -389,7 +404,9 @@ def _handle_task_error(
                     notify = (
                         int(media_file.user_id),
                         int(media_file.id),
-                        _create_user_friendly_error(error_msg),
+                        refusal.user_message
+                        if refusal is not None
+                        else _create_user_friendly_error(error_msg),
                     )
                     media_file.summary_status = "failed"  # type: ignore[assignment]
             update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
@@ -408,6 +425,8 @@ def _handle_task_error(
             0,
         )
 
+    if refusal is not None:
+        return {"status": "error", "error_code": refusal.code, "message": error_msg}
     return {"status": "error", "message": error_msg}
 
 

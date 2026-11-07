@@ -70,7 +70,9 @@ class LLMHealthMixin(LLMHost):
                 #
                 # Test with a simple message
                 test_messages = [{"role": "user", "content": "Hi"}]
-                response = self.chat_completion(test_messages, max_tokens=5)
+                # A connection test is a diagnostic, not a feature: the token limits do not
+                # refuse it, so a reached limit never reads as a broken connection.
+                response = self.chat_completion(test_messages, enforce_budget=False, max_tokens=5)
                 if response and response.content and response.content.strip():
                     return (
                         True,

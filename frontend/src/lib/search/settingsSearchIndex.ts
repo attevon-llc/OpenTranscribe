@@ -78,6 +78,7 @@ const SECTION_NAMESPACES: Partial<Record<SettingsSection, string[]>> = {
   chat: ['chat.settings', 'chat.controls'],
   'chat-admin': ['chat.adminSettings', 'chat.settings.tabs.advanced'],
   'llm-provider': ['settings.llmProvider', 'llm'],
+  'llm-usage': ['settings.llmUsage'],
   'organization-context': ['settings.orgContext'],
   'speaker-attributes': ['settings.speakerAttributes'],
   'processing-pipeline': ['settings.pipeline'],

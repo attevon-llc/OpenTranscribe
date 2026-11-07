@@ -1,4 +1,4 @@
-"""Schema detection, v434-v459: data-only resets, provenance, takedowns, policy, holds, legal
+"""Schema detection, v434-v460: data-only resets, provenance, takedowns, policy, holds, legal
 acceptance, erasure receipts, audit-row guards, voiceprint consent and unique object keys.
 
 The data-only revisions (v434, v436, v439) key on the ABSENCE of the rows they rewrite, read
@@ -6,7 +6,7 @@ through each revision's own ``DETECT_SQL`` so detection and rewrite cannot drift
 processing provenance, correction carry-over, the password-age column, legal acceptance, the
 takedown origin/notice/notification tables, organization policy, collection visibility,
 content holds, the one-active-task guard, speaker identity source, and the v0.6.1 compliance
-revisions (v450-v458) and the governance audit outbox (v459).
+revisions (v450-v458), the governance audit outbox (v459) and the LLM token-limit counters (v460).
 
 ``probe()`` issues this era's queries in the order the ladder always has; ``ARMS`` is this
 era's slice of the newest-first ladder (``ladder.py``), and its first arm is the top of it.
@@ -97,7 +97,7 @@ def _has_unstamped_voiceprint_suggestion(conn: Connection, tables: list[str]) ->
 
 @dataclass(frozen=True)
 class GovernanceFacts:
-    """Probe answers for v434-v459."""
+    """Probe answers for v434-v460."""
 
     has_unusable_pyannote_source: bool
     has_lite_local_source: bool
@@ -124,6 +124,7 @@ class GovernanceFacts:
     has_audit_guard_followups: bool
     has_speaker_machine_identity_index: bool
     has_audit_outbox: bool
+    has_llm_token_budget: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
@@ -279,6 +280,11 @@ def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
         has_audit_outbox=_check_exists(
             "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_audit_outbox_status')"
         ),
+        # v460: the LLM token-limit counters (issue #790). Keyed on the unique index, created
+        # after the table.
+        has_llm_token_budget=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE indexname = 'uq_llm_token_budget_counter')"
+        ),
     )
 
 
@@ -319,7 +325,7 @@ def _matches_v451(f: SchemaFacts) -> bool:
     )
 
 
-# v452-v459 each add one probe to the previous rung: the step's revision, then its probe.
+# v452-v460 each add one probe to the previous rung: the step's revision, then its probe.
 _V452_ONWARD: tuple[tuple[str, str], ...] = (
     ("v452_add_erasure_receipt", "has_erasure_receipt"),
     ("v453_audit_row_immutability", "has_audit_row_guard"),
@@ -329,6 +335,7 @@ _V452_ONWARD: tuple[tuple[str, str], ...] = (
     ("v457_audit_guard_followups", "has_audit_guard_followups"),
     ("v458_speaker_machine_identity_index", "has_speaker_machine_identity_index"),
     ("v459_add_audit_outbox", "has_audit_outbox"),
+    ("v460_add_llm_token_budget", "has_llm_token_budget"),
 )
 
 
@@ -350,7 +357,7 @@ def _rung_probes(i: int) -> tuple[str, ...]:
 
 
 ARMS: tuple[Arm, ...] = (
-    # v459 (the top of the ladder) down to v452, newest first.
+    # v460 (the top of the ladder) down to v452, newest first.
     *(
         (_rung(_rung_probes(i)), revision)
         for i, (revision, _) in reversed(list(enumerate(_V452_ONWARD)))

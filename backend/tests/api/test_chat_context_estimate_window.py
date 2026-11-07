@@ -137,3 +137,49 @@ def test_unknown_window_is_logged_with_reason_and_no_scope_content(client, auth_
     assert len(records) == 1
     assert "llm_config_unusable" in records[0].getMessage()
     assert "board-minutes-secret-tag" not in records[0].getMessage()
+
+
+def test_the_estimate_measures_against_the_conversations_pinned_model(
+    client, auth_headers, db_session, normal_user
+):
+    """#1364 residual: a pinned model's window is the one the turn uses, not the default's."""
+    import uuid as uuid_mod
+
+    from app.models.user_llm_settings import UserLLMSettings
+
+    pinned = UserLLMSettings(
+        user_id=normal_user.id,
+        name="pinned",
+        provider="openai",
+        model_name="gpt-pinned",
+        max_tokens=200_000,
+        temperature="0.3",
+        uuid=uuid_mod.uuid4(),
+    )
+    db_session.add(pinned)
+    db_session.commit()
+
+    def from_config(_user_id, config_id):
+        assert config_id == pinned.id
+        return SimpleNamespace(user_context_window=200_000)
+
+    with (
+        _llm_with_window(8_000),
+        patch("app.services.llm_service.LLMService.create_from_config_id", side_effect=from_config),
+    ):
+        response = client.post(
+            URL, params={"llm_config_uuid": str(pinned.uuid)}, json=SCOPE, headers=auth_headers
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["context_window"] == 200_000
+
+
+def test_a_pinned_model_the_caller_may_not_use_is_a_404(client, auth_headers):
+    import uuid as uuid_mod
+
+    with _llm_with_window(8_000):
+        response = client.post(
+            URL, params={"llm_config_uuid": str(uuid_mod.uuid4())}, json=SCOPE, headers=auth_headers
+        )
+    assert response.status_code == 404

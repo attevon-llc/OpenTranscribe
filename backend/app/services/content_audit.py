@@ -52,6 +52,11 @@ if TYPE_CHECKING:
     from app.models.user import User
     from app.services.platform_bypass import PlatformBypass
 
+    #: The HTTP request an event takes its client address from. Services that only pass a
+    #: request through to the audit name it by this alias, so the web framework is imported
+    #: here, at the audit's HTTP edge, and not again in every service.
+    AuditRequest = Request
+
 logger = logging.getLogger(__name__)
 
 CONTENT_ACCESS_CAPABILITY = "audit.content_access"

@@ -70,7 +70,6 @@ backend/app/services/embedding_mode_service.py::method::validate_embedding_dimen
 backend/app/services/erasure_receipt/inventory.py::function::register_erasure_store	1	v0.6.1 merge: release helper with test-only callers; delete or whitelist when touched
 backend/app/services/error_categorization_service.py::method::should_show_enhanced_notification	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/formatting_service.py::method::calculate_percentage	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/services/hold_guard.py::function::assert_not_held	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/imohash_service.py::function::compute_from_bytes	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/ingest_artifacts/index_mapping.py::function::embedding_text_fits	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/interfaces.py::class::CacheService	1	residual after the dead-code pass; delete or whitelist when touched

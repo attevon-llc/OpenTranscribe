@@ -196,6 +196,12 @@ NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED = "collection_access_changed"
 NOTIFICATION_TYPE_GROUP_MEMBER_ADDED = "group_member_added"
 NOTIFICATION_TYPE_GROUP_MEMBER_REMOVED = "group_member_removed"
 
+# Trash state changes (issue #1101), sent to the file's owner, the actor and the organization's
+# admins. The payload is the file uuid and the trash dates; the file's own processing events
+# are suppressed while it is in the trash (services/file_availability).
+NOTIFICATION_TYPE_FILE_TRASHED = "file_trashed"
+NOTIFICATION_TYPE_FILE_RESTORED = "file_restored"
+
 # Token estimation constants for LLM services
 CHARS_PER_TOKEN_ESTIMATE = 4.0  # Average characters per token
 SUBWORD_TOKENIZATION_FACTOR = 1.3  # Factor for subword tokenization
@@ -725,3 +731,15 @@ LLM_BUDGET_LOCAL_UNLIMITED_KEY = "llm.budget.local_unlimited"
 DEFAULT_LLM_BUDGET_LOCAL_UNLIMITED = False
 #: Upper bound an admin may set for either limit (a typo guard, about 1e12 tokens).
 LLM_BUDGET_MAX_TOKENS = 1_000_000_000_000
+
+# --- Trash (issue #1101) -------------------------------------------------------------------
+# A person's delete moves a file to the trash; the hourly ``files.purge_trash`` beat task
+# destroys it when ``purge_after`` passes. ``purge_after`` is stamped at trash time, so changing
+# the window never shortens or extends a file already in the trash. Edited in Settings -> Data
+# Management -> Retention (admin), no restart. Retention expiry does NOT go through the trash.
+TRASH_RETENTION_DAYS_KEY = "files.trash_retention_days"
+DEFAULT_TRASH_RETENTION_DAYS = 30
+MIN_TRASH_RETENTION_DAYS = 1
+MAX_TRASH_RETENTION_DAYS = 90
+#: Most files one purge tick destroys; the rest wait for the next tick.
+TRASH_PURGE_BATCH_SIZE = 200

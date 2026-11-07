@@ -124,6 +124,16 @@ class AuditEventType(StrEnum):
     # A permanent delete refused by services/delete_permissions.py (issue #1103)
     FILE_DELETE_DENIED = "file.delete.denied"
 
+    # The trash (issue #1101). ``details`` carries ids, counts and the trash origin only, never
+    # a filename. ``file.purge.requested`` is a person asking for "delete forever" (one file,
+    # or ``file.trash.empty`` for a whole trash); ``file.purge`` is the destroy itself, written
+    # by the purge task with no person as its actor.
+    FILE_TRASH = "file.trash"
+    FILE_RESTORE = "file.restore"
+    FILE_PURGE_REQUESTED = "file.purge.requested"
+    FILE_PURGE = "file.purge"
+    TRASH_EMPTY = "file.trash.empty"
+
     # Prompt sharing events
     PROMPT_SHARE = "prompt.share"
     PROMPT_UNSHARE = "prompt.unshare"

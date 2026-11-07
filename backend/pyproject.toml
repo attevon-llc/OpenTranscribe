@@ -222,6 +222,7 @@ ignore_imports = [
   "app.services.privacy.policy_admin -> app.tasks.privacy_purge_task",  # deliberate late binding: Celery task lookup
   "app.services.redaction.llm_guard -> app.tasks.redaction_task",  # deliberate late binding: Celery task lookup
   "app.services.redaction.service -> app.tasks.redaction_task",  # deliberate late binding: Celery task lookup
+  "app.services.trash_service -> app.tasks.trash",  # deliberate late binding: Celery task lookup
   "app.services.search.model_switch -> app.tasks.reindex_task",  # deliberate late binding: Celery task lookup
   "app.services.search.reindex_dispatch -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
   "app.services.speaker_label_backfill -> app.tasks.ingest_artifacts_task",  # deliberate late binding: Celery task lookup

@@ -74,6 +74,13 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute=0),  # Every hour on the hour
         "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
     },
+    "purge-trash": {
+        "task": "files.purge_trash",
+        # Hourly at :45, offset from cleanup-expired-files (:00). Destroys trashed files whose
+        # window has ended (issue #1101); one indexed query when nothing is due.
+        "schedule": crontab(minute=45),
+        "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+    },
     "scratch-janitor": {
         "task": "cleanup.scratch_janitor",
         "schedule": crontab(minute=15),  # Hourly at :15, offset from cleanup/maintenance
@@ -226,6 +233,7 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "embedding-consistency-check": BeatEffect.MUTATING,  # dispatches GPU repair batches
     "gpu-stats-update": BeatEffect.READ_ONLY,  # refreshes the gpu_stats cache key only
     "cleanup-expired-files": BeatEffect.MUTATING,  # deletes files
+    "purge-trash": BeatEffect.MUTATING,  # destroys trashed files past their window
     "scratch-janitor": BeatEffect.MUTATING,  # deletes scratch directories
     "orphan-upload-sweeper": BeatEffect.MUTATING,  # deletes abandoned PENDING uploads
     "watch-source-scan": BeatEffect.INGEST,  # imports media from watch sources

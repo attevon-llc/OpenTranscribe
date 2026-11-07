@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The monitoring overlay ships tested alert rules (including a stuck governance outbox), Alertmanager and a node exporter. Alerts reach the app through a webhook that needs `ALERTMANAGER_WEBHOOK_TOKEN` and is refused at the HTTPS proxy, and appear as notifications. The backend healthcheck uses `/health/ready`, and text-mode logs carry the request id (#791).
 - An optional anonymous usage report, off by default and a double opt-in: the images ship `DO_NOT_TRACK=1`, so an operator first sets `DO_NOT_TRACK=0` in `.env` and restarts, then a super admin turns it on in Settings, Privacy & redaction. It sends about once a day a random install ID, the version and a rough count of files added in the last week; the settings card shows exactly what would be sent. `OPENTRANSCRIBE_TELEMETRY=false` also forces it off, and nothing is sent until a receiver key is configured (#1019).
 - The file list and collection file lists can be filtered to files under a legal hold (or not under one), the filter options report how many of your visible files are held, and each listed file says whether the platform or your organization holds it. A hold's reason and identifiers are never shown in lists.
+- A comment can be timed or general. A timed comment takes the playback time from the moment you start typing and keeps it while the video plays; you can type a different time, nudge it by a second, or use the current time before posting. Unticking Timestamp makes a general comment about the whole file, labelled "General" and listed first. Both kinds can be switched, and the time changed, when editing.
 
 ### Changed
 
@@ -127,6 +128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Log records no longer run an import to look up the request id, which every log line did in text mode.
 - Gender detection reports that its model is not loaded instead of failing with a `NoneType` error.
 - Files moved to the trash no longer appear in search results, counts, filters, suggestions, summary search or chat answers, and their speakers are no longer matched or suggested; restoring a file brings it all back. Excluding trashed files does not depend on a list of file ids, so search keeps working however many files are in the trash (#1101).
+- The Add Comment button no longer sits disabled without a reason: an empty comment shows a message next to the box.
+- Transcript exports no longer show a general comment as made at 00:00:00: it is listed first without a time (null in JSON, empty time cells in CSV).
 
 ### Security
 

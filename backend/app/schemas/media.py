@@ -124,6 +124,10 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     # view preference: another user's response never reflects it. Set by the gallery and
     # collection list endpoints; None where a response does not compute it.
     is_hidden: bool | None = None
+    #: Who holds the file (``platform`` / ``organization``), for the gallery badge. Never a
+    #: reason, and never hold uuids on a list. Set by the gallery and collection list endpoints
+    #: from one batched lookup per page; None where a response does not compute it.
+    hold: HoldSummary | None = None
 
     # Technical metadata
     media_format: str | None = None
@@ -232,6 +236,7 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
 
 class MediaFileDetail(MediaFile):
     #: Who holds the file against deletion and reprocessing (issue #1276); never a reason.
+    #: Always computed here (the detail page asks per file), so never None, unlike the list's.
     hold: HoldSummary = Field(default_factory=HoldSummary)
 
     #: Detail-only takedown fields — kept off the list schema (§B.3): a `Text` reason

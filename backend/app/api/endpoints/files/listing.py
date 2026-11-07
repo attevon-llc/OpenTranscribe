@@ -28,6 +28,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.media import PaginatedMediaFileResponse
 from app.schemas.user import UserSearchResult
+from app.services.content_hold_queries import list_hold_summaries
 from app.services.delete_permissions import can_delete_file
 from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
@@ -108,13 +109,14 @@ def _sort_and_page(
 
 
 def _format_list_page(db: Session, result: list[MediaFile], ctx: RequestContext) -> list:
-    """Format one gallery page: presigned URLs, speaker chips, delete capability, hidden mark."""
+    """Format one gallery page: URLs, speaker chips, delete capability, hidden mark, hold badge."""
     current_user = ctx.user
     org_scope = ctx.org_id
     # One privacy view for the page: the speaker chips ask the voiceprint policy per FILE
     # scope, and a page of files spans a handful of scopes, not one per speaker (#1280).
     privacy = PrivacyView(db)
     hidden_ids = hidden_file_ids_among(db, current_user.id, (f.id for f in result))
+    holds = list_hold_summaries(db, (f.id for f in result))
 
     # Format each file with URLs and formatted fields
     formatted_files = []
@@ -132,6 +134,7 @@ def _format_list_page(db: Session, result: list[MediaFile], ctx: RequestContext)
             bypass=ctx.bypass,
         )
         formatted_file.is_hidden = file.id in hidden_ids
+        formatted_file.hold = holds[file.id]
         formatted_files.append(formatted_file)
     return formatted_files
 
@@ -172,6 +175,10 @@ def list_media_files(
         "exclude",
         pattern=HIDDEN_MODE_PATTERN,
         description="Your hidden files: 'exclude' (default), 'include', or 'only'",
+    ),
+    # The computed "Legal hold" tag: held files only (true) or free files only (false).
+    held: bool | None = Query(
+        None, description="Legal hold: true = only held files, false = only files not held"
     ),
     # Sort parameters (after filters to avoid parameter shifting)
     sort_by: str = Query(
@@ -270,6 +277,7 @@ def list_media_files(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
+        "held": held,
         "user_id": effective_user_id,
         "owner_user_ids": resolve_owner_user_ids(db, owner),
         "organization_id": org_scope,

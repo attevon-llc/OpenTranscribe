@@ -25,6 +25,8 @@ from app.models.user import User
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
 from app.services.hidden_media_service import hidden_mode_pred
+from app.services.hold_guard import held_pred
+from app.services.hold_guard import not_held_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.sql_like import escape_like
@@ -447,6 +449,25 @@ def apply_owner_filter(query: Query, owner_user_ids: list[int] | None) -> Query:
     return query
 
 
+def apply_hold_filter(query: Query, held: bool | None) -> Query:
+    """The computed "Legal hold" tag: keep only held files (``True``) or only free ones.
+
+    Computed from ``hold_guard``'s predicate at read time, never stored as tag or collection rows
+    (docs/design/legal_hold_ux_freeze_plan.md section 5), so it narrows whatever the caller's
+    list already scoped and cannot reach a file the caller could not already see.
+
+    Args:
+        query: Base query, already scoped to the caller's accessible files.
+        held: ``True`` held only, ``False`` free only, ``None`` no filter.
+
+    Returns:
+        Filtered query.
+    """
+    if held is None:
+        return query
+    return query.filter(held_pred() if held else not_held_pred())
+
+
 def get_accessible_owners(
     db: Session,
     user_id: int,
@@ -545,6 +566,8 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
         query, filters.get("min_file_size"), filters.get("max_file_size")
     )
     query = apply_search_filter(query, filters.get("search"))
+    # An indexed flag plus an EXISTS on the hold tables: cheap next to the subqueries below.
+    query = apply_hold_filter(query, filters.get("held"))
 
     # More expensive filters — subqueries / external service
     query = apply_tag_filter(query, filters.get("tag"))
@@ -677,6 +700,8 @@ def get_metadata_filters(
             func.max(cast(height_text, Integer)),
             func.min(MediaFile.file_size),
             func.max(MediaFile.file_size),
+            # The computed "Legal hold" tag's count, over the same scoped set (no extra scan).
+            func.count(MediaFile.id).filter(held_pred()),
         )
         .filter(file_filter)
         .first()
@@ -691,10 +716,12 @@ def get_metadata_filters(
         max_height = ranges[5] if ranges[5] is not None else 0
         min_file_size = ranges[6] if ranges[6] is not None else 0
         max_file_size = ranges[7] if ranges[7] is not None else 0
+        held_count = int(ranges[8] or 0)
     else:
         min_duration = max_duration = 0.0
         min_width = max_width = min_height = max_height = 0
         min_file_size = max_file_size = 0
+        held_count = 0
 
     return {
         "formats": formats,
@@ -706,4 +733,5 @@ def get_metadata_filters(
             "width": {"min": min_width, "max": max_width},
             "height": {"min": min_height, "max": max_height},
         },
+        "held_count": held_count,
     }

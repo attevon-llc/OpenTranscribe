@@ -18,6 +18,7 @@ from app.models.content_hold import ContentHoldFile
 from app.schemas.content_hold import HoldSummary
 from app.services.hold_guard import HELD_BY_ORGANIZATION
 from app.services.hold_guard import hold_state
+from app.services.hold_guard import hold_states
 
 
 def collection_has_active_hold(db: Session, collection_id: int) -> bool:
@@ -79,6 +80,21 @@ def file_hold_summary(db: Session, file_id: int, *, reveal_uuids: bool) -> HoldS
         held_by=state.held_by,
         hold_uuids=list(state.org_hold_uuids) if reveal_uuids else [],
     )
+
+
+def list_hold_summaries(db: Session, file_ids: Iterable[int]) -> dict[int, HoldSummary]:
+    """The badge facts for every file on one list page, from ONE batched ``hold_states`` call.
+
+    Every id gets a summary (free files get the not-held default). Hold uuids are never put on a
+    list, whoever asks: the list says only who holds; the detail page is where an administrator
+    gets the release handle.
+    """
+    ids = {int(i) for i in file_ids}
+    states = hold_states(db, ids)
+    summaries = {file_id: HoldSummary() for file_id in ids}
+    for file_id, state in states.items():
+        summaries[file_id] = HoldSummary(held=state.held, held_by=state.held_by)
+    return summaries
 
 
 def collection_hold_summaries(

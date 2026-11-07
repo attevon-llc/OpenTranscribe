@@ -43,6 +43,18 @@
  * node is unchanged (16,884 -> 16,909 B). It cannot be removed from app code, so the two closure
  * budgets are raised by the measured delta plus the usual ~4% headroom, and the entry-chunk
  * budget is lowered to follow the measured drop.
+ *
+ * File-detail player on Video.js 10 (issue #1327 lane C, owner decision Q1), 2026-11-07, stock
+ * `nice -n 19 npm run build` on the lane tree before/after, gzip level 9:
+ *   total JS              2,649,976 B -> 2,774,568 B  (+124,592 B)
+ *   first-load closure      146,223 B ->   146,349 B  (+126 B, Svelte's custom-element attribute
+ *                                                      helper in the shared runtime chunk; no
+ *                                                      Video.js code, which the gate checks)
+ *   entry chunks              3,795 B ->     3,817 B
+ * The delta is the route-scoped composed controls plus the library's lazy locale packs (53
+ * chunks, about 62 KB in total, of which a viewer downloads one, about 1.3 KB). Plyr is still
+ * shipped for the mini player until lane E removes it (about 34 KB back). The total-JS budget is
+ * raised by the delta plus ~4% of it (124,592 + 4,984 B), rounded up to whole KiB.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize, relative } from 'node:path';
@@ -81,8 +93,9 @@ export const FIRST_LOAD_GZIP_BUDGET = 147 * 1024;
  * before the comment composer, i.e. 90 B of headroom left, and 2,649,803 B with it. 7,733 B of
  * that 7,973 B delta is translated copy in the 12 lazily loaded locale chunks (a user downloads
  * one, about 650 B), so it is content, not a regression. Reset to about 3% above the new measure.
+ * Raised 2666 -> 2793 KiB for the Video.js file player (#1327): measured 2,774,568 B, header.
  */
-export const TOTAL_JS_GZIP_BUDGET = 2666 * 1024;
+export const TOTAL_JS_GZIP_BUDGET = 2793 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;

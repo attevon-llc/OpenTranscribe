@@ -94,7 +94,7 @@ indexing → WebSocket notification.
   backup restore brought back. `takedown_service.release_file` calls its
   `notify_hold_released` for latency; **the schedule is the guarantee** — a hold can also
   be cleared by a DB edit or a restore, and a hook alone has a silent failure mode.
-  Phases: 0 self-service requests that came due (`self_erasure_service.execute_due_requests`), 1-2
+  Phases: 0 scheduled erasures that came due, any scope (`scheduled_erasure_service.execute_due_requests`), 1-2
   open entries, 3 completed entries (user/organization row back; `org_member` re-run bounded by time),
   4 index-level check (`erasure_index_reconcile.run_index_phase`). Result keys: `self_erasure_due`,
   `self_erasure_executed`, `org_member_rerun`, `org_member_needs_review` (replaced

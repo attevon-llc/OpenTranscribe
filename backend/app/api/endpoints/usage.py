@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -210,3 +211,56 @@ def get_my_usage(
         "rates_verified_on": RATES_VERIFIED_ON,
         "budget": _budget_view(db, ctx),
     }
+
+
+@router.get("/me/daily")
+def get_my_daily_usage(
+    days: int = Query(30, ge=1, le=MAX_WINDOW_DAYS),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_current_context),
+) -> dict[str, Any]:
+    """Daily LLM token totals for the caller, over every LLM feature — the series behind a chart.
+
+    Grouped in SQL: this one only needs the date, the event type and the quantity, all
+    real columns, so there is no reason to pull every row into Python. ``messages`` counts
+    chat exchanges, ``events`` every LLM token event, and ``by_event_type`` splits the day's
+    tokens by feature.
+    """
+    since = datetime.now(UTC) - timedelta(days=days)
+    day = func.date_trunc("day", UsageEvent.created_at).label("day")
+
+    rows = (
+        db.query(
+            day, UsageEvent.event_type, func.sum(UsageEvent.quantity), func.count(UsageEvent.id)
+        )
+        .filter(
+            UsageEvent.user_id == ctx.user.id,
+            org_stamp_is(UsageEvent.organization_id, ctx.org_id),
+            UsageEvent.event_type.in_(TOKEN_EVENT_TYPES),
+            UsageEvent.created_at >= since,
+        )
+        .group_by(day, UsageEvent.event_type)
+        .order_by(day)
+        .all()
+    )
+
+    series: dict[str, dict[str, Any]] = {}
+    for when, event_type, quantity, count in rows:
+        point = series.setdefault(
+            when.date().isoformat(),
+            {
+                "day": when.date().isoformat(),
+                "total_tokens": 0,
+                "messages": 0,
+                "events": 0,
+                "by_event_type": {},
+            },
+        )
+        tokens = int(quantity or 0)
+        point["total_tokens"] += tokens
+        point["events"] += int(count or 0)
+        point["by_event_type"][str(event_type)] = tokens
+        if event_type == EVENT_TYPE_CHAT_TOKENS:
+            point["messages"] += int(count or 0)
+
+    return {"window_days": days, "series": list(series.values())}

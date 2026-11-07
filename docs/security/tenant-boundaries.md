@@ -107,7 +107,7 @@ Paths are relative to `backend/`. Test abbreviations: **XT** =
 |---|---|---|---|---|
 | Tasks / file status / progress | Owner's files in the active tenant (single-tenant admin: all) | Retry/recovery only on own files in the active tenant | `app/api/endpoints/tasks.py:_get_user_media_files`, `get_active_progress`; `user_files.py:get_user_file_status`; `task_detection_service.py:find_user_problem_files` | OL `::test_task_listing_and_lookup_follow_the_active_tenant`, `::test_my_files_status_counts_only_the_active_tenant`, `::test_active_progress_names_only_files_of_the_active_tenant` |
 | Stuck files | Owner's files in the active tenant (admin: all) | n/a | `files/crud.py:get_media_file_by_id` via `files/management.py:get_stuck_files` | OL `::test_stuck_file_listing_follows_the_active_tenant` |
-| LLM usage | Own events stamped with the active tenant | n/a | `app/api/endpoints/usage.py:get_my_usage` | OL `::test_usage_reports_only_the_active_tenant` |
+| LLM usage | Own events stamped with the active tenant | n/a | `app/api/endpoints/usage.py:get_my_usage`, `get_my_daily_usage` | OL `::test_usage_reports_only_the_active_tenant` |
 
 ### Operator access
 

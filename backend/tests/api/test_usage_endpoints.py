@@ -12,6 +12,8 @@ real behavior confirmed from source:
   ``app.services.chat.pricing.RATES_VERIFIED_ON``.
 - ``days`` is bounded by module constant ``MAX_WINDOW_DAYS = 365``
   (``Query(30, ge=1, le=MAX_WINDOW_DAYS)``); 366 is a 422.
+- ``GET /usage/me/daily`` returns ``{"window_days": int, "series": [{"day": iso-date,
+  "total_tokens": int, "messages": int}]}``.
 """
 
 from __future__ import annotations

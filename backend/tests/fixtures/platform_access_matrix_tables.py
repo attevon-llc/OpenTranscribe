@@ -107,6 +107,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/tasks/progress/active": "bypass",
     "GET /api/tasks/{task_id}": "bypass",
     "GET /api/usage/me": "caller",
+    "GET /api/usage/me/daily": "caller",
     "GET /api/user-settings/media-sources": "caller",
     "GET /api/user-settings/organization-context/shared": "caller",
     "GET /api/users/search": "caller",

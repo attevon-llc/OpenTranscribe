@@ -33,6 +33,7 @@ import {
   changeOwnPassword,
   isAuthenticated,
   authStore,
+  lifecycleHoldCleared,
 } from './auth';
 
 const forbidden = (detail: unknown) => ({ response: { status: 403, data: { detail } } });
@@ -183,5 +184,29 @@ describe('changeOwnPassword', () => {
 
     expect(result).toEqual({ success: false, message: 'Password has been used recently.' });
     expect(get(accountLifecycle)?.code).toBe('password_change_required');
+  });
+
+  it('re-reads what loaded during the hold once the change succeeds', async () => {
+    // While the flag was set the server served this session as anonymous on
+    // /system/capabilities and refused its socket.
+    vi.mocked(axiosInstance.put).mockResolvedValue({ data: {} } as never);
+    vi.mocked(axiosInstance.get).mockResolvedValue({ data: { uuid: 'u1' } } as never);
+    accountLifecycle.set({ code: 'password_change_required', message: 'change it' });
+    const before = get(lifecycleHoldCleared);
+
+    await changeOwnPassword('old-secret', 'new-secret');
+
+    expect(get(lifecycleHoldCleared)).toBe(before + 1);
+    expect(vi.mocked(axiosInstance.get)).toHaveBeenCalledWith('/system/capabilities');
+  });
+
+  it('re-reads nothing when the change is refused', async () => {
+    vi.mocked(axiosInstance.put).mockRejectedValue({ response: { status: 400, data: {} } });
+    accountLifecycle.set({ code: 'password_change_required', message: 'change it' });
+    const before = get(lifecycleHoldCleared);
+
+    await changeOwnPassword('old-secret', 'weak');
+
+    expect(get(lifecycleHoldCleared)).toBe(before);
   });
 });

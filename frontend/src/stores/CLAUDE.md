@@ -19,6 +19,10 @@ caches of API responses.
   because the endpoint that clears each gate needs it. Add a code here **and** to
   `api/endpoints/auth/lifecycle_gates.py` (`external_token.py` for `proxy_identity_mismatch`) —
   a client that string-matches an English message breaks on rewording.
+  While either remedy hold is in force the server treats the session as **anonymous** on
+  optional-auth reads (`/system/capabilities`, thumbnails) and refuses its socket (4003), so
+  clearing one bumps `lifecycleHoldCleared`: `auth.ts` re-reads capabilities and
+  `websocket.ts` reconnects a socket that is not open.
 - `websocket.ts` — the socket lifecycle (connect, reconnect, close codes; policy in
   `$lib/websocket/connectionPolicy.ts`) and frame dispatch. `websocketNotifications.ts` — the
   notification list it holds (persistence, retention, panel/client actions, folds of inbound frames

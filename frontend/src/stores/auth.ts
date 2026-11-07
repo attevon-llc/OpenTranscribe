@@ -190,6 +190,20 @@ export function clearAccountLifecycle(): void {
 }
 
 /**
+ * Bumped when the server has just cleared a self-service hold (banner consent recorded,
+ * forced password change done). While the hold was in force the server treated the
+ * session as anonymous on optional-auth reads and refused it at the WebSocket handshake,
+ * so whatever loaded during the hold is read again: the capability map here, the socket
+ * in `$stores/websocket` (which subscribes; importing it here would be a cycle).
+ */
+export const lifecycleHoldCleared = writable(0);
+
+function onLifecycleHoldCleared(): void {
+  lifecycleHoldCleared.update((count) => count + 1);
+  void loadCapabilities();
+}
+
+/**
  * Record consent to the login banner (`POST /auth/banner/acknowledge`).
  *
  * This is the ONLY thing that satisfies the AC-8 gate. The SPA used to fake it
@@ -211,6 +225,8 @@ export async function acknowledgeBanner(): Promise<{ success: boolean; message?:
     if (get(accountLifecycle)?.code === 'banner_acknowledgment_required') {
       clearAccountLifecycle();
     }
+    // A caller still owing a password change is refused until that clears too.
+    if (get(accountLifecycle) === null) onLifecycleHoldCleared();
     return { success: true };
   } catch (rawError: unknown) {
     console.error('auth.ts: Banner acknowledgment failed:', rawError);
@@ -511,6 +527,7 @@ export async function changeOwnPassword(
     });
 
     clearAccountLifecycle();
+    onLifecycleHoldCleared();
     await fetchUserInfo();
     return { success: true };
   } catch (rawError: unknown) {

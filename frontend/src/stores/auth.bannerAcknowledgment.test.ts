@@ -37,6 +37,7 @@ import {
   accountLifecycle,
   isAuthenticated,
   authStore,
+  lifecycleHoldCleared,
 } from './auth';
 
 const bannerRefusal = (reason?: string) => ({
@@ -166,5 +167,40 @@ describe('acknowledgeBanner', () => {
     });
 
     expect((await acknowledgeBanner()).message).toBe('Too many requests');
+  });
+
+  it('re-reads what loaded during the hold once consent is recorded', async () => {
+    // While the hold was in force the server served this session as anonymous on
+    // /system/capabilities and refused its socket.
+    vi.mocked(axiosInstance.post).mockResolvedValue({ data: { acknowledged: true } } as never);
+    vi.mocked(axiosInstance.get).mockResolvedValue({ data: {} } as never);
+    accountLifecycle.set({ code: 'banner_acknowledgment_required', message: '' });
+    const before = get(lifecycleHoldCleared);
+
+    await acknowledgeBanner();
+
+    expect(get(lifecycleHoldCleared)).toBe(before + 1);
+    expect(vi.mocked(axiosInstance.get)).toHaveBeenCalledWith('/system/capabilities');
+  });
+
+  it('re-reads nothing while a password-change hold still stands', async () => {
+    vi.mocked(axiosInstance.post).mockResolvedValue({ data: { acknowledged: true } } as never);
+    accountLifecycle.set({ code: 'password_change_required', message: 'change it' });
+    const before = get(lifecycleHoldCleared);
+
+    await acknowledgeBanner();
+
+    expect(get(lifecycleHoldCleared)).toBe(before);
+    expect(vi.mocked(axiosInstance.get)).not.toHaveBeenCalledWith('/system/capabilities');
+  });
+
+  it('re-reads nothing when consent was not recorded', async () => {
+    vi.mocked(axiosInstance.post).mockRejectedValue({ response: { status: 500, data: {} } });
+    accountLifecycle.set({ code: 'banner_acknowledgment_required', message: '' });
+    const before = get(lifecycleHoldCleared);
+
+    await acknowledgeBanner();
+
+    expect(get(lifecycleHoldCleared)).toBe(before);
   });
 });

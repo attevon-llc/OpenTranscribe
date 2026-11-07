@@ -26,7 +26,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 
-from starlette.requests import Request
+from starlette.requests import HTTPConnection
 
 from app.core.config import settings
 
@@ -79,7 +79,7 @@ def is_trusted_proxy(ip: str) -> bool:
     return any(parsed in network for network in _TRUSTED_NETWORKS)
 
 
-def resolve_client_ip(request: Request | None) -> str:
+def resolve_client_ip(request: HTTPConnection | None) -> str:
     """Return the most trustworthy client address for *request*.
 
     Args:

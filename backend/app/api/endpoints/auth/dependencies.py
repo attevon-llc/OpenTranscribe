@@ -212,8 +212,10 @@ def get_current_active_user(
     ``get_current_user`` answers "is this credential valid?"; this dependency
     answers "may this account act right now?" — the account-lifecycle gate lives
     here rather than there so that the credential-validating layer stays
-    untouched (widening or narrowing it affects the WebSocket handshake, the
-    session probe and the optional-auth path, none of which want a 403).
+    untouched (widening or narrowing it affects the session probe, which reports
+    the hold rather than refusing). The WebSocket handshake and the optional-auth
+    path ask the same gates through ``admitted_on_optional_auth`` and treat a
+    refused account as anonymous instead of answering 403.
 
     ``db`` is the same session ``get_current_user`` already resolved (FastAPI
     caches a dependency per request), so the banner gate costs one extra query,
@@ -255,8 +257,10 @@ def get_optional_current_user(
     Used for endpoints that support both authenticated and unauthenticated
     access (e.g., public files can be accessed without auth, private files require auth).
 
-    A pending, rejected or expired account is anonymous here, as it is refused at
-    ``get_current_active_user``; see ``lifecycle_gates.admitted_on_optional_auth``.
+    An account ``get_current_active_user`` would refuse on this route (inactive,
+    pending, rejected, expired, owing a banner acknowledgment or a password change,
+    or a proxy-identity mismatch) is anonymous here; see
+    ``lifecycle_gates.admitted_on_optional_auth``.
 
     Returns:
         User object if valid token provided, None otherwise
@@ -293,7 +297,9 @@ def get_optional_current_user(
                 if external_session_expired(external_identity):
                     return None
                 external_user = sync_external_user_to_db(db, external_identity)
-                if not external_user.is_active or not admitted_on_optional_auth(external_user, db):
+                if not external_user.is_active or not admitted_on_optional_auth(
+                    external_user, request, db
+                ):
                     return None
                 # Stash for resolve_org_context()/get_current_context() so org
                 # scoping (e.g. thumbnail org-resolution) works for external
@@ -338,7 +344,7 @@ def get_optional_current_user(
 
         # Look up user by UUID
         user = db.query(User).filter(User.uuid == user_uuid).first()
-        if user is None or not user.is_active or not admitted_on_optional_auth(user, db):
+        if user is None or not user.is_active or not admitted_on_optional_auth(user, request, db):
             return None
 
         return user  # type: ignore[no-any-return]

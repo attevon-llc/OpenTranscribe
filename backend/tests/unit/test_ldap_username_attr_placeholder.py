@@ -17,6 +17,10 @@ patches ``get_auth_settings`` so it needs no live Postgres and stays runnable
 anywhere, including a ``git archive HEAD`` red-check tree with no ``.env``.
 """
 
+from unittest.mock import MagicMock
+
+from sqlalchemy.orm import Session
+
 from app.auth.ldap_auth import LdapConfig
 
 
@@ -41,7 +45,7 @@ class TestFromDbResolvesUsernameAttrPlaceholder:
         )
         monkeypatch.setattr("app.core.auth_settings.get_auth_settings", lambda db: fake)
 
-        cfg = LdapConfig.from_db(db=object())
+        cfg = LdapConfig.from_db(db=MagicMock(spec=Session))
 
         assert "{username_attr}" not in cfg.user_search_filter
         assert cfg.user_search_filter == "(uid={username})"
@@ -55,6 +59,6 @@ class TestFromDbResolvesUsernameAttrPlaceholder:
         )
         monkeypatch.setattr("app.core.auth_settings.get_auth_settings", lambda db: fake)
 
-        cfg = LdapConfig.from_db(db=object())
+        cfg = LdapConfig.from_db(db=MagicMock(spec=Session))
 
         assert cfg.user_search_filter == "(sAMAccountName={username})"

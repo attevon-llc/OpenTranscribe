@@ -280,8 +280,6 @@ def test_run_migrations_builds_the_index_and_survives_a_held_transaction(monkeyp
     """The real ``run_migrations()`` (advisory-lock connection and all) on a private database."""
     from app.db import concurrent_indexes
     from app.db import migrations
-    from app.db.migrations import _detect_schema_version
-    from tests.unit._migration_detection import _chain_order
     from tests.unit._migration_detection import assert_detected_at_or_after
 
     with shared_engine.connect() as lock_conn, lock_conn.begin():
@@ -301,10 +299,9 @@ def test_run_migrations_builds_the_index_and_survives_a_held_transaction(monkeyp
 
             with _autocommit(scratch) as conn:
                 conn.execute(text(f"DROP INDEX {INDEX}"))
-                # Pending index: an untracked database is stamped v457 and v458 re-runs (no DDL).
-                detected = _detect_schema_version(conn, inspect(conn).get_table_names())
-                order = _chain_order()
-                assert detected is not None and order.index(detected) < order.index(REVISION)
+                # Pending index: v458 runs no DDL, so a later revision's marker still places the
+                # database (v459's rung does not require the index); the runner builds it below.
+                assert_detected_at_or_after(conn, inspect(conn).get_table_names(), REVISION)
 
             with scratch.connect().execution_options(isolation_level="REPEATABLE READ") as blocker:
                 blocker.execute(text("SELECT count(*) FROM speaker"))

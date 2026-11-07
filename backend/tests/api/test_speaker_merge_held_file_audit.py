@@ -2,21 +2,21 @@
 
 Merging moves every transcript segment of the source speaker onto the target, which is a
 bulk edit of the file's transcript. A hold blocks destruction, not correction, so the merge
-goes ahead; what the hold changes is that the edit is on the record. Driven through the real
-route against savepoint-isolated rows; the audit logger and the hold lookup are the seams.
+goes ahead; what the hold changes is that the edit is on the record, staged in the merge's own
+transaction (the transactional outbox, issue #1329). Driven through the real route against
+savepoint-isolated rows; the hold lookup is the seam, and the event is read back from the
+``audit_outbox`` row the merge committed.
 """
 
 from __future__ import annotations
 
 import json
 import uuid as uuid_pkg
-from unittest.mock import MagicMock
 
-import pytest
+from sqlalchemy import text
 
 from app.auth.audit_events import AuditEventType
 from app.models.media import TranscriptSegment
-from app.services import content_audit
 from app.services import content_hold_service
 from app.services.hold_guard import HoldState
 from tests.fixtures.speaker_cleanup_seams import make_pair
@@ -25,11 +25,18 @@ from tests.fixtures.speaker_cleanup_seams import make_speaker
 SECRET_TEXT = "the merger closes on friday"
 
 
-@pytest.fixture
-def audit_log(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    log = MagicMock(name="audit_logger")
-    monkeypatch.setattr(content_audit, "audit_logger", log)
-    return log
+def _edit_events(db_session, file_uuid: str) -> list[dict]:
+    """The ``content.transcript.edit`` events staged for ``file_uuid``, as their payloads."""
+    return [
+        row.payload
+        for row in db_session.execute(
+            text(
+                "SELECT payload FROM audit_outbox WHERE event_type = :t "
+                "AND payload->>'resource_uuid' = :f"
+            ),
+            {"t": AuditEventType.CONTENT_TRANSCRIPT_EDIT.value, "f": file_uuid},
+        )
+    ]
 
 
 def _merge(client, headers, db_session, normal_user, seams, monkeypatch, *, held: bool):
@@ -54,8 +61,8 @@ def _merge(client, headers, db_session, normal_user, seams, monkeypatch, *, held
     return response, ids
 
 
-def test_merging_speakers_on_a_held_file_writes_a_transcript_edit_event(
-    client, user_token_headers, db_session, normal_user, speaker_os_seams, audit_log, monkeypatch
+def test_merging_speakers_on_a_held_file_commits_a_transcript_edit_event(
+    client, user_token_headers, db_session, normal_user, speaker_os_seams, monkeypatch
 ):
     response, (file_uuid, source_uuid, target_uuid) = _merge(
         client,
@@ -68,8 +75,8 @@ def test_merging_speakers_on_a_held_file_writes_a_transcript_edit_event(
     )
 
     assert response.status_code == 200, response.text
-    events = [c.kwargs for c in audit_log.log.call_args_list]
-    (event,) = [e for e in events if e["event_type"] is AuditEventType.CONTENT_TRANSCRIPT_EDIT]
+    events = _edit_events(db_session, file_uuid)
+    (event,) = events
     assert event["resource_type"] == "media_file"
     assert event["resource_uuid"] == file_uuid
     assert event["details"]["kind"] == "speaker_merge"
@@ -79,10 +86,10 @@ def test_merging_speakers_on_a_held_file_writes_a_transcript_edit_event(
 
 
 def test_merging_speakers_on_a_free_file_writes_no_event(
-    client, user_token_headers, db_session, normal_user, speaker_os_seams, audit_log, monkeypatch
+    client, user_token_headers, db_session, normal_user, speaker_os_seams, monkeypatch
 ):
     """Control: the same merge on a file nobody holds is not a governance event."""
-    response, _ids = _merge(
+    response, (file_uuid, _source, _target) = _merge(
         client,
         user_token_headers,
         db_session,
@@ -93,8 +100,4 @@ def test_merging_speakers_on_a_free_file_writes_no_event(
     )
 
     assert response.status_code == 200, response.text
-    assert [
-        c
-        for c in audit_log.log.call_args_list
-        if c.kwargs["event_type"] is AuditEventType.CONTENT_TRANSCRIPT_EDIT
-    ] == []
+    assert _edit_events(db_session, file_uuid) == []

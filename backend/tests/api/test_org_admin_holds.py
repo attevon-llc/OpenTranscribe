@@ -14,13 +14,16 @@ import uuid as uuid_pkg
 
 import pytest
 from fastapi import status
+from sqlalchemy import select
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
+from app.models.audit_outbox import AuditOutbox
 from app.models.content_hold import ContentHold
+from app.services import audit_outbox
 from app.services.hold_guard import hold_state
 
 HOLDS = "/api/org-admin/holds"
@@ -48,8 +51,16 @@ def holds_off():
 
 @pytest.fixture()
 def events(monkeypatch) -> list[dict]:
+    """Logged events (refusals) and staged ones (place/release: the outbox, issue #1329)."""
     written: list[dict] = []
     monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+    real_stage = audit_outbox.stage
+
+    def _stage(db, **kw):
+        written.append(kw)
+        return real_stage(db, **kw)
+
+    monkeypatch.setattr(audit_outbox, "stage", _stage)
     return written
 
 
@@ -389,6 +400,13 @@ def test_placing_and_releasing_are_audited_without_the_reason_or_matter(
         }
     blob = json.dumps(events, default=str)
     assert REASON not in blob and MATTER not in blob
+    rows = gov.db.execute(
+        select(AuditOutbox.event_type, AuditOutbox.payload).where(
+            AuditOutbox.payload["resource_uuid"].astext == hold_uuid
+        )
+    ).all()
+    assert sorted(r.event_type for r in rows) == ["content.hold.place", "content.hold.release"]
+    assert REASON not in json.dumps([r.payload for r in rows])
 
 
 def test_a_refused_delete_is_audited_as_a_refusal(client, gov, holds_on, events):

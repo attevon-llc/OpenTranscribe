@@ -8,7 +8,8 @@ nginx-denied (``location = /metrics { deny all; return 404; }``, and the same fo
 
 - ``/metrics`` — every collector. Queue gauges are sampled per scrape; the
   backup/media-mirror projection is DB-backed and refreshed at most once per
-  ``backup_metrics.JOB_METRICS_TTL_SECONDS`` (issue #1001).
+  ``backup_metrics.JOB_METRICS_TTL_SECONDS`` (issue #1001), as is the governance audit
+  outbox's ``audit_outbox_stuck_events``.
 - ``/metrics/queues`` — ONLY the per-queue Celery gauges (``celery_queue_depth``,
   ``celery_queue_reserved``, ``celery_queue_orphaned``,
   ``celery_queue_oldest_unacked_age_seconds``, ``celery_queue_oldest_message_age_seconds``),
@@ -36,6 +37,7 @@ from app.core.metrics import celery_queue_oldest_message_age_seconds
 from app.core.metrics import celery_queue_oldest_unacked_age_seconds
 from app.core.metrics import celery_queue_orphaned
 from app.core.metrics import celery_queue_reserved
+from app.services.audit_outbox import refresh_stuck_gauge
 
 router = APIRouter()
 
@@ -55,6 +57,7 @@ def metrics() -> Response:
     update_queue_depths()
     update_transcription_lease_metrics()
     refresh_job_metrics()
+    refresh_stuck_gauge()
     return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 

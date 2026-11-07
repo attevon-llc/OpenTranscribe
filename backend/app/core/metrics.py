@@ -116,6 +116,7 @@ search_indexing_retries_total: Counter
 search_indexing_files_awaiting_reindex: Gauge
 task_rows_superseded_total: Counter
 task_rows_superseded_active: Gauge
+audit_outbox_stuck_events: Gauge
 diarization_runs_total: Counter
 
 
@@ -150,6 +151,7 @@ def _register() -> None:
     global search_indexing_retries_total
     global task_rows_superseded_total
     global task_rows_superseded_active
+    global audit_outbox_stuck_events
     global search_indexing_files_awaiting_reindex
     global diarization_runs_total
 
@@ -343,6 +345,15 @@ def _register() -> None:
         "Active (pending/in_progress) task rows that a newer completed row of the same step "
         "for the same file has superseded: what the recovery sweep resolves on its next run. "
         "Should be zero; alert if it stays above zero for longer than a sweep interval.",
+    )
+
+    # Governance audit outbox (v459, issue #1329). Derived from the database at scrape time
+    # (app.services.audit_outbox.refresh_stuck_gauge) with the predicate the relay logs by, so it
+    # is correct on the API process.
+    audit_outbox_stuck_events = Gauge(
+        "audit_outbox_stuck_events",
+        "Governance audit events committed to audit_outbox that the audit sink has not received "
+        "within 15 minutes, or that it rejected. Should be zero; alert if it stays above zero.",
     )
 
     # Diarization runs by the engine that served them (issue #1184). Incremented in the GPU

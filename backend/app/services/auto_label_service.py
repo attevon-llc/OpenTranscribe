@@ -8,6 +8,7 @@ application to existing files.
 
 import logging
 from collections.abc import Callable
+from collections.abc import Iterable
 from datetime import UTC
 from datetime import datetime
 from typing import Any
@@ -27,9 +28,10 @@ from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.topic import TopicSuggestion
+from app.services import audit_outbox
 from app.services.collection_visibility import usable_collections
 from app.services.content_audit import AuditedResource
-from app.services.content_audit import record_content_event
+from app.services.content_audit import stage_content_event
 from app.services.permission_service import PermissionService
 from app.services.tag_scope import owned_or_system
 from app.services.tag_scope import tenant_first
@@ -267,6 +269,7 @@ class AutoLabelService:
         if not (result["failed_tags"] or result["failed_collections"]):
             suggestion.auto_apply_completed_at = datetime.now(UTC)
 
+        self._stage_collection_join_events(media_file, joined_collections)
         try:
             self.db.commit()
         except Exception:
@@ -330,26 +333,20 @@ class AutoLabelService:
             result[f"auto_applied_{kind}"].append(name)
         return outcomes
 
-    def _announce_collection_joins(
+    def _stage_collection_join_events(
         self,
         media_file: MediaFile,
         joined_collections: list[Collection],
         source: str = "auto_label",
     ) -> None:
-        """After the commit: refresh the search index and audit each collection joined.
+        """Before the commit: stage one membership event per collection joined (issue #1329).
 
-        An organization file that joined a collection needs its chunks' ``collection_ids``
-        rewritten (the org-collection read route, ``search/access_filter``). The audit event
-        is unattended, so the actor is the file's owner and ``source`` says so.
+        Staged in the join's own transaction, so the membership and its record commit or roll
+        back together. The event is unattended, so the actor is the file's owner and ``source``
+        says so.
         """
-        if not joined_collections:
-            return
-        if media_file.organization_id is not None:
-            from app.tasks.search_file_field_tasks import update_file_access_index
-
-            update_file_access_index.delay([int(media_file.id)])
         for collection in joined_collections:
-            record_content_event(
+            stage_content_event(
                 self.db,
                 None,
                 event=AuditEventType.COLLECTION_MEMBERSHIP_CHANGE,
@@ -361,8 +358,30 @@ class AutoLabelService:
                     "file_uuids": [str(media_file.uuid)],
                     "source": source,
                 },
-                dedup=False,
             )
+
+    def _stage_grouped_joins(self, joins: Iterable[tuple[MediaFile, list[Collection]]]) -> None:
+        """:meth:`_stage_collection_join_events` for each file a batch grouping moved."""
+        for grouped_file, grouped_collections in joins:
+            self._stage_collection_join_events(
+                grouped_file, grouped_collections, source=TAG_SOURCE_BULK_GROUP
+            )
+
+    def _announce_collection_joins(
+        self, media_file: MediaFile, joined_collections: list[Collection]
+    ) -> None:
+        """After the commit: refresh the search index and deliver the staged audit events.
+
+        An organization file that joined a collection needs its chunks' ``collection_ids``
+        rewritten (the org-collection read route, ``search/access_filter``).
+        """
+        if not joined_collections:
+            return
+        if media_file.organization_id is not None:
+            from app.tasks.search_file_field_tasks import update_file_access_index
+
+            update_file_access_index.delay([int(media_file.id)])
+        audit_outbox.deliver_staged(self.db)
 
     def _get_or_create_tag_with_dedup(
         self,
@@ -605,6 +624,7 @@ class AutoLabelService:
                 collections_created += 1
 
         batch.grouping_status = "completed"
+        self._stage_grouped_joins(joined_by_file.values())
         try:
             self.db.commit()
         except Exception:
@@ -612,9 +632,7 @@ class AutoLabelService:
             raise
 
         for grouped_file, grouped_collections in joined_by_file.values():
-            self._announce_collection_joins(
-                grouped_file, grouped_collections, source=TAG_SOURCE_BULK_GROUP
-            )
+            self._announce_collection_joins(grouped_file, grouped_collections)
 
         return {
             "collections_created": collections_created,

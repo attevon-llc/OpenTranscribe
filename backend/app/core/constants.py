@@ -672,6 +672,19 @@ MIN_LEGAL_ACCEPTANCE_RETENTION_DAYS = 365
 # accepted). Enforced at startup in config and again inside the audit_prune() SQL function.
 AUDIT_RETENTION_FLOOR_DAYS = 365
 
+# Governance audit outbox (v459, services/audit_outbox.py, issue #1329). A relay pass claims at
+# most BATCH rows; a claim is a lease that lapses after LEASE seconds (a relay that died mid-pass
+# releases its rows that way). A failed delivery is retried after BASE * 2^(attempts - 1)
+# seconds, capped at MAX. A pending row older than STUCK_AFTER (or a rejected one) is "stuck":
+# the relay logs it at ERROR and the audit_outbox_stuck_events gauge counts it. Sent rows are
+# deleted after SENT_RETENTION_DAYS (the sink holds them).
+AUDIT_OUTBOX_BATCH_SIZE = 100
+AUDIT_OUTBOX_LEASE_SECONDS = 300
+AUDIT_OUTBOX_RETRY_BASE_SECONDS = 30
+AUDIT_OUTBOX_RETRY_MAX_SECONDS = 3600
+AUDIT_OUTBOX_STUCK_AFTER_SECONDS = 900
+AUDIT_OUTBOX_SENT_RETENTION_DAYS = 7
+
 # Opt-in voiceprint retention (tasks/voiceprint_retention.py). 0 = off; an operator sets e.g. 24.
 PRIVACY_VOICEPRINT_RETENTION_MONTHS_KEY = "privacy.voiceprint_retention_months"
 DEFAULT_PRIVACY_VOICEPRINT_RETENTION_MONTHS = 0

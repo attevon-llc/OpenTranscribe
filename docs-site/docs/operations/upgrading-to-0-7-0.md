@@ -127,3 +127,22 @@ it to `127.0.0.1` unless you need the access above.
 New installs ask "Expose directly on your LAN without HTTPS?" when HTTPS is not set up. The
 answer defaults to no, which keeps the web UI on the server only; answer yes, or set
 `FRONTEND_BIND_HOST=0.0.0.0` later, to use plain HTTP from other devices.
+
+## Governance audit events are kept in the database until delivered
+
+**Check this if...** you alert on Prometheus metrics, or you rely on the audit log as the record
+of legal holds.
+
+Placing or releasing a legal hold, editing the transcript of a held file, and changing a
+collection's visibility or membership now write their audit event in the same database
+transaction as the change (a new `audit_outbox` table, created automatically on upgrade). Before
+0.7.0 these events were written after the change, and an audit log outage lost them. Now the
+event waits in the database and is delivered when the audit log is back, by the existing
+background scheduler (`celery-beat`) and the utility worker, so keep both running.
+
+Two things you may notice:
+
+- If the database cannot store the event, the change itself fails too, instead of succeeding
+  without a record.
+- Add an alert on `audit_outbox_stuck_events > 0` (see
+  [Monitoring](./monitoring.md#governance-audit-outbox)). The backend has no new setting.

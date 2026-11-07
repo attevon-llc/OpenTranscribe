@@ -223,6 +223,7 @@ def place_org_hold(
     except holds.HoldRequestError as error:
         # Every refusal is raised before the service writes anything, so nothing to undo.
         raise _http(error) from None
+    holds.record_hold_change(db, request, ctx.user, change)
     db.commit()
     holds.finish_hold_change(db, request, ctx.user, change)
     return _serialize(db, org_id, [change.hold])[0]
@@ -248,6 +249,7 @@ def release_org_hold(
     except holds.HoldRequestError as error:
         # Every refusal is raised before the service writes anything, so nothing to undo.
         raise _http(error) from None
+    holds.record_hold_change(db, request, ctx.user, change)
     db.commit()
     holds.finish_hold_change(db, request, ctx.user, change)
     return _serialize(db, org_id, [change.hold])[0]

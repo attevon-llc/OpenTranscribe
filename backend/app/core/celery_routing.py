@@ -198,6 +198,8 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     # Legal record / voiceprint retention: bounded selection + delete or dispatch. Utility.
     "legal.acceptance_retention_sweep": {"queue": CeleryQueues.UTILITY},
     "audit.retention_sweep": {"queue": CeleryQueues.UTILITY},
+    # Governance audit outbox relay (v459): small DB claims plus one sink write per event.
+    "audit.outbox_relay": {"queue": CeleryQueues.UTILITY},
     "privacy.voiceprint_retention_sweep": {"queue": CeleryQueues.UTILITY},
     # Benchmark-timing bookkeeping (one Redis hash -> one DB row), dispatched with a
     # countdown after postprocess. Utility, so telemetry never takes a cpu slot.

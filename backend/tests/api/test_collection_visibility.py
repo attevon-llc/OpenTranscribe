@@ -12,7 +12,9 @@ as the caller, and keeps a control (the named people still see it) so a pass can
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
+from app.models.audit_outbox import AuditOutbox
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.topic import TopicSuggestion
@@ -298,11 +300,19 @@ class _Recorder:
 @pytest.fixture()
 def side_effects(monkeypatch):
     from app.api.endpoints import media_collections
+    from app.services import audit_outbox
     from app.services.chat import retrieval_cache
 
     ws, audit, bumps = _Recorder(), _Recorder(), _Recorder()
+    real_stage = audit_outbox.stage
+
+    def _stage(db, **kwargs):
+        audit(db, **kwargs)
+        return real_stage(db, **kwargs)
+
     monkeypatch.setattr(media_collections, "send_ws_event", ws)
-    monkeypatch.setattr(media_collections.audit_logger, "log", audit)
+    # The visibility event is staged in the change's transaction (issue #1329), not logged.
+    monkeypatch.setattr(audit_outbox, "stage", _stage)
     monkeypatch.setattr(retrieval_cache, "bump_corpus_version", bumps)
     return type("Effects", (), {"ws": ws, "audit": audit, "bumps": bumps})
 
@@ -359,6 +369,13 @@ def test_visibility_change_is_audited_without_the_name_and_clears_the_chat_cache
     assert kwargs["details"]["to"] == "restricted"
     assert kwargs["details"]["members_who_lost_access"] == 1, "bob; the admin and creator keep it"
     assert "Do not log this name" not in repr(kwargs)
+    staged = gov.db.execute(
+        select(AuditOutbox.status).where(
+            AuditOutbox.event_type == "collection.visibility.change",
+            AuditOutbox.payload["resource_uuid"].astext == str(collection.uuid),
+        )
+    ).all()
+    assert len(staged) == 1, "the event row is written in the change's own transaction"
 
 
 def test_setting_the_same_visibility_again_is_a_no_op(client, gov, side_effects):

@@ -221,6 +221,19 @@ for the same file (a late write from the older run reopened it). The periodic he
 The database also allows only one active (`pending` or `in_progress`) task row per file and task
 type. Starting a step again supersedes the file's older active row of that step.
 
+### Governance audit outbox
+
+Governance audit events (a transcript edit on a held file, placing or releasing a legal hold, a
+collection's visibility or membership changing) are written to the `audit_outbox` table in the
+same transaction as the change, then delivered to the audit log. Delivery is tried right after
+the request and then by the `audit.outbox_relay` task every minute, with a delay that doubles
+from 30 seconds up to an hour while the audit log is unavailable. Delivered rows are kept for 7
+days, then deleted (the audit log holds them).
+
+| Metric | Meaning |
+|---|---|
+| `audit_outbox_stuck_events` | gauge on the API `/metrics`: events committed more than 15 minutes ago that the audit log has not received, plus any it refused as malformed. Should be zero; alert if it stays above zero. The relay also logs the count at error level. The cause is in `audit_outbox.last_error`. |
+
 Recovery behaviour and its settings: [Environment variables → Task Recovery](../configuration/environment-variables.md#task-recovery).
 
 **OpenTranscribe — Product & Usage** (`product.json`, mixed datasources):

@@ -460,6 +460,7 @@ _MODERN_CHAIN: list[Step] = [
         "v458_speaker_machine_identity_index",
         markers={("index", "ix_speaker_machine_identity_media_file")},
     ),
+    step("v459_add_audit_outbox", markers={("constraint", "ck_audit_outbox_status")}),
 ]
 
 
@@ -545,14 +546,23 @@ def test_the_modern_chain_detects_each_revision_it_has_applied(lite, revision, s
     assert detect(schema) == revision
 
 
+def test_a_pending_v458_index_does_not_hold_the_outbox_revision_back(lite):
+    """v458 runs no DDL: its index is built by the runner after the upgrade, so it may be absent."""
+    schema = dict(_modern_chain_states())["v459_add_audit_outbox"]
+    schema.markers.discard(("index", "ix_speaker_machine_identity_media_file"))
+    assert detect(schema) == "v459_add_audit_outbox"
+    schema.markers.discard(("constraint", "ck_audit_outbox_status"))
+    assert detect(schema) == "v457_audit_guard_followups", "control: without v459's marker"
+
+
 def test_every_ladder_revision_is_pinned_by_a_test_above():
     """Guard the guard: an arm with no state here could move or vanish unnoticed."""
     pinned = {revision for revision, _ in _LEGACY_ARMS} | {s.name for s in _MODERN_CHAIN}
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 59
-    assert len(pinned) == 103
+    assert len(_MODERN_CHAIN) == 60
+    assert len(pinned) == 104
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -636,7 +646,8 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "FROM user_setting s",  # v434
         "conname = 'speaker_identity_source_user_id_fkey'",  # v449
         "conname = 'ck_legal_acceptance_subject'",  # v451
-        "indexname = 'ix_speaker_machine_identity_media_file'",  # v458, the last probe
+        "indexname = 'ix_speaker_machine_identity_media_file'",  # v458
+        "conname = 'ck_audit_outbox_status'",  # v459, the last probe
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]
     assert positions == sorted(positions), f"probe eras ran out of order: {positions}"

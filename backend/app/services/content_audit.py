@@ -12,8 +12,9 @@ holds) calls :func:`record_content_event`, so the rules below exist once:
   ``content.export`` are recorded only when the ``audit.content_access`` capability AND the
   super_admin ``audit.content_access.enabled`` setting (default off) are both true.
   Governance events (membership, visibility, holds, and a transcript edit on a held file) are
-  always recorded: they are low volume
-  and the features require them.
+  always recorded: they are low volume and the features require them. They go through
+  :func:`stage_content_event` into the transactional outbox (``services/audit_outbox``, v459),
+  in the same transaction as the change, and so are never lost to a sink outage.
 * **View-class events are de-duplicated** (``content.file.view`` and a ``stream_url`` media
   access): once per ``(event, actor, resource, surface)`` per ``CONTENT_AUDIT_DEDUP_SECONDS``,
   with ``SET NX EX`` in Redis. **Redis being unavailable means the event is written**: the
@@ -21,7 +22,8 @@ holds) calls :func:`record_content_event`, so the rules below exist once:
   a distinct copy leaving the system.
 * **Never in an event:** transcript text, filenames, titles, collection names or hold reasons.
   ``details`` carries ids, kinds, counts and formats only (``test_content_audit_events`` pins it).
-* **It never raises.** An audit failure must not fail the request it describes.
+* **:func:`record_content_event` never raises.** An audit failure must not fail the request it
+  describes. :func:`stage_content_event` raises: its row is part of the change's transaction.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from app.core.capabilities import capability_enabled
 from app.core.constants import AUDIT_CONTENT_ACCESS_DEFAULT
 from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY
 from app.core.constants import CONTENT_AUDIT_DEDUP_SECONDS
+from app.services import audit_outbox
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -193,33 +196,73 @@ def record_content_event(
             surface = str(body.get("surface") or body.get("kind") or "")
             if _already_recorded(event, int(actor.id), resource.uuid, surface):
                 return False
-        if bypass is not None and bypass.grant is not None:
-            body["grant_uuid"] = bypass.grant.uuid
-
-        from app.middleware.audit import get_request_context
-
-        ctx = get_request_context(request) if request is not None else {}
-        owner = resource.owner_user_id
-        audit_logger.log(
-            event_type=event,
-            outcome=AuditOutcome.SUCCESS,
-            user_id=int(actor.id),
-            username=str(actor.email),
-            source_ip=ctx.get("source_ip"),
-            user_agent=ctx.get("user_agent"),
-            organization_id=resource.organization_id,
-            target_user_id=owner if owner is not None and owner != actor.id else None,
-            resource_type=resource.resource_type,
-            resource_uuid=resource.uuid,
-            tenant_scope=(
-                TENANT_SCOPE_ORG if resource.organization_id is not None else TENANT_SCOPE_PERSONAL
-            ),
-            details=body,
-        )
+        audit_logger.log(**_event_kwargs(request, event, actor, resource, body, bypass))
         return True
     except Exception:  # noqa: BLE001
         logger.warning("content-audit write failed (request unaffected)", exc_info=True)
         return False
+
+
+def _event_kwargs(
+    request: Request | None,
+    event: AuditEventType,
+    actor: User,
+    resource: AuditedResource,
+    details: dict[str, Any],
+    bypass: PlatformBypass | None,
+) -> dict[str, Any]:
+    """``AuditLogger.log`` keyword arguments for one content or governance event."""
+    body = dict(details)
+    if bypass is not None and bypass.grant is not None:
+        body["grant_uuid"] = bypass.grant.uuid
+
+    from app.middleware.audit import get_request_context
+
+    ctx = get_request_context(request) if request is not None else {}
+    owner = resource.owner_user_id
+    return {
+        "event_type": event,
+        "outcome": AuditOutcome.SUCCESS,
+        "user_id": int(actor.id),
+        "username": str(actor.email),
+        "source_ip": ctx.get("source_ip"),
+        "user_agent": ctx.get("user_agent"),
+        "organization_id": resource.organization_id,
+        "target_user_id": owner if owner is not None and owner != actor.id else None,
+        "resource_type": resource.resource_type,
+        "resource_uuid": resource.uuid,
+        "tenant_scope": (
+            TENANT_SCOPE_ORG if resource.organization_id is not None else TENANT_SCOPE_PERSONAL
+        ),
+        "details": body,
+    }
+
+
+def stage_content_event(
+    db: Session,
+    request: Request | None,
+    *,
+    event: AuditEventType,
+    actor: User,
+    resource: AuditedResource,
+    details: dict[str, Any] | None = None,
+    bypass: PlatformBypass | None = None,
+) -> bool:
+    """Stage a governance event in ``db``'s transaction (the outbox, v459, issue #1329).
+
+    Call it BEFORE the commit of the change the event describes: the event row commits or rolls
+    back with it, and :func:`app.services.audit_outbox.deliver_staged` (after the commit) or the
+    relay delivers it to the sink. Unlike :func:`record_content_event` it RAISES on failure, as
+    any other write of that transaction would: a change whose record cannot be kept does not
+    commit. Governance events only: never gated, never de-duplicated.
+
+    Returns:
+        Whether an event was staged (False only while audit logging is off).
+    """
+    if event in GATED_EVENTS:
+        raise ValueError(f"{event.value} is an opt-in content event, not a governance event")
+    kwargs = _event_kwargs(request, event, actor, resource, dict(details or {}), bypass)
+    return audit_outbox.stage(db, **kwargs) is not None
 
 
 def record_file_event(

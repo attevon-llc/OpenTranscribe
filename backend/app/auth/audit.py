@@ -38,9 +38,17 @@ if TYPE_CHECKING:
 _AUDIT_WRITE_TIMEOUT_SECONDS = 2
 
 
-def _audit_index_name() -> str:
-    """The monthly index the current event belongs in."""
-    return f"audit-logs-{datetime.now(UTC).strftime('%Y.%m')}"
+def _audit_index_name(at: datetime | None = None) -> str:
+    """The monthly index an event belongs in: the month of ``at`` (default: now)."""
+    return f"audit-logs-{(at or datetime.now(UTC)).strftime('%Y.%m')}"
+
+
+class AuditSinkUnavailableError(RuntimeError):
+    """The audit sink could not take an event now; a later attempt may succeed."""
+
+
+class AuditEventRejectedError(RuntimeError):
+    """The sink refused the event document itself (a field type clash): no retry can succeed."""
 
 
 #: Fields added for content governance (#1277). A pre-existing index gets them through
@@ -64,6 +72,14 @@ _AUDIT_PROPERTIES: dict[str, Any] = {
     "tenant_scope": {"type": "keyword"},
     "details": {"type": "object", "enabled": True},
 }
+
+
+def _event_time(event: dict[str, Any]) -> datetime | None:
+    """The event's own timestamp, or None when it has none that parses."""
+    try:
+        return datetime.fromisoformat(str(event["timestamp"]))
+    except (KeyError, ValueError):
+        return None
 
 
 class AuditLogger:
@@ -326,8 +342,53 @@ class AuditLogger:
                 #1277): a member's own-file view must not be readable by every
                 admin of every organization the member belongs to.
         """
-        if not settings.AUDIT_LOG_ENABLED:
+        event = self.build_event(
+            event_type=event_type,
+            outcome=outcome,
+            user_id=user_id,
+            username=username,
+            source_ip=source_ip,
+            user_agent=user_agent,
+            error_code=error_code,
+            details=details,
+            organization_id=organization_id,
+            target_user_id=target_user_id,
+            target_username=target_username,
+            resource_type=resource_type,
+            resource_uuid=resource_uuid,
+            tenant_scope=tenant_scope,
+        )
+        if event is None:
             return
+        self._write_line(event)
+        if settings.AUDIT_LOG_TO_OPENSEARCH:
+            self._index_to_opensearch(event)
+
+    def build_event(
+        self,
+        event_type: AuditEventType,
+        outcome: AuditOutcome,
+        user_id: int | None = None,
+        username: str | None = None,
+        source_ip: str | None = None,
+        user_agent: str | None = None,
+        error_code: str | None = None,
+        details: dict[str, Any] | None = None,
+        organization_id: int | None = None,
+        target_user_id: int | None = None,
+        target_username: str | None = None,
+        resource_type: str | None = None,
+        resource_uuid: str | None = None,
+        tenant_scope: str | None = None,
+    ) -> dict[str, Any] | None:
+        """The event document :meth:`log` writes, or ``None`` while audit logging is off.
+
+        Takes exactly :meth:`log`'s arguments. The timestamp and request id are taken NOW, so an
+        event built inside a request and delivered later (``services/audit_outbox``) still
+        carries the time and request of the change it describes.
+        """
+        if not settings.AUDIT_LOG_ENABLED:
+            return None
 
         # ``source_ip`` is mapped as an ``ip``: a value that is not one ("unknown" from a proxy,
         # a hostname, a test client's name) makes OpenSearch reject the WHOLE event, which then
@@ -373,16 +434,51 @@ class AuditLogger:
             event["resource_uuid"] = resource_uuid
         if tenant_scope is not None:
             event["tenant_scope"] = tenant_scope
+        return event
 
-        # Log in configured format
+    def _write_line(self, event: dict) -> None:
+        """Write the event to the audit log stream in the configured format."""
         if settings.AUDIT_LOG_FORMAT.lower() == "cef":
             self._logger.info(self._format_cef(event))
         else:
             self._logger.info(self._format_json(event))
 
-        # Index to OpenSearch if enabled
+    def deliver(self, event: dict[str, Any], event_id: str) -> bool:
+        """Deliver one outbox event to the sink, at most once per ``event_id``; raise on failure.
+
+        The OpenSearch document id is ``event_id`` and the write is ``op_type=create``, so a
+        resend of an event the index already holds (the relay crashed after the write and
+        before marking the row sent) is answered 409 and indexes nothing. The index is the
+        month of the event's own timestamp, so a resend after a month boundary finds the same
+        index. Unlike :meth:`log`, nothing goes to the fallback file: the outbox row is the
+        durable copy until this returns.
+
+        Returns:
+            True when this call wrote the event; False when the index already held it.
+
+        Raises:
+            AuditEventRejectedError: the sink refused the document; retrying cannot succeed.
+            AuditSinkUnavailableError: no client, or the write failed; retry later.
+        """
         if settings.AUDIT_LOG_TO_OPENSEARCH:
-            self._index_to_opensearch(event)
+            client = self._get_opensearch_client()
+            if client is None:
+                raise AuditSinkUnavailableError("OpenSearch audit client unavailable")
+            index_name = _audit_index_name(_event_time(event))
+            try:
+                self._ensure_index(client, index_name)
+                client.index(index=index_name, id=event_id, body=event, op_type="create")
+            except Exception as e:
+                status = getattr(e, "status_code", None)
+                if status == 409:
+                    return False
+                self._known_indices.discard(index_name)
+                if status == 400:
+                    raise AuditEventRejectedError(f"{type(e).__name__}: {e}") from e
+                raise AuditSinkUnavailableError(f"{type(e).__name__}: {e}") from e
+        # After the index write, so a sink outage does not repeat the line on every retry.
+        self._write_line(event)
+        return True
 
     def log_login_success(
         self,

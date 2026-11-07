@@ -142,6 +142,13 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute=10, hour=5),
         "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
     },
+    "audit-outbox-relay": {
+        "task": "audit.outbox_relay",
+        # Every minute: delivers governance audit events the request could not (the sink was
+        # down), retrying with backoff; a no-op query when the outbox has nothing due (v459).
+        "schedule": 60.0,
+        "options": {"queue": "utility", "priority": 3},  # UtilityPriority.OPERATIONAL
+    },
     "audit-retention-sweep": {
         "task": "audit.retention_sweep",
         # Daily at 05:15. A no-op unless AUDIT_LOG_RETENTION_DAYS > 0 (default 0 = keep
@@ -220,6 +227,7 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "account-inactivity-sweep": BeatEffect.MUTATING,  # disables accounts
     "gdpr-erasure-reconcile": BeatEffect.MUTATING,  # erases subjects' data
     "legal-acceptance-retention-sweep": BeatEffect.MUTATING,  # deletes acceptance records
+    "audit-outbox-relay": BeatEffect.MUTATING,  # copies audit events out, marks/deletes rows
     "audit-retention-sweep": BeatEffect.MUTATING,  # deletes audit rows
     "voiceprint-retention-sweep": BeatEffect.MUTATING,  # deletes voiceprints
     "session-cap-sweep": BeatEffect.MUTATING,  # revokes sessions

@@ -158,6 +158,10 @@ EXEMPT_TABLES: dict[str, str] = {
         "placement and release are already in the OpenSearch audit stream"
     ),
     "content_hold_file": "child of content_hold, same reason",
+    "audit_outbox": (
+        "a delivery queue, not the record: the relay must update its delivery state and delete "
+        "rows the audit sink already holds (v459, issue #1329)"
+    ),
     "usage_event": (
         "cloud-edition seam table: a downstream edition owns its lifecycle and may opt in "
         "through register_protected_table"

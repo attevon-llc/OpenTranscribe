@@ -114,13 +114,11 @@ def merge_speakers(
     # (not this profile, not that speaker) must outlive the CASCADE that drops its rows.
     carry_blacklist(db, int(source_speaker_id), int(target_speaker.id))
 
-    # Delete the source speaker
-    db.delete(source_speaker)
-    db.commit()
-
     # A merge rewrites the speaker of every segment the source had, which is an edit of the
-    # transcript: on a held file it is allowed and recorded (issue #1307). After the commit,
-    # so a rolled-back merge leaves no event; nothing is written for a file nobody holds.
+    # transcript: on a held file it is allowed and recorded (issues #1307, #1329). Staged in the
+    # merge's own transaction, so the merge and its record commit or roll back together;
+    # nothing is staged for a file nobody holds.
+    from app.services import audit_outbox
     from app.services.content_hold_service import record_edit_on_held_file
 
     record_edit_on_held_file(
@@ -132,6 +130,11 @@ def merge_speakers(
         speaker_uuids=[source_speaker_uuid, target_speaker_uuid_str],
         bypass=ctx.bypass,
     )
+
+    # Delete the source speaker
+    db.delete(source_speaker)
+    db.commit()
+    audit_outbox.deliver_staged(db)
 
     # The source is no longer a member: its clusters and profile drop it NOW, not when the
     # background task gets to it (issue #1214). The target side waits for the averaged

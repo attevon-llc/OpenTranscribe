@@ -92,12 +92,19 @@ export interface PurgeStatus {
   residual_ok: boolean | null;
   residual_unverified: string[];
   audit: PurgeAuditRef[];
-  /** Why a purge ended without running; `files_protected` = every recording was held or taken down. */
+  /**
+   * Why a purge ended without finishing: `files_protected` = every recording was held or taken
+   * down; `interrupted` = the worker died between passes and the re-verify task gave up, so
+   * the admin should run the purge again.
+   */
   reason?: string | null;
 }
 
 /** The abort code for a purge whose every recording is under a legal hold or has been taken down. */
 export const PURGE_REASON_FILES_PROTECTED = 'files_protected';
+
+/** The abort code for a purge whose worker died before its second pass; running it again is safe. */
+export const PURGE_REASON_INTERRUPTED = 'interrupted';
 
 export type PurgeScope = 'personal' | 'all';
 

@@ -211,4 +211,29 @@ describe('FileVoiceprintConsent', () => {
     );
     expect(toast.error).not.toHaveBeenCalledWith(enMessages['file.voiceprintConsent.purgeFailed']);
   });
+
+  it('tells the owner to run an interrupted deletion again, not a generic failure', async () => {
+    api.setFileVoiceprintConsent.mockResolvedValue({
+      state: 'declined',
+      changed: true,
+      purge_task_id: 't-4',
+      reprocess_to_create_voiceprints: false,
+    });
+    api.getPurgeStatus.mockResolvedValue({
+      task_id: 't-4',
+      status: 'failed',
+      reason: 'interrupted',
+      residual_ok: null,
+    });
+    render(FileVoiceprintConsent, { props: { fileUuid: 'f-1', state: 'granted', isOwner: true } });
+
+    await optOut();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        enMessages['file.voiceprintConsent.purgeInterrupted']
+      )
+    );
+    expect(toast.error).not.toHaveBeenCalledWith(enMessages['file.voiceprintConsent.purgeFailed']);
+  });
 });

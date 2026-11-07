@@ -22,6 +22,7 @@
     PrivacyApi,
     PURGE_CONFIRM_WORD,
     PURGE_REASON_FILES_PROTECTED,
+    PURGE_REASON_INTERRUPTED,
     isTerminalPurgeState,
     type PurgeAccepted,
     type PurgeStatus,
@@ -200,6 +201,10 @@
           <p>{$t('privacy.purge.completed', { total: purgeCountTotal(status.counts) })}</p>
         {:else if status.status === 'failed' && status.reason === PURGE_REASON_FILES_PROTECTED}
           <p role="status" data-testid="purge-all-protected">{$t('privacy.purge.allProtected')}</p>
+        {:else if status.status === 'failed' && status.reason === PURGE_REASON_INTERRUPTED}
+          <p class="error" role="alert" data-testid="purge-interrupted">
+            {$t('privacy.purge.interrupted')}
+          </p>
         {:else if status.status === 'failed'}
           <p class="error" role="alert">{$t('privacy.purge.failed')}</p>
         {:else if status.status === 'skipped'}

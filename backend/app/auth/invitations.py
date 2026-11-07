@@ -28,11 +28,15 @@ from app.auth.password_history import add_password_to_history
 from app.auth.password_policy import validate_password
 from app.auth.roles import role_implies_superuser
 from app.auth.utils import local_password_allowed
+from app.core.auth_mail import INVITATION_TASK
+from app.core.auth_mail import dispatch_auth_mail
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
+from app.core.exceptions import EmailTransientError
 from app.core.security import get_password_hash
 from app.models.invitation import UserInvitation
 from app.models.user import User
+from app.services.email_service import EmailDeliveryError
 from app.services.email_service import email_service
 
 logger = logging.getLogger(__name__)
@@ -67,7 +71,13 @@ def create_invitation(
     created_by: User,
     ip_address: str,
 ) -> tuple[UserInvitation | None, str | None]:
-    """Issue one invitation and email the link.
+    """Issue one invitation and queue the email carrying its link.
+
+    Whether mail can be sent at all is decided here, from configuration, before the
+    invitation is created: an administrator is told synchronously (503) that nothing can
+    go out. The send itself runs in the ``auth_mail.invitation`` task, which mints the
+    single-use token (the row is created with a throwaway hash nobody holds) so the token
+    is never a task argument.
 
     Args:
         db: Database session.
@@ -87,6 +97,8 @@ def create_invitation(
     if db.query(User).filter(User.email == email).first():
         return None, "That email address already has an account."
 
+    email_service.require_credential_mail(f"{settings.FRONTEND_URL}/accept-invite")
+
     # One outstanding invitation per address: re-inviting must invalidate the
     # previous link, or a revoked-and-resent invite leaves the old one live.
     now = datetime.now(UTC)
@@ -96,13 +108,14 @@ def create_invitation(
         UserInvitation.revoked_at.is_(None),
     ).update({"revoked_at": now})
 
-    raw_token = secrets.token_urlsafe(32)
+    # Placeholder hash: the real token is minted by the delivery task, so this row cannot be
+    # redeemed until (and unless) the mail is handed to a transport.
     invitation = UserInvitation(
         email=email,
         full_name=full_name,
         role=role,
         auth_type=auth_type,
-        token_hash=_hash(raw_token),
+        token_hash=_hash(secrets.token_urlsafe(32)),
         expires_at=now + timedelta(hours=expires_in_hours),
         created_by_id=created_by.id,
         ip_address=ip_address,
@@ -111,16 +124,45 @@ def create_invitation(
     db.commit()
     db.refresh(invitation)
 
-    accept_url = f"{settings.FRONTEND_URL}/accept-invite?token={raw_token}"
-    email_service.send_invitation(
-        str(email),
-        accept_url,
-        inviter=str(created_by.email),
-        expires_in_hours=expires_in_hours,
-        requires_password=auth_type == AUTH_TYPE_LOCAL,
-    )
+    dispatch_auth_mail(INVITATION_TASK, int(invitation.id), expires_in_hours)
     logger.info("Invitation issued for %s (role=%s, auth_type=%s)", email, role, auth_type)
     return invitation, None
+
+
+def deliver_invitation(
+    db: Session, invitation_id: int, expires_in_hours: int, *, final_attempt: bool = True
+) -> None:
+    """Mint the single-use link for an invitation and mail it (Celery task body).
+
+    A revoked, used or missing invitation is skipped. Each attempt mints a fresh token,
+    which supersedes the previous one, so a retry never leaves two live links.
+
+    Raises:
+        EmailTransientError: The send failed transiently and attempts remain.
+    """
+    invitation = db.query(UserInvitation).filter(UserInvitation.id == invitation_id).first()
+    if invitation is None or invitation.used_at is not None or invitation.revoked_at is not None:
+        return
+    inviter = db.query(User).filter(User.id == invitation.created_by_id).first()
+
+    raw_token = secrets.token_urlsafe(32)
+    invitation.token_hash = _hash(raw_token)
+    db.commit()
+
+    try:
+        email_service.send_invitation(
+            str(invitation.email),
+            f"{settings.FRONTEND_URL}/accept-invite?token={raw_token}",
+            inviter=str(inviter.email) if inviter is not None else "An administrator",
+            expires_in_hours=expires_in_hours,
+            requires_password=invitation.auth_type == AUTH_TYPE_LOCAL,
+        )
+    except EmailTransientError:
+        if not final_attempt:
+            raise
+        logger.error("Invitation %s could not be delivered after retries", invitation.id)
+    except EmailDeliveryError:
+        logger.error("Invitation %s could not be delivered", invitation.id)
 
 
 def revoke_invitation(db: Session, invitation: UserInvitation) -> None:

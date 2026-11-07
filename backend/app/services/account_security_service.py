@@ -403,15 +403,18 @@ def notify_email_changed(old_email: str, new_email: str) -> None:
 
     Changing the address and then requesting a password reset is a complete
     account takeover, and it is silent unless the previous owner is told.
-    Delivery failure must never block the change itself.
+    The send runs in the ``auth_mail.security_notice`` task, so delivery never delays
+    the change; a failure to queue it is logged and never blocks it either.
     """
-    from app.services.email_service import email_service
+    from app.core.auth_mail import SECURITY_NOTICE_TASK
+    from app.core.auth_mail import dispatch_auth_mail
 
     try:
-        email_service.send_security_notice(
+        dispatch_auth_mail(
+            SECURITY_NOTICE_TASK,
             old_email,
             "Your account email address was changed",
             f"The email address on your account was changed to {new_email}.",
         )
     except Exception as exc:  # pragma: no cover - defensive
-        logger.error("Failed to send email-change notice to the previous address: %s", exc)
+        logger.error("Failed to queue email-change notice to the previous address: %s", exc)

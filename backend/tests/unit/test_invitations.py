@@ -127,6 +127,9 @@ class RecordingMailer:
         self.invitations = []
         self.verifications = []
 
+    def require_credential_mail(self, link):
+        return None
+
     def send_invitation(self, to_email, accept_url, inviter, expires_in_hours, requires_password):
         self.invitations.append(
             {
@@ -147,10 +150,23 @@ def db():
 
 
 @pytest.fixture
-def mailer(monkeypatch):
+def mailer(monkeypatch, db):
+    """Recording mail transport, with the ``auth_mail`` tasks run inline on the fake session.
+
+    Both flows hand their mail to a Celery task; running the task body here, against the
+    same fake database, keeps these tests exercising the real issue-then-redeem round trip.
+    """
     from app.auth import email_verification as ev_module
     from app.auth import invitations as inv_module
 
+    def run_inline(name, args=None, kwargs=None, **_options):
+        if name == "auth_mail.invitation":
+            inv_module.deliver_invitation(db, *args)
+        elif name == "auth_mail.email_verification":
+            ev_module.deliver_verification(db, *args)
+        return SimpleNamespace(id="inline")
+
+    monkeypatch.setattr("app.core.celery.celery_app.send_task", run_inline)
     recorder = RecordingMailer()
     monkeypatch.setattr(inv_module, "email_service", recorder)
     monkeypatch.setattr(ev_module, "email_service", recorder)

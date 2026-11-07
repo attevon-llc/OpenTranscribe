@@ -95,7 +95,7 @@ class TestLocalEnabledDoesNotGateThePasswordResetChain:
     """
 
     def test_the_reset_chain_is_not_gated_by_local_enabled(
-        self, local_enabled, normal_user, db_session, monkeypatch
+        self, local_enabled, normal_user, db_session, monkeypatch, run_auth_mail_inline
     ):
         from app.auth import password_reset as password_reset_module
 
@@ -114,7 +114,7 @@ class TestLocalEnabledDoesNotGateThePasswordResetChain:
         )
 
     def test_the_break_glass_super_admin_can_complete_the_whole_chain_with_local_auth_off(
-        self, local_enabled, super_admin_user, db_session, monkeypatch
+        self, local_enabled, super_admin_user, db_session, monkeypatch, run_auth_mail_inline
     ):
         """The composed claim nothing else asserts: request, confirm, AND the
         resulting login exemption, all under one local_enabled(False)."""
@@ -142,7 +142,7 @@ class TestLocalEnabledDoesNotGateThePasswordResetChain:
         assert authenticators._local_auth_permitted(db_session, super_admin_user) is True
 
     def test_an_ordinary_account_gains_no_access_from_a_reset_while_local_auth_is_off(
-        self, local_enabled, normal_user, db_session, monkeypatch
+        self, local_enabled, normal_user, db_session, monkeypatch, run_auth_mail_inline
     ):
         """Negative control for the test above: an ordinary account completes the
         identical reset chain and is still refused login — the dead end."""

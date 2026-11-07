@@ -60,7 +60,7 @@ class _Mailer:
 
 
 @pytest.fixture
-def mailer(monkeypatch) -> _Mailer:
+def mailer(monkeypatch, run_auth_mail_inline) -> _Mailer:
     recorder = _Mailer()
     monkeypatch.setattr("app.auth.password_reset.email_service", recorder)
     monkeypatch.setattr("app.auth.email_verification.email_service", recorder)

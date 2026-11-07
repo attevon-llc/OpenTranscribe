@@ -22,10 +22,13 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.auth.roles import ROLE_SUPER_ADMIN
+from app.core.auth_mail import EMAIL_VERIFICATION_TASK
+from app.core.auth_mail import dispatch_auth_mail
 from app.core.auth_settings import get_auth_settings
 from app.core.auth_types import AUTH_TYPE_LOCAL
 from app.core.config import settings
 from app.core.exceptions import AccessDeniedError
+from app.core.exceptions import EmailTransientError
 from app.models.invitation import EmailVerificationToken
 from app.models.user import User
 from app.services.email_service import EmailDeliveryError
@@ -54,12 +57,36 @@ def email_verification_required(db: Session) -> bool:
     return bool(get_auth_settings(db).get_bool("require_email_verification", False))
 
 
-def issue_verification_token(db: Session, user: User, ip_address: str = "") -> None:
-    """Create a verification token for *user* and email the link.
+def issue_verification_token(db: Session, user: User | None, ip_address: str = "") -> None:
+    """Queue a verification email for *user*; ``None`` stands for an unknown address.
 
-    Silently does nothing for an already-verified account or a non-local one,
-    and rate-limits per user so the endpoint cannot be turned into a mailer.
+    Does the same work whether or not the account exists (one task dispatch), so the
+    resend endpoint cannot be timed to find out. Eligibility, the per-user rate limit,
+    the token and the SMTP send are in :func:`deliver_verification`, run by the
+    ``auth_mail.email_verification`` task.
     """
+    dispatch_auth_mail(
+        EMAIL_VERIFICATION_TASK, int(user.id) if user is not None else None, ip_address
+    )
+
+
+def deliver_verification(
+    db: Session, user_id: int | None, ip_address: str = "", *, final_attempt: bool = True
+) -> None:
+    """Create a verification token for ``user_id`` and email the link (Celery task body).
+
+    Silently does nothing for an unknown id, an already-verified account or a non-local
+    one, and rate-limits per user so the endpoint cannot be turned into a mailer. A
+    delivery failure is logged, never raised past the task (a transient one is re-raised
+    while attempts remain, so the task retries).
+
+    Raises:
+        EmailTransientError: The send failed transiently and attempts remain.
+    """
+    user = db.query(User).filter(User.id == user_id).first() if user_id is not None else None
+    if user is None:
+        logger.debug("Verification mail requested for an unknown address")
+        return
     if user.email_verified or user.auth_type != AUTH_TYPE_LOCAL:
         return
 
@@ -77,24 +104,27 @@ def issue_verification_token(db: Session, user: User, ip_address: str = "") -> N
         return
 
     raw_token = secrets.token_urlsafe(32)
-    db.add(
-        EmailVerificationToken(
-            user_id=user.id,
-            token_hash=_hash(raw_token),
-            expires_at=datetime.now(UTC) + timedelta(hours=TOKEN_EXPIRY_HOURS),
-            ip_address=ip_address or None,
-        )
+    record = EmailVerificationToken(
+        user_id=user.id,
+        token_hash=_hash(raw_token),
+        expires_at=datetime.now(UTC) + timedelta(hours=TOKEN_EXPIRY_HOURS),
+        ip_address=ip_address or None,
     )
+    db.add(record)
     db.commit()
 
     verify_url = f"{settings.FRONTEND_URL}/verify-email?token={raw_token}"
-    # Absorbed, not propagated, for both callers: `resend_verification` answers
-    # identically for a known and an unknown address, so an escaping exception
-    # would be an account-existence oracle; and
-    # `assert_email_verified_for_local_login` must still raise its own 403,
-    # which tells the user what is wrong, rather than a 500 that does not.
     try:
         email_service.send_email_verification(str(user.email), verify_url, TOKEN_EXPIRY_HOURS)
+    except EmailTransientError:
+        db.delete(record)
+        db.commit()
+        if not final_attempt:
+            raise
+        logger.error(
+            "Email-verification link for user %s could not be delivered after retries", user.id
+        )
+        return
     except EmailDeliveryError:
         logger.error(
             "Email-verification link for user %s was generated but could not be delivered",
@@ -149,9 +179,6 @@ def resend_verification(db: Session, email: str, ip_address: str = "") -> None:
     oracle that needs no session.
     """
     user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        logger.debug("Verification resend requested for an unknown address")
-        return
     issue_verification_token(db, user, ip_address)
 
 

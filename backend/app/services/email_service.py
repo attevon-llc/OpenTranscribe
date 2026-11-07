@@ -41,6 +41,7 @@ from app.core.constants import AUTH_EMAIL_CONFIG_SETTING_KEY
 from app.core.constants import DEFAULT_AUTH_EMAIL_CONFIG_UUID
 from app.core.constants import DEFAULT_FRONTEND_URL
 from app.core.exceptions import EmailDeliveryError
+from app.core.exceptions import EmailTransientError
 from app.services import watch_email_service
 from app.utils.smtp_transport import SMTP_IMPLICIT_SSL_PORT
 from app.utils.smtp_transport import smtp_transport_problem
@@ -168,11 +169,9 @@ class EmailService:
 
         Raises:
             EmailDeliveryError: The message was not handed to a transport. The
-                error names no address, but note that this call is only reached
-                for an account that exists — the caller
-                (``auth/password_reset.request_password_reset``) owns keeping the
-                HTTP response uniform so a mail outage cannot become an
-                account-existence oracle.
+                error names no address. It is raised inside the ``auth_mail``
+                Celery task, never in the HTTP request, so a mail outage cannot
+                become an account-existence oracle.
         """
         project = html.escape(settings.PROJECT_NAME)
         inner = (
@@ -318,6 +317,20 @@ class EmailService:
             _shell(html.escape(subject), inner),
             text_body,
         )
+
+    def require_credential_mail(self, link: str) -> None:
+        """Raise unless a message carrying ``link`` could be handed to a transport.
+
+        Decided from configuration alone, before anything is queued, so the admin who
+        issues an invitation learns synchronously that it cannot be sent.
+
+        Raises:
+            EmailDeliveryError: No transport is configured, or ``link`` is built from
+                the ``FRONTEND_URL`` default.
+        """
+        if not self.has_transport():
+            raise EmailDeliveryError("No mail transport is configured; the message was not sent")
+        self._assert_link_is_deliverable(link, "invitation")
 
     def has_transport(self) -> bool:
         """Whether a message would be handed to a transport (designated config or env SMTP).
@@ -467,7 +480,9 @@ class EmailService:
             config.name,
             reason,
         )
-        raise EmailDeliveryError(f"Could not send {subject!r}: {reason}")
+        # The config path reports failure as text, so it cannot tell a refusal from a
+        # network fault; treat it as retryable (the retry count is bounded).
+        raise EmailTransientError(f"Could not send {subject!r}: {reason}")
 
     @staticmethod
     def _send_via_env_smtp(to: str, subject: str, html_body: str, text_body: str) -> None:
@@ -495,12 +510,26 @@ class EmailService:
             # is a live single-use credential.
             reason = scrub_addresses(str(e))
             logger.error("Failed to send %r to %s: %s", subject, _mask_email(to), reason)
+            if _is_transient(e):
+                raise EmailTransientError(f"Could not send {subject!r}: {reason}") from e
             raise EmailDeliveryError(f"Could not send {subject!r}: {reason}") from e
         finally:
             if server is not None:
                 with contextlib.suppress(Exception):
                     server.quit()
         logger.info("Sent %r to %s", subject, _mask_email(to))
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether a later attempt could succeed: a network fault or a 4xx reply.
+
+    A policy refusal, a rejected recipient and a 5xx reply will fail the same way again.
+    """
+    if isinstance(exc, EmailDeliveryError | smtplib.SMTPRecipientsRefused):
+        return False
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return exc.smtp_code < 500
+    return isinstance(exc, OSError)
 
 
 def _env_smtp_connect() -> smtplib.SMTP:

@@ -762,10 +762,10 @@ _RAISE_ALLOWLIST: dict[str, tuple[int, str]] = {
         "OpenTranscribeError subclass the raise-scanner now tracks",
     ),
     "services/email_service.py::_send_via_env_smtp": (
-        1,
-        "already scrubs every embedded email address via _scrub(str(e)) before "
-        "interpolating, per this module's own documented contract "
-        "(reason = _scrub(str(e)); raise EmailDeliveryError(f'...{reason}') from e)",
+        2,
+        "both raises (EmailTransientError for a retryable fault, EmailDeliveryError for a "
+        "final one) interpolate only `reason`, which scrub_addresses(str(e)) has already "
+        "masked of every email address, per this module's documented contract",
     ),
     "services/search/model_switch.py::apply_embedding_model_switch": (
         1,
@@ -939,7 +939,7 @@ _SERVICE_RETURN_ALLOWLIST: dict[str, tuple[int, str]] = {
     "services/watch_email_service.py::send_email": (
         1,
         "internal-only: both callers discard or pre-scrub the message before any "
-        "HTTP surface sees it -- email_service.py:416 runs it through _scrub() "
+        "HTTP surface sees it -- email_service.py:416 runs it through scrub_addresses() "
         "before logging, watch_source_tasks.py:634 unpacks it as `_msg` and never "
         "reads it at all",
     ),

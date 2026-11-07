@@ -163,7 +163,7 @@ default. The environment read is removed completely in v0.8.0, so delete these l
 
 | Variable (deprecated) | Now set in | Default |
 |---|---|---|
-| `YOUTUBE_USER_RATE_LIMIT_ENABLED` | Settings > Recovery > YouTube downloads | on |
+| `YOUTUBE_USER_RATE_LIMIT_ENABLED` | Settings > File status > Recovery > YouTube downloads | on |
 | `YOUTUBE_USER_RATE_LIMIT_PER_HOUR` | same | 50 |
 | `YOUTUBE_USER_RATE_LIMIT_PER_DAY` | same | 500 |
 | `YOUTUBE_AUTO_RETRY_ENABLED` | same | on |

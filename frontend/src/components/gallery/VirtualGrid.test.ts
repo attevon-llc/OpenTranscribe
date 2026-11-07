@@ -25,6 +25,12 @@ vi.mock('$stores/locale', () => ({
       return () => {};
     },
   },
+  locale: {
+    subscribe: (run: (value: string) => void) => {
+      run('de');
+      return () => {};
+    },
+  },
 }));
 
 const mockPrefetch = vi.hoisted(() => ({
@@ -292,5 +298,27 @@ describe('VirtualGrid technical values in right-to-left languages', () => {
       (el) => el.textContent === '45 KB'
     );
     expect(size?.getAttribute('dir')).toBe('ltr');
+  });
+});
+
+describe('VirtualGrid upload date language', () => {
+  it('formats the upload date in the interface language, not the server English text', async () => {
+    const { container } = render(VirtualGrid, {
+      props: {
+        items: [
+          file('f0', {
+            upload_time: '2026-11-07T12:00:00Z',
+            formatted_upload_date: 'Nov 07, 2026',
+          }),
+        ],
+        scrollContainer: scrollContainerWithHeight(800),
+      },
+    });
+    setWrapperWidth(container, 900);
+    await tick();
+    await tick();
+    const meta = container.querySelector('.meta-line')?.textContent ?? '';
+    expect(meta).not.toContain('Nov 07, 2026');
+    expect(meta).toContain(new Date('2026-11-07T12:00:00Z').toLocaleDateString('de'));
   });
 });

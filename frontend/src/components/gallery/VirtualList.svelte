@@ -3,12 +3,18 @@
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { goto } from '$app/navigation';
   import { galleryStore } from '$stores/gallery';
-  import { t } from '$stores/locale';
+  import { locale, t } from '$stores/locale';
+  import { formatDate } from '$lib/utils/formatting';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
   import HiddenBadge from './HiddenBadge.svelte';
   import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
+
+  /** The server's `formatted_upload_date` is English-only; format the date in the app language. */
+  function uploadDate(file: MediaFile, lang: string): string {
+    return file.upload_time ? formatDate(file.upload_time, lang) : (file.formatted_upload_date ?? '');
+  }
 
   export let items: MediaFile[] = [];
   export let scrollContainer: HTMLElement | null = null;
@@ -276,7 +282,7 @@
 
           <!-- Date -->
           <div class="list-cell list-cell-date">
-            {file.formatted_upload_date || '-'}
+            {uploadDate(file, $locale) || '-'}
           </div>
 
           <!-- Size -->

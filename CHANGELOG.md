@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.
 - The speakers page said "1 speakers have no match" when one speaker was waiting in Review; the message now uses each language's plural forms.
 - In right-to-left languages the player's speed menu and the floating preview's speed button showed rates as "×1" and "×0.5"; they now read "1×" and "0.5×".
 - In right-to-left languages the legal hold dialog's reason counter read "2000 / 55"; it now reads "55 / 2000".

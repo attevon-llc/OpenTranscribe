@@ -23,6 +23,12 @@ vi.mock('$stores/locale', () => ({
       return () => {};
     },
   },
+  locale: {
+    subscribe: (run: (value: string) => void) => {
+      run('de');
+      return () => {};
+    },
+  },
 }));
 
 const mockPrefetch = vi.hoisted(() => ({
@@ -235,5 +241,20 @@ describe('technical values in right-to-left languages', () => {
       (el) => el.textContent?.trim() === '45 KB' && el.children.length === 0
     );
     expect(size?.getAttribute('dir')).toBe('ltr');
+  });
+});
+
+describe('upload date language', () => {
+  it('formats the upload date in the interface language, not the server English text', async () => {
+    const items = [
+      file('f0', { upload_time: '2026-11-07T12:00:00Z', formatted_upload_date: 'Nov 07, 2026' }),
+    ];
+    const { container } = render(VirtualList, {
+      props: { items, scrollContainer: scrollContainerWithHeight(400) },
+    });
+    await tick();
+    const row = container.querySelector('.file-list-row')?.textContent ?? '';
+    expect(row).not.toContain('Nov 07, 2026');
+    expect(row).toContain(new Date('2026-11-07T12:00:00Z').toLocaleDateString('de'));
   });
 });

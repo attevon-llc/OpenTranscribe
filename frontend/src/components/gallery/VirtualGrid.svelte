@@ -3,12 +3,18 @@
   import { goto } from '$app/navigation';
   import { cachedThumbnail } from '$lib/thumbnailCache';
   import { galleryStore } from '$stores/gallery';
-  import { t } from '$stores/locale';
+  import { locale, t } from '$stores/locale';
+  import { formatDate } from '$lib/utils/formatting';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
   import HiddenBadge from './HiddenBadge.svelte';
   import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
+
+  /** The server's `formatted_upload_date` is English-only; format the date in the app language. */
+  function uploadDate(file: MediaFile, lang: string): string {
+    return file.upload_time ? formatDate(file.upload_time, lang) : (file.formatted_upload_date ?? '');
+  }
 
   export let items: MediaFile[] = [];
   export let scrollContainer: HTMLElement | null = null;
@@ -319,7 +325,7 @@
                   <div class="meta-line">
                     <!-- Only this text truncates: the hold badge and status stay whole. -->
                     <span class="meta-text">
-                      <span>{file.formatted_upload_date}</span>
+                      <span>{uploadDate(file, $locale)}</span>
                       {#if file.formatted_file_size}
                         <span class="meta-dot">&middot;</span>
                         <span dir="ltr">{file.formatted_file_size}</span>

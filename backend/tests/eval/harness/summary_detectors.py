@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
+from app.services.search.sentence_splitter import split_into_sentences
 
 _SUBJECT = r"(?:recording|transcript|audio|meeting|conversation|discussion|excerpt|text|content)"
 _TRUNCATED_WORD = (
@@ -122,8 +122,17 @@ class FailureDisclosure:
 
 
 def split_sentences(text: str) -> list[str]:
-    """Sentences of ``text``, split on terminal punctuation and newlines; empties dropped."""
-    return [s.strip() for s in _SENTENCE_SPLIT.split(text or "") if s and s.strip()]
+    """Sentences of ``text``: one line at a time, each cut by the product's punkt splitter.
+
+    Punkt (NLTK's Punkt sentence tokenizer) knows ``vs.`` / ``e.g.`` / ``i.e.`` are not sentence
+    ends; a bare split on every period manufactured fragments the judge then called truncation.
+    """
+    return [
+        s.strip()
+        for line in (text or "").split("\n")
+        for s in split_into_sentences(line)
+        if s and s.strip()
+    ]
 
 
 def _hits(patterns: tuple[re.Pattern[str], ...], text: str) -> list[str]:

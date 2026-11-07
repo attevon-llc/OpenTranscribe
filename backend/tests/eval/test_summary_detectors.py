@@ -117,3 +117,18 @@ class TestFailureDisclosure:
 def test_split_sentences_drops_empties_and_splits_on_newlines() -> None:
     assert split_sentences("One. Two!\n\nThree?  ") == ["One.", "Two!", "Three?"]
     assert split_sentences("") == []
+
+
+def test_split_sentences_does_not_cut_at_abbreviations() -> None:
+    """Fragments like "(TV-only vs." were being judged as truncation claims (plan 5.4, (b))."""
+    text = (
+        "Define the final scope of the remote control (TV-only vs. VCR functions) based on "
+        "technical feasibility. They categorized hidden variables (e.g., scroll wheels), so the "
+        "group solidified its direction. Materials (like latex) and options (push buttons vs. "
+        "transcript) came before the July deadline."
+    )
+    out = split_sentences(text)
+    assert len(out) == 3
+    assert out[0].endswith("technical feasibility.")
+    assert out[1].startswith("They categorized") and out[1].endswith("direction.")
+    assert not any(s.endswith(("vs.", "e.g.,")) for s in out)

@@ -45,6 +45,7 @@ export type SettingsSection =
   | 'admin-users'
   | 'admin-task-health'
   | 'quarantine'
+  | 'platform-holds'
   | 'takedown-notices'
   | 'chat-admin'
   | 'redaction-policy'

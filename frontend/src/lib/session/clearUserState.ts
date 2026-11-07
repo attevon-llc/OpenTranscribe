@@ -43,6 +43,9 @@ export async function purgeTenantDataCaches(): Promise<void> {
     import('$lib/notifications/reconcile').then((m) => m.resetReconcileThrottle()),
     // The policy of the previous tenant's files and organization (issue #1280).
     import('$stores/privacyPolicy').then((m) => m.resetEffectivePrivacy()),
+    // How many held files the previous user could see, and the last legal-hold refusal they got.
+    import('$lib/legalHold/heldCount').then((m) => m.resetHeldCount()),
+    import('$lib/legalHold/refusal').then((m) => m.resetHoldRefusals()),
   ]);
 }
 

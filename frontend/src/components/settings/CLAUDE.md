@@ -313,15 +313,16 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   content. Beside a modal-level title, wrap `<h3 class="section-title">` and the tip in `.section-title-row`
   (Organization Context does). Do not re-add a bottom/top `.info-box` card to a panel; the remaining ones
   (OIDC, SAML, SCIM token, Group mappings, Audio extraction) are candidates to convert the same way.
-- **`OrgLegalHoldsPanel` (org admin, issue #1276)** is a lazy section (`org-holds`, `orgHolds`),
-  shown only on `orgAdminCapOn(capState, 'org.legal_hold')`. It lists, places (a collection, or file
-  ids one per line) and releases holds; the server decides what a hold may name and what stays held
-  after a release, so the panel only keeps "Place"/"Release" disabled until the input is one the
-  server accepts (reason 10 to 2,000 characters, valid uuids). The reason is shown in this panel
-  and nowhere else. The "Legal hold" pill on a file header and a collection card is
-  `ui/HoldBadge.svelte` over the server's `hold` field (who holds it, never why), and a delete,
-  remove or reprocess refusal is translated by `getErrorMessage` from `held_by`
-  (`HOLD_REFUSAL_KEYS` in `lib/i18n/keyMaps.ts`).
+- **`LegalHoldsPanel` (issue #1276, legal-hold plan Lane D)** is ONE panel for two lazy sections
+  sharing the `legalHolds` loader: `org-holds` (`scope="organization"`, org admins, shown only on
+  `orgAdminCapOn(capState, 'org.legal_hold')`) and `platform-holds` (`scope="platform"`, instance
+  admins, Administration group, `/admin/holds`, no takedown; holds placed WITH a takedown stay on
+  Quarantine). It lists and releases holds and places them through the shared
+  `legal-hold/PlaceHoldDialog`; the server decides what a hold may name and what stays held after
+  a release. The reason is shown in this panel and nowhere else. The "Legal hold" pill on a file
+  header, a gallery card and a collection card is `ui/HoldBadge.svelte` over the server's `hold`
+  field (who holds it, never why), and a refusal is translated by `getErrorMessage` from
+  `held_by` (`HOLD_REFUSAL_KEYS` in `lib/i18n/keyMaps.ts`). See `components/legal-hold/CLAUDE.md`.
 - **Privacy controls (issue #1280)** are four small surfaces over ONE restrict-only policy (platform,
   deployment, organization and user ANDed; any layer off turns the feature off; the server names the
   highest one as `locked_by`). All four use `components/privacy/PrivacySwitchCard` (a CONTROLLED switch:

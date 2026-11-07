@@ -7,6 +7,7 @@
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
   import HiddenBadge from './HiddenBadge.svelte';
+  import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -325,6 +326,7 @@
                       <span class="meta-dot">&middot;</span>
                       <span>{$t('gallery.speakerCountShort', { count: file.speaker_summary.count })}</span>
                     {/if}
+                    <HoldBadge hold={file.hold} />
                     <span class="status-slot">
                       <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11):
                            a file quarantined mid-pipeline can have `status` overwritten to a

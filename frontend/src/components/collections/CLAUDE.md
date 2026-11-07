@@ -10,6 +10,9 @@ file. They render owned-collection management, shared-collection browsing, and t
 - `CollectionsList.svelte` — list of the user's collections (exports a module-context `Collection`
   type); dispatches select/edit/delete intents.
 - `SharedCollectionsSection.svelte` — collections shared with the user (`manage` vs `add` view modes).
+- `HeldCollectionCard.svelte` — the computed "Legal hold" collection (not stored; no share, edit
+  or delete). `CollectionsPanel` renders it in manage mode when given `onHeldSelect` (the gallery
+  does), only while `held_count > 0`; choosing it filters the gallery to `held=true`.
 - `CollectionFormModal.svelte` — **one parameterized modal** for both create and edit (driven by
   props: `idPrefix`, `title`, `submitLabel`, etc.); dispatches `submit`.
 

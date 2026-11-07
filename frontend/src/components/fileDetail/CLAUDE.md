@@ -44,6 +44,11 @@ Presentational children extracted from the file-detail route `src/routes/files/[
   label, and every non-`native` engine shown as PyAnnote); the backend's
   `processing_steps` is display-ready, so derive nothing here.
 
+- **Legal hold (Lane D):** the page calls `provideFileFrozen()` and sets it from `file.hold.held`;
+  `FileActionButtons` (summary generate, reprocess) and `RedactionControls` (rescan) read
+  `fileFrozen()` and render disabled with a `legal-hold/FrozenNote`. The banner, copy-ID and
+  place-hold action are in `FileHeader`. See `components/legal-hold/CLAUDE.md`.
+
 ## Conventions / patterns
 
 - The route page owns the state and orchestration; these children take props and dispatch events.

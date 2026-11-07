@@ -6,6 +6,8 @@
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import Spinner from './ui/Spinner.svelte';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let summary: SummaryData | null;
   export let generating: boolean = false;
@@ -15,6 +17,10 @@
   export let summaryStatus: string = 'pending';
   export let canGenerate: boolean = true;
   export let summaryEnabledSystem: boolean = true;
+
+  // A held file's summary is frozen (legal-hold plan, Lane D): generate, retry and regenerate
+  // stay visible, disabled, with the reason printed in this row.
+  const frozen = fileFrozen();
 
   const dispatch = createEventDispatcher<{
     generateSummary: void;
@@ -55,6 +61,9 @@
 </script>
 
 <div class="summary-actions">
+  {#if $frozen}
+    <FrozenNote id="summary-frozen-note" />
+  {/if}
   {#if !summary && summaryStatus === 'disabled'}
     <div class="disabled-badge">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -67,7 +76,8 @@
       <button
         class="action-button primary"
         on:click={() => dispatch('generateSummary')}
-        disabled={generating}
+        disabled={generating || $frozen}
+        aria-describedby={$frozen ? 'summary-frozen-note' : undefined}
       >
         {#if generating}
           <Spinner size="small" color="currentColor" />
@@ -83,7 +93,8 @@
     <button
       class="action-button primary"
       on:click={() => dispatch('generateSummary')}
-      disabled={generating}
+      disabled={generating || $frozen}
+        aria-describedby={$frozen ? 'summary-frozen-note' : undefined}
     >
       {#if generating}
         <Spinner size="small" color="currentColor" />
@@ -112,7 +123,8 @@
     <button
       class="action-button warning"
       on:click={() => dispatch('retrySummary')}
-      disabled={generating}
+      disabled={generating || $frozen}
+        aria-describedby={$frozen ? 'summary-frozen-note' : undefined}
     >
       {#if generating}
         <Spinner size="small" color="currentColor" />
@@ -134,7 +146,7 @@
       <select
         class="prompt-select"
         bind:value={selectedPromptUuid}
-        disabled={generating || loadingPrompts}
+        disabled={generating || loadingPrompts || $frozen}
         title={$t('summary.selectPromptTooltip')}
       >
         <option value={null}>{$t('summary.useActivePrompt')}</option>
@@ -147,7 +159,8 @@
       <button
         class="action-button regenerate"
         on:click={handleRegenerateWithPrompt}
-        disabled={generating}
+        disabled={generating || $frozen}
+        aria-describedby={$frozen ? 'summary-frozen-note' : undefined}
         title={$t('summary.regenerateWithPromptTooltip')}
       >
         {#if generating}

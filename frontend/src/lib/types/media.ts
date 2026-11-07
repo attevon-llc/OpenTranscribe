@@ -82,6 +82,8 @@ export interface MediaFile {
    * have `status` overwritten to a terminal value by a running task
    * (issue #824's documented residual gap) while this flag stays correct. */
   is_quarantined?: boolean;
+  /** Who holds the file under a legal hold (issue #1276); on list rows too since v0.7.0, never with uuids. */
+  hold?: HoldSummary;
   filename: string;
   status: MediaFileStatus;
   upload_time: string;
@@ -186,8 +188,6 @@ export interface MediaFileDetail extends MediaFile {
   quarantine_reason?: string | null;
   quarantined_at?: string | null;
   legal_hold?: boolean;
-  /** Who holds the file against deletion and reprocessing (issue #1276). */
-  hold?: HoldSummary;
 
   /**
    * Full tag objects, the same shape `/api/tags` returns (#326). `GET /files`

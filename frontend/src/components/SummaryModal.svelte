@@ -16,6 +16,7 @@
   import SummaryDisplay from './SummaryDisplay.svelte';
   import SummarySearch from './SummarySearch.svelte';
   import SummaryActions from './SummaryActions.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   // NOTE: despite the name, this is the file's UUID, not its integer id — every
   // real caller (`routes/files/[id]/+page.svelte`) passes `file.uuid`, and
@@ -30,6 +31,9 @@
   // machinery below rather than a second one. `key_path` format:
   // `backend/app/services/search/summary_search.py::SummarySectionMatch`.
   export let scrollToKeyPath: string | null = null;
+
+  // A held file's summary cannot be regenerated (legal-hold plan, Lane D).
+  const frozen = fileFrozen();
 
   const dispatch = createEventDispatcher<{
     close: void;
@@ -422,9 +426,10 @@
                 <button
                   class="reprocess-button-header"
                   on:click={reprocessSummary}
-                  disabled={generating}
+                  disabled={generating || $frozen}
                   aria-label={$t('summary.reprocessLabel')}
-                  title={$t('summary.regenerateSummaryTooltip')}
+                  aria-describedby={$frozen ? 'summary-frozen-note' : undefined}
+                  title={$frozen ? $t('holds.frozenControl') : $t('summary.regenerateSummaryTooltip')}
                 >
                   {#if generating}
                     <Spinner size="small" />

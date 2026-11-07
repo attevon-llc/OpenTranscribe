@@ -1,10 +1,14 @@
 <!--
-  OrgLegalHoldsPanel.svelte — an organization administrator's legal holds (issue #1276).
+  LegalHoldsPanel.svelte - the legal holds of one authority: an organization's (its
+  administrators, `scope="organization"`, issue #1276) or the operator's (instance
+  administrators, `scope="platform"`, legal-hold plan §8.4). One component for both: only the API
+  and the copy differ.
 
-  List, place and release. The server decides everything that matters (which files are the
-  organization's, whether a reason is long enough, what is still held after a release); this
-  renders it, sends the request and shows the answer. The reason is shown here and nowhere else:
-  the badge on a file or collection says only that it is held and by whom.
+  List, place and release. The server decides everything that matters (which files a hold may
+  name, whether a reason is long enough, what is still held after a release); this renders it,
+  sends the request and shows the answer. Placing goes through the shared PlaceHoldDialog. The
+  reason is shown here and nowhere else: the badge on a file or collection says only that it is
+  held and by whom. Release lives here only.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -13,55 +17,46 @@
   import { formatDate } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
-  import { CollectionsApi } from '$lib/api/collections';
-  import { OrgAdminApi, type OrgHeldFile, type OrgHold } from '$lib/api/orgAdmin';
-  import type { Collection } from '$lib/types/collection';
+  import HoldExplainer from '$components/legal-hold/HoldExplainer.svelte';
+  import PlaceHoldDialog from '$components/legal-hold/PlaceHoldDialog.svelte';
+  import type { OrgHeldFile, OrgHold } from '$lib/api/orgAdmin';
+  import {
+    HOLD_REASON_MAX,
+    HOLD_REASON_MIN,
+    holdReasonValid,
+    type HoldPlacer,
+  } from '$lib/legalHold/authority';
+  import { holdsApiFor } from '$lib/legalHold/holdsApi';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t, locale } from '$stores/locale';
   import { toastStore } from '$stores/toast';
 
-  /** The bounds the server enforces on a reason (`ck_content_hold_reason_length`). */
-  const REASON_MIN = 10;
-  const REASON_MAX = 2000;
-  const MAX_FILES = 500;
-  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /** Whose holds: the caller's organization, or the operator's. */
+  export let scope: HoldPlacer = 'organization';
+
+  $: api = holdsApiFor(scope);
+  $: descriptionKey = scope === 'platform' ? 'holds.platform.description' : 'holds.description';
+  $: reasonHelpKey = scope === 'platform' ? 'holds.platform.reasonHelp' : 'holds.reasonHelp';
 
   let holds: OrgHold[] = [];
   let total = 0;
   let loading = true;
   let showReleased = false;
-
   let placing = false;
-  let placeScope: 'file' | 'collection' = 'collection';
-  let fileIdsText = '';
-  let collectionUuid = '';
-  let collections: Collection[] = [];
-  let reason = '';
-  let matterRef = '';
-  let saving = false;
 
   /** Files of the holds the administrator expanded, by hold uuid. */
   let expanded: Record<string, OrgHeldFile[]> = {};
 
   let releasing: OrgHold | null = null;
   let releaseReason = '';
+  let saving = false;
 
-  $: fileIds = fileIdsText
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  $: filesValid =
-    fileIds.length > 0 && fileIds.length <= MAX_FILES && fileIds.every((id) => UUID_PATTERN.test(id));
-  $: targetValid = placeScope === 'file' ? filesValid : collectionUuid !== '';
-  $: reasonValid = reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX;
-  $: releaseReasonValid =
-    releaseReason.trim().length >= REASON_MIN && releaseReason.trim().length <= REASON_MAX;
-  $: canPlace = targetValid && reasonValid && !saving;
+  $: releaseReasonValid = holdReasonValid(releaseReason);
 
   async function load() {
     loading = true;
     try {
-      const result = await OrgAdminApi.listHolds({ active_only: !showReleased, limit: 200 });
+      const result = await api.listHolds({ active_only: !showReleased, limit: 200 });
       holds = result.holds;
       total = result.total;
     } catch (error) {
@@ -72,44 +67,6 @@
     }
   }
 
-  async function openPlace() {
-    placing = true;
-    placeScope = 'collection';
-    fileIdsText = '';
-    collectionUuid = '';
-    reason = '';
-    matterRef = '';
-    try {
-      collections = await CollectionsApi.list();
-    } catch (error) {
-      console.error('Failed to load collections for a hold:', error);
-      collections = [];
-    }
-  }
-
-  async function place() {
-    if (!canPlace) return;
-    saving = true;
-    try {
-      const hold = await OrgAdminApi.placeHold({
-        scope: placeScope,
-        ...(placeScope === 'file'
-          ? { file_uuids: fileIds }
-          : { collection_uuid: collectionUuid }),
-        reason: reason.trim(),
-        matter_ref: matterRef.trim() || undefined,
-      });
-      toastStore.success($t('holds.placed', { count: hold.file_count }));
-      placing = false;
-      await load();
-    } catch (error) {
-      console.error('Failed to place a hold:', error);
-      toastStore.error(getErrorMessage(error, $t('holds.placeError')));
-    } finally {
-      saving = false;
-    }
-  }
-
   async function toggleFiles(hold: OrgHold) {
     if (expanded[hold.uuid]) {
       const { [hold.uuid]: _closed, ...rest } = expanded;
@@ -117,7 +74,7 @@
       return;
     }
     try {
-      const detail = await OrgAdminApi.getHold(hold.uuid);
+      const detail = await api.getHold(hold.uuid);
       expanded = { ...expanded, [hold.uuid]: detail.files };
     } catch (error) {
       console.error('Failed to load the files of a hold:', error);
@@ -134,7 +91,7 @@
     if (!releasing || !releaseReasonValid) return;
     saving = true;
     try {
-      await OrgAdminApi.releaseHold(releasing.uuid, releaseReason.trim());
+      await api.releaseHold(releasing.uuid, releaseReason.trim());
       toastStore.success($t('holds.released'));
       releasing = null;
       await load();
@@ -149,11 +106,15 @@
   onMount(load);
 </script>
 
-<div class="holds">
-  <p class="intro">{$t('holds.description')}</p>
+<div class="holds" data-testid="legal-holds-panel" data-scope={scope}>
+  <p class="intro">{$t(descriptionKey)}</p>
+  {#if scope === 'platform'}
+    <p class="intro note">{$t('holds.platform.takedownNote')}</p>
+  {/if}
+  <HoldExplainer />
 
   <div class="toolbar">
-    <button class="btn-primary" type="button" on:click={openPlace}>{$t('holds.place')}</button>
+    <button class="btn btn-primary" type="button" on:click={() => (placing = true)}>{$t('holds.place')}</button>
     <label class="show-released">
       <input type="checkbox" bind:checked={showReleased} on:change={load} />
       {$t('holds.showReleased')}
@@ -225,7 +186,7 @@
               </td>
               <td>
                 {#if hold.active}
-                  <button class="btn-secondary" type="button" on:click={() => openRelease(hold)}>
+                  <button class="btn btn-secondary" type="button" on:click={() => openRelease(hold)}>
                     {$t('holds.release')}
                   </button>
                 {/if}
@@ -241,74 +202,12 @@
   {/if}
 </div>
 
-<BaseModal isOpen={placing} title={$t('holds.placeTitle')} size="md" onClose={() => (placing = false)}>
-  <div class="form">
-    <fieldset class="scope">
-      <legend>{$t('holds.scopeLabel')}</legend>
-      <label>
-        <input type="radio" bind:group={placeScope} value="collection" />
-        {$t('holds.scopeCollection')}
-      </label>
-      <label>
-        <input type="radio" bind:group={placeScope} value="file" />
-        {$t('holds.scopeFiles')}
-      </label>
-    </fieldset>
-
-    {#if placeScope === 'collection'}
-      <label class="field">
-        <span>{$t('holds.collectionLabel')}</span>
-        <select bind:value={collectionUuid}>
-          <option value="">{$t('holds.collectionChoose')}</option>
-          {#each collections as collection (collection.uuid)}
-            <option value={collection.uuid}>{collection.name}</option>
-          {/each}
-        </select>
-      </label>
-    {:else}
-      <label class="field">
-        <span>{$t('holds.filesLabel')}</span>
-        <textarea
-          rows="4"
-          dir="ltr"
-          spellcheck="false"
-          bind:value={fileIdsText}
-          aria-invalid={fileIdsText.trim() !== '' && !filesValid}
-        ></textarea>
-        <small class:error={fileIdsText.trim() !== '' && !filesValid}>
-          {fileIdsText.trim() !== '' && !filesValid
-            ? $t('holds.invalidFileIds', { max: MAX_FILES })
-            : $t('holds.filesHelp')}
-        </small>
-      </label>
-    {/if}
-
-    <label class="field">
-      <span>{$t('holds.reasonLabel')}</span>
-      <textarea
-        rows="3"
-        maxlength={REASON_MAX}
-        bind:value={reason}
-        aria-invalid={reason.trim() !== '' && !reasonValid}
-      ></textarea>
-      <small>{$t('holds.reasonHelp', { min: REASON_MIN, max: REASON_MAX })}</small>
-    </label>
-
-    <label class="field">
-      <span>{$t('holds.matterLabel')}</span>
-      <input type="text" maxlength="255" bind:value={matterRef} />
-    </label>
-  </div>
-
-  <svelte:fragment slot="footer">
-    <button class="btn-secondary" type="button" on:click={() => (placing = false)}>
-      {$t('common.cancel')}
-    </button>
-    <button class="btn-primary" type="button" disabled={!canPlace} on:click={place}>
-      {$t('holds.confirmPlace')}
-    </button>
-  </svelte:fragment>
-</BaseModal>
+<PlaceHoldDialog
+  isOpen={placing}
+  placer={scope}
+  on:placed={load}
+  on:close={() => (placing = false)}
+/>
 
 <BaseModal
   isOpen={releasing !== null}
@@ -321,18 +220,18 @@
     <span>{$t('holds.releaseReasonLabel')}</span>
     <textarea
       rows="3"
-      maxlength={REASON_MAX}
+      maxlength={HOLD_REASON_MAX}
       bind:value={releaseReason}
       aria-invalid={releaseReason.trim() !== '' && !releaseReasonValid}
     ></textarea>
-    <small>{$t('holds.reasonHelp', { min: REASON_MIN, max: REASON_MAX })}</small>
+    <small>{$t(reasonHelpKey, { min: HOLD_REASON_MIN, max: HOLD_REASON_MAX })}</small>
   </label>
   <svelte:fragment slot="footer">
-    <button class="btn-secondary" type="button" on:click={() => (releasing = null)}>
+    <button class="btn btn-secondary" type="button" on:click={() => (releasing = null)}>
       {$t('common.cancel')}
     </button>
     <button
-      class="btn-primary"
+      class="btn btn-primary"
       type="button"
       disabled={!releaseReasonValid || saving}
       on:click={release}
@@ -344,68 +243,42 @@
 
 <style>
   .holds {
-    padding: 0.5rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2);
+    font-size: var(--font-size-sm);
   }
 
   .intro {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
     color: var(--color-text-secondary);
+  }
+
+  .intro.note {
+    font-style: italic;
   }
 
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 0.75rem;
+    gap: var(--space-4);
+    margin-block: var(--space-3);
   }
 
   .show-released {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
+    gap: var(--space-1-5);
     color: var(--color-text-secondary);
-  }
-
-  .btn-primary,
-  .btn-secondary {
-    padding: 0.375rem 0.75rem;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .btn-primary {
-    background: var(--primary-color);
-    color: white;
-    border: none;
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background: var(--surface-color);
-    border: 1px solid var(--border-color);
-    color: var(--text-color);
-  }
-
-  .btn-secondary:hover {
-    background: var(--button-hover);
   }
 
   .empty {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    padding: 2rem 1rem;
+    gap: var(--space-2);
+    padding: var(--space-8) var(--space-4);
     color: var(--color-text-secondary);
     border: 1px dashed var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
   }
 
   .empty p {
@@ -415,26 +288,26 @@
   .table-wrap {
     overflow-x: auto;
     border: 1px solid var(--color-border);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
   }
 
   .holds-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
 
   .holds-table th,
   .holds-table td {
-    padding: 0.5rem;
+    padding: var(--space-2);
     text-align: start;
     vertical-align: top;
-    border-bottom: 1px solid var(--color-border);
+    border-block-end: 1px solid var(--color-border);
   }
 
   .holds-table th {
     background: var(--color-bg-secondary);
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     color: var(--color-text-secondary);
@@ -445,7 +318,7 @@
   }
 
   .reason {
-    margin-top: 0.25rem;
+    margin-block-start: var(--space-1);
     color: var(--color-text-secondary);
     max-width: 28rem;
     white-space: pre-wrap;
@@ -456,66 +329,43 @@
     display: block;
     background: none;
     border: none;
+    box-shadow: none;
     padding: 0;
     color: var(--primary-on-surface);
     cursor: pointer;
-    font-size: 0.6875rem;
+    font-size: var(--font-size-2xs);
     text-decoration: underline;
   }
 
   .files {
-    margin: 0.25rem 0 0;
-    padding-inline-start: 1rem;
+    margin: var(--space-1) 0 0;
+    padding-inline-start: var(--space-4);
     max-height: 8rem;
     overflow-y: auto;
     color: var(--color-text-secondary);
   }
 
   .sub {
-    margin-top: 0.125rem;
+    margin-block-start: var(--space-0-5);
     color: var(--color-text-secondary);
-    font-size: 0.6875rem;
-  }
-
-  .form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.25rem 0;
-  }
-
-  .scope {
-    border: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    gap: 1rem;
-  }
-
-  .scope legend {
-    margin-bottom: 0.25rem;
-    font-weight: 600;
+    font-size: var(--font-size-2xs);
   }
 
   .field {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: var(--space-1);
   }
 
   .field span {
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
   }
 
   .field small {
     color: var(--color-text-secondary);
   }
 
-  .field small.error {
-    color: var(--error-solid);
-  }
-
   .release-body {
-    margin: 0 0 0.75rem;
+    margin: 0 0 var(--space-3);
   }
 </style>

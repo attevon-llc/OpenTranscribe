@@ -1,8 +1,8 @@
 /**
- * The organization legal-holds panel (#1276). The server owns what a hold may name and what is
- * still held after a release; the panel must send exactly what the administrator entered, keep
- * "Place" disabled until the input is one the server would accept, and surface the server's
- * answer.
+ * The legal-holds panel, for an organization's holds (#1276) and the operator's (legal-hold plan
+ * §8.4). The server owns what a hold may name and what is still held after a release; the panel
+ * must send exactly what the administrator entered to its own authority's API, keep "Place"
+ * disabled until the input is one the server would accept, and surface the server's answer.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
@@ -25,12 +25,19 @@ const api = vi.hoisted(() => ({
   releaseHold: vi.fn(),
 }));
 vi.mock('$lib/api/orgAdmin', () => ({ OrgAdminApi: api }));
+const adminApi = vi.hoisted(() => ({
+  listHolds: vi.fn(),
+  getHold: vi.fn(),
+  placeHold: vi.fn(),
+  releaseHold: vi.fn(),
+}));
+vi.mock('$lib/api/adminHolds', () => ({ AdminHoldsApi: adminApi }));
 const collectionsApi = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('$lib/api/collections', () => ({ CollectionsApi: collectionsApi }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
 
-import OrgLegalHoldsPanel from './OrgLegalHoldsPanel.svelte';
+import LegalHoldsPanel from './LegalHoldsPanel.svelte';
 
 const COLLECTION = '22222222-2222-2222-2222-222222222222';
 const FILE = '33333333-3333-3333-3333-333333333333';
@@ -60,15 +67,15 @@ beforeEach(() => {
 });
 
 async function openPlace() {
-  render(OrgLegalHoldsPanel);
+  render(LegalHoldsPanel);
   await screen.findByText('Collection: Matter 14');
   await fireEvent.click(screen.getByRole('button', { name: 'Place a hold' }));
   await screen.findByText('Place a legal hold');
 }
 
-describe('OrgLegalHoldsPanel', () => {
+describe('LegalHoldsPanel (organization scope, the default)', () => {
   it('lists holds in force with the reason, the matter, who placed it and the file count', async () => {
-    render(OrgLegalHoldsPanel);
+    render(LegalHoldsPanel);
 
     expect(await screen.findByText('Collection: Matter 14')).toBeInTheDocument();
     expect(screen.getByText('Privileged litigation hold')).toBeInTheDocument();
@@ -86,7 +93,7 @@ describe('OrgLegalHoldsPanel', () => {
         { uuid: COLLECTION, title: null, filename: 'untitled.mp3' },
       ],
     });
-    render(OrgLegalHoldsPanel);
+    render(LegalHoldsPanel);
     await screen.findByText('Collection: Matter 14');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Show files' }));
@@ -100,7 +107,7 @@ describe('OrgLegalHoldsPanel', () => {
 
   it('says so when nothing is held', async () => {
     api.listHolds.mockResolvedValue({ holds: [], total: 0 });
-    render(OrgLegalHoldsPanel);
+    render(LegalHoldsPanel);
     expect(await screen.findByText('No legal holds in force.')).toBeInTheDocument();
   });
 
@@ -110,7 +117,7 @@ describe('OrgLegalHoldsPanel', () => {
       holds: [hold(), hold({ uuid: 'h-2', active: false, released_at: '2026-10-26T12:00:00Z' })],
       total: 2,
     });
-    render(OrgLegalHoldsPanel);
+    render(LegalHoldsPanel);
     await screen.findByText('In force');
 
     await fireEvent.click(screen.getByLabelText('Show released holds'));
@@ -148,6 +155,7 @@ describe('OrgLegalHoldsPanel', () => {
       })
     );
     expect(toast.success).toHaveBeenCalledWith('Legal hold placed on 3 file(s).');
+    await waitFor(() => expect(api.listHolds).toHaveBeenCalledTimes(2));
   });
 
   it('holds named files: one valid id per line, nothing malformed', async () => {
@@ -191,7 +199,7 @@ describe('OrgLegalHoldsPanel', () => {
 
   it('releases only with a reason, then reloads', async () => {
     api.releaseHold.mockResolvedValue(hold({ active: false }));
-    render(OrgLegalHoldsPanel);
+    render(LegalHoldsPanel);
     await screen.findByText('Collection: Matter 14');
 
     await fireEvent.click(screen.getByRole('button', { name: 'Release' }));
@@ -205,5 +213,64 @@ describe('OrgLegalHoldsPanel', () => {
     await waitFor(() => expect(api.releaseHold).toHaveBeenCalledWith('h-1', 'Matter closed 2026'));
     expect(toast.success).toHaveBeenCalledWith('Legal hold released.');
     await waitFor(() => expect(api.listHolds).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe('LegalHoldsPanel (platform scope)', () => {
+  beforeEach(() => {
+    adminApi.listHolds.mockResolvedValue({
+      holds: [hold({ authority: 'platform', organization_uuid: null })],
+      total: 1,
+    });
+  });
+
+  it('lists, places and releases through the operator API, never the organization one', async () => {
+    adminApi.placeHold.mockResolvedValue(hold({ authority: 'platform', file_count: 3 }));
+    adminApi.releaseHold.mockResolvedValue(hold({ active: false }));
+    render(LegalHoldsPanel, { scope: 'platform' });
+    await screen.findByText('Collection: Matter 14');
+    expect(adminApi.listHolds).toHaveBeenCalledWith({ active_only: true, limit: 200 });
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Place a hold' }));
+    await screen.findByText('Place a legal hold');
+    await fireEvent.change(screen.getByRole('combobox'), { target: { value: COLLECTION } });
+    await fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: REASON } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
+    await waitFor(() =>
+      expect(adminApi.placeHold).toHaveBeenCalledWith({
+        scope: 'collection',
+        collection_uuid: COLLECTION,
+        reason: REASON,
+        matter_ref: undefined,
+      })
+    );
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Release' }));
+    await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'Matter closed 2026' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Release hold' }));
+    await waitFor(() =>
+      expect(adminApi.releaseHold).toHaveBeenCalledWith('h-1', 'Matter closed 2026')
+    );
+    expect(api.listHolds).not.toHaveBeenCalled();
+    expect(api.placeHold).not.toHaveBeenCalled();
+    expect(api.releaseHold).not.toHaveBeenCalled();
+  });
+
+  it("says the operator's own words: instance administrators, and where takedown holds live", async () => {
+    render(LegalHoldsPanel, { scope: 'platform' });
+    await screen.findByText('Collection: Matter 14');
+    expect(screen.getByText(/without taking them down/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Holds placed together with a takedown are managed in Quarantine.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/your organization's administrators only/)).toBeNull();
+  });
+
+  it('explains what a hold does at the top of the panel', async () => {
+    render(LegalHoldsPanel, { scope: 'platform' });
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'What does a legal hold do?' })
+    );
+    expect(screen.getByText(/Still works:/)).toBeInTheDocument();
   });
 });

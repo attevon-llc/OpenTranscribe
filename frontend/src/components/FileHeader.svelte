@@ -4,10 +4,18 @@
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
   import HoldBadge from '$components/ui/HoldBadge.svelte';
+  import CopyButton from '$components/ui/CopyButton.svelte';
+  import HeldFileBanner from '$components/legal-hold/HeldFileBanner.svelte';
+  import FilePlaceHoldAction from '$components/legal-hold/FilePlaceHoldAction.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { reportHoldRefusal } from '$lib/legalHold/refusal';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
 
   const dispatch = createEventDispatcher();
+  // A held file's title is frozen (legal-hold plan, Lane D); the banner below says why.
+  const frozen = fileFrozen();
 
   export let file: MediaFileDetail | null = null;
   export let currentProcessingStep: string = '';
@@ -89,7 +97,9 @@
       }
     } catch (error) {
       console.error('Error updating display name:', error);
-      showSaveErrorModal = true;
+      // A hold placed since the page loaded: say so (translated) instead of a generic failure.
+      if (reportHoldRefusal(error)) cancelEditingTitle();
+      else showSaveErrorModal = true;
     } finally {
       isSaving = false;
     }
@@ -172,16 +182,36 @@
           type="button"
           on:click={startEditingTitle}
           class="edit-btn"
-          title={$t('fileDetail.editDisplayName')}
+          title={$frozen ? $t('holds.frozenControl') : $t('fileDetail.editDisplayName')}
+          aria-label={$t('fileDetail.editDisplayName')}
+          disabled={$frozen}
+          aria-describedby={$frozen ? 'held-file-banner-text' : undefined}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m18 2 4 4-14 14H4v-4z"></path>
             <path d="m14.5 5.5 4 4"></path>
           </svg>
         </button>
+        {#if file?.uuid}
+          <span class="file-id-actions">
+            <CopyButton
+              text={String(file.uuid)}
+              label={$t('fileDetail.copyId')}
+              copiedLabel={$t('fileDetail.copyIdDone')}
+              on:copied={() => toastStore.success($t('fileDetail.copyIdDone'))}
+            />
+            <FilePlaceHoldAction
+              fileUuid={String(file.uuid)}
+              fileLabel={getDisplayName(file)}
+              on:placed={(e) => dispatch('holdPlaced', e.detail)}
+            />
+          </span>
+        {/if}
       </div>
     {/if}
   </div>
+
+  <HeldFileBanner hold={file?.hold} />
 
   <!-- Processing Status Display -->
   {#if file?.status === 'error'}
@@ -288,6 +318,18 @@
 />
 
 <style>
+  .file-id-actions {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .edit-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
   .file-header-main {
     margin-bottom: 24px;
   }

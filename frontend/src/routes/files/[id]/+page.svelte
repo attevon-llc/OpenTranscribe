@@ -64,12 +64,20 @@
   import { applyReprocessStart, reprocessRegeneratesSummary } from '$lib/fileDetail/reprocess';
   import Spinner from '$components/ui/Spinner.svelte';
   import FileDetailSkeleton from '$components/FileDetailSkeleton.svelte';
+  import { provideFileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { onHoldRefused } from '$lib/legalHold/refusal';
+  import { markHeld } from '$lib/legalHold/summary';
 
   // Props - SvelteKit passes data from +page.ts
   export let data;
   $: id = data.id;
 
   let file: any = null;
+  // Legal hold: every edit control below reads this through context (legal-hold plan, Lane D).
+  const fileFrozenStore = provideFileFrozen();
+  $: fileFrozenStore.set(file?.hold?.held === true);
+  // A hold placed while this page is open: a refused edit switches the page to the frozen view.
+  onDestroy(onHoldRefused((heldBy) => { if (file) file = { ...file, hold: markHeld(file.hold, heldBy) }; }));
   let fileId = '';
   let videoUrl = '';
   let streamContentType = '';
@@ -619,6 +627,7 @@
         {currentProcessingStep}
         sharedPermission={myPermission ?? null}
         on:titleUpdated={(e) => { if (file) file.title = e.detail.title; }}
+        on:holdPlaced={(e) => { if (file) file = { ...file, hold: markHeld(file.hold, [e.detail.authority]) }; }}
       />
     </div>
 

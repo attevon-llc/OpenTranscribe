@@ -10,6 +10,8 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let file: MediaFileDetail | null = null;
   // Default-deny: the real page (routes/files/[id]/+page.svelte) always passes
@@ -22,6 +24,10 @@
   export let reprocessing = false;
 
   const dispatch = createEventDispatcher();
+  // A legal hold freezes the summary and refuses a reprocess: both stay visible, disabled,
+  // with the reason printed beside them.
+  const frozen = fileFrozen();
+  const frozenNoteId = 'file-actions-frozen-note';
 </script>
 
 <div class="header-buttons">
@@ -64,8 +70,9 @@
     <button
       class="header-action-btn generate-summary-btn"
       on:click={() => dispatch('generateSummary')}
-      disabled={generatingSummary || summaryGenerating || !llmAvailable}
-      title={!llmAvailable ? (llmSettingsUnavailable ? $t('llm.settingsUnavailable') : $t('fileDetail.aiNotAvailable')) :
+      disabled={generatingSummary || summaryGenerating || !llmAvailable || $frozen}
+      aria-describedby={$frozen ? frozenNoteId : undefined}
+      title={$frozen ? $t('holds.frozenControl') : !llmAvailable ? (llmSettingsUnavailable ? $t('llm.settingsUnavailable') : $t('fileDetail.aiNotAvailable')) :
              (generatingSummary || summaryGenerating) ? $t('fileDetail.aiSummaryGenerating') :
              $t('fileDetail.generateSummaryTooltip')}
     >
@@ -87,8 +94,10 @@
     <button
       class="header-action-btn icon-only reprocess-button-header"
       on:click={() => dispatch('openReprocess')}
-      disabled={reprocessing}
-      title={reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
+      disabled={reprocessing || $frozen}
+      aria-label={$t('fileDetail.reprocessTooltip')}
+      aria-describedby={$frozen ? frozenNoteId : undefined}
+      title={$frozen ? $t('holds.frozenControl') : reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 4v6h-6"></path>
@@ -98,6 +107,9 @@
         <Spinner size="small" />
       {/if}
     </button>
+  {/if}
+  {#if $frozen && canEdit && (file?.status === 'completed' || file?.status === 'error')}
+    <FrozenNote id={frozenNoteId} />
   {/if}
 </div>
 

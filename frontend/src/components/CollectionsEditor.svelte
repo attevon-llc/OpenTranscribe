@@ -4,6 +4,7 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage, getErrorStatus, getErrorCode } from '$lib/utils/apiError';
+  import { reportHoldRefusal } from '$lib/legalHold/refusal';
   import AISuggestionsDropdown from './AISuggestionsDropdown.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
 
@@ -100,6 +101,7 @@
       }
     } catch (err: unknown) {
       console.error('[CollectionsEditor] Error adding to collection:', err);
+      if (reportHoldRefusal(err)) return;
 
       // Extract error message
       const errorMessage = getErrorMessage(err, $t('collections.failedToAdd'));
@@ -161,6 +163,7 @@
       newCollectionInput = '';
     } catch (err: unknown) {
       console.error('[CollectionsEditor] Error with collection:', err);
+      if (reportHoldRefusal(err)) return;
 
       // Extract error message
       const errorMessage = getErrorMessage(err, $t('collections.failedToAdd'));
@@ -199,6 +202,7 @@
       }
     } catch (err: unknown) {
       console.error('[CollectionsEditor] Error removing from collection:', err);
+      if (reportHoldRefusal(err)) return;
 
       // Extract error message
       const errorMessage = getErrorMessage(err, $t('collections.failedToRemove'));

@@ -13,6 +13,9 @@
   import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { reportHoldRefusal } from '$lib/legalHold/refusal';
 
   // Issue #748: the Export/Edit-speakers/Download row (`TranscriptActionsBar`) and the
   // speaker editor panel moved into the file-detail page's left column, and the download
@@ -34,6 +37,8 @@
   export let loadingMoreSegments: boolean = false;
 
   const dispatch = createEventDispatcher();
+  // A held file's transcript is read-only (legal-hold plan, Lane D); the note above says why.
+  const frozen = fileFrozen();
 
   // Reactive transcript segments (passed to search + segment list children)
   $: transcriptSegments = (file?.transcript_segments || []) as TranscriptSegment[];
@@ -169,7 +174,9 @@
         resolved_speaker_name: existingSegment.resolved_speaker_name ?? null
       });
 
-      toastStore.error(getErrorMessage(error, $t('transcript.failedToUpdateSpeaker')));
+      if (!reportHoldRefusal(error)) {
+        toastStore.error(getErrorMessage(error, $t('transcript.failedToUpdateSpeaker')));
+      }
     } finally {
       updatingSegments.delete(segmentUuid);
     }
@@ -225,6 +232,9 @@
     </button>
   </div>
 
+  {#if $frozen}
+    <FrozenNote id="transcript-frozen-note" message={$t('holds.frozenTranscript')} />
+  {/if}
   {#if file.transcript_segments && file.transcript_segments.length > 0}
     <TranscriptSegmentList
       bind:this={segmentListComponent}
@@ -232,7 +242,7 @@
       {groupedTranscriptSegments}
       {speakerList}
       {diarizationDisabled}
-      editable={!$supportSessionGate.readOnly}
+      editable={!$supportSessionGate.readOnly && !$frozen}
       {editingSegmentId}
       bind:editingSegmentText
       {savingTranscript}

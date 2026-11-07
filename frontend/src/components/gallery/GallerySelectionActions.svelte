@@ -5,10 +5,15 @@
   import { anchoredPanel } from '$lib/actions/anchoredPanel';
   import { toastStore } from '$stores/toast';
   import { user as userStore } from '$stores/auth';
+  import { capabilities } from '$stores/capabilities';
+  import { isCloudEdition } from '$lib/edition';
+  import { holdAuthorityForCaller } from '$lib/legalHold/authority';
 
   // Same expression as SettingsModal.svelte:92 — do not invent a second admin
   // predicate (issue #576).
   $: isAdmin = $userStore?.role === 'admin' || $userStore?.role === 'super_admin';
+  // Legal holds: organization admins (managed edition) and instance admins only.
+  $: canPlaceHold = holdAuthorityForCaller($capabilities, $userStore, isCloudEdition) !== null;
 
   /** Mirrors ChatScope.file_uuids max_length in backend/app/schemas/chat.py. */
   const CHAT_MAX_FILES = 100;
@@ -98,6 +103,7 @@
   function handleSpeakerId() { galleryStore.triggerSpeakerId(); closeAllMenus(); }
   function handleCancelProcessing() { galleryStore.triggerCancelProcessing(); closeAllMenus(); }
   function handleQuarantine() { galleryStore.triggerQuarantine(); closeAllMenus(); }
+  function handlePlaceHold() { galleryStore.triggerPlaceHold(); closeAllMenus(); }
 
   /** Hide the selection from (or show it in) the caller's own views. Nobody else is affected. */
   async function handleSetHidden(hidden: boolean) {
@@ -402,6 +408,21 @@
               <MenuIcon name="eye" />
               {$t('gallery.hidden.show')}
             </button>
+            {/if}
+            {#if canPlaceHold && !$supportSessionGate.active}
+              <div class="dropdown-divider"></div>
+              <!-- Any status may be held: a hold freezes what exists and blocks deletion. The
+                   dialog refuses more than 500 files with its own message. -->
+              <button
+                class="dropdown-item place-hold-item"
+                on:click={handlePlaceHold}
+                disabled={$selectedCount === 0}
+                title={$t('holds.action.placeTooltip')}
+                data-testid="gallery-place-hold"
+              >
+                <MenuIcon name="shield" />
+                {$t('holds.action.place')}
+              </button>
             {/if}
             {#if isAdmin}
               <div class="dropdown-divider"></div>

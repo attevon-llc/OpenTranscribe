@@ -160,18 +160,7 @@ _SUPPORT_ACCESS_REASON = (
     "Strict xfail so the entry is deleted the moment the SPA calls the route."
 )
 
-_LEGAL_HOLD_UI_REASON = (
-    "Legal-hold plan (docs/design/legal_hold_ux_freeze_plan.md) lane B: the operator's "
-    "/admin/holds API ships before its UI. Lane D builds the platform Legal holds panel and "
-    "the gallery / file-page hold dialog against this contract; strict xfail so the entry is "
-    "deleted the moment the SPA calls the route."
-)
-
 _NOT_YET_VERIFIED: dict[str, str] = {
-    # --- the operator's legal holds (v467): backend lands first, the SPA follows in lane D ---
-    "/api/admin/holds": _LEGAL_HOLD_UI_REASON,
-    "/api/admin/holds/{hold_uuid}": _LEGAL_HOLD_UI_REASON,
-    "/api/admin/holds/{hold_uuid}/release": _LEGAL_HOLD_UI_REASON,
     # --- support-access grants (#1122): backend lands first, the SPA follows ---
     "/api/support-access/grants/{grant_uuid}/uses": _SUPPORT_ACCESS_REASON,
     "/api/org-admin/support-access": _SUPPORT_ACCESS_REASON,

@@ -32,7 +32,6 @@ types::src/lib/settings/pyannoteCredential.ts::PyannoteBadge	1	pre-existing unus
 types::src/lib/supportAccess/events.ts::SupportAccessEventDetail	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/takedownBasis.ts::BasisMode	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/chat.ts::TraceState	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-types::src/lib/types/hold.ts::HoldAuthority	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/media.ts::DerivedCandidate	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/speaker.ts::MergeSpeakersResponse	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/types/speaker.ts::SpeakerIdentity	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched

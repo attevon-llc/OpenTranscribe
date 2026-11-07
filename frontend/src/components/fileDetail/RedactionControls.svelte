@@ -8,6 +8,8 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let showRedactionToggle = false;
   export let canViewOriginal = false;
@@ -20,6 +22,9 @@
   export let redactionToggleBusy = false;
 
   const dispatch = createEventDispatcher();
+  // An explicit rescan of a held file is refused (legal-hold plan §3.4); viewing either version
+  // still works.
+  const frozen = fileFrozen();
 </script>
 
 {#if showRedactionToggle}
@@ -35,7 +40,9 @@
           type="button"
           class="redaction-link-btn"
           on:click={() => dispatch('rescan')}
-          title={$t('settings.contentRedaction.rescanTooltip')}
+          disabled={$frozen}
+          aria-describedby={$frozen ? 'redaction-frozen-note' : undefined}
+          title={$frozen ? $t('holds.frozenControl') : $t('settings.contentRedaction.rescanTooltip')}
         >
           {$t('settings.contentRedaction.rescan')}
         </button>
@@ -69,11 +76,16 @@
       type="button"
       class="redaction-link-btn"
       on:click={() => dispatch('rescan')}
-      title={$t('settings.contentRedaction.rescanTooltip')}
+      disabled={$frozen}
+      aria-describedby={$frozen ? 'redaction-frozen-note' : undefined}
+      title={$frozen ? $t('holds.frozenControl') : $t('settings.contentRedaction.rescanTooltip')}
     >
       {$t('settings.contentRedaction.runRedaction')}
     </button>
   </div>
+{/if}
+{#if $frozen && canViewOriginal && redactionEnabled}
+  <FrozenNote id="redaction-frozen-note" />
 {/if}
 
 <style>

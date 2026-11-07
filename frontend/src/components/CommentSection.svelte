@@ -12,6 +12,8 @@
   import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '../stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { reportHoldRefusal } from '$lib/legalHold/refusal';
   import { t } from '$stores/locale';
 
   // The Svelte component is exported by default automatically
@@ -31,6 +33,10 @@
   let loading = true;
 
   // Confirmation modal state
+  // A held file keeps taking NEW comments (recorded as hold annotations); existing ones are
+  // frozen (legal-hold plan, Lane D).
+  const frozen = fileFrozen();
+
   const confirmDialog = createConfirmDialog();
   const {
     isOpen: confirmOpen,
@@ -292,6 +298,7 @@
       });
 
       // Provide a more user-friendly error message
+      if (reportHoldRefusal(err)) return false;
       if (err.response && err.response.status === 401) {
         toastStore.error($t('comments.loginRequiredToEdit'));
       } else {
@@ -334,6 +341,7 @@
       });
 
       // Provide a more user-friendly error message
+      if (reportHoldRefusal(err)) return;
       if (err.response && err.response.status === 401) {
         toastStore.error($t('comments.loginRequiredToDelete'));
       } else {
@@ -373,6 +381,9 @@
   {#if !$supportSessionGate.readOnly}
   <div class="comment-form-container">
     <CommentComposer {currentTime} {duration} submit={addComment} />
+    {#if $frozen}
+      <p class="hold-comment-hint" data-testid="hold-comment-hint">{$t('holds.commentHint')}</p>
+    {/if}
   </div>
   {/if}
 
@@ -391,6 +402,7 @@
           {currentTime}
           {duration}
           isAuthor={isCommentAuthor(comment.user?.uuid)}
+          frozen={$frozen}
           save={(payload) => editComment(comment.uuid, payload)}
           on:seekTo={(e) => dispatch('seekTo', e.detail)}
           on:delete={() => deleteComment(comment.uuid)}
@@ -415,6 +427,12 @@
 />
 
 <style>
+  .hold-comment-hint {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-warning-text);
+  }
+
   .comments-header-internal {
     display: flex;
     align-items: center;

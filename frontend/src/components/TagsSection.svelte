@@ -6,6 +6,8 @@
   import type { Tag } from '$lib/types/tag';
   import type { MediaFileDetail } from '$lib/types/media';
   import TagsEditor from './TagsEditor.svelte';
+  import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
+  import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
   export let file: MediaFileDetail | null = null;
   export let isTagsExpanded: boolean = false;
@@ -15,7 +17,10 @@
   // tags read-only, since the server refuses their attach/detach anyway.
   export let canEdit = false;
 
-  $: editable = canEdit && !$supportSessionGate.readOnly;
+  // A held file's tags are part of its preserved record (legal-hold plan, Lane D): read-only,
+  // with the reason printed under them.
+  const frozen = fileFrozen();
+  $: editable = canEdit && !$supportSessionGate.readOnly && !$frozen;
 
   const dispatch = createEventDispatcher<{ tagsUpdated: { tags: Tag[] } }>();
 
@@ -67,6 +72,9 @@
           </div>
         {:else}
           <span class="no-tags">{$t('tags.noTags')}</span>
+        {/if}
+        {#if $frozen && canEdit}
+          <FrozenNote id="tags-frozen-note" />
         {/if}
       {:else if file && file.uuid}
         <TagsEditor

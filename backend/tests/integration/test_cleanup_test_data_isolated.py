@@ -201,6 +201,12 @@ def throwaway_pg() -> Iterator[dict[str, Any]]:
 class _StubApiHandler(BaseHTTPRequestHandler):
     """Records every DELETE it receives; answers login/logout/GET-detail so
     ``cleanup-test-data.py``'s ``ApiSession`` completes its real flow against it.
+
+    A media file is removed the way the real API requires since the trash (#1101):
+    ``DELETE /api/files/{uuid}`` (or ``/force``) only trashes it, recorded under
+    ``deleted["media_file"]``; ``DELETE /api/files/{uuid}/purge`` destroys it, answered
+    with the real endpoint's 202 and recorded under ``purged``. ``media_events`` keeps
+    both in arrival order so a test can prove each purge follows its own trash.
     """
 
     server: _StubApiServer
@@ -249,10 +255,18 @@ class _StubApiHandler(BaseHTTPRequestHandler):
                 self.server.deleted.setdefault("tag", []).extend(query.get("tag_uuids", []))
                 self._send_json(200, {"deleted": len(query.get("tag_uuids", []))})
                 return
+            if path.startswith("/api/files/") and path.rstrip("/").endswith("/purge"):
+                file_uuid = path[len("/api/files/") :].rstrip("/").removesuffix("/purge")
+                self.server.purged.append(file_uuid)
+                self.server.media_events.append(("purge", file_uuid))
+                self._send_json(202, {})
+                return
             for resource, prefix in self.server.DELETE_PREFIXES.items():
                 if path.startswith(prefix):
                     resource_uuid = path[len(prefix) :].rstrip("/").removesuffix("/force")
                     self.server.deleted.setdefault(resource, []).append(resource_uuid)
+                    if resource == "media_file":
+                        self.server.media_events.append(("trash", resource_uuid))
                     self._send_json(200, {})
                     return
         self._send_json(404, {"detail": "not found"})
@@ -271,6 +285,8 @@ class _StubApiServer(ThreadingHTTPServer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.deleted: dict[str, list[str]] = {}
+        self.purged: list[str] = []
+        self.media_events: list[tuple[str, str]] = []
         self.logout_calls = 0
         self.lock = threading.Lock()
 
@@ -285,6 +301,23 @@ def stub_api() -> Iterator[_StubApiServer]:
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+def _assert_trashed_then_purged_exactly(stub_api: _StubApiServer, expected: set[str]) -> None:
+    """Every expected file is trashed once and then purged once, and no other file is
+    touched by either call: a trash alone leaves the test file's storage and index
+    documents behind, and a purge of anything else would destroy a row the sweep never
+    selected."""
+    trashed = stub_api.deleted.get("media_file", [])
+    assert sorted(trashed) == sorted(expected), (
+        f"expected exactly the OLD tier-A files trashed, once each, got {trashed}"
+    )
+    assert sorted(stub_api.purged) == sorted(expected), (
+        f"expected exactly the trashed files purged, once each, got {stub_api.purged}"
+    )
+    for file_uuid in expected:
+        events = [verb for verb, u in stub_api.media_events if u == file_uuid]
+        assert events == ["trash", "purge"], f"{file_uuid}: expected trash then purge, got {events}"
 
 
 def _wait_for_path(path: Path, timeout: float = 10.0) -> None:
@@ -520,6 +553,7 @@ def test_dry_run_mutates_nothing_and_deletes_nothing_over_the_api(
     after = _snapshot(seeded_db["engine"])
     assert after == before, "a dry run must not change a single row, in ANY table"
     assert stub_api.deleted == {}, "a dry run must never issue a real API delete"
+    assert stub_api.purged == [], "a dry run must never purge a file"
 
 
 # ---------------------------------------------------------------------------------------------
@@ -555,18 +589,22 @@ def test_execute_unambiguous_removes_only_old_tier_a_rows(
     result = _run_script(env, stub_api, live_run_marker, "--execute-unambiguous")
     assert result.returncode == 0, result.stdout + result.stderr
 
-    assert set(stub_api.deleted.get("media_file", [])) == {
-        seeded_db["old_media_uuid"],
-        seeded_db["bench_media_uuid"],
-        seeded_db["injected_media_uuid"],
-    }, f"expected only the OLD tier-A files deleted, got {stub_api.deleted.get('media_file')}"
-    assert not seeded_db["kept_injected_uuids"] & set(stub_api.deleted.get("media_file", [])), (
+    _assert_trashed_then_purged_exactly(
+        stub_api,
+        {
+            seeded_db["old_media_uuid"],
+            seeded_db["bench_media_uuid"],
+            seeded_db["injected_media_uuid"],
+        },
+    )
+    touched = set(stub_api.deleted.get("media_file", [])) | set(stub_api.purged)
+    assert not seeded_db["kept_injected_uuids"] & touched, (
         "the canonical corpus and an operator-seeded corpus are real eval data, never swept"
     )
-    assert fresh_uuid not in stub_api.deleted.get("media_file", []), (
+    assert fresh_uuid not in touched, (
         "a file created inside a still-live run window must survive (liveness cutoff)"
     )
-    assert seeded_db["human_media_uuid"] not in stub_api.deleted.get("media_file", []), (
+    assert seeded_db["human_media_uuid"] not in touched, (
         "a human-plausible filename sharing only the prefix must survive (shape check)"
     )
     assert stub_api.deleted.get("tag") == [seeded_db["tag_uuid"]]
@@ -596,12 +634,17 @@ def test_dry_run_report_names_exactly_the_rows_execute_unambiguous_removes(
         "the human-plausible near-miss must not be listed"
     )
 
-    _run_script(env, stub_api, tmp_path / ".testruns", "--execute-unambiguous")
-    assert set(stub_api.deleted.get("media_file", [])) == {
-        seeded_db["old_media_uuid"],
-        seeded_db["bench_media_uuid"],
-        seeded_db["injected_media_uuid"],
-    }
+    assert stub_api.deleted == {} and stub_api.purged == [], "the dry run must remove nothing"
+    executed = _run_script(env, stub_api, tmp_path / ".testruns", "--execute-unambiguous")
+    assert executed.returncode == 0, executed.stdout + executed.stderr
+    _assert_trashed_then_purged_exactly(
+        stub_api,
+        {
+            seeded_db["old_media_uuid"],
+            seeded_db["bench_media_uuid"],
+            seeded_db["injected_media_uuid"],
+        },
+    )
     assert "bench-parallel-0a1b2c3d.wav" in dry.stdout
     assert "synthetic__T000.transcript [seed pytest-synth-0123456789]" in dry.stdout
     assert "qmsum__Bro003.transcript" not in dry.stdout

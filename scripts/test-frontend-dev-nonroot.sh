@@ -40,7 +40,7 @@ check() { # image volume-prefix
 
 echo "== 1. EXISTING root-owned volumes (seeded by the old root image) =="
 docker run --rm --label "$L" -v ot-fn-nm1:/app/node_modules -v ot-fn-sk1:/app/.svelte-kit ot-fn-test-old true
-echo "seeded owner (old image): $(docker run --rm -v ot-fn-nm1:/v alpine stat -c %u /v)"
+echo "seeded owner (old image): $(docker run --rm --platform "$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')" -v ot-fn-nm1:/v alpine:3 stat -c %u /v)"
 check ot-fn-test-new ot-fn-nm1 ot-fn-sk1 ot-fn-existing
 echo "== 2. BRAND-NEW volumes =="
 check ot-fn-test-new ot-fn-nm2 ot-fn-sk2 ot-fn-fresh

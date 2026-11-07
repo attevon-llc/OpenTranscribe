@@ -156,6 +156,30 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "scope, never tenant content",
     ),
     (
+        r"^\w+ /api/admin/youtube-settings$",
+        "settings",
+        "admin-gated deployment YouTube ingestion policy (switches and rate numbers); never "
+        "tenant content",
+    ),
+    (
+        r"^\w+ /api/admin/transcription-defaults$",
+        "settings",
+        "admin-gated deployment VAD defaults new transcriptions start from (numbers only); "
+        "never tenant content",
+    ),
+    (
+        r"^\w+ /api/admin/media-private-hosts$",
+        "settings",
+        "super_admin-gated allowlist of private-network media hosts (an SSRF boundary, hence "
+        "super_admin); scheme://host[:port] strings only, never tenant content",
+    ),
+    (
+        r"^\w+ /api/admin/llm-budget$",
+        "settings",
+        "admin-gated LLM token limits (issue #790) plus the instance-wide token total for the "
+        "month and the reset times; one aggregate number, no per-user or per-file breakdown",
+    ),
+    (
         r"^GET /api/speakers/debug/cross-media-data",
         "self-scoped",
         "admin-gated diagnostic that reads only the caller's own speakers (user_id filter)",

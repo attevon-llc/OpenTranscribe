@@ -223,9 +223,19 @@ class MediaPlayer:
         menu.first.wait_for(state="visible")
         return menu.first
 
+    def speed_menu_item(self) -> Locator:
+        """The settings row that opens the speed list.
+
+        Matched by name AND ``aria-haspopup="menu"``: the speed list's own back row carries
+        the same name, but it returns to the settings list instead of opening a menu.
+        """
+        return self.page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"]).and_(
+            self.page.locator('[aria-haspopup="menu"]')
+        )
+
     def open_speed_menu(self) -> None:
         self.open_settings()
-        self.page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"]).click()
+        self.speed_menu_item().click()
 
     def blur(self) -> None:
         """Move focus off any control so page-wide shortcuts reach the player."""

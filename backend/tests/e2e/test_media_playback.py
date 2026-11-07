@@ -31,7 +31,6 @@ from conftest import OWNED_MEDIA_PREFIX
 from conftest import _generate_media
 from conftest import delete_media_file
 from conftest import wait_for_stable_completion
-from media_player import CONTROL_NAMES
 from media_player import MediaPlayer
 from media_player import app_label
 from media_player import speed_name
@@ -428,7 +427,7 @@ class TestPlayerLanguageAndAccessibility:
         }"""
 
         player.open_settings()
-        speed = page.get_by_role("menuitem", name=CONTROL_NAMES["speed_menu"]).first
+        speed = player.speed_menu_item()
         ltr = speed.evaluate(row_js)
         assert ltr["first"] < ltr["last"], ltr
         page.keyboard.press("Escape")

@@ -27,6 +27,7 @@ from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
 from app.services.embedding_mode_service import MODE_V4
 from app.services.embedding_mode_service import EmbeddingMode
 from app.services.embedding_mode_service import EmbeddingModeService
+from app.utils.audio_stream import audio_map_args
 from app.utils.hardware_detection import detect_hardware
 
 logger = logging.getLogger(__name__)
@@ -287,6 +288,7 @@ class SpeakerEmbeddingService:
                 "ffmpeg",
                 "-i",
                 audio_path,
+                *audio_map_args(),
                 "-vn",  # Skip video decoding (crucial for MP4/video files)
                 "-f",
                 "f32le",

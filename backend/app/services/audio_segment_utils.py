@@ -14,6 +14,8 @@ from typing import Any
 
 import numpy as np
 
+from app.utils.audio_stream import audio_map_args
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,6 +118,7 @@ def extract_audio_segment_np(
         str(max(0.0, start)),
         "-i",
         audio_source,
+        *audio_map_args(),
         "-t",
         str(duration),
         "-vn",
@@ -171,6 +174,7 @@ def load_full_audio_np(
         "ffmpeg",
         "-i",
         audio_path,
+        *audio_map_args(),
         "-f",
         "f32le",
         "-acodec",

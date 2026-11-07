@@ -34,6 +34,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
+from app.utils.audio_stream import audio_map_args
 from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
@@ -286,8 +287,7 @@ def build_encode_command(source: str, output_path: str, probe: MediaProbe) -> li
         "-y",
         "-i",
         source,
-        "-map",
-        "0:a:0",
+        *audio_map_args(),
         "-vn",
         "-sn",
         "-dn",

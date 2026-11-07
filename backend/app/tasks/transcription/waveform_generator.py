@@ -12,6 +12,8 @@ from typing import Any
 
 import numpy as np
 
+from app.utils.audio_stream import audio_map_args
+
 logger = logging.getLogger(__name__)
 
 # Standard waveform resolutions for responsive design and device optimization
@@ -140,7 +142,7 @@ class WaveformGenerator:
         Returns:
             Numpy array of audio samples as float32, or None if extraction failed
         """
-        ffmpeg_cmd = ["ffmpeg", "-i", file_path]
+        ffmpeg_cmd = ["ffmpeg", "-i", file_path, *audio_map_args()]
 
         # Add duration flag to ensure we get the complete audio stream
         if duration > 0:

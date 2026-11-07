@@ -148,8 +148,7 @@ def _source_counts(
     Summary pill's count, which is exactly the failure §6 exists to avoid.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.hybrid_search_service import _quarantined_file_uuids
-    from app.services.search.quarantine_exclusion import SearchCountUnavailableError
+    from app.services.search.search_types import SearchCountUnavailableError
 
     service = HybridSearchService()
     counts: dict[str, int | None] = {
@@ -178,14 +177,13 @@ def _source_counts(
             logger.warning("source_counts: %s count unavailable", source)
 
     try:
-        quarantined = [] if unavailable_list_exempt(ctx.bypass) else _quarantined_file_uuids()
         _hits, total = service.search_summary_plane(
             q,
             ctx.user.id,
             organization_id=ctx.org_id,
             page=1,
             page_size=1,
-            quarantined_file_uuids=quarantined,
+            include_quarantined=unavailable_list_exempt(ctx.bypass),
             **filter_kwargs,
         )
         counts["summary"] = total
@@ -335,9 +333,8 @@ def _summary_search_payload(
     ``redaction/summary_redaction.py`` for why batching leaks repeated names,
     and for why only the returned leaves are examined (issue #822).
 
-    Quarantine is resolved from Postgres (fail-closed:
-    ``hybrid_search_service._quarantined_file_uuids``) and applied INSIDE
-    ``search_summary_plane`` as a ``must_not`` PRE-filter, so
+    Quarantine is excluded INSIDE ``search_summary_plane`` through the
+    ``availability`` field the takedown action stamps (a PRE-filter), so
     ``summary_total`` and the page offsets are consistent with what is
     returned. This function used to post-filter the hit list here; that left
     the count disclosing a taken-down file whose hit fell outside the
@@ -351,7 +348,6 @@ def _summary_search_payload(
     """
     from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
-    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
     from app.services.search.summary_search import search_summaries
 
     cfg = resolve_effective_config(db, ctx.user.id, organization_id=ctx.org_id)
@@ -382,13 +378,6 @@ def _summary_search_payload(
         )
     except SummaryMaskingUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
-    except QuarantineExclusionUnavailableError as e:
-        # Literal 503, matching this module's other quarantine-unavailable
-        # arms — silently searching without the exclusion is a takedown
-        # bypass, not a degraded result.
-        raise HTTPException(
-            status_code=503, detail="The summary search exclusion list is unavailable."
-        ) from e
 
     return {
         "summary_results": [

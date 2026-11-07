@@ -142,24 +142,30 @@ is a fresh `collection_ids` on the chunks, so `update_file_access_index` rewrite
 dispatches it. A bare `{"terms": {"accessible_user_ids": ...}}` in a new reader hides files the rest
 of the app lets the caller open.
 
-## The trash is an index field, not an exclusion list (#1101)
+## Trash and quarantine are an index field, not an exclusion list (#1101, #1253)
 
-A trashed file keeps its documents until purge. Every per-file document (chunks, digests,
+A trashed or taken-down file keeps its documents. Every per-file document (chunks, digests,
 summary leaves, the legacy `transcripts` doc, per-file voiceprints) carries `availability`
-(`availability_field.py`: `available` | `trashed`, keyword). Readers exclude with
-`must_not term availability: trashed`, never a positive term: documents written before the
-field existed have no value and must stay visible. `access_filter_clause` ANDs it into the ACL,
-so every chunk-plane reader gets it; every speaker kNN body calls
-`availability_field.exclude_unavailable_clause()` (`tests/unit/test_knn_bodies_exclude_unavailable.py`
-guards new ones). Writers stamp the value from the row (`file_availability.index_availability`;
-`tests/unit/test_index_writers_stamp_availability.py`), and `trash_service` rewrites it in place
-on trash/restore through `availability_stamp.stamp_files` (update_by_query, `refresh=True`); a
-failure converges via `search.availability_reconcile`. Mapping: additive step 4 on the chunks
-index, `indices.ensure_field_mapping` on transcripts/speaker indices at startup, no reindex.
-Do NOT model the trash on `quarantine_exclusion.py`: that Postgres-resolved `must_not terms`
-list fails closed with a 503 past 10,000 ids, and a 30-day org trash passes that. Quarantine
-itself is not in the index yet (it still uses that list); the Postgres post-filter
-(`unavailable_among`) stays as the belt for both.
+(`availability_field.py`: `available` | `quarantined` | `trashed`, keyword; a file in both states
+reads `trashed`, the state with no exemption). Readers exclude with `must_not terms availability`,
+never a positive term: documents written before the field existed have no value and must stay
+visible. `access_filter_clause` ANDs it into the ACL, so every chunk-plane reader gets it; its
+`include_quarantined` is the review exemption, passed only from
+`file_availability.unavailable_list_exempt(bypass)` (search hits, counts, facets, suggestions,
+summary plane, gallery transcript filter). Chat never passes it. Every speaker kNN body calls
+`availability_field.exclude_unavailable_clause()` with no exemption
+(`tests/unit/test_knn_bodies_exclude_unavailable.py` guards new ones): matching and suggestions
+are not review surfaces. Writers stamp the value from the row
+(`file_availability.index_availability`; `tests/unit/test_index_writers_stamp_availability.py`),
+and `trash_service` / `takedown_service` rewrite it in place through
+`availability_stamp.restamp` (update_by_query, `refresh=True`, value read from the row); a
+failure converges via `search.availability_reconcile` (dispatched on failure, once per boot, and
+by beat every 15 minutes; the unscoped run stamps every trashed and quarantined file, which is
+what stamps takedowns older than the field). Mapping: additive step 4 on the chunks index,
+`indices.ensure_field_mapping` on transcripts/speaker indices at startup, no reindex. Never
+reintroduce a Postgres-resolved `must_not terms file_uuid` list for either state: it grows until
+it cannot be sent, and it cannot reach the kNN reads. The Postgres post-filter
+(`unavailable_among`) stays as the belt for result lists while the stamp converges.
 
 ## Gotchas
 

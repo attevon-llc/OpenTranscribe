@@ -65,7 +65,6 @@ def test_available_filters_outage_raises_instead_of_empty_facets():
     with (
         patch.object(suggestions._client, "opensearch_client", client),
         patch.object(suggestions, "_chunks_index_verified", return_value=True),
-        patch.object(suggestions, "_quarantined_file_uuids", return_value=[]),
         pytest.raises(ServiceUnavailableError),
     ):
         suggestions.get_available_filters(user_id=1, organization_id=None, is_admin=False)

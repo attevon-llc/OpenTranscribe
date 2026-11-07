@@ -5,6 +5,16 @@ from dataclasses import field
 from typing import Any
 
 
+class SearchCountUnavailableError(RuntimeError):
+    """``count_matches`` could not produce a trustworthy count.
+
+    Reporting a failed count as ``0`` is a content oracle (issue #817): a caller polling the
+    count while searching for a term would learn whether it exists somewhere they cannot see,
+    since "0 matches" and "the search itself failed" would be indistinguishable. Callers answer
+    503 (the find bar) or ``null`` (the source pills) instead.
+    """
+
+
 @dataclass
 class SearchOccurrence:
     """A single matching snippet within a file."""

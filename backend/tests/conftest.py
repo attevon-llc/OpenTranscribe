@@ -349,6 +349,10 @@ pytest_plugins = [
     # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
     # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
     "fixtures.summary_plane",
+    # `availability_indices`: throwaway chunks/transcripts/speaker indices plus the indexing and
+    # read-surface helpers the trash and quarantine lifecycle suites share (#1101, #1253).
+    # Opt-in; nothing autouse.
+    "fixtures.availability_index_world",
     # `support_world`: two organizations, an org admin, a platform admin and a super_admin with
     # real tokens, for the support-access grant suites (#1122). Opt-in; nothing autouse.
     "fixtures.support_world",
@@ -397,9 +401,13 @@ def _skip_celery_dispatch():
     ``task.delay(...)`` still published to the broker. On a developer host that
     silently targeted whatever Redis answered on localhost:6379 (an unrelated
     container), and against the real stack Redis (localhost:5177, auth'd) it
-    500s. Patching ``Task.apply_async`` (which ``.delay`` wraps) makes the
-    skip-switch actually cover dispatch, with a fake AsyncResult id for code
-    that records task ids.
+    500s. Patching ``Task.apply_async`` (which ``.delay`` wraps) and the app's
+    ``celery_app.send_task`` (dispatch by task name, which never goes through a
+    ``Task``) makes the skip-switch actually cover dispatch, with a fake
+    AsyncResult id for code that records task ids. Without the second patch a
+    by-name dispatch spent ~19 s retrying an unreachable broker per call. The
+    instance, not the ``Celery`` class: the live broker suites build Celery apps
+    of their own and must keep a real ``send_task``.
     """
     if os.environ.get("SKIP_CELERY") != "True":
         yield
@@ -409,7 +417,12 @@ def _skip_celery_dispatch():
 
     fake_result = MagicMock(name="FakeAsyncResult")
     fake_result.id = "test-task-id"
-    with patch("celery.app.task.Task.apply_async", return_value=fake_result):
+    from app.core.celery import celery_app
+
+    with (
+        patch("celery.app.task.Task.apply_async", return_value=fake_result),
+        patch.object(celery_app, "send_task", return_value=fake_result),
+    ):
         yield
 
 

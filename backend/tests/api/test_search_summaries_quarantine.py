@@ -23,9 +23,10 @@ from fixtures.summary_plane import sync_summary_plane
 from app.models.media import MediaFile
 from app.services.search.hybrid_search_service import HybridSearchService
 
-# The summary leg reads the OpenSearch summary plane (#963). Quarantine is decided from
-# Postgres at query time, so a test flips ``is_quarantined`` AFTER the plane is written --
-# exactly the production order -- and the plane must still be told to hide the file.
+# The summary leg reads the OpenSearch summary plane (#963). A takedown restamps the file's
+# documents ``availability: quarantined`` (#1253); a test flips ``is_quarantined`` AFTER the
+# plane is written -- the production order -- and rewrites the plane from the row, which
+# stamps the same value without touching any index outside this fixture's.
 pytestmark = pytest.mark.usefixtures("summary_plane")
 
 SEARCH_PATH = "/api/search"
@@ -70,6 +71,7 @@ def test_summary_total_does_not_disclose_an_off_page_taken_down_file(
     clean = _make_file(db_session, normal_user, summary={"bluf": "roadmap review too"})
     quarantined.is_quarantined = True
     db_session.commit()
+    sync_summary_plane(quarantined)
 
     body = client.get(
         SEARCH_PATH,
@@ -118,6 +120,7 @@ def test_an_admin_still_sees_both(
     quarantined = _make_file(db_session, admin_user, summary={"bluf": "roadmap review too"})
     quarantined.is_quarantined = True
     db_session.commit()
+    sync_summary_plane(quarantined)
 
     body = client.get(
         SEARCH_PATH,

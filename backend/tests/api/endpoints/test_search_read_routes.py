@@ -35,6 +35,8 @@ from unittest.mock import patch
 
 from fastapi import status
 
+from tests.fixtures.opensearch_filter_eval import matches_all
+
 COUNT = "/api/search/count"
 SUGGESTIONS = "/api/search/suggestions"
 
@@ -133,7 +135,11 @@ def test_count_is_scoped_to_the_caller_and_optionally_one_file(
         )
 
     unscoped, scoped = (b["query"]["bool"]["filter"] for b in engine.bodies)
-    assert {"terms": {"accessible_user_ids": [normal_user.id]}} in unscoped
+    # Evaluated, not pinned: the ACL term sits inside the clause that also drops trashed and
+    # taken-down files (``access_filter_clause``).
+    mine = {"accessible_user_ids": [normal_user.id], "doc_type": "chunk"}
+    theirs = {"accessible_user_ids": [normal_user.id + 1], "doc_type": "chunk"}
+    assert matches_all(mine, unscoped) and not matches_all(theirs, unscoped)
     assert {"term": {"file_uuid": file_uuid}} not in unscoped
     assert {"term": {"file_uuid": file_uuid}} in scoped
 
@@ -209,7 +215,7 @@ def test_suggestions_engine_is_asked_for_the_callers_own_scope(
     """
     calls: list[dict] = []
 
-    def _record(_self, *, prefix, user_id, limit, organization_id, is_admin):
+    def _record(_self, *, prefix, user_id, limit, organization_id, is_admin, exclude_file_uuids):
         calls.append(
             {
                 "prefix": prefix,

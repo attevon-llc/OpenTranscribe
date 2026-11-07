@@ -140,7 +140,6 @@ noqa::backend/tests/api/test_admin_approvals.py	1	suppression: reason to be adde
 noqa::backend/tests/api/test_diarizer_status_endpoint_consistency.py	1	suppression: reason to be added
 noqa::backend/tests/api/test_embedding_model_language_metadata.py	2	suppression: reason to be added
 noqa::backend/tests/api/test_search_count_quarantine.py	1	suppression: reason to be added
-noqa::backend/tests/api/test_search_filters_fail_closed.py	1	suppression: reason to be added
 noqa::backend/tests/compose_project.py	1	suppression: reason to be added
 noqa::backend/tests/conftest.py	7	suppression: reason to be added
 noqa::backend/tests/e2e/conftest.py	2	suppression: reason to be added

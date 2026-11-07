@@ -42,7 +42,7 @@ def search_summary_plane(
     language: str | None = None,
     title_filter: str | None = None,
     file_uuid: str | None = None,
-    quarantined_file_uuids: list[str] | None = None,
+    include_quarantined: bool = False,
     exclude_file_uuids: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """Search the summary plane of ``transcript_chunks`` (issue #963).
@@ -59,10 +59,11 @@ def search_summary_plane(
     (``api/endpoints/search.py``) stands independently, for RRF-competition
     reasons (#462 rejection 4).
 
-    ``quarantined_file_uuids`` is resolved by the caller from Postgres —
-    the chunks index carries no ``is_quarantined`` field — and applied
-    here as a ``must_not`` PRE-filter, so ``total`` and the page are
-    consistent with each other (#818: a post-filter cannot correct either).
+    Trashed and quarantined files are excluded inside the query by
+    ``_build_filters``' ACL clause (the ``availability`` field), a PRE-filter,
+    so ``total`` and the page are consistent with each other (#818: a
+    post-filter cannot correct either). ``include_quarantined`` is the
+    quarantine review exemption (``file_availability.unavailable_list_exempt``).
 
     ``exclude_file_uuids`` (the caller's hidden files, issue #1102) is a
     pre-filter for the same reason.
@@ -99,9 +100,8 @@ def search_summary_plane(
         exclude_file_uuids=exclude_file_uuids,
         plane_clause=summary_plane_clause(),
         speaker_field="speakers",
+        include_quarantined=include_quarantined,
     )
-    if quarantined_file_uuids:
-        filters.append({"bool": {"must_not": {"terms": {"file_uuid": quarantined_file_uuids}}}})
 
     clean_query = query.strip() if query else ""
     text_query_clause = service._build_text_query(clean_query, _SUMMARY_SEARCH_FIELDS)

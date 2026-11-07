@@ -218,11 +218,13 @@ def search_transcripts(
             file_uuid=file_uuid,
             sources=transcript_sources if explicit_sources else None,
             exclude_file_uuids=hidden,
+            include_quarantined=unavailable_list_exempt(ctx.bypass),
         )
 
-        # The transcript index carries no takedown field, so drop unavailable files from
-        # the result page against the DB (page-sized, one IN query). An exempt reviewer
-        # keeps quarantined hits; a trashed file is dropped for everyone.
+        # The query already excludes trashed and quarantined files through the index's
+        # `availability` stamp; this page-sized post-filter (one IN query) is the backstop
+        # for a document the stamp has not reached yet. An exempt reviewer keeps
+        # quarantined hits; a trashed file is dropped for everyone.
         search_response = _drop_quarantined_search_hits(
             db,
             search_response,
@@ -286,7 +288,7 @@ def search_transcripts(
             # Issue #760, §6: a masking outage must not blank the whole page
             # when more than one source was requested — only the summary leg
             # degrades. `_summary_search_payload` still raises a literal 503
-            # for `SummaryMaskingUnavailableError`/`QuarantineExclusionUnavailableError`;
+            # for `SummaryMaskingUnavailableError`;
             # re-raise unchanged for a summary-ONLY request (nothing else to
             # show), degrade otherwise. Never "fail open" — this withholds
             # the summary results, it never serves them unmasked.
@@ -387,11 +389,10 @@ def search_match_count(
 
     Raises:
         HTTPException: 404/403 from the permission chokepoint when ``file_uuid``
-            names a file the caller cannot see; 503 when the quarantine
-            exclusion — or the count query itself — could not be resolved.
+            names a file the caller cannot see; 503 when the count query failed.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
+    from app.services.search.search_types import SearchCountUnavailableError
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
     if file_uuid:
@@ -418,9 +419,8 @@ def search_match_count(
             # count inside one file the caller opened does not.
             exclude_file_uuids=None if file_uuid else hidden_uuids(db, ctx.user.id),
         )
-    except QuarantineExclusionUnavailableError as e:
-        # Literal 503 to match get_available_filters' raise below; this module
-        # does not import `fastapi.status`.
+    except SearchCountUnavailableError as e:
+        # Literal 503; this module does not import `fastapi.status`.
         raise HTTPException(
             status_code=503,
             detail="Search is temporarily unavailable.",
@@ -442,14 +442,10 @@ def search_suggestions(
     Returns ranked suggestions from title prefix matches,
     speaker name matches, and frequent content terms.
 
-    Quarantined (DMCA/abuse takedown) files are excluded on BOTH the title and
-    speaker legs inside ``HybridSearchService.get_suggestions`` itself (issue
-    #817). This replaces a DB post-filter that used to live here and covered
-    titles only — the speaker-name leg carries no file linkage to post-filter
-    against, so a quarantined file's speaker names leaked into autocomplete
-    with no way for this endpoint to catch it after the fact. See that
-    method's docstring for the exclusion; this endpoint only shapes a
-    resolution failure into a 503.
+    Quarantined (DMCA/abuse takedown) and trashed files are excluded on BOTH the
+    title and speaker legs inside ``HybridSearchService.get_suggestions`` itself
+    (issue #817), through the ``availability`` field on their documents — the
+    speaker-name leg carries no file linkage a post-filter here could check.
 
     Args:
         q: Search prefix text.
@@ -457,28 +453,18 @@ def search_suggestions(
 
     Returns:
         List of suggestion items with type and text.
-
-    Raises:
-        HTTPException: 503 when the quarantine exclusion could not be applied.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
 
     search_service = HybridSearchService()
-    try:
-        return search_service.get_suggestions(
-            prefix=q,
-            user_id=ctx.user.id,
-            limit=limit,
-            organization_id=ctx.org_id,
-            is_admin=unavailable_list_exempt(ctx.bypass),
-            exclude_file_uuids=hidden_uuids(db, ctx.user.id),
-        )
-    except QuarantineExclusionUnavailableError as e:
-        raise HTTPException(
-            status_code=503,
-            detail="Search suggestions are temporarily unavailable.",
-        ) from e
+    return search_service.get_suggestions(
+        prefix=q,
+        user_id=ctx.user.id,
+        limit=limit,
+        organization_id=ctx.org_id,
+        is_admin=unavailable_list_exempt(ctx.bypass),
+        exclude_file_uuids=hidden_uuids(db, ctx.user.id),
+    )
 
 
 @router.get("/filters")
@@ -491,36 +477,20 @@ def get_available_filters(
     Return available filter options (speakers, tags, date range).
 
     Quarantined (DMCA/abuse takedown) files are excluded from every facet for
-    non-admins, including the file's own owner — same admin bypass as the
-    results page's ``_drop_quarantined_search_hits``.
-
-    That exclusion **fails closed** (issue #876): if the quarantined-file set
-    cannot be resolved completely — the DB is unreachable, or there are more
-    quarantined files than one ``terms`` clause can carry — this answers **503**
-    rather than serving buckets that may have been built from taken-down
-    content. Same posture as ``_summary_search_payload``'s masking outage above.
+    callers the review exemption does not reach, including the file's own owner —
+    same exemption as the results page's ``_drop_quarantined_search_hits``. The
+    exclusion is the ``availability`` field on the documents, inside the
+    aggregation query, so it holds at any number of taken-down files.
 
     Returns:
         Dict with speakers, tags, and date_range filter options.
-
-    Raises:
-        HTTPException: 503 when the quarantine exclusion could not be applied.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.quarantine_exclusion import QuarantineExclusionUnavailableError
 
     search_service = HybridSearchService()
-    try:
-        return search_service.get_available_filters(
-            user_id=ctx.user.id,
-            organization_id=ctx.org_id,
-            is_admin=unavailable_list_exempt(ctx.bypass),
-            exclude_file_uuids=hidden_uuids(db, ctx.user.id),
-        )
-    except QuarantineExclusionUnavailableError as e:
-        # Literal 503 to match _summary_search_payload's masking-outage raise
-        # above; this module does not import `fastapi.status`.
-        raise HTTPException(
-            status_code=503,
-            detail="Search filters are temporarily unavailable.",
-        ) from e
+    return search_service.get_available_filters(
+        user_id=ctx.user.id,
+        organization_id=ctx.org_id,
+        is_admin=unavailable_list_exempt(ctx.bypass),
+        exclude_file_uuids=hidden_uuids(db, ctx.user.id),
+    )

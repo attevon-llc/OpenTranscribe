@@ -43,10 +43,12 @@ from app.core.enums import FileStatus
 from app.core.enums import TakedownOrigin
 from app.models.media import MediaFile
 from app.models.takedown import TakedownNotice
+from app.services.file_availability import index_availability
 from app.services.hold_guard import is_held
 from app.services.media_revocation import MediaRevocationReport
 from app.services.media_revocation import MediaSnapshot
 from app.services.media_revocation import settle_file
+from app.services.search.availability_stamp import restamp
 from app.services.takedown_authority import TakedownActor
 from app.services.takedown_authority import TakedownRefusedError
 from app.services.takedown_authority import assert_may_quarantine
@@ -333,16 +335,22 @@ def quarantine_file(
     db.refresh(file)
     media = MediaSnapshot.of(file)
     file_id = int(file.id)
+    availability = index_availability(file)
     tenant_visible = file.organization_id is not None
     # End the transaction ``refresh`` opened: storage round trips follow, and they read the
     # snapshot rather than the (now expired) row.
     db.commit()
 
+    # The index learns the takedown in place (``availability: quarantined``), so search,
+    # facets, chat retrieval and speaker matching drop the file inside the query itself. Never
+    # raises: a failed stamp dispatches a reconcile, and the takedown stays committed.
+    restamp({file_id: availability})
+
     # A takedown changes what the searchable/chat-retrievable corpus may serve —
     # exactly the event `bump_corpus_version` exists for (its own docstring names
-    # this scenario). The per-request post-filters (`exclude_unavailable`,
-    # `_drop_quarantined_search_hits`, chat's quarantine visibility rule) are the
-    # actual enforcement; this only stops a cached page/retrieval from outliving
+    # this scenario). The index stamp above and the per-request post-filters
+    # (`exclude_unavailable`, `_drop_quarantined_search_hits`, chat's quarantine
+    # visibility rule) are the actual enforcement; this only stops a cached page/retrieval from outliving
     # them for the rest of its TTL. Never raises by construction — no try/except.
     from app.services.chat.retrieval_cache import bump_corpus_version
 
@@ -487,10 +495,15 @@ def release_file(
     db.refresh(file)
     media = MediaSnapshot.of(file)
     file_id = int(file.id)
+    availability = index_availability(file)
     tenant_visible = file.organization_id is not None
     lift_object_lock = bool(clear_legal_hold and media.storage_path and not is_held(file))
     # End the read transaction before the storage round trips below (see quarantine_file).
     db.commit()
+
+    # Un-stamp the index from the row (``available``, or ``trashed`` for a file released while
+    # in the trash); see quarantine_file.
+    restamp({file_id: availability})
 
     # Release also changes what the corpus may serve (the file is servable
     # again) — same reasoning as the bump in `quarantine_file`. Never raises.

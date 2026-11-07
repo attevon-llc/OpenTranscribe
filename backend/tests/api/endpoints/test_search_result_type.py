@@ -546,6 +546,8 @@ class TestQuarantinedSummaryHitsAreDropped:
         media_file = _make_file(db_session, normal_user, summary={"bluf": "roadmap review"})
         media_file.is_quarantined = True
         db_session.commit()
+        # The takedown restamps the plane (#1253); rewriting it from the row does the same.
+        sync_summary_plane(media_file)
 
         body = client.get(
             SEARCH_PATH,
@@ -566,6 +568,8 @@ class TestQuarantinedSummaryHitsAreDropped:
         media_file = _make_file(db_session, admin_user, summary={"bluf": "roadmap review"})
         media_file.is_quarantined = True
         db_session.commit()
+        # The takedown restamps the plane (#1253); rewriting it from the row does the same.
+        sync_summary_plane(media_file)
 
         body = client.get(
             SEARCH_PATH,

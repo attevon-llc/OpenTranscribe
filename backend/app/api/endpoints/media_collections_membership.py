@@ -368,9 +368,8 @@ def get_collection_media(
     # Abuse/DMCA: quarantined files are hidden from every read surface for
     # non-admins — the paginated collection-media list included (matches the
     # collection detail's is_unavailable gate and the visible member counts).
-    base_query = exclude_unavailable(
-        base_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
-    )
+    include_quarantined = unavailable_list_exempt(ctx.bypass)
+    base_query = exclude_unavailable(base_query, include_quarantined=include_quarantined)
     base_query = apply_hidden_mode(base_query, current_user.id, hidden)
 
     # Prepare filters dictionary
@@ -392,6 +391,7 @@ def get_collection_media(
         # The collection was resolved in this scope, and a file joins a collection only
         # from the same scope, so gating the transcript index by it drops nothing.
         "organization_id": ctx.org_id,
+        "include_quarantined": include_quarantined,
     }
 
     # A speaker filter matches the names the page shows (#1280).

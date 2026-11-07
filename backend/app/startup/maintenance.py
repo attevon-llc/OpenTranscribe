@@ -312,6 +312,24 @@ async def _run_search_maintenance() -> None:
         logger.error(f"Error scheduling search maintenance: {e}")
 
 
+async def _run_availability_reconcile() -> None:
+    """Converge the index's ``availability`` stamp once per boot window (issue #1253).
+
+    A file taken down before the index carried quarantine has documents with no value, which
+    every reader treats as available; the unscoped reconcile stamps every trashed and
+    quarantined file. The beat runs the same task every 15 minutes, so this only shortens the
+    window after an upgrade or a restore of the index. Result lists keep the Postgres
+    post-filter meanwhile. Neither call raises: the election runs the step when Redis is down,
+    and a failed dispatch is logged and left to the beat.
+    """
+    await asyncio.sleep(30)
+    from app.services.search.availability_stamp import dispatch_reconcile
+    from app.utils.boot_once import run_once_per_boot
+
+    if run_once_per_boot("availability_reconcile_dispatch"):
+        dispatch_reconcile(None)
+
+
 def _repair_tag_tenancy() -> None:
     """Run ``tag_tenant_repair`` in its own session; the caller logs a failure."""
     from app.db.base import SessionLocal

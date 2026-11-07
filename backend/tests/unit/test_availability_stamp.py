@@ -226,7 +226,7 @@ def test_the_beat_reconcile_stamps_the_trash_and_unstamps_restored_files(
     assert stamped["available"] == {restored.id}
     assert outcome.as_dict()["incomplete"] == []
     (_index, body) = client.searches[0]
-    assert body["query"] == {"term": {"availability": "trashed"}}
+    assert body["query"] == {"terms": {"availability": ["trashed", "quarantined"]}}
     assert body["aggs"]["files"]["composite"]["sources"] == [
         {"file": {"terms": {"field": "file_id"}}}
     ]

@@ -45,6 +45,7 @@ from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
 from app.startup.maintenance import _clear_stale_task_state
+from app.startup.maintenance import _run_availability_reconcile
 from app.startup.maintenance import _run_imohash_recompute
 from app.startup.maintenance import _run_one_time_embedding_normalization
 from app.startup.maintenance import _run_search_maintenance
@@ -250,6 +251,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     minio_task = asyncio.create_task(run_in_threadpool(_setup_minio))
     recovery_task = asyncio.create_task(_run_startup_recovery())
     search_maintenance = asyncio.create_task(_run_search_maintenance())
+    availability_reconcile = asyncio.create_task(_run_availability_reconcile())
     thumbnail_migration = asyncio.create_task(_run_thumbnail_migration())
     neural_search_task = asyncio.create_task(_initialize_neural_search())
     embedding_migration = asyncio.create_task(_run_one_time_embedding_normalization())
@@ -266,6 +268,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         minio_task,
         recovery_task,
         search_maintenance,
+        availability_reconcile,
         thumbnail_migration,
         neural_search_task,
         embedding_migration,

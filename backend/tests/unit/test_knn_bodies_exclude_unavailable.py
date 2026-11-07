@@ -1,11 +1,13 @@
-"""Every kNN query body excludes a trashed file's voices (#1101).
+"""Every kNN query body excludes trashed and quarantined files' voices (#1101, #1253).
 
-A trashed file keeps its per-file speaker documents until purge, stamped
-``availability: trashed``. Speaker matching, similarity, clustering and profile suggestions
-are all kNN reads over those documents, and a trashed file's voice that still matched would
-put its speaker back into suggestions and clusters. The rule: a function that builds a kNN
+A trashed or taken-down file keeps its per-file speaker documents, stamped
+``availability: trashed`` / ``quarantined``. Speaker matching, similarity, clustering and
+profile suggestions are all kNN reads over those documents, and such a voice that still matched
+would put its speaker back into suggestions and clusters. The rule: a function that builds a kNN
 body (a dict with a ``"knn"`` key whose value is a query, not the ``"knn": True`` index
-setting) calls ``availability_field.exclude_unavailable_clause()``.
+setting) calls ``availability_field.exclude_unavailable_clause()`` WITHOUT the
+``include_quarantined`` review exemption: matching and suggestions are not review surfaces, so a
+taken-down voice is excluded for every caller.
 
 The sweep is over every module under ``app/`` rather than a list of known sites, because the
 failure it guards is a NEW kNN reader. Exemptions are allowlisted with a reason, and an entry
@@ -42,13 +44,17 @@ def _is_knn_body(node: ast.Dict) -> bool:
 
 
 def _calls_helper(func: ast.AST) -> bool:
-    for node in ast.walk(func):
-        if isinstance(node, ast.Call):
-            target = node.func
-            name = target.id if isinstance(target, ast.Name) else getattr(target, "attr", None)
-            if name == HELPER:
-                return True
-    return False
+    """Whether ``func`` calls the helper with no quarantine exemption on any of its calls."""
+    calls = [
+        node
+        for node in ast.walk(func)
+        if isinstance(node, ast.Call)
+        and (node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None))
+        == HELPER
+    ]
+    return bool(calls) and not any(
+        kw.arg == "include_quarantined" for call in calls for kw in call.keywords
+    )
 
 
 def scan(source: str, relpath: str) -> dict[str, bool]:
@@ -79,9 +85,9 @@ def test_every_knn_body_excludes_the_trash():
     offenders = sorted(k for k, ok in _all_sites().items() if not ok and k not in ALLOWED)
     assert not offenders, (
         "These functions build a kNN query without "
-        "availability_field.exclude_unavailable_clause(), so a trashed file's voices still "
-        "match. Add the clause to the knn filter, or allowlist the function with a reason:\n  "
-        + "\n  ".join(offenders)
+        "availability_field.exclude_unavailable_clause(), or pass it the quarantine exemption, "
+        "so a trashed or taken-down file's voices still match. Add the clause (no exemption) to "
+        "the knn filter, or allowlist the function with a reason:\n  " + "\n  ".join(offenders)
     )
 
 
@@ -116,6 +122,15 @@ def test_scanner_fires_on_a_knn_body_without_the_helper():
         "    q = {'query': {'knn': {'embedding': {'vector': v, 'k': 5,\n"
         "        'filter': {'bool': {'filter': [{'term': {'user_id': 1}}]}}}}}}\n"
         "    return q\n"
+    )
+    assert scan(src, "x.py") == {"x.py::find": False}
+
+
+def test_scanner_fires_on_a_knn_body_that_exempts_the_quarantine():
+    src = (
+        "def find(v, admin):\n"
+        "    fs = [exclude_unavailable_clause(include_quarantined=admin)]\n"
+        "    return {'query': {'knn': {'embedding': {'vector': v, 'filter': {'bool': {'filter': fs}}}}}}\n"
     )
     assert scan(src, "x.py") == {"x.py::find": False}
 

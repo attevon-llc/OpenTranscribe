@@ -2,8 +2,10 @@
 
 A core, open-source surface. Anyone paying an LLM bill wants to see where it
 went, and that is as true for a self-hoster with an OpenAI key as for a hosted
-tenant. Quotas, tiers and invoicing are deliberately absent: this endpoint
-reports, it does not enforce.
+tenant. This endpoint reports: every recorded event type (chat, summaries,
+topics, speaker identification, the LLM redaction detector, and any non-token
+event), and the caller's standing against the token limits. Enforcing those
+limits is ``services/llm_budget.py``'s job at the LLM call seam, not this one's.
 
 Handlers are declared ``def``, not ``async def`` (issue #284 A2.5): they only do
 blocking SQLAlchemy work and never ``await``, so as coroutines they would occupy
@@ -30,6 +32,8 @@ from app.models.usage_event import UsageEvent
 from app.services.chat.pricing import RATES_VERIFIED_ON
 from app.services.chat.pricing import estimate_cost_usd
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
+from app.services.llm_budget import TOKEN_EVENT_TYPES
+from app.services.llm_budget import status_for
 from app.services.request_context import RequestContext
 from app.utils.db_helpers import org_stamp_is
 
@@ -45,18 +49,62 @@ def _model_key(meta: dict[str, Any]) -> tuple[str, str]:
     return str(meta.get("provider") or "unknown"), str(meta.get("model") or "unknown")
 
 
+def _token_bucket(**identity: str) -> dict[str, Any]:
+    return {
+        **identity,
+        "events": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost_usd": None,
+    }
+
+
+def _add_cost(bucket: dict[str, Any], cost: float) -> None:
+    bucket["estimated_cost_usd"] = float((bucket["estimated_cost_usd"] or 0) + cost)
+
+
+def _budget_view(db: Session, ctx: RequestContext) -> dict[str, Any]:
+    """The caller's standing against the token limits (``0`` = unlimited).
+
+    The instance's monthly total is not shown to a user (it spans every tenant), only
+    whether the instance limit has been reached; admins read it at ``/admin/llm-budget``.
+    """
+    status = status_for(db, ctx.user.id)
+    limits = status.limits
+    return {
+        "user_daily_tokens": limits.user_daily_tokens,
+        "used_today": status.user_used_today,
+        "day_resets_at": status.day_resets_at.isoformat(),
+        "instance_limited": limits.instance_monthly_tokens > 0,
+        "instance_limit_reached": limits.instance_monthly_tokens > 0
+        and status.instance_used_this_month >= limits.instance_monthly_tokens,
+        "month_resets_at": status.month_resets_at.isoformat(),
+        "local_unlimited": limits.local_unlimited,
+    }
+
+
 @router.get("/me")
 def get_my_usage(
     days: int = Query(30, ge=1, le=MAX_WINDOW_DAYS),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
-    """Summarize the caller's own chat LLM usage in the active tenant over a trailing window.
+    """Summarize the caller's own usage in the active tenant over a trailing window.
+
+    Every event type is returned in ``by_event_type`` (count and quantity in its own
+    unit). LLM token events (``chat.tokens``, ``summary.tokens``, ``topics.tokens``,
+    ``speaker_id.tokens``, ``redaction.tokens``) are also broken down in ``totals``,
+    ``by_feature`` and ``by_model``. ``totals.messages`` counts chat exchanges only;
+    ``totals.events`` counts every LLM token event.
 
     Costs are **estimates**. They are computed from a rate table that a vendor can
     change at any time, they ignore any negotiated discount, and they are omitted
     entirely for models with no known rate — an honest blank beats a confident
-    $0.00. ``rates_verified_on`` is returned so a stale table is visible.
+    $0.00. A model on this deployment is free only when its event recorded that it
+    was local. ``rates_verified_on`` is returned so a stale table is visible.
 
     Aggregation happens in Python rather than SQL because the per-model breakdown
     lives in a JSONB column and the row count per user per month is small. If that
@@ -69,15 +117,17 @@ def get_my_usage(
         .filter(
             UsageEvent.user_id == ctx.user.id,
             org_stamp_is(UsageEvent.organization_id, ctx.org_id),
-            UsageEvent.event_type == EVENT_TYPE_CHAT_TOKENS,
             UsageEvent.created_at >= since,
         )
         .all()
     )
 
+    by_type: dict[str, dict[str, Any]] = {}
+    by_feature: dict[str, dict[str, Any]] = {}
     by_model: dict[tuple[str, str], dict[str, Any]] = {}
     totals = {
         "messages": 0,
+        "events": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "cache_read_tokens": 0,
@@ -90,22 +140,20 @@ def get_my_usage(
     any_unpriced = False
 
     for event in events:
+        event_type = str(event.event_type)
+        kind = by_type.setdefault(
+            event_type, {"event_type": event_type, "unit": event.unit, "events": 0, "quantity": 0.0}
+        )
+        kind["events"] += 1
+        kind["quantity"] += float(event.quantity or 0)
+        if event_type not in TOKEN_EVENT_TYPES:
+            continue
+
         meta = event.event_metadata or {}
         key = _model_key(meta)
-        bucket = by_model.setdefault(
-            key,
-            {
-                "provider": key[0],
-                "model": key[1],
-                "messages": 0,
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "cache_read_tokens": 0,
-                "cache_write_tokens": 0,
-                "total_tokens": 0,
-                "estimated_cost_usd": None,
-            },
-        )
+        model_bucket = by_model.setdefault(key, _token_bucket(provider=key[0], model=key[1]))
+        model_bucket.setdefault("messages", 0)
+        feature_bucket = by_feature.setdefault(event_type, _token_bucket(event_type=event_type))
 
         prompt = int(meta.get("prompt_tokens") or 0)
         completion = int(meta.get("completion_tokens") or 0)
@@ -113,16 +161,19 @@ def get_my_usage(
         cache_write = int(meta.get("cache_write_tokens") or 0)
         total = int(event.quantity or 0)
 
-        for target in (bucket, totals):
-            target["messages"] += 1
+        for target in (model_bucket, feature_bucket, totals):
+            target["events"] += 1
             target["prompt_tokens"] += prompt
             target["completion_tokens"] += completion
             target["cache_read_tokens"] += cache_read
             target["cache_write_tokens"] += cache_write
             target["total_tokens"] += total
 
-        if meta.get("use_context"):
-            totals["grounded_messages"] += 1
+        if event_type == EVENT_TYPE_CHAT_TOKENS:
+            totals["messages"] += 1
+            model_bucket["messages"] += 1
+            if meta.get("use_context"):
+                totals["grounded_messages"] += 1
         if meta.get("tokens_estimated"):
             totals["estimated_token_messages"] += 1
 
@@ -133,23 +184,30 @@ def get_my_usage(
             completion_tokens=completion,
             cache_read_tokens=cache_read,
             cache_write_tokens=cache_write,
+            local=meta.get("local") if isinstance(meta.get("local"), bool) else None,
         )
         if cost is None:
             any_unpriced = True
         else:
-            bucket["estimated_cost_usd"] = float((bucket["estimated_cost_usd"] or 0) + float(cost))
+            _add_cost(model_bucket, float(cost))
+            _add_cost(feature_bucket, float(cost))
             total_cost = float((total_cost or 0) + float(cost))
 
     return {
         "window_days": days,
         "since": since.isoformat(),
         "totals": totals,
+        "by_event_type": sorted(by_type.values(), key=lambda row: row["event_type"]),
+        "by_feature": sorted(
+            by_feature.values(), key=lambda row: row["total_tokens"], reverse=True
+        ),
         "by_model": sorted(by_model.values(), key=lambda row: row["total_tokens"], reverse=True),
         "estimated_cost_usd": total_cost,
         # True when at least one model had no known rate, so the UI can say the
         # total is partial rather than presenting it as complete.
         "cost_incomplete": any_unpriced,
         "rates_verified_on": RATES_VERIFIED_ON,
+        "budget": _budget_view(db, ctx),
     }
 
 
@@ -159,35 +217,48 @@ def get_my_daily_usage(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> dict[str, Any]:
-    """Daily token totals for the caller — the series behind a usage chart.
+    """Daily LLM token totals for the caller, over every LLM feature — the series behind a chart.
 
-    Grouped in SQL: this one only needs the date and the quantity, both of which
-    are real columns, so there is no reason to pull every row into Python.
+    Grouped in SQL: this one only needs the date, the event type and the quantity, all
+    real columns, so there is no reason to pull every row into Python. ``messages`` counts
+    chat exchanges, ``events`` every LLM token event, and ``by_event_type`` splits the day's
+    tokens by feature.
     """
     since = datetime.now(UTC) - timedelta(days=days)
     day = func.date_trunc("day", UsageEvent.created_at).label("day")
 
     rows = (
-        db.query(day, func.sum(UsageEvent.quantity), func.count(UsageEvent.id))
+        db.query(
+            day, UsageEvent.event_type, func.sum(UsageEvent.quantity), func.count(UsageEvent.id)
+        )
         .filter(
             UsageEvent.user_id == ctx.user.id,
             org_stamp_is(UsageEvent.organization_id, ctx.org_id),
-            UsageEvent.event_type == EVENT_TYPE_CHAT_TOKENS,
+            UsageEvent.event_type.in_(TOKEN_EVENT_TYPES),
             UsageEvent.created_at >= since,
         )
-        .group_by(day)
+        .group_by(day, UsageEvent.event_type)
         .order_by(day)
         .all()
     )
 
-    return {
-        "window_days": days,
-        "series": [
+    series: dict[str, dict[str, Any]] = {}
+    for when, event_type, quantity, count in rows:
+        point = series.setdefault(
+            when.date().isoformat(),
             {
-                "day": row[0].date().isoformat(),
-                "total_tokens": int(row[1] or 0),
-                "messages": int(row[2] or 0),
-            }
-            for row in rows
-        ],
-    }
+                "day": when.date().isoformat(),
+                "total_tokens": 0,
+                "messages": 0,
+                "events": 0,
+                "by_event_type": {},
+            },
+        )
+        tokens = int(quantity or 0)
+        point["total_tokens"] += tokens
+        point["events"] += int(count or 0)
+        point["by_event_type"][str(event_type)] = tokens
+        if event_type == EVENT_TYPE_CHAT_TOKENS:
+            point["messages"] += int(count or 0)
+
+    return {"window_days": days, "series": list(series.values())}

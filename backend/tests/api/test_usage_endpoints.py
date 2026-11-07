@@ -148,3 +148,101 @@ class TestUsageMeDaily:
 
         total_tokens_across_days = sum(row["total_tokens"] for row in body["series"])
         assert total_tokens_across_days >= 450
+
+
+def _add(db_session, user, event_type: str, quantity: int, unit: str = "tokens", **meta) -> None:
+    db_session.add(
+        UsageEvent(
+            id=uuid_mod.uuid4(),
+            user_id=user.id,
+            event_type=event_type,
+            quantity=quantity,
+            unit=unit,
+            event_metadata=meta or None,
+            created_at=datetime.now(UTC),
+        )
+    )
+    db_session.flush()
+
+
+class TestEveryEventType:
+    """Issue #790: the usage API used to count only ``chat.tokens``."""
+
+    def test_task_usage_and_non_token_events_are_returned(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        _make_event(db_session, normal_user, prompt_tokens=100, completion_tokens=50)
+        _add(
+            db_session,
+            normal_user,
+            "summary.tokens",
+            700,
+            provider="openai",
+            model="gpt-x",
+            prompt_tokens=600,
+            completion_tokens=100,
+        )
+        _add(db_session, normal_user, "speaker_id.tokens", 300, provider="openai", model="gpt-x")
+        _add(db_session, normal_user, "transcription.hours", 2, unit="hours")
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        body = client.get("/api/usage/me", headers=headers).json()
+
+        kinds = {row["event_type"]: row for row in body["by_event_type"]}
+        assert set(kinds) == {
+            "chat.tokens",
+            "summary.tokens",
+            "speaker_id.tokens",
+            "transcription.hours",
+        }
+        assert kinds["transcription.hours"]["unit"] == "hours"
+        assert kinds["transcription.hours"]["quantity"] == 2
+        features = {row["event_type"]: row["total_tokens"] for row in body["by_feature"]}
+        assert features == {"chat.tokens": 150, "summary.tokens": 700, "speaker_id.tokens": 300}
+        assert body["totals"]["total_tokens"] == 1150
+        assert body["totals"]["messages"] == 1  # chat exchanges only
+        assert body["totals"]["events"] == 3
+
+    def test_daily_series_counts_every_llm_feature(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        _make_event(db_session, normal_user, prompt_tokens=100, completion_tokens=50)
+        _add(db_session, normal_user, "topics.tokens", 250)
+        _add(db_session, normal_user, "transcription.hours", 2, unit="hours")
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        series = client.get("/api/usage/me/daily", headers=headers).json()["series"]
+
+        today = series[-1]
+        assert today["total_tokens"] == 400  # hours are not tokens
+        assert today["by_event_type"] == {"chat.tokens": 150, "topics.tokens": 250}
+        assert today["messages"] == 1
+
+    def test_a_local_model_is_free_and_a_named_one_is_unpriced(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        _add(db_session, normal_user, "summary.tokens", 100, provider="vllm", model="m", local=True)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+        body = client.get("/api/usage/me", headers=headers).json()
+        assert body["estimated_cost_usd"] == 0.0
+        assert body["cost_incomplete"] is False
+
+        _add(db_session, normal_user, "chat.tokens", 100, provider="vllm", model="m")
+        body = client.get("/api/usage/me", headers=headers).json()
+        assert body["cost_incomplete"] is True
+
+    def test_the_budget_shows_the_callers_day_against_the_limit(
+        self, client, db_session, normal_user, user_token_headers
+    ):
+        from app.services.system_settings_service import set_setting
+
+        set_setting(db_session, "llm.budget.user_daily_tokens", 5000)
+        _add(db_session, normal_user, "summary.tokens", 1200)
+        headers = {"Authorization": user_token_headers["Authorization"]}
+
+        budget = client.get("/api/usage/me", headers=headers).json()["budget"]
+
+        assert budget["user_daily_tokens"] == 5000
+        assert budget["used_today"] == 1200
+        assert budget["instance_limited"] is False
+        assert "instance_used_this_month" not in budget  # spans every tenant

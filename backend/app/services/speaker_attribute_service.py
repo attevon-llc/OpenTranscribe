@@ -100,10 +100,12 @@ class SpeakerAttributeService:
             self._feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(  # nosec B615
                 MODEL_NAME, **from_pretrained_kwargs
             )
-            self._model = Wav2Vec2ForSequenceClassification.from_pretrained(  # nosec B615
+            # Typed as a plain Module: transformers 5's decorated PreTrainedModel.to() makes
+            # mypy expect a model as its first argument; the call still dispatches to it.
+            model: torch.nn.Module = Wav2Vec2ForSequenceClassification.from_pretrained(  # nosec B615
                 MODEL_NAME, **from_pretrained_kwargs
             )
-            self._model.eval()
+            model.eval()
 
             # Use GPU only on GPU workers (PRELOAD_GPU_MODELS=true).
             # On CPU workers, this model would leak a CUDA context (~5GB)
@@ -112,12 +114,13 @@ class SpeakerAttributeService:
             is_gpu_worker = env_bool("PRELOAD_GPU_MODELS", False)
             if not self._force_cpu and is_gpu_worker and torch.cuda.is_available():
                 self._device = "cuda"
-                self._model = self._model.to(self._device)
+                model = model.to(self._device)
                 logger.info(f"Gender model loaded on GPU: {MODEL_NAME}")
             else:
                 self._device = "cpu"
                 logger.info(f"Gender model loaded on CPU: {MODEL_NAME}")
 
+            self._model = model
             self._model_loaded = True
 
         except Exception as e:
@@ -145,8 +148,12 @@ class SpeakerAttributeService:
 
         import torch
 
+        model, extractor = self._model, self._feature_extractor
+        if model is None or extractor is None:
+            raise RuntimeError(f"Gender model {MODEL_NAME} is not loaded")
+
         audio_np = center_crop(audio_np, max_clip_seconds())
-        inputs = self._feature_extractor(  # type: ignore[misc]
+        inputs = extractor(
             audio_np,
             sampling_rate=16000,
             return_tensors="pt",
@@ -158,7 +165,7 @@ class SpeakerAttributeService:
             inputs = {k: v.to(self._device) for k, v in inputs.items()}
 
         with torch.inference_mode():
-            logits = self._model(**inputs).logits  # type: ignore[misc]
+            logits = model(**inputs).logits
 
         probs = torch.nn.functional.softmax(logits, dim=1).squeeze().cpu().numpy()
         predicted_id = int(np.argmax(probs))

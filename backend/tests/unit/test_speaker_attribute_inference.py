@@ -114,3 +114,16 @@ def test_run_gender_inference_parallel_aggregates_and_skips_bad_clips(monkeypatc
     probs, counts = sai._run_gender_inference_parallel("src", items, Svc())
     assert probs == {7: {"male": 0.0, "female": 1.0}, 8: {"male": 0.0, "female": 0.5}}
     assert counts == {7: 2, 8: 1}
+
+
+def test_inference_refuses_clearly_when_the_model_did_not_load(monkeypatch):
+    """A load that leaves no model must fail with a named error, not 'NoneType is not callable'."""
+    svc = SpeakerAttributeService(force_cpu=True)
+
+    def _load_without_model() -> None:
+        svc._model_loaded = True
+
+    monkeypatch.setattr(svc, "load_models", _load_without_model)
+
+    with pytest.raises(RuntimeError, match="is not loaded"):
+        svc._run_inference(np.zeros(16000, dtype=np.float32))

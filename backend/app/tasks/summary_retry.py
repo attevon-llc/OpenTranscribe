@@ -76,9 +76,13 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
         return False
 
 
-async def check_llm_availability() -> bool:
+async def check_llm_availability(user_id: int | None = None) -> bool:
     """
-    Check if LLM service is available for summary generation
+    Check if the given user's LLM service is available for summary generation
+
+    Args:
+        user_id: The file owner. Providers are per user, so a check without one can never
+            see a configured provider.
 
     Returns:
         True if LLM is available, False otherwise
@@ -87,7 +91,7 @@ async def check_llm_availability() -> bool:
         SQLAlchemyError: the settings could not be read; an outage is not "unavailable".
     """
     try:
-        return await is_llm_available()
+        return await is_llm_available(user_id=user_id)
     except SQLAlchemyError:
         logger.warning(LLM_SETTINGS_UNREADABLE_MESSAGE)
         raise
@@ -116,17 +120,18 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
     # every call from that endpoint raised `RuntimeError: asyncio.run()
     # cannot be called from a running event loop`, so the retry-summary
     # endpoint's success path has never worked (issue #474).
-    # An unreadable settings DB raises a 503 here, before any file row is read or reset, so
-    # the retry is skipped for this cycle and no file's status changes.
-    with llm_settings_outage_as_503():
-        llm_available = await check_llm_availability()
-
     # Get internal ID for logging. get_by_uuid_optional, not get_file_by_uuid --
     # see the matching comment in reset_summary_for_retry above.
     media_file = get_by_uuid_optional(db, MediaFile, file_uuid)
     if not media_file:
         logger.debug(f"File {file_uuid} not found for retry")
         return False
+
+    # Availability is per user: ask for THIS file's owner. An unreadable settings DB raises
+    # a 503 here, before anything is reset, so the retry is skipped for this cycle and no
+    # file's status changes.
+    with llm_settings_outage_as_503():
+        llm_available = await check_llm_availability(int(media_file.user_id))
     file_id = media_file.id
 
     if not llm_available:

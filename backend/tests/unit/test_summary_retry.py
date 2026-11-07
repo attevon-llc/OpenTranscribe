@@ -126,7 +126,7 @@ def _async_returning(value):
     async def _coro():
         return value
 
-    return lambda: _coro()
+    return lambda *a, **k: _coro()
 
 
 class TestResetSummaryForRetry:
@@ -275,6 +275,65 @@ class TestRetrySummaryIfAvailable:
         assert calls == [str(mf.uuid)]
         assert mf.summary_status == "pending"
         assert mf.summary_data is None
+
+    def test_the_availability_check_is_made_for_the_files_owner(
+        self, db_session, make_media_file, normal_user, monkeypatch
+    ):
+        """Providers are per user; a user-less check can never see one (always "unavailable")."""
+        configured_for: list[int | None] = []
+
+        class _Healthy:
+            def health_check(self) -> bool:
+                return True
+
+            def close(self) -> None:
+                pass
+
+        def _settings(user_id):
+            configured_for.append(user_id)
+            return _Healthy() if user_id == normal_user.id else None
+
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.create_from_user_settings", _settings
+        )
+        calls: list[str] = []
+        monkeypatch.setattr(
+            summarization.summarize_transcript_task,
+            "delay",
+            lambda file_uuid: calls.append(file_uuid),
+            raising=True,
+        )
+        mf = make_media_file(status=FileStatus.COMPLETED, summary_status="failed")
+
+        result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
+
+        assert result is True, "the owner has a provider, so the retry must be queued"
+        assert configured_for == [normal_user.id]
+        assert calls == [str(mf.uuid)]
+
+    def test_a_file_whose_owner_has_no_provider_is_not_retried(
+        self, db_session, make_media_file, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "app.services.llm_service.LLMService.create_from_user_settings", lambda user_id: None
+        )
+        calls: list[str] = []
+        monkeypatch.setattr(
+            summarization.summarize_transcript_task,
+            "delay",
+            lambda file_uuid: calls.append(file_uuid),
+            raising=True,
+        )
+        mf = make_media_file(
+            status=FileStatus.COMPLETED, summary_status="failed", summary_data={"bluf": "keep"}
+        )
+
+        result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
+
+        assert result is False
+        assert calls == []
+        assert mf.summary_status == "failed"
+        assert mf.summary_data == {"bluf": "keep"}
 
     def test_a_dispatch_failure_restores_the_prior_summary_instead_of_destroying_it(
         self, db_session, make_media_file, monkeypatch

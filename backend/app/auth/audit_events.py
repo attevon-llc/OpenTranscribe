@@ -94,10 +94,9 @@ class AuditEventType(StrEnum):
     # preserved content) and recorded. ``details`` carries the comment's uuid and who holds the
     # file: never the comment's text or the hold's reason.
     CONTENT_HOLD_ANNOTATION = "content.hold.annotation"
-    # Historic: emitted before v0.7.0 for a transcript edit on a held file (issue #1307). A held
-    # file now refuses edits (``content.hold.refused``), so nothing emits it any more; it stays
-    # so rows already in the audit log remain readable and filterable.
-    CONTENT_TRANSCRIPT_EDIT = "content.transcript.edit"
+    # ``content.transcript.edit`` (a transcript edit on a held file, issue #1307) is no longer a
+    # member: a held file now refuses edits (``content.hold.refused``), so nothing emits it.
+    # Rows written before v0.7.0 keep the string and stay readable; the audit views label it.
 
     # Privacy controls (issues #1280, #1279). ``org.policy.change``: an organization
     # administrator changed the organization's policy; ``details.fields`` lists the NAMES of the

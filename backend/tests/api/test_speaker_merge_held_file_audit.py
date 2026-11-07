@@ -26,6 +26,8 @@ from tests.fixtures.speaker_cleanup_seams import make_pair
 from tests.fixtures.speaker_cleanup_seams import make_speaker
 
 SECRET_TEXT = "the merger closes on friday"
+# Written before v0.7.0; no longer an ``AuditEventType`` member.
+HISTORIC_TRANSCRIPT_EDIT = "content.transcript.edit"
 
 
 def _edit_events(db_session, file_uuid: str) -> list[dict]:
@@ -37,7 +39,7 @@ def _edit_events(db_session, file_uuid: str) -> list[dict]:
                 "SELECT payload FROM audit_outbox WHERE event_type = :t "
                 "AND payload->>'resource_uuid' = :f"
             ),
-            {"t": AuditEventType.CONTENT_TRANSCRIPT_EDIT.value, "f": file_uuid},
+            {"t": HISTORIC_TRANSCRIPT_EDIT, "f": file_uuid},
         )
     ]
 

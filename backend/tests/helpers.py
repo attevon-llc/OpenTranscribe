@@ -46,6 +46,23 @@ def fake_request(scheme: str = "https") -> Request:
     return Request(scope)
 
 
+def caller_access_gate(user_id: int) -> dict[str, Any]:
+    """The personal-scope OpenSearch read gate for ``user_id``, written out literally.
+
+    ``accessible_user_ids`` AND NOT ``availability`` in (trashed, quarantined): the shape
+    ``services/search/access_filter.access_filter_clause`` emits with no organization and
+    no quarantine review exemption. Spelled out here rather than built by calling the
+    product function, so a test asserting the gate is present cannot pass merely because
+    the product and the expectation share one (possibly wrong) builder.
+    """
+    return {
+        "bool": {
+            "filter": [{"terms": {"accessible_user_ids": [user_id]}}],
+            "must_not": [{"terms": {"availability": ["trashed", "quarantined"]}}],
+        }
+    }
+
+
 def stub_public_dns(
     monkeypatch: pytest.MonkeyPatch,
     *,

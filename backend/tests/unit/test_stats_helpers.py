@@ -342,6 +342,8 @@ class TestGetFileStats:
             "new": 0,
             "total_duration": 0,
             "total_size": 0,
+            "trashed_files": 0,
+            "trashed_bytes": 0,
             "segments": 0,
             "speakers": 0,
         }
@@ -354,9 +356,34 @@ class TestGetFileStats:
             "new": 2,
             "total_duration": 15.75,
             "total_size": 3000,
+            "trashed_files": 0,
+            "trashed_bytes": 0,
             "segments": 0,
             "speakers": 0,
         }
+
+    def test_trashed_files_stay_in_the_totals_and_are_counted_apart(
+        self, db_session, normal_user, isolated_file_tables
+    ):
+        """A trashed file still holds storage until its purge; a quarantined one is not trash."""
+        from app.services.trash_service import TRASH_ORIGIN_USER
+
+        _make_media_file(db_session, normal_user.id, file_size=1000)
+        trashed = _make_media_file(db_session, normal_user.id, file_size=2000)
+        quarantined = _make_media_file(db_session, normal_user.id, file_size=4000)
+        now = datetime.now(UTC)
+        trashed.deleted_at = now
+        trashed.purge_after = now + timedelta(days=30)
+        trashed.trash_origin = TRASH_ORIGIN_USER
+        quarantined.is_quarantined = True
+        db_session.commit()
+
+        stats = get_file_stats(db_session)
+
+        assert stats["total"] == 3
+        assert stats["total_size"] == 7000
+        assert stats["trashed_files"] == 1
+        assert stats["trashed_bytes"] == 2000
 
     def test_status_breakdown_counts(self, db_session, normal_user, isolated_file_tables):
         _make_media_file(db_session, normal_user.id, status="pending")

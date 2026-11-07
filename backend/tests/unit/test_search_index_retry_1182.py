@@ -9,6 +9,7 @@ durable sweep, and visible state / metrics.
 
 from __future__ import annotations
 
+import importlib
 import uuid as uuid_pkg
 from contextlib import contextmanager
 from datetime import UTC
@@ -379,6 +380,12 @@ class _FakeRedis:
 @pytest.fixture
 def sweep_env(monkeypatch):
     """OpenSearch on, a fake Redis, and a captured dispatch."""
+    # Import the sweep module (and with it ``app.utils.task_lock``) BEFORE patching
+    # ``get_redis``: a module first imported inside the patch binds the patched name for the
+    # rest of the worker's life, and the process-wide ``task_lock_manager`` then hands this
+    # fake (which has no ``lock``) to every later test (test_reindex_run_scoped_state failed
+    # with "'_FakeRedis' object has no attribute 'lock'" when it ran after this class).
+    importlib.import_module("app.tasks.search_index_sweep_task")
     monkeypatch.setattr(settings, "OPENSEARCH_ENABLED", True)
     monkeypatch.setattr(settings, "SEARCH_INDEX_SWEEP_BATCH_SIZE", 50)
     redis = _FakeRedis()

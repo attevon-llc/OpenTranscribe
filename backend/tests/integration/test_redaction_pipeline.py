@@ -45,11 +45,14 @@ def seeded_file():
             )
             db.add(user)
             db.flush()
+        file_uuid = uuidlib.uuid4()
         mf = MediaFile(
-            uuid=uuidlib.uuid4(),
+            uuid=file_uuid,
             user_id=user.id,
             filename="redaction_fixture.wav",
-            storage_path="test/redaction_fixture.wav",
+            # Unique per seed: storage_path is UNIQUE, and the two tests here run on different
+            # xdist workers at once, so a shared literal made one of them fail on setup.
+            storage_path=f"test/redaction_fixture-{file_uuid}.wav",
             file_size=1,
             content_type="audio/wav",
             language="en",

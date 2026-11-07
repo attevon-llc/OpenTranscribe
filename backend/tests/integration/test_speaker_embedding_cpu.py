@@ -15,10 +15,12 @@ Scope is deliberately narrow: "does CPU produce a valid, GPU-parity embedding" �
 speaker-ID correctness (a separate ground-truth test, issue-tracked separately, owns that).
 
 Device forcing uses the actual production knob: `app.utils.hardware_detection.detect_hardware()`
-reads the `TORCH_DEVICE` env var (see `detect_hardware()`, hardware_detection.py:517-534) and
-`SpeakerEmbeddingService.__init__` calls `detect_hardware()` fresh on every construction, so
-`monkeypatch.setenv("TORCH_DEVICE", "cpu")` before constructing the service is the real
-"deploy this in lite/CPU-only mode" code path — not a monkeypatch of internals.
+reads `settings.TORCH_DEVICE` (the `TORCH_DEVICE` env var, captured when `Settings` is built at
+process start) and `SpeakerEmbeddingService.__init__` calls `detect_hardware()` fresh on every
+construction, so setting `settings.TORCH_DEVICE = "cpu"` before constructing the service is the
+real "deploy this in lite/CPU-only mode" code path. `monkeypatch.setenv` is NOT: since
+detect_hardware stopped reading the raw variable (4cc341e69) an env change after import is never
+seen, which went unnoticed because the default selection hides every CUDA device anyway.
 
 Marked ``models`` (not ``gpu``): despite exercising the CPU path, this test needs real pyannote
 model weights (WeSpeaker embedding model) to be present, which is exactly what the ``models``
@@ -98,7 +100,9 @@ def cpu_service(monkeypatch):
     `test_cpu_matches_gpu_dimensionality_and_direction`'s own "GPU" service to silently come back
     as CPU (device leaked across tests, not caught by inspection — only by running the suite).
     """
-    monkeypatch.setenv("TORCH_DEVICE", "cpu")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "TORCH_DEVICE", "cpu")
     service = _embedding_service()
     assert str(service.device) == "cpu", (
         f"TORCH_DEVICE=cpu did not force CPU device selection; got {service.device}. "
@@ -167,7 +171,9 @@ def test_cpu_matches_gpu_dimensionality_and_direction() -> None:
 
     mp = MonkeyPatch()
     try:
-        mp.setenv("TORCH_DEVICE", "cpu")
+        from app.core.config import settings
+
+        mp.setattr(settings, "TORCH_DEVICE", "cpu")
         cpu_service = _embedding_service()
         assert str(cpu_service.device) == "cpu"
         cpu_embedding = cpu_service.extract_embedding_from_segment(str(SAMPLE_WAV), segment)

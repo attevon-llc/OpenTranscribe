@@ -153,6 +153,19 @@ ALLOWLIST: dict[str, str] = {
         "P: offers the force_delete action in the response to admins; display only, the file "
         "was resolved with the bypass"
     ),
+    "api/endpoints/files/detail_response.py::get_media_file_detail": (
+        "P: decides only whether the file's hold badge carries the PLATFORM hold uuids, which "
+        "an instance administrator placed; display only, after get_media_file_by_uuid(bypass=) "
+        "resolved the file in the caller's tenant scope"
+    ),
+    "api/endpoints/media_collections_access.py::_collection_held": (
+        "P: whether a collection's hold badge carries the platform hold uuids; display only, "
+        "the collection was already authorized by the caller's collection permission check"
+    ),
+    "api/endpoints/media_collections_access.py::_hold_refusal": (
+        "P: whether the 409 for a held collection carries the platform hold uuids; display "
+        "only, it refuses a change and never grants one"
+    ),
     "api/endpoints/files/management.py::recover_stuck_files_bulk": (
         "P: admin-gated bulk stuck-file recovery (plan 3.3); repairs pipeline state and "
         "returns counts, no tenant content"

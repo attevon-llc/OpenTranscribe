@@ -7,6 +7,7 @@ paginated transcript (including segments not yet loaded in the browser).
 """
 
 from app.services.search.hybrid_search_service import HybridSearchService
+from tests.helpers import caller_access_gate
 
 FILE_UUID = "11111111-2222-3333-4444-555555555555"
 
@@ -59,4 +60,4 @@ def test_file_uuid_scope_composes_with_other_filters():
     assert {"term": {"language": "en"}} in filters
     assert {"terms": {"speaker": ["Alice"]}} in filters
     # The caller scope (accessible_user_ids) is always present.
-    assert {"terms": {"accessible_user_ids": [7]}} in filters
+    assert caller_access_gate(7) in filters

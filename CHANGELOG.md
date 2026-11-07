@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - `scripts/test-in-worktree.sh` (added in 0.6.1) is removed, together with its test. `./scripts/run-backend-tests.sh --throwaway-db` does the same job from any worktree and is the only throwaway-database runner.
+- The unused `GET /api/usage/me/daily` endpoint. Today's use against your daily limit is on the AI usage panel.
 
 ### Fixed
 
@@ -103,6 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The GDPR erasure receipt now covers the LLM token counters.
 - Backend tests release idle database connections between tests, so a parallel run no longer exhausts the test database's connection limit.
 - A voiceprint purge whose worker stopped between its two passes could leave voice-cluster data in the search index and later report success. The unfinished work is now recorded in the same transaction as the first pass (migration `v461`), and a scheduled re-check every 15 minutes finishes it and marks such a purge failed with the reason `interrupted` (#1334).
+- Chat's internal AI calls (query planning, query rewriting, evidence review and overview condensing) are recorded as usage at the same point the token limit is charged, so the AI usage panel matches the limit counter. A chat message's own token total now counts the answer only (#790).
+- The voiceprint orphan sweep (`python -m app.scripts.sweep_orphan_voiceprints`) also removes voice-cluster entries left in the search index with no database row, including those from purges interrupted before this release (#1334).
+- Recovering a stuck task that has no media file, such as a privacy purge, no longer logs a spurious error.
+- An interrupted voiceprint purge shows its own message asking you to run it again.
+- Log records no longer run an import to look up the request id, which every log line did in text mode.
 
 ### Security
 

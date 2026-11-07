@@ -414,6 +414,28 @@ def _skip_celery_dispatch():
 
 
 @pytest.fixture(autouse=True)
+def _release_burst_connections():
+    """Close the idle connections a concurrent test left in the shared app engine's pool.
+
+    ``QueuePool`` keeps up to ``DB_POOL_SIZE`` (20) returned connections open, so a test that
+    fans out N threads through ``SessionLocal`` (a multi-slice summary, a reservation race)
+    leaves N server connections pinned to its xdist worker for the rest of the session. The
+    floor is already two per worker (this module's engine and the app's), 96 of the throwaway
+    database's 100 under ``-n auto`` on 48 cores, so one such burst failed unrelated modules
+    with "too many clients already" (af11 sweep). ``dispose()`` closes only the checked-in
+    connections; one still checked out is unaffected.
+    """
+    yield
+    from sqlalchemy.pool import QueuePool
+
+    from app.db.base import engine as app_engine
+
+    pool = app_engine.pool
+    if isinstance(pool, QueuePool) and pool.checkedin() > 1:
+        app_engine.dispose()
+
+
+@pytest.fixture(autouse=True)
 def _clear_process_auth_cache():
     """Isolate the process-wide auth-config cache between tests.
 

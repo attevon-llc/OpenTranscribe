@@ -8,6 +8,11 @@ Isolation Level"). A read-then-write implementation admits more than the limit h
 The counters live under a far-future month unique to each test and are deleted afterwards;
 the limits are patched in-process rather than written to ``system_settings``, so tests on
 other workers sharing the database never see a limit.
+
+The racers get their own ``NullPool`` engine. Through the shared app engine every racer's
+connection would stay pooled for the rest of the xdist worker's life (QueuePool keeps up to
+``DB_POOL_SIZE`` idle), which under ``-n auto`` took the test database past
+``max_connections`` and failed unrelated modules with "too many clients already".
 """
 
 from __future__ import annotations
@@ -18,9 +23,13 @@ from datetime import UTC
 from datetime import datetime
 
 import pytest
+from sqlalchemy import create_engine
 from sqlalchemy import text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.db.base import SessionLocal
+from app.db.base import engine as app_engine
 from app.services import llm_budget
 
 
@@ -34,6 +43,8 @@ def private_month(monkeypatch):
         "read_limits",
         lambda _db: llm_budget.BudgetLimits(instance_monthly_tokens=100),
     )
+    racers = create_engine(app_engine.url, poolclass=NullPool)
+    monkeypatch.setattr(llm_budget, "_session", sessionmaker(bind=racers))
     # The counter exists before the race, so the writers meet on the row itself rather than
     # queueing behind each other's first INSERT of it.
     with SessionLocal() as db:
@@ -46,6 +57,7 @@ def private_month(monkeypatch):
         )
         db.commit()
     yield now
+    racers.dispose()
     with SessionLocal() as db:
         db.execute(
             text("DELETE FROM llm_token_budget WHERE period = :p"), {"p": now.strftime("%Y-%m")}
@@ -55,19 +67,19 @@ def private_month(monkeypatch):
 
 def _race(now: datetime, threads: int, amount: int) -> tuple[int, int]:
     barrier = threading.Barrier(threads)
-    admitted: list[bool] = []
+    outcomes: list[str] = []
     lock = threading.Lock()
 
     def worker() -> None:
         barrier.wait()
         try:
             llm_budget.reserve(user_id=None, amount=amount, now=now)
-            ok = True
+            outcome = "admitted"
         except llm_budget.LLMBudgetExceededError as refused:
-            assert refused.code == llm_budget.CODE_EXCEEDED
-            ok = False
+            # Recorded, not asserted here: an assert in a thread only kills the thread.
+            outcome = refused.code
         with lock:
-            admitted.append(ok)
+            outcomes.append(outcome)
 
     pool = [threading.Thread(target=worker) for _ in range(threads)]
     for t in pool:
@@ -81,8 +93,9 @@ def _race(now: datetime, threads: int, amount: int) -> tuple[int, int]:
             ),
             {"p": now.strftime("%Y-%m")},
         ).scalar()
-    assert len(admitted) == threads
-    return sum(admitted), int(used or 0)
+    assert len(outcomes) == threads
+    assert set(outcomes) <= {"admitted", llm_budget.CODE_EXCEEDED}, outcomes
+    return outcomes.count("admitted"), int(used or 0)
 
 
 def test_two_calls_cannot_both_take_the_last_tokens(private_month):

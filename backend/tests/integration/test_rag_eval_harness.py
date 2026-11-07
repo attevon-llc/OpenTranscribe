@@ -117,8 +117,14 @@ def injected(tmp_path_factory):
             db.rollback()
             # Refresh BEFORE deleting: the indexer bulk-loads with refresh=false and
             # delete_by_query refreshes after it runs, so fresh chunks would survive it.
-            client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
-            report = purge_injected(db, owner, CORPUS, seed)
+            # The purge must run even when the refresh raises (cluster unreachable): the
+            # injected rows are committed, completed, and look unindexed, so a leak shows
+            # up in every whole-table reader of the shared test DB (the #1182 sweep tests
+            # re-dispatched exactly these two files). The refresh error still propagates.
+            try:
+                client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
+            finally:
+                report = purge_injected(db, owner, CORPUS, seed)
             assert report.clean, f"injected corpus not cleanly purged: {report.failed}"
 
 

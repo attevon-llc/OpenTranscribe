@@ -592,8 +592,12 @@ fc_check_post_processing() {
     fi
     counts="$(fc_sql "SELECT count(*)::text || '|' || count(attributes_predicted_at)::text || '|' || coalesce(extract(epoch from max(attributes_predicted_at))::text, '') FROM speaker WHERE media_file_id = (SELECT id FROM media_file WHERE uuid = '$f')")"
     IFS='|' read -r speakers predicted maxp <<<"$counts"
-    fc_judge "notifications: every post-processing stage is terminal; Gender row skipped when attributes pre-exist" \
-        post-processing "${speakers:-0}" "${predicted:-0}" "${maxp:-}"
+    # Two claims, two labels: one combined label could only say "failed" or "skipped" about
+    # both at once, so a Gender-branch SKIP hid a perfectly good terminal verdict (#1308 D).
+    fc_judge "notifications: every post-processing stage is terminal" \
+        post-processing "${speakers:-0}" "${predicted:-0}" "${maxp:-}" terminal
+    fc_judge "notifications: Gender row skipped when attributes pre-exist" \
+        post-processing "${speakers:-0}" "${predicted:-0}" "${maxp:-}" gender
 }
 
 # ─── (8) system statistics ──────────────────────────────────────────────────────────────────

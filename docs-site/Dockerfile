@@ -49,7 +49,8 @@ RUN npm run build
 # a frontend scanning 0/0 from the same kind of base.
 #
 # Two images serving static files behind nginx have no reason to be on different
-# bases; when they diverge, only one of them gets looked at. Bump both together.
+# bases; when they diverge, only one of them gets looked at. Bump them together,
+# along with the HTTPS proxy's pin in docker-compose.nginx.yml.
 FROM nginx:1.31.8-alpine3.24
 
 # OCI annotations for container metadata and compliance.

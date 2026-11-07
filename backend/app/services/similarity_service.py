@@ -17,6 +17,7 @@ import torch
 from torch.nn import functional as nn_functional
 
 from app.core.env import env_bool
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import opensearch_score_from_raw_cosine
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
@@ -126,6 +127,7 @@ class SimilarityService:
         must_filters = [
             {"term": {"user_id": user_id}},
             *_speaker_org_filter_clauses(organization_id, user_ids=[user_id]),
+            exclude_unavailable_clause(),  # a trashed file's voices are never matched (#1101)
         ]
         must_not_filters = []
 

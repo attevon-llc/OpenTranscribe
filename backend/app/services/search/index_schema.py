@@ -5,6 +5,8 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
+from app.services.search.availability_field import AVAILABILITY_FIELD
+from app.services.search.availability_field import AVAILABILITY_MAPPING
 
 # Index version -- bump when mappings or analysis settings change.
 # Stored in index _meta so ensure_chunks_index_exists() can detect stale indices.
@@ -103,6 +105,16 @@ ADDITIVE_MAPPING_STEPS: tuple[AdditiveMappingStep, ...] = (
             # The prune counter, sibling of `digest_section`. NOT `chunk_index`: a
             # summary's is a negative sentinel that counts the wrong way.
             "summary_leaf_index": {"type": "integer"},
+        },
+    ),
+    AdditiveMappingStep(
+        version=4,
+        description="availability keyword: a trashed file's documents read 'trashed' (#1101)",
+        properties={
+            # Readers exclude with must_not term availability:trashed, never a positive
+            # term, so the documents written before this step (no value) stay visible:
+            # see services/search/availability_field.py.
+            AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
         },
     ),
 )

@@ -179,12 +179,16 @@ def test_summary_plane_clause_matches_only_the_summary_doc_type():
     assert clause == {"term": {"doc_type": "summary"}}
 
 
-def test_additive_version_is_now_three():
-    """T-B10: step 3 landed additively; steps 1 and 2 stay byte-for-byte."""
+def test_additive_version_is_now_four():
+    """T-B10: step 3 landed additively; steps 1 and 2 stay byte-for-byte.
+
+    Step 4 (the trash's ``availability`` field, #1101) is pinned by
+    ``tests/unit/test_availability_index_mappings.py``.
+    """
     from app.services.search.index_schema import _ADDITIVE_VERSION
     from app.services.search.index_schema import ADDITIVE_MAPPING_STEPS
 
-    assert _ADDITIVE_VERSION == 3
+    assert _ADDITIVE_VERSION == 4
     versions = [s.version for s in ADDITIVE_MAPPING_STEPS]
     assert versions == sorted(versions)
     step3 = next(s for s in ADDITIVE_MAPPING_STEPS if s.version == 3)

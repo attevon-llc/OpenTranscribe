@@ -13,6 +13,7 @@ from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,9 @@ def find_matching_speaker(
             _speaker_org_filter_clauses(organization_id, user_ids=accessible_user_ids or [user_id])
         )
 
+        # A trashed file's voices are never matched (#1101).
+        filters.append(exclude_unavailable_clause())
+
         # Add collection filter if specified
         if collection_ids:
             filters.append({"terms": {"collection_ids": collection_ids}})
@@ -212,7 +216,11 @@ def batch_find_matching_speakers(
                 "size": max_candidates,
                 "query": {
                     "bool": {
-                        "filter": [{"term": {"user_id": user_id}}, *org_clauses],
+                        "filter": [
+                            {"term": {"user_id": user_id}},
+                            *org_clauses,
+                            exclude_unavailable_clause(),
+                        ],
                         "must_not": [
                             {"term": {"speaker_id": emb_data["id"]}},  # Exclude self
                             {"exists": {"field": "document_type"}},  # Exclude profile documents
@@ -324,6 +332,7 @@ def msearch_speaker_similarities(
                                                 }
                                             },
                                             *org_clauses,
+                                            exclude_unavailable_clause(),
                                         ]
                                     }
                                 },

@@ -12,6 +12,7 @@ from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.opensearch_service.repair import _repair_index
+from app.services.search.availability_field import exclude_unavailable_clause
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,10 @@ def iter_speaker_embeddings(
                 "size": batch_size,
                 "query": {
                     "bool": {
-                        "filter": [{"term": {"user_id": user_id}}],
+                        "filter": [
+                            {"term": {"user_id": user_id}},
+                            exclude_unavailable_clause(),
+                        ],
                         "must_not": [{"exists": {"field": "document_type"}}],
                     }
                 },
@@ -290,6 +294,7 @@ def get_all_speaker_embeddings(
                     "bool": {
                         "filter": [
                             {"term": {"user_id": user_id}},
+                            exclude_unavailable_clause(),
                         ],
                         "must_not": [
                             {"exists": {"field": "document_type"}},

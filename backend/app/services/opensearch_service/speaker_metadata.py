@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.services.search.tenant_scope import org_filter_clauses
 
 if TYPE_CHECKING:
@@ -59,7 +60,7 @@ def find_speaker_across_media(
                         {"term": {"user_id": user_id}},
                         {"term": {"speakers": speaker_name}},
                     ],
-                    "filter": org_filter_clauses(organization_id),
+                    "filter": [*org_filter_clauses(organization_id), exclude_unavailable_clause()],
                 }
             },
             "size": size_limit,  # Max media files returned; increase if users have very large libraries

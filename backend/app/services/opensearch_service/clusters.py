@@ -12,6 +12,7 @@ from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.client import query_embedding_dimension_mismatch
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.privacy.policy import assert_voiceprint_write_allowed
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
@@ -177,6 +178,7 @@ def find_matching_clusters(
                                     {"term": {"document_type": "cluster"}},
                                     {"term": {"user_id": user_id}},
                                     *_speaker_org_filter_clauses(organization_id),
+                                    exclude_unavailable_clause(),
                                 ]
                             }
                         },

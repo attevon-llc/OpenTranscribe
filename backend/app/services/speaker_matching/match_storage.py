@@ -13,6 +13,7 @@ from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
 from app.services.opensearch_service import find_matching_speaker
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 if TYPE_CHECKING:
@@ -60,6 +61,7 @@ def build_speaker_match_query(
                 ]
             }
         },
+        exclude_unavailable_clause(),  # a trashed file's voices are never matched (#1101)
     ]
 
     return {

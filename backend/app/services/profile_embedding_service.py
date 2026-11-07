@@ -30,6 +30,7 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.policy import Decision
 from app.services.privacy.policy import declined_file_ids
 from app.services.privacy.redact_view import PrivacyView
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
@@ -263,6 +264,8 @@ def _execute_knn_search(
         ]
     # Tenant gate on profile docs (org term, else exclude org-stamped).
     filters.extend(_speaker_org_filter_clauses(organization_id))
+    # Profile documents carry no file (a no-op today); every kNN body uses the one helper.
+    filters.append(exclude_unavailable_clause())
 
     query = {
         "size": 25,

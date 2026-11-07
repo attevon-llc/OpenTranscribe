@@ -110,20 +110,27 @@ def bridged_session(monkeypatch, gov):
     monkeypatch.setattr("app.db.session_utils.session_scope", _scope)
 
 
+def _not_trashed(acl: dict) -> dict:
+    """The ACL as ``access_filter_clause`` returns it: ANDed with "not trashed" (#1101)."""
+    return {"bool": {"filter": [acl], "must_not": [{"term": {"availability": "trashed"}}]}}
+
+
 def test_search_clause_adds_the_collection_arm_for_a_member_only(gov, org_files, bridged_session):
     from app.services.search.access_filter import access_filter_clause
 
     by_user = {"terms": {"accessible_user_ids": [gov.bob.id]}}
-    assert access_filter_clause(gov.bob.id, gov.org.id) == {
-        "bool": {
-            "should": [by_user, {"terms": {"collection_ids": [org_files.collection.id]}}],
-            "minimum_should_match": 1,
+    assert access_filter_clause(gov.bob.id, gov.org.id) == _not_trashed(
+        {
+            "bool": {
+                "should": [by_user, {"terms": {"collection_ids": [org_files.collection.id]}}],
+                "minimum_should_match": 1,
+            }
         }
-    }
+    )
     # Personal scope and a non-member get today's per-file term and nothing wider.
-    assert access_filter_clause(gov.bob.id, None) == by_user
+    assert access_filter_clause(gov.bob.id, None) == _not_trashed(by_user)
     outsider = {"terms": {"accessible_user_ids": [gov.outsider.id]}}
-    assert access_filter_clause(gov.outsider.id, gov.org.id) == outsider
+    assert access_filter_clause(gov.outsider.id, gov.org.id) == _not_trashed(outsider)
 
 
 def test_search_clause_drops_the_arm_above_the_term_cap(
@@ -134,7 +141,7 @@ def test_search_clause_drops_the_arm_above_the_term_cap(
     monkeypatch.setattr(access_filter, "MAX_VISIBLE_COLLECTION_TERMS", 0)
     with caplog.at_level("WARNING", logger=access_filter.logger.name):
         clause = access_filter.access_filter_clause(gov.bob.id, gov.org.id)
-    assert clause == {"terms": {"accessible_user_ids": [gov.bob.id]}}
+    assert clause == _not_trashed({"terms": {"accessible_user_ids": [gov.bob.id]}})
     assert "falls back to per-file access" in caplog.text
 
 
@@ -150,7 +157,8 @@ def test_hybrid_filters_use_the_same_clause(gov, org_files, bridged_session):
         organization_id=gov.org.id,
     )
     arm = {"terms": {"collection_ids": [org_files.collection.id]}}
-    assert any("bool" in f and arm in f["bool"].get("should", []) for f in filters)
+    acls = [inner for f in filters for inner in f.get("bool", {}).get("filter", [])]
+    assert any("bool" in a and arm in a["bool"].get("should", []) for a in acls)
 
 
 class _RecordingOpenSearch:

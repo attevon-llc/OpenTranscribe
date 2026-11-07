@@ -25,6 +25,7 @@ from app.models.user import User
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
 from app.services.platform_bypass import PlatformBypass
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
@@ -361,6 +362,8 @@ def apply_transcript_search_filter(
         if user_id is not None:
             filter_clauses.append({"term": {"user_id": user_id}})
         filter_clauses.extend(org_filter_clauses(organization_id))
+        # A trashed file's transcript never matches (#1101); the SQL side drops it too.
+        filter_clauses.append(exclude_unavailable_clause())
 
         search_body: dict = {
             "query": {

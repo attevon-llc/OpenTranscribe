@@ -91,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The development server answered every server-rendered page with an error after the route-store change in this release; the page store now reads the current page only while a page renders.
 - A scheduled erasure of one member's organization data, or of a whole organization, would have run as the deletion of the person's whole account; the executor now runs the erasure the request names (#1105).
 - The retention preview (Settings, Data & Storage, File Retention) listed files under a legal hold or a takedown, which a retention run never deletes; it now applies the same rules as the run, and leaves out files in the trash (#1101).
 - A file under takedown no longer shows up in five places that still revealed it to its owner: the owner filter in the gallery, the "already in these collections" check when organizing selected files, the stuck-files list, speaker profile file and appearance counts, and the member list of a speaker cluster (#1101).

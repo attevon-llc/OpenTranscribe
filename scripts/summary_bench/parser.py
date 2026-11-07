@@ -56,6 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument('--runs', type=int, default=5)
     run.add_argument('--lock', default=None, help='inputs.lock.json (default: work-dir/lock)')
     run.add_argument('--run-dir', default=None)
+    run.add_argument(
+        '--concurrency',
+        type=int,
+        default=1,
+        help='summaries in flight at once within one arm and run block (default 1: sequential, '
+        'comparable with older runs; 8-12 suits the test vLLM, whose --max-num-seqs is 16). '
+        'Per-cell wall_s and call latency are not comparable when above 1',
+    )
     run.add_argument('--resume', action='store_true')
     run.add_argument('--retry-errors', action='store_true')
     run.add_argument('--no-controls', action='store_true', help='skip old-aa and sabotage (smoke)')

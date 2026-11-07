@@ -59,6 +59,12 @@ def test_an_unknown_option_is_a_misuse_error(tmp_path: Path) -> None:
     assert _run(tmp_path, "--bogus").returncode == 2
 
 
+def test_a_non_positive_concurrency_is_a_misuse_error(tmp_path: Path) -> None:
+    result = _run(tmp_path, "--fresh", "x", *ARMS, "--concurrency", "0", "--dry-run")
+    assert result.returncode == 2
+    assert "--concurrency" in result.stderr
+
+
 def test_gpu_zero_is_refused_even_for_a_dry_run(tmp_path: Path) -> None:
     result = _run(tmp_path, "--fresh", "x", *ARMS, "--dry-run", LLM_TEST_GPU_DEVICE_ID="0")
     assert result.returncode == 2

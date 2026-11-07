@@ -163,6 +163,23 @@ gate failed, `2` misuse, `3` precondition unmet (e.g. the dev stack isn't up) â€
 NOT MEASURED (a phase verified nothing). It is `5`, not `4`, because `4` already means operator
 abort in the release contract.
 
+### Summary evaluation concurrency
+
+`scripts/run-summary-eval.sh --concurrency N` (also `benchmark_summary.py run --concurrency N`) runs
+up to N summaries at once. The default is 1, strictly sequential, so new runs stay comparable with
+old ones. The test vLLM accepts 16 sequences (`--max-num-seqs`) and each summary holds up to 4 slice
+calls, so 3 to 4 is the useful range there; higher only queues (see
+[Performance Tuning](../operations/performance-tuning.md#llm-throughput)).
+
+- Only cells of the same arm and run block overlap. The harness patches the arm's rule text into the
+  app module, so two arms are never in flight together, and each block keeps its seeded arm order.
+- Records are appended as each cell finishes, so within an arm their order in `records.jsonl` is
+  completion order. `--resume` and `--retry-errors` behave exactly as before.
+- `meta.json` and `runinfo.json` record `concurrency`. Per-cell `wall_s` and call `latency_s` are
+  **not comparable** with a sequential run when it is above 1 (`runinfo.json` sets
+  `latency_comparable: false`); `seconds_per_summary` is wall clock over cells, so it is the figure
+  that stays meaningful.
+
 ### Prerequisites
 
 ```bash

@@ -8,9 +8,11 @@ Records hold corpus-derived prose, so they live outside the repo and are never c
 
 from __future__ import annotations
 
+import itertools
 import json
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -140,8 +142,13 @@ def _void_reason(
     return None
 
 
-def run_cell(ctx: RunContext, cell: CellId) -> dict[str, Any]:
-    """Produce one cell's record: the slices the merge received, the merged summary, the calls."""
+def run_cell(ctx: RunContext, cell: CellId, *, arm_scoped: bool = False) -> dict[str, Any]:
+    """Produce one cell's record: the slices the merge received, the merged summary, the calls.
+
+    ``arm_scoped`` means the caller already holds ``inject_arm``/``default_prompt`` for this cell's
+    arm (``run_cells`` does, around a group of same-arm cells run in parallel), so they are not
+    entered here: patching the same module globals from several threads would race on exit.
+    """
     ensure_app_environment()
     spec = ctx.specs[cell.input_id]
     entry = ctx.lock['inputs'][cell.input_id]
@@ -162,8 +169,11 @@ def run_cell(ctx: RunContext, cell: CellId) -> dict[str, Any]:
     # results" summary with `metadata.error`. Both are classified below. Anything that still
     # raises is a bug in the harness or the app and must stop the run, not be recorded as a
     # model failure (a fail-open handler would score it as a zero and carry on).
-    with inject_arm(arm), default_prompt(ctx.prompt):
+    if arm_scoped:
         merged = service.generate_summary(render.transcript, render.speaker_data)
+    else:
+        with inject_arm(arm), default_prompt(ctx.prompt):
+            merged = service.generate_summary(render.transcript, render.speaker_data)
     error = _failure_of(merged, service.recorder, injection)
     recorder = service.recorder
     void = None if error else _void_reason(recorder, entry, injection)
@@ -221,14 +231,51 @@ def pending_cells(
     return [c for c in cells if c.key not in done or done[c.key]['status'] in redo]
 
 
+def _append(path: Path, record: dict[str, Any]) -> None:
+    with path.open('a', encoding='utf-8') as handle:
+        handle.write(json.dumps(record, sort_keys=True) + '\n')
+
+
 def run_cells(
-    ctx: RunContext, cells: list[CellId], path: Path, on_record: Callable[[dict[str, Any]], None]
+    ctx: RunContext,
+    cells: list[CellId],
+    path: Path,
+    on_record: Callable[[dict[str, Any]], None],
+    *,
+    concurrency: int = 1,
 ) -> Iterator[dict[str, Any]]:
-    """Run ``cells`` strictly one at a time, appending each record the moment it exists."""
+    """Run ``cells``, appending each record the moment it exists.
+
+    With ``concurrency`` 1 the cells run strictly one at a time, in order. Above 1, only cells of
+    the same run block and arm overlap: ``inject_arm`` patches module globals, so two arms must
+    never be in flight at once, and the seeded arm order of each block is kept. Groups run one
+    after another; inside a group records are written in completion order. Only this generator's
+    thread writes the file, so no lock is needed.
+    """
+    if concurrency < 1:
+        raise HarnessError('--concurrency must be at least 1', ExitCode.MISUSE)
     path.parent.mkdir(parents=True, exist_ok=True)
-    for cell in cells:
-        record = run_cell(ctx, cell)
-        with path.open('a', encoding='utf-8') as handle:
-            handle.write(json.dumps(record, sort_keys=True) + '\n')
-        on_record(record)
-        yield record
+    if concurrency == 1:
+        for cell in cells:
+            record = run_cell(ctx, cell)
+            _append(path, record)
+            on_record(record)
+            yield record
+        return
+    for (_run, arm_name), group_iter in itertools.groupby(cells, key=lambda c: (c.run, c.arm)):
+        group = list(group_iter)
+        with (
+            inject_arm(ctx.arms[arm_name]),
+            default_prompt(ctx.prompt),
+            ThreadPoolExecutor(max_workers=min(concurrency, len(group))) as pool,
+        ):
+            futures = [pool.submit(run_cell, ctx, c, arm_scoped=True) for c in group]
+            try:
+                for future in as_completed(futures):
+                    record = future.result()
+                    _append(path, record)
+                    on_record(record)
+                    yield record
+            finally:
+                for future in futures:
+                    future.cancel()

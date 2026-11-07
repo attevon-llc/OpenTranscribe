@@ -139,7 +139,12 @@ def cmd_run(args: Namespace) -> int:
     matrix = build_matrix(specs, sorted(arms), args.runs, aa_inputs=aa_inputs)
     cells = plan_cells(specs, sorted(arms), matrix)
     if args.dry_run:
-        print(f'{len(cells)} cells, strictly sequential, in this order:')
+        how = (
+            'strictly sequential'
+            if args.concurrency == 1
+            else f'{args.concurrency} at a time per arm'
+        )
+        print(f'{len(cells)} cells, {how}, in this order:')
         for index, cell in enumerate(cells, start=1):
             print(f'  {index:3d}. {cell.key}')
         return ExitCode.OK
@@ -177,6 +182,7 @@ def cmd_run(args: Namespace) -> int:
         'llm_models': _llm_models(args),
         'app_git_sha': app_git_sha(),
         'cells_planned': len(cells),
+        'concurrency': args.concurrency,
     }
     (run_dir / 'meta.json').write_text(json.dumps(meta, indent=2, sort_keys=True) + '\n')
     print(f'run dir: {run_dir}  ({len(todo)} of {len(cells)} cells to run)')
@@ -192,18 +198,22 @@ def cmd_run(args: Namespace) -> int:
             flush=True,
         )
 
-    for record in run_cells(ctx, todo, records_path, progress):
+    for record in run_cells(ctx, todo, records_path, progress, concurrency=args.concurrency):
         done.append(record)
-    _write_runinfo(run_dir, done, time.monotonic() - started)
+    _write_runinfo(run_dir, done, time.monotonic() - started, args.concurrency)
     return ExitCode.OK
 
 
-def _write_runinfo(run_dir: Path, records: list[dict[str, Any]], wall_s: float) -> None:
+def _write_runinfo(
+    run_dir: Path, records: list[dict[str, Any]], wall_s: float, concurrency: int = 1
+) -> None:
     """Append this session's timing and applied-check counts (a resumed run has several)."""
     calls = [c for r in records for c in r['calls']]
     session = {
         'wall_clock_s': round(wall_s, 1),
         'cells_run': len(records),
+        'concurrency': concurrency,
+        'latency_comparable': concurrency == 1,
         'seconds_per_summary': round(wall_s / len(records), 2) if records else None,
         'llm_calls': len(calls),
         'applied_checked': sum(r['applied']['checked'] for r in records),

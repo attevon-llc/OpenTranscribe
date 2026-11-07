@@ -41,6 +41,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import Token
 from app.schemas.user import TokenRefreshRequest
+from app.utils.websocket_notify import publish_token_revocation
 
 router = APIRouter()
 
@@ -221,6 +222,10 @@ def _revoke_presented_tokens(db: Session, request: Request, claims: dict | None)
             logger.info(f"Logout: revoked access token (jti={jti[:8]}...)")
         except RevocationError:
             failed.append("access_token")
+        subject = claims.get("sub")
+        if subject:
+            # Sockets this token opened are outside every HTTP check; close them too.
+            publish_token_revocation(str(subject), str(jti))
 
     refresh_value = get_refresh_token_from_cookie(request)
     if refresh_value:

@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as redis
@@ -30,9 +31,56 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-#: Sent when an open socket is closed because its user's sessions were revoked. The SPA
-#: re-checks the session over HTTP before reconnecting rather than retrying blindly.
+#: Sent when an open socket is closed because its user's sessions were revoked, or because
+#: the access token that authenticated it expired. The SPA re-checks the session over HTTP
+#: (refreshing it when it can) before reconnecting rather than retrying blindly.
 SESSION_REVOKED_CLOSE = 4004
+
+
+@dataclass(frozen=True)
+class SocketAuth:
+    """Who authenticated a socket, and with which access token.
+
+    ``jti`` / ``issued_at`` / ``expires_at`` come from a local access token's claims and
+    are ``None`` for a socket an external verifier authenticated.
+    """
+
+    user_uuid: str | None
+    authenticated_at: int
+    jti: str | None = None
+    issued_at: int | None = None
+    expires_at: int | None = None
+
+    def predates(self, epoch: int) -> bool:
+        """Whether a revocation epoch outdates this socket.
+
+        Compares the token's own ``iat`` with the epoch, as the HTTP verdict does
+        (``TokenService._issued_before_user_epoch``), so the answer does not depend on this
+        host's clock agreeing with the host that stamped the epoch. ``<=`` rather than the
+        verdict's ``<``: a token minted in the epoch's own second is closed too, which costs
+        one reconnect that its handshake then accepts. Without an ``iat``, falls back to
+        when this process accepted the socket.
+        """
+        if self.issued_at is not None:
+            return self.issued_at <= epoch
+        return self.authenticated_at <= epoch
+
+
+def _socket_auth(user_uuid: str | None, claims: dict[str, Any] | None) -> SocketAuth:
+    """Build the :class:`SocketAuth` record for a freshly authenticated socket."""
+
+    def _int(name: str) -> int | None:
+        value = (claims or {}).get(name)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    jti = (claims or {}).get("jti")
+    return SocketAuth(
+        user_uuid=user_uuid,
+        authenticated_at=int(time.time()),
+        jti=jti if isinstance(jti, str) else None,
+        issued_at=_int("iat"),
+        expires_at=_int("exp"),
+    )
 
 
 # Connection manager to handle WebSocket connections
@@ -42,8 +90,8 @@ class ConnectionManager:
         self.active_connections: dict[int, list[WebSocket]] = {}
         # Sockets whose user held an admin tier when the connection was opened.
         self.admin_connections: set[WebSocket] = set()
-        # socket -> (user UUID, wall-clock second it authenticated), for close_revoked.
-        self.socket_owners: dict[WebSocket, tuple[str | None, int]] = {}
+        # socket -> who authenticated it and with which token, for the revocation closes.
+        self.socket_owners: dict[WebSocket, SocketAuth] = {}
 
     def connect(
         self,
@@ -51,6 +99,7 @@ class ConnectionManager:
         user_id: int,
         host_telemetry: bool = False,
         user_uuid: str | None = None,
+        claims: dict[str, Any] | None = None,
     ) -> None:
         """Register a WebSocket connection for a user (accept() must be called before this).
 
@@ -63,7 +112,7 @@ class ConnectionManager:
         self.active_connections[user_id].append(websocket)
         if host_telemetry:
             self.admin_connections.add(websocket)
-        self.socket_owners[websocket] = (user_uuid, int(time.time()))
+        self.socket_owners[websocket] = _socket_auth(user_uuid, claims)
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
     async def drain(self, code: int = 1001) -> int:
@@ -100,21 +149,33 @@ class ConnectionManager:
         return len(sockets)
 
     async def close_revoked(self, user_uuid: str, epoch: int) -> int:
-        """Close *user_uuid*'s sockets authenticated at or before the revocation ``epoch``.
+        """Close *user_uuid*'s sockets whose token the revocation ``epoch`` outdates.
 
-        A socket opened in the same second may carry a token newer than the epoch; it
-        is closed anyway, which costs one reconnect. Later sockets passed the epoch
-        check at their handshake and are left alone. Bookkeeping is removed by each
-        connection's own coroutine when its receive loop sees the close.
+        See :meth:`SocketAuth.predates`. Sockets whose token is newer than the epoch
+        passed the epoch check at their handshake and are left alone. Bookkeeping is
+        removed by each connection's own coroutine when its receive loop sees the close.
 
         Returns:
             Number of sockets closed.
         """
-        doomed = [
-            ws
-            for ws, (owner, authenticated_at) in self.socket_owners.items()
-            if owner == user_uuid and authenticated_at <= epoch
-        ]
+        return await self._close_where(
+            lambda auth: auth.user_uuid == user_uuid and auth.predates(epoch)
+        )
+
+    async def close_token(self, user_uuid: str, jti: str) -> int:
+        """Close *user_uuid*'s sockets authenticated with the access token ``jti``.
+
+        Used when one session logs out: its access token is blacklisted, so a socket it
+        opened must not outlive it. A socket the same session opened with an earlier
+        access token is bounded by that token's expiry instead (``websocket_endpoint``).
+
+        Returns:
+            Number of sockets closed.
+        """
+        return await self._close_where(lambda auth: auth.user_uuid == user_uuid and auth.jti == jti)
+
+    async def _close_where(self, doomed_if: Any) -> int:
+        doomed = [ws for ws, auth in self.socket_owners.items() if doomed_if(auth)]
         for ws in doomed:
             with contextlib.suppress(Exception):
                 await ws.close(code=SESSION_REVOKED_CLOSE, reason="Session revoked")
@@ -203,9 +264,12 @@ async def _dispatch_notification(message: dict) -> None:
 
     if notification_type == SESSION_REVOKED_EVENT:
         user_uuid = notification_data.get("user_uuid")
-        epoch = notification_data.get("data", {}).get("epoch")
-        if isinstance(user_uuid, str) and isinstance(epoch, int):
+        revoked = notification_data.get("data", {})
+        epoch, jti = revoked.get("epoch"), revoked.get("jti")
+        if isinstance(user_uuid, str) and isinstance(epoch, int) and not isinstance(epoch, bool):
             await manager.close_revoked(user_uuid, epoch)
+        elif isinstance(user_uuid, str) and isinstance(jti, str) and jti:
+            await manager.close_token(user_uuid, jti)
         else:
             logger.warning("Ignoring malformed session revocation message")
         return
@@ -344,6 +408,42 @@ def _try_authenticate_token(
         return None
 
 
+def _local_claims(token: str) -> dict[str, Any] | None:
+    """The claims of a local access token that just authenticated a socket, else ``None``.
+
+    ``None`` for a token an external verifier accepted: it carries no local ``jti``/``exp``
+    and its lifetime is that verifier's business.
+    """
+    try:
+        claims: dict[str, Any] = verify_token(token)
+    except Exception:
+        logger.debug("Socket token is not a local access token", exc_info=True)
+        return None
+    return claims
+
+
+async def _receive_until(websocket: WebSocket, expires_at: int | None) -> str | None:
+    """Next client frame, or ``None`` once the token that opened the socket has expired.
+
+    A socket must not outlive its access token: revocation reaches an open socket only
+    through a best-effort broadcast, so the expiry is what bounds a socket that missed one
+    (a single-session logout of an earlier token, a replica that missed an outage-time
+    revocation). The SPA treats the 4004 close as "re-check the session" and reconnects
+    with its refreshed token.
+    """
+    if expires_at is None:
+        return await websocket.receive_text()
+    remaining = expires_at - time.time()
+    if remaining > 0:
+        try:
+            return await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+        except TimeoutError:
+            pass
+    with contextlib.suppress(Exception):
+        await websocket.close(code=SESSION_REVOKED_CLOSE, reason="Session expired")
+    return None
+
+
 def _normalize_origin(origin: str) -> str:
     """Lower-case an origin and drop a trailing slash, for exact comparison."""
     return origin.strip().rstrip("/").lower()
@@ -477,6 +577,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     # 1. Try cookie-based auth
     token = websocket.cookies.get("access_token")
+    auth_token = token
     if token:
         with session_scope() as db:
             user = _try_authenticate_token(token, db, websocket)
@@ -497,8 +598,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             if data.get("type") != "authenticate" or not data.get("token"):
                 await websocket.close(code=4001, reason="Authentication required")
                 return
+            auth_token = data["token"]
             with session_scope() as db:
-                user = _try_authenticate_token(data["token"], db, websocket)
+                user = _try_authenticate_token(auth_token, db, websocket)
                 if user is not None:
                     db.expunge(user)
             if not user:
@@ -522,8 +624,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         user.id,
         host_telemetry=_may_receive_host_telemetry(user),
         user_uuid=str(user.uuid),
+        claims=_local_claims(auth_token) if auth_token else None,
     )
-
     # Send initial connection status
     await websocket.send_text(
         json.dumps(
@@ -534,10 +636,20 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         )
     )
 
+    await _serve_authenticated(websocket, user.id)
+
+
+async def _serve_authenticated(websocket: WebSocket, user_id: int) -> None:
+    """Message loop of a registered socket, until the peer leaves or its token expires."""
+    owner = manager.socket_owners.get(websocket)
+    expires_at = owner.expires_at if owner else None
     try:
         while True:
             # Wait for messages (keep the connection alive)
-            data = await websocket.receive_text()
+            data = await _receive_until(websocket, expires_at)
+            if data is None:
+                manager.disconnect(websocket, user_id)
+                return
             # Silently drop auth messages that arrive in the echo loop
             # (e.g. from cookie-auth clients that also send first-message auth)
             try:
@@ -549,7 +661,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             # Echo back for debugging/heartbeat
             await websocket.send_text(json.dumps({"type": "echo", "data": data}))
     except WebSocketDisconnect:
-        manager.disconnect(websocket, user.id)
+        manager.disconnect(websocket, user_id)
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
-        manager.disconnect(websocket, user.id)
+        manager.disconnect(websocket, user_id)

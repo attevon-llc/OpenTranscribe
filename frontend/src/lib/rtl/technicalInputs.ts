@@ -18,7 +18,7 @@ const INPUT_TAG = /<(?:input|textarea)\b(?:[^>"'{]|"[^"]*"|'[^']*'|\{[^}]*\})*>/
 const NON_TEXT_TYPE = /type="(checkbox|radio|range|file|number|date|hidden|color)"/;
 
 /** True when the opening `<input ...>`/`<textarea ...>` tag holds a technical (non-prose) value. */
-export function isTechnicalInputTag(tag: string): boolean {
+function isTechnicalInputTag(tag: string): boolean {
   if (NON_TEXT_TYPE.test(tag)) return false;
   if (/type="(url|email)"/.test(tag)) return true;
   const id = /\bid="([^"]*)"/.exec(tag)?.[1];

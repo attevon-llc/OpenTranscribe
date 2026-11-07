@@ -111,7 +111,7 @@ export interface OrgHoldCreate {
 export type FloorCategory = 'pii' | 'toxicity' | 'profanity';
 
 /** An organization's redaction floor: it can only ADD to the instance floor. */
-export interface OrgRedactionFloor {
+interface OrgRedactionFloor {
   forced_categories: FloorCategory[];
   forced_pii_entities: string[];
   forced_custom_words: string[];

@@ -52,6 +52,7 @@ vi.mock('$lib/auth/sessionRecheck', async (importOriginal) => ({
 
 import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '../test-mocks/fakeWebSocket';
 import { websocketStore, unreadCount, connectionStatus } from './websocket';
+import { authStore, lifecycleHoldCleared } from './auth';
 import { apiCache, CacheTTL } from '$lib/apiCache';
 import axiosInstance from '$lib/axios';
 
@@ -262,6 +263,43 @@ describe('websocket refusal close codes are terminal', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     expect(FakeWebSocket.instances).toHaveLength(2);
     expect(authMeCalls()).toHaveLength(1);
+  });
+});
+
+describe('a refusal made during a lifecycle hold', () => {
+  beforeEach(() => {
+    vi.mocked(axiosInstance.get).mockClear();
+    authStore.setToken('cookie');
+  });
+
+  afterEach(() => {
+    authStore.setToken(null);
+  });
+
+  it('connects again once the hold clears', async () => {
+    // The server refuses the handshake of an account owing a banner acknowledgment or a
+    // password change; the session probe (/auth/me) still answers, so one retry is also
+    // refused and the socket stays down.
+    const socket = openSocket();
+    vi.mocked(axiosInstance.get).mockResolvedValue({ data: {} });
+    socket.simulateServerClose(4003, 'refused');
+    await vi.advanceTimersByTimeAsync(60_000);
+    FakeWebSocket.latest().simulateServerClose(4003, 'refused');
+    await vi.advanceTimersByTimeAsync(60_000);
+    const refused = FakeWebSocket.instances.length;
+
+    lifecycleHoldCleared.update((count) => count + 1);
+
+    expect(FakeWebSocket.instances).toHaveLength(refused + 1);
+  });
+
+  it('leaves an open socket alone', () => {
+    openSocket();
+    const open = FakeWebSocket.instances.length;
+
+    lifecycleHoldCleared.update((count) => count + 1);
+
+    expect(FakeWebSocket.instances).toHaveLength(open);
   });
 });
 

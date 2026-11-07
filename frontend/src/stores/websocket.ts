@@ -352,6 +352,15 @@ authStore.token.subscribe((token: string | null) => {
   }
 });
 
+// A handshake made while the account owed a banner acknowledgment or a password change
+// was refused, and a refusal is terminal; connect again once the hold clears.
+authStore.lifecycleHoldCleared.subscribe((count: number) => {
+  if (count === 0) return;
+  if (get(websocketStore).status !== 'connected' && get(authStore.isAuthenticated)) {
+    websocketStore.connect();
+  }
+});
+
 // Handle page visibility changes to reconnect when page becomes visible
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {

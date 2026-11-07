@@ -1,12 +1,11 @@
-"""The WebSocket handshake applies the account approval and expiry gates.
+"""The WebSocket handshake applies every account-lifecycle gate.
 
-HTTP refuses a rejected, pending (while approval is required) or expired account on every
-authenticated route, and optional-auth routes treat one as anonymous
+HTTP refuses a rejected, pending (while approval is required) or expired account, or one
+owing a banner acknowledgment or a password change, on every non-exempt authenticated
+route, and optional-auth routes treat one as anonymous
 (``lifecycle_gates.admitted_on_optional_auth``). The handshake checked only ``is_active``,
 so such an account with a still-valid token opened a socket and received its live events.
-
-The banner and forced-password-change holds stay admitted, as on optional-auth routes:
-both have a self-service remedy whose screens run while the hold is in force.
+The SPA reconnects once the hold clears.
 """
 
 from __future__ import annotations
@@ -89,9 +88,29 @@ def test_an_account_expiring_later_connects(db_session, client):
     assert _connects(client, later) is True
 
 
-def test_an_account_owing_a_password_change_connects(db_session, client):
-    """Control: a remedy-screen hold is not an admission refusal."""
-    assert _connects(client, make_user(db_session, must_change_password=True)) is True
+def test_an_account_owing_a_password_change_is_refused(db_session, client):
+    owing = make_user(db_session, must_change_password=True)
+
+    assert _refusal_code(client, owing) == INVALID_TOKEN_CLOSE
+
+
+def test_an_account_owing_the_banner_is_refused(db_session, client, monkeypatch):
+    from app.api.endpoints.auth import lifecycle_gates
+
+    monkeypatch.setattr(lifecycle_gates, "_banner_requirement", lambda _db: (True, None))
+    owing = make_user(db_session, banner_acknowledged_at=None)
+
+    assert _refusal_code(client, owing) == INVALID_TOKEN_CLOSE
+
+
+def test_an_account_that_acknowledged_the_banner_connects(db_session, client, monkeypatch):
+    """Control: the banner is enabled; only the acknowledgment differs."""
+    from app.api.endpoints.auth import lifecycle_gates
+
+    monkeypatch.setattr(lifecycle_gates, "_banner_requirement", lambda _db: (True, None))
+    acknowledged = make_user(db_session, banner_acknowledged_at=datetime.now(UTC))
+
+    assert _connects(client, acknowledged) is True
 
 
 def test_a_rejected_account_is_refused_on_the_first_message_path(db_session, client):

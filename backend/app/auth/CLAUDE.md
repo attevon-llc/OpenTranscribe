@@ -184,6 +184,13 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   is what lets the per-user epoch cancel a still-valid stateless access token
   (`tests/api/test_optional_auth_revocation_epoch.py`). It now also feeds
   `GET /system/capabilities`, whose staff overlay would otherwise survive a logout-all.
+  It also asks **every** account-lifecycle gate `get_current_active_user` applies (proxy
+  identity, approval, expiry, banner, forced password change) through
+  `lifecycle_gates.admitted_on_optional_auth`, and serves a refused account as **anonymous**
+  (never a 403/500). The WebSocket handshake asks the same function and closes with 4003; the
+  SPA reconnects the socket and re-reads capabilities when a banner/password hold clears.
+  `tests/unit/test_optional_auth_lifecycle_gates.py::TestNoGateIsLeftOut` fails when a new
+  `_enforce_*` gate is added to the strict dependency without a predicate on this path.
 - `direct_auth.py`, `external_sync.py`, `cookies.py`, `password_policy.py`,
   `password_history.py`, `password_reset.py`.
 

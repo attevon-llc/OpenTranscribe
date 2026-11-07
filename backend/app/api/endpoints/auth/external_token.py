@@ -2,7 +2,8 @@
 
 The external-verifier seam (cloud edition: an external bearer token, its absolute
 session timeout and JIT sync) and the trusted-proxy identity consistency check.
-Imports from ``lifecycle_gates`` only; nothing there imports back.
+Imports from ``lifecycle_gates`` at load time; ``lifecycle_gates`` imports the proxy
+check back only inside ``admitted_on_optional_auth``, at call time.
 """
 
 import logging
@@ -11,6 +12,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
 
 from app.api.endpoints.auth.lifecycle_gates import _audit_lifecycle_denial
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
@@ -28,7 +30,9 @@ logger = logging.getLogger(__name__)
 ERROR_CODE_PROXY_IDENTITY_MISMATCH = "proxy_identity_mismatch"
 
 
-def _enforce_proxy_identity_consistency(user: User, request: Request | None, db: Session) -> None:
+def _enforce_proxy_identity_consistency(
+    user: User, request: HTTPConnection | None, db: Session
+) -> None:
     """Refuse — and revoke — when the proxy now asserts somebody else.
 
     Trusted-header authentication consults the header once, at sign-in, and then

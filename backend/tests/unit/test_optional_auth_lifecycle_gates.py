@@ -1,14 +1,12 @@
-"""``get_optional_current_user`` applies the approval and expiry gates.
+"""``get_optional_current_user`` applies every account-lifecycle gate.
 
 An optional-auth route (the thumbnail fallback, ``GET /system/capabilities`` and the
 capability-gate platform-staff bypass) used to resolve any active account with a
-valid token, so a pending, rejected or expired account received what the strict
-dependency next door refuses it. Such a caller is now served as anonymous.
-
-Two gates are deliberately NOT applied here: an account owing a banner
-acknowledgment or a password change has a self-service remedy, and the screens that
-offer it run while the account is in that state. Each refusal below has a control
-that differs in exactly the one attribute under test.
+valid token, so an account the strict dependency next door refuses still received a
+signed-in answer there. Such a caller is now served as anonymous: pending, rejected,
+expired, and also owing a banner acknowledgment or a password change (the remedy
+screens for those two use exempt strict routes, never an optional one). Each refusal
+below has a control that differs in exactly the one attribute under test.
 """
 
 # mypy: disable-error-code="arg-type"
@@ -36,6 +34,7 @@ from app.auth.approval import APPROVAL_PENDING
 from app.auth.approval import APPROVAL_REJECTED
 from app.auth.cookies import ACCESS_COOKIE
 from app.auth.direct_auth import create_access_token
+from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.auth_config import AuthConfig
 from app.models.user import User
@@ -44,7 +43,7 @@ from app.services.auth_config_service import AuthConfigService
 pytestmark = pytest.mark.xdist_group("account_approval")
 
 
-def _request(token: str) -> Request:
+def _request(token: str, path: str = "/api/files/some-uuid/thumbnail") -> Request:
     """A real ``Request`` carrying *token* in the SPA's httpOnly cookie."""
     return Request(
         {
@@ -54,7 +53,7 @@ def _request(token: str) -> Request:
             "scheme": "http",
             "server": ("backend", 8080),
             "root_path": "",
-            "path": "/api/files/some-uuid/thumbnail",
+            "path": path,
             "query_string": b"",
             "headers": [
                 (b"user-agent", b"pytest"),
@@ -165,20 +164,44 @@ class TestExpiry:
         assert resolved is not None and resolved.id == current.id
 
 
-class TestSelfServiceStatesStillResolve:
-    def test_an_account_owing_a_password_change_resolves(self, db_session):
+class TestSelfServiceStatesAreAnonymous:
+    def test_an_account_owing_a_password_change_is_anonymous(self, db_session):
         owing = _account(db_session, must_change_password=True)
 
-        resolved = _resolve(db_session, owing)
+        assert _resolve(db_session, owing) is None
 
-        assert resolved is not None and resolved.id == owing.id
+    def test_an_account_not_owing_a_password_change_resolves(self, db_session):
+        """Control: the same account without the flag."""
+        current = _account(db_session, must_change_password=False)
 
-    def test_an_account_owing_the_banner_resolves(self, db_session):
+        resolved = _resolve(db_session, current)
+
+        assert resolved is not None and resolved.id == current.id
+
+    def test_an_account_owing_the_banner_is_anonymous(self, db_session):
         _store_banner_enabled(db_session)
         owing = _account(db_session)
         assert owing.banner_acknowledged_at is None
 
-        resolved = _resolve(db_session, owing)
+        assert _resolve(db_session, owing) is None
+
+    def test_an_account_that_acknowledged_the_banner_resolves(self, db_session):
+        """Control: the banner is still enabled; only the acknowledgment differs."""
+        _store_banner_enabled(db_session)
+        acknowledged = _account(db_session, banner_acknowledged_at=datetime.now(UTC))
+
+        resolved = _resolve(db_session, acknowledged)
+
+        assert resolved is not None and resolved.id == acknowledged.id
+
+    def test_an_exempt_route_still_resolves_an_account_owing_a_password_change(self, db_session):
+        """The gates are asked about the matched route, exactly as the strict path asks:
+        the self-service change endpoint stays reachable while the flag is set."""
+        owing = _account(db_session, must_change_password=True)
+        token = create_access_token({"sub": str(owing.uuid), "role": "user"})
+        request = _request(token, path=f"{settings.API_PREFIX}/users/me")
+
+        resolved = get_optional_current_user(request, db_session)
 
         assert resolved is not None and resolved.id == owing.id
 
@@ -218,3 +241,48 @@ class TestUnrecognisedApprovalStatus:
         user = SimpleNamespace(id=1, email="bare@example.com", approval_status=None)
 
         assert gates_module._approval_refusal(user, db_session) is None
+
+
+class TestNoGateIsLeftOut:
+    """A gate added to the strict dependency must be asked on the optional path too."""
+
+    #: Each gate ``get_current_active_user`` enforces, and the call through which
+    #: ``admitted_on_optional_auth`` asks the same question without raising.
+    GATE_PREDICATES = {
+        "_enforce_proxy_identity_consistency": "_enforce_proxy_identity_consistency",
+        "_enforce_approval": "_approval_refusal",
+        "_enforce_account_expiry": "_expired_at",
+        "_enforce_banner_acknowledgment": "_banner_refusal_reason",
+        "_enforce_password_change": "_password_change_owed",
+    }
+
+    @staticmethod
+    def _called_names(function) -> set[str]:
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+        return {
+            node.func.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+
+    def test_every_strict_gate_is_mapped(self):
+        from app.api.endpoints.auth.dependencies import get_current_active_user
+
+        enforced = {
+            name
+            for name in self._called_names(get_current_active_user)
+            if name.startswith("_enforce_")
+        }
+
+        assert enforced == set(self.GATE_PREDICATES)
+
+    def test_the_optional_path_asks_every_mapped_gate(self):
+        asked = self._called_names(gates_module.admitted_on_optional_auth)
+
+        missing = {gate for gate, call in self.GATE_PREDICATES.items() if call not in asked}
+
+        assert missing == set()

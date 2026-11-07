@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
+from starlette.requests import HTTPConnection
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
@@ -77,7 +78,7 @@ BANNER_EXEMPT_PATHS = frozenset(
 )
 
 
-def _route_path(request: Request | None) -> str:
+def _route_path(request: HTTPConnection | None) -> str:
     """Return the matched route template for *request*.
 
     Falls back to the raw URL path when no route has been matched yet (and to
@@ -90,7 +91,7 @@ def _route_path(request: Request | None) -> str:
     return path.rstrip("/") if len(path) > 1 else path
 
 
-def _lifecycle_client_info(request: Request | None) -> tuple[str, str]:
+def _lifecycle_client_info(request: HTTPConnection | None) -> tuple[str, str]:
     """Client IP / user agent for a lifecycle audit event, never raising.
 
     An audit record must not be the reason an authorization decision fails, so
@@ -106,7 +107,7 @@ def _lifecycle_client_info(request: Request | None) -> tuple[str, str]:
 def _audit_lifecycle_denial(
     event_type: AuditEventType,
     user: User,
-    request: Request | None,
+    request: HTTPConnection | None,
     error_code: str,
     details: dict,
 ) -> None:
@@ -198,19 +199,44 @@ def _approval_refusal(user: User, db: Session) -> tuple[str, str] | None:
     return None
 
 
-def admitted_on_optional_auth(user: User, db: Session) -> bool:
-    """Whether an optional-auth route may treat *user* as signed in.
+def admitted_on_optional_auth(user: User, request: HTTPConnection | None, db: Session) -> bool:
+    """Whether an optional-auth path may treat *user* as signed in.
 
-    Applies only the approval and expiry gates, without raising or auditing: the
-    caller is served as anonymous rather than refused, and these routes run on
-    every page load. The banner and password-change gates are left out because
-    both have a self-service remedy whose screens run in that state.
+    The optional-auth dependency, the capability gate's staff bypass and the WebSocket
+    handshake serve a caller this refuses as anonymous: an account that
+    ``get_current_active_user`` would refuse on the same route is never an
+    authenticated caller anywhere. Every gate that dependency applies is asked, in the
+    same order, through the same predicates; a new gate there belongs here too.
+
+    The approval, expiry, banner and password-change gates are answered without
+    raising or auditing, because these paths run on every page load and the strict
+    dependency audits the same account's next request. The proxy-identity check runs
+    for real (it revokes and audits): a session known to belong to nobody is ended
+    wherever it shows up. A setting that cannot be read refuses rather than admits.
+
+    Args:
+        user: The account the credential resolved to.
+        request: The HTTP request or WebSocket; its matched route decides the
+            banner and password-change exemptions, exactly as for the strict path.
+        db: The request's session.
     """
-    if _expired_at(user) is not None:
+    if not getattr(user, "is_active", False):
         return False
+    # Imported here: external_token imports this module at load time.
+    from app.api.endpoints.auth.external_token import _enforce_proxy_identity_consistency
+
     try:
-        return _approval_refusal(user, db) is None
+        _enforce_proxy_identity_consistency(user, request, db)
+        return not (
+            _approval_refusal(user, db) is not None
+            or _expired_at(user) is not None
+            or _banner_refusal_reason(user, request, db) is not None
+            or _password_change_owed(user, request)
+        )
     except (HTTPException, DomainError):
+        # A refusal the strict path would raise (proxy mismatch, an unreadable
+        # approval setting). Anything else propagates; every caller serves it as
+        # anonymous.
         return False
 
 
@@ -262,17 +288,20 @@ def _enforce_approval(user: User, request: Request | None, db: Session) -> None:
     )
 
 
+def _password_change_owed(user: User, request: HTTPConnection | None) -> bool:
+    """Whether *user* owes a password change that bars the route *request* matched."""
+    if not getattr(user, "must_change_password", False):
+        return False
+    return _route_path(request) not in PASSWORD_CHANGE_EXEMPT_PATHS
+
+
 def _enforce_password_change(user: User, request: Request | None) -> None:
     """Confine a caller flagged ``must_change_password`` to the change endpoint.
 
     Raises:
         HTTPException: 403 with ``detail.code == password_change_required``.
     """
-    if not getattr(user, "must_change_password", False):
-        return
-
-    path = _route_path(request)
-    if path in PASSWORD_CHANGE_EXEMPT_PATHS:
+    if not _password_change_owed(user, request):
         return
 
     _audit_lifecycle_denial(
@@ -280,7 +309,7 @@ def _enforce_password_change(user: User, request: Request | None) -> None:
         user,
         request,
         error_code="PASSWORD_CHANGE_REQUIRED",
-        details={"reason": "must_change_password", "path": path},
+        details={"reason": "must_change_password", "path": _route_path(request)},
     )
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -363,6 +392,29 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
     return _last_banner_read
 
 
+def _banner_refusal_reason(user: User, request: HTTPConnection | None, db: Session) -> str | None:
+    """Why the banner gate refuses *user* on the route *request* matched, else ``None``.
+
+    ``"never_acknowledged"`` or ``"banner_text_changed"``; see
+    :func:`_enforce_banner_acknowledgment` for why a text change re-asks.
+    """
+    enabled, text_changed_at = _banner_requirement(db)
+    if not enabled or _route_path(request) in BANNER_EXEMPT_PATHS:
+        return None
+
+    acknowledged_at = getattr(user, "banner_acknowledged_at", None)
+    if acknowledged_at is None:
+        return "never_acknowledged"
+    if acknowledged_at.tzinfo is None:
+        acknowledged_at = acknowledged_at.replace(tzinfo=UTC)
+    changed_at = text_changed_at
+    if changed_at is not None and changed_at.tzinfo is None:
+        changed_at = changed_at.replace(tzinfo=UTC)
+    if changed_at is None or acknowledged_at >= changed_at:
+        return None
+    return "banner_text_changed"
+
+
 def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Session) -> None:
     """Confine a caller who has not accepted the login banner (FedRAMP AC-8).
 
@@ -384,26 +436,9 @@ def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Sess
     Raises:
         HTTPException: 403 with ``detail.code == banner_acknowledgment_required``.
     """
-    enabled, text_changed_at = _banner_requirement(db)
-    if not enabled:
+    reason = _banner_refusal_reason(user, request, db)
+    if reason is None:
         return
-
-    path = _route_path(request)
-    if path in BANNER_EXEMPT_PATHS:
-        return
-
-    acknowledged_at = getattr(user, "banner_acknowledged_at", None)
-    if acknowledged_at is not None:
-        if acknowledged_at.tzinfo is None:
-            acknowledged_at = acknowledged_at.replace(tzinfo=UTC)
-        changed_at = text_changed_at
-        if changed_at is not None and changed_at.tzinfo is None:
-            changed_at = changed_at.replace(tzinfo=UTC)
-        if changed_at is None or acknowledged_at >= changed_at:
-            return
-        reason = "banner_text_changed"
-    else:
-        reason = "never_acknowledged"
 
     # Deliberately NOT audited. Unlike the two gates above — which fire for one
     # flagged account at a time — this refuses every request of every session
@@ -421,7 +456,7 @@ def _enforce_banner_acknowledgment(user: User, request: Request | None, db: Sess
     )
 
 
-def _get_client_info(request: Request | None) -> tuple[str, str]:
+def _get_client_info(request: HTTPConnection | None) -> tuple[str, str]:
     """Extract client IP and user agent from request.
 
     Args:

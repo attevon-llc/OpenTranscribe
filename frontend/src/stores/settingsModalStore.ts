@@ -35,6 +35,7 @@ export type SettingsSection =
   | 'org-audit-logs'
   | 'org-holds'
   | 'org-privacy'
+  | 'org-erasures'
   // Admin sections
   // 'admin-settings' and 'cache' are deliberately absent: neither has had a
   // render block in SettingsModal for some time, so deep-linking to them opened

@@ -148,7 +148,33 @@ export type OrgPolicyChanges = Partial<
   Pick<OrgPolicy, 'voiceprint_matching_enabled' | 'gender_inference_enabled'>
 > & { redaction_floor?: Partial<OrgRedactionFloor> };
 
+/** One open scheduled erasure of this organization (`GET /org-admin/gdpr/erasures`). */
+export interface ScheduledErasure {
+  ledger_uuid: string;
+  subject_type: 'org_member' | 'organization';
+  subject_user_uuid: string | null;
+  requested_at: string;
+  scheduled_for: string | null;
+  sla_due_at: string;
+  status: 'scheduled' | 'cancelled';
+  cancelled_at: string | null;
+  /** Resolved at read time, only while the requester is still a member; null otherwise. */
+  requested_by: string | null;
+}
+
 export class OrgAdminApi {
+  /** This organization's open scheduled erasures, soonest first. Requesting one stays API-only. */
+  static async listScheduledErasures(): Promise<ScheduledErasure[]> {
+    const response = await axiosInstance.get('/org-admin/gdpr/erasures');
+    return response.data;
+  }
+
+  /** Withdraw one before it runs. 409 `already_executing` / `not_cancellable` once it has. */
+  static async cancelScheduledErasure(ledgerUuid: string): Promise<ScheduledErasure> {
+    const response = await axiosInstance.post(`/org-admin/gdpr/erasures/${ledgerUuid}/cancel`);
+    return response.data;
+  }
+
   /** This organization's taken-down files, newest first. */
   static async listQuarantinedFiles(params?: {
     limit?: number;

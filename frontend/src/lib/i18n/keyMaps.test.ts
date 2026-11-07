@@ -97,6 +97,12 @@ describe('keyFor / labelFor', () => {
   });
 });
 
+describe('ORG_AUDIT_EVENT_KEYS: owner change (#1105)', () => {
+  it('labels the organization owner change', () => {
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['org.owner.change']).toBe('orgAudit.event.ownerChange');
+  });
+});
+
 describe('ORG_AUDIT_EVENT_KEYS: scheduled erasure events (#1105)', () => {
   it('labels the three scheduled-erasure events an organization admin now reads', () => {
     expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.scheduled']).toBe(

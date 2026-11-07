@@ -32,6 +32,7 @@ import pytest
 from app.models.media import MediaFile
 from app.services.llm_stream import LLMStreamEvent
 from app.services.search.chunk_retrieval import retrieve_chunks
+from tests.helpers import caller_access_gate
 
 
 class _FakeLLM:
@@ -240,5 +241,5 @@ def test_the_unscoped_query_is_still_gated_by_the_callers_access_list():
         retrieve_chunks("what did we decide", user_id=42, file_uuids=None, search_mode="keyword")
 
     filters = client.search.call_args.kwargs["body"]["query"]["bool"]["filter"]
-    assert {"terms": {"accessible_user_ids": [42]}} in filters
+    assert caller_access_gate(42) in filters
     assert not any("file_uuid" in clause.get("terms", {}) for clause in filters)

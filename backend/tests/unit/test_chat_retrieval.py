@@ -18,6 +18,7 @@ from app.services.search.chunk_retrieval import diversity_sample
 from app.services.search.chunk_retrieval import dynamic_rrf_window
 from app.services.search.chunk_retrieval import retrieve_chunks
 from app.services.search.hybrid_search_service import HybridSearchService
+from tests.helpers import caller_access_gate
 from tests.helpers import does_not_raise
 
 
@@ -249,7 +250,7 @@ def test_retrieval_always_filters_by_caller():
 
     body = client.search.call_args.kwargs["body"]
     filters = body["query"]["bool"]["filter"]
-    assert {"terms": {"accessible_user_ids": [42]}} in filters
+    assert caller_access_gate(42) in filters
     assert {"terms": {"file_uuid": ["u1"]}} in filters
 
 

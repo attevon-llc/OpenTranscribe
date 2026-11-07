@@ -35,6 +35,7 @@ from app.services.chat.aggregation_queries import _temporal_bounds
 from app.services.chat.aggregation_service import answer_aggregation
 from app.services.chat.router import TemporalHint
 from app.services.chat.router import route
+from tests.helpers import caller_access_gate
 
 pytestmark = pytest.mark.unit
 
@@ -162,7 +163,7 @@ def test_scope_none_means_every_accessible_file_and_empty_means_nothing():
 def test_every_aggregation_carries_the_access_gate_and_the_chunk_plane():
     filters = base_filters(user_id=7, organization_id=None, file_uuids=None)
     rendered = str(filters)
-    assert {"terms": {"accessible_user_ids": [7]}} in filters
+    assert caller_access_gate(7) in filters
     assert "doc_type" in rendered, "the chunk-plane clause must be present"
     assert "organization_id" in rendered, "the tenant gate must be present"
 

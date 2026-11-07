@@ -28,6 +28,7 @@ from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.permission_service import PermissionService
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
+from tests.helpers import caller_access_gate
 
 
 # --------------------------------------------------------------------------- #
@@ -262,7 +263,7 @@ class TestSearchFilterOrgGate:
             date_to=None,
             organization_id=42,
         )
-        assert {"terms": {"accessible_user_ids": [7]}} in filters
+        assert caller_access_gate(7) in filters
         assert {"term": {"organization_id": 42}} in filters
 
     def test_personal_scope_excludes_org_docs(self):

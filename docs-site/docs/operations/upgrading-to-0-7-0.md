@@ -240,7 +240,7 @@ free.
 
 ## Voiceprint purges that were interrupted
 
-**Check this if...** you run voiceprint or gender purges (Settings -> Privacy), or a purge you
+**Check this if...** you run voiceprint or gender purges (Settings -> Privacy & redaction, or Settings -> Speaker identification for your own voiceprints), or a purge you
 started earlier still shows as in progress.
 
 A voiceprint purge deletes in two passes a minute apart. Before 0.7.0, if the worker running a

@@ -1,11 +1,6 @@
-exports::src/test-mocks/app-environment.ts::dev	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/test-mocks/app-environment.ts::version	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/test-mocks/app-navigation.ts::beforeNavigateCallbacks	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/test-mocks/app-navigation.ts::invalidate	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 exports::src/test-mocks/app-navigation.ts::invalidateAll	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/test-mocks/app-stores.ts::getStores	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/test-mocks/app-stores.ts::navigating	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
-exports::src/test-mocks/app-stores.ts::updated	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/asrProviderPolicy.ts::SharedCredential	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/asrSettings.ts::PipelineIssue	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched
 types::src/lib/api/dataIntegrity.ts::IndexSweepStats	1	pre-existing unused exports and types in the frontend, to be removed as each module is touched

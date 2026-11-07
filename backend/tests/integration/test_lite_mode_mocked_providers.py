@@ -426,6 +426,47 @@ def _processing_rows_when_voiceprints_recorded(
     return rows
 
 
+_OPEN_POST_PROCESSING_STATES = {"queued", "started"}
+
+
+def _post_processing_when_settled(
+    api_session: requests.Session,
+    backend_url: str,
+    file_uuid: str,
+    timeout_secs: int = 180,
+    require_task: str | None = None,
+    newer_than: float = 0.0,
+) -> dict:
+    """Poll ``GET /api/files/{uuid}/post-processing`` until a run is known and nothing is open.
+
+    ``require_task`` additionally waits for that task to appear: the endpoint answers "no run
+    known" before the first plan is written, and a task that is simply not reported yet must
+    not read as settled. Returns the last body, settled or not, so the caller's assertion
+    prints what the run really looked like.
+    """
+    import time
+
+    deadline = time.time() + timeout_secs
+    body: dict = {}
+    while time.time() < deadline:
+        resp = api_session.get(f"{backend_url}/api/files/{file_uuid}/post-processing", timeout=30)
+        assert resp.status_code == 200, (
+            f"post-processing read: {resp.status_code} {resp.text[:200]}"
+        )
+        body = resp.json()
+        tasks = body.get("tasks") or {}
+        known = body.get("run_at") is not None and bool(tasks)
+        open_tasks = [k for k, v in tasks.items() if v["state"] in _OPEN_POST_PROCESSING_STATES]
+        if (
+            known
+            and not open_tasks
+            and (require_task is None or tasks.get(require_task, {}).get("at", 0.0) > newer_than)
+        ):
+            return body
+        time.sleep(3)
+    return body
+
+
 class TestMockedAsrHappyPath:
     """Upload through the real pipeline against the mock Gladia server."""
 
@@ -626,6 +667,99 @@ class TestMockedAsrPlusMockedLlm:
                 api_session.delete(
                     f"{backend_url}/api/chat/conversations/{conversation_uuid}", timeout=15
                 )
+        finally:
+            with contextlib.suppress(requests.RequestException):
+                api_session.delete(
+                    f"{backend_url}/api/llm-settings/config/{llm_config['uuid']}",
+                    headers=headers,
+                    timeout=30,
+                )
+
+
+class TestPostProcessingOnRealWorkers:
+    """The per-file post-processing run (#1308), observed through its REST snapshot.
+
+    The notification card folds ``post_processing_status`` frames; the same states are served
+    by ``GET /api/files/{uuid}/post-processing`` for a card that missed frames, so asserting
+    the snapshot asserts what the workers really reported.
+    """
+
+    def test_run_settles_with_every_task_finished_cleanly(
+        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+    ):
+        status = _poll_status(api_session, backend_url, uploaded_file)
+        assert status == "completed", f"file did not complete (status={status})"
+
+        body = _post_processing_when_settled(
+            api_session, backend_url, uploaded_file, require_task="search_indexing"
+        )
+        tasks = body.get("tasks") or {}
+        assert body.get("run_at") is not None and tasks, f"no run was reported: {body}"
+        unfinished = {
+            k: v["state"] for k, v in tasks.items() if v["state"] not in ("done", "skipped")
+        }
+        assert not unfinished, f"post-processing did not settle cleanly: {unfinished}"
+        assert tasks["search_indexing"]["state"] == "done", tasks["search_indexing"]
+
+    def test_a_failing_llm_reports_the_summary_as_failed(
+        self, api_session: requests.Session, backend_url: str, uploaded_file: str
+    ):
+        """``mock-error`` answers HTTP 500 before any token: the summary task must say ``failed``."""
+        status = _poll_status(api_session, backend_url, uploaded_file)
+        assert status == "completed", f"file did not complete (status={status})"
+        # A run must already be settled, or an earlier plan's states could be read as the result.
+        before = _post_processing_when_settled(api_session, backend_url, uploaded_file)
+        earlier_at = float(((before.get("tasks") or {}).get("summary") or {}).get("at", 0.0))
+
+        csrf_token = api_session.cookies.get("csrf_token")
+        assert csrf_token, "api_session has no csrf_token cookie"
+        headers = {"X-CSRF-Token": csrf_token}
+        llm_resp = api_session.post(
+            f"{backend_url}/api/llm-settings",
+            json={
+                "name": f"Mock LLM error {uploaded_file[:8]}",
+                "provider": "custom",
+                "model_name": "mock-error",
+                "base_url": "http://mock-llm:5199/v1",
+                "api_key": "mock-key-not-secret",
+            },
+            headers=headers,
+            timeout=30,
+        )
+        assert llm_resp.status_code == 200, llm_resp.text[:300]
+        llm_config = llm_resp.json()
+        try:
+            # The throwaway module user's own active pointer: the summary task resolves the
+            # owner's active config, and this user is deleted at module teardown.
+            active = api_session.post(
+                f"{backend_url}/api/llm-settings/set-active",
+                json={"configuration_id": llm_config["uuid"]},
+                headers=headers,
+                timeout=30,
+            )
+            assert active.status_code == 200, active.text[:300]
+
+            triggered = api_session.post(
+                f"{backend_url}/api/files/{uploaded_file}/summarize",
+                json={"force_regenerate": True},
+                headers=headers,
+                timeout=30,
+            )
+            assert triggered.status_code == 200, (
+                f"summarize refused: {triggered.status_code} {triggered.text[:300]}"
+            )
+
+            body = _post_processing_when_settled(
+                api_session,
+                backend_url,
+                uploaded_file,
+                timeout_secs=240,
+                require_task="summary",
+                newer_than=earlier_at,
+            )
+            summary = (body.get("tasks") or {}).get("summary")
+            assert summary is not None, f"no summary task was reported: {body}"
+            assert summary["state"] == "failed", f"expected failed, got {summary}: {body}"
         finally:
             with contextlib.suppress(requests.RequestException):
                 api_session.delete(

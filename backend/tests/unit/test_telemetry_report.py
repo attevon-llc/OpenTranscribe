@@ -22,6 +22,10 @@ import pytest
 from app.core import constants
 from app.services import telemetry
 
+# Opting in writes the unique telemetry `system_settings` rows inside the test's open
+# transaction; every module that does so shares one xdist group (see test_admin_telemetry.py).
+pytestmark = pytest.mark.xdist_group("telemetry_setting")
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOCS_PAGE = REPO_ROOT / "docs-site" / "docs" / "operations" / "telemetry.md"
 

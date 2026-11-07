@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 import pytest
 
 from app.services.redaction.llm_guard import is_local_provider
+from app.services.redaction.llm_guard import is_local_provider_at
 
 
 @dataclass
@@ -419,3 +420,28 @@ def test_the_unresolvable_reason_string_has_not_drifted():
     )
     assert addresses == []
     assert reason.startswith(_DNS_UNRESOLVABLE_REASON_PREFIX)
+
+
+# --------------------------------------------------------------------------- #
+# Classification from the pinned address (no second lookup)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    ("provider", "address", "expected"),
+    [
+        ("vllm", "10.0.0.5", True),
+        ("ollama", "127.0.0.1", True),
+        ("custom", "fd00::1", True),
+        ("custom", "::ffff:192.168.1.9", True),
+        ("vllm", "8.8.8.8", False),
+        ("custom", "2001:4860:4860::8888", False),
+        ("openai", "10.0.0.5", False),
+        ("vllm", "not-an-address", False),
+    ],
+)
+def test_pinned_address_classification(provider: str, address: str, expected: bool) -> None:
+    """The address a pinned call dials decides locality; a hosted provider never is."""
+    config = _Config(provider=provider, base_url="https://llm.example.org/v1")
+    with patch("socket.getaddrinfo", side_effect=AssertionError("must not resolve")):
+        assert is_local_provider_at(config, address) is expected

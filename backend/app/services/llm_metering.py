@@ -49,12 +49,19 @@ class LLMMeteringMixin(LLMHost):
     def is_local(self) -> bool:
         """Whether this service reaches a model on this deployment (``is_local_provider``).
 
-        Computed once per service: the check may resolve the endpoint's host name.
+        Once a call has pinned the endpoint, the answer is taken from the address it dials
+        (no second lookup); before that it may resolve the host name. Computed once per service.
         """
         if self._local is None:
             from app.services.redaction.llm_guard import is_local_provider
+            from app.services.redaction.llm_guard import is_local_provider_at
 
-            self._local = is_local_provider(self.config)
+            pinned = getattr(self, "_pinned", None)
+            self._local = (
+                is_local_provider_at(self.config, pinned[2].address)
+                if pinned is not None
+                else is_local_provider(self.config)
+            )
         return self._local
 
     def _budget_subject(self) -> int | None:

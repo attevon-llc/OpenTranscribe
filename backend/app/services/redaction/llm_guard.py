@@ -282,6 +282,23 @@ def is_local_provider(config: object) -> bool:
     return _custom_endpoint_is_local(getattr(config, "base_url", None))
 
 
+def is_local_provider_at(config: object, address: str) -> bool:
+    """:func:`is_local_provider` for a call already pinned to ``address``.
+
+    The pinned client resolved and validated the endpoint once and dials that address;
+    classifying it by a second lookup would answer for an address the request may not
+    have reached (and add a resolution the pin exists to avoid). Same provider rule, same
+    address ranges; an unparseable address reads remote.
+    """
+    provider = str(getattr(config, "provider", "") or "").strip().lower()
+    if provider not in _LOCAL_HOSTED_PROVIDERS and provider != "custom":
+        return False
+    try:
+        return _is_local_address(ipaddress.ip_address(address))
+    except ValueError:
+        return False
+
+
 #: The exact prefix `app.utils.url_validation.resolve_public_addresses` uses for its
 #: two "DNS lookup itself failed" reasons (`socket.gaierror`/`UnicodeError`), as opposed
 #: to its other rejection reasons (malformed URL, blocked/metadata hostname, blocked

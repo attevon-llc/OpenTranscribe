@@ -59,6 +59,7 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@videojs/html": "10.3.0",
     "axios": "^1.20.0",
     "date-fns": "^4.4.0",
     "dompurify": "^3.4.17",

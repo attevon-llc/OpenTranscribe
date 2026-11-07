@@ -241,3 +241,26 @@ should import `app.api` or `app.services` at module scope.
   "FileStatus.X"` is pinned by characterization tests and redaction/analytics comparisons.
 - The single-process Prometheus registry assumes **one** uvicorn worker (prod CMD has no
   `--workers`).
+
+## Caching rule
+
+**Cache only where invalidation is provable; where it is not, say why.** A TTL alone is not an
+invalidation: it bounds how stale an answer can be, it does not make it correct. Both existing
+caches key on a corpus version so a change makes old entries unreachable instead of waiting out
+the TTL. Do not add a third without naming what invalidates it.
+
+- `services/search/search_cache.py` (process-local, TTL `SEARCH_CACHE_TTL_SECONDS`, LRU): the
+  key folds in `_search_corpus_version()` (`:40`, used at `hybrid_search_service.py:223`; it reuses the chat counter) and the
+  requester's redaction-policy fingerprint (`_redaction_policy_fingerprint`, `:115`). It is
+  invalidated by any `bump_corpus_version()` call, and by a redaction-policy change through the key.
+  Not provable: when Redis is unreachable the version reads `"0"` (`:73`), so the cache falls back
+  to TTL-only.
+- `services/chat/retrieval_cache.py` (Redis, key `chat:corpus:version`): `corpus_version()` (`:45`)
+  is in every key; `bump_corpus_version()` (`:75`) is the only invalidation. Callers: chunk
+  indexing/deletion (`search/indexing_service.py:269`, `search/indexing/chunk_plane.py:75`), the ACL
+  rewrite (`tasks/search_file_field_tasks.py:134`, after its `update_by_query` loop), rename
+  propagation (`tasks/rename_propagation_task.py:293`), takedown (`services/takedown_service.py:366,516`)
+  and collection changes (`api/endpoints/media_collections.py:346`). The key is deliberately
+  ACL-blind (module docstring); a share revocation is covered only by that ACL-rewrite bump.
+  Not provable: the counter is global and best-effort (a failed bump or a Redis outage leaves a
+  stale entry for up to the TTL; the bump never raises).

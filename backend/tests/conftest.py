@@ -397,9 +397,13 @@ def _skip_celery_dispatch():
     ``task.delay(...)`` still published to the broker. On a developer host that
     silently targeted whatever Redis answered on localhost:6379 (an unrelated
     container), and against the real stack Redis (localhost:5177, auth'd) it
-    500s. Patching ``Task.apply_async`` (which ``.delay`` wraps) makes the
-    skip-switch actually cover dispatch, with a fake AsyncResult id for code
-    that records task ids.
+    500s. Patching ``Task.apply_async`` (which ``.delay`` wraps) and the app's
+    ``celery_app.send_task`` (dispatch by task name, which never goes through a
+    ``Task``) makes the skip-switch actually cover dispatch, with a fake
+    AsyncResult id for code that records task ids. Without the second patch a
+    by-name dispatch spent ~19 s retrying an unreachable broker per call. The
+    instance, not the ``Celery`` class: the live broker suites build Celery apps
+    of their own and must keep a real ``send_task``.
     """
     if os.environ.get("SKIP_CELERY") != "True":
         yield
@@ -409,7 +413,12 @@ def _skip_celery_dispatch():
 
     fake_result = MagicMock(name="FakeAsyncResult")
     fake_result.id = "test-task-id"
-    with patch("celery.app.task.Task.apply_async", return_value=fake_result):
+    from app.core.celery import celery_app
+
+    with (
+        patch("celery.app.task.Task.apply_async", return_value=fake_result),
+        patch.object(celery_app, "send_task", return_value=fake_result),
+    ):
         yield
 
 

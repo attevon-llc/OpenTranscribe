@@ -7,7 +7,7 @@
 #     --arm old=@module --arm new=~/ot-cleanup-work/summary-eval/arms/new.json \
 #     [--inputs gate|dev|smoke] [--runs 5] [--judge haiku|none] [--keep-stack] \
 #     [--llm-base-url URL]      # a vLLM is already up: skip stack and GPU management
-#     [--port-offset N] [--budget-hours 4] [--resume-dir DIR] [--remote-leg] [--dry-run]
+#     [--port-offset N] [--concurrency N] [--budget-hours 4] [--resume-dir DIR] [--remote-leg] [--dry-run]
 #
 # --remote-leg adds Q2: one I1 summary per arm through the Anthropic dialect (Haiku 4.5, which still
 # accepts the assistant prefill and temperature the app sends), as an output-shape check. It needs
@@ -45,6 +45,7 @@ KEEP_STACK=false
 EXTERNAL_URL=""
 BUDGET_HOURS=4
 RESUME_DIR=""
+CONCURRENCY=1
 REMOTE_LEG=false
 DRY_RUN=false
 declare -a ARMS=()
@@ -62,6 +63,7 @@ while [[ $# -gt 0 ]]; do
         --keep-stack)     KEEP_STACK=true ;;
         --llm-base-url)   EXTERNAL_URL="${2:?}"; shift ;;
         --budget-hours)   BUDGET_HOURS="${2:?}"; shift ;;
+        --concurrency)    CONCURRENCY="${2:?--concurrency needs a number}"; shift ;;
         --resume-dir)     RESUME_DIR="${2:?}"; shift ;;
         --remote-leg)     REMOTE_LEG=true ;;
         --dry-run)        DRY_RUN=true ;;
@@ -72,6 +74,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 case "$INPUTS" in gate|dev|smoke) ;; *) echo "error: --inputs must be gate, dev or smoke" >&2; exit "$EXIT_MISUSE" ;; esac
+[[ "$CONCURRENCY" =~ ^[1-9][0-9]*$ ]] || { echo "error: --concurrency must be a positive integer" >&2; exit "$EXIT_MISUSE"; }
 case "$JUDGE" in haiku|none) ;; *) echo "error: --judge must be haiku or none" >&2; exit "$EXIT_MISUSE" ;; esac
 if [[ ${#ARMS[@]} -lt 2 ]]; then
     echo "error: --arm old=... and --arm new=... are both required" >&2
@@ -235,7 +238,7 @@ measure() {
     local image
     image="$(vllm_image)"
     bench run --inputs "$INPUTS" --runs "$RUNS" "${ARM_ARGS[@]}" --lock "$LOCK_DIR" \
-        --llm-base-url "$LLM_URL" --vllm-image "${image:-unknown}" --run-dir "$RUN_DIR" \
+        --llm-base-url "$LLM_URL" --vllm-image "${image:-unknown}" --run-dir "$RUN_DIR" --concurrency "$CONCURRENCY" \
         ${noctl[@]+"${noctl[@]}"} ${resume[@]+"${resume[@]}"} || return $?
     if [[ "$INPUTS" != smoke ]]; then
         bench replay-merge --inputs "$INPUTS" "${ARM_ARGS[@]}" --lock "$LOCK_DIR" --llm-base-url "$LLM_URL" --run-dir "$RUN_DIR" || return $?

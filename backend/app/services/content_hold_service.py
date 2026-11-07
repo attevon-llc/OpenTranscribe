@@ -5,9 +5,11 @@ file is held is answered by ``hold_guard`` and nowhere else; this module only ch
 that answer reads.
 
 **Writes never commit.** Every function here adds rows and flushes; the endpoint commits once.
-What must happen only AFTER the commit (the storage object lock, the "a hold was lifted" nudge to
-the erasure sweep, and the audit event, which would otherwise describe a change that then rolled
-back) is returned in a :class:`HoldChange` and performed by :func:`finish_hold_change`.
+The audit event is staged in that same transaction by :func:`record_hold_change` (the
+transactional outbox, v459, issue #1329), so it commits or rolls back with the hold. What must
+happen only AFTER the commit (the storage object lock, the "a hold was lifted" nudge to the
+erasure sweep, and handing the staged event to the audit sink) is returned in a
+:class:`HoldChange` and performed by :func:`finish_hold_change`.
 
 A hold's ``reason`` and ``matter_ref`` are administrator text. They are stored, shown to the
 organization's administrators, and nothing else: not in an audit event, not over a socket, not in
@@ -16,7 +18,6 @@ any file or collection response.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
@@ -38,16 +39,16 @@ from app.models.content_hold import SCOPE_FILE
 from app.models.content_hold import ContentHold
 from app.models.content_hold import ContentHoldFile
 from app.models.media import MediaFile
+from app.services import audit_outbox
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
+from app.services.content_audit import stage_content_event
 from app.services.hold_guard import hold_states
 
 if TYPE_CHECKING:
     from fastapi import Request
 
     from app.models.user import User
-
-logger = logging.getLogger(__name__)
 
 #: Most files one file-scoped hold may name in a single request.
 MAX_FILES_PER_HOLD = 500
@@ -224,14 +225,39 @@ def release_hold(
     )
 
 
+def record_hold_change(
+    db: Session, request: Request | None, actor: User, change: HoldChange
+) -> None:
+    """Stage the hold's audit event in the caller's transaction. Call it BEFORE the commit.
+
+    Raises like any write of that transaction: a hold whose record cannot be kept is not placed.
+    """
+    details: dict[str, Any] = {"scope": change.hold.scope, "file_count": change.file_count}
+    # Name the files: the hold's file links cascade away with a deleted file, so once a held file
+    # is gone this event is the only record of what the hold covered. Ids only, never a name.
+    if change.file_uuids:
+        details["file_uuids"] = sorted(change.file_uuids)[:MAX_AUDITED_FILE_UUIDS]
+    if change.hold.collection_id is not None and change.hold.collection is not None:
+        details["collection_uuid"] = str(change.hold.collection.uuid)
+    stage_content_event(
+        db,
+        request,
+        event=change.event,
+        actor=actor,
+        resource=AuditedResource.of("content_hold", change.hold),
+        details=details,
+    )
+
+
 def finish_hold_change(
     db: Session, request: Request | None, actor: User, change: HoldChange
 ) -> None:
-    """After the commit: storage locks, the erasure-sweep nudge and the audit event.
+    """After the commit: storage locks, the erasure-sweep nudge and delivery of the audit event.
 
     Never raises. The object lock is advisory (the database is the source of truth); a lifted
     hold nudges the erasure sweep for every file that is no longer held, the same hook the
-    platform's release uses (``takedown_service.release_file``).
+    platform's release uses (``takedown_service.release_file``). The event itself was committed
+    with the hold (:func:`record_hold_change`); a sink outage only delays it.
     """
     from app.services.minio_service import set_object_legal_hold
 
@@ -244,22 +270,7 @@ def finish_hold_change(
 
         for freed in change.unheld_files:
             notify_hold_released(freed)
-    details: dict[str, Any] = {"scope": change.hold.scope, "file_count": change.file_count}
-    # Name the files: the hold's file links cascade away with a deleted file, so once a held file
-    # is gone this event is the only record of what the hold covered. Ids only, never a name.
-    if change.file_uuids:
-        details["file_uuids"] = sorted(change.file_uuids)[:MAX_AUDITED_FILE_UUIDS]
-    if change.hold.collection_id is not None and change.hold.collection is not None:
-        details["collection_uuid"] = str(change.hold.collection.uuid)
-    record_content_event(
-        db,
-        request,
-        event=change.event,
-        actor=actor,
-        resource=AuditedResource.of("content_hold", change.hold),
-        details=details,
-        dedup=False,
-    )
+    audit_outbox.deliver_staged(db)
 
 
 def record_edit_on_held_file(
@@ -274,19 +285,18 @@ def record_edit_on_held_file(
     speaker_uuids: Iterable[str] = (),
     bypass: Any = None,
 ) -> bool:
-    """Audit a transcript edit made while ``file`` is under a legal hold (issue #1307).
+    """Audit a transcript edit made while ``file`` is under a legal hold (issues #1307, #1329).
 
     A hold blocks destruction, not correction, so the edit goes ahead; what the hold changes
-    is that the edit is now on the record. Call it AFTER the edit committed, so the event never
-    describes a change that rolled back. A file nobody holds writes nothing (the ordinary edit
-    is not a governance event), and the event is not opt-in: held files are few and this is the
-    trail the hold exists to keep. It is best-effort by construction, though: the edit has
-    already committed when this runs, so a failed audit write cannot undo or refuse it. A
-    failure is logged at ERROR with the file's uuid (never its content), so a missing event is
-    visible to an operator instead of silent.
+    is that the edit is now on the record. Call it BEFORE the edit commits: the event is staged
+    in the same transaction (the transactional outbox, ``services/audit_outbox``), so the edit
+    and its record commit or roll back together, and an audit sink outage only delays the event
+    (the caller hands it to the sink with ``audit_outbox.deliver_staged`` after the commit). A
+    file nobody holds stages nothing (the ordinary edit is not a governance event), and the
+    event is not opt-in: held files are few and this is the trail the hold exists to keep.
 
-    Its own reads run in a SAVEPOINT: a database error here must not leave the caller's
-    transaction aborted for the writes that follow the call.
+    It raises like any other write of the edit's transaction: if the hold cannot be read or the
+    event cannot be staged, the edit fails with it rather than committing unrecorded.
 
     Args:
         kind: ``segment_edit`` (text or times), ``segment_speaker`` (reassignment) or
@@ -298,40 +308,30 @@ def record_edit_on_held_file(
         bypass: The request's platform bypass, so a support-access grant is recorded.
 
     Returns:
-        Whether an event was written. Never raises.
+        Whether an event was staged.
     """
-    try:
-        with db.begin_nested():
-            state = hold_states(db, [int(file.id)]).get(int(file.id))
-            if state is None or not state.held:
-                return False
-            details: dict[str, Any] = {
-                "kind": kind,
-                "fields": sorted(fields),
-                "held_by": state.held_by,
-            }
-            if segment_uuid is not None:
-                details["segment_uuid"] = segment_uuid
-            speakers = sorted(speaker_uuids)
-            if speakers:
-                details["speaker_uuids"] = speakers
-            return record_content_event(
-                db,
-                request,
-                event=AuditEventType.CONTENT_TRANSCRIPT_EDIT,
-                actor=actor,
-                resource=AuditedResource.file(file),
-                details=details,
-                dedup=False,
-                bypass=bypass,
-            )
-    except Exception:  # noqa: BLE001 - the edit is already committed; it cannot be un-made here
-        logger.error(
-            "held-file edit audit could NOT be recorded for file %s (the edit was committed)",
-            file.uuid,
-            exc_info=True,
-        )
+    state = hold_states(db, [int(file.id)]).get(int(file.id))
+    if state is None or not state.held:
         return False
+    details: dict[str, Any] = {
+        "kind": kind,
+        "fields": sorted(fields),
+        "held_by": state.held_by,
+    }
+    if segment_uuid is not None:
+        details["segment_uuid"] = segment_uuid
+    speakers = sorted(speaker_uuids)
+    if speakers:
+        details["speaker_uuids"] = speakers
+    return stage_content_event(
+        db,
+        request,
+        event=AuditEventType.CONTENT_TRANSCRIPT_EDIT,
+        actor=actor,
+        resource=AuditedResource.file(file),
+        details=details,
+        bypass=bypass,
+    )
 
 
 def record_hold_refusal(

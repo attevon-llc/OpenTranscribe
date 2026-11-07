@@ -211,8 +211,12 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   by `put_mapping`, once per process; a conflict is a WARNING and the next month is right).
   `build_org_scope_clause`'s legacy branch (events with no `organization_id`, attributed by the actor's
   membership) refuses any event that carries `tenant_scope`, so a member's personal-file event is never
-  readable by their org admins (finding F5). Content and governance events go through
-  `services/content_audit.record_content_event`, not `audit_logger.log` directly.
+  readable by their org admins (finding F5). Content events go through
+  `services/content_audit.record_content_event`, not `audit_logger.log` directly; governance events
+  (membership, visibility, holds, held-file edits) through `stage_content_event`, which writes them to
+  the `audit_outbox` table in the change's own transaction and has them relayed to `AuditLogger.deliver`
+  (OpenSearch doc id = event uuid, `op_type=create`, index month = the event's own timestamp; v459,
+  issue #1329). `AuditLogger.build_event` is `log`'s document without the write.
 - **`user_id` is the ACTOR; the subject goes in `target_user_id` / `target_username`**
   (issue #443). This is an access-control invariant, not a style rule: `query_audit_logs`
   filters on both `user_id` (actor) and `target_user_id` (subject, issue #828 — the write-side

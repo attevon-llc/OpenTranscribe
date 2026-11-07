@@ -95,9 +95,17 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   text or reason in `details`. Don't call `audit_logger.log` directly for a content event.
   Routes call `record_file_event` (a row or a uuid; the uuid is resolved only after the opt-in gate, so
   the file page pays no query when auditing is off) after the read or the content exists, never before a
-  refusal. `AuditedResource.conversation` covers chat exports. Membership changes
-  (`collection.membership.change`) are governance events: always written, after the commit.
-  `tests/api/test_content_audit_events.py` pins one event per emit site.
+  refusal. `AuditedResource.conversation` covers chat exports. **Governance events** (membership,
+  visibility, hold place/release, a transcript edit on a held file) go through
+  `stage_content_event` instead, BEFORE the commit: it stages the event as an `audit_outbox` row in
+  the change's own transaction (`audit_outbox.py`, v459, issue #1329) and RAISES on failure, so the
+  change and its record commit or roll back together. After the commit, call
+  `audit_outbox.deliver_staged(db)` (never raises; a sink outage leaves the row pending for the
+  `audit.outbox_relay` beat task, which retries with backoff; the sink id is the event uuid and the
+  write is create-only, so a resend never duplicates). `content.hold.refused` and the opt-in events
+  stay best-effort through `record_content_event`.
+  `tests/api/test_content_audit_events.py` pins one event per emit site; `tests/unit/test_audit_outbox.py`
+  pins commit/rollback, retry and exactly-once delivery.
 - **Holds** — `hold_guard.py` is the ONE answer to "is this file held by anyone"
   (platform `media_file.legal_hold` OR an active organization `content_hold`): `hold_state` /
   `hold_states` per file, `held_pred` / `not_held_pred` inside a query, `is_held(file)` for a loaded
@@ -105,9 +113,10 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   uuids; the reason never appears). Never read `MediaFile.legal_hold` to decide whether to destroy
   or restart a clock (`test_hold_guard_single_source.py` fails on it). `content_hold_service.py`
   places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`);
-  it never commits, and what must follow the commit (storage object
-  lock, the erasure-sweep nudge, the audit event) is a `HoldChange` that `finish_hold_change`
-  performs. `content_hold_queries.py` holds the read-side questions.
+  it never commits. The endpoint stages the audit event with `record_hold_change` BEFORE its
+  commit; what must follow the commit (storage object lock, the erasure-sweep nudge, delivering the
+  staged event) is a `HoldChange` that `finish_hold_change` performs. `record_edit_on_held_file` is
+  likewise called BEFORE the edit's commit and raises rather than let an edit commit unrecorded. `content_hold_queries.py` holds the read-side questions.
 - **Org audit view** — `org_audit_view.py` resolves `actor_display` / `target_display` /
   `resource_display` for the organization admin's audit screen at READ time (three queries per page), and
   only inside the org: a non-member (left, operator, failed login) or another tenant's / personal /

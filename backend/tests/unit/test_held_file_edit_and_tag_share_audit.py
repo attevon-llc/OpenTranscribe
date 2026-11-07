@@ -4,13 +4,16 @@ Two gaps the content-governance work left:
 
 1. A hold blocks destruction, not correction, so editing a held file's transcript stays
    allowed. "Allowed" must not mean "invisible": each edit made while the file is held now
-   writes ``content.transcript.edit`` through the one content-audit write path.
+   stages ``content.transcript.edit`` in the edit's own transaction (the transactional outbox,
+   issue #1329), so the edit and its record commit or roll back together.
 2. Tag-share events still carried ``details.resource_name`` (the tag's name) after collection
    events had dropped theirs. A tag name is user text and may be sensitive; an audit log is
    read by people who may not see the tag.
 
-In-process: the audit logger and the hold lookup are the seams, so a regression in either
-the call sites or the event body fails here without a database.
+In-process: the outbox stage, the audit logger and the hold lookup are the seams, so a
+regression in the call sites, their order against the commit, or the event body fails here
+without a database. The database half (commit/rollback, relay, idempotency) is
+``test_audit_outbox.py``.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from app.api.endpoints.tags import sharing
 from app.auth.audit_events import AuditEventType
 from app.schemas.transcript import SegmentSpeakerUpdate
 from app.schemas.transcript import TranscriptSegmentUpdate
+from app.services import audit_outbox
 from app.services import content_audit
 from app.services import content_hold_service
 from app.services.content_hold_service import record_edit_on_held_file
@@ -66,6 +70,18 @@ def audit_log(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return log
 
 
+@pytest.fixture
+def staged(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """``audit_outbox.stage``, recorded: its keyword arguments are ``AuditLogger.log``'s."""
+    stage = MagicMock(name="audit_outbox.stage", return_value="event-uuid")
+    monkeypatch.setattr(audit_outbox, "stage", stage)
+    return stage
+
+
+def _staged(stage: MagicMock) -> list[dict[str, Any]]:
+    return [dict(call.kwargs) for call in stage.call_args_list]
+
+
 def _hold(monkeypatch: pytest.MonkeyPatch, file_id: int, state: HoldState | None) -> None:
     result = {file_id: state} if state is not None else {}
     monkeypatch.setattr(content_hold_service, "hold_states", lambda db, ids: result)
@@ -78,7 +94,7 @@ def _events(log: MagicMock) -> list[dict[str, Any]]:
 # ------------------------------------------------------------------ the audit helper
 
 
-def test_an_edit_on_an_org_held_file_writes_a_transcript_edit_event(monkeypatch, audit_log):
+def test_an_edit_on_an_org_held_file_stages_a_transcript_edit_event(monkeypatch, staged):
     file = _file()
     _hold(monkeypatch, file.id, HoldState(platform=False, org_hold_uuids=("hold-1",)))
 
@@ -93,7 +109,7 @@ def test_an_edit_on_an_org_held_file_writes_a_transcript_edit_event(monkeypatch,
     )
 
     assert written is True
-    (event,) = _events(audit_log)
+    (event,) = _staged(staged)
     assert event["event_type"] is AuditEventType.CONTENT_TRANSCRIPT_EDIT
     assert event["resource_type"] == "media_file"
     assert event["resource_uuid"] == str(file.uuid)
@@ -107,7 +123,7 @@ def test_an_edit_on_an_org_held_file_writes_a_transcript_edit_event(monkeypatch,
     }
 
 
-def test_a_platform_hold_is_recorded_as_such(monkeypatch, audit_log):
+def test_a_platform_hold_is_recorded_as_such(monkeypatch, staged):
     file = _file(organization_id=None)
     _hold(monkeypatch, file.id, HoldState(platform=True))
 
@@ -115,12 +131,12 @@ def test_a_platform_hold_is_recorded_as_such(monkeypatch, audit_log):
         MagicMock(), None, _actor(), file, kind="segment_speaker", segment_uuid="seg-2"
     )
 
-    (event,) = _events(audit_log)
+    (event,) = _staged(staged)
     assert event["details"]["held_by"] == ["platform"]
     assert event["tenant_scope"] == "personal"
 
 
-def test_an_edit_on_a_free_file_writes_nothing(monkeypatch, audit_log):
+def test_an_edit_on_a_free_file_stages_nothing(monkeypatch, staged):
     file = _file()
     _hold(monkeypatch, file.id, None)
 
@@ -129,10 +145,10 @@ def test_an_edit_on_a_free_file_writes_nothing(monkeypatch, audit_log):
     )
 
     assert written is False
-    audit_log.log.assert_not_called()
+    staged.assert_not_called()
 
 
-def test_the_event_never_carries_text_titles_or_values(monkeypatch, audit_log):
+def test_the_event_never_carries_text_titles_or_values(monkeypatch, staged):
     file = _file()
     _hold(monkeypatch, file.id, HoldState(platform=False, org_hold_uuids=("h",)))
 
@@ -146,36 +162,55 @@ def test_the_event_never_carries_text_titles_or_values(monkeypatch, audit_log):
         fields=["text"],
     )
 
-    body = json.dumps(_events(audit_log), default=str)
+    body = json.dumps(_staged(staged), default=str)
     assert SECRET_TEXT not in body
     assert SECRET_TITLE not in body
     assert "Confidential" not in body
 
 
-def test_an_audit_failure_never_fails_the_edit(monkeypatch, audit_log):
+def test_a_sink_outage_never_reaches_the_edit(monkeypatch, audit_log):
+    """Staging writes a row in the edit's transaction; the sink is not touched until later."""
     file = _file()
     _hold(monkeypatch, file.id, HoldState(platform=True))
-    audit_log.log.side_effect = RuntimeError("opensearch down")
+    deliver = MagicMock(name="deliver", side_effect=RuntimeError("down"))
+    monkeypatch.setattr(audit_outbox.audit_logger, "deliver", deliver)
+    db = MagicMock(name="db")
 
     assert (
-        record_edit_on_held_file(
-            MagicMock(), None, _actor(), file, kind="segment_edit", segment_uuid="s"
-        )
-        is False
+        record_edit_on_held_file(db, None, _actor(), file, kind="segment_edit", segment_uuid="s")
+        is True
     )
+    (row,) = [call.args[0] for call in db.add.call_args_list]
+    assert row.event_type == AuditEventType.CONTENT_TRANSCRIPT_EDIT.value
+    assert row.payload["resource_uuid"] == str(file.uuid)
+    audit_log.log.assert_not_called()
+    deliver.assert_not_called()
 
 
-def test_a_failing_hold_lookup_never_fails_the_edit(monkeypatch, audit_log):
+def test_a_failing_hold_lookup_fails_the_edit_instead_of_committing_it_unrecorded(
+    monkeypatch, staged
+):
+    """The lookup runs in the edit's transaction; swallowing it would commit an unrecorded edit."""
+
     def _boom(db, ids):
         raise RuntimeError("db hiccup")
 
     monkeypatch.setattr(content_hold_service, "hold_states", _boom)
-    assert (
+    with pytest.raises(RuntimeError, match="db hiccup"):
         record_edit_on_held_file(
             MagicMock(), None, _actor(), _file(), kind="segment_edit", segment_uuid="s"
         )
-        is False
-    )
+    staged.assert_not_called()
+
+
+def test_a_failing_stage_fails_the_edit(monkeypatch):
+    file = _file()
+    _hold(monkeypatch, file.id, HoldState(platform=True))
+    monkeypatch.setattr(audit_outbox, "stage", MagicMock(side_effect=RuntimeError("no insert")))
+    with pytest.raises(RuntimeError, match="no insert"):
+        record_edit_on_held_file(
+            MagicMock(), None, _actor(), file, kind="segment_edit", segment_uuid="s"
+        )
 
 
 # ------------------------------------------- the real edit endpoints reach the helper
@@ -218,14 +253,14 @@ def _edit_text(monkeypatch, file: Any, segment: Any):
     )
 
 
-def test_editing_segment_text_on_a_held_file_writes_an_audit_event(monkeypatch, audit_log):
+def test_editing_segment_text_on_a_held_file_stages_an_audit_event(monkeypatch, staged):
     file, segment = _file(), _segment()
     _hold(monkeypatch, file.id, HoldState(platform=False, org_hold_uuids=("hold-1",)))
 
     result = _edit_text(monkeypatch, file, segment)
 
     assert result.text == SECRET_TEXT, "the edit itself must still go through on a held file"
-    (event,) = _events(audit_log)
+    (event,) = _staged(staged)
     assert event["event_type"] is AuditEventType.CONTENT_TRANSCRIPT_EDIT
     assert event["details"]["kind"] == "segment_edit"
     assert event["details"]["fields"] == ["text"]
@@ -233,14 +268,53 @@ def test_editing_segment_text_on_a_held_file_writes_an_audit_event(monkeypatch, 
     assert SECRET_TEXT not in json.dumps(event, default=str)
 
 
-def test_editing_segment_text_on_a_free_file_writes_no_audit_event(monkeypatch, audit_log):
+def test_editing_segment_text_on_a_free_file_stages_no_audit_event(monkeypatch, staged):
     file, segment = _file(), _segment()
     _hold(monkeypatch, file.id, None)
 
     result = _edit_text(monkeypatch, file, segment)
 
     assert result.text == SECRET_TEXT
-    audit_log.log.assert_not_called()
+    staged.assert_not_called()
+
+
+def _order_recorder(monkeypatch: pytest.MonkeyPatch, db: MagicMock) -> list[str]:
+    """Record, in order, the stage call, every commit and the post-commit delivery."""
+    order: list[str] = []
+    monkeypatch.setattr(audit_outbox, "stage", lambda db, **kw: order.append("stage"))
+    monkeypatch.setattr(audit_outbox, "deliver_staged", lambda db: order.append("deliver"))
+    db.commit.side_effect = lambda: order.append("commit")
+    return order
+
+
+def test_the_segment_text_event_is_staged_before_the_edit_commits(monkeypatch):
+    file, segment = _file(), _segment()
+    _hold(monkeypatch, file.id, HoldState(platform=True))
+    monkeypatch.setattr(crud, "get_media_file_by_uuid", lambda *a, **k: file)
+    db = MagicMock(name="db")
+    db.query.return_value.options.return_value.filter.return_value.first.return_value = segment
+    order = _order_recorder(monkeypatch, db)
+    monkeypatch.setattr(
+        "app.services.redaction.service.RedactionService.redetect_edited_segment",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "app.services.search.reindex_dispatch.dispatch_transcript_reindex", lambda **k: None
+    )
+    monkeypatch.setattr(
+        "app.services.analytics_service.AnalyticsService.refresh_analytics", lambda *a: True
+    )
+
+    crud.update_single_transcript_segment(
+        db,
+        str(file.uuid),
+        str(segment.uuid),
+        TranscriptSegmentUpdate(text=SECRET_TEXT),
+        _actor(),
+        request=None,
+    )
+
+    assert order[:3] == ["stage", "commit", "deliver"], order
 
 
 @pytest.fixture
@@ -256,14 +330,24 @@ def speaker_edit_collaborators(monkeypatch: pytest.MonkeyPatch) -> Any:
     return file, segment
 
 
-def test_reassigning_a_speaker_on_a_held_file_writes_an_audit_event(
-    monkeypatch, audit_log, speaker_edit_collaborators
+def test_reassigning_a_speaker_on_a_held_file_stages_an_audit_event_before_the_commit(
+    monkeypatch, speaker_edit_collaborators
 ):
     file, segment = speaker_edit_collaborators
     _hold(monkeypatch, file.id, HoldState(platform=True))
     db = MagicMock(name="db")
     db.query.return_value.filter.return_value.first.return_value = file
     ctx = RequestContext(user=cast("Any", _actor()), org_id=7, org_role=None)
+    order: list[str] = []
+    events: list[dict[str, Any]] = []
+
+    def _stage(db, **kwargs):
+        order.append("stage")
+        events.append(kwargs)
+
+    monkeypatch.setattr(audit_outbox, "stage", _stage)
+    monkeypatch.setattr(audit_outbox, "deliver_staged", lambda db: order.append("deliver"))
+    db.commit.side_effect = lambda: order.append("commit")
 
     transcript_segments.update_segment_speaker(
         str(segment.uuid),
@@ -274,10 +358,11 @@ def test_reassigning_a_speaker_on_a_held_file_writes_an_audit_event(
         request=MagicMock(name="request"),
     )
 
-    (event,) = _events(audit_log)
+    (event,) = events
     assert event["event_type"] is AuditEventType.CONTENT_TRANSCRIPT_EDIT
     assert event["details"]["kind"] == "segment_speaker"
     assert event["details"]["held_by"] == ["platform"]
+    assert order[:3] == ["stage", "commit", "deliver"], order
 
 
 # ------------------------------------------------------------- tag-share audit events
@@ -325,53 +410,3 @@ def test_the_tag_share_endpoints_cannot_bypass_the_helper():
     assert source.count("_audit_tag_share(") == 3  # the definition and the two endpoints
     assert source.count("audit_logger.log(") == 1
     assert "resource_name" not in source.replace("never put the tag's NAME", "")
-
-
-def test_a_failing_audit_lookup_leaves_the_session_usable_and_keeps_staged_work(
-    monkeypatch, audit_log, db_session, normal_user
-):
-    """The helper runs between an edit's commit and the writes that follow it.
-
-    A DB error inside it aborts the transaction; unless only the helper's own work is rolled
-    back, the next statement of the request fails and a committed edit answers 500.
-    """
-    from sqlalchemy import select
-    from sqlalchemy import text
-
-    from app.models.user import User
-
-    def broken(db, ids):
-        db.execute(text("SELECT * FROM a_table_that_does_not_exist"))
-
-    monkeypatch.setattr(content_hold_service, "hold_states", broken)
-    normal_user.full_name = "staged before the audit"
-
-    written = record_edit_on_held_file(
-        db_session, None, normal_user, _file(), kind="segment_edit", segment_uuid="s"
-    )
-
-    assert written is False
-    assert db_session.execute(text("SELECT 1")).scalar() == 1
-    staged = db_session.execute(select(User.full_name).where(User.id == normal_user.id)).scalar()
-    assert staged == "staged before the audit"
-
-
-def test_a_failed_audit_is_reported_at_error_level_and_never_raises(monkeypatch, caplog):
-    """The edit has committed, so the audit cannot refuse it; the loss must not be silent."""
-    file = _file()
-
-    def _broken(db, ids):
-        raise RuntimeError("audit store unavailable")
-
-    monkeypatch.setattr(content_hold_service, "hold_states", _broken)
-
-    with caplog.at_level("WARNING", logger=content_hold_service.logger.name):
-        written = record_edit_on_held_file(
-            MagicMock(), None, _actor(), file, kind="segment_edit", segment_uuid="seg-1"
-        )
-
-    assert written is False
-    [record] = [r for r in caplog.records if r.name == content_hold_service.logger.name]
-    assert record.levelname == "ERROR"
-    assert str(file.uuid) in record.getMessage()
-    assert SECRET_TITLE not in record.getMessage()

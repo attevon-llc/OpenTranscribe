@@ -329,11 +329,11 @@ def update_segment_speaker(
 
     # Update the segment's speaker
     segment.speaker_id = new_speaker_id  # type: ignore[assignment]
-    db.commit()
-    db.refresh(segment)
 
-    # Editing a held file is allowed, but it is audited (issue #1307). After the commit, so a
-    # rolled-back edit leaves no event; writes nothing for a file nobody holds.
+    # Editing a held file is allowed, but it is audited (issues #1307, #1329). Staged in the
+    # edit's own transaction, so the edit and its record commit or roll back together; stages
+    # nothing for a file nobody holds.
+    from app.services import audit_outbox
     from app.services.content_hold_service import record_edit_on_held_file
 
     record_edit_on_held_file(
@@ -345,6 +345,9 @@ def update_segment_speaker(
         segment_uuid=segment_uuid,
         bypass=ctx.bypass,
     )
+    db.commit()
+    db.refresh(segment)
+    audit_outbox.deliver_staged(db)
 
     # Handle side effects of speaker change (cleanup orphans, refresh analytics, embeddings)
     cleanup_residual = _handle_speaker_change(

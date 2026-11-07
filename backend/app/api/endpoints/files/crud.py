@@ -424,11 +424,10 @@ def update_single_transcript_segment(
 
         RedactionService.redetect_edited_segment(db, db_file, segment)
 
-    db.commit()
-    db.refresh(segment)
-
-    # Editing a held file is allowed, but it is audited (issue #1307). After the commit, so a
-    # rolled-back edit leaves no event; writes nothing for a file nobody holds.
+    # Editing a held file is allowed, but it is audited (issues #1307, #1329). Staged in the
+    # edit's own transaction, so the edit and its record commit or roll back together; stages
+    # nothing for a file nobody holds.
+    from app.services import audit_outbox
     from app.services.content_hold_service import record_edit_on_held_file
 
     record_edit_on_held_file(
@@ -441,6 +440,10 @@ def update_single_transcript_segment(
         fields=[f for f in mutable_segment_fields if f in update_fields],
         bypass=bypass,
     )
+
+    db.commit()
+    db.refresh(segment)
+    audit_outbox.deliver_staged(db)
 
     # The text is what search/RAG chunk documents are built from — a stale
     # index otherwise serves the pre-edit wording indefinitely (issue #666).

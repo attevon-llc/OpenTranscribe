@@ -33,14 +33,10 @@ from app.api.endpoints.media_collections_access import _collection_held
 from app.api.endpoints.media_collections_access import _get_prompt_info
 from app.api.endpoints.media_collections_access import _hold_refusal
 from app.api.endpoints.media_collections_access import _resolve_prompt_uuid
-from app.api.endpoints.media_collections_access import _tenant_scope
 from app.api.endpoints.media_collections_listing import list_collections
-from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
-from app.auth.audit_events import AuditOutcome
 from app.core.constants import NOTIFICATION_TYPE_COLLECTION_ACCESS_CHANGED
 from app.db.base import get_db
-from app.middleware.audit import get_request_context
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.user import User
@@ -50,7 +46,10 @@ from app.schemas.collection import CollectionUpdate
 from app.schemas.collection import CollectionVisibilityUpdate
 from app.schemas.collection import CollectionWithCount
 from app.schemas.media import CollectionResponse
+from app.services import audit_outbox
 from app.services.collection_visibility import members_without_access
+from app.services.content_audit import AuditedResource
+from app.services.content_audit import stage_content_event
 from app.services.content_hold_queries import collection_has_active_hold
 from app.services.permission_service import PermissionService
 from app.services.request_context import RequestContext
@@ -331,12 +330,27 @@ def set_collection_visibility(
     previous = collection.visibility
     if body.visibility != previous:
         collection.visibility = body.visibility
+        db.flush()
+        lost_sight = members_without_access(db, collection)
+        # Staged in the change's own transaction (issue #1329): the visibility change and its
+        # record commit or roll back together.
+        stage_content_event(
+            db,
+            request,
+            event=AuditEventType.COLLECTION_VISIBILITY_CHANGE,
+            actor=current_user,
+            resource=AuditedResource.collection(collection),
+            details={
+                "from": previous,
+                "to": body.visibility,
+                "members_who_lost_access": len(lost_sight),
+            },
+        )
         db.commit()
         db.refresh(collection)
 
         from app.services.chat.retrieval_cache import bump_corpus_version
 
-        lost_sight = members_without_access(db, collection)
         for member_id in lost_sight:
             send_ws_event(
                 member_id,
@@ -344,25 +358,7 @@ def set_collection_visibility(
                 {"collection_uuid": str(collection.uuid)},
             )
         bump_corpus_version()
-
-        req_ctx = get_request_context(request)
-        audit_logger.log(
-            event_type=AuditEventType.COLLECTION_VISIBILITY_CHANGE,
-            outcome=AuditOutcome.SUCCESS,
-            user_id=current_user.id,
-            username=str(current_user.email),
-            source_ip=req_ctx["source_ip"],
-            user_agent=req_ctx["user_agent"],
-            organization_id=collection.organization_id,
-            resource_type="collection",
-            resource_uuid=str(collection.uuid),
-            tenant_scope=_tenant_scope(collection),
-            details={
-                "from": previous,
-                "to": body.visibility,
-                "members_who_lost_access": len(lost_sight),
-            },
-        )
+        audit_outbox.deliver_staged(db)
 
     result = CollectionSchema.model_validate(collection)
     prompt_uuid, prompt_name = _get_prompt_info(collection)

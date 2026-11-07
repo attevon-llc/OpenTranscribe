@@ -3,7 +3,8 @@
 Each test drives a real route as a member of an organization and reads what reached the audit
 logger. The recorder replaces ``audit_logger.log`` on the shared singleton, so it sees the
 events written by the shared writer (``services/content_audit``) AND by the routes that call the
-logger directly (collection and tag shares).
+logger directly (collection and tag shares); it also records the governance events staged in the
+transactional outbox (``audit_outbox.stage``, issue #1329).
 
 What is pinned, per emit site: the event type, ``organization_id`` and ``tenant_scope`` taken
 from the RESOURCE (not the request), ``resource_uuid``, and the one detail that tells the
@@ -31,6 +32,7 @@ from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
 from app.models.media import TranscriptSegment
 from app.models.topic import TopicSuggestion
+from app.services import audit_outbox
 from app.services import content_audit
 from app.services.auto_label_service import AutoLabelService
 from app.services.system_settings_service import set_setting
@@ -68,9 +70,20 @@ class _BrokenRedis:
 
 @pytest.fixture()
 def events(monkeypatch) -> list[dict]:
-    """Every audit event written during the test, as the keyword arguments of ``log``."""
+    """Every audit event written during the test, as the keyword arguments of ``log``.
+
+    Governance events are staged in the change's own transaction (``audit_outbox.stage``, issue
+    #1329) with the same keyword arguments, and still staged for real, so both are recorded.
+    """
     written: list[dict] = []
     monkeypatch.setattr(audit_logger, "log", lambda **kw: written.append(kw))
+    real_stage = audit_outbox.stage
+
+    def _stage(db, **kw):
+        written.append(kw)
+        return real_stage(db, **kw)
+
+    monkeypatch.setattr(audit_outbox, "stage", _stage)
     return written
 
 
@@ -352,7 +365,7 @@ def test_removing_a_file_that_was_never_a_member_records_nothing(client, gov, ev
 def test_an_auto_label_join_is_a_membership_change_by_the_files_owner(gov, events):
     collection = gov.collection(gov.alice, name="Retail")
     media_file = gov.file(gov.alice)
-    AutoLabelService(gov.db)._announce_collection_joins(media_file, [collection])
+    AutoLabelService(gov.db)._stage_collection_join_events(media_file, [collection])
 
     event = _one(events, AuditEventType.COLLECTION_MEMBERSHIP_CHANGE)
     assert event["user_id"] == gov.alice.id
@@ -367,7 +380,7 @@ def test_an_auto_label_join_is_a_membership_change_by_the_files_owner(gov, event
 
 
 def test_the_topic_suggestion_path_is_what_calls_the_auto_label_announcement(gov, events):
-    """The announcement is wired into ``auto_apply_suggestions``, not merely defined."""
+    """The membership event is wired into ``auto_apply_suggestions``, not merely defined."""
     media_file = gov.file(gov.alice)
     suggestion = TopicSuggestion(
         media_file_id=media_file.id,

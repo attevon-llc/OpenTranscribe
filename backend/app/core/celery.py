@@ -216,6 +216,7 @@ celery_app = Celery(
         "app.tasks.chat_retention",
         "app.tasks.legal_retention",
         "app.tasks.audit_retention",
+        "app.tasks.audit_outbox_relay",
         "app.tasks.voiceprint_retention",
         "app.tasks.erasure_reconciliation",
         "app.tasks.erasure_receipt_reverify",

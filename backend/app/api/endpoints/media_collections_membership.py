@@ -37,9 +37,10 @@ from app.models.user import User
 from app.schemas.collection import CollectionMemberAdd
 from app.schemas.collection import CollectionMemberRemove
 from app.schemas.media import PaginatedMediaFileResponse
+from app.services import audit_outbox
 from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
 from app.services.content_audit import AuditedResource
-from app.services.content_audit import record_content_event
+from app.services.content_audit import stage_content_event
 from app.services.content_hold_queries import held_by_collection_hold
 from app.services.formatting_service import FormattingService
 from app.services.privacy.redact_view import PrivacyView
@@ -78,14 +79,15 @@ def _record_membership_change(
     added: list[str],
     removed: list[str],
 ) -> None:
-    """Audit files added to / removed from a collection (always recorded, issue #1277).
+    """Audit files added to / removed from a collection (always recorded, issues #1277, #1329).
 
     ``added`` / ``removed`` are file uuids. The event carries the exact counts and at most
-    ``MAX_MEMBERSHIP_UUIDS`` uuids; never a name. Written after the change commits.
+    ``MAX_MEMBERSHIP_UUIDS`` uuids; never a name. Staged in the change's own transaction (call it
+    BEFORE the commit), so the change and its record commit or roll back together.
     """
     if not added and not removed:
         return
-    record_content_event(
+    stage_content_event(
         db,
         request,
         event=AuditEventType.COLLECTION_MEMBERSHIP_CHANGE,
@@ -97,7 +99,6 @@ def _record_membership_change(
             "file_uuids": (added + removed)[:MAX_MEMBERSHIP_UUIDS],
             "source": "manual",
         },
-        dedup=False,
     )
 
 
@@ -166,6 +167,15 @@ def add_media_to_collection(
         added_file_ids.append(media_file_id)
         added_count += 1
 
+    added_set = set(added_file_ids)
+    _record_membership_change(
+        db,
+        request,
+        current_user,
+        collection,
+        added=[str(f.uuid) for f in media_files if f.id in added_set],
+        removed=[],
+    )
     db.commit()
 
     # Joining a held collection holds the file (the CollectionMember insert covers it); mirror
@@ -180,14 +190,7 @@ def add_media_to_collection(
 
     if added_file_ids and _membership_affects_index(db, collection):
         update_file_access_index.delay(added_file_ids)
-    _record_membership_change(
-        db,
-        request,
-        current_user,
-        collection,
-        added=[str(f.uuid) for f in media_files if f.id in set(added_file_ids)],
-        removed=[],
-    )
+    audit_outbox.deliver_staged(db)
 
     return {
         "message": f"Added {added_count} media files to collection",
@@ -257,11 +260,6 @@ def remove_media_from_collection(
         )
         .delete(synchronize_session=False)
     )
-
-    db.commit()
-
-    if media_file_ids and _membership_affects_index(db, collection):
-        update_file_access_index.delay(media_file_ids)
     _record_membership_change(
         db,
         request,
@@ -270,6 +268,12 @@ def remove_media_from_collection(
         added=[],
         removed=[str(uuid) for fid, uuid in resolved if fid in present_ids],
     )
+
+    db.commit()
+
+    if media_file_ids and _membership_affects_index(db, collection):
+        update_file_access_index.delay(media_file_ids)
+    audit_outbox.deliver_staged(db)
 
     return {
         "message": f"Removed {removed_count} media files from collection",

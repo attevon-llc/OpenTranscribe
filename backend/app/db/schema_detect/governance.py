@@ -1,4 +1,4 @@
-"""Schema detection, v434-v458: data-only resets, provenance, takedowns, policy, holds, legal
+"""Schema detection, v434-v459: data-only resets, provenance, takedowns, policy, holds, legal
 acceptance, erasure receipts, audit-row guards, voiceprint consent and unique object keys.
 
 The data-only revisions (v434, v436, v439) key on the ABSENCE of the rows they rewrite, read
@@ -6,7 +6,7 @@ through each revision's own ``DETECT_SQL`` so detection and rewrite cannot drift
 processing provenance, correction carry-over, the password-age column, legal acceptance, the
 takedown origin/notice/notification tables, organization policy, collection visibility,
 content holds, the one-active-task guard, speaker identity source, and the v0.6.1 compliance
-revisions (v450-v458).
+revisions (v450-v458) and the governance audit outbox (v459).
 
 ``probe()`` issues this era's queries in the order the ladder always has; ``ARMS`` is this
 era's slice of the newest-first ladder (``ladder.py``), and its first arm is the top of it.
@@ -97,7 +97,7 @@ def _has_unstamped_voiceprint_suggestion(conn: Connection, tables: list[str]) ->
 
 @dataclass(frozen=True)
 class GovernanceFacts:
-    """Probe answers for v434-v458."""
+    """Probe answers for v434-v459."""
 
     has_unusable_pyannote_source: bool
     has_lite_local_source: bool
@@ -123,6 +123,7 @@ class GovernanceFacts:
     has_unique_object_keys: bool
     has_audit_guard_followups: bool
     has_speaker_machine_identity_index: bool
+    has_audit_outbox: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
@@ -273,6 +274,11 @@ def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
             "SELECT EXISTS(SELECT 1 FROM pg_indexes "
             "WHERE indexname = 'ix_speaker_machine_identity_media_file')"
         ),
+        # v459: the governance audit outbox (issue #1329). Keyed on the LAST CHECK the revision
+        # creates: a table without it must re-run the revision.
+        has_audit_outbox=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'ck_audit_outbox_status')"
+        ),
     )
 
 
@@ -313,7 +319,7 @@ def _matches_v451(f: SchemaFacts) -> bool:
     )
 
 
-# v452-v458 each add one probe to the previous rung: the step's revision, then its probe.
+# v452-v459 each add one probe to the previous rung: the step's revision, then its probe.
 _V452_ONWARD: tuple[tuple[str, str], ...] = (
     ("v452_add_erasure_receipt", "has_erasure_receipt"),
     ("v453_audit_row_immutability", "has_audit_row_guard"),
@@ -322,17 +328,31 @@ _V452_ONWARD: tuple[tuple[str, str], ...] = (
     ("v456_unique_object_keys", "has_unique_object_keys"),
     ("v457_audit_guard_followups", "has_audit_guard_followups"),
     ("v458_speaker_machine_identity_index", "has_speaker_machine_identity_index"),
+    ("v459_add_audit_outbox", "has_audit_outbox"),
 )
+
+
+#: Probes only their own rung requires. v458 runs no DDL (the runner builds its index after the
+#: upgrade, on every start until present), so a later revision's rung must not need its index:
+#: while the build is pending, a database carrying v459's table would be stamped v457 and re-run
+#: v459 for nothing.
+_OWN_RUNG_ONLY = frozenset({"has_speaker_machine_identity_index"})
 
 
 def _rung(probes: tuple[str, ...]) -> Callable[[SchemaFacts], bool]:
     return lambda f: _matches_v451(f) and all(getattr(f.governance, p) for p in probes)
 
 
+def _rung_probes(i: int) -> tuple[str, ...]:
+    """The probes rung ``i`` of ``_V452_ONWARD`` requires: its own, and every earlier one's."""
+    own = _V452_ONWARD[i][1]
+    return tuple(p for _, p in _V452_ONWARD[:i] if p not in _OWN_RUNG_ONLY) + (own,)
+
+
 ARMS: tuple[Arm, ...] = (
-    # v458 (the top of the ladder) down to v452, newest first.
+    # v459 (the top of the ladder) down to v452, newest first.
     *(
-        (_rung(tuple(p for _, p in _V452_ONWARD[: i + 1])), revision)
+        (_rung(_rung_probes(i)), revision)
         for i, (revision, _) in reversed(list(enumerate(_V452_ONWARD)))
     ),
     # v451: same as v450 plus the survival trigger.

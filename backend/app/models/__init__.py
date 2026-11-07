@@ -4,6 +4,7 @@ SQLAlchemy ORM models for OpenTranscribe.
 This package contains database models for all entities in the system.
 """
 
+from .audit_outbox import AuditOutbox
 from .auth_config import AuthConfig
 from .auth_config import AuthConfigAudit
 from .chat import ChatConversation
@@ -113,6 +114,7 @@ __all__ = [
     "EmailVerificationToken",
     "AuthConfig",
     "AuthConfigAudit",
+    "AuditOutbox",
     "UserGroup",
     "UserGroupMember",
     "GroupMapping",

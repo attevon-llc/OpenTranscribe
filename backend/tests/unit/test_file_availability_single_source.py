@@ -88,11 +88,6 @@ ALLOWED: dict[str, str] = {
     "api/endpoints/files/trash.py::_row": (
         "REPORTS deleted_at on a trash list row the trash lookup already selected."
     ),
-    "services/search/quarantine_exclusion.py::_quarantined_file_uuids": (
-        "The index-side quarantine set for search (the transcript index carries no takedown "
-        "field). Quarantine-only on purpose: the trash is filtered index-side by its own field "
-        "and post-filtered through file_availability.unavailable_among."
-    ),
 }
 
 

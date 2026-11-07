@@ -41,13 +41,7 @@ def _cfg(enabled: bool, categories: frozenset[str] = frozenset()) -> EffectiveRe
 
 
 def _patch_plane(monkeypatch, hits: list[dict], total: int | None = None) -> list[tuple]:
-    """Stand in for the real OpenSearch call; records every call's kwargs.
-
-    Also stubs ``_quarantined_file_uuids`` to an empty set — it opens its OWN
-    Postgres session (by design, see its docstring), which this file has no
-    business paying for just to prove `search_summaries`'s orchestration.
-    Tests exercising the quarantine-set passthrough itself override this.
-    """
+    """Stand in for the real OpenSearch call; records every call's kwargs."""
     calls: list[tuple] = []
 
     def _fake_search_summary_plane(self, query, user_id, **kwargs):
@@ -58,7 +52,6 @@ def _patch_plane(monkeypatch, hits: list[dict], total: int | None = None) -> lis
         "app.services.search.hybrid_search_service.HybridSearchService.search_summary_plane",
         _fake_search_summary_plane,
     )
-    monkeypatch.setattr("app.services.search.hybrid_search_service._quarantined_file_uuids", list)
     return calls
 
 
@@ -184,14 +177,10 @@ class TestSearchSummariesOrchestration:
         assert len(snippet) <= summary_search._MAX_SNIPPET_CHARS + 1  # +1 for the ellipsis char
         assert snippet.endswith("…")
 
-    def test_filter_kwargs_and_quarantine_set_are_forwarded_to_the_plane_search(self, monkeypatch):
+    def test_filter_kwargs_and_the_exemption_are_forwarded_to_the_plane_search(self, monkeypatch):
         """The whole point of #963's rewrite (closing #831): one filter builder,
         forwarded verbatim, not re-derived here."""
         calls = _patch_plane(monkeypatch, hits=[])
-        monkeypatch.setattr(
-            "app.services.search.hybrid_search_service._quarantined_file_uuids",
-            lambda: ["deadbeef"],
-        )
 
         search_summaries(
             _DB,
@@ -225,20 +214,13 @@ class TestSearchSummariesOrchestration:
         assert kwargs["collection_id"] == 5
         assert kwargs["title_filter"] == "kickoff"
         assert kwargs["file_uuid"] == "some-uuid"
-        assert kwargs["quarantined_file_uuids"] == ["deadbeef"]
+        assert kwargs["include_quarantined"] is False
 
-    def test_include_quarantined_skips_resolving_the_exclusion_set(self, monkeypatch):
+    def test_the_review_exemption_is_forwarded(self, monkeypatch):
         calls = _patch_plane(monkeypatch, hits=[])
 
-        def _boom():
-            raise AssertionError("quarantine resolution must not run for an admin review")
-
-        monkeypatch.setattr(
-            "app.services.search.hybrid_search_service._quarantined_file_uuids", _boom
-        )
-
         search_summaries(_DB, "roadmap", 1, organization_id=None, include_quarantined=True)
-        assert calls[0][2]["quarantined_file_uuids"] == []
+        assert calls[0][2]["include_quarantined"] is True
 
 
 # --------------------------------------------------------------------------- #

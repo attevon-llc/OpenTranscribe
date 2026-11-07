@@ -2,7 +2,8 @@
 
 The tenant and quarantine chokepoints live here: :func:`_accessible_scoped_files` (the Postgres
 predicate every Postgres-backed shape builds through) and :func:`_unavailable_among` (the
-post-filter for the OpenSearch-backed shapes, whose index carries no quarantine field). Both are
+backstop for the OpenSearch-backed shapes, whose index excludes trashed and quarantined files
+through the ``availability`` stamp but may hold a document the stamp has not reached). Both are
 shared by :mod:`app.services.chat.aggregation_service`,
 :mod:`app.services.chat.aggregation_speakers` and :mod:`app.services.chat.recurrence_service`.
 """
@@ -304,7 +305,8 @@ def _files_matching(
     whose documents carry no title yields ``""`` — never a fabricated name.
 
     Callers must post-filter the result through ``_unavailable_among`` — this
-    function is index-only and the index carries no quarantine field at all.
+    function is index-only, and a document the ``availability`` stamp has not
+    reached yet still reads as available.
     """
     body = {
         "size": 0,

@@ -32,9 +32,9 @@ that runs off this host?") off where an LLM runs. This is a **display**
 surface — no model is involved in serving a search result — so there is no
 egress event to exempt. Do not thread local-provider logic into this module.
 
-Quarantine (abuse/DMCA takedown) is resolved from Postgres by the caller
-(``hybrid_search_service._quarantined_file_uuids``, fail-closed) and applied
-as an OpenSearch PRE-filter inside ``search_summary_plane`` — not a post-filter
+Quarantine (abuse/DMCA takedown) is excluded through the ``availability`` field
+the takedown action stamps on the file's documents, as an OpenSearch PRE-filter
+inside ``search_summary_plane`` — not a post-filter
 on the hit list — because a post-filter cannot correct total/offset and a
 count that includes a taken-down file is a content oracle (issue #818, same
 class as #876's ``/search/count``).
@@ -163,12 +163,12 @@ def search_summaries(
 
     ``db`` is accepted for call-site symmetry with the endpoint (which already
     holds a session for redaction-config resolution) but is not read here:
-    quarantine exclusion (``hybrid_search_service._quarantined_file_uuids``)
-    deliberately opens its OWN short session rather than borrowing this one,
-    and access control itself is enforced by
-    :meth:`HybridSearchService._build_filters`'s ``accessible_user_ids``/org
-    clauses inside the OpenSearch query — the same authority the transcript
-    leg uses, never a second SQL predicate here.
+    access control, the trash and the quarantine are enforced by
+    :meth:`HybridSearchService._build_filters`'s ACL clause inside the
+    OpenSearch query (``accessible_user_ids``/org terms and the
+    ``availability`` field) — the same authority the transcript leg uses,
+    never a second SQL predicate here. ``include_quarantined`` is the
+    quarantine review exemption.
 
     Filter kwargs (``speakers``, ``tags``, ``date_from``, …) are forwarded
     straight into ``HybridSearchService.search_summary_plane`` /
@@ -194,14 +194,8 @@ def search_summaries(
             fail closed (503), not fall back to the unmasked summary. A
             detector outage on a leaf that is not returned does not raise
             this (issue #822's narrowing, preserved).
-        QuarantineExclusionUnavailableError: the quarantine exclusion set
-            could not be resolved from Postgres. The caller must fail closed
-            (503) rather than silently search without the exclusion.
     """
     from app.services.search.hybrid_search_service import HybridSearchService
-    from app.services.search.hybrid_search_service import _quarantined_file_uuids
-
-    quarantined = [] if include_quarantined else _quarantined_file_uuids()
 
     service = HybridSearchService()
     raw_hits, total = service.search_summary_plane(
@@ -223,7 +217,7 @@ def search_summaries(
         language=language,
         title_filter=title_filter,
         file_uuid=file_uuid,
-        quarantined_file_uuids=quarantined,
+        include_quarantined=include_quarantined,
         exclude_file_uuids=exclude_file_uuids,
     )
 

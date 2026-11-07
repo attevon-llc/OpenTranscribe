@@ -111,8 +111,14 @@ def bridged_session(monkeypatch, gov):
 
 
 def _not_trashed(acl: dict) -> dict:
-    """The ACL as ``access_filter_clause`` returns it: ANDed with "not trashed" (#1101)."""
-    return {"bool": {"filter": [acl], "must_not": [{"term": {"availability": "trashed"}}]}}
+    """The ACL as ``access_filter_clause`` returns it: ANDed with "not trashed or quarantined"
+    (#1101, #1253)."""
+    return {
+        "bool": {
+            "filter": [acl],
+            "must_not": [{"terms": {"availability": ["trashed", "quarantined"]}}],
+        }
+    }
 
 
 def test_search_clause_adds_the_collection_arm_for_a_member_only(gov, org_files, bridged_session):

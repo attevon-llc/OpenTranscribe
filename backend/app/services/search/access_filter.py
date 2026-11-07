@@ -11,29 +11,38 @@ Every transcript-plane reader builds its ACL term through :func:`access_filter_c
 ``{"terms": {"accessible_user_ids": [...]}}`` beside it would silently hide files the rest of the
 app lets the caller open.
 
-The clause also drops trashed files (issue #1101): a trashed file's documents carry
-``availability: trashed`` (``availability_field``), and because every reader already ANDs this
-clause in, the one edit here removes the trash from search hits, counts, facets, suggestions, the
-summary plane and chat chunk/digest retrieval at once, with no per-file id list in the query.
+The clause also drops trashed and quarantined files (issues #1101, #1253): their documents carry
+``availability: trashed`` / ``quarantined`` (``availability_field``), and because every reader
+already ANDs this clause in, the one edit here removes them from search hits, counts, facets,
+suggestions, the summary plane and chat chunk/digest retrieval at once, with no per-file id list
+in the query. ``include_quarantined`` is the quarantine review exemption: search passes
+``file_availability.unavailable_list_exempt(bypass)``; chat never passes it (chat is a retrieval
+surface, not a review one).
 """
 
 import logging
 from typing import Any
 
 from app.core.constants import MAX_VISIBLE_COLLECTION_TERMS
-from app.services.search.availability_field import trashed_term
+from app.services.search.availability_field import unavailable_term
 
 logger = logging.getLogger(__name__)
 
 
-def access_filter_clause(user_id: int, organization_id: int | None) -> dict[str, Any]:
+def access_filter_clause(
+    user_id: int, organization_id: int | None, *, include_quarantined: bool = False
+) -> dict[str, Any]:
     """The ``filter`` clause matching the chunks ``user_id`` may read in the tenant scope.
 
-    ``acl AND NOT availability:trashed``. The ``must_not`` keeps a document written before the
-    ``availability`` field existed readable (no value is not "trashed").
+    ``acl AND NOT availability IN (trashed, quarantined)``, or ``NOT trashed`` alone with
+    ``include_quarantined``. The ``must_not`` keeps a document written before the
+    ``availability`` field existed readable (no value is not unavailable).
     """
     return {
-        "bool": {"filter": [_acl_clause(user_id, organization_id)], "must_not": [trashed_term()]}
+        "bool": {
+            "filter": [_acl_clause(user_id, organization_id)],
+            "must_not": [unavailable_term(include_quarantined=include_quarantined)],
+        }
     }
 
 

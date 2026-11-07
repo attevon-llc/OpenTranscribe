@@ -151,6 +151,7 @@ def _build_filters(
     exclude_file_uuids: list[str] | None = None,
     plane_clause: dict[str, Any] | None = None,
     speaker_field: str = "speaker",
+    include_quarantined: bool = False,
 ) -> list[dict[str, Any]]:
     """Build OpenSearch filter clauses.
 
@@ -172,13 +173,19 @@ def _build_filters(
     Postgres first, so share and quarantine semantics are decided there
     rather than trusting the denormalized fields on the OpenSearch doc.
 
+    ``include_quarantined`` is the quarantine review exemption
+    (``file_availability.unavailable_list_exempt(bypass)``): trashed and quarantined files'
+    documents are excluded inside the ACL clause, and only the quarantine is exempt.
+
     ``exclude_file_uuids`` drops the caller's hidden files (issue #1102,
     ``search/hidden_exclusion.py``); the caller leaves it empty for a request
     scoped to files it picked.
     """
     from app.services.search.tenant_scope import org_filter_clauses
 
-    filters: list[dict[str, Any]] = [access_filter_clause(user_id, organization_id)]
+    filters: list[dict[str, Any]] = [
+        access_filter_clause(user_id, organization_id, include_quarantined=include_quarantined)
+    ]
     filters.extend(org_filter_clauses(organization_id))
     # The chunk plane, compatibility-armed, UNLESS a caller passed its own
     # plane clause (issue #963: `search_summary_plane` passes

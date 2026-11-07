@@ -250,9 +250,8 @@ def list_media_files(
         effective_user_id = None
 
     # Abuse/DMCA: hide taken-down files from the gallery for non-admins.
-    base_query = exclude_unavailable(
-        base_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
-    )
+    include_quarantined = unavailable_list_exempt(ctx.bypass)
+    base_query = exclude_unavailable(base_query, include_quarantined=include_quarantined)
     # The caller's own view preference, applied after availability (which always wins).
     base_query = apply_hidden_mode(base_query, user_id, hidden)
 
@@ -273,6 +272,7 @@ def list_media_files(
         "user_id": effective_user_id,
         "owner_user_ids": resolve_owner_user_ids(db, owner),
         "organization_id": org_scope,
+        "include_quarantined": include_quarantined,
     }
 
     # A speaker filter matches the names the page shows, so a name withheld by the privacy

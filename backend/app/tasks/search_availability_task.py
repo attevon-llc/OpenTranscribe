@@ -1,18 +1,23 @@
-"""``search.availability_reconcile``: make the index's trash state converge (issue #1101).
+"""``search.availability_reconcile``: make the index's trash and takedown state converge.
+
+Issues #1101 (trash) and #1253 (quarantine).
 
 The work is ``services/search/availability_stamp.reconcile``. Two ways in:
 
-* **Dispatched with ``file_ids``** by a trash or restore whose synchronous stamp failed or left
-  documents unstamped. Retried with backoff while OpenSearch is unreachable; each run reads the
+* **Dispatched with ``file_ids``** by a trash, restore, quarantine or release whose synchronous
+  stamp failed or left documents unstamped. Retried with backoff while OpenSearch is unreachable; each run reads the
   rows' CURRENT state, so a restore that lands between retries is what gets stamped.
-* **Beat**, every 15 minutes, with no arguments: the whole trash. This is the guarantee for a
+* **Beat**, every 15 minutes, and **once per boot** (``startup/maintenance``), with no
+  arguments: every trashed and quarantined file, and every file the index still reads as
+  unavailable whose row is available again. The boot run is what stamps a takedown that
+  predates the field. This is the guarantee for a
   stamp that failed AND whose dispatch failed (broker down at the same moment), and for a
   document a concurrent writer landed after the stamp ran.
 
 Replayable after worker loss (``core/task_replay``): every run recomputes its target from
 Postgres and assigns the value whole, so a duplicate run reaches the same end state.
-Meanwhile the Postgres post-filter (``file_availability.unavailable_among``) keeps a trashed
-file's hits out of every result list; only counts and facets can lag.
+Meanwhile the Postgres post-filter (``file_availability.unavailable_among``) keeps a trashed or
+quarantined file's hits out of every result list; only counts, facets and suggestions can lag.
 """
 
 from __future__ import annotations
@@ -43,7 +48,7 @@ def _countdown(retries: int) -> int:
     max_retries=MAX_SCOPED_RETRIES,
 )
 def availability_reconcile(self: Any, file_ids: list[int] | None = None) -> dict[str, Any]:
-    """Stamp ``availability`` from Postgres: for ``file_ids``, or for the whole trash."""
+    """Stamp ``availability`` from Postgres: for ``file_ids``, or for every unavailable file."""
     from app.services.search.availability_stamp import reconcile
 
     try:

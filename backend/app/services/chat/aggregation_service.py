@@ -192,8 +192,8 @@ def answer_aggregation(
         if clause is None:
             return None
         matched = _files_matching(client, index, filters, clause)
-        # Quarantine post-filter: the index carries no quarantine field, so a
-        # taken-down file's uuid and TITLE would otherwise reach
+        # Quarantine post-filter, the backstop behind the index's `availability`
+        # stamp: an unstamped taken-down file's uuid and TITLE would otherwise reach
         # `format_counted_block`'s `<counted>` block and, per base rule 10, be
         # reported to the user as fact.
         quarantined = _unavailable_among(session_factory, (uuid for uuid, _title in matched))

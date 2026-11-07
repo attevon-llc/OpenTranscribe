@@ -1,27 +1,17 @@
-"""GET /search/filters must exclude quarantined files' facets (A2 leak class).
+"""GET /search/filters must exclude quarantined files' facets (A2 leak class, #1253).
 
-``takedown_service.quarantine_file`` writes only Postgres — no OpenSearch call
-exists anywhere in ``takedown_service.py`` — so before this fix a quarantined
-file's speaker names, tag names and upload-time date range kept appearing in
-this endpoint's facet aggregation for anyone who had access before the
-takedown, including the file's own owner (whom ``file_availability.is_unavailable``
-says must be treated as if the file no longer exists).
+There is no hit list here, only aggregated buckets, so a takedown has to be excluded inside the
+aggregation query itself. ``takedown_service.quarantine_file`` stamps
+``availability: quarantined`` on the file's documents (``availability_stamp``, an in-place
+``update_by_query``), and the ACL clause every facet query ANDs in excludes it, except under
+the review exemption (``is_admin`` = ``file_availability.unavailable_list_exempt``).
 
-``search.py``'s sibling ``search_summaries``/``_drop_quarantined_search_hits``
-already had the right shape for a *hit list* — resolve the quarantined uuids in
-Postgres, drop them from the OpenSearch response. There is no hit list here,
-only aggregated buckets, so the fix has to build the exclusion into the
-aggregation query itself
-(``HybridSearchService.get_available_filters``'s ``_quarantined_file_uuids()``
-+ a ``must_not`` clause) rather than post-filtering a response.
-
-Real OpenSearch is required: the thing under test is the query body actually
-excluding matching documents from `aggs`, which an in-memory stand-in cannot
-prove. ``_index_digest_plane``/``_quarantined_file_uuids`` open their own
-session — patching ``app.db.session_utils.session_scope`` to the test's
-``db_session`` is the same bridge ``test_digest_plane_opensearch.py`` and
-``test_chat_endpoints.py`` use, and without it a savepoint-isolated
-``MediaFile`` row is invisible to a genuinely separate connection.
+Real OpenSearch is required: the thing under test is the stamp landing on the documents and
+the query body actually excluding them from ``aggs``, which an in-memory stand-in cannot
+prove. The takedown and the stamp open their own sessions; patching
+``app.db.session_utils.session_scope`` to the test's ``db_session`` is the same bridge
+``test_digest_plane_opensearch.py`` uses, and without it a savepoint-isolated ``MediaFile``
+row is invisible to a genuinely separate connection.
 
 Point it at an isolated stack, never the shared dev one::
 
@@ -59,12 +49,8 @@ pytestmark = [
 def chunk_index(monkeypatch, db_session):
     """A throwaway chunks index with the REAL mapping, and ``session_scope`` bridged.
 
-    ``HybridSearchService._quarantined_file_uuids`` opens its own session — under the
-    savepoint harness a genuinely separate connection cannot see this test's
-    uncommitted ``MediaFile`` row, so without the bridge the quarantine exclusion
-    would silently resolve to an empty set and the fix's own test would pass
-    vacuously (exactly the class of bug ``test_digest_plane_opensearch.py``'s
-    docstring warns about).
+    The stamp is scoped to this index only: the transcript and speaker targets are pointed at
+    names that do not exist, so the takedown never touches a real index.
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client
@@ -84,6 +70,8 @@ def chunk_index(monkeypatch, db_session):
     client.indices.create(index=name, body=index_admin._get_index_body_with_dimension(384))
     try:
         monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", name)
+        monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", f"{name}_absent")
+        monkeypatch.setattr(settings, "OPENSEARCH_SPEAKER_INDEX", f"{name}_speakers_absent")
         monkeypatch.setattr(settings, "OPENSEARCH_NEURAL_SEARCH_ENABLED", False)
         pipelines.reset_neural_pipeline_state()
         yield client
@@ -92,13 +80,13 @@ def chunk_index(monkeypatch, db_session):
         pipelines.reset_neural_pipeline_state()
 
 
-def _user(db_session) -> User:
+def _user(db_session, *, admin: bool = False) -> User:
     user = User(
         email=f"quarantine_facet_{uuid_pkg.uuid4().hex[:10]}@example.com",
         hashed_password="x",
         is_active=True,
-        is_superuser=False,
-        role="user",
+        is_superuser=admin,
+        role="super_admin" if admin else "user",
         auth_type="local",
     )
     db_session.add(user)
@@ -111,7 +99,7 @@ def _media_file(db_session, user: User) -> MediaFile:
         uuid=uuid_pkg.uuid4(),
         user_id=user.id,
         filename="quarantine-facet.wav",
-        storage_path=f"x/{uuid_pkg.uuid4().hex}.wav",
+        storage_path="",
         file_size=1,
         content_type="audio/wav",
     )
@@ -123,13 +111,15 @@ def _media_file(db_session, user: User) -> MediaFile:
 def test_a_quarantined_files_facets_are_excluded_including_for_its_owner(chunk_index, db_session):
     """The fix: speaker/tag facets from a quarantined file vanish for its own owner.
 
-    Watched red against ``git archive HEAD``: the pre-fix ``get_available_filters``
-    filters only on ``accessible_user_ids`` + org, with no quarantine predicate at
-    all, so the distinctive speaker/tag survive the takedown for this test's owner.
+    The takedown goes through the real ``quarantine_file``, so this proves the stamp and
+    the reader together; release must bring the facets back.
     """
     from app.core.config import settings
     from app.services.search.hybrid_search_service import HybridSearchService
     from app.services.search.indexing_service import TranscriptIndexingService
+    from app.services.takedown_service import TakedownActor
+    from app.services.takedown_service import quarantine_file
+    from app.services.takedown_service import release_file
 
     user = _user(db_session)
     media_file = _media_file(db_session, user)
@@ -171,10 +161,15 @@ def test_a_quarantined_files_facets_are_excluded_including_for_its_owner(chunk_i
     assert distinctive_speaker in [s["name"] for s in before["speakers"]]
     assert distinctive_tag in [t["name"] for t in before["tags"]]
 
-    # Quarantine exactly the way takedown_service.quarantine_file does it:
-    # Postgres only, no OpenSearch write.
-    media_file.is_quarantined = True
-    db_session.commit()
+    admin = _user(db_session, admin=True)
+    quarantine_file(
+        db_session,
+        media_file,
+        actor=TakedownActor.platform(admin),
+        reason="takedown (test)",
+        legal_hold=False,
+        operator_action_reason="operator action (test)",
+    )
 
     after = service.get_available_filters(user_id=user.id, is_admin=False)
     after_speakers = [s["name"] for s in after["speakers"]]
@@ -192,4 +187,10 @@ def test_a_quarantined_files_facets_are_excluded_including_for_its_owner(chunk_i
     admin_speakers = [s["name"] for s in admin_view["speakers"]]
     assert distinctive_speaker in admin_speakers, (
         "an admin lost review visibility into a quarantined file's facets"
+    )
+
+    release_file(db_session, media_file, actor=TakedownActor.platform(admin), reason="released")
+    released = service.get_available_filters(user_id=user.id, is_admin=False)
+    assert distinctive_speaker in [s["name"] for s in released["speakers"]], (
+        "a released file's facets did not come back"
     )

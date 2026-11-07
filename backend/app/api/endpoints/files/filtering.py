@@ -307,6 +307,7 @@ def apply_transcript_search_filter(
     user_id: int | None = None,
     *,
     organization_id: int | None,
+    include_quarantined: bool = False,
 ) -> Query:
     """
     Apply transcript content search filter using OpenSearch.
@@ -326,6 +327,8 @@ def apply_transcript_search_filter(
             (#1027): the index query carries its own tenant gate rather than relying
             only on the org-scoped SQL query it is intersected with. That also keeps
             other tenants' hits from filling the 10,000-hit window below.
+        include_quarantined: The quarantine review exemption, the same value the SQL side
+            of the listing passes to ``exclude_unavailable``. Trashed files never match.
 
     Returns:
         Filtered query with only matching file IDs
@@ -363,8 +366,9 @@ def apply_transcript_search_filter(
         if user_id is not None:
             filter_clauses.append({"term": {"user_id": user_id}})
         filter_clauses.extend(org_filter_clauses(organization_id))
-        # A trashed file's transcript never matches (#1101); the SQL side drops it too.
-        filter_clauses.append(exclude_unavailable_clause())
+        # A trashed or quarantined file's transcript never matches (#1101, #1253); the SQL side
+        # drops it too, under the same review exemption.
+        filter_clauses.append(exclude_unavailable_clause(include_quarantined=include_quarantined))
 
         search_body: dict = {
             "query": {
@@ -532,6 +536,8 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
         query: Base query
         filters: Dictionary of filter parameters. ``organization_id`` is required —
             the request's tenant scope, forwarded to the transcript-index query.
+            ``include_quarantined`` is the review exemption the caller's SQL base
+            query was built with; it reaches the transcript-index query too.
 
     Returns:
         Filtered query
@@ -557,6 +563,7 @@ def apply_all_filters(query: Query, filters: dict) -> Query:
         filters.get("transcript_search"),
         user_id=filters.get("user_id"),
         organization_id=filters["organization_id"],
+        include_quarantined=bool(filters.get("include_quarantined", False)),
     )
 
     return query

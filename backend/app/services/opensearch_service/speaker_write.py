@@ -1,8 +1,9 @@
 """Writes of speaker (voiceprint) embeddings, single and bulk, v3 and v4.
 
-A per-file voiceprint document carries its file's trash state (``availability``, issue
-#1101), read from the row at write time (:func:`availability_by_file`), so a voice written
-for a trashed file is never matchable. The kNN readers exclude it with
+A per-file voiceprint document carries its file's availability (``availability``: trashed,
+quarantined or available, issues #1101, #1253), read from the row at write time
+(:func:`availability_by_file`), so a voice written for a trashed or taken-down file is never
+matchable. The kNN readers exclude it with
 ``availability_field.exclude_unavailable_clause``.
 """
 

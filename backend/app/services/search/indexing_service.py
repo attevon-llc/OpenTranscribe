@@ -78,10 +78,10 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
                 Includes owner + users/groups with collection shares.
                 If None, defaults to [user_id] (owner only).
             organization_id: The file's tenant (None = personal).
-            availability: The file's trash state, from
-                ``file_availability.index_availability`` (issue #1101). Stamped on every
-                chunk, digest and summary document, so a reindex of a trashed file writes
-                trashed documents. Every production caller passes it
+            availability: The file's trash/takedown state, from
+                ``file_availability.index_availability`` (issues #1101, #1253). Stamped on
+                every chunk, digest and summary document, so a reindex of a trashed or
+                quarantined file writes documents that stay excluded. Every production caller passes it
                 (``tests/unit/test_index_writers_stamp_availability.py``).
 
         Returns:

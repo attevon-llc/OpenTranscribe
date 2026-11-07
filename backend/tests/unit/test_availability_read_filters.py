@@ -6,7 +6,8 @@ ACL builder (``access_filter_clause``, which ``_build_filters``, suggestions, fa
 summary plane and chat aggregation all AND in), and the legacy ``transcripts`` readers. The
 speaker kNN bodies are guarded separately (``test_knn_bodies_exclude_unavailable.py``).
 
-The exclusion is ``must_not term availability: trashed`` and never a positive term: a document
+The exclusion is ``must_not terms availability: [trashed, quarantined]`` (``trashed`` alone under
+the quarantine review exemption) and never a positive term: a document
 written before the field existed has no value and must stay visible.
 
 The last test is the "10,001 trashed files still searches" property in the form a unit test
@@ -25,18 +26,20 @@ from typing import Any
 from sqlalchemy.orm import Query
 
 from app.models.media import MediaFile
+from tests.fixtures.opensearch_filter_eval import matches
 
-NOT_TRASHED = {"bool": {"must_not": [{"term": {"availability": "trashed"}}]}}
+UNAVAILABLE = {"terms": {"availability": ["trashed", "quarantined"]}}
 
 
 def _excludes_trashed(clause: dict[str, Any]) -> bool:
-    """True when ``clause`` (or a ``bool`` it nests) carries ``must_not availability:trashed``."""
-    trashed = {"term": {"availability": "trashed"}}
-    if clause == NOT_TRASHED:
-        return True
+    """True when ``clause`` (or a ``bool`` it nests) carries a ``must_not`` that a trashed
+    document matches."""
     inner = clause.get("bool", {})
     must_not = inner.get("must_not", [])
-    if trashed in (must_not if isinstance(must_not, list) else [must_not]):
+    if any(
+        matches({"availability": "trashed"}, q)
+        for q in (must_not if isinstance(must_not, list) else [must_not])
+    ):
         return True
     nested = inner.get("filter", [])
     return any(_excludes_trashed(c) for c in (nested if isinstance(nested, list) else [nested]))
@@ -50,7 +53,7 @@ def test_the_acl_clause_ands_in_not_trashed_and_keeps_the_acl():
     assert clause == {
         "bool": {
             "filter": [{"terms": {"accessible_user_ids": [7]}}],
-            "must_not": [{"term": {"availability": "trashed"}}],
+            "must_not": [UNAVAILABLE],
         }
     }
 
@@ -71,7 +74,7 @@ def test_the_org_acl_clause_excludes_the_trash_on_both_arms(monkeypatch):
 
     clause = access_filter_clause(7, 11)
 
-    assert clause["bool"]["must_not"] == [{"term": {"availability": "trashed"}}]
+    assert clause["bool"]["must_not"] == [UNAVAILABLE]
     (acl,) = clause["bool"]["filter"]
     assert {"terms": {"collection_ids": [3, 4]}} in acl["bool"]["should"]
 
@@ -149,15 +152,15 @@ def _filters_with_a_trash_of(monkeypatch, size: int) -> tuple[list[dict[str, Any
     reads: list[str] = []
     trash = [f"{i:08d}-0000-0000-0000-000000000000" for i in range(size)]
 
-    def _trashed_ids(*_a: Any, **_k: Any) -> list[int]:
-        reads.append("trashed_file_ids")
-        return list(range(size))
+    def _trashed_ids(*_a: Any, **_k: Any) -> dict[int, str]:
+        reads.append("unavailable_file_states")
+        return dict.fromkeys(range(size), "trashed")
 
     def _unavailable(*_a: Any, **_k: Any) -> set[str]:
         reads.append("unavailable_among")
         return set(trash)
 
-    monkeypatch.setattr(file_availability, "trashed_file_ids", _trashed_ids)
+    monkeypatch.setattr(file_availability, "unavailable_file_states", _trashed_ids)
     monkeypatch.setattr(file_availability, "unavailable_among", _unavailable)
     filters = _build_filters(
         user_id=7, speakers=None, tags=None, date_from=None, date_to=None, organization_id=None

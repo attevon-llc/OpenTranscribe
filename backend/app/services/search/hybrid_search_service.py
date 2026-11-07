@@ -4,7 +4,7 @@
 modules (``collapsed_search``, ``split_bm25``, ``two_phase_search``,
 ``summary_plane_search``, ``suggestions``) and the request pieces in ``filters``,
 ``query_building``, ``collapse_bodies``, ``result_processing`` and ``highlighting``, with
-``search_cache``, ``search_infra``, ``quarantine_exclusion`` and ``search_types`` beside
+``search_cache``, ``search_infra`` and ``search_types`` beside
 them. This module keeps the orchestration, the neural-availability probe and the
 corpus-wide match count.
 """
@@ -34,8 +34,6 @@ from app.services.search.filters import _collect_filters_applied
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import search_pipeline_id
 from app.services.search.hidden_exclusion import exclusion_fingerprint
-from app.services.search.quarantine_exclusion import SearchCountUnavailableError
-from app.services.search.quarantine_exclusion import _quarantined_file_uuids
 from app.services.search.query_building import _parse_query_operators
 from app.services.search.search_cache import _get_cached_response
 from app.services.search.search_cache import _make_cache_key
@@ -44,6 +42,7 @@ from app.services.search.search_cache import _resolve_redaction_config_for_cache
 from app.services.search.search_cache import _search_corpus_version
 from app.services.search.search_cache import _set_cached_response
 from app.services.search.search_infra import _ensure_infrastructure
+from app.services.search.search_types import SearchCountUnavailableError
 from app.services.search.search_types import SearchResponse
 
 if TYPE_CHECKING:  # pragma: no cover - import cost paid only by type checkers
@@ -151,6 +150,7 @@ class HybridSearchService:
         fusion: FusionConfig | None = None,
         sources: frozenset[str] | None = None,
         exclude_file_uuids: list[str] | None = None,
+        include_quarantined: bool = False,
     ) -> SearchResponse:
         """Execute hybrid search and return grouped results.
 
@@ -174,6 +174,8 @@ class HybridSearchService:
             title_filter: Optional filename/title substring filter.
             exclude_file_uuids: The caller's hidden files (issue #1102), dropped
                 before ranking. Its fingerprint is part of the cache key.
+            include_quarantined: The quarantine review exemption
+                (``file_availability.unavailable_list_exempt``). Part of the cache key.
 
         Returns:
             SearchResponse with grouped results.
@@ -230,6 +232,7 @@ class HybridSearchService:
             # SEARCH_CACHE_TTL_SECONDS.
             sources=sorted(sources) if sources is not None else None,
             hidden_files=exclusion_fingerprint(exclude_file_uuids),
+            include_quarantined=include_quarantined,
         )
         cached = _get_cached_response(cache_key)
         if cached:
@@ -266,6 +269,7 @@ class HybridSearchService:
             organization_id=organization_id,
             file_uuid=file_uuid,
             exclude_file_uuids=exclude_file_uuids,
+            include_quarantined=include_quarantined,
         )
         filters_applied = _collect_filters_applied(
             speakers=speakers,
@@ -464,20 +468,21 @@ class HybridSearchService:
 
         ``client is None`` and an empty/whitespace ``query`` both still return ``0``
         rather than raising — the first is "lite mode" (no OpenSearch client at all),
-        the second is "nothing to search for". Neither is a quarantine-exclusion
-        failure and neither has content to withhold, so ``0`` is the honest answer.
+        the second is "nothing to search for". Neither has content to withhold, so ``0`` is
+        the honest answer.
 
         Args:
             query: The search text.
             user_id: Current user id — scopes to ``accessible_user_ids``.
             file_uuid: Optional single-file scope. Callers (``search.py``) resolve
                 this through ``get_file_by_uuid_with_permission`` BEFORE calling
-                here, which already 404s a quarantined file — so this method does
-                not additionally apply the quarantine exclusion when scoped to one
-                file; there is nothing left for it to hide.
+                here, which already 404s a quarantined file for anyone the per-row
+                review exemption does not reach — so a scoped count keeps that one
+                file's quarantined documents; there is nothing left for it to hide.
             organization_id: Active org id (None = personal) — tenant gate.
-            is_admin: When True, skip the quarantine exclusion — the admin review
-                bypass every other quarantine-aware read surface applies.
+            is_admin: The quarantine review exemption
+                (``file_availability.unavailable_list_exempt``): quarantined files'
+                documents are counted. Trashed ones never are.
             fields: OpenSearch fields to query (defaults to content/content.exact,
                 the find-bar's original behaviour). Issue #760 reuses this method
                 for the per-source pill counts by passing ``["title"]`` /
@@ -503,8 +508,7 @@ class HybridSearchService:
             approximate-above-10,000 distinct-file count.
 
         Raises:
-            SearchCountUnavailableError: The quarantine exclusion set could not be
-                resolved, or the OpenSearch query itself failed. Either way this
+            SearchCountUnavailableError: The OpenSearch query failed, so this
                 count cannot be trusted (issue #817) — reporting it as ``0`` would
                 make this endpoint a content oracle for a file the caller cannot
                 see, since "0 matches" and "the search itself failed" would be
@@ -535,14 +539,11 @@ class HybridSearchService:
             file_uuid=file_uuid,
             organization_id=organization_id,
             exclude_file_uuids=exclude_file_uuids,
+            # A file-scoped count needs no quarantine exclusion of its own: the caller's
+            # permission check already refused the request unless the review exemption
+            # reaches that one file.
+            include_quarantined=is_admin or bool(file_uuid),
         )
-        # Same posture as `get_available_filters`: quarantine is Postgres-only,
-        # so an unscoped (whole-corpus) count has to exclude taken-down files
-        # itself. A file-scoped count needs no exclusion of its own — the
-        # caller's permission check already refused the request if that one
-        # file is quarantined.
-        quarantined_uuids = [] if (is_admin or file_uuid) else _quarantined_file_uuids()
-        query_must_not = [{"terms": {"file_uuid": quarantined_uuids}}] if quarantined_uuids else []
 
         text_query = self._build_text_query(clean, fields or ["content", "content.exact"])
         body: dict[str, Any] = {
@@ -552,7 +553,6 @@ class HybridSearchService:
                 "bool": {
                     "filter": filters,
                     "must": [text_query],
-                    **({"must_not": query_must_not} if query_must_not else {}),
                 }
             },
         }

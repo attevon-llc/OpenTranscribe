@@ -198,7 +198,7 @@ class TestSourceCounts:
         assert set(body["source_counts"].keys()) == {"content", "title", "speaker", "summary"}
 
     def test_a_failed_count_is_null_never_zero(self, client, user_token_headers, monkeypatch):
-        from app.services.search.quarantine_exclusion import SearchCountUnavailableError
+        from app.services.search.search_types import SearchCountUnavailableError
 
         _install_transcript_stub(monkeypatch)
         _install_summary_stub(monkeypatch)

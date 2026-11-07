@@ -78,8 +78,9 @@ def index_transcript(
         organization_id: The FILE's tenant (None = personal). Required so no writer can
             forget it (#1027): an org file's doc is stamped, a personal doc carries no
             field at all — the shape ``tenant_scope.org_filter_clauses`` gates on.
-        availability: The file's trash state (``file_availability.index_availability``,
-            issue #1101); every production caller passes it.
+        availability: The file's trash/takedown state
+            (``file_availability.index_availability``, issues #1101, #1253); every
+            production caller passes it.
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping indexing")

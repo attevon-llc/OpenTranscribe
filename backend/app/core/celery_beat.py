@@ -83,9 +83,9 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
     },
     "availability-reconcile": {
         "task": "search.availability_reconcile",
-        # Quarter-hourly at :08/:23/:38/:53. Makes the index's trash stamp agree with Postgres
-        # (issue #1101): a stamp that failed in the trash/restore request, or a document a
-        # concurrent writer landed after it. Idempotent update_by_query calls that match
+        # Quarter-hourly at :08/:23/:38/:53. Makes the index's trash and takedown stamp agree
+        # with Postgres (issues #1101, #1253): a stamp that failed in the trash, restore,
+        # quarantine or release request, or a document a concurrent writer landed after it. Idempotent update_by_query calls that match
         # nothing when the index already agrees.
         "schedule": crontab(minute="8,23,38,53"),
         "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE

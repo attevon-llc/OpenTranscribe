@@ -23,10 +23,11 @@ import this module.
     choke points (``uuid_helpers.get_file_by_uuid_with_permission``) turn into a 404.
   * :func:`unavailable_among` - which of a batch of uuids are unavailable, for the post-filters
     over index-backed results (search hits, chat evidence, aggregation, persisted citations).
-  * :func:`index_availability` / :func:`index_availability_by_id` / :func:`trashed_file_ids` -
-    the value every OpenSearch writer stamps into a document's ``availability`` field
-    (``search/availability_field``, issue #1101), so the index can exclude the trash itself.
-    Index-side the field tracks the trash only: quarantine stays on its Postgres-resolved list.
+  * :func:`index_availability` / :func:`index_availability_by_id` / :func:`unavailable_file_states`
+    - the value every OpenSearch writer stamps into a document's ``availability`` field
+    (``search/availability_field``, issues #1101, #1253), so the index can exclude the trash and
+    the quarantine itself. A file both trashed and quarantined reads ``trashed``: the trash has
+    no exemption, so it is the stronger state.
   * :func:`is_notification_suppressed` / :func:`is_notification_suppressed_for_uuid` /
     :func:`filter_suppressed_file_uuids` - the WebSocket-push twin: an unavailable file's
     identity must not reach a recipient over a live event any more than through a read surface
@@ -51,6 +52,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.media import MediaFile
 from app.services.search.availability_field import AVAILABLE
+from app.services.search.availability_field import QUARANTINED
 from app.services.search.availability_field import TRASHED
 from app.services.takedown_predicates import is_review_admin
 from app.services.takedown_predicates import quarantine_exempt
@@ -166,9 +168,18 @@ def unavailable_among(
 # --- index form -------------------------------------------------------------------------------
 
 
+def _index_value(deleted_at: Any, quarantined: bool) -> str:
+    if deleted_at is not None:
+        return TRASHED
+    return QUARANTINED if quarantined else AVAILABLE
+
+
 def index_availability(file: MediaFile) -> str:
-    """The ``availability`` value a document of ``file`` must carry: trashed, or available."""
-    return TRASHED if getattr(file, "deleted_at", None) is not None else AVAILABLE
+    """The ``availability`` value a document of ``file`` must carry: trashed, quarantined or
+    available, in that precedence."""
+    return _index_value(
+        getattr(file, "deleted_at", None), bool(getattr(file, "is_quarantined", False))
+    )
 
 
 def index_availability_by_id(db: Session, file_ids: Iterable[int]) -> dict[int, str]:
@@ -180,19 +191,27 @@ def index_availability_by_id(db: Session, file_ids: Iterable[int]) -> dict[int, 
     ids = sorted({int(i) for i in file_ids if i is not None})
     if not ids:
         return {}
-    rows = db.query(MediaFile.id, MediaFile.deleted_at).filter(MediaFile.id.in_(ids)).all()
-    return {int(row[0]): TRASHED if row[1] is not None else AVAILABLE for row in rows}
-
-
-def trashed_file_ids(db: Session) -> list[int]:
-    """Every trashed file's id, ascending: the set whose documents must read ``trashed``."""
     rows = (
-        db.query(MediaFile.id)
-        .filter(unavailable_pred(include_quarantined=True))
+        db.query(MediaFile.id, MediaFile.deleted_at, MediaFile.is_quarantined)
+        .filter(MediaFile.id.in_(ids))
+        .all()
+    )
+    return {int(row[0]): _index_value(row[1], bool(row[2])) for row in rows}
+
+
+def unavailable_file_states(db: Session) -> dict[int, str]:
+    """Every trashed or quarantined file's id and the value its documents must read.
+
+    The set the reconcile stamps. One indexed query; quarantine is rare and the trash is
+    bounded by its retention window.
+    """
+    rows = (
+        db.query(MediaFile.id, MediaFile.deleted_at, MediaFile.is_quarantined)
+        .filter(unavailable_pred())
         .order_by(MediaFile.id)
         .all()
     )
-    return [int(row[0]) for row in rows]
+    return {int(row[0]): _index_value(row[1], bool(row[2])) for row in rows}
 
 
 # --- WebSocket notification form --------------------------------------------------------------

@@ -2260,7 +2260,7 @@
         "type": "object"
       },
       "ChatAdminSettings": {
-        "description": "Platform-admin RAG knobs (all DB-backed SystemSettings; no ``.env`` vars).",
+        "description": "Platform-admin RAG knobs (all DB-backed SystemSettings; no ``.env`` vars).\n\nDefaults are the ``core.chat_defaults`` constants the server applies\n(``services/chat/settings.ChatSettings``), so the OpenAPI document cannot advertise others.",
         "properties": {
           "cache_ttl_seconds": {
             "default": 300,
@@ -2287,7 +2287,7 @@
             "type": "boolean"
           },
           "final_chunks": {
-            "default": 12,
+            "default": 40,
             "maximum": 100.0,
             "minimum": 1.0,
             "title": "Final Chunks",
@@ -2311,14 +2311,14 @@
             "type": "boolean"
           },
           "max_chunks_per_file": {
-            "default": 4,
+            "default": 12,
             "maximum": 50.0,
             "minimum": 1.0,
             "title": "Max Chunks Per File",
             "type": "integer"
           },
           "max_concurrent_streams": {
-            "default": 2,
+            "default": 6,
             "maximum": 20.0,
             "minimum": 1.0,
             "title": "Max Concurrent Streams",
@@ -2415,7 +2415,7 @@
             "type": "boolean"
           },
           "trace_enabled": {
-            "default": false,
+            "default": true,
             "title": "Trace Enabled",
             "type": "boolean"
           }
@@ -11866,7 +11866,7 @@
         "description": "A single protected media source configuration.",
         "properties": {
           "hostname": {
-            "description": "Hostname (e.g. media.example.com)",
+            "description": "Address: host[:port], or http(s)://host[:port] (default https)",
             "minLength": 1,
             "title": "Hostname",
             "type": "string"

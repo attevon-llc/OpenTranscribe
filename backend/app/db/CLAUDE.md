@@ -16,7 +16,7 @@ pending. `alembic upgrade head` by hand is **production-only**.
   era's `information_schema` probes (`probe()` → a frozen facts dataclass) and its slice of
   arms (`ARMS`, newest first): `legacy.py` v010-v366, `cloud_seams.py` v367-v376,
   `auth_identity.py` v377-v388, `ingest_tenancy.py` v389-v433, `governance.py` v434-v462,
-  `data_safety.py` v463 onward (its arms build on `governance.matches_v462`).
+  `data_safety.py` v463-v464 (its arms build on `governance.matches_v462`).
   `ladder.py` runs every probe oldest era first (`collect_facts`) and concatenates the slices
   newest era first (`LADDER`). Every arm's position is pinned without a database by
   `tests/unit/test_schema_detection_ladder.py`.

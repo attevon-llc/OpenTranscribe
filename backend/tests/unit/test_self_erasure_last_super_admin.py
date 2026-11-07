@@ -20,6 +20,7 @@ from app.core.security import get_password_hash
 from app.models.erasure import ErasureLedgerEntry
 from app.models.user import User
 from app.services import erasure_ledger_service as ledger
+from app.services import scheduled_erasure_service as executor
 from app.services import self_erasure_service as service
 from app.services.system_settings_service import set_setting
 
@@ -108,7 +109,7 @@ def test_two_due_super_admins_erase_exactly_one(
     other = _super_admin(db_session)
     first, second = _entry(db_session, super_admin_user), _entry(db_session, other)
 
-    ran = [service._execute_one(db_session, int(e.id), DUE) for e in (first, second)]
+    ran = [executor._execute_one(db_session, int(e.id), DUE) for e in (first, second)]
     db_session.expire_all()
 
     assert erased == [super_admin_user.id]
@@ -132,7 +133,7 @@ def test_super_admin_left_alone_after_the_other_goes_is_not_erased(
         other.is_superuser = False
     db_session.commit()
 
-    assert service._execute_one(db_session, int(entry.id), DUE) is False
+    assert executor._execute_one(db_session, int(entry.id), DUE) is False
     db_session.expire_all()
 
     assert erased == []
@@ -147,7 +148,7 @@ def test_a_super_admin_with_another_active_one_is_erased(
     _super_admin(db_session)
     entry = _entry(db_session, super_admin_user)
 
-    assert service._execute_one(db_session, int(entry.id), DUE) is True
+    assert executor._execute_one(db_session, int(entry.id), DUE) is True
 
     assert erased == [super_admin_user.id]
     assert audit_actions == []
@@ -156,7 +157,7 @@ def test_a_super_admin_with_another_active_one_is_erased(
 def test_a_non_admin_is_unaffected(db_session, normal_user, erased):
     entry = _entry(db_session, normal_user)
 
-    assert service._execute_one(db_session, int(entry.id), DUE) is True
+    assert executor._execute_one(db_session, int(entry.id), DUE) is True
 
     assert erased == [normal_user.id]
     assert db_session.get(ErasureLedgerEntry, entry.id).status == "pending"
@@ -167,10 +168,10 @@ def test_a_blocked_request_is_not_picked_up_again(db_session, super_admin_user, 
     entry = _entry(db_session, super_admin_user)
     other.is_active = False
     db_session.commit()
-    service._execute_one(db_session, int(entry.id), DUE)
+    executor._execute_one(db_session, int(entry.id), DUE)
 
     assert ledger.due_grace_entries(db_session, limit=10, now=DUE) == []
-    assert service._execute_one(db_session, int(entry.id), DUE) is False
+    assert executor._execute_one(db_session, int(entry.id), DUE) is False
     assert erased == []
 
 
@@ -181,7 +182,7 @@ def test_a_blocked_request_is_what_get_last_blocked_request_reports(
     entry = _entry(db_session, super_admin_user)
     other.is_active = False
     db_session.commit()
-    service._execute_one(db_session, int(entry.id), DUE)
+    executor._execute_one(db_session, int(entry.id), DUE)
     db_session.expire_all()
 
     blocked = service.get_last_blocked_request(db_session, int(super_admin_user.id))

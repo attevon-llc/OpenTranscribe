@@ -23,10 +23,11 @@ again, matching on **both** the id and the UUID: a restore rewinds the id sequen
 a later account can be issued an id the erased subject once held, and matching on id
 alone would erase an innocent bystander.
 
-**3. Self-service requests that came due (phase 0).**
-A request made under ``/users/me/erasure-request`` is a ``deferred`` / ``grace_period`` ledger
-entry. Once its ``scheduled_for`` has passed, ``self_erasure_service.execute_due_requests`` runs
-it; worst-case lag after the grace period is one beat interval. Until then it is invisible to
+**3. Scheduled erasures that came due (phase 0).**
+A self-service request (``/users/me/erasure-request``) or an organization admin's request is a
+``deferred`` / ``grace_period`` ledger entry. Once its ``scheduled_for`` has passed,
+``scheduled_erasure_service.execute_due_requests`` runs it as the scope it names; worst-case lag
+after the grace period is one beat interval. Until then it is invisible to
 phases 1 and 2 (``open_entries`` excludes it), and a cancelled one never runs.
 
 **4. Documents that came back in a search index (phase 4).**
@@ -132,47 +133,6 @@ def _subject_is_alive(db: Session, entry: ErasureLedgerEntry) -> bool:
     return False
 
 
-def _required_id(value: int | None, column: str) -> int:
-    """A subject id the ledger's CHECK constraint guarantees for this ``subject_type``."""
-    if value is None:
-        raise ValueError(f"erasure ledger entry has no {column}")
-    return value
-
-
-def _rerun(db: Session, entry: ErasureLedgerEntry) -> dict[str, Any]:
-    """Re-run the erasure this entry describes, updating the entry in place.
-
-    The existing entry is passed down so the retry updates it rather than opening a
-    second one — an SLA clock that restarted on every tick would never expire, which is
-    precisely the failure mode the ledger exists to prevent.
-    """
-    from app.services.erasure_org_member_rerun import cutoff_of
-    from app.services.gdpr_erasure_service import erase_file
-    from app.services.gdpr_erasure_service import erase_org_member_data
-    from app.services.gdpr_erasure_service import erase_organization
-    from app.services.gdpr_erasure_service import erase_user
-
-    if entry.subject_type == "user":
-        return erase_user(
-            db, _required_id(entry.subject_user_id, "subject_user_id"), ledger_entry=entry
-        )
-    if entry.subject_type == "file":
-        return erase_file(db, entry.subject_file_uuid, ledger_entry=entry)
-    if entry.subject_type == "organization":
-        return erase_organization(
-            db,
-            _required_id(entry.subject_organization_id, "subject_organization_id"),
-            ledger_entry=entry,
-        )
-    return erase_org_member_data(
-        db,
-        _required_id(entry.subject_user_id, "subject_user_id"),
-        _required_id(entry.subject_organization_id, "subject_organization_id"),
-        ledger_entry=entry,
-        created_before=cutoff_of(entry),
-    )
-
-
 @celery_app.task(
     bind=True,
     name="gdpr.erasure_reconcile",
@@ -193,15 +153,15 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=Tr
     from app.db.session_utils import session_scope
     from app.models.erasure import ErasureLedgerEntry
     from app.services import erasure_ledger_service as ledger
-    from app.services import self_erasure_service
+    from app.services import scheduled_erasure_service as scheduled_erasure
     from app.services.erasure_index_reconcile import run_index_phase
     from app.services.erasure_org_member_rerun import rerun_state
 
     retried = completed = resurrected = failures = 0
     org_member_rerun = org_member_needs_review = 0
 
-    # Phase 0 -- self-service requests whose grace period ran out. Their own sessions.
-    due = self_erasure_service.execute_due_requests()
+    # Phase 0 -- scheduled erasures (any scope) whose time has come. Their own sessions.
+    due = scheduled_erasure.execute_due_requests()
     failures += due["failures"]
 
     # Phase 1 — a SHORT session that decides the work and returns plain ids.
@@ -232,7 +192,7 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=Tr
                 entry = db.get(ErasureLedgerEntry, entry_id)
                 if entry is None:
                     continue
-                summary = _rerun(db, entry)
+                summary = scheduled_erasure.run_entry(db, entry)
                 if summary.get("complete") and not summary.get("legal_holds_skipped"):
                     completed += 1
         except Exception as e:  # noqa: BLE001 — one bad entry must not stop the pass
@@ -252,13 +212,13 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=Tr
                     if state.old_rows:
                         org_member_rerun += 1
                         ledger.record_resurrection(db, entry, store_key="pg.org_member")
-                        _rerun(db, entry)
+                        scheduled_erasure.run_entry(db, entry)
                     continue
                 if not _subject_is_alive(db, entry):
                     continue
                 resurrected += 1
                 ledger.record_resurrection(db, entry)
-                _rerun(db, entry)
+                scheduled_erasure.run_entry(db, entry)
         except Exception as e:  # noqa: BLE001
             failures += 1
             logger.error("Re-erasure after resurrection failed for entry %s: %s", entry_id, e)
@@ -298,6 +258,19 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=Tr
         "overdue": overdue,
         "truncated": retried >= MAX_OPEN_ENTRIES_PER_RUN,
     }
+
+
+@celery_app.task(name="gdpr.erasure_execute_due", priority=UtilityPriority.BACKGROUND)
+def erasure_execute_due() -> dict:
+    """Run the scheduled erasures whose time has come (hourly; issue #1105).
+
+    The latency half of phase 0: the daily sweep above runs the same executor and stays the
+    guarantee, this tick keeps a 72-hour organization erasure from running up to a day late.
+    Overlapping runs are safe: the executor locks each entry before flipping it to ``pending``.
+    """
+    from app.services import scheduled_erasure_service as scheduled_erasure
+
+    return {"status": "ok", **scheduled_erasure.execute_due_requests()}
 
 
 def notify_hold_released(file: MediaFile) -> None:

@@ -13,10 +13,8 @@ Surfaces:
     all-tenant view stays super-admin-only at ``GET /admin/audit-logs``.
     ``GET /org-admin/audit-logs/export`` (``org_admin_audit.py``) downloads the same
     view behind its own ``org.audit_logs`` capability.
-  - ``POST /org-admin/gdpr/erase-user/{uuid}``   — GDPR Art. 17 erasure of a
-    member of the caller's org.
-  - ``POST /org-admin/gdpr/erase-organization``  — GDPR erasure of the caller's
-    entire org (org data + member-owned org data + voiceprints).
+  - The scheduled GDPR erasure routes (``/org-admin/gdpr/erase-user/{uuid}``,
+    ``/gdpr/erase-organization``, ``/gdpr/erasures``) live in ``org_admin_erasure.py``.
 
 Community-edition invariance: with no orgs, the router's ``organizations``
 capability is off (``app.api.router``), so every route answers **404** before
@@ -42,7 +40,6 @@ from app.api.deps_context import require_org_admin
 from app.auth.audit_query import query_audit_logs
 from app.db.base import get_db
 from app.models.organization import OrganizationMembership
-from app.models.user import User
 from app.services.org_audit_view import member_id_for_uuid
 from app.services.org_audit_view import with_display_fields
 from app.services.request_context import RequestContext
@@ -217,72 +214,3 @@ def get_org_audit_logs(
             "logs": with_display_fields(db, org_id_of(ctx), int(ctx.user.id), result["logs"]),
         }
     return result
-
-
-@router.post("/gdpr/erase-user/{user_uuid}")
-def erase_org_member(
-    user_uuid: str,
-    db: Session = Depends(get_db),
-    ctx: RequestContext = Depends(require_org_admin),
-) -> dict[str, Any]:
-    """GDPR Art. 17 erasure of a member's data WITHIN the caller's organization.
-
-    The target must be a member of the caller's org (403 otherwise), and the
-    erasure is strictly org-scoped: only the target's rows stamped with THIS
-    org (media, org-scoped profiles/collections, the (user, org) voiceprint
-    docs) are destroyed. The target's personal-scope data, other orgs' data,
-    and their account survive — an org admin has authority over the tenant's
-    data, never over the person's account (full account erasure is the data
-    subject's own deletion flow or a platform super-admin action). Idempotent;
-    SLA 30 days; audit-logged with the acting admin by the service.
-    """
-    target = db.query(User).filter(User.uuid == user_uuid).first()
-    if target is None:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    member_ids = _org_member_user_ids(db, ctx.org_id)  # type: ignore[arg-type]
-    if int(target.id) not in member_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User is not a member of your organization",
-        )
-
-    from app.services.gdpr_erasure_service import erase_org_member_data
-
-    summary = erase_org_member_data(
-        db,
-        int(target.id),
-        int(ctx.org_id),  # type: ignore[arg-type]
-        actor_user_id=int(ctx.user.id),
-        actor_email=str(ctx.user.email),
-    )
-    return summary
-
-
-@router.post("/gdpr/erase-organization")
-def erase_own_organization(
-    confirm: bool = Query(False, description="Must be true to execute the irreversible erasure"),
-    db: Session = Depends(get_db),
-    ctx: RequestContext = Depends(require_org_admin),
-) -> dict[str, Any]:
-    """GDPR erasure of the caller's ENTIRE organization (irreversible).
-
-    Erases org-stamped media, member-owned org data, the org's voiceprints, and
-    the organization row itself. Members keep their personal accounts. Requires
-    ``confirm=true``. Idempotent; SLA 30 days.
-    """
-    if not confirm:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Pass confirm=true to execute organization erasure (irreversible)",
-        )
-
-    from app.services.gdpr_erasure_service import erase_organization
-
-    summary = erase_organization(
-        db,
-        int(ctx.org_id),  # type: ignore[arg-type]
-        actor_user_id=int(ctx.user.id),
-        actor_email=str(ctx.user.email),
-    )
-    return summary

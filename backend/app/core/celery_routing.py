@@ -186,6 +186,7 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     # GDPR Art. 17 reconciliation (issue #442): small DB reads plus, when there is
     # deferred work, object-storage and OpenSearch deletes. Utility — never gpu.
     "gdpr.erasure_reconcile": {"queue": CeleryQueues.UTILITY},
+    "gdpr.erasure_execute_due": {"queue": CeleryQueues.UTILITY},
     "erasure.receipt_reverify": {"queue": CeleryQueues.UTILITY},
     # FedRAMP AC-2 account-inactivity expiration: small DB reads/writes only.
     # Utility — never gpu.

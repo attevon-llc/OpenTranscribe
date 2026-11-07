@@ -93,7 +93,7 @@ orm_call_in_api::backend/app/api/endpoints/media_collections_access.py	1	layerin
 orm_call_in_api::backend/app/api/endpoints/media_collections_listing.py	16	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/media_collections_membership.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/media_collections_shares.py	15	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/org_admin.py	2	layering: removal planned
+orm_call_in_api::backend/app/api/endpoints/org_admin.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_holds.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/org_admin_takedown.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/privacy.py	1	layering: removal planned

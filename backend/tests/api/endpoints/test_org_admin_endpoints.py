@@ -5,8 +5,8 @@
 reached these routes through the router, which left four properties completely
 unasserted — every one of them a control whose removal is silent:
 
-* **The ``confirm=true`` double opt-in.** ``POST /gdpr/erase-organization`` is
-  irreversible whole-tenant erasure. Regressing the guard to a no-op means the
+* **The ``confirm=true`` double opt-in.** ``POST /gdpr/erase-organization`` schedules an
+  irreversible whole-tenant erasure (since #1105 it runs after a delay, with re-auth). Regressing the guard to a no-op means the
   first unconfirmed call — a mis-typed curl, a UI button wired without the
   query param — erases the tenant.
 * **``require_org_admin`` in the dependency chain.** If it degrades to
@@ -20,11 +20,11 @@ unasserted — every one of them a control whose removal is silent:
   one guarding an irreversible verb. A 403 here would tell any community-edition
   user that a whole-tenant erasure route exists on their deployment.
 
-The erasure services themselves are replaced by a recorder in the tests that check
-*routing*, because what is under test there is which org id and which actor the
-endpoint hands them — not the row deletion, which the service suite already pins.
-One test lets the real ``erase_organization`` run so the confirmed path is proved
-to actually destroy something.
+The scheduling call is recorded in the tests that check *routing*, because what is under
+test there is which org id and which actor the endpoint hands it, and an immediate erasure
+is a failure. One test lets the executor run the real ``erase_organization`` so the confirmed
+path is proved to actually destroy something, later. The re-auth, listing and cancel rules
+are in ``tests/api/test_org_admin_erasure.py``.
 """
 
 from __future__ import annotations
@@ -74,40 +74,46 @@ def org_admin_request(org, normal_user, user_token_headers, org_context, db_sess
     return user_token_headers
 
 
+#: The org admin's re-authentication (``normal_user``'s password in conftest).
+REAUTH = {"password": "password123"}
+
+
 @pytest.fixture
-def erasure_recorder(monkeypatch) -> list[dict]:
-    """Record calls to both erasure services instead of performing them.
+def erasure_recorder(monkeypatch, tmp_path) -> list[dict]:
+    """Record every scheduled erasure the routes ask for, and fail on any immediate one.
 
-    Returns the call list; empty means the endpoint refused before the service,
-    which is the assertion the ``confirm`` and membership guards need.
+    Returns the call list; empty means the endpoint refused before scheduling, which is the
+    assertion the ``confirm``, membership and re-auth guards need. The real ``schedule`` still
+    runs, so a 202 is backed by a real ledger entry. Since #1105 neither route erases anything
+    itself: an immediate call into the erasure services is a failure, not a recording.
     """
+    from app.core.config import settings
+    from app.services import scheduled_erasure_service as scheduled
+
+    monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
     calls: list[dict] = []
+    real_schedule = scheduled.schedule
 
-    def _record_org(_db, org_id, *, actor_user_id=None, actor_email=None):
+    def _record(db, **kwargs):
+        organization = kwargs.get("organization")
+        subject_user = kwargs.get("subject_user")
         calls.append(
             {
-                "kind": "organization",
-                "org_id": org_id,
-                "actor_user_id": actor_user_id,
-                "actor_email": actor_email,
+                "kind": kwargs["subject_type"],
+                "org_id": organization.id if organization is not None else None,
+                "user_id": subject_user.id if subject_user is not None else None,
+                "actor_user_id": kwargs["actor"].id,
+                "actor_kind": kwargs["actor_kind"],
             }
         )
-        return {"scope": "organization", "target_id": org_id, "errors": []}
+        return real_schedule(db, **kwargs)
 
-    def _record_member(_db, user_id, org_id, *, actor_user_id=None, actor_email=None):
-        calls.append(
-            {
-                "kind": "member",
-                "user_id": user_id,
-                "org_id": org_id,
-                "actor_user_id": actor_user_id,
-                "actor_email": actor_email,
-            }
-        )
-        return {"scope": "org_member", "target_id": user_id, "errors": []}
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("an organization admin's request must not erase anything now")
 
-    monkeypatch.setattr("app.services.gdpr_erasure_service.erase_organization", _record_org)
-    monkeypatch.setattr("app.services.gdpr_erasure_service.erase_org_member_data", _record_member)
+    monkeypatch.setattr(scheduled, "schedule", _record)
+    monkeypatch.setattr("app.services.gdpr_erasure_service.erase_organization", _must_not_run)
+    monkeypatch.setattr("app.services.gdpr_erasure_service.erase_org_member_data", _must_not_run)
     return calls
 
 
@@ -233,66 +239,78 @@ class TestEraseOrganizationConfirmGate:
         still_there = db_session.query(Organization).filter(Organization.id == org.id).first()
         assert still_there is not None
 
-    def test_confirmed_erasure_targets_the_callers_own_org_and_records_the_actor(
+    def test_confirmed_request_targets_the_callers_own_org_and_records_the_actor(
         self, client, org, normal_user, org_admin_request, erasure_recorder
     ):
         """The org id is taken from the resolved context, never from the request —
         a client-supplied org id here would be cross-tenant erasure."""
-        response = client.post(f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request)
-        assert response.status_code == 200, response.text
+        response = client.post(
+            f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request, json=REAUTH
+        )
+        assert response.status_code == 202, response.text
         assert erasure_recorder == [
             {
                 "kind": "organization",
                 "org_id": org.id,
+                "user_id": None,
                 "actor_user_id": normal_user.id,
-                "actor_email": normal_user.email,
+                "actor_kind": "org_admin",
             }
         ]
 
-    def test_confirmed_erasure_really_destroys_the_org(
-        self, client, org, org_admin_request, db_session, monkeypatch
+    def test_confirmed_request_destroys_nothing_until_the_executor_runs_it(
+        self, client, org, org_admin_request, db_session, monkeypatch, tmp_path
     ):
-        """The unpatched service, over HTTP: proves ``confirm=true`` guards
-        something real, so the 400 above is a control and not a formality.
+        """The unpatched service, over HTTP and then through the executor: proves
+        ``confirm=true`` guards something real, so the 400 above is a control and not a
+        formality, and that the request alone deletes nothing (#1105).
 
         Only the voiceprint sweep is stubbed — it is the one unconditional
         OpenSearch call, and the savepoint rollback cannot undo an index write.
         """
+        from app.core.config import settings
+        from app.models.erasure import ErasureLedgerEntry
+        from app.services import scheduled_erasure_service as scheduled
+
+        monkeypatch.setattr(settings, "DATA_DIR", tmp_path)
         monkeypatch.setattr(
             "app.services.gdpr_erasure_service._erase_speaker_voiceprints",
             lambda **_kwargs: 0,
         )
-        response = client.post(f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request)
-        assert response.status_code == 200, response.text
+        org_id = org.id
+        response = client.post(
+            f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request, json=REAUTH
+        )
+        assert response.status_code == 202, response.text
         db_session.expire_all()
-        assert db_session.query(Organization).filter(Organization.id == org.id).first() is None
+        assert db_session.query(Organization).filter(Organization.id == org_id).first()
 
-    def test_a_partial_erasure_is_visible_in_the_200_body(
-        self, client, org, org_admin_request, monkeypatch
+        entry = (
+            db_session.query(ErasureLedgerEntry)
+            .filter(ErasureLedgerEntry.uuid == uuid_pkg.UUID(response.json()["ledger_uuid"]))
+            .one()
+        )
+        assert scheduled._execute_one(db_session, entry.id, entry.scheduled_for) is True
+        db_session.expire_all()
+        assert db_session.query(Organization).filter(Organization.id == org_id).first() is None
+
+    def test_the_202_body_is_the_request_receipt_not_an_erasure_summary(
+        self, client, org_admin_request, erasure_recorder
     ):
-        """An erasure that could not destroy every copy still answers **200**.
+        """Before #1105 this route answered 200 with the erasure summary (``complete``,
+        ``errors``). It now answers 202 with the receipt; an integrator scripting against it
+        reads ``scheduled_for`` and the ledger uuid, and the summary arrives as the erasure
+        receipt once the executor has run it."""
+        response = client.post(
+            f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request, json=REAUTH
+        )
 
-        That is the current contract, and it is deliberately pinned here rather
-        than left implicit: the only way a caller scripting against this route
-        can tell a complete erasure from a partial one is the body. So the body
-        must say so — ``complete: false`` plus a populated ``errors`` list — and
-        a future move to 207/`Multi-Status` has to come through this test rather
-        than silently changing what an integrator sees.
-
-        The failure injected is an unreachable OpenSearch during the biometric
-        sweep, which is exactly the outage that used to answer ``errors: []``.
-        """
-        monkeypatch.setattr("app.services.opensearch_service.opensearch_client", None)
-        monkeypatch.setattr("app.services.opensearch_service.client.opensearch_client", None)
-        monkeypatch.setattr("app.services.opensearch_service.client.opensearch_client", None)
-
-        response = client.post(f"{ERASE_ORG_PATH}?confirm=true", headers=org_admin_request)
-
-        assert response.status_code == 200, response.text
+        assert response.status_code == 202, response.text
         body = response.json()
-        assert body["complete"] is False
-        assert body["errors"], "a partial erasure must name what survived"
-        assert any(e.get("stage") == "voiceprints" for e in body["errors"])
+        assert body["subject_type"] == "organization"
+        assert body["status"] == "scheduled"
+        assert body["scheduled_for"] > body["requested_at"]
+        assert "complete" not in body and "errors" not in body
 
 
 # --------------------------------------------------------------------------- #
@@ -337,7 +355,7 @@ class TestEraseOrgMemberTargeting:
         assert response.status_code == 404, response.text
         assert erasure_recorder == []
 
-    def test_member_of_the_callers_org_is_erased_with_both_scopes_threaded(
+    def test_member_of_the_callers_org_is_scheduled_with_both_scopes_threaded(
         self,
         client,
         org,
@@ -352,15 +370,17 @@ class TestEraseOrgMemberTargeting:
         )
         db_session.commit()
 
-        response = client.post(_erase_user_path(str(other_user.uuid)), headers=org_admin_request)
-        assert response.status_code == 200, response.text
+        response = client.post(
+            _erase_user_path(str(other_user.uuid)), headers=org_admin_request, json=REAUTH
+        )
+        assert response.status_code == 202, response.text
         assert erasure_recorder == [
             {
-                "kind": "member",
+                "kind": "org_member",
                 "user_id": other_user.id,
                 "org_id": org.id,
                 "actor_user_id": normal_user.id,
-                "actor_email": normal_user.email,
+                "actor_kind": "org_admin",
             }
         ]
 

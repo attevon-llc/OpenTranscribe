@@ -213,6 +213,9 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/admin/gdpr/erasures/{ledger_uuid}/receipts": _NO_ADMIN_PANEL_REASON,
     "/api/admin/gdpr/erasure-receipt/ignored-indices": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/gdpr/erase-file/{file_uuid}": _NO_ADMIN_PANEL_REASON,
+    # issue #1105: the org-admin "Scheduled erasures" panel (list + Cancel) is lane L7's.
+    "/api/org-admin/gdpr/erasures": _NO_ADMIN_PANEL_REASON,
+    "/api/org-admin/gdpr/erasures/{ledger_uuid}/cancel": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/gdpr/erasures/{ledger_uuid}/receipts": _NO_ADMIN_PANEL_REASON,
     # issue #576: /admin/files/{file_uuid}/quarantine, /release and /files/quarantined
     # now have a caller (AdminApi.quarantineFile / releaseFile / listQuarantinedFiles),

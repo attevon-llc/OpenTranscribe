@@ -77,7 +77,9 @@ Two judgement calls worth not re-litigating blindly:
   resurrected**: `_completion_time` keeps it through a deferral and through the re-run's own
   completion, so a retry is still bounded; do not "refresh" it.
 - **Self-service erasure is a ledger entry, not a second state machine** (#1354):
-  `self_erasure_service` (request / cancel / `execute_due_requests`), `self_erasure_reauth`
+  `self_erasure_service` (request / cancel), `scheduled_erasure_service` (`execute_due_requests`,
+  and `run_entry`, the ONE dispatch from an entry to its erasure: it branches on `subject_type`, so
+  a due `org_member` entry runs `erase_org_member_data`, never `erase_user`), `reauth`
   (password or TOTP), `deferred` / `grace_period` / `scheduled_for`, terminal status `cancelled`.
   `open_entries` excludes every grace-period entry (phase 0 of the sweep runs the due ones) and
   `overdue_entries` excludes `cancelled`. Journal lines carry the grace fields and the **last line

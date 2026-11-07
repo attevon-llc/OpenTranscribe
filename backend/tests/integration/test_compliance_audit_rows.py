@@ -41,6 +41,7 @@ from fixtures.redaction_export_world import make_redactable_file
 
 from app.auth.audit import AuditEventType
 from app.models.organization import OrganizationMembership
+from tests.fixtures.support_world import PASSWORD
 from tests.fixtures.support_world import make_user
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
@@ -362,9 +363,16 @@ def case_gdpr_erase(w, h) -> Expect:
 
 def case_org_member_erase(w, h) -> Expect:
     member = _member(w, "orgerase")
-    _ok(w.client.post(f"/api/org-admin/gdpr/erase-user/{member.uuid}", headers=w.org_admin_headers))
+    _ok(
+        w.client.post(
+            f"/api/org-admin/gdpr/erase-user/{member.uuid}",
+            headers=w.org_admin_headers,
+            json={"password": PASSWORD},
+        ),
+        202,
+    )
     target = (("target_user_id", member.id),)
-    return Expect(AuditEventType.ADMIN_USER_DELETE, w.org_admin.id, target, w.org.id)
+    return Expect(AuditEventType.ERASURE_SCHEDULED, w.org_admin.id, target, w.org.id)
 
 
 def case_admin_user_delete(w, h) -> Expect:
@@ -389,11 +397,14 @@ def case_users_delete(w, h) -> Expect:
 def case_org_erase(w, h) -> Expect:
     _ok(
         w.client.post(
-            "/api/org-admin/gdpr/erase-organization?confirm=true", headers=w.org_admin_headers
-        )
+            "/api/org-admin/gdpr/erase-organization?confirm=true",
+            headers=w.org_admin_headers,
+            json={"password": PASSWORD},
+        ),
+        202,
     )
-    target = (("details.action", "gdpr_erasure_organization"),)
-    return Expect(AuditEventType.ADMIN_USER_DELETE, w.org_admin.id, target, w.org.id)
+    target = (("details.subject_type", "organization"),)
+    return Expect(AuditEventType.ERASURE_SCHEDULED, w.org_admin.id, target, w.org.id)
 
 
 def _personal_grant(w) -> str:

@@ -650,6 +650,15 @@ GDPR_SELF_ERASURE_GRACE_DAYS_KEY = "gdpr.self_erasure_grace_days"
 DEFAULT_GDPR_SELF_ERASURE_ENABLED = False
 DEFAULT_GDPR_SELF_ERASURE_GRACE_DAYS = 14
 MAX_GDPR_SELF_ERASURE_GRACE_DAYS = 21
+#: An organization admin's erasure request (issue #1105) waits this long before it runs, so any
+#: organization admin can cancel a mistaken or hostile request. Hours, 24-168. Every scheduled
+#: erasure is also capped at ``MAX_GDPR_SELF_ERASURE_GRACE_DAYS`` (see
+#: ``scheduled_erasure_service.MAX_SCHEDULED_DELAY``): the SLA clock starts at the request.
+GDPR_ORG_ERASURE_DELAY_HOURS_KEY = "gdpr.org_erasure_delay_hours"
+GDPR_ORG_MEMBER_ERASURE_DELAY_HOURS_KEY = "gdpr.org_member_erasure_delay_hours"
+DEFAULT_GDPR_ORG_ERASURE_DELAY_HOURS = 72
+MIN_GDPR_ORG_ERASURE_DELAY_HOURS = 24
+MAX_GDPR_ORG_ERASURE_DELAY_HOURS = 168
 #: ``UserSetting`` key for the user layer of voiceprint matching. The gender user layer is the
 #: existing ``speaker_attribute_gender_detection_enabled``.
 PRIVACY_USER_VOICEPRINT_MATCHING_KEY = "privacy_voiceprint_matching_enabled"

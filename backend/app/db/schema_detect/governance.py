@@ -257,9 +257,19 @@ def probe(conn: Connection, tables: list[str]) -> GovernanceFacts:
         and _check_exists("SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname = 'audit_prune')"),
         # v455: self-service erasure requests (issues #1354/#1355). Keyed on the LAST object the
         # revision creates, the unique open-request index.
-        has_self_service_erasure=_check_exists(
-            "SELECT EXISTS(SELECT 1 FROM pg_indexes "
-            "WHERE indexname = 'uq_erasure_ledger_open_self_request')"
+        # v464 replaces this index with a wider one, so either name is v455's marker. Both
+        # probes always run: the probe sequence must not depend on the answers.
+        has_self_service_erasure=any(
+            (
+                _check_exists(
+                    "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+                    "WHERE indexname = 'uq_erasure_ledger_open_self_request')"
+                ),
+                _check_exists(
+                    "SELECT EXISTS(SELECT 1 FROM pg_indexes "
+                    "WHERE indexname = 'uq_erasure_ledger_open_grace_subject')"
+                ),
+            )
         ),
         # v456: unique object keys (issue #1357). Keyed on the LAST index the revision builds,
         # the playback one; the storage_path index can legitimately be absent (duplicates found).

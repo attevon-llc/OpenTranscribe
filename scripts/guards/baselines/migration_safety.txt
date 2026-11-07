@@ -154,3 +154,4 @@ backend/alembic/versions/v455_add_self_service_erasure_request.py::R1	2	applied 
 backend/alembic/versions/v455_add_self_service_erasure_request.py::R5	3	applied history (v0.6.1 release revision); revisions are never edited
 backend/alembic/versions/v455_add_self_service_erasure_request.py::R6	1	applied history (v0.6.1 release revision); revisions are never edited
 backend/alembic/versions/v457_audit_guard_followups.py::DYNAMIC-SQL	1	applied history (v0.6.1 release revision); revisions are never edited
+backend/alembic/versions/v464_generalise_erasure_grace_index.py::R1	1	unique index on erasure_ledger (one row per erasure request, tiny); built in the transaction because it replaces the v455 unique index in the same step and a post-upgrade CONCURRENTLY build would leave no uniqueness rule in between; SET LOCAL lock_timeout bounds the wait

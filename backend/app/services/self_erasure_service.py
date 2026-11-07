@@ -6,18 +6,16 @@ account stays usable during the grace period and logging in never cancels (an au
 refresh would cancel silently): only an explicit cancel does.
 
 The request receipt is the ledger uuid, the two timestamps and a sha256 digest over those canonical
-fields. It is not the erasure receipt, which is measured after the destruction and linked by the
+fields (``scheduled_erasure_service.schedule`` writes it, with the ``gdpr.erasure.scheduled``
+audit event in the same commit). It is not the erasure receipt, which is measured after the destruction and linked by the
 same ledger uuid. Running a request that came due is ``scheduled_erasure_service``'s job, which
 runs every grace-period entry whatever its scope.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import uuid as uuid_pkg
-from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
@@ -31,9 +29,8 @@ from app.core.constants import MAX_GDPR_SELF_ERASURE_GRACE_DAYS
 from app.core.env import is_truthy
 from app.models.erasure import ErasureLedgerEntry
 from app.models.user import User
-from app.services import erasure_ledger_service as ledger
+from app.services import scheduled_erasure_service as scheduled
 from app.services.system_settings_service import get_setting
-from app.utils.uuid7 import uuid7
 
 logger = logging.getLogger(__name__)
 
@@ -65,22 +62,6 @@ def grace_days(db: Session) -> int:
     return max(0, min(value, MAX_GDPR_SELF_ERASURE_GRACE_DAYS))
 
 
-def request_digest(
-    ledger_uuid: uuid_pkg.UUID, requested_at: datetime, scheduled_for: datetime
-) -> str:
-    """sha256 over the canonical request fields; a reference the subject can quote."""
-    canonical = json.dumps(
-        {
-            "ledger_uuid": str(ledger_uuid),
-            "requested_at": requested_at.astimezone(UTC).isoformat(),
-            "scheduled_for": scheduled_for.astimezone(UTC).isoformat(),
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
 def get_last_blocked_request(db: Session, user_id: int) -> ErasureLedgerEntry | None:
     """The caller's most recent self-service request, if the system closed it without erasing.
 
@@ -106,16 +87,7 @@ def get_last_blocked_request(db: Session, user_id: int) -> ErasureLedgerEntry | 
 
 
 def get_open_request(db: Session, user_id: int) -> ErasureLedgerEntry | None:
-    return (
-        db.query(ErasureLedgerEntry)
-        .filter(
-            ErasureLedgerEntry.subject_type == "user",
-            ErasureLedgerEntry.subject_user_id == user_id,
-            ErasureLedgerEntry.status == "deferred",
-            ErasureLedgerEntry.deferred_reason == "grace_period",
-        )
-        .first()
-    )
+    return scheduled.open_request(db, "user", user_id, None)
 
 
 def _is_last_super_admin(db: Session, user: User) -> bool:
@@ -149,30 +121,18 @@ def request_self_erasure(
             "last_super_admin", "The last active super administrator cannot be erased."
         )
 
-    requested_at = now or datetime.now(UTC)
-    scheduled_for = requested_at + timedelta(days=grace_days(db))
-    entry_uuid = uuid7()
-    entry = ledger.record_request(
-        db,
-        subject_type="user",
-        subject_user_id=int(user.id),
-        subject_user_uuid=user.uuid,
-        actor_kind="data_subject",
-        actor_user_id=int(user.id),
-        status="deferred",
-        deferred_reason="grace_period",
-        scheduled_for=scheduled_for,
-        request_digest=request_digest(entry_uuid, requested_at, scheduled_for),
-        requested_at=requested_at,
-        entry_uuid=entry_uuid,
-    )
-    if entry is None:
-        # record_request swallows the unique-index race as well as real failures.
-        existing = get_open_request(db, int(user.id))
-        if existing is not None:
-            raise SelfErasureError("request_exists", "A request is already open.", entry=existing)
-        raise SelfErasureError("ledger_unavailable", "The request could not be recorded.")
-    return entry
+    try:
+        return scheduled.schedule(
+            db,
+            subject_type="user",
+            actor=user,
+            actor_kind="data_subject",
+            delay=timedelta(days=grace_days(db)),
+            subject_user=user,
+            now=now,
+        )
+    except scheduled.ScheduledErasureError as error:
+        raise SelfErasureError(error.code, error.message, entry=error.entry) from error
 
 
 def cancel_self_erasure(
@@ -196,12 +156,7 @@ def cancel_self_erasure(
     )
     if entry is None:
         raise SelfErasureError("not_found", "No such request.")
-    current = now or datetime.now(UTC)
-    if entry.status == "deferred" and entry.deferred_reason == "grace_period":
-        scheduled = entry.scheduled_for
-        if scheduled is not None and current >= scheduled:
-            raise SelfErasureError("already_executing", "The grace period is over.", entry=entry)
-        return ledger.cancel_request(db, entry, now=current)
-    if entry.status in ("pending", "deferred", "complete", "failed"):
-        raise SelfErasureError("already_executing", "The erasure has started.", entry=entry)
-    raise SelfErasureError("not_cancellable", "This request cannot be cancelled.", entry=entry)
+    try:
+        return scheduled.cancel(db, entry, actor=user, now=now)
+    except scheduled.ScheduledErasureError as error:
+        raise SelfErasureError(error.code, error.message, entry=error.entry) from error

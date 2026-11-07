@@ -66,6 +66,12 @@ class AuditEventType(StrEnum):
     ADMIN_USER_DELETE = "admin.user.delete"
     # A read of an erasure receipt (issue #1353): ids only, never the counts.
     GDPR_RECEIPT_VIEW = "gdpr.receipt.view"
+    # A scheduled (delayed) erasure (issue #1105): requested, withdrawn before it ran, and handed
+    # to the erasure when its time came. The outcome stays ``admin.user.delete``. ``details``
+    # holds the subject type, the actor kind and times: never a name.
+    ERASURE_SCHEDULED = "gdpr.erasure.scheduled"
+    ERASURE_CANCELLED = "gdpr.erasure.cancelled"
+    ERASURE_EXECUTION_STARTED = "gdpr.erasure.execution_started"
     ADMIN_ROLE_CHANGE = "admin.role.change"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 

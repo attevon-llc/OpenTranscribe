@@ -2,7 +2,8 @@
 
 * ``router`` (``/users/me/erasure-request``, any signed-in user): read the status, request erasure
   of the caller's own account with a grace period, cancel until ``scheduled_for``.
-* ``admin_router`` (``/admin/self-erasure``, super_admin): the two instance settings.
+* ``admin_router`` (``/admin/self-erasure``, super_admin): the instance settings, including the
+  delay of an organization admin's scheduled erasure (issue #1105).
 
 This is the SUBJECT's own action, which is why it has a UI while operator erasure deliberately has
 none. The feature is OFF by default; while it is off POST and DELETE answer 404 so it is not
@@ -33,9 +34,13 @@ from app.auth.audit import audit_logger
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
+from app.core.constants import GDPR_ORG_ERASURE_DELAY_HOURS_KEY
+from app.core.constants import GDPR_ORG_MEMBER_ERASURE_DELAY_HOURS_KEY
 from app.core.constants import GDPR_SELF_ERASURE_ENABLED_KEY
 from app.core.constants import GDPR_SELF_ERASURE_GRACE_DAYS_KEY
+from app.core.constants import MAX_GDPR_ORG_ERASURE_DELAY_HOURS
 from app.core.constants import MAX_GDPR_SELF_ERASURE_GRACE_DAYS
+from app.core.constants import MIN_GDPR_ORG_ERASURE_DELAY_HOURS
 from app.db.base import get_db
 from app.models.erasure import ErasureLedgerEntry
 from app.schemas.self_erasure import SelfErasureCreate
@@ -44,6 +49,7 @@ from app.schemas.self_erasure import SelfErasureRequestReceipt
 from app.schemas.self_erasure import SelfErasureSettings
 from app.schemas.self_erasure import SelfErasureSettingsUpdate
 from app.schemas.self_erasure import SelfErasureStatus
+from app.services import scheduled_erasure_service as scheduled
 from app.services import self_erasure_service as service
 from app.services.reauth import can_reauthenticate
 from app.services.reauth import verify_reauth
@@ -165,11 +171,19 @@ def cancel_erasure(
     return _receipt(entry)
 
 
+def _delay_hours(db: Session, subject_type: str) -> int:
+    return int(scheduled.delay_for(db, subject_type).total_seconds() // 3600)
+
+
 def _read_settings(db: Session) -> SelfErasureSettings:
     return SelfErasureSettings(
         enabled=service.is_enabled(db),
         grace_days=service.grace_days(db),
         max_grace_days=MAX_GDPR_SELF_ERASURE_GRACE_DAYS,
+        org_erasure_delay_hours=_delay_hours(db, "organization"),
+        org_member_erasure_delay_hours=_delay_hours(db, "org_member"),
+        min_org_erasure_delay_hours=MIN_GDPR_ORG_ERASURE_DELAY_HOURS,
+        max_org_erasure_delay_hours=MAX_GDPR_ORG_ERASURE_DELAY_HOURS,
     )
 
 
@@ -197,6 +211,17 @@ def put_self_erasure_settings(
     if body.grace_days is not None and body.grace_days != service.grace_days(db):
         set_setting(db, GDPR_SELF_ERASURE_GRACE_DAYS_KEY, body.grace_days)
         changes.append({"setting": GDPR_SELF_ERASURE_GRACE_DAYS_KEY, "value": body.grace_days})
+    for key, subject_type, value in (
+        (GDPR_ORG_ERASURE_DELAY_HOURS_KEY, "organization", body.org_erasure_delay_hours),
+        (
+            GDPR_ORG_MEMBER_ERASURE_DELAY_HOURS_KEY,
+            "org_member",
+            body.org_member_erasure_delay_hours,
+        ),
+    ):
+        if value is not None and value != _delay_hours(db, subject_type):
+            set_setting(db, key, value)
+            changes.append({"setting": key, "value": value})
     source_ip, user_agent = _get_client_info(request)
     for change in changes:
         audit_logger.log(

@@ -39,7 +39,7 @@ from tests.audit_maintenance import audit_maintenance
 GRANT_HEADER = "X-Support-Access-Grant"
 #: Random per process: these accounts exist only inside a rolled-back transaction, and a
 #: literal credential in the tree is something secret scanners rightly flag.
-_PASSWORD = uuid.uuid4().hex
+PASSWORD = uuid.uuid4().hex
 
 
 def make_user(db, *, role: str, label: str) -> User:
@@ -47,7 +47,7 @@ def make_user(db, *, role: str, label: str) -> User:
     user = User(
         email=f"sa_{label}_{uuid.uuid4().hex[:8]}@example.com",
         full_name=f"SA {label}",
-        hashed_password=get_password_hash(_PASSWORD),
+        hashed_password=get_password_hash(PASSWORD),
         is_active=True,
         is_superuser=role == "super_admin",
         role=role,
@@ -61,7 +61,7 @@ def make_user(db, *, role: str, label: str) -> User:
 def login_headers(client, user: User) -> dict[str, str]:
     response = client.post(
         "/api/auth/token",
-        data={"username": user.email, "password": _PASSWORD},
+        data={"username": user.email, "password": PASSWORD},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     assert response.status_code == 200, response.text

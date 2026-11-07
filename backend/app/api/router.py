@@ -50,6 +50,7 @@ from .endpoints import media_mirror_settings
 from .endpoints import media_private_hosts
 from .endpoints import org_admin
 from .endpoints import org_admin_audit
+from .endpoints import org_admin_erasure
 from .endpoints import org_admin_holds
 from .endpoints import org_admin_policy
 from .endpoints import org_admin_takedown
@@ -251,6 +252,15 @@ include_router_with_consistency(
     prefix="/org-admin",
     tags=["org-admin"],
     capability="organizations",
+)
+# Scheduled organization and member erasure (issue #1105): same capability and org-admin gate,
+# and refused under a support grant (a grant must never schedule an organization's erasure).
+include_router_with_consistency(
+    org_admin_erasure.router,
+    prefix="/org-admin",
+    tags=["org-admin"],
+    capability="organizations",
+    refuse_under_grant=True,
 )
 # Organization-scoped quarantine/release (issue #1253). Its own capability so a deployment
 # can expose it without the rest of /org-admin; no platform-admin bypass, because these are

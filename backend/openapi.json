@@ -12795,6 +12795,39 @@
         "title": "OrgEffectivePrivacy",
         "type": "object"
       },
+      "OrgErasureConfirm": {
+        "description": "Re-authentication for the request: the caller's password or a current TOTP code.",
+        "properties": {
+          "mfa_code": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Code"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 1024,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "title": "OrgErasureConfirm",
+        "type": "object"
+      },
       "OrgMediaRevocation": {
         "description": "What an organization admin is told about the media URLs.\n\nNo storage permissions, enforcer or per-object error: those describe the operator's\ninfrastructure, which a tenant must not see. The operator gets them on the platform route,\nin the audit event and in the log.",
         "properties": {
@@ -17309,6 +17342,201 @@
         "title": "ScanResponse",
         "type": "object"
       },
+      "ScheduledErasureItem": {
+        "description": "One open scheduled erasure in the organization's list.",
+        "properties": {
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "ledger_uuid": {
+            "format": "uuid",
+            "title": "Ledger Uuid",
+            "type": "string"
+          },
+          "request_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Digest"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested By"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "sla_due_at": {
+            "format": "date-time",
+            "title": "Sla Due At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_type": {
+            "enum": [
+              "org_member",
+              "organization"
+            ],
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          }
+        },
+        "required": [
+          "ledger_uuid",
+          "subject_type",
+          "requested_at",
+          "sla_due_at",
+          "status"
+        ],
+        "title": "ScheduledErasureItem",
+        "type": "object"
+      },
+      "ScheduledErasureReceipt": {
+        "description": "The request receipt: ids and times only, no personal data.",
+        "properties": {
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "ledger_uuid": {
+            "format": "uuid",
+            "title": "Ledger Uuid",
+            "type": "string"
+          },
+          "request_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Digest"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "scheduled_for": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled For"
+          },
+          "sla_due_at": {
+            "format": "date-time",
+            "title": "Sla Due At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_type": {
+            "enum": [
+              "org_member",
+              "organization"
+            ],
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "subject_user_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject User Uuid"
+          }
+        },
+        "required": [
+          "ledger_uuid",
+          "subject_type",
+          "requested_at",
+          "sla_due_at",
+          "status"
+        ],
+        "title": "ScheduledErasureReceipt",
+        "type": "object"
+      },
       "SegmentSpeakerUpdate": {
         "description": "Schema for updating a transcript segment's speaker assignment.\n\nAttributes:\n    speaker_uuid: UUID of the speaker to assign (null to unassign speaker)",
         "properties": {
@@ -17488,11 +17716,35 @@
             "default": 21,
             "title": "Max Grace Days",
             "type": "integer"
+          },
+          "max_org_erasure_delay_hours": {
+            "default": 168,
+            "title": "Max Org Erasure Delay Hours",
+            "type": "integer"
+          },
+          "min_org_erasure_delay_hours": {
+            "default": 24,
+            "title": "Min Org Erasure Delay Hours",
+            "type": "integer"
+          },
+          "org_erasure_delay_hours": {
+            "maximum": 168.0,
+            "minimum": 24.0,
+            "title": "Org Erasure Delay Hours",
+            "type": "integer"
+          },
+          "org_member_erasure_delay_hours": {
+            "maximum": 168.0,
+            "minimum": 24.0,
+            "title": "Org Member Erasure Delay Hours",
+            "type": "integer"
           }
         },
         "required": [
           "enabled",
-          "grace_days"
+          "grace_days",
+          "org_erasure_delay_hours",
+          "org_member_erasure_delay_hours"
         ],
         "title": "SelfErasureSettings",
         "type": "object"
@@ -17522,6 +17774,32 @@
               }
             ],
             "title": "Grace Days"
+          },
+          "org_erasure_delay_hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 24.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Erasure Delay Hours"
+          },
+          "org_member_erasure_delay_hours": {
+            "anyOf": [
+              {
+                "maximum": 168.0,
+                "minimum": 24.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Org Member Erasure Delay Hours"
           }
         },
         "title": "SelfErasureSettingsUpdate",
@@ -43544,30 +43822,45 @@
     },
     "/api/org-admin/gdpr/erase-organization": {
       "post": {
-        "description": "GDPR erasure of the caller's ENTIRE organization (irreversible).\n\nErases org-stamped media, member-owned org data, the org's voiceprints, and\nthe organization row itself. Members keep their personal accounts. Requires\n``confirm=true``. Idempotent; SLA 30 days.",
+        "description": "Schedule the GDPR erasure of the caller's ENTIRE organization (irreversible once it runs).\n\nWhen it runs: org-stamped media, member-owned org data, the org's voiceprints and the\norganization row itself. Members keep their personal accounts. Requires ``confirm=true`` and\nre-authentication; answers 202 with the request receipt.",
         "operationId": "erase_own_organization_api_org_admin_gdpr_erase_organization_post",
         "parameters": [
           {
-            "description": "Must be true to execute the irreversible erasure",
+            "description": "Must be true to schedule the irreversible erasure",
             "in": "query",
             "name": "confirm",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Must be true to execute the irreversible erasure",
+              "description": "Must be true to schedule the irreversible erasure",
               "title": "Confirm",
               "type": "boolean"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/OrgErasureConfirm"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Erase Own Organization Api Org Admin Gdpr Erase Organization Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ScheduledErasureReceipt"
                 }
               }
             },
@@ -43597,7 +43890,7 @@
     },
     "/api/org-admin/gdpr/erase-user/{user_uuid}": {
       "post": {
-        "description": "GDPR Art. 17 erasure of a member's data WITHIN the caller's organization.\n\nThe target must be a member of the caller's org (403 otherwise), and the\nerasure is strictly org-scoped: only the target's rows stamped with THIS\norg (media, org-scoped profiles/collections, the (user, org) voiceprint\ndocs) are destroyed. The target's personal-scope data, other orgs' data,\nand their account survive — an org admin has authority over the tenant's\ndata, never over the person's account (full account erasure is the data\nsubject's own deletion flow or a platform super-admin action). Idempotent;\nSLA 30 days; audit-logged with the acting admin by the service.",
+        "description": "Schedule the GDPR Art. 17 erasure of a member's data WITHIN the caller's organization.\n\nThe target must be a member of the caller's org (403 otherwise). When it runs, only the\ntarget's rows stamped with THIS org are destroyed; their account, personal-scope data and\nother organizations' data survive (an org admin has authority over the tenant's data, never\nover the person's account). Answers 202 with the request receipt; the erasure runs once\n``scheduled_for`` has passed unless an organization admin cancels it first.",
         "operationId": "erase_org_member_api_org_admin_gdpr_erase_user__user_uuid__post",
         "parameters": [
           {
@@ -43610,14 +43903,29 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/OrgErasureConfirm"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Erase Org Member Api Org Admin Gdpr Erase User  User Uuid  Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ScheduledErasureReceipt"
                 }
               }
             },
@@ -43640,6 +43948,86 @@
           }
         ],
         "summary": "Erase Org Member",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/gdpr/erasures": {
+      "get": {
+        "description": "The caller's organization's open scheduled erasures, soonest first.\n\n``requested_by`` is resolved now, and only while the requester is still a member of this\norganization: the ledger keeps no names.",
+        "operationId": "list_scheduled_erasures_api_org_admin_gdpr_erasures_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ScheduledErasureItem"
+                  },
+                  "title": "Response List Scheduled Erasures Api Org Admin Gdpr Erasures Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Scheduled Erasures",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/gdpr/erasures/{ledger_uuid}/cancel": {
+      "post": {
+        "description": "Withdraw a scheduled erasure of this organization before it runs (409 once it has).\n\nAnother organization's entry, a self-service request and an unknown uuid are the same 404.",
+        "operationId": "cancel_scheduled_erasure_api_org_admin_gdpr_erasures__ledger_uuid__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ledger_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Ledger Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledErasureReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Cancel Scheduled Erasure",
         "tags": [
           "org-admin"
         ]

@@ -1,7 +1,8 @@
 """Wire contract of the self-service erasure request (issue #1354).
 
 ``GET|POST /users/me/erasure-request``, ``DELETE /users/me/erasure-request/{ledger_uuid}`` for the
-account holder, and ``GET|PUT /admin/self-erasure`` for the two instance settings (super_admin).
+account holder, and ``GET|PUT /admin/self-erasure`` for the instance settings (super_admin): the self-service switch and
+grace period, and the delay of an organization admin's scheduled erasure (issue #1105).
 
 ``GET`` also reports ``last_outcome`` when the account holder's latest request was closed by the
 system without erasing (``blocked`` / ``last_super_admin``).
@@ -68,8 +69,15 @@ class SelfErasureSettings(BaseModel):
     enabled: bool
     grace_days: int = Field(ge=0, le=21)
     max_grace_days: int = 21
+    #: How long an organization admin's scheduled erasure waits (issue #1105), in hours.
+    org_erasure_delay_hours: int = Field(ge=24, le=168)
+    org_member_erasure_delay_hours: int = Field(ge=24, le=168)
+    min_org_erasure_delay_hours: int = 24
+    max_org_erasure_delay_hours: int = 168
 
 
 class SelfErasureSettingsUpdate(BaseModel):
     enabled: bool | None = None
     grace_days: int | None = Field(default=None, ge=0, le=21)
+    org_erasure_delay_hours: int | None = Field(default=None, ge=24, le=168)
+    org_member_erasure_delay_hours: int | None = Field(default=None, ge=24, le=168)

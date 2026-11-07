@@ -41,6 +41,8 @@ COMPLIANCE_EVENTS: frozenset[str] = frozenset(
         "ADMIN_DATA_INTEGRITY_STORAGE_PURGE",
         "FILE_DELETE_DENIED",
         "ADMIN_USER_DELETE",
+        "ERASURE_SCHEDULED",
+        "ERASURE_CANCELLED",
         "SUPPORT_ACCESS_REQUESTED",
         "SUPPORT_ACCESS_APPROVED",
         "SUPPORT_ACCESS_DENIED",
@@ -159,10 +161,15 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     ),
     # Erasure.
     ("POST", "/api/admin/gdpr/erase-user/{user_uuid}"): A(("ADMIN_USER_DELETE",), "gdpr-erase"),
+    # An organization admin's erasure is scheduled, not run (#1105): the request writes
+    # gdpr.erasure.scheduled; the erasure's own admin.user.delete comes from the executor.
     ("POST", "/api/org-admin/gdpr/erase-user/{user_uuid}"): A(
-        ("ADMIN_USER_DELETE",), "org-member-erase"
+        ("ERASURE_SCHEDULED",), "org-member-erase"
     ),
-    ("POST", "/api/org-admin/gdpr/erase-organization"): A(("ADMIN_USER_DELETE",), "org-erase"),
+    ("POST", "/api/org-admin/gdpr/erase-organization"): A(("ERASURE_SCHEDULED",), "org-erase"),
+    ("POST", "/api/org-admin/gdpr/erasures/{ledger_uuid}/cancel"): A(
+        ("ERASURE_CANCELLED",), pinned_by="api/test_org_admin_erasure.py"
+    ),
     # Single-recording erasure, the account holder's own request (and its withdrawal), the
     # receipt reads, and the per-file voiceprint opt-out whose purge is a compliance event.
     ("POST", "/api/admin/gdpr/erase-file/{file_uuid}"): A(
@@ -255,6 +262,7 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("GET", "/api/admin/data-integrity/storage/status"): _READ,
     ("GET", "/api/admin/data-integrity/storage/keys"): _READ,
     ("GET", "/api/admin/gdpr/erasures"): _READ,
+    ("GET", "/api/org-admin/gdpr/erasures"): _READ,
     ("GET", "/api/admin/gdpr/erasure-receipt/ignored-indices"): _READ,
     ("GET", "/api/admin/takedown-notices"): _READ,
     ("GET", "/api/admin/takedown-notices/{notice_uuid}"): _READ,

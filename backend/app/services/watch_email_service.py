@@ -220,7 +220,9 @@ def _send_m365(
     )
     if resp.status_code in (200, 202):
         return True, f"Sent to {len(recipients)} recipient(s) via Graph"
-    return False, f"Graph sendMail failed: {resp.status_code} {resp.text[:200]}"
+    # Status only: the response body can quote recipients and tenant details.
+    logger.warning("Microsoft Graph sendMail was rejected: HTTP %s", resp.status_code)
+    return False, f"Graph sendMail failed: HTTP {resp.status_code}"
 
 
 def _test_m365(config: EmailNotificationConfig) -> tuple[bool, str]:

@@ -66,10 +66,16 @@ _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]*\w")
 #: lives in ``core/exceptions`` with the rest of the hierarchy because
 #: ``main.py`` maps it to a 503 — an undeliverable message is a service failure,
 #: not a bug in the request.
-__all__ = ["EmailDeliveryError", "EmailService", "email_service", "load_auth_mail_config"]
+__all__ = [
+    "EmailDeliveryError",
+    "EmailService",
+    "email_service",
+    "load_auth_mail_config",
+    "scrub_addresses",
+]
 
 
-def _scrub(detail: str) -> str:
+def scrub_addresses(detail: str) -> str:
     """Mask any email address embedded in a provider/SMTP error string.
 
     ``SMTPRecipientsRefused`` and Graph error bodies quote the recipient back at
@@ -455,7 +461,7 @@ class EmailService:
         if ok:
             logger.info("Sent %r to %s via email config %r", subject, _mask_email(to), config.name)
             return
-        reason = _scrub(detail)
+        reason = scrub_addresses(detail)
         logger.error(
             "Failed to send %r to %s via email config %r: %s",
             subject,
@@ -492,7 +498,7 @@ class EmailService:
         except Exception as e:
             # Never fall back to logging the body: for a password reset that body
             # is a live single-use credential.
-            reason = _scrub(str(e))
+            reason = scrub_addresses(str(e))
             logger.error("Failed to send %r to %s: %s", subject, _mask_email(to), reason)
             raise EmailDeliveryError(f"Could not send {subject!r}: {reason}") from e
         finally:

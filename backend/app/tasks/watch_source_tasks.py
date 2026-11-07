@@ -591,6 +591,7 @@ def send_notification(self: Any, source_id: int, summary: dict) -> dict:
     duration with nothing to show for it.
     """
     from app.models.email_notification_config import EmailNotificationConfig
+    from app.services.email_service import scrub_addresses
     from app.services.watch_email_service import build_scan_summary_html
     from app.services.watch_email_service import send_email
 
@@ -655,9 +656,19 @@ def send_notification(self: Any, source_id: int, summary: dict) -> dict:
 
     sent = 0
     for cfg, recipients in deliveries:
-        ok, _msg = send_email(cfg, recipients, subject, html)
+        ok, msg = send_email(cfg, recipients, subject, html)
         if ok:
             sent += 1
+            continue
+        # Provider and config name only, plus the scrubbed, truncated reason: never the
+        # credentials or a response body.
+        logger.warning(
+            "Watch source %r: notification through email config %r (%s) was not delivered: %s",
+            source_name,
+            cfg.name,
+            cfg.provider,
+            scrub_addresses(msg)[:200],
+        )
     return {"sent": sent}
 
 

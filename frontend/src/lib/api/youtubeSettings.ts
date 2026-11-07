@@ -1,4 +1,4 @@
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export interface YoutubeSettings {
   user_rate_limit_enabled: boolean;

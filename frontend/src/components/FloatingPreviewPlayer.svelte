@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { formatClock } from '$lib/utils/formatting';
-  import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
+  import MiniPlayer from '$components/player/MiniPlayer.svelte';
   import type { PlayerHandle } from '$lib/player/types';
 
   // Display
@@ -13,7 +13,7 @@
   export let closeTitle: string;
   export let closeAriaLabel: string;
 
-  // Media (passed through to PlyrMiniPlayer)
+  // Media (passed through to MiniPlayer)
   export let mediaUrl: string;
   export let contentType: string;
   export let startTime: number = 0;
@@ -23,7 +23,7 @@
 
   const dispatch = createEventDispatcher();
 
-  let innerPlayer: PlyrMiniPlayer | null = null;
+  let innerPlayer: MiniPlayer | null = null;
 
   $: isAudio = contentType?.startsWith('audio/') ?? false;
 
@@ -85,7 +85,7 @@
   </div>
   <div class="preview-player-container">
     {#key `${fileId}:${startTime}`}
-      <PlyrMiniPlayer
+      <MiniPlayer
         bind:this={innerPlayer}
         {mediaUrl}
         {contentType}

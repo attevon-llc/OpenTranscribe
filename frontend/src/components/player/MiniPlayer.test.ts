@@ -1,18 +1,20 @@
 /**
- * DEFECT THIS CATCHES (issue #649, "F1" in the audit): `PlyrMiniPlayer` — the
- * search-results / speaker preview player — carried the #645/#647 bug that
- * `VideoPlayer.seekToTime` was fixed for: `applySeek` awaited
- * `waitForMediaMetadata` BEFORE touching the media element's `currentTime`,
- * so a click that opened the preview player at a non-zero `startTime` stalled
- * for as long as metadata took to arrive (up to the 15s fallback) instead of
- * seeking immediately. Per the HTML spec, assigning `currentTime` before
- * `loadedmetadata` is not discarded — it becomes the default playback start
- * position — so the wait bought nothing and blocked the very request it was
- * waiting for.
+ * DEFECT THIS CATCHES (issue #649, "F1" in the audit): the mini player (search-results /
+ * speaker preview) carried the #645/#647 bug that `VideoPlayer.seekToTime` was fixed for:
+ * `applySeek` awaited `waitForMediaMetadata` BEFORE touching the media element's
+ * `currentTime`, so a click that opened the preview at a non-zero `startTime` stalled for as
+ * long as metadata took to arrive (up to the 15s fallback) instead of seeking immediately.
+ * Per the HTML spec, assigning `currentTime` before `loadedmetadata` is not discarded — it
+ * becomes the default playback start position — so the wait bought nothing and blocked the
+ * very request it was waiting for.
  *
  * The initial seek was also gated behind a `canplay` listener (readyState >=
- * HAVE_FUTURE_DATA), which is STRICTER than the metadata gate above and had
- * no fallback if `canplay` never fired.
+ * HAVE_FUTURE_DATA), which is STRICTER than the metadata gate above and had no fallback if
+ * `canplay` never fired.
+ *
+ * Ported from the Plyr mini player (issue #1327): the cases drive the `PlayerHandle` seam, so
+ * they hold whichever library builds the controls. The controls themselves are covered by
+ * `MiniPlayer.controls.test.ts`.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
@@ -20,12 +22,15 @@ import type { PlayerHandle } from '$lib/player/types';
 
 // The seam is faked, not the library behind it (issue #1327): these cases must keep passing
 // whichever player library the adapter wraps.
-vi.mock('$lib/player/plyrHandle', async () => {
+vi.mock('$lib/player/videojsHandle', async () => {
   const { createFakePlayer } = await import('$lib/player/fakePlayer');
-  return { createPlyrPlayer: createFakePlayer };
+  return {
+    createVideojsHandle: (media: HTMLMediaElement) =>
+      createFakePlayer(media, { variant: 'mini', audio: media.tagName === 'AUDIO' }),
+  };
 });
 
-import PlyrMiniPlayer from './PlyrMiniPlayer.svelte';
+import MiniPlayer from './MiniPlayer.svelte';
 import { fakePlayers } from '$lib/player/fakePlayer';
 
 /** A couple of microtask turns — enough for the synchronous portion of an
@@ -44,7 +49,7 @@ beforeEach(() => {
 
 describe('initial seek timing', () => {
   it('assigns currentTime to the media element before metadata has ever arrived', async () => {
-    const { container } = render(PlyrMiniPlayer, {
+    const { container } = render(MiniPlayer, {
       props: {
         mediaUrl: 'blob:test-media',
         contentType: 'audio/mpeg',
@@ -66,7 +71,7 @@ describe('initial seek timing', () => {
   });
 
   it('does not touch currentTime when startTime is 0 (nothing to seek to)', async () => {
-    const { container } = render(PlyrMiniPlayer, {
+    const { container } = render(MiniPlayer, {
       props: {
         mediaUrl: 'blob:test-media',
         contentType: 'audio/mpeg',
@@ -86,30 +91,33 @@ describe('initial seek timing', () => {
 /** Mount the mini player and return its element, the fake behind the seam and the events. */
 async function mountMini(props: Record<string, unknown>) {
   const events = { play: vi.fn(), pause: vi.fn(), ended: vi.fn(), timeupdate: vi.fn() };
-  const { container, component } = render(PlyrMiniPlayer, {
+  const { container, component, rerender } = render(MiniPlayer, {
     props: { mediaUrl: 'blob:test-media', contentType: 'audio/mpeg', fileId: '', ...props },
     events,
   } as never);
   await flushMicrotasks();
   const media = container.querySelector('audio, video') as HTMLMediaElement;
-  return { media, events, player: fakePlayers[0], component };
+  return { media, events, player: fakePlayers[0], component, container, rerender };
 }
 
 describe('the mini player over the player seam (#1327)', () => {
-  it('builds one mini player on its own element and hands out that handle', async () => {
-    const { media, player, component } = await mountMini({ autoplay: false });
+  it('builds one handle on its own element and hands out that handle', async () => {
+    const { media, player, component, container } = await mountMini({ autoplay: false });
 
     expect(fakePlayers).toHaveLength(1);
     expect(player.media).toBe(media);
-    expect(player.options).toMatchObject({ variant: 'mini', audio: true });
+    expect(media.tagName).toBe('AUDIO');
+    expect(container.querySelector('audio-player')).not.toBeNull();
     const handle = (component as unknown as { getPlayer: () => PlayerHandle | null }).getPlayer();
     expect(handle).toBe(player);
   });
 
-  it('builds the video variant for a video clip', async () => {
-    const { media, player } = await mountMini({ contentType: 'video/mp4', autoplay: false });
+  it('builds the video player for a video clip', async () => {
+    const { media, container } = await mountMini({ contentType: 'video/mp4', autoplay: false });
     expect(media.tagName).toBe('VIDEO');
-    expect(player.options).toMatchObject({ variant: 'mini', audio: false });
+    expect(media.hasAttribute('playsinline')).toBe(true);
+    expect(container.querySelector('video-player')).not.toBeNull();
+    expect(container.querySelector('audio-player')).toBeNull();
   });
 
   it('starts playback through the handle once metadata lands (autoplay at an offset)', async () => {
@@ -160,5 +168,22 @@ describe('the mini player over the player seam (#1327)', () => {
     media.dispatchEvent(new Event('loadedmetadata'));
     await flushMicrotasks();
     expect(player.play).not.toHaveBeenCalled();
+  });
+
+  it('hot-swaps a refreshed presigned URL and resumes where it was, still playing', async () => {
+    const { media, player, rerender } = await mountMini({ autoplay: false });
+    const load = vi.spyOn(media, 'load');
+    media.currentTime = 12;
+    Object.defineProperty(media, 'paused', { configurable: true, get: () => false });
+
+    await rerender({ mediaUrl: 'blob:refreshed-media' });
+    await flushMicrotasks();
+
+    expect(media.querySelector('source')?.getAttribute('src')).toBe('blob:refreshed-media');
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(media.currentTime).toBe(12);
+    media.dispatchEvent(new Event('loadedmetadata'));
+    await flushMicrotasks();
+    expect(player.play).toHaveBeenCalledTimes(1);
   });
 });

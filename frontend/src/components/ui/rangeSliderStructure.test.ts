@@ -22,8 +22,6 @@ const THUMB_RULE_ALLOWLIST: Record<string, string> = {
   'styles/range-slider.css': 'the central slider stylesheet',
   'components/VideoPlayer.svelte':
     'Plyr generates its inputs at runtime; only vendor pseudo-element selectors can style them',
-  'components/PlyrMiniPlayer.svelte':
-    'Plyr generates its inputs at runtime; only vendor pseudo-element selectors can style them',
 };
 
 const SELF = 'components/ui/RangeSlider.svelte';

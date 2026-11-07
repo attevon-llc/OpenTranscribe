@@ -1,7 +1,7 @@
 /**
  * Media-element readiness helpers shared by the players.
  *
- * Both `VideoPlayer.svelte` and `PlyrMiniPlayer.svelte` need the same thing: a
+ * Both `VideoPlayer.svelte` and `player/MiniPlayer.svelte` need the same thing: a
  * seek requested before `loadedmetadata` has fired must still land on the right
  * timestamp. They used to carry byte-identical copies of the wait below.
  */

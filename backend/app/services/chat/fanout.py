@@ -280,7 +280,7 @@ def _run_plan_fanout(
 
 def _run_enrichment(
     llm: ChatPrepLLM, question: str, masked_chunks: list[MaskedChunk]
-) -> tuple[str, int, int, int]:
+) -> tuple[str, int]:
     """One bounded non-streaming call reconciling merged evidence (#403).
 
     Reads ``masked_chunks`` — evidence that has ALREADY passed through
@@ -289,13 +289,14 @@ def _run_enrichment(
     Temperature 0, non-streaming, one call, bounded to ~500 reply tokens.
 
     Returns:
-        ``(block, llm_calls, prompt_tokens, completion_tokens)``. ``block``
+        ``(block, llm_calls)``. Its tokens are recorded by the LLM seam
+        (``llm_call_events``), not here. ``block``
         is ``""`` on any failure or when there is no evidence to reconcile —
         an enhancement in the hot path, never a dependency.
     """
     evidence = "\n\n".join(c.content.strip() for c in masked_chunks[:12] if c.content.strip())
     if not evidence.strip():
-        return "", 0, 0, 0
+        return "", 0
     evidence = evidence[:6000]
     system = (
         "You reconcile several pieces of retrieved evidence about ONE question "
@@ -314,21 +315,15 @@ def _run_enrichment(
         response = llm.chat_completion(messages, max_tokens=500, temperature=0)
     except Exception as exc:  # noqa: BLE001 — an enhancement, never a dependency
         logger.info(f"Chat enrichment call failed, continuing without a synthesis block: {exc}")
-        return "", 1, 0, 0
+        return "", 1
 
     text = (getattr(response, "content", "") or "").strip()[:3000]
     if not text:
-        return "", 1, 0, 0
+        return "", 1
 
     from app.services.chat.prompt_blocks import format_synthesis_block
 
-    try:
-        prompt_tokens = llm.estimate_tokens(system + user_content)
-        completion_tokens = llm.estimate_tokens(text)
-    except Exception:  # noqa: BLE001 — metering must not break the feature
-        prompt_tokens = 0
-        completion_tokens = 0
-    return format_synthesis_block(text), 1, prompt_tokens, completion_tokens
+    return format_synthesis_block(text), 1
 
 
 def _maybe_run_enrichment(
@@ -352,9 +347,6 @@ def _maybe_run_enrichment(
     one subquestion (or none) and no recurrence result has nothing worth
     reconciling, and running the call anyway would just paraphrase what a
     single leg already found.
-
-    Mutates `meta` in place with the extra token counters `_finalize_turn`
-    folds into the turn's metered totals.
 
     Returns:
         `(synthesis_block, llm_calls)` — `synthesis_block` is `""` unless
@@ -383,11 +375,7 @@ def _maybe_run_enrichment(
         return "", 0
 
     _check_cancelled(assistant_message_uuid)
-    block, calls, extra_prompt, extra_completion = _run_enrichment(llm, question, masked)
-    meta["extra_llm_prompt_tokens"] = meta.get("extra_llm_prompt_tokens", 0) + extra_prompt
-    meta["extra_llm_completion_tokens"] = (
-        meta.get("extra_llm_completion_tokens", 0) + extra_completion
-    )
+    block, calls = _run_enrichment(llm, question, masked)
     emit_trace(
         recorder,
         QueryStage.REVIEWED,

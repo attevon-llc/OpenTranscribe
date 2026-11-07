@@ -97,6 +97,7 @@ from app.services.chat.trace_stream import drain_available
 from app.services.chat.trace_stream import trace_payload
 from app.services.chat.turn import ChatTurn
 from app.services.chat.turn import _TurnCancelled
+from app.services.llm_call_events import chat_call_scope
 
 if TYPE_CHECKING:
     from app.services.llm_types import ChatLLM
@@ -497,20 +498,23 @@ class ChatService:
                 # the turn back to holding one transaction across the rewrite,
                 # the counted tier's aggregation and retrieval.
                 def _prep() -> tuple[list[MaskedChunk], dict[str, Any], Any, Any, str, str]:
-                    return _prepare_context(
-                        user_id=user_id,
-                        organization_id=organization_id,
-                        question=question,
-                        history=history,
-                        settings=settings,
-                        file_uuids=file_uuids,
-                        speakers=speakers,
-                        search_mode=search_mode,
-                        llm=llm,
-                        rewrite_enabled=settings.query_rewrite_enabled,
-                        assistant_message_uuid=assistant_message_uuid,
-                        recorder=recorder,
-                    )
+                    # The planner, rewrite, enrichment and overview calls are recorded by the
+                    # LLM seam, under this turn's user and tenant.
+                    with chat_call_scope(user_id, organization_id):
+                        return _prepare_context(
+                            user_id=user_id,
+                            organization_id=organization_id,
+                            question=question,
+                            history=history,
+                            settings=settings,
+                            file_uuids=file_uuids,
+                            speakers=speakers,
+                            search_mode=search_mode,
+                            llm=llm,
+                            rewrite_enabled=settings.query_rewrite_enabled,
+                            assistant_message_uuid=assistant_message_uuid,
+                            recorder=recorder,
+                        )
 
                 prepared = _Awaited()
                 async for frame in _keepalive_until_done(
@@ -528,13 +532,6 @@ class ChatService:
                 turn.metadata.update(meta)
                 counted_block = format_counted_block(counted)
                 overview_block = overview.block if overview is not None else ""
-
-                # #403: extra tokens spent on the planner/enrichment/
-                # rewrite-extension calls this turn made, folded into the
-                # turn's own counters so `_finalize_turn` meters them through
-                # the same `record_chat_usage` call the answer stream uses.
-                turn.extra_prompt_tokens += int(meta.get("extra_llm_prompt_tokens", 0))
-                turn.extra_completion_tokens += int(meta.get("extra_llm_completion_tokens", 0))
 
                 for frame in _context_warning_frames(meta):
                     yield frame

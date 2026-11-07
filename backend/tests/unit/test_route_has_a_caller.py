@@ -257,7 +257,6 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/speaker-profiles/speakers/{speaker_uuid}/suggestions": _UNVERIFIED_REASON,
     "/api/speakers/{speaker_uuid}/verify": _UNVERIFIED_REASON,
     "/api/users": _UNVERIFIED_REASON,
-    "/api/usage/me/daily": _USAGE_REASON,
 }
 
 

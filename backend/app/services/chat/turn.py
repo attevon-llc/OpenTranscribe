@@ -54,15 +54,6 @@ class ChatTurn:
         self.cache_read_tokens: int | None = None
         self.cache_write_tokens: int | None = None
         self.tokens_estimated = False
-        # #403: tokens spent on bounded, non-generation LLM calls this
-        # turn made (planner, enrichment, and the planner's share of a
-        # follow-up's extended rewrite call) — folded into `prompt_tokens`/
-        # `completion_tokens` in `_finalize_turn`, right before
-        # `record_chat_usage` reads them, so those calls are metered through
-        # the SAME single hook the answer stream already goes through
-        # rather than needing a second accounting path.
-        self.extra_prompt_tokens = 0
-        self.extra_completion_tokens = 0
         self.finish_reason: str | None = None
         self.error: str | None = None
         self.error_code: str | None = None

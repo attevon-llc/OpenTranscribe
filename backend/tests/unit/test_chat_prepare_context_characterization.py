@@ -558,12 +558,9 @@ def test_a_planned_fan_out_turn_produces_exactly_this(monkeypatch):
         "reranked": 0,
         "cache_hit": False,
         "files_searched": "all",
-        "extra_llm_prompt_tokens": meta["extra_llm_prompt_tokens"],
-        "extra_llm_completion_tokens": len("The evidence agrees on the budget.") // 4,
         "recurrence": {"groups": 3, "truncated": False},
         "llm_calls": 2,
     }
-    assert meta["extra_llm_prompt_tokens"] > 0
     assert legs_seen == [
         {
             "legs": ["main", "subquestion-0", "subquestion-1", "recurrence"],

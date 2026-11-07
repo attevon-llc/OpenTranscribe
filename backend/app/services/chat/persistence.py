@@ -82,17 +82,6 @@ async def _finalize_turn(
         except Exception:  # noqa: BLE001
             logger.exception("Token estimation failed")
 
-    # #403: fold in the planner/enrichment/rewrite-extension tokens
-    # AFTER the fallback estimate above (which only fires when the provider
-    # reported nothing) and BEFORE `total_tokens` — this is the one place
-    # every path (real usage or estimated) converges before persistence and
-    # the `record_chat_usage` hook, so those bounded calls are metered
-    # through the exact same accounting the answer stream already uses.
-    if turn.extra_prompt_tokens or turn.extra_completion_tokens:
-        turn.prompt_tokens = (turn.prompt_tokens or 0) + turn.extra_prompt_tokens
-        turn.completion_tokens = (turn.completion_tokens or 0) + turn.extra_completion_tokens
-        turn.tokens_estimated = True
-
     turn.total_tokens = (turn.prompt_tokens or 0) + (turn.completion_tokens or 0)
     turn.metadata.setdefault("timings_ms", {})["total"] = int((time.monotonic() - started) * 1000)
     used_citations = citations_mod.extract_used_citations(turn.answer, turn.offered_citations)

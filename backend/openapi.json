@@ -51093,59 +51093,6 @@
         ]
       }
     },
-    "/api/usage/me/daily": {
-      "get": {
-        "description": "Daily LLM token totals for the caller, over every LLM feature — the series behind a chart.\n\nGrouped in SQL: this one only needs the date, the event type and the quantity, all\nreal columns, so there is no reason to pull every row into Python. ``messages`` counts\nchat exchanges, ``events`` every LLM token event, and ``by_event_type`` splits the day's\ntokens by feature.",
-        "operationId": "get_my_daily_usage_api_usage_me_daily_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "days",
-            "required": false,
-            "schema": {
-              "default": 30,
-              "maximum": 365,
-              "minimum": 1,
-              "title": "Days",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get My Daily Usage Api Usage Me Daily Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "summary": "Get My Daily Usage",
-        "tags": [
-          "usage"
-        ]
-      }
-    },
     "/api/user-settings/ai-summary": {
       "get": {
         "description": "Get the user's auto-summary preference and the deployment-wide switch.\n\nReturns:\n    ``ai_summary_enabled`` (the caller's preference) and ``system_enabled`` (the admin's\n    deployment-wide switch, read from the setting ``PUT /admin/system/ai-summary`` writes).",

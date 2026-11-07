@@ -40,8 +40,13 @@ def handle_trash_action(
             trash_access.require_purgeable_by(ctx, file)
     except ResourceNotFoundError:
         return _refused(file_uuid, "File not found in the trash", "NOT_FOUND")
-    except AccessDeniedError as denied:
-        return _refused(file_uuid, str(denied.detail), "FORBIDDEN")
+    except AccessDeniedError:
+        detail = (
+            trash_access.RESTORE_FORBIDDEN_DETAIL
+            if action == "restore"
+            else trash_access.PURGE_FORBIDDEN_DETAIL
+        )
+        return _refused(file_uuid, detail, "FORBIDDEN")
 
     if action == "restore":
         restored, _ = trash_service.restore_files(

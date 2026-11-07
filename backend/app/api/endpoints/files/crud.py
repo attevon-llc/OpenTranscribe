@@ -276,6 +276,7 @@ def delete_media_file(
     from app.services.content_hold_service import record_hold_refusal
     from app.services.delete_permissions import get_deletable_file
     from app.services.hold_guard import HoldRefusedError
+    from app.services.hold_guard import hold_state
     from app.services.hold_guard import refusal_detail
     from app.services.trash_service import trash_files
 
@@ -289,8 +290,10 @@ def delete_media_file(
     )
     try:
         trash_files(db, [db_file], actor=current_user, request=request, bypass=bypass)
-    except HoldRefusedError as refused:
-        state = refused.merged()
+    except HoldRefusedError:
+        # Read back from the database, never from the exception: the row is still locked by
+        # this transaction, so the state is the one that refused it.
+        state = hold_state(db, int(db_file.id))
         record_hold_refusal(
             db,
             request,

@@ -319,6 +319,17 @@ def init_db(db: Session) -> None:
     _ensure_admin_user(db)
     _ensure_default_tags(db)
     _ensure_system_prompts(db)
+    _seed_deprecated_env_settings(db)
+
+
+def _seed_deprecated_env_settings(db: Session) -> None:
+    """Copy settings that moved from ``.env`` to the admin UI into the database, once (D15).
+
+    Removed in v0.8.0 together with the environment read.
+    """
+    from app.services import youtube_policy
+
+    youtube_policy.seed_from_env(db)
 
 
 def main() -> None:

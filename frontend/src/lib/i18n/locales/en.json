@@ -6502,5 +6502,18 @@
   "settings.selfErasureAdmin.saveGrace": "Save period",
   "settings.selfErasureAdmin.saved": "Saved",
   "settings.selfErasureAdmin.saveError": "Could not save the setting.",
-  "settings.selfErasureAdmin.loadError": "Could not load the setting."
+  "settings.selfErasureAdmin.loadError": "Could not load the setting.",
+  "settings.youtube.title": "YouTube downloads",
+  "settings.youtube.desc": "Limits and automatic retry for downloads from YouTube links. Changes apply within about 30 seconds.",
+  "settings.youtube.rateLimitEnabled": "Limit downloads per user",
+  "settings.youtube.perHour": "Downloads per hour",
+  "settings.youtube.perDay": "Downloads per day",
+  "settings.youtube.autoRetry": "Retry failed downloads automatically",
+  "settings.youtube.recoveryBatch": "Downloads re-queued per recovery cycle",
+  "settings.youtube.recoveryBatchHint": "The recovery check runs every 10 minutes. Keep this low to stay within YouTube's limits.",
+  "settings.youtube.save": "Save",
+  "settings.youtube.saving": "Saving...",
+  "settings.youtube.saved": "YouTube settings saved",
+  "settings.youtube.saveFailed": "Failed to save YouTube settings",
+  "settings.youtube.loadFailed": "Failed to load YouTube settings"
 }

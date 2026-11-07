@@ -6490,5 +6490,18 @@
   "settings.selfErasureAdmin.saveGrace": "期間を保存",
   "settings.selfErasureAdmin.saved": "保存しました",
   "settings.selfErasureAdmin.saveError": "設定を保存できませんでした。",
-  "settings.selfErasureAdmin.loadError": "設定を読み込めませんでした。"
+  "settings.selfErasureAdmin.loadError": "設定を読み込めませんでした。",
+  "settings.youtube.title": "YouTube のダウンロード",
+  "settings.youtube.desc": "YouTube リンクからのダウンロードに対する制限と自動再試行です。変更は約 30 秒以内に反映されます。",
+  "settings.youtube.rateLimitEnabled": "ユーザーごとのダウンロードを制限する",
+  "settings.youtube.perHour": "1 時間あたりのダウンロード数",
+  "settings.youtube.perDay": "1 日あたりのダウンロード数",
+  "settings.youtube.autoRetry": "失敗したダウンロードを自動的に再試行する",
+  "settings.youtube.recoveryBatch": "復旧サイクルごとに再キューされるダウンロード数",
+  "settings.youtube.recoveryBatchHint": "復旧チェックは 10 分ごとに実行されます。YouTube の制限内に収めるため、小さい値にしてください。",
+  "settings.youtube.save": "保存",
+  "settings.youtube.saving": "保存中...",
+  "settings.youtube.saved": "YouTube の設定を保存しました",
+  "settings.youtube.saveFailed": "YouTube の設定を保存できませんでした",
+  "settings.youtube.loadFailed": "YouTube の設定を読み込めませんでした"
 }

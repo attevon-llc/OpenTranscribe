@@ -6514,5 +6514,18 @@
   "settings.selfErasureAdmin.saveGrace": "Enregistrer le délai",
   "settings.selfErasureAdmin.saved": "Enregistré",
   "settings.selfErasureAdmin.saveError": "Impossible d'enregistrer le paramètre.",
-  "settings.selfErasureAdmin.loadError": "Impossible de charger le paramètre."
+  "settings.selfErasureAdmin.loadError": "Impossible de charger le paramètre.",
+  "settings.youtube.title": "Téléchargements YouTube",
+  "settings.youtube.desc": "Limites et nouvelle tentative automatique pour les téléchargements depuis des liens YouTube. Les changements s'appliquent en 30 secondes environ.",
+  "settings.youtube.rateLimitEnabled": "Limiter les téléchargements par utilisateur",
+  "settings.youtube.perHour": "Téléchargements par heure",
+  "settings.youtube.perDay": "Téléchargements par jour",
+  "settings.youtube.autoRetry": "Réessayer automatiquement les téléchargements échoués",
+  "settings.youtube.recoveryBatch": "Téléchargements remis en file par cycle de récupération",
+  "settings.youtube.recoveryBatchHint": "La vérification de récupération s'exécute toutes les 10 minutes. Gardez une valeur basse pour respecter les limites de YouTube.",
+  "settings.youtube.save": "Enregistrer",
+  "settings.youtube.saving": "Enregistrement...",
+  "settings.youtube.saved": "Paramètres YouTube enregistrés",
+  "settings.youtube.saveFailed": "Échec de l'enregistrement des paramètres YouTube",
+  "settings.youtube.loadFailed": "Échec du chargement des paramètres YouTube"
 }

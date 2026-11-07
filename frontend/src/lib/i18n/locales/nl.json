@@ -6502,5 +6502,18 @@
   "settings.selfErasureAdmin.saveGrace": "Wachttijd opslaan",
   "settings.selfErasureAdmin.saved": "Opgeslagen",
   "settings.selfErasureAdmin.saveError": "De instelling kon niet worden opgeslagen.",
-  "settings.selfErasureAdmin.loadError": "De instelling kon niet worden geladen."
+  "settings.selfErasureAdmin.loadError": "De instelling kon niet worden geladen.",
+  "settings.youtube.title": "YouTube-downloads",
+  "settings.youtube.desc": "Limieten en automatisch opnieuw proberen voor downloads van YouTube-links. Wijzigingen gelden na ongeveer 30 seconden.",
+  "settings.youtube.rateLimitEnabled": "Downloads per gebruiker beperken",
+  "settings.youtube.perHour": "Downloads per uur",
+  "settings.youtube.perDay": "Downloads per dag",
+  "settings.youtube.autoRetry": "Mislukte downloads automatisch opnieuw proberen",
+  "settings.youtube.recoveryBatch": "Opnieuw in de wachtrij geplaatste downloads per herstelcyclus",
+  "settings.youtube.recoveryBatchHint": "De herstelcontrole draait elke 10 minuten. Houd de waarde laag om binnen de limieten van YouTube te blijven.",
+  "settings.youtube.save": "Opslaan",
+  "settings.youtube.saving": "Opslaan...",
+  "settings.youtube.saved": "YouTube-instellingen opgeslagen",
+  "settings.youtube.saveFailed": "YouTube-instellingen opslaan mislukt",
+  "settings.youtube.loadFailed": "YouTube-instellingen laden mislukt"
 }

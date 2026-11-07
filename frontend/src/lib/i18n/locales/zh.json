@@ -6490,5 +6490,18 @@
   "settings.selfErasureAdmin.saveGrace": "保存期限",
   "settings.selfErasureAdmin.saved": "已保存",
   "settings.selfErasureAdmin.saveError": "无法保存该设置。",
-  "settings.selfErasureAdmin.loadError": "无法加载该设置。"
+  "settings.selfErasureAdmin.loadError": "无法加载该设置。",
+  "settings.youtube.title": "YouTube 下载",
+  "settings.youtube.desc": "针对 YouTube 链接下载的限额与自动重试。更改约在 30 秒内生效。",
+  "settings.youtube.rateLimitEnabled": "限制每位用户的下载次数",
+  "settings.youtube.perHour": "每小时下载次数",
+  "settings.youtube.perDay": "每天下载次数",
+  "settings.youtube.autoRetry": "自动重试失败的下载",
+  "settings.youtube.recoveryBatch": "每个恢复周期重新排队的下载数",
+  "settings.youtube.recoveryBatchHint": "恢复检查每 10 分钟运行一次。请保持较小的值，以免超出 YouTube 的限制。",
+  "settings.youtube.save": "保存",
+  "settings.youtube.saving": "正在保存...",
+  "settings.youtube.saved": "已保存 YouTube 设置",
+  "settings.youtube.saveFailed": "无法保存 YouTube 设置",
+  "settings.youtube.loadFailed": "无法加载 YouTube 设置"
 }

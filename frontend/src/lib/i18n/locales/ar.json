@@ -6550,5 +6550,18 @@
   "settings.selfErasureAdmin.saveGrace": "حفظ الفترة",
   "settings.selfErasureAdmin.saved": "تم الحفظ",
   "settings.selfErasureAdmin.saveError": "تعذر حفظ الإعداد.",
-  "settings.selfErasureAdmin.loadError": "تعذر تحميل الإعداد."
+  "settings.selfErasureAdmin.loadError": "تعذر تحميل الإعداد.",
+  "settings.youtube.title": "تنزيلات يوتيوب",
+  "settings.youtube.desc": "حدود وإعادة محاولة تلقائية لعمليات التنزيل من روابط يوتيوب. تُطبَّق التغييرات خلال نحو 30 ثانية.",
+  "settings.youtube.rateLimitEnabled": "تحديد عدد التنزيلات لكل مستخدم",
+  "settings.youtube.perHour": "عدد التنزيلات في الساعة",
+  "settings.youtube.perDay": "عدد التنزيلات في اليوم",
+  "settings.youtube.autoRetry": "إعادة محاولة التنزيلات الفاشلة تلقائيًا",
+  "settings.youtube.recoveryBatch": "عدد التنزيلات المعاد إدراجها في الطابور لكل دورة استرداد",
+  "settings.youtube.recoveryBatchHint": "يعمل فحص الاسترداد كل 10 دقائق. أبقِ القيمة منخفضة للبقاء ضمن حدود يوتيوب.",
+  "settings.youtube.save": "حفظ",
+  "settings.youtube.saving": "جارٍ الحفظ...",
+  "settings.youtube.saved": "تم حفظ إعدادات يوتيوب",
+  "settings.youtube.saveFailed": "تعذّر حفظ إعدادات يوتيوب",
+  "settings.youtube.loadFailed": "تعذّر تحميل إعدادات يوتيوب"
 }

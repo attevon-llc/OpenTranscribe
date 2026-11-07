@@ -57,6 +57,7 @@ from app.tasks.media_playlist_processing import _dispatch_playlist_video_task
 from app.tasks.media_playlist_processing import _handle_playlist_result
 from app.tasks.youtube_processing import _resolve_download_quality
 from app.tasks.youtube_processing import process_youtube_url_task
+from tests.helpers import set_youtube_policy
 
 
 def _make_media_file(
@@ -197,7 +198,7 @@ def yt_url_seams(monkeypatch, db_session):
     for each test to configure.
     """
     monkeypatch.setattr(youtube_processing.settings, "YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", False)
-    monkeypatch.setattr(youtube_processing.settings, "YOUTUBE_AUTO_RETRY_ENABLED", True)
+    set_youtube_policy(monkeypatch, auto_retry_enabled=True)
 
     @contextlib.contextmanager
     def _scope():

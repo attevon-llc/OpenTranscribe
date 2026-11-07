@@ -37,6 +37,11 @@ def _raw(name: str) -> str | None:
     return None if value is None else value.strip()
 
 
+def env_is_set(name: str) -> bool:
+    """True when the variable is set to a non-blank value."""
+    return bool(_raw(name))
+
+
 def env_int(
     name: str, default: int, *, minimum: int | None = None, maximum: int | None = None
 ) -> int:

@@ -207,3 +207,13 @@ def media_file_count(db: Session, user_id: int) -> int:
     count taken before and after a request can move without the request doing anything.
     """
     return db.query(MediaFile).filter(MediaFile.user_id == user_id).count()
+
+
+def set_youtube_policy(monkeypatch, **fields):
+    """Pin the effective YouTube ingestion policy for one test (the stored policy is DB-backed)."""
+    from dataclasses import replace
+
+    from app.services import youtube_policy
+
+    policy = replace(youtube_policy.DEFAULT_POLICY, **fields)
+    monkeypatch.setattr(youtube_policy, "current_youtube_policy", lambda: policy)

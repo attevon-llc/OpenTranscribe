@@ -6514,5 +6514,18 @@
   "settings.selfErasureAdmin.saveGrace": "Salvar período",
   "settings.selfErasureAdmin.saved": "Salvo",
   "settings.selfErasureAdmin.saveError": "Não foi possível salvar a configuração.",
-  "settings.selfErasureAdmin.loadError": "Não foi possível carregar a configuração."
+  "settings.selfErasureAdmin.loadError": "Não foi possível carregar a configuração.",
+  "settings.youtube.title": "Downloads do YouTube",
+  "settings.youtube.desc": "Limites e nova tentativa automática para downloads de links do YouTube. As alterações valem em cerca de 30 segundos.",
+  "settings.youtube.rateLimitEnabled": "Limitar downloads por usuário",
+  "settings.youtube.perHour": "Downloads por hora",
+  "settings.youtube.perDay": "Downloads por dia",
+  "settings.youtube.autoRetry": "Tentar novamente automaticamente os downloads com falha",
+  "settings.youtube.recoveryBatch": "Downloads recolocados na fila por ciclo de recuperação",
+  "settings.youtube.recoveryBatchHint": "A verificação de recuperação roda a cada 10 minutos. Mantenha o valor baixo para respeitar os limites do YouTube.",
+  "settings.youtube.save": "Salvar",
+  "settings.youtube.saving": "Salvando...",
+  "settings.youtube.saved": "Configurações do YouTube salvas",
+  "settings.youtube.saveFailed": "Falha ao salvar as configurações do YouTube",
+  "settings.youtube.loadFailed": "Falha ao carregar as configurações do YouTube"
 }

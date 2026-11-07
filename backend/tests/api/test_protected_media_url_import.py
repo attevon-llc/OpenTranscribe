@@ -28,7 +28,6 @@ import app.api.endpoints.files.url_processing as url_processing
 import app.api.endpoints.files.url_video_import as url_video_import
 import app.api.endpoints.system as system_endpoints
 import app.utils.task_secret_handoff as handoff
-from app.core.config import settings
 from app.core.exceptions import InvalidInputError
 from app.models.media import MediaFile
 from app.models.organization import Organization
@@ -40,6 +39,7 @@ from app.services.media_download_service import MediaDownloadService
 from app.services.protected_media_plugins.mediacms import MediacmsProvider
 from app.utils.encryption import encrypt_api_key
 from tests.helpers import media_file_count
+from tests.helpers import set_youtube_policy
 from tests.helpers import stub_public_dns
 
 MEDIA_URL = "https://m.example.com/view?m=abc"
@@ -66,7 +66,7 @@ class _FakeRedis:
 def seams(monkeypatch):
     """Record the metadata lookups and both dispatches; keep the hand-off in memory."""
     stub_public_dns(monkeypatch)
-    monkeypatch.setattr(settings, "YOUTUBE_USER_RATE_LIMIT_ENABLED", False)
+    set_youtube_policy(monkeypatch, user_rate_limit_enabled=False)
     redis = _FakeRedis()
     monkeypatch.setattr(handoff, "get_redis", lambda: redis)
     extracted: list[tuple[str, dict]] = []

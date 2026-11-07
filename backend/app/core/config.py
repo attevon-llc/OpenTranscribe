@@ -1426,25 +1426,8 @@ class Settings(BaseSettings):
     YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = 2
     YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = 15
 
-    # User Rate Limiting (per-user quotas to prevent abuse)
-    YOUTUBE_USER_RATE_LIMIT_ENABLED: bool = (
-        os.getenv("YOUTUBE_USER_RATE_LIMIT_ENABLED", "true").lower() == "true"
-    )
-    YOUTUBE_USER_RATE_LIMIT_PER_HOUR: int = 50
-    YOUTUBE_USER_RATE_LIMIT_PER_DAY: int = 500
-
-    # Recovery throttle: max YouTube downloads re-queued per health-check cycle
-    # (every 10 min).  Keep this well below YOUTUBE_USER_RATE_LIMIT_PER_HOUR / 6
-    # to leave headroom for user-initiated downloads.
-    YOUTUBE_RECOVERY_BATCH_SIZE: int = 3
-    # Master switch for automatic YouTube download retries.
-    # Set to false to stop all automatic re-attempts (both Celery task retries
-    # and the recovery task's periodic re-queuing).  Manual downloads via the
-    # UI are NOT affected — only automatic/background retry loops are disabled.
-    # Re-enable by setting to true and restarting the celery-worker container.
-    YOUTUBE_AUTO_RETRY_ENABLED: bool = (
-        os.getenv("YOUTUBE_AUTO_RETRY_ENABLED", "true").lower() == "true"
-    )
+    # The per-user quotas, the recovery batch size and the automatic-retry switch are admin
+    # settings (``services/youtube_policy``), not environment variables.
 
     # Celery task-level rate limit for YouTube downloads.
     # Format: "N/h" (per hour), "N/m" (per minute), "N/s" (per second).

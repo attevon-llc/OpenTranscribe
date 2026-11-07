@@ -6514,5 +6514,18 @@
   "settings.selfErasureAdmin.saveGrace": "Guardar plazo",
   "settings.selfErasureAdmin.saved": "Guardado",
   "settings.selfErasureAdmin.saveError": "No se pudo guardar el ajuste.",
-  "settings.selfErasureAdmin.loadError": "No se pudo cargar el ajuste."
+  "settings.selfErasureAdmin.loadError": "No se pudo cargar el ajuste.",
+  "settings.youtube.title": "Descargas de YouTube",
+  "settings.youtube.desc": "Límites y reintento automático para las descargas desde enlaces de YouTube. Los cambios se aplican en unos 30 segundos.",
+  "settings.youtube.rateLimitEnabled": "Limitar las descargas por usuario",
+  "settings.youtube.perHour": "Descargas por hora",
+  "settings.youtube.perDay": "Descargas por día",
+  "settings.youtube.autoRetry": "Reintentar automáticamente las descargas fallidas",
+  "settings.youtube.recoveryBatch": "Descargas reencoladas por ciclo de recuperación",
+  "settings.youtube.recoveryBatchHint": "La comprobación de recuperación se ejecuta cada 10 minutos. Manténgalo bajo para respetar los límites de YouTube.",
+  "settings.youtube.save": "Guardar",
+  "settings.youtube.saving": "Guardando...",
+  "settings.youtube.saved": "Ajustes de YouTube guardados",
+  "settings.youtube.saveFailed": "No se pudieron guardar los ajustes de YouTube",
+  "settings.youtube.loadFailed": "No se pudieron cargar los ajustes de YouTube"
 }

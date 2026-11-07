@@ -78,6 +78,7 @@ from .endpoints import user_settings
 from .endpoints import users
 from .endpoints import version
 from .endpoints import watch_sources
+from .endpoints import youtube_settings
 from .endpoints.files import router as files_router
 from .endpoints.files.management import router as file_management_router
 
@@ -203,6 +204,7 @@ include_router_with_consistency(admin_identity.router, prefix="/admin", tags=["a
 include_router_with_consistency(admin_audit_logs.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_maintenance.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_quarantine.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(youtube_settings.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(
     admin_storage_integrity.router, prefix="/admin", tags=["admin-storage-integrity"]

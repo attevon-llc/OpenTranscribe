@@ -6526,5 +6526,18 @@
   "settings.ldap.tlsServerNameHelp": "Проверять сертификат каталога по этому имени, а не по адресу выше. Используйте, если вы подключаетесь по IP-адресу, а в сертификате указано только имя хоста. Оставьте пустым, чтобы проверять адрес выше.",
   "settings.ldap.tlsSkipVerify": "Не проверять TLS-сертификат каталога",
   "settings.ldap.tlsSkipVerifyWarning": "Небезопасно: любой, кто находится на сетевом пути, может выдать себя за сервер каталога и прочитать отправляемые ему пароли. Используйте только для тестирования. Для каждого такого подключения в журнал записывается предупреждение.",
-  "settings.ldap.tlsEnvFallbackHelp": "Пустые поля используют настройки сервера LDAP_CA_CERT_FILE и LDAP_TLS_SERVER_NAME. Пока вы не измените флажок ниже, проверка сертификата следует LDAP_TLS_SKIP_VERIFY."
+  "settings.ldap.tlsEnvFallbackHelp": "Пустые поля используют настройки сервера LDAP_CA_CERT_FILE и LDAP_TLS_SERVER_NAME. Пока вы не измените флажок ниже, проверка сертификата следует LDAP_TLS_SKIP_VERIFY.",
+  "settings.youtube.title": "Загрузки с YouTube",
+  "settings.youtube.desc": "Лимиты и автоматические повторы для загрузок по ссылкам YouTube. Изменения вступают в силу примерно через 30 секунд.",
+  "settings.youtube.rateLimitEnabled": "Ограничить загрузки для каждого пользователя",
+  "settings.youtube.perHour": "Загрузок в час",
+  "settings.youtube.perDay": "Загрузок в сутки",
+  "settings.youtube.autoRetry": "Автоматически повторять неудачные загрузки",
+  "settings.youtube.recoveryBatch": "Загрузок, возвращаемых в очередь за цикл восстановления",
+  "settings.youtube.recoveryBatchHint": "Проверка восстановления запускается каждые 10 минут. Держите значение небольшим, чтобы не превышать лимиты YouTube.",
+  "settings.youtube.save": "Сохранить",
+  "settings.youtube.saving": "Сохранение...",
+  "settings.youtube.saved": "Настройки YouTube сохранены",
+  "settings.youtube.saveFailed": "Не удалось сохранить настройки YouTube",
+  "settings.youtube.loadFailed": "Не удалось загрузить настройки YouTube"
 }

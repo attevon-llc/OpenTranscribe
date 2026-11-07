@@ -67,5 +67,22 @@ OpenTranscribe how to trust it, in Settings, Authentication or in `.env`:
 | `ldap_tls_server_name` | `LDAP_TLS_SERVER_NAME` | You connect by IP address or an alias, but the certificate lists a different name. |
 | `ldap_tls_skip_verify` | `LDAP_TLS_SKIP_VERIFY` | Last resort: turns verification off and logs a warning on every connection. |
 
+A value set in the Settings panel wins over the `.env` variable. A setting left empty in the
+panel keeps the `.env` value, and saving other LDAP fields no longer clears it.
+
 LDAP referrals are no longer followed. See [LDAP authentication](../authentication/ldap.md)
 for the full setting list.
+
+## MediaCMS sources and plain HTTP
+
+**Check this if...** you import from a MediaCMS server that is served over plain `http://`.
+
+A media source now records its scheme, and sign-in credentials are only ever sent to the
+scheme, host and port you configured. An address without a scheme means `https`. A source that
+was saved without a scheme and is really served over plain HTTP stops signing in after the
+upgrade: edit it in Settings, Media Sources and enter the address as `http://host[:port]`. The
+form warns while you type an `http://` address, and the saved source shows an
+"Unencrypted (http)" badge.
+
+If two older sources point at the same server, the address of either can only be changed after
+one of them is deleted. Their other fields stay editable.

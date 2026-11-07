@@ -13,11 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Supply-chain and publication gates for running OpenTranscribe on the public internet: GitHub Actions are pinned to commit SHAs with least-privilege tokens and audited by zizmor; CodeQL, OpenSSF Scorecard, OSV and a scheduled dependency and image scan run in CI; a dependency review blocks pull requests that add a vulnerable or copyleft package and uploads a package-change report; `scripts/check-licenses.py` classifies every shipped Python and npm package against a permissive-only policy; Dependabot waits seven days before proposing a new release; a migration guard flags table-locking operations; and `scripts/public-smoke.sh`, `scripts/check-public-headers.py` and `scripts/zap-baseline.sh` check a deployed instance from outside.
 - `./scripts/run-backend-tests.sh --throwaway-db [--keep]` runs the backend tests against a disposable, labelled Postgres container that it migrates with the checkout's own migrations, so it works from the main checkout and from any git worktree with no dev stack, and removes the container and its temp directory on every exit (failure, interrupt and termination included; `--keep` leaves them). A worktree with no `backend/venv` borrows the main checkout's. The labels let `./opentr.sh test-cleanup` find a leftover from a killed run.
 - `scripts/check-venv-drift.py` names any host-venv package that differs from the pinned requirements; `scripts/smoke-container-free.sh` checks shell syntax, the app import, the route table, the OpenAPI and pipeline-docs drift checks and the compose dry-run without starting a container. A test now keeps the ruff and import-linter pre-commit pins equal to the requirements pins.
+- `scripts/run-summary-eval.sh --concurrency N` runs up to N summary cells at once against the model server (one arm at a time), and a resumed run no longer repeats its smoke step. The performance-tuning guide gains an LLM throughput section covering the vLLM settings (`--max-num-seqs`, `--max-num-batched-tokens`, `--limit-mm-per-prompt` with `video:0`) and the app's own limits (summary slice workers, `chat.limits.max_concurrent_streams`, `NLP_CONCURRENCY`).
+- The FIPS-mode security suites run as their own CI job, `backend-fips-tests`.
+- `./opentr.sh start dev --with-ldap-test` also serves LDAPS on port 6360 with a certificate from a generated test CA, so certificate verification is tested end to end.
+- An extension-surface contract: `CLOUD_SEAM_VERSION` is 14, and a test fails when a module an extension imports moves without the surface list being updated.
 
 ### Changed
 
 - The ruff pre-commit hook moves to v0.16.7 and the import-linter hook is pinned to 2.15, matching `backend/requirements-dev.txt`. The test-timing baseline note in `CLAUDE.md` now says `baseline.xml` is untracked and local.
 - `nodeenv` is pinned to 1.12.0 in `backend/requirements-dev.txt`: 1.10.0, which pre-commit pulls in unpinned, crashes while reading Node's release index since it listed a Node 27 alpha, so the frontend hooks could not run.
+- pypdf is 6.21.4 in the CI and test requirements and the mypy hook.
+- The legacy diarization model directory comes from `DIAR_NATIVE_LEGACY_MODELS_DIR` instead of a fixed path.
+- The search modules read the OpenSearch client when they run, not at import, so a client created after startup is used everywhere.
+- The GDPR erasure tests no longer wait on object-storage retries; they took about a minute each and now take under a second.
 
 ### Removed
 
@@ -46,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opening the connection as a failure, so StartTLS was never attempted and every such login (and
   the admin Test connection) failed with a StartTLS error. StartTLS now runs, and a refused bind
   or failed StartTLS closes its connection instead of leaving the socket open.
+- The admin chat settings API reported four defaults that differ from what the server uses (`final_chunks`, `max_chunks_per_file`, `max_concurrent_streams`, `trace_enabled`). The schema now takes its defaults from the same constants as the server, and a test fails on any drift.
+- The frontend docs no longer list `VITE_API_BASE_URL`, which nothing reads.
+- The release now ships `service-credentials.sh`, which the installed probe scripts import.
+- Saving the LDAP settings panel no longer clears TLS settings that come from `.env`. A value in the panel wins over `.env`; an empty field keeps the `.env` value, and the admin Test connection resolves settings the same way a login does.
 
 ### Security
 
@@ -74,6 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cannot match an IP address. A CA file that cannot be read refuses the connection. **Upgrade
   note:** a directory with a private or self-signed certificate needs one of these settings.
   LDAP referrals are no longer followed.
+- **MediaCMS credentials are only sent to the configured scheme, host and port.** A media source
+  records its scheme; an address without one means https, and plain http is used only when the
+  source is entered as `http://`, with a warning in the form and an "Unencrypted (http)" badge.
+  **Upgrade note:** a source saved without a scheme that is really served over http must be
+  re-entered as `http://host[:port]` (see the 0.7.0 upgrade page).
 
 ## [0.6.1] - 2026-11-03
 

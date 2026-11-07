@@ -82,6 +82,7 @@ def record_chat_usage(ctx: ChatCompletionContext) -> None:
                     "tokens_estimated": ctx.tokens_estimated,
                     "retrieved_chunks": ctx.retrieved_chunks,
                     "use_context": ctx.use_context,
+                    "local": ctx.local,
                     "success": ctx.success,
                 },
             )

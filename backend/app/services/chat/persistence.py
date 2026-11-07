@@ -23,6 +23,7 @@ from app.services.chat import limits
 from app.services.chat.hooks import ChatCompletionContext
 from app.services.chat.hooks import fire_message_complete
 from app.services.chat.turn import ChatTurn
+from app.services.redaction.llm_guard import is_local_provider
 
 if TYPE_CHECKING:
     from app.services.llm_types import TurnAccountingLLM
@@ -131,6 +132,7 @@ async def _finalize_turn(
                 cache_read_tokens=turn.cache_read_tokens or 0,
                 cache_write_tokens=turn.cache_write_tokens or 0,
                 use_context=use_context,
+                local=bool(is_local_provider(getattr(llm, "config", None))),
             )
         )
     except Exception:  # noqa: BLE001 — hooks are contained by contract

@@ -128,13 +128,36 @@ def test_bedrock_is_not_priced_off_the_first_party_rate_card():
     )
 
 
-@pytest.mark.parametrize("provider", ["ollama", "vllm"])
-def test_local_runtimes_are_explicitly_free(provider):
+@pytest.mark.parametrize("provider", ["ollama", "vllm", "custom"])
+def test_a_model_on_this_deployment_is_explicitly_free(provider):
     """Free and unpriced are different states, and the UI shows them differently."""
     cost = estimate_cost_usd(
-        provider=provider, model="llama3", prompt_tokens=999_999, completion_tokens=999_999
+        provider=provider,
+        model="llama3",
+        prompt_tokens=999_999,
+        completion_tokens=999_999,
+        local=True,
     )
     assert cost == Decimal(0)
+
+
+@pytest.mark.parametrize("local", [False, None])
+@pytest.mark.parametrize("provider", ["ollama", "vllm"])
+def test_a_self_hostable_provider_name_alone_is_not_free(provider, local):
+    """Issue #790: a vllm/ollama endpoint on a hosted service bills per token.
+
+    Free is decided by where the endpoint is (recorded as ``local``), never by the name.
+    """
+    assert (
+        estimate_cost_usd(
+            provider=provider,
+            model="llama3",
+            prompt_tokens=1000,
+            completion_tokens=100,
+            local=local,
+        )
+        is None
+    )
 
 
 # --------------------------------------------------------------------------

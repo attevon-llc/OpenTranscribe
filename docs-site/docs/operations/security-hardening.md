@@ -233,8 +233,8 @@ encryption strategy must cover all of them:
 ### Encryption at Rest
 
 **MinIO Storage** (media files): Server-side AES-256-GCM encryption is **enabled automatically
-by the installer**, which generates `MINIO_KMS_SECRET_KEY` and sets
-`MINIO_KMS_AUTO_ENCRYPTION=on`. Manual configuration:
+by the installer**, which generates `MINIO_KMS_SECRET_KEY`. `MINIO_KMS_AUTO_ENCRYPTION` is `on`
+unless `.env` turns it off, so MinIO does not start without a key. Manual configuration:
 
 ```bash
 # .env configuration

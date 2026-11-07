@@ -26,8 +26,9 @@ class ServiceCredentialSettings(BaseSettings):
 
     # Basic-auth password for the Flower dashboard.
     FLOWER_PASSWORD: str = ""
-    # Bundled-MinIO server-side encryption switch ("on" encrypts every new object).
-    MINIO_KMS_AUTO_ENCRYPTION: str = ""
+    # Bundled-MinIO server-side encryption switch ("on" encrypts every new object). The
+    # default matches docker-compose.yml's, so an unset value means MinIO is encrypting.
+    MINIO_KMS_AUTO_ENCRYPTION: str = "on"
     # Explicit opt-out for a deployment that deliberately stores objects unencrypted
     # (e.g. the volume is encrypted at the host level).
     ALLOW_UNENCRYPTED_OBJECT_STORE: bool = False
@@ -61,8 +62,8 @@ def validate_service_credentials(is_production: bool) -> None:
         )
         raise ValueError("Insecure FLOWER_PASSWORD in production environment")
 
-    # Bundled MinIO only encrypts objects at rest when MINIO_KMS_AUTO_ENCRYPTION=on
-    # (compose defaults to off so key-less development installs still start).
+    # Bundled MinIO only encrypts objects at rest when MINIO_KMS_AUTO_ENCRYPTION=on, which is
+    # the compose default; "off" is accepted only with the explicit opt-out.
     if (
         is_production
         and settings.STORAGE_BACKEND == "minio"

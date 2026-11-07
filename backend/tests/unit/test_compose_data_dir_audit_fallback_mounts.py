@@ -33,6 +33,7 @@ volume NAMES actually differ from the non-bench ones, not just that a mount exis
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -96,6 +97,9 @@ def _resolve(overlays: tuple[str, ...]) -> dict:
         args += ["-f", name]
     args.append("config")
 
+    # The prod overlay refuses to render without a Flower password
+    # (test_prod_flower_password_required.py); a shell value wins over any .env.
+    env = {**os.environ, "FLOWER_PASSWORD": "rendered-test-value"}
     result = subprocess.run(
         args,
         cwd=REPO_ROOT,
@@ -103,6 +107,7 @@ def _resolve(overlays: tuple[str, ...]) -> dict:
         text=True,
         timeout=_CONFIG_TIMEOUT_S,
         check=False,
+        env=env,
     )
     assert result.returncode == 0, (
         f"docker compose config failed for {overlays}:\nstdout={result.stdout}\n"

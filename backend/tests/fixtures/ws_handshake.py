@@ -77,15 +77,21 @@ def make_user(db_session: Session, **fields: Any) -> User:
     return user
 
 
-def access_token(user: User, *, issued_at: int | None = None) -> str:
-    """An otherwise-valid access token with a chosen ``iat`` (now by default)."""
+def access_token(
+    user: User,
+    *,
+    issued_at: int | None = None,
+    jti: str | None = None,
+    expires_in: int = 600,
+) -> str:
+    """An otherwise-valid access token with a chosen ``iat`` (now by default), ``jti`` and life."""
     return jwt.encode(
         {
             "sub": str(user.uuid),
             "type": TOKEN_TYPE_ACCESS,
-            "jti": uuid_pkg.uuid4().hex,
+            "jti": jti or uuid_pkg.uuid4().hex,
             "iat": int(time.time()) if issued_at is None else issued_at,
-            "exp": int(time.time()) + 600,
+            "exp": int(time.time()) + expires_in,
         },
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,

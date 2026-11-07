@@ -4,8 +4,10 @@
 # Mirrors backend/app/core/startup_validation.py:validate_service_credentials(), which
 # refuses to start a hardened backend when FLOWER_PASSWORD is unset or a known default, or
 # when bundled MinIO does not encrypt objects (MINIO_KMS_AUTO_ENCRYPTION not on) without
-# ALLOW_UNENCRYPTED_OBJECT_STORE=true. Checking here turns a post-upgrade crash loop into a
-# refusal with a remedy while the old stack is still running.
+# ALLOW_UNENCRYPTED_OBJECT_STORE=true. It also catches the case MinIO itself refuses:
+# encryption on (the compose default) with no usable MINIO_KMS_SECRET_KEY. Checking here
+# turns a post-upgrade crash loop into a refusal with a remedy while the old stack is
+# still running.
 #
 # This file only READS .env. It never generates or writes a password or KMS key: losing a
 # KMS key makes every object encrypted under it permanently unreadable, so the operator
@@ -19,7 +21,7 @@ _ot_cred_raw() {
 
 # Print one problem per line for the .env at $1 (default .env); empty output means OK.
 ot_service_credential_problems() {
-    local env_file="${1:-.env}" env_name flower storage kms optout
+    local env_file="${1:-.env}" env_name flower storage kms optout key
     env_name=$(_ot_cred_raw ENVIRONMENT "$env_file" | tr '[:upper:]' '[:lower:]')
     case "$env_name" in development|dev|testing|test|local) return 0 ;; esac
 
@@ -29,13 +31,20 @@ ot_service_credential_problems() {
     esac
 
     storage=$(_ot_cred_raw STORAGE_BACKEND "$env_file" | tr '[:upper:]' '[:lower:]')
+    # Unset means on: docker-compose.yml defaults MINIO_KMS_AUTO_ENCRYPTION to on.
     kms=$(_ot_cred_raw MINIO_KMS_AUTO_ENCRYPTION "$env_file" | tr '[:upper:]' '[:lower:]')
     optout=$(_ot_cred_raw ALLOW_UNENCRYPTED_OBJECT_STORE "$env_file" | tr '[:upper:]' '[:lower:]')
+    key=$(_ot_cred_raw MINIO_KMS_SECRET_KEY "$env_file" | tr '[:upper:]' '[:lower:]')
     if [ -z "$storage" ] || [ "$storage" = "minio" ]; then
-        case "$kms" in on|true|1) ;; *)
-            case "$optout" in true|1|yes|on) ;; *)
-                echo "MINIO_KMS_AUTO_ENCRYPTION is not 'on' (bundled MinIO would store objects unencrypted)" ;;
-            esac ;;
+        case "${kms:-on}" in
+            on|true|1)
+                case "$key" in ""|*change_me*)
+                    echo "MINIO_KMS_SECRET_KEY is unset or a placeholder while MINIO_KMS encryption is on (bundled MinIO cannot start)" ;;
+                esac ;;
+            *)
+                case "$optout" in true|1|yes|on) ;; *)
+                    echo "MINIO_KMS_AUTO_ENCRYPTION is not 'on' (bundled MinIO would store objects unencrypted)" ;;
+                esac ;;
         esac
     fi
 }
@@ -59,7 +68,9 @@ ot_require_service_credentials() {
         echo "  MINIO_KMS_AUTO_ENCRYPTION=on"
         echo "  BACK UP that key before starting. Objects are encrypted with it; if it is lost they"
         echo "  become permanently unreadable. Objects already stored unencrypted stay readable."
-        echo "Or, to knowingly store objects unencrypted, add: ALLOW_UNENCRYPTED_OBJECT_STORE=true" ;;
+        echo "Or, to knowingly store objects unencrypted, add both:"
+        echo "  MINIO_KMS_AUTO_ENCRYPTION=off"
+        echo "  ALLOW_UNENCRYPTED_OBJECT_STORE=true" ;;
     esac
     return 1
 }

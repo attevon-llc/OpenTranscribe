@@ -39,8 +39,12 @@ def _session_lifetime_minutes(db: Session) -> tuple[int, int, int]:
             auth_settings.session_absolute_timeout_minutes,
             auth_settings.max_concurrent_sessions,
         )
-    except Exception:  # pragma: no cover - defensive
-        logger.debug("Could not read session lifetime config; using .env values", exc_info=True)
+    except Exception:
+        from app.core.auth_settings import CONFIG_FALLBACK_LOG
+        from app.core.auth_settings import count_config_fallback
+
+        logger.warning(CONFIG_FALLBACK_LOG, "session_lifetime", "the .env timeouts", exc_info=True)
+        count_config_fallback()
         return (
             settings.SESSION_IDLE_TIMEOUT_MINUTES,
             settings.SESSION_ABSOLUTE_TIMEOUT_MINUTES,

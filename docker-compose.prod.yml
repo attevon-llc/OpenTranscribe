@@ -146,6 +146,13 @@ services:
       context: ./backend
       dockerfile: Dockerfile.prod  # Production build
     pull_policy: always
+    environment:
+      # No fallback password in production: compose refuses to render any chain that
+      # includes this overlay while FLOWER_PASSWORD is unset or empty, so the base
+      # file's development default ("flower") can never reach a production Flower or
+      # the nginx overlay's basic-auth header. The backend's startup check additionally
+      # refuses known defaults such as "flower" and the .env.example placeholder.
+      - "FLOWER_PASSWORD=${FLOWER_PASSWORD:?FLOWER_PASSWORD must be set in .env for production (generate one with openssl rand -hex 16)}"
 
   # OpenSearch production security (enable security plugin with TLS + auth)
   # Requires OPENSEARCH_ADMIN_PASSWORD set in .env

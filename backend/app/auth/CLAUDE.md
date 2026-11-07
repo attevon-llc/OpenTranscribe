@@ -298,10 +298,16 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   dependencies, plus the lifecycle gate `admitted_on_optional_auth`); a copy that dropped `iat`
   once let logout-all miss the handshake. Sockets already open are closed with code 4004
   (`SESSION_REVOKED_CLOSE`) when the epoch is stamped (`ConnectionManager.close_revoked`, fed by
-  `publish_session_revocation`). The token store re-probes Redis after a degraded fall-back
-  (`REDIS_REPROBE_SECONDS`, at most one probe per interval); revocations recorded while degraded
-  never reached Redis, so tokens issued before recovery keep the database verdict until expiry
-  (`_predates_recovery`).
+  `publish_session_revocation`), judged by the socket token's own `iat` so host clock skew
+  cannot keep one open; a single-session `/logout` closes the sockets of the token it
+  blacklists (`publish_token_revocation` -> `close_token`); and every socket closes when the
+  access token that opened it expires (`_receive_until`), which bounds any socket a
+  best-effort broadcast missed. The token store re-probes Redis after a degraded fall-back
+  (`REDIS_REPROBE_SECONDS`, at most one probe per interval); this replica keeps the database
+  verdict for tokens issued before recovery (`_predates_recovery`), and the user epochs it could
+  not write are replayed into Redis on recovery (`auth/revocation_backlog.py`, a Lua write that
+  never lowers a newer epoch) so the other replicas refuse those tokens too. The backlog is in
+  memory: a restart of the stamping process before Redis returns loses it.
 - **`absolute_expires_at` is carried forward, never recomputed.** It is the only thing that
   caps a client which refreshes forever; `expires_at` moves with each rotation and therefore
   caps nothing. `last_activity_at` is the half that does move. Both are **nullable and

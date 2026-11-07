@@ -2743,7 +2743,7 @@ start_app() {
     # Generate a real MinIO KMS secret key if .env still has .env.example's
     # shipped placeholder, so a genuinely fresh `cp .env.example .env` boots
     # MinIO's KMS auto-encryption without manual intervention (issue #614).
-    ensure_minio_kms_secret ".env"
+    ensure_minio_kms_secret ".env" || exit 1
     # Unconditional owner-only lock (issue #857) -- not reachable via
     # ensure_minio_kms_secret alone once a real key is already in place.
     ensure_env_permissions ".env"
@@ -3675,7 +3675,7 @@ reset_and_init() {
 
   # Generate a real MinIO KMS secret key if .env still has .env.example's
   # shipped placeholder (issue #614).
-  ensure_minio_kms_secret ".env"
+  ensure_minio_kms_secret ".env" || exit 1
   # Unconditional owner-only lock (issue #857) -- not reachable via
   # ensure_minio_kms_secret alone once a real key is already in place.
   ensure_env_permissions ".env"

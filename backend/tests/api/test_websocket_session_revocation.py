@@ -20,9 +20,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 from starlette.websockets import WebSocketDisconnect
 
 from app.api import websockets as ws_module
+from app.api.endpoints.auth import sessions
 from app.auth.token_service import TokenService
 from app.models.user import User
 from app.services import gdpr_erasure_service
@@ -169,3 +171,52 @@ def test_deleting_the_account_closes_its_open_socket(
             _next_frame(socket)
 
     assert closed.value.code == ws_module.SESSION_REVOKED_CLOSE
+
+
+def test_single_session_logout_closes_only_that_tokens_socket(
+    db_session, revocation, client, owner, monkeypatch
+):
+    """`/logout` blacklists the presented access token; the socket it opened goes with it,
+    while a second tab's socket on another token stays open."""
+    monkeypatch.setattr(sessions, "token_service", revocation)
+    logged_out, other_tab = access_token(owner, jti="logout-a"), access_token(owner)
+    with (
+        client.websocket_connect("/ws", headers=cookie_header(logged_out)) as closing,
+        client.websocket_connect("/ws", headers=cookie_header(other_tab)) as staying,
+    ):
+        assert _established(closing) and _established(staying)
+
+        claims = {"sub": str(owner.uuid), "jti": "logout-a", "exp": int(time.time()) + 600}
+        request = Request({"type": "http", "headers": []})
+        assert sessions._revoke_presented_tokens(db_session, request, claims) == []
+
+        with pytest.raises(WebSocketDisconnect) as closed:
+            _next_frame(closing)
+        staying.send_text("still here")
+        echoed = json.loads(staying.receive_text())
+
+    assert closed.value.code == ws_module.SESSION_REVOKED_CLOSE
+    assert echoed == {"type": "echo", "data": "still here"}
+
+
+def test_a_socket_does_not_outlive_its_access_token(db_session, revocation, client, owner):
+    """Nothing revoked it, but its token expired: the socket closes so the SPA re-checks
+    the session and reconnects with a fresh token, rather than staying open forever."""
+    with client.websocket_connect(
+        "/ws", headers=cookie_header(access_token(owner, expires_in=2))
+    ) as socket:
+        assert _established(socket)
+
+        deadline = time.monotonic() + 15
+        closed: WebSocketDisconnect | None = None
+        while time.monotonic() < deadline:
+            try:
+                _next_frame(socket)
+            except WebSocketDisconnect as disconnect:
+                closed = disconnect
+                break
+            time.sleep(0.2)
+
+    assert closed is not None, "the socket outlived its access token"
+    assert closed.code == ws_module.SESSION_REVOKED_CLOSE
+    assert closed.reason == "Session expired"

@@ -54,11 +54,14 @@ CHAINS: dict[str, tuple[str, ...]] = {
 
 needs_docker = pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI not present")
 
+#: The prod overlay refuses to render without it (test_prod_flower_password_required.py).
+RENDER_BASE_ENV = "FLOWER_PASSWORD=rendered-test-value\n"
+
 
 def _render(tmp_path: Path, chain: tuple[str, ...], env: str = "") -> dict:
     for name in chain:
         shutil.copy(REPO_ROOT / name, tmp_path / name)
-    (tmp_path / "test.env").write_text(env, encoding="utf-8")
+    (tmp_path / "test.env").write_text(RENDER_BASE_ENV + env, encoding="utf-8")
     args = ["docker", "compose", "--env-file", "test.env"]
     for name in chain:
         args += ["-f", name]

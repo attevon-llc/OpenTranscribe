@@ -12,8 +12,9 @@ Following the characterization-test convention of ``tests/unit/test_transcriptio
 
 What is pinned here, in order:
 
-1. **``revoke_all_sessions`` is fail-open.** A raising ``token_service`` call must not
-   propagate — it must return ``0`` — and must leave real token rows untouched. The
+1. **``revoke_all_sessions`` fails closed.** A raising ``token_service`` call propagates,
+   so the caller's credential or privilege change rolls back with it, and leaves real
+   token rows untouched. The
    success path is pinned separately: a real call against real ``RefreshToken`` rows
    really revokes them (DB ``revoked_at`` set, Redis-shaped blacklist entries written)
    and returns the true count.
@@ -122,23 +123,24 @@ def test_revoke_all_sessions_revokes_real_tokens_and_returns_the_actual_count(
     assert isolated_token_service.store.get(f"revoked:jti:{row2.jti}") is not None
 
 
-def test_revoke_all_sessions_swallows_the_underlying_exception_and_returns_zero(
+def test_revoke_all_sessions_propagates_the_underlying_exception(
     db_session, normal_user, isolated_token_service, monkeypatch
 ):
+    """A swallowed failure let a password reset or lock commit while every old session
+    stayed valid; propagating rolls the caller's change back with it."""
     row = _mint_refresh_token(isolated_token_service, db_session, normal_user)
     monkeypatch.setattr(
         isolated_token_service,
         "revoke_all_user_tokens_in_transaction",
-        Mock(side_effect=RuntimeError("redis exploded")),
+        Mock(side_effect=RuntimeError("database went away")),
     )
 
-    revoked_count = account_security_service.revoke_all_sessions(
-        db_session, normal_user, reason="password_change"
-    )
+    with pytest.raises(RuntimeError, match="database went away"):
+        account_security_service.revoke_all_sessions(
+            db_session, normal_user, reason="password_change"
+        )
 
-    assert revoked_count == 0
-
-    # Fail-open means a clean no-op, not a partial mutation: the real row is untouched.
+    # No partial mutation either: the real row is untouched.
     persisted = db_session.query(RefreshToken).filter(RefreshToken.id == row.id).one()
     assert persisted.revoked_at is None
 

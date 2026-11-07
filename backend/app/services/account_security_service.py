@@ -162,16 +162,20 @@ def revoke_all_sessions(db: Session, user: User, *, reason: str) -> int:
     """Revoke every refresh token for *user*, inside the caller's transaction.
 
     Call this from anything that changes a credential or a privilege. Returns the
-    number of sessions revoked; failures are logged and swallowed so a revocation
-    problem never blocks the security change itself from being persisted.
+    number of sessions revoked.
+
+    A failure propagates: the caller's transaction then rolls back, so a password
+    reset, lock or role change is never persisted while the sessions it should have
+    ended stay valid. (The cache writes inside are best-effort already; what can raise
+    here is the database, whose aborted transaction could not commit anyway.)
     """
     try:
         revoked = token_service.revoke_all_user_tokens_in_transaction(
             db, user.id, user_uuid=str(user.uuid)
         )
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.error("Failed to revoke sessions for user %s (%s): %s", user.id, reason, exc)
-        return 0
+    except Exception:
+        logger.error("Failed to revoke sessions for user %s (%s)", user.id, reason, exc_info=True)
+        raise
 
     if revoked:
         logger.info("Revoked %d session(s) for user %s (%s)", revoked, user.id, reason)

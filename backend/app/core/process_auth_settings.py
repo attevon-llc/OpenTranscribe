@@ -21,7 +21,9 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.auth_settings import CONFIG_FALLBACK_LOG
 from app.core.auth_settings import DynamicAuthSettings
+from app.core.auth_settings import count_config_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -152,11 +154,8 @@ def _read_effective_from_own_session(key: str) -> Any:
         finally:
             db.close()
     except Exception:
-        logger.warning(
-            "Could not resolve auth config '%s' from the database; using the .env value.",
-            key,
-            exc_info=True,
-        )
+        logger.warning(CONFIG_FALLBACK_LOG, key, "the .env value", exc_info=True)
+        count_config_fallback()
         return None
 
 

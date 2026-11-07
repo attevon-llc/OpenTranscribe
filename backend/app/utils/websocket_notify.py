@@ -77,6 +77,20 @@ def publish_session_revocation(user_uuid: str, epoch: int) -> bool:
     return _publish(notification, user_uuid, SESSION_REVOKED_EVENT)
 
 
+def publish_token_revocation(user_uuid: str, jti: str) -> bool:
+    """Ask every API process to close *user_uuid*'s sockets opened with access token ``jti``.
+
+    Sent by a single-session logout, which blacklists that one token rather than stamping
+    a user-wide epoch. Best-effort like every publish here: a socket that misses it is
+    still closed when its token expires.
+
+    Returns:
+        True on success, False on failure (errors are logged, never raised).
+    """
+    notification = {"type": SESSION_REVOKED_EVENT, "user_uuid": user_uuid, "data": {"jti": jti}}
+    return _publish(notification, user_uuid, SESSION_REVOKED_EVENT)
+
+
 def send_ws_event_for_file(
     user_id: int,
     notification_type: str,

@@ -216,6 +216,8 @@ async def get_admin_stats(
                 "segments": total_segments,
                 "by_status": file_stats.get("by_status", {}),
                 "total_size": file_stats["total_size"],
+                "trashed_files": file_stats["trashed_files"],
+                "trashed_bytes": file_stats["trashed_bytes"],
             },
             "transcripts": {"total_segments": total_segments},
             "speakers": {

@@ -272,6 +272,7 @@ ignore_imports = [
   "app.utils.stats_helpers -> app.models.media",  # upward import, module level: removal planned (layering)
   "app.utils.stats_helpers -> app.models.speaker",  # upward import, module level: removal planned (layering)
   "app.utils.stats_helpers -> app.models.user",  # upward import, module level: removal planned (layering)
+  "app.utils.stats_helpers -> app.services.file_availability",  # upward import, function level: trashed-file counts through the one availability rule (#1101)
   "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
   "app.utils.stats_helpers -> app.transcription.diar_sidecar_status",  # upward import, function level: removal planned (layering)
   "app.utils.stuck_file_recovery -> app.models.media",  # upward import, module level: removal planned (layering)
@@ -325,6 +326,7 @@ ignore_imports = [
   "app.utils.file_retry -> app.tasks.search_file_field_tasks",  # deliberate late binding: Celery task lookup
   "app.utils.lite_mode -> app.services.pipeline_plan",  # upward import, function level: removal planned (layering)
   "app.utils.speaker_labels -> app.services.privacy.redact_view",  # upward import, function level: removal planned (layering)
+  "app.utils.stats_helpers -> app.services.file_availability",  # upward import, function level: trashed-file counts through the one availability rule (#1101)
   "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
   "app.utils.stuck_file_recovery -> app.services.system_settings_service",  # upward import, module level: removal planned (layering)
   "app.utils.stuck_file_recovery -> app.services.takedown_service",  # upward import, function level: removal planned (layering)

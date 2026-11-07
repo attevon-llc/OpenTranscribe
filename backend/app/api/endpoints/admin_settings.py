@@ -216,6 +216,7 @@ def update_retention_configuration(
         delete_error_files=config.delete_error_files,
         run_time=config.run_time,
         timezone=config.timezone,
+        trash_retention_days=config.trash_retention_days,
     )
 
     return RetentionConfig(**updated)

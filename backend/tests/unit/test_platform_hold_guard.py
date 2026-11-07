@@ -11,6 +11,9 @@ Rows are inserted directly here so the guard is tested without the hold service.
 
 from __future__ import annotations
 
+from datetime import UTC
+from datetime import datetime
+
 import pytest
 
 from app.models.content_hold import AUTHORITY_ORGANIZATION
@@ -22,6 +25,8 @@ from app.models.content_hold import ContentHoldFile
 from app.services.content_hold_queries import collection_hold_states
 from app.services.content_hold_queries import collection_hold_summaries
 from app.services.content_hold_queries import file_hold_summary
+from app.services.content_hold_queries import list_holds
+from app.services.content_hold_queries import list_platform_holds
 from app.services.hold_guard import HoldRefusedError
 from app.services.hold_guard import HoldState
 from app.services.hold_guard import assert_not_held
@@ -138,3 +143,22 @@ def test_a_collection_badge_names_the_authority_that_holds_it(gov):
     assert collection_hold_states(gov.db, [by_both.id])[by_both.id] == HoldState(
         platform_flag=False, org_hold_uuids=(str(o2.uuid),), platform_hold_uuids=(str(p2.uuid),)
     )
+
+
+def test_the_organization_list_never_shows_a_platform_hold_and_the_platform_list_only_those(gov):
+    f = gov.file(gov.alice)
+    p = _hold(gov, f)
+    o = _hold(gov, f, authority=AUTHORITY_ORGANIZATION)
+    released = _hold(gov, f)
+    released.released_at = datetime.now(UTC)
+    gov.db.commit()
+
+    org_rows, org_total = list_holds(gov.db, gov.org.id, active_only=False)
+    assert [h.uuid for h in org_rows] == [o.uuid] and org_total == 1
+
+    active, active_total = list_platform_holds(gov.db, active_only=True)
+    assert [h.uuid for h in active] == [p.uuid] and active_total == 1
+    everything, total = list_platform_holds(gov.db, active_only=False)
+    assert [h.uuid for h in everything] == [released.uuid, p.uuid] and total == 2
+    page, _ = list_platform_holds(gov.db, active_only=False, limit=1, offset=1)
+    assert [h.uuid for h in page] == [p.uuid]

@@ -107,11 +107,11 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   stay best-effort through `record_content_event`.
   `tests/api/test_content_audit_events.py` pins one event per emit site; `tests/unit/test_audit_outbox.py`
   pins commit/rollback, retry and exactly-once delivery.
-- **Holds** — `hold_guard.py` is the ONE answer to "is this file held by anyone"
-  (platform `media_file.legal_hold` OR an active organization `content_hold`): `hold_state` /
-  `hold_states` per file, `held_pred` / `not_held_pred` inside a query, `is_held(file)` for a loaded
-  row, `refusal_detail` for the 409 body (everyone learns `held_by`; only an org admin gets the hold
-  uuids; the reason never appears). Never read `MediaFile.legal_hold` to decide whether to destroy
+- **Holds** — `hold_guard.py` is the ONE answer to "is this file held by anyone" (takedown
+  flag `media_file.legal_hold` OR an active `content_hold`, authority `organization` or `platform`,
+  v467): `hold_state(s)` per file, `held_pred` / `not_held_pred` in a query, `is_held(file)`,
+  `refusal_detail` for the 409 (everyone learns `held_by`; org admins get their org's hold uuids,
+  instance admins the platform's via `reveal_platform_uuids`; the reason never appears). Never read `MediaFile.legal_hold` to decide whether to destroy
   or restart a clock (`test_hold_guard_single_source.py` fails on it). `content_hold_service.py`
   places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`);
   it never commits. The endpoint stages the audit event with `record_hold_change` BEFORE its

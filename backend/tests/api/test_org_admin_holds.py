@@ -22,8 +22,10 @@ from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.models.audit_outbox import AuditOutbox
+from app.models.content_hold import AUTHORITY_PLATFORM
 from app.models.content_hold import ContentHold
 from app.services import audit_outbox
+from app.services import content_hold_service as holds
 from app.services.hold_guard import hold_state
 
 HOLDS = "/api/org-admin/holds"
@@ -287,6 +289,42 @@ def test_releasing_one_of_two_holds_does_not_free_the_file_or_notify(client, gov
         assert client.post(f"{HOLDS}/{first}/release", json={"reason": REASON}).status_code == 200
     assert hold_state(gov.db, f.id).org_hold_uuids == (second,)
     assert freed == []
+
+
+def test_a_platform_hold_never_appears_on_the_organization_screen(client, gov, holds_on):
+    """An instance administrator's hold (v467) covers the org's file, but it is not the
+    organization's to list, read or release; the org's own hold says ``organization``."""
+    f = gov.file(gov.admin)  # the admin's own: an org admin has no read route into members' files
+    operator = gov.user("operator")
+    operator.role = "admin"
+    gov.db.commit()
+    platform = holds.place_file_hold(
+        gov.db,
+        org_id=None,
+        authority=AUTHORITY_PLATFORM,
+        actor=operator,
+        files=[f],
+        reason=REASON,
+    ).hold
+    gov.db.commit()
+    own = _place(client, gov, f).json()
+
+    with gov.acting_as(gov.admin):
+        listed = client.get(HOLDS, params={"active_only": "false"}).json()
+        read = client.get(f"{HOLDS}/{platform.uuid}")
+        released = client.post(f"{HOLDS}/{platform.uuid}/release", json={"reason": REASON})
+        page = client.get(f"/api/files/{f.uuid}").json()["hold"]
+    assert [h["uuid"] for h in listed["holds"]] == [own["uuid"]] and listed["total"] == 1
+    assert own["authority"] == "organization"
+    assert own["organization_uuid"] == str(gov.org.uuid)
+    assert read.status_code == released.status_code == status.HTTP_404_NOT_FOUND
+    assert platform.active
+    # The org admin is told the platform holds it too, but given only their own hold's uuid.
+    assert page == {
+        "held": True,
+        "held_by": ["platform", "organization"],
+        "hold_uuids": [own["uuid"]],
+    }
 
 
 # --------------------------------------------------------------------------- #

@@ -65,6 +65,13 @@ def list_holds(
     return _page(db, [ContentHold.organization_id == org_id], active_only, limit, offset)
 
 
+def list_platform_holds(
+    db: Session, *, active_only: bool = True, limit: int = 100, offset: int = 0
+) -> tuple[list[ContentHold], int]:
+    """The platform's own holds (any tenant's files), newest first, with the total."""
+    return _page(db, [ContentHold.authority == AUTHORITY_PLATFORM], active_only, limit, offset)
+
+
 def _page(
     db: Session, where: list[ColumnElement[bool]], active_only: bool, limit: int, offset: int
 ) -> tuple[list[ContentHold], int]:

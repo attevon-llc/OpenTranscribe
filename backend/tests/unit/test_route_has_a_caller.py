@@ -166,7 +166,18 @@ _TRASH_UI_REASON = (
     "entry is deleted the moment the SPA calls the route."
 )
 
+_LEGAL_HOLD_UI_REASON = (
+    "Legal-hold plan (docs/design/legal_hold_ux_freeze_plan.md) lane B: the operator's "
+    "/admin/holds API ships before its UI. Lane D builds the platform Legal holds panel and "
+    "the gallery / file-page hold dialog against this contract; strict xfail so the entry is "
+    "deleted the moment the SPA calls the route."
+)
+
 _NOT_YET_VERIFIED: dict[str, str] = {
+    # --- the operator's legal holds (v467): backend lands first, the SPA follows in lane D ---
+    "/api/admin/holds": _LEGAL_HOLD_UI_REASON,
+    "/api/admin/holds/{hold_uuid}": _LEGAL_HOLD_UI_REASON,
+    "/api/admin/holds/{hold_uuid}/release": _LEGAL_HOLD_UI_REASON,
     # --- the trash (#1101): backend lands first, the SPA follows in L4 ---
     "/api/files/trash": _TRASH_UI_REASON,
     "/api/files/trash/empty": _TRASH_UI_REASON,

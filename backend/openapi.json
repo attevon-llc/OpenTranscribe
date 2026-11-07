@@ -7938,7 +7938,7 @@
             "title": "Matter Ref"
           },
           "reason": {
-            "description": "Why the hold exists. Visible to this organization's administrators only.",
+            "description": "Why the hold exists. Visible to the administrators who manage the hold only.",
             "maxLength": 2000,
             "minLength": 10,
             "title": "Reason",
@@ -7987,6 +7987,10 @@
           "active": {
             "title": "Active",
             "type": "boolean"
+          },
+          "authority": {
+            "title": "Authority",
+            "type": "string"
           },
           "collection_name": {
             "anyOf": [
@@ -8040,6 +8044,18 @@
               }
             ],
             "title": "Matter Ref"
+          },
+          "organization_uuid": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Uuid"
           },
           "placed_at": {
             "format": "date-time",
@@ -8107,6 +8123,7 @@
         },
         "required": [
           "uuid",
+          "authority",
           "scope",
           "reason",
           "placed_at",
@@ -29136,6 +29153,233 @@
           }
         ],
         "summary": "Test Hf Token",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/holds": {
+      "get": {
+        "description": "The platform's legal holds, newest first. Organization holds are never listed here.",
+        "operationId": "list_admin_holds_api_admin_holds_get",
+        "parameters": [
+          {
+            "description": "Only holds that are still in force",
+            "in": "query",
+            "name": "active_only",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Only holds that are still in force",
+              "title": "Active Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Admin Holds",
+        "tags": [
+          "admin"
+        ]
+      },
+      "post": {
+        "description": "Place a platform hold on named files of any tenant, or on a whole collection.\n\nA collection hold covers its files now and every file added later. Nothing is quarantined.",
+        "operationId": "place_admin_hold_api_admin_holds_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Place Admin Hold",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/holds/{hold_uuid}": {
+      "get": {
+        "description": "One platform hold, with the files it covers (up to 500).",
+        "operationId": "get_admin_hold_api_admin_holds__hold_uuid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hold_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hold Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Admin Hold",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/holds/{hold_uuid}/release": {
+      "post": {
+        "description": "Release a platform hold. Files another hold or the takedown still covers stay held.",
+        "operationId": "release_admin_hold_api_admin_holds__hold_uuid__release_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "hold_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Hold Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HoldRelease"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HoldOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Release Admin Hold",
         "tags": [
           "admin"
         ]

@@ -36,6 +36,23 @@ from app.core.env import is_truthy
 logger = logging.getLogger(__name__)
 
 
+#: Log line for an auth-config read that fell back instead of using the database. Every
+#: fallback site logs it with ``exc_info=True`` and calls :func:`count_config_fallback`.
+CONFIG_FALLBACK_LOG = "Could not read auth config '%s' from the database; using %s."
+
+
+def count_config_fallback() -> None:
+    """Count one auth-config read that fell back instead of using the database.
+
+    ``security_state_degraded_total{control="auth_config", fallback="env"}``. The fallback
+    keeps logins working through a database hiccup, but the value used may be weaker than
+    what an admin set in the UI, so it must be visible. Never raises.
+    """
+    from app.core.degradation import record_degradation
+
+    record_degradation("auth_config", "env")
+
+
 class DynamicAuthSettings:
     """Dynamic auth settings loader with fallback to .env.
 
@@ -86,8 +103,12 @@ class DynamicAuthSettings:
                     if self._cache_enabled:
                         self._cache[key] = db_value
                     return db_value
-            except Exception as e:
-                logger.warning(f"Failed to get config '{key}' from database: {e}")
+            except Exception:
+                # Deliberately not raised: a configuration read must not turn every login
+                # into a 500. Logged and counted every time, because the .env value used
+                # instead may be weaker than what an admin set in the UI.
+                logger.warning(CONFIG_FALLBACK_LOG, key, "the .env value", exc_info=True)
+                count_config_fallback()
 
         # Fall back to environment/settings
         env_key = key.upper()

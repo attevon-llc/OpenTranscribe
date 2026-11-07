@@ -188,11 +188,12 @@ def _register() -> None:
     )
     security_state_degraded_total = Counter(
         "security_state_degraded_total",
-        "Times a security control could not reach its shared state store (Redis) and "
-        "fell back. ALERT ON THIS: shared state is what makes revocation, lockout and "
-        "MFA replay protection work across replicas. `control` is the control affected; "
-        "`fallback` is what was used instead (database = authoritative, deny = failed "
-        "closed, local = per-process approximation).",
+        "Times a security control could not reach its shared state store (Redis, or the "
+        "database for auth configuration) and fell back. ALERT ON THIS: shared state is "
+        "what makes revocation, lockout and MFA replay protection work across replicas, "
+        "and auth_config is the admin-set authentication configuration. `control` is the "
+        "control affected; `fallback` is what was used instead (database = authoritative, "
+        "deny = failed closed, local = per-process approximation, env = the .env value).",
         ["control", "fallback"],
     )
     celery_queue_depth = Gauge(

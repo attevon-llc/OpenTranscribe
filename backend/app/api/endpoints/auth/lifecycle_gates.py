@@ -336,7 +336,16 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             .all()
         }
     except Exception:
-        logger.debug("Could not read banner configuration", exc_info=True)
+        from app.core.auth_settings import CONFIG_FALLBACK_LOG
+        from app.core.auth_settings import count_config_fallback
+
+        logger.warning(
+            CONFIG_FALLBACK_LOG,
+            "login_banner",
+            "the last value read, else the .env value",
+            exc_info=True,
+        )
+        count_config_fallback()
         if _last_banner_read is not None and _last_banner_read[0]:
             return _last_banner_read
         return settings.LOGIN_BANNER_ENABLED, None

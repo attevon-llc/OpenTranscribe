@@ -39,6 +39,7 @@ from app.models.speaker import Speaker
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_identity_source import hides_link
+from app.utils.speaker_identity_source import record_profile_rename
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ def apply_profile_name_to_speakers(
     profile_id: int,
     new_name: str,
     *,
+    actor_user_id: int | None,
     restrict_to_user_id: int | None = None,
     organization_id: OrgScope = UNSCOPED,
 ) -> list[tuple[str, str]]:
@@ -75,6 +77,8 @@ def apply_profile_name_to_speakers(
             already resolved and authorized it.
         profile_id: The renamed profile.
         new_name: Its new name, which becomes every member's display name.
+        actor_user_id: The person renaming the profile, recorded in each member's identity
+            history (#1336). Who made the member's identity does not change.
         restrict_to_user_id: When set, only that user's speakers are rewritten.
             A profile can be shared, so its members may belong to other accounts;
             ``None`` (admin) sweeps all of them. This mirrors the authorization
@@ -131,6 +135,7 @@ def apply_profile_name_to_speakers(
         if file_uuid and old_chunk_name:
             renames.append((file_uuid, old_chunk_name))
         speaker.display_name = new_name
+        record_profile_rename(speaker, user_id=actor_user_id)
 
     logger.info(
         f"Applied profile {profile_id} name '{new_name}' to {len(linked_speakers)} speaker(s)"

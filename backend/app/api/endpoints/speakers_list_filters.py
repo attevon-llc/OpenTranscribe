@@ -21,7 +21,7 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import visible_display_name_expr
 from app.services.privacy.redact_view import visible_profile_id_expr
-from app.utils.speaker_labels import PLACEHOLDER_SPEAKER_NAME_PATTERN
+from app.utils.speaker_name_rules import PLACEHOLDER_SPEAKER_NAME_PATTERN
 
 logger = logging.getLogger(__name__)
 

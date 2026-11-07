@@ -165,7 +165,7 @@ def test_reprocess_clear_erases_voiceprints_and_rebuilds_clusters(
     _fa, fb, _sa, sb, cluster = make_pair(db_session, normal_user, speaker_os_seams)
     victim = str(sb.uuid)
 
-    reprocess_clear.clear_selective_data(db_session, fb, stages)
+    reprocess_clear.clear_selective_data(db_session, fb, stages, user_id=None)
 
     assert speaker_os_seams["erased_speakers"] == [victim]
     assert cosine(speaker_os_seams["clusters"][str(cluster.uuid)], VOICE_A) >= MATCH

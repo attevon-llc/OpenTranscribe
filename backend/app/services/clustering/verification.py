@@ -259,9 +259,9 @@ def _apply_skip(b: _Batch, speaker: Speaker) -> None:
     # has no reader anywhere (backend or frontend), so overwriting a real
     # "llm_analysis" here only ever erased the historical marker
     # task_detection_service reads (issue #620 item 4).
-    mark_review_skipped(speaker)
+    mark_review_skipped(speaker, user_id=b.user_id)
     # Reviewed is not confirmed: a voiceprint suggestion stays the voiceprint's.
-    after_skip(speaker)
+    after_skip(speaker, user_id=b.user_id)
     b.updated += 1
 
 

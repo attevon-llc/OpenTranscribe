@@ -517,7 +517,11 @@ def test_unlinking_a_machine_link_restores_what_the_name_was(db_session, normal_
     db_session.commit()
 
     unlink_from_profile(
-        db_session, [machine_named, link_only, typed], int(profile.id), SpeakerRenameTracker()
+        db_session,
+        [machine_named, link_only, typed],
+        int(profile.id),
+        SpeakerRenameTracker(),
+        user_id=None,
     )
     db_session.commit()
 

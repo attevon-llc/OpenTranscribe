@@ -51,7 +51,9 @@ def _unlink_stale_profile_links(
     stale_links = [s for s in profile_speakers if int(s.profile_id or 0) in blacklisted[int(s.id)]]
     for stale in stale_links:
         profile_id_left = int(stale.profile_id)  # type: ignore[arg-type]
-        if unlink_from_profile(self.db, [stale], profile_id_left, self._rename_tracker):
+        if unlink_from_profile(
+            self.db, [stale], profile_id_left, self._rename_tracker, user_id=None
+        ):
             self._assigned.profile_ids.add(profile_id_left)
             self._assigned.relabel_speaker_ids.add(int(stale.id))
     if stale_links:

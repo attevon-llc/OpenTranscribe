@@ -385,7 +385,7 @@ def hidden_suggestion_clause(
     from sqlalchemy import false
 
     from app.models.speaker import Speaker
-    from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+    from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
     embedding = Speaker.suggestion_source.in_(sorted(EMBEDDING_SUGGESTION_SOURCES))
     in_off_file = _in_off_file(view, file_ids_select, embedding)

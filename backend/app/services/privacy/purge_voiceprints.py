@@ -49,6 +49,9 @@ from sqlalchemy import select
 from sqlalchemy import update
 
 from app.services.privacy import purge_pending
+from app.services.speaker_identity_history import forget_voiceprint_events
+from app.services.speaker_identity_history import record_bulk_identity_events
+from app.utils.speaker_identity_history import ORIGIN_PURGE
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import VOICEPRINT
 from app.utils.speaker_identity_source import VOICEPRINT_LINK
@@ -63,6 +66,11 @@ if TYPE_CHECKING:
 
 #: Ids per ``IN (...)`` list; a scope can hold hundreds of thousands of speakers.
 _CHUNK = 5000
+
+#: The origin records of the history rows a purge appends (#1336): no values, only what happened.
+_PURGE_DETAIL_REVERTED = {"origin": ORIGIN_PURGE, "reverted": "identity"}
+_PURGE_DETAIL_UNLINKED = {"origin": ORIGIN_PURGE, "reverted": "link"}
+_PURGE_DETAIL_SUGGESTION = {"origin": ORIGIN_PURGE, "reverted": "suggestion"}
 
 
 @dataclass
@@ -198,7 +206,7 @@ def _revert_machine_identities(
         detail; ``suggestion_details_cleared`` rows that held a suggestion detail.
     """
     from app.models.speaker import Speaker
-    from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+    from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
     embedding_sources = sorted(EMBEDDING_SUGGESTION_SOURCES)
     has_voice_suggestion = Speaker.suggestion_source.in_(embedding_sources)
@@ -269,6 +277,9 @@ def _revert_machine_identities(
             .execution_options(synchronize_session=False)
         )
     ]
+    record_bulk_identity_events(
+        db, reverted, kind="purge", user_id=None, detail=_PURGE_DETAIL_REVERTED
+    )
     unlinked = [
         int(row[0])
         for row in db.execute(
@@ -285,6 +296,9 @@ def _revert_machine_identities(
             .execution_options(synchronize_session=False)
         )
     ]
+    record_bulk_identity_events(
+        db, unlinked, kind="purge", user_id=None, detail=_PURGE_DETAIL_UNLINKED
+    )
     return (
         reverted,
         unlinked,
@@ -508,7 +522,7 @@ def purge_voiceprints_postgres(
     from app.models.speaker import Speaker
     from app.models.speaker import SpeakerMatch
     from app.models.speaker import SpeakerProfile
-    from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+    from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
     counts: dict[str, int] = {
         key: 0
@@ -530,6 +544,7 @@ def purge_voiceprints_postgres(
             "files_skipped_held",
             "files_skipped_quarantined",
             "profiles_retained",
+            "identity_history_events_deleted",
         )
     }
     from app.services.privacy.purge_file_guard import profile_keeps_protected_voice
@@ -689,6 +704,17 @@ def purge_voiceprints_postgres(
         )
     ]
     counts["suggestions_cleared"] += len(cleared_suggestions)
+    record_bulk_identity_events(
+        db,
+        set(cleared_suggestions) - set(machine_ids),
+        kind="purge",
+        user_id=None,
+        detail=_PURGE_DETAIL_SUGGESTION,
+    )
+    # What a voiceprint wrote is also gone from the speakers' history (#1336).
+    counts["identity_history_events_deleted"] = forget_voiceprint_events(
+        db, _scope_speaker_ids(scope)
+    )
     if pending_task_id is not None:
         purge_pending.record(db, pending_task_id, scope, targets.cluster_uuids)
     db.commit()

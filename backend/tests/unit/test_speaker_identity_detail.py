@@ -182,7 +182,7 @@ def test_a_later_step_of_the_same_action_keeps_the_record_the_request_made():
     s = _speaker(display_name="Alice", suggested_name="Alice", suggestion_source="voice_match")
     ids.record_human_identity(s, user_id=7, origin=detail.ORIGIN_TYPED)
     first = (s.identity_source_at, dict(s.identity_source_detail))
-    ids.clear_suggestion(s)
+    ids.clear_suggestion(s, user_id=None)
 
     ids.record_human_identity(
         s, user_id=7, origin=detail.ORIGIN_PROFILE_ASSIGNED, keep_recorded=True
@@ -210,7 +210,7 @@ def test_reverting_to_unknown_clears_the_whole_record():
     ids.record_machine_link(s, detail=detail.voiceprint_detail(detail.ORIGIN_VOICE_MATCH))
     s.profile_id = None
 
-    ids.after_unlink(s)
+    ids.after_unlink(s, user_id=None)
 
     assert s.identity_source is None
     assert (s.identity_source_at, s.identity_source_user_id, s.identity_source_detail) == (
@@ -227,7 +227,7 @@ def test_a_voiceprint_whose_name_was_cleared_keeps_the_record_of_its_link():
     )
     s.display_name = None
 
-    ids.after_name_cleared(s)
+    ids.after_name_cleared(s, user_id=None)
 
     assert s.identity_source == "voiceprint_link"
     assert s.identity_source_detail is not None
@@ -236,7 +236,7 @@ def test_a_voiceprint_whose_name_was_cleared_keeps_the_record_of_its_link():
 def test_a_skipped_voice_suggestion_is_marked_the_machines_with_a_detail():
     s = _speaker(suggested_name="Alice", suggestion_source="voice_match", confidence=0.8)
 
-    ids.after_skip(s)
+    ids.after_skip(s, user_id=None)
 
     assert s.identity_source == "voiceprint"
     assert s.identity_source_detail == {
@@ -265,7 +265,7 @@ def test_withdrawing_a_suggestion_clears_its_detail_but_keeps_the_source_marker(
         s, source="llm_analysis", name="Alice", confidence=0.7, detail={"origin": "llm"}
     )
 
-    ids.clear_suggestion(s)
+    ids.clear_suggestion(s, user_id=None)
 
     assert (s.suggested_name, s.confidence, s.suggestion_detail) == (None, None, None)
     assert s.suggestion_source == "llm_analysis"
@@ -275,8 +275,8 @@ def test_a_review_skip_never_overwrites_a_real_source():
     real = _speaker(suggestion_source="llm_analysis", suggestion_detail={"origin": "llm"})
     none = _speaker()
 
-    ids.mark_review_skipped(real)
-    ids.mark_review_skipped(none)
+    ids.mark_review_skipped(real, user_id=None)
+    ids.mark_review_skipped(none, user_id=None)
 
     assert (real.suggestion_source, real.suggestion_detail) == ("llm_analysis", {"origin": "llm"})
     assert (none.suggestion_source, none.suggestion_detail) == (

@@ -96,8 +96,13 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         raise
 
 
-def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) -> None:
-    """Clear data only for selected pipeline stages."""
+def clear_selective_data(
+    db: Session, media_file: MediaFile, stages: list[str], *, user_id: int | None
+) -> None:
+    """Clear data only for selected pipeline stages.
+
+    ``user_id`` is the person who asked for the reprocess, for the speaker identity history.
+    """
     from app.models.media import Analytics
     from app.models.media import TranscriptSegment
     from app.models.speaker import Speaker
@@ -159,7 +164,7 @@ def clear_selective_data(db: Session, media_file: MediaFile, stages: list[str]) 
             )
             for speaker in existing_speakers:
                 before = canonical_speaker_label_for_row(speaker)
-                clear_suggestion(speaker)
+                clear_suggestion(speaker, user_id=user_id)
                 tracker.record(int(media_file.id), before, canonical_speaker_label_for_row(speaker))
 
         if "summarization" in stages:

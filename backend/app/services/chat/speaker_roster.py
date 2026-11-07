@@ -32,9 +32,9 @@ from app.services.privacy.redact_view import hidden_suggestion_clause
 from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import visible_display_name_expr
 from app.utils.speaker_identity_source import visible_profile_id
-from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)

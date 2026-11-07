@@ -34,6 +34,7 @@ VOICEPRINT_RESIDUAL_KEYS = (
     "speaker_identity_provenance",
     "voiceprint_suggestions",
     "voiceprint_suggestion_details",
+    "voiceprint_identity_history",
     "speaker_matches",
     "unpromoted_cluster_members",
     "profiles_with_embeddings",
@@ -62,8 +63,9 @@ def measure_voiceprint_residual(
     from app.models.speaker import SpeakerClusterMember
     from app.models.speaker import SpeakerMatch
     from app.models.speaker import SpeakerProfile
+    from app.models.speaker_identity_event import SpeakerIdentityEvent
     from app.services.gdpr_voiceprint_erasure import count_speaker_docs_by_ids
-    from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+    from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
     result = Residual()
     db = session_factory()
@@ -109,6 +111,16 @@ def measure_voiceprint_residual(
                 Speaker.suggestion_detail["origin"].astext.in_(
                     sorted(EMBEDDING_SUGGESTION_SOURCES)
                 ),
+            ),
+        )
+        # The history of what a voiceprint wrote (#1336) goes with what it wrote.
+        result.counts["voiceprint_identity_history"] = _count(
+            db,
+            select(func.count())
+            .select_from(SpeakerIdentityEvent)
+            .where(
+                SpeakerIdentityEvent.voiceprint.is_(True),
+                SpeakerIdentityEvent.speaker_id.in_(in_scope),
             ),
         )
         result.counts["voiceprint_suggestions"] = _count(

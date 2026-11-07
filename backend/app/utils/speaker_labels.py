@@ -27,6 +27,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.utils.speaker_name_rules import is_assigned_speaker_name
+from app.utils.speaker_name_rules import is_embedding_suggestion_source
+
 #: The canonical "not diarized to a person" label. Chosen over the bare "Unknown" some
 #: planes used because it is unambiguous next to a real name in a roster or a facet —
 #: "Unknown" alone reads as "an unnamed *thing*", not "nobody was attributed here".
@@ -42,46 +45,10 @@ UNKNOWN_SPEAKER_LABEL = "Unknown Speaker"
 #: full reindex is known to have retired every pre-unification document.
 UNKNOWN_SPEAKER_LABELS: frozenset[str] = frozenset({UNKNOWN_SPEAKER_LABEL, "Unknown"})
 
-#: A ``display_name`` matching this is a **diarization placeholder**, not a human-assigned
-#: identity — as are ``NULL`` and ``""``. The distinction is deliberate and shared with the
-#: frontend's speaker plane: a placeholder is scoped to **one file**, so ``SPEAKER_00`` in
-#: recording A and ``SPEAKER_00`` in recording B are different people and must never be
-#: treated as one cross-file identity. Anything else is a name a human assigned.
-PLACEHOLDER_SPEAKER_NAME_PATTERN = r"^SPEAKER_\d+$"
-
-
-def is_assigned_speaker_name(value: object) -> bool:
-    """Whether a ``display_name`` names somebody, rather than being empty or a placeholder."""
-    if not isinstance(value, str) or not value.strip():
-        return False
-    return re.match(PLACEHOLDER_SPEAKER_NAME_PATTERN, value.strip()) is None
-
-
 #: The confidence a suggestion needs before it is shown at all. Matches the value both
 #: prior implementations used (``get_speaker_name``'s ``0.75`` literal and
 #: ``SpeakerStatusService.HIGH_CONFIDENCE_THRESHOLD``) — not a new number, just named once.
 DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD = 0.75
-
-#: ``Speaker.suggestion_source`` values written ONLY by a voiceprint/embedding match
-#: (``speaker_matching_service`` for ``profile_match`` / ``voice_match``,
-#: ``speaker_update`` and ``batch_speaker_matching`` for ``voice_match``). Their
-#: ``confidence`` is a cosine similarity gated at ``CLUSTER_ASSIGNMENT_THRESHOLD`` (0.75), so
-#: a suggestion carrying one of them at >= 0.75 is evidence about the VOICE.
-#:
-#: Owner decision 2026-10-12: a speaker's canonical label (what search, chat, exports and the
-#: OpenSearch documents show as the name) comes only from a name a human typed/verified or
-#: from one of these. Every other source -- ``llm_analysis``, ``metadata_hint``,
-#: ``user_skipped``, and a row with NO source (legacy data that cannot prove where its
-#: suggestion came from) -- is a suggestion the human must verify: shown in suggestion UIs
-#: with its confidence, never promoted to the speaker's name. This is an allow-list on
-#: purpose: a new suggestion producer is non-canonical until someone decides otherwise.
-EMBEDDING_SUGGESTION_SOURCES: frozenset[str] = frozenset({"voice_match", "profile_match"})
-
-
-def is_embedding_suggestion_source(source: object) -> bool:
-    """Whether a ``suggestion_source`` marks a voiceprint match (see the allow-list above)."""
-    return isinstance(source, str) and source in EMBEDDING_SUGGESTION_SOURCES
-
 
 #: Words that mean the model is NOT naming anyone: "Unknown (not Robert)", "N/A", "Unidentified".
 _NON_NAME_PATTERN = re.compile(

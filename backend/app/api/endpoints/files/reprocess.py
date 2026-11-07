@@ -198,7 +198,7 @@ def _reprocess_selected_stages(
         _reset_file_for_reprocess(db, int(file_id))
 
     # Clear data for selected stages
-    clear_selective_data(db, media_file, stages)
+    clear_selective_data(db, media_file, stages, user_id=user_id)
 
     # Refresh the file object
     db.refresh(media_file)

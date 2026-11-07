@@ -560,7 +560,7 @@ def test_a_skip_marker_does_not_keep_naming_a_person_either():
         suggestion_source="voice_match",
     )
 
-    ids.after_skip(row)
+    ids.after_skip(row, user_id=None)
 
     assert row.identity_source == "voiceprint"
     assert row.identity_source_user_id is None

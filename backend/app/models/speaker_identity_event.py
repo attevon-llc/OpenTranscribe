@@ -1,7 +1,9 @@
 """One change to a speaker's name, profile link or suggestion (v462, issue #1336).
 
-Append-only: the database refuses to rewrite or delete the rows (``speaker_identity_event_guard``,
-registered in ``app.db.audit_protection``). See
+Append-only: rows are written in the same transaction as the change by
+``app/services/speaker_identity_history.py`` (the ORM flush listener, or
+``record_bulk_identity_events`` for a bulk ``UPDATE``) and the database refuses to rewrite or
+delete them (``speaker_identity_event_guard``, registered in ``app.db.audit_protection``). See
 ``alembic/versions/v462_add_speaker_identity_event.py`` for the design.
 """
 
@@ -21,15 +23,24 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
+from sqlalchemy import event
+from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import InstanceState
 from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import UOWTransaction
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+from app.utils.speaker_identity_history import TRACKED_FIELDS
+from app.utils.speaker_identity_history import EventDraft
+from app.utils.speaker_identity_history import derive_event
+from app.utils.speaker_identity_source import HISTORY_NOTES_KEY
 
 if TYPE_CHECKING:
     from app.models.speaker import Speaker
@@ -115,5 +126,91 @@ class SpeakerIdentityEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    # No backref: the speaker never loads or cascades its history (the database deletes it).
+    # Set by the flush listener so a speaker inserted in the same flush is written first. No
+    # backref: the speaker never loads or cascades its history (the database deletes it).
     speaker: Mapped[Speaker] = relationship("Speaker")
+
+
+def _changes(state: InstanceState[Any]) -> dict[str, tuple[Any, Any]]:
+    """Tracked field -> ``(old, new)`` for each tracked field this flush changes."""
+    found: dict[str, tuple[Any, Any]] = {}
+    for field in TRACKED_FIELDS:
+        history = state.attrs[field].history
+        if not history.added:
+            continue
+        old = history.deleted[0] if history.deleted else None
+        new = history.added[0]
+        if old != new:
+            found[field] = (old, new)
+    return found
+
+
+def _draft_for(state: InstanceState[Any]) -> EventDraft | None:
+    speaker = state.obj()
+    restamped = any(v is not None for v in state.attrs["identity_source_at"].history.added)
+    row = {
+        name: getattr(speaker, name)
+        for name in (
+            "identity_source",
+            "identity_source_user_id",
+            "identity_source_detail",
+            "suggestion_source",
+            "suggestion_detail",
+        )
+    }
+    return derive_event(
+        _changes(state), row, state.info.pop(HISTORY_NOTES_KEY, ()), restamped=restamped
+    )
+
+
+@event.listens_for(Session, "before_flush")
+def _record_speaker_identity_history(
+    session: Session, _flush_context: UOWTransaction, _instances: object
+) -> None:
+    """Append one history row per speaker whose name, link or suggestion this flush changes.
+
+    Every ORM writer of those fields goes through the helpers of
+    ``app/utils/speaker_identity_source`` (``tests/unit/test_speaker_identity_source_discipline``),
+    and every one of their writes reaches the database through a flush, so this is the one place
+    that cannot be forgotten (the shape of ``content_hold``'s membership listener). The row is
+    added to the same flush, so it commits or rolls back with the change. Bulk ``UPDATE``
+    statements bypass the flush and record through
+    ``app.services.speaker_identity_history.record_bulk_identity_events``.
+    """
+    from app.models.speaker import Speaker
+
+    for obj in list(session.new) + list(session.dirty):
+        if not isinstance(obj, Speaker):
+            continue
+        state = inspect(obj)
+        if state.deleted or obj in session.deleted:
+            continue
+        draft = _draft_for(state)
+        if draft is None:
+            continue
+        session.add(
+            SpeakerIdentityEvent(
+                speaker=obj,
+                organization_id=obj.organization_id,
+                kind=draft.kind,
+                actor_kind=draft.actor_kind,
+                actor_user_id=draft.actor_user_id,
+                origin=draft.origin,
+                model=draft.model,
+                confidence=draft.confidence,
+                voiceprint=draft.voiceprint,
+                before_value=draft.before,
+                after_value=draft.after,
+                detail=draft.detail,
+            )
+        )
+
+
+@event.listens_for(Session, "after_soft_rollback")
+def _forget_unflushed_notes(session: Session, _previous_transaction: object) -> None:
+    """A rolled-back change must not lend its attribution to the next write of the same row."""
+    from app.models.speaker import Speaker
+
+    for obj in list(session.identity_map.values()):
+        if isinstance(obj, Speaker):
+            inspect(obj).info.pop(HISTORY_NOTES_KEY, None)

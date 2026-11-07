@@ -45,6 +45,8 @@ def unlink_from_profile(
     speakers: Iterable[Speaker],
     profile_id: int,
     tracker: SpeakerRenameTracker,
+    *,
+    user_id: int | None,
 ) -> set[int]:
     """Take a profile's identity back from these speakers. Returns the ids it unlinked.
 
@@ -52,7 +54,8 @@ def unlink_from_profile(
     display name or suggestion that IS the profile's name goes with it (it came from the
     profile), while a name the user set to something else survives. The chunk plane is
     told through ``tracker``, which the caller flushes after its commit. A speaker linked
-    to a different profile is not touched.
+    to a different profile is not touched. ``user_id`` is the person who took it back
+    (``None``: a task), for the identity history.
     """
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
@@ -67,9 +70,9 @@ def unlink_from_profile(
         if name is not None and speaker.display_name == name:
             speaker.display_name = None
         if name is not None and speaker.suggested_name == name:
-            clear_suggestion(speaker)
+            clear_suggestion(speaker, user_id=user_id)
         # Settle who made what is left, before the "after" label below depends on it (#1280).
-        after_unlink(speaker)
+        after_unlink(speaker, user_id=user_id)
         tracker.record(
             int(speaker.media_file_id), indexed_as, canonical_speaker_label_for_row(speaker)
         )
@@ -150,6 +153,7 @@ def detach_from_cluster(
     *,
     blacklist: bool,
     tracker: SpeakerRenameTracker,
+    user_id: int | None,
 ) -> SpeakerImpact:
     """Unassign speakers from a cluster: that section is no longer that person.
 
@@ -159,6 +163,7 @@ def detach_from_cluster(
     The cluster and its profile remain for the other members; the caller commits, flushes
     ``tracker`` and hands the returned impact to :func:`reconcile_speaker_impact`, which
     rebuilds the centroid and the profile embedding (an emptied cluster is deleted).
+    ``user_id`` is the person unassigning them, for the identity history.
     """
     remove_ids = sorted({int(s.id) for s in speakers})
     remaining = [
@@ -183,7 +188,7 @@ def detach_from_cluster(
         int(cluster.promoted_to_profile_id) if cluster.promoted_to_profile_id is not None else None
     )
     if profile_id is not None:
-        unlinked = unlink_from_profile(db, speakers, profile_id, tracker)
+        unlinked = unlink_from_profile(db, speakers, profile_id, tracker, user_id=user_id)
         if unlinked:
             impact.profile_ids.add(profile_id)
             impact.relabel_speaker_ids |= unlinked

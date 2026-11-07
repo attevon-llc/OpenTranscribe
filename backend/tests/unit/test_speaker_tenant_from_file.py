@@ -145,20 +145,28 @@ class TestProfileRenameScopesByFileTenant:
     def test_unscoped_rename_reaches_every_member(self, world):
         """Control: with no tenant gate every linked speaker is rewritten."""
         apply_profile_name_to_speakers(
-            world["db"], world["profile"].id, "Renamed", organization_id=UNSCOPED
+            world["db"],
+            world["profile"].id,
+            "Renamed",
+            actor_user_id=None,
+            organization_id=UNSCOPED,
         )
         assert _renamed(world) == {"a", "b", "personal"}
 
     def test_organization_rename_reaches_only_that_organizations_files(self, world):
         renames = apply_profile_name_to_speakers(
-            world["db"], world["profile"].id, "Renamed", organization_id=world["org_a"].id
+            world["db"],
+            world["profile"].id,
+            "Renamed",
+            actor_user_id=None,
+            organization_id=world["org_a"].id,
         )
         assert _renamed(world) == {"a"}
         assert [file_uuid for file_uuid, _ in renames] == [str(world["files"]["a"].uuid)]
 
     def test_personal_rename_never_reaches_an_organizations_files(self, world):
         apply_profile_name_to_speakers(
-            world["db"], world["profile"].id, "Renamed", organization_id=None
+            world["db"], world["profile"].id, "Renamed", actor_user_id=None, organization_id=None
         )
         assert _renamed(world) == {"personal"}
 
@@ -172,6 +180,7 @@ class TestProfileRenameScopesByFileTenant:
             db,
             world["profile"].id,
             "Renamed",
+            actor_user_id=None,
             restrict_to_user_id=world["owner"].id,
             organization_id=world["org_a"].id,
         )

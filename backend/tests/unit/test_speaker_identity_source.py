@@ -92,7 +92,7 @@ def test_a_person_makes_any_identity_human(before):
 )
 def test_after_unlink(display_name, before, after):
     row = _row(display_name=display_name, identity_source=before)
-    ids.after_unlink(row)
+    ids.after_unlink(row, user_id=None)
     assert row.identity_source == after
 
 

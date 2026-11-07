@@ -27,6 +27,7 @@ from app.services.speaker_identity_rules import carry_blacklist
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_status_service import SpeakerStatusService
 from app.services.uuid_helpers import require_speaker_access
+from app.utils.speaker_identity_source import record_speaker_merge
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,7 @@ def merge_speakers(
         bypass=ctx.bypass,
     )
 
+    record_speaker_merge(target_speaker, user_id=current_user.id, merged=source_speaker)
     # Delete the source speaker
     db.delete(source_speaker)
     db.commit()

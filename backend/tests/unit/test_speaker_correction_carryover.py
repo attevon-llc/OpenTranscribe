@@ -107,7 +107,7 @@ def _clear(db, media, how: str, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.tasks.search_file_field_tasks.index_file_summary.delay", lambda *a, **k: None
     )
-    clear_selective_data(db, db.get(type(media), media.id), [how])
+    clear_selective_data(db, db.get(type(media), media.id), [how], user_id=None)
 
 
 def _rerun(db, user, media) -> dict[str, Speaker]:

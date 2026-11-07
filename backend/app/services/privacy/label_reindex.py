@@ -58,9 +58,9 @@ from app.models.speaker import Speaker
 from app.models.system_settings import SystemSettings
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_labels import DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD
-from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABELS
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session

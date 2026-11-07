@@ -156,6 +156,7 @@ def _process_single_file_action(
             max_speakers,
             num_speakers,
             disable_diarization,
+            user_id=current_user.id,
         ),
         "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
         "redact": lambda: _redact_if_enabled(

@@ -105,6 +105,11 @@ def test_put_is_audited_and_malformed_entries_are_rejected(
     assert [e["event_type"] for e in events] == [AuditEventType.ADMIN_SETTINGS_CHANGE]
     bad = client.put(URL, json={"hosts": ["ftp://x.lan"]}, headers=super_admin_token_headers)
     assert bad.status_code == 422
+    # A fixed sentence, never the validator's exception text (issue #859).
+    assert bad.json()["detail"] == (
+        "Each private host must be an http:// or https:// address or a bare hostname, "
+        "with an optional port"
+    )
 
 
 def test_the_fetch_path_honours_the_same_list(private_dns, db_session):

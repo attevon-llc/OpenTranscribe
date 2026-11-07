@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+#: The rejection detail. The validator's own message is not echoed (issue #859); the only way
+#: past the request model's length cap to a ``ValueError`` is a malformed entry.
+INVALID_HOSTS_DETAIL = (
+    "Each private host must be an http:// or https:// address or a bare hostname, "
+    "with an optional port"
+)
+
 
 class PrivateHosts(BaseModel):
     """The allowlist, as normalised ``scheme://host[:port]`` strings."""
@@ -52,7 +59,7 @@ def put_private_hosts(
     try:
         stored = media_private_hosts.set_private_hosts(db, body.hosts)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail=INVALID_HOSTS_DETAIL) from exc
     audit_logger.log(
         event_type=AuditEventType.ADMIN_SETTINGS_CHANGE,
         outcome=AuditOutcome.SUCCESS,

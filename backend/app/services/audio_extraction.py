@@ -13,6 +13,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.services.video_processing_host import VideoProcessingHost
 from app.services.video_subtitle_burn import _run_ffmpeg
+from app.utils.audio_stream import audio_map_args
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +98,7 @@ def _build_audio_extract_command(
         ffmpeg_path,
         "-i",
         str(input_path),
+        *audio_map_args(),
         "-vn",
         *codec_args,
         "-y",

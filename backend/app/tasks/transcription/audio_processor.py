@@ -5,6 +5,7 @@ from pathlib import Path
 
 import ffmpeg
 
+from app.utils.audio_stream import AUDIO_MAP_SPEC
 from app.utils.cpu_budget import effective_cpu_count
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,7 @@ def extract_audio_from_video(  # noqa: C901
             ar="16000",
             ac=1,
             vn=None,
+            map=AUDIO_MAP_SPEC,
             threads=_ffmpeg_threads(),
         ).run(quiet=True, overwrite_output=True)
 
@@ -219,7 +221,12 @@ def convert_audio_format(  # noqa: C901
             progress_callback(0.3, "Converting audio format...")
 
         ffmpeg.input(input_path).output(
-            output_path, acodec="pcm_s16le", ar="16000", ac=1, threads=_ffmpeg_threads()
+            output_path,
+            acodec="pcm_s16le",
+            ar="16000",
+            ac=1,
+            map=AUDIO_MAP_SPEC,
+            threads=_ffmpeg_threads(),
         ).run(quiet=True, overwrite_output=True)
 
         if progress_callback:

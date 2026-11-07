@@ -1,23 +1,23 @@
 Package,Version,License,Status,Reason,Repository,Publisher
 @adobe/css-tools,4.5.0,MIT,OK,permissive,https://github.com/adobe/css-tools,TJ Holowaychuk
-@asamuzakjp/css-color,7.0.1,MIT,OK,permissive,https://github.com/asamuzaK/cssColor,asamuzaK
-@asamuzakjp/dom-selector,9.2.1,MIT,OK,permissive,https://github.com/asamuzaK/domSelector,asamuzaK
+@asamuzakjp/css-color,7.1.9,MIT,OK,permissive,https://github.com/asamuzaK/cssColor,asamuzaK
+@asamuzakjp/dom-selector,10.0.5,MIT,OK,permissive,https://github.com/asamuzaK/domSelector,asamuzaK
 @babel/code-frame,7.29.7,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
-@babel/helper-string-parser,7.29.7,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
+@babel/helper-string-parser,7.29.13,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
 @babel/helper-validator-identifier,7.29.7,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
-@babel/parser,7.29.9,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
-@babel/runtime,7.29.7,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
-@babel/types,7.29.8,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
+@babel/parser,7.29.13,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
+@babel/runtime,7.29.13,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
+@babel/types,7.29.11,MIT,OK,permissive,https://github.com/babel/babel,The Babel Team
 @bcoe/v8-coverage,1.0.2,MIT,OK,permissive,https://github.com/bcoe/v8-coverage,Charles Samborski
-@bramus/specificity,2.4.2,MIT,OK,permissive,https://github.com/bramus/specificity,Bramus Van Damme
+@bramus/specificity,2.4.3,MIT,OK,permissive,https://github.com/bramus/specificity,Bramus Van Damme
 @cacheable/memory,2.2.0,MIT,OK,permissive,https://github.com/jaredwray/cacheable,Jared Wray
 @cacheable/utils,2.5.0,MIT,OK,permissive,https://github.com/jaredwray/cacheable,Jared Wray
-@csstools/color-helpers,6.1.1,MIT-0,OK,permissive,https://github.com/csstools/postcss-plugins,
-@csstools/css-calc,3.4.0,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
-@csstools/css-color-parser,4.2.3,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
-@csstools/css-parser-algorithms,4.0.0,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
-@csstools/css-syntax-patches-for-csstree,1.1.14,MIT-0,OK,permissive,https://github.com/csstools/postcss-plugins,
-@csstools/css-tokenizer,4.0.1,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
+@csstools/color-helpers,6.1.2,MIT-0,OK,permissive,https://github.com/csstools/postcss-plugins,
+@csstools/css-calc,3.4.3,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
+@csstools/css-color-parser,4.2.7,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
+@csstools/css-parser-algorithms,4.0.2,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
+@csstools/css-syntax-patches-for-csstree,1.1.16,MIT-0,OK,permissive,https://github.com/csstools/postcss-plugins,
+@csstools/css-tokenizer,4.0.2,MIT,OK,permissive,https://github.com/csstools/postcss-plugins,
 @dependents/detective-less,5.0.3,MIT,OK,permissive,https://github.com/dependents/node-detective-less,Joel Kemp
 @discoveryjs/json-ext,1.1.0,MIT,OK,permissive,https://github.com/discoveryjs/json-ext,Roman Dvornov
 @eslint-community/eslint-utils,4.10.1,MIT,OK,permissive,https://github.com/eslint-community/eslint-utils,Toru Nagashima
@@ -44,20 +44,24 @@ Package,Version,License,Status,Reason,Repository,Publisher
 @jridgewell/trace-mapping,0.3.31,MIT,OK,permissive,https://github.com/jridgewell/sourcemaps,Justin Ridgewell
 @keyv/bigmap,1.3.1,MIT,OK,permissive,https://github.com/jaredwray/keyv,Jared Wray
 @keyv/serialize,1.1.1,MIT,OK,permissive,https://github.com/jaredwray/keyv,Jared Wray
-@oxc-parser/binding-linux-x64-gnu,0.150.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
-@oxc-project/types,0.150.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
-@oxc-project/types,0.151.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
+@lit-labs/ssr-dom-shim,1.6.0,BSD-3-Clause,OK,permissive,https://github.com/lit/lit,Google LLC
+@lit/context,1.1.6,BSD-3-Clause,OK,permissive,https://github.com/lit/lit,Google LLC
+@lit/reactive-element,2.1.2,BSD-3-Clause,OK,permissive,https://github.com/lit/lit,Google LLC
+@oxc-parser/binding-linux-x64-gnu,0.156.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
+@oxc-project/types,0.156.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
 @oxc-resolver/binding-linux-x64-gnu,11.24.2,MIT,OK,permissive,https://github.com/oxc-project/oxc-resolver,
 @polka/url,1.0.0-next.29,MIT,OK,permissive,https://github.com/lukeed/polka,Luke Edwards
-@rolldown/binding-linux-x64-gnu,1.2.11,MIT,OK,permissive,https://github.com/rolldown/rolldown,
+@rolldown/binding-linux-x64-gnu,1.2.16,MIT,OK,permissive,https://github.com/rolldown/rolldown,
 @rolldown/pluginutils,1.0.1,MIT,OK,permissive,https://github.com/rolldown/plugins,
 @standard-schema/spec,1.1.0,MIT,OK,permissive,https://github.com/standard-schema/standard-schema,Colin McDonnell
 @svelte-plugins/datepicker,1.0.11,MIT,OK,permissive,https://github.com/svelte-plugins/datepicker,Kieran Boyle
 @sveltejs/acorn-typescript,1.0.13,MIT,OK,permissive,https://github.com/sveltejs/acorn-typescript,tyrealhu and the Svelte team
-@sveltejs/adapter-static,3.0.10,MIT,OK,permissive,https://github.com/sveltejs/kit,
-@sveltejs/kit,2.70.3,MIT,OK,permissive,https://github.com/sveltejs/kit,
+@sveltejs/adapter-static,4.0.1,MIT,OK,permissive,https://github.com/sveltejs/kit,
+@sveltejs/kit,3.1.1,MIT,OK,permissive,https://github.com/sveltejs/kit,
 @sveltejs/load-config,0.2.3,MIT,OK,permissive,https://github.com/sveltejs/language-tools,
 @sveltejs/vite-plugin-svelte,7.3.1,MIT,OK,permissive,https://github.com/sveltejs/vite-plugin-svelte,
+@svta/cml-error-codes,0.1.2,Apache-2.0,OK,permissive,https://github.com/streaming-video-technology-alliance/common-media-library,
+@svta/cml-utils,1.7.0,Apache-2.0,OK,permissive,https://github.com/streaming-video-technology-alliance/common-media-library,
 @testing-library/dom,10.4.2,MIT,OK,permissive,https://github.com/testing-library/dom-testing-library,Kent C. Dodds
 @testing-library/jest-dom,7.0.1,MIT,OK,permissive,https://github.com/testing-library/jest-dom,Ernesto Garcia
 @testing-library/svelte-core,1.1.3,MIT,OK,permissive,https://github.com/testing-library/svelte-testing-library,
@@ -68,39 +72,46 @@ Package,Version,License,Status,Reason,Repository,Publisher
 @ts-graphviz/core,2.0.7,MIT,OK,permissive,https://github.com/ts-graphviz/ts-graphviz,Yuki Yamazaki
 @types/aria-query,5.0.4,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
 @types/chai,5.2.3,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
-@types/cookie,0.6.0,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
 @types/deep-eql,4.0.2,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
 @types/esrecurse,4.3.1,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
-@types/estree,1.0.9,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
+@types/estree,1.0.10,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
 @types/json-schema,7.0.15,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
-@types/node,26.6.2,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
+@types/node,26.6.6,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
 @types/trusted-types,2.0.7,MIT,OK,permissive,https://github.com/DefinitelyTyped/DefinitelyTyped,
-@typescript-eslint/eslint-plugin,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/parser,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/project-service,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/scope-manager,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/tsconfig-utils,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/type-utils,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/types,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/typescript-estree,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/utils,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@typescript-eslint/visitor-keys,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-@vitest/coverage-v8,5.0.1,MIT,OK,permissive,https://github.com/vitest-dev/vitest,Anthony Fu
-@vitest/istanbul-lib-coverage,1.0.1,MIT,OK,permissive,https://github.com/vitest-dev/istanbuljs,Vitest Team
-@vitest/istanbul-lib-report,1.0.1,MIT,OK,permissive,https://github.com/vitest-dev/istanbuljs,Vitest Team
-@vitest/mocker,5.0.1,MIT,OK,permissive,https://github.com/vitest-dev/vitest,
-@vitest/spy,5.0.1,MIT,OK,permissive,https://github.com/vitest-dev/vitest,
-@vue/compiler-core,3.5.43,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
-@vue/compiler-dom,3.5.43,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
-@vue/compiler-sfc,3.5.43,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
-@vue/compiler-ssr,3.5.43,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
-@vue/shared,3.5.43,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
+@typescript-eslint/eslint-plugin,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/parser,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/project-service,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/scope-manager,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/tsconfig-utils,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/type-utils,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/types,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/typescript-estree,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/utils,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@typescript-eslint/visitor-keys,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+@videojs/core,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/element,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/html,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/media,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/native-hls-video,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/spf,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/store,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@videojs/utils,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+@vitest/coverage-v8,5.1.0,MIT,OK,permissive,https://github.com/vitest-dev/vitest,Anthony Fu
+@vitest/istanbul-lib-coverage,2.1.0,MIT,OK,permissive,https://github.com/vitest-dev/istanbuljs,Vitest Team
+@vitest/istanbul-lib-report,2.1.0,MIT,OK,permissive,https://github.com/vitest-dev/istanbuljs,Vitest Team
+@vitest/mocker,5.1.0,MIT,OK,permissive,https://github.com/vitest-dev/vitest,
+@vitest/spy,5.1.0,MIT,OK,permissive,https://github.com/vitest-dev/vitest,
+@vue/compiler-core,3.5.45,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
+@vue/compiler-dom,3.5.45,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
+@vue/compiler-sfc,3.5.45,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
+@vue/compiler-ssr,3.5.45,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
+@vue/shared,3.5.45,MIT,OK,permissive,https://github.com/vuejs/core,Evan You
 acorn-jsx,5.3.2,MIT,OK,permissive,https://github.com/acornjs/acorn-jsx,
-acorn,8.18.0,MIT,OK,permissive,https://github.com/acornjs/acorn,
+acorn,8.19.0,MIT,OK,permissive,https://github.com/acornjs/acorn,
 agent-base,6.0.2,MIT,OK,permissive,https://github.com/TooTallNate/node-agent-base,Nathan Rajlich
 ajv,6.15.0,MIT,OK,permissive,https://github.com/ajv-validator/ajv,Evgeny Poberezkin
 ansi-regex,5.0.1,MIT,OK,permissive,https://github.com/chalk/ansi-regex,Sindre Sorhus
-ansi-regex,6.3.0,MIT,OK,permissive,https://github.com/chalk/ansi-regex,Sindre Sorhus
+ansi-regex,6.5.0,MIT,OK,permissive,https://github.com/chalk/ansi-regex,Sindre Sorhus
 ansi-styles,4.3.0,MIT,OK,permissive,https://github.com/chalk/ansi-styles,Sindre Sorhus
 ansi-styles,5.2.0,MIT,OK,permissive,https://github.com/chalk/ansi-styles,Sindre Sorhus
 ansi-styles,6.2.3,MIT,OK,permissive,https://github.com/chalk/ansi-styles,Sindre Sorhus
@@ -112,7 +123,7 @@ assertion-error,2.0.1,MIT,OK,permissive,https://github.com/chaijs/assertion-erro
 ast-module-types,6.0.2,MIT,OK,permissive,https://github.com/dependents/node-ast-module-types,Joel Kemp
 ast-v8-to-istanbul,1.0.7,MIT,OK,permissive,https://github.com/AriPerkkio/ast-v8-to-istanbul,Ari Perkkiö
 asynckit,0.4.0,MIT,OK,permissive,https://github.com/alexindigo/asynckit,Alex Indigo
-axios,1.20.0,MIT,OK,permissive,https://github.com/axios/axios,Matt Zabriskie
+axios,1.21.0,MIT,OK,permissive,https://github.com/axios/axios,Matt Zabriskie
 axobject-query,4.1.0,Apache-2.0,OK,permissive,https://github.com/A11yance/axobject-query,Jesse Beach
 balanced-match,4.0.4,MIT,OK,permissive,https://github.com/juliangruber/balanced-match,
 base64-js,1.5.1,MIT,OK,permissive,https://github.com/beatgammit/base64-js,T. Jameson Little
@@ -120,10 +131,10 @@ bidi-js,1.1.0,MIT,OK,permissive,https://github.com/lojjic/bidi-js,Jason Johnston
 bl,4.1.0,MIT,OK,permissive,https://github.com/rvagg/bl,
 brace-expansion,5.0.12,MIT,OK,permissive,https://github.com/juliangruber/brace-expansion,
 buffer,5.7.1,MIT,OK,permissive,https://github.com/feross/buffer,Feross Aboukhadijeh
-bundle-name,4.1.0,MIT,OK,permissive,https://github.com/sindresorhus/bundle-name,Sindre Sorhus
+bundle-name,4.1.1,MIT,OK,permissive,https://github.com/sindresorhus/bundle-name,Sindre Sorhus
 cacheable,2.5.0,MIT,OK,permissive,https://github.com/jaredwray/cacheable,Jared Wray
 call-bind-apply-helpers,1.0.2,MIT,OK,permissive,https://github.com/ljharb/call-bind-apply-helpers,Jordan Harband
-chai,6.2.2,MIT,OK,permissive,https://github.com/chaijs/chai,Jake Luer
+chai,6.3.0,MIT,OK,permissive,https://github.com/chaijs/chai,Jake Luer
 chalk,4.1.2,MIT,OK,permissive,https://github.com/chalk/chalk,
 chokidar,4.0.3,MIT,OK,permissive,https://github.com/paulmillr/chokidar,Paul Miller
 cli-cursor,3.1.0,MIT,OK,permissive,https://github.com/sindresorhus/cli-cursor,Sindre Sorhus
@@ -135,16 +146,15 @@ color-convert,2.0.1,MIT,OK,permissive,https://github.com/Qix-/color-convert,Heat
 color-name,1.1.4,MIT,OK,permissive,https://github.com/colorjs/color-name,DY
 combined-stream,1.0.8,MIT,OK,permissive,https://github.com/felixge/node-combined-stream,Felix Geisendörfer
 commander,12.1.0,MIT,OK,permissive,https://github.com/tj/commander.js,TJ Holowaychuk
+commander,15.1.0,MIT,OK,permissive,https://github.com/tj/commander.js,TJ Holowaychuk
 commander,7.2.0,MIT,OK,permissive,https://github.com/tj/commander.js,TJ Holowaychuk
 commondir,1.0.1,MIT,OK,permissive,https://github.com/substack/node-commondir,James Halliday
-cookie,0.7.2,MIT,OK,permissive,https://github.com/jshttp/cookie,Roman Shtylman
-core-js,3.50.0,MIT,OK,permissive,https://github.com/zloirock/core-js,Denis Pushkarev
+cookie,2.0.2,MIT,OK,permissive,https://github.com/jshttp/cookie,Roman Shtylman
 cross-spawn,7.0.6,MIT,OK,permissive,https://github.com/moxystudio/node-cross-spawn,André Cruz
 css-tree,3.2.1,MIT,OK,permissive,https://github.com/csstree/csstree,Roman Dvornov
 css.escape,1.5.1,MIT,OK,permissive,https://github.com/mathiasbynens/CSS.escape,Mathias Bynens
 cssesc,3.0.0,MIT,OK,permissive,https://github.com/mathiasbynens/cssesc,Mathias Bynens
-custom-event-polyfill,1.0.7,MIT,OK,permissive,https://github.com/kumarharsh/custom-event-polyfill,Evan Krambuhl
-data-urls,7.0.0,MIT,OK,permissive,https://github.com/jsdom/data-urls,Domenic Denicola
+data-urls,8.0.0,MIT,OK,permissive,https://github.com/jsdom/data-urls,Domenic Denicola
 date-fns,4.4.0,MIT,OK,permissive,https://github.com/date-fns/date-fns,
 debug,4.4.3,MIT,OK,permissive,https://github.com/debug-js/debug,Josh Junon
 decimal.js,10.6.0,MIT,OK,permissive,https://github.com/MikeMcl/decimal.js,Michael Mclaughlin
@@ -171,12 +181,12 @@ detective-vue2,2.3.0,MIT,OK,permissive,https://github.com/dependents/detective-v
 devalue,5.9.4,MIT,OK,permissive,https://github.com/sveltejs/devalue,
 dom-accessibility-api,0.5.16,MIT,OK,permissive,https://github.com/eps1lon/dom-accessibility-api,
 dom-accessibility-api,0.6.3,MIT,OK,permissive,https://github.com/eps1lon/dom-accessibility-api,
-dompurify,3.4.16,(MPL-2.0 OR Apache-2.0),OK,satisfied by an OR'd permissive option: (MPL-2.0 OR Apache-2.0),https://github.com/cure53/DOMPurify,"Dr.-Ing. Mario Heiderich, Cure53"
+dompurify,3.4.17,(MPL-2.0 OR Apache-2.0),OK,satisfied by an OR'd permissive option: (MPL-2.0 OR Apache-2.0),https://github.com/cure53/DOMPurify,"Dr.-Ing. Mario Heiderich, Cure53"
 dunder-proto,1.0.1,MIT,OK,permissive,https://github.com/es-shims/dunder-proto,Jordan Harband
 emoji-regex,10.6.0,MIT,OK,permissive,https://github.com/mathiasbynens/emoji-regex,Mathias Bynens
-enhanced-resolve,5.25.1,MIT,OK,permissive,https://github.com/webpack/enhanced-resolve,Tobias Koppers @sokra
+enhanced-resolve,5.26.1,MIT,OK,permissive,https://github.com/webpack/enhanced-resolve,Tobias Koppers @sokra
 entities,7.0.1,BSD-2-Clause,OK,permissive,https://github.com/fb55/entities,Felix Boehm
-entities,8.1.0,BSD-2-Clause,OK,permissive,https://github.com/fb55/entities,Felix Boehm
+entities,9.0.0,BSD-2-Clause,OK,permissive,https://github.com/fb55/entities,Felix Boehm
 es-define-property,1.0.1,MIT,OK,permissive,https://github.com/ljharb/es-define-property,Jordan Harband
 es-errors,1.3.0,MIT,OK,permissive,https://github.com/ljharb/es-errors,Jordan Harband
 es-module-lexer,2.3.2,MIT,OK,permissive,https://github.com/guybedford/es-module-lexer,Guy Bedford
@@ -186,19 +196,19 @@ escalade,3.2.0,MIT,OK,permissive,https://github.com/lukeed/escalade,Luke Edwards
 escape-string-regexp,4.0.0,MIT,OK,permissive,https://github.com/sindresorhus/escape-string-regexp,Sindre Sorhus
 escodegen,2.1.0,BSD-2-Clause,OK,permissive,https://github.com/estools/escodegen,
 eslint-config-prettier,10.1.8,MIT,OK,permissive,https://github.com/prettier/eslint-config-prettier,Simon Lydell
-eslint-plugin-svelte,3.23.0,MIT,OK,permissive,https://github.com/sveltejs/eslint-plugin-svelte,Yosuke Ota
+eslint-plugin-svelte,3.24.1,MIT,OK,permissive,https://github.com/sveltejs/eslint-plugin-svelte,Yosuke Ota
 eslint-scope,8.4.0,BSD-2-Clause,OK,permissive,https://github.com/eslint/js,
 eslint-scope,9.1.2,BSD-2-Clause,OK,permissive,https://github.com/eslint/js,
 eslint-visitor-keys,3.4.3,Apache-2.0,OK,permissive,https://github.com/eslint/eslint-visitor-keys,Toru Nagashima
 eslint-visitor-keys,4.2.1,Apache-2.0,OK,permissive,https://github.com/eslint/js,Toru Nagashima
 eslint-visitor-keys,5.0.1,Apache-2.0,OK,permissive,https://github.com/eslint/js,Toru Nagashima
-eslint,10.11.0,MIT,OK,permissive,https://github.com/eslint/eslint,Nicholas C. Zakas
+eslint,10.14.0,MIT,OK,permissive,https://github.com/eslint/eslint,Nicholas C. Zakas
 esm-env,1.2.2,MIT,OK,permissive,https://github.com/benmccann/esm-env,Ben McCann
 espree,10.4.0,BSD-2-Clause,OK,permissive,https://github.com/eslint/js,Nicholas C. Zakas
 espree,11.2.0,BSD-2-Clause,OK,permissive,https://github.com/eslint/js,Nicholas C. Zakas
 esprima,4.0.1,BSD-2-Clause,OK,permissive,https://github.com/jquery/esprima,Ariya Hidayat
 esquery,1.7.0,BSD-3-Clause,OK,permissive,https://github.com/estools/esquery,Joel Feenstra
-esrap,2.3.11,MIT,OK,permissive,https://github.com/sveltejs/esrap,
+esrap,2.4.0,MIT,OK,permissive,https://github.com/sveltejs/esrap,
 esrecurse,4.3.0,BSD-2-Clause,OK,permissive,https://github.com/estools/esrecurse,
 estraverse,5.3.0,BSD-2-Clause,OK,permissive,https://github.com/estools/estraverse,
 estree-walker,2.0.2,MIT,OK,permissive,https://github.com/Rich-Harris/estree-walker,Rich Harris
@@ -215,9 +225,9 @@ filing-cabinet,5.5.1,MIT,OK,permissive,https://github.com/dependents/node-filing
 find-up,5.0.0,MIT,OK,permissive,https://github.com/sindresorhus/find-up,Sindre Sorhus
 flat-cache,6.1.23,MIT,OK,permissive,https://github.com/jaredwray/cacheable,Jared Wray
 flatted,3.4.4,ISC,OK,permissive,https://github.com/WebReflection/flatted,Andrea Giammarchi
-follow-redirects,1.16.0,MIT,OK,permissive,https://github.com/follow-redirects/follow-redirects,Ruben Verborgh
+follow-redirects,1.16.2,MIT,OK,permissive,https://github.com/follow-redirects/follow-redirects,Ruben Verborgh
 form-data,4.0.6,MIT,OK,permissive,https://github.com/form-data/form-data,Felix Geisendörfer
-formatly,0.7.1,MIT,OK,permissive,https://github.com/JoshuaKGoldberg/formatly,Josh Goldberg ✨
+formatly,0.11.4,MIT,OK,permissive,https://github.com/JoshuaKGoldberg/formatly,Josh Goldberg ✨
 function-bind,1.1.2,MIT,OK,permissive,https://github.com/Raynos/function-bind,Raynos
 fuse.js,7.5.0,Apache-2.0,OK,permissive,https://github.com/krisk/Fuse,Kiro Risk
 get-amd-module-type,6.0.2,MIT,OK,permissive,https://github.com/dependents/node-get-amd-module-type,Joel Kemp
@@ -229,7 +239,7 @@ get-proto,1.0.1,MIT,OK,permissive,https://github.com/ljharb/get-proto,Jordan Har
 get-tsconfig,4.14.3,MIT,OK,permissive,https://github.com/privatenumber/get-tsconfig,Hiroki Osame
 glob-parent,6.0.2,ISC,OK,permissive,https://github.com/gulpjs/glob-parent,Gulp Team
 globals,16.5.0,MIT,OK,permissive,https://github.com/sindresorhus/globals,Sindre Sorhus
-globals,17.12.0,MIT,OK,permissive,https://github.com/sindresorhus/globals,Sindre Sorhus
+globals,17.14.0,MIT,OK,permissive,https://github.com/sindresorhus/globals,Sindre Sorhus
 gonzales-pe,4.3.0,MIT,OK,permissive,https://github.com/tonyganch/gonzales-pe,Tony Ganch
 gopd,1.2.0,MIT,OK,permissive,https://github.com/ljharb/gopd,Jordan Harband
 graceful-fs,4.2.11,ISC,OK,permissive,https://github.com/isaacs/node-graceful-fs,
@@ -238,20 +248,21 @@ has-symbols,1.1.0,MIT,OK,permissive,https://github.com/inspect-js/has-symbols,Jo
 has-tostringtag,1.0.2,MIT,OK,permissive,https://github.com/inspect-js/has-tostringtag,Jordan Harband
 hashery,1.5.1,MIT,OK,permissive,https://github.com/jaredwray/hashery,Jared Wray
 hasown,2.0.4,MIT,OK,permissive,https://github.com/inspect-js/hasOwn,Jordan Harband
+highlight.js,11.12.0,BSD-3-Clause,OK,permissive,https://github.com/highlightjs/highlight.js,Josh Goebel
 hookified,1.15.1,MIT,OK,permissive,https://github.com/jaredwray/hookified,Jared Wray
 hookified,2.2.0,MIT,OK,permissive,https://github.com/jaredwray/hookified,Jared Wray
 html-encoding-sniffer,7.0.0,MIT,OK,permissive,https://github.com/jsdom/html-encoding-sniffer,Domenic Denicola
 https-proxy-agent,5.0.1,MIT,OK,permissive,https://github.com/TooTallNate/node-https-proxy-agent,Nathan Rajlich
-i18next-browser-languagedetector,8.2.1,MIT,OK,permissive,https://github.com/i18next/i18next-browser-languageDetector,Jan Mühlemann
+i18next-browser-languagedetector,8.3.0,MIT,OK,permissive,https://github.com/i18next/i18next-browser-languageDetector,Jan Mühlemann
 i18next,25.10.10,MIT,OK,permissive,https://github.com/i18next/i18next,Jan Mühlemann
 ieee754,1.2.1,BSD-3-Clause,OK,permissive,https://github.com/feross/ieee754,Feross Aboukhadijeh
 ignore,5.3.2,MIT,OK,permissive,https://github.com/kaelzhang/node-ignore,kael
-ignore,7.0.10,MIT,OK,permissive,https://github.com/kaelzhang/node-ignore,kael
+ignore,7.0.14,MIT,OK,permissive,https://github.com/kaelzhang/node-ignore,kael
 imurmurhash,0.1.4,MIT,OK,permissive,https://github.com/jensyt/imurmurhash-js,Jens Taylor
 indent-string,4.0.0,MIT,OK,permissive,https://github.com/sindresorhus/indent-string,Sindre Sorhus
 inherits,2.0.4,ISC,OK,permissive,https://github.com/isaacs/inherits,
 ini,1.3.8,ISC,OK,permissive,https://github.com/isaacs/ini,Isaac Z. Schlueter
-is-core-module,2.17.0,MIT,OK,permissive,https://github.com/inspect-js/is-core-module,Jordan Harband
+is-core-module,2.18.0,MIT,OK,permissive,https://github.com/inspect-js/is-core-module,Jordan Harband
 is-docker,3.0.0,MIT,OK,permissive,https://github.com/sindresorhus/is-docker,Sindre Sorhus
 is-extglob,2.1.1,MIT,OK,permissive,https://github.com/jonschlinkert/is-extglob,Jon Schlinkert
 is-glob,4.0.3,MIT,OK,permissive,https://github.com/micromatch/is-glob,Jon Schlinkert
@@ -269,19 +280,18 @@ isexe,2.0.0,ISC,OK,permissive,https://github.com/isaacs/isexe,Isaac Z. Schlueter
 jiti,2.7.0,MIT,OK,permissive,https://github.com/unjs/jiti,
 js-tokens,10.0.0,MIT,OK,permissive,https://github.com/lydell/js-tokens,Simon Lydell
 js-tokens,4.0.0,MIT,OK,permissive,https://github.com/lydell/js-tokens,Simon Lydell
-jsdom,30.1.1,MIT,OK,permissive,https://github.com/jsdom/jsdom,
+jsdom,30.1.3,MIT,OK,permissive,https://github.com/jsdom/jsdom,
 json-schema-traverse,0.4.1,MIT,OK,permissive,https://github.com/epoberezkin/json-schema-traverse,Evgeny Poberezkin
 json-stable-stringify-without-jsonify,1.0.1,MIT,OK,permissive,https://github.com/samn/json-stable-stringify,James Halliday
 json5,2.2.3,MIT,OK,permissive,https://github.com/json5/json5,Aseem Kishore
+katex,0.19.1,MIT,OK,permissive,https://github.com/KaTeX/KaTeX,
 keyv,5.6.0,MIT,OK,permissive,https://github.com/jaredwray/keyv,Jared Wray
-kleur,4.1.5,MIT,OK,permissive,https://github.com/lukeed/kleur,Luke Edwards
-knip,6.38.0,ISC,OK,permissive,https://github.com/webpro-nl/knip,Lars Kappert
+knip,6.44.2,ISC,OK,permissive,https://github.com/webpro-nl/knip,Lars Kappert
 known-css-properties,0.37.0,MIT,OK,permissive,https://github.com/known-css/known-css-properties,Viorel Cojocaru
 levn,0.4.1,MIT,OK,permissive,https://github.com/gkz/levn,George Zahariev
 lightningcss-linux-x64-gnu,1.33.0,MPL-2.0,REVIEW,weak copyleft,https://github.com/parcel-bundler/lightningcss,
 lightningcss,1.33.0,MPL-2.0,REVIEW,weak copyleft,https://github.com/parcel-bundler/lightningcss,
 lilconfig,2.1.0,MIT,OK,permissive,https://github.com/antonk52/lilconfig,antonk52
-loadjs,4.3.0,MIT,OK,permissive,https://github.com/kubetail-org/loadjs,
 locate-character,3.0.0,MIT,OK,permissive,git+https://gitlab.com/Rich-Harris/locate-character,Rich Harris
 locate-path,6.0.0,MIT,OK,permissive,https://github.com/sindresorhus/locate-path,Sindre Sorhus
 log-symbols,4.1.0,MIT,OK,permissive,https://github.com/sindresorhus/log-symbols,Sindre Sorhus
@@ -289,9 +299,9 @@ lru-cache,11.5.3,BlueOak-1.0.0,UNKNOWN,unrecognized license identifier: BlueOak-
 lz-string,1.5.0,MIT,OK,permissive,https://github.com/pieroxy/lz-string,pieroxy
 madge,8.0.0,MIT,OK,permissive,https://github.com/pahen/madge,Patrik Henningsson
 magic-string,0.30.21,MIT,OK,permissive,https://github.com/Rich-Harris/magic-string,Rich Harris
-magic-string,1.4.2,MIT,OK,permissive,https://github.com/Rich-Harris/magic-string,Rich Harris
+magic-string,1.4.5,MIT,OK,permissive,https://github.com/Rich-Harris/magic-string,Rich Harris
 magicast,0.5.5,MIT,OK,permissive,https://github.com/unjs/magicast,
-marked,18.0.14,MIT,OK,permissive,https://github.com/markedjs/marked,Christopher Jeffrey
+marked,18.1.3,MIT,OK,permissive,https://github.com/markedjs/marked,Christopher Jeffrey
 math-intrinsics,1.1.0,MIT,OK,permissive,https://github.com/es-shims/math-intrinsics,Jordan Harband
 mdn-data,2.27.1,CC0-1.0,OK,permissive,https://github.com/mdn/data,Mozilla Developer Network
 mime-db,1.52.0,MIT,OK,permissive,https://github.com/jshttp/mime-db,
@@ -306,35 +316,34 @@ mri,1.2.0,MIT,OK,permissive,https://github.com/lukeed/mri,Luke Edwards
 mrmime,2.0.1,MIT,OK,permissive,https://github.com/lukeed/mrmime,Luke Edwards
 ms,2.1.3,MIT,OK,permissive,https://github.com/vercel/ms,
 murmurhash3js-revisited,3.0.0,MIT,OK,permissive,https://github.com/cimi/murmurhash3js-revisited,Karan Lyons
-nanoid,3.3.19,MIT,OK,permissive,https://github.com/ai/nanoid,Andrey Sitnik
+nanoid,3.3.20,MIT,OK,permissive,https://github.com/ai/nanoid,Andrey Sitnik
 natural-compare,1.4.0,MIT,OK,permissive,https://github.com/litejs/natural-compare-lite,Lauri Rooden
 node-source-walk,7.0.2,MIT,OK,permissive,https://github.com/dependents/node-source-walk,Joel Kemp
 obug,2.2.1,MIT,OK,permissive,https://github.com/sxzz/obug,Kevin Deng
+obug,3.0.0,MIT,OK,permissive,https://github.com/sxzz/obug,Kevin Deng
 onetime,5.1.2,MIT,OK,permissive,https://github.com/sindresorhus/onetime,Sindre Sorhus
 open,11.0.4,MIT,OK,permissive,https://github.com/sindresorhus/open,Sindre Sorhus
 optionator,0.9.4,MIT,OK,permissive,https://github.com/gkz/optionator,George Zahariev
 ora,5.4.1,MIT,OK,permissive,https://github.com/sindresorhus/ora,Sindre Sorhus
-oxc-parser,0.150.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
+oxc-parser,0.156.0,MIT,OK,permissive,https://github.com/oxc-project/oxc,Boshen and oxc contributors
 oxc-resolver,11.24.2,MIT,OK,permissive,https://github.com/oxc-project/oxc-resolver,
 p-limit,3.1.0,MIT,OK,permissive,https://github.com/sindresorhus/p-limit,Sindre Sorhus
 p-locate,5.0.0,MIT,OK,permissive,https://github.com/sindresorhus/p-locate,Sindre Sorhus
-package-manager-detector,1.8.0,MIT,OK,permissive,https://github.com/antfu-collective/package-manager-detector,Anthony Fu
+package-manager-detector,1.9.0,MIT,OK,permissive,https://github.com/antfu-collective/package-manager-detector,Anthony Fu
 parse-ms,2.1.0,MIT,OK,permissive,https://github.com/sindresorhus/parse-ms,Sindre Sorhus
-parse5,8.0.1,MIT,OK,permissive,https://github.com/inikulin/parse5,Ivan Nikulin
+parse5,8.1.1,MIT,OK,permissive,https://github.com/inikulin/parse5,Ivan Nikulin
 path-exists,4.0.0,MIT,OK,permissive,https://github.com/sindresorhus/path-exists,Sindre Sorhus
 path-key,3.1.1,MIT,OK,permissive,https://github.com/sindresorhus/path-key,Sindre Sorhus
 path-parse,1.0.7,MIT,OK,permissive,https://github.com/jbgutierrez/path-parse,Javier Blanco
 picocolors,1.1.1,ISC,OK,permissive,https://github.com/alexeyraspopov/picocolors,Alexey Raspopov
 picomatch,4.0.7,MIT,OK,permissive,https://github.com/micromatch/picomatch,Jon Schlinkert
 pluralize,8.0.0,MIT,OK,permissive,https://github.com/blakeembrey/pluralize,Blake Embrey
-plyr,3.8.4,MIT,OK,permissive,https://github.com/sampotts/plyr,Sam Potts
 postcss-load-config,3.1.4,MIT,OK,permissive,https://github.com/postcss/postcss-load-config,Michael Ciniawky
 postcss-safe-parser,7.1.0,MIT,OK,permissive,https://github.com/postcss/postcss-safe-parser,Andrey Sitnik
 postcss-scss,4.0.9,MIT,OK,permissive,https://github.com/postcss/postcss-scss,Andrey Sitnik
-postcss-selector-parser,7.1.6,MIT,OK,permissive,https://github.com/postcss/postcss-selector-parser,
+postcss-selector-parser,7.1.7,MIT,OK,permissive,https://github.com/postcss/postcss-selector-parser,
 postcss-values-parser,6.0.2,MPL-2.0,REVIEW,weak copyleft,https://github.com/shellscape/postcss-values-parser,Andrew Powell
-postcss,8.5.28,MIT,OK,permissive,https://github.com/postcss/postcss,Andrey Sitnik
-powershell-utils,0.1.0,MIT,OK,permissive,https://github.com/sindresorhus/powershell-utils,Sindre Sorhus
+postcss,8.5.32,MIT,OK,permissive,https://github.com/postcss/postcss,Andrey Sitnik
 powershell-utils,0.2.1,MIT,OK,permissive,https://github.com/sindresorhus/powershell-utils,Sindre Sorhus
 precinct,12.3.2,MIT,OK,permissive,https://github.com/dependents/node-precinct,Joel Kemp
 prelude-ls,1.2.1,MIT,OK,permissive,https://github.com/gkz/prelude-ls,George Zahariev
@@ -344,9 +353,10 @@ proxy-from-env,2.1.0,MIT,OK,permissive,https://github.com/Rob--W/proxy-from-env,
 punycode,2.3.1,MIT,OK,permissive,https://github.com/mathiasbynens/punycode.js,Mathias Bynens
 qified,0.10.1,MIT,OK,permissive,https://github.com/jaredwray/qified,Jared Wray
 quote-unquote,1.0.0,MIT,OK,permissive,https://github.com/dominictarr/quote-unquote,Dominic Tarr
-rangetouch,2.0.1,MIT,OK,permissive,https://github.com/sampotts/rangetouch,Sam Potts
 rc,1.2.8,(BSD-2-Clause OR MIT OR Apache-2.0),OK,satisfied by an OR'd permissive option: (BSD-2-Clause OR MIT OR Apache-2.0),https://github.com/dominictarr/rc,Dominic Tarr
+react-compiler-runtime,1.0.0,MIT,OK,permissive,https://github.com/facebook/react,
 react-is,17.0.2,MIT,OK,permissive,https://github.com/facebook/react,
+react,19.3.1,MIT,OK,permissive,https://github.com/react/react,
 readable-stream,3.6.2,MIT,OK,permissive,https://github.com/nodejs/readable-stream,
 readdirp,4.1.2,MIT,OK,permissive,https://github.com/paulmillr/readdirp,Thorsten Lorenz
 redent,3.0.0,MIT,OK,permissive,https://github.com/sindresorhus/redent,Sindre Sorhus
@@ -355,28 +365,26 @@ requirejs-config-file,4.0.0,MIT,OK,permissive,https://github.com/webforge-labs/r
 requirejs,2.3.8,MIT,OK,permissive,https://github.com/jrburke/r.js,James Burke
 resolve-dependency-path,4.0.1,MIT,OK,permissive,https://github.com/dependents/node-resolve-dependency-path,Joel Kemp
 resolve-pkg-maps,1.0.0,MIT,OK,permissive,https://github.com/privatenumber/resolve-pkg-maps,Hiroki Osame
-resolve,1.22.12,MIT,OK,permissive,https://github.com/browserify/resolve,James Halliday
+resolve,1.22.14,MIT,OK,permissive,https://github.com/browserify/resolve,James Halliday
 restore-cursor,3.1.0,MIT,OK,permissive,https://github.com/sindresorhus/restore-cursor,Sindre Sorhus
-rolldown,1.2.11,MIT,OK,permissive,https://github.com/rolldown/rolldown,
-rollup-plugin-visualizer,7.1.1,MIT,OK,permissive,https://github.com/btd/rollup-plugin-visualizer,Denis Bardadym
+rolldown,1.2.16,MIT,OK,permissive,https://github.com/rolldown/rolldown,
+rollup-plugin-visualizer,7.1.2,MIT,OK,permissive,https://github.com/btd/rollup-plugin-visualizer,Denis Bardadym
 run-applescript,7.1.0,MIT,OK,permissive,https://github.com/sindresorhus/run-applescript,Sindre Sorhus
 sade,1.8.1,MIT,OK,permissive,https://github.com/lukeed/sade,Luke Edwards
 safe-buffer,5.2.1,MIT,OK,permissive,https://github.com/feross/safe-buffer,Feross Aboukhadijeh
 sass-lookup,6.1.2,MIT,OK,permissive,https://github.com/dependents/node-sass-lookup,Joel Kemp
 saxes,6.0.0,ISC,OK,permissive,https://github.com/lddubeau/saxes,Louis-Dominique Dubeau
-semver,7.8.5,ISC,OK,permissive,https://github.com/npm/node-semver,GitHub Inc.
-set-cookie-parser,3.1.2,MIT,OK,permissive,https://github.com/nfriedly/set-cookie-parser,Nathan Friedly
+semver,7.8.6,ISC,OK,permissive,https://github.com/npm/node-semver,GitHub Inc.
 shebang-command,2.0.0,MIT,OK,permissive,https://github.com/kevva/shebang-command,Kevin Mårtensson
 shebang-regex,3.0.0,MIT,OK,permissive,https://github.com/sindresorhus/shebang-regex,Sindre Sorhus
-siginfo,2.0.0,ISC,OK,permissive,https://github.com/emilbayes/siginfo,Emil Bay
 signal-exit,3.0.7,ISC,OK,permissive,https://github.com/tapjs/signal-exit,Ben Coe
+signal-polyfill,0.2.2,Apache-2.0,OK,permissive,https://github.com/proposal-signals/signal-polyfill,EisenbergEffect
 sirv,3.0.2,MIT,OK,permissive,https://github.com/lukeed/sirv,Luke Edwards
-smol-toml,1.9.0,BSD-3-Clause,OK,permissive,https://github.com/squirrelchat/smol-toml,Cynthia Rey
-source-map-js,1.2.1,BSD-3-Clause,OK,permissive,https://github.com/7rulnik/source-map-js,Valentin 7rulnik Semirulnik
+smol-toml,1.9.1,BSD-3-Clause,OK,permissive,https://github.com/squirrelchat/smol-toml,Cynthia Rey
+source-map-js,1.2.2,BSD-3-Clause,OK,permissive,https://github.com/7rulnik/source-map-js,Valentin 7rulnik Semirulnik
 source-map,0.6.1,BSD-3-Clause,OK,permissive,https://github.com/mozilla/source-map,Nick Fitzgerald
 source-map,0.8.0,BSD-3-Clause,OK,permissive,https://github.com/mozilla/source-map,Nick Fitzgerald
-stackback,0.0.2,MIT,OK,permissive,https://github.com/shtylman/node-stackback,Roman Shtylman
-std-env,4.2.0,MIT,OK,permissive,https://github.com/unjs/std-env,
+std-env,4.3.0,MIT,OK,permissive,https://github.com/unjs/std-env,
 stream-to-array,2.3.0,MIT,OK,permissive,https://github.com/stream-utils/stream-to-array,Jonathan Ong
 string-width,7.2.0,MIT,OK,permissive,https://github.com/sindresorhus/string-width,Sindre Sorhus
 string-width,8.3.0,MIT,OK,permissive,https://github.com/sindresorhus/string-width,Sindre Sorhus
@@ -391,49 +399,48 @@ strip-json-comments,5.0.3,MIT,OK,permissive,https://github.com/sindresorhus/stri
 stylus-lookup,6.1.2,MIT,OK,permissive,https://github.com/dependents/node-stylus-lookup,Joel Kemp
 supports-color,7.2.0,MIT,OK,permissive,https://github.com/chalk/supports-color,Sindre Sorhus
 supports-preserve-symlinks-flag,1.0.0,MIT,OK,permissive,https://github.com/inspect-js/node-supports-preserve-symlinks-flag,Jordan Harband
-svelte-check,4.7.6,MIT,OK,permissive,https://github.com/sveltejs/language-tools,The Svelte Community
-svelte-eslint-parser,1.8.1,MIT,OK,permissive,https://github.com/sveltejs/svelte-eslint-parser,Yosuke Ota
+svelte-check,4.7.8,MIT,OK,permissive,https://github.com/sveltejs/language-tools,The Svelte Community
+svelte-eslint-parser,1.10.1,MIT,OK,permissive,https://github.com/sveltejs/svelte-eslint-parser,Yosuke Ota
 svelte-multiselect,11.8.0,MIT,OK,permissive,https://github.com/janosh/svelte-multiselect,Janosh Riebesell
 svelte-range-slider-pips,4.1.1,MPL-2.0,REVIEW,weak copyleft,https://github.com/simeydotme/svelte-range-slider-pips,Simon Goellner
-svelte,5.57.1,MIT,OK,permissive,https://github.com/sveltejs/svelte,
+svelte,5.57.3,MIT,OK,permissive,https://github.com/sveltejs/svelte,
 tapable,2.3.3,MIT,OK,permissive,https://github.com/webpack/tapable,Tobias Koppers @sokra
-tinybench,6.1.4,MIT,OK,permissive,https://github.com/tinylibs/tinybench,
-tinyexec,1.3.0,MIT,OK,permissive,https://github.com/tinylibs/tinyexec,James Garbutt
+tinybench,6.2.3,MIT,OK,permissive,https://github.com/tinylibs/tinybench,
+tinyexec,1.3.1,MIT,OK,permissive,https://github.com/tinylibs/tinyexec,James Garbutt
 tinyglobby,0.2.17,MIT,OK,permissive,https://github.com/SuperchupuDev/tinyglobby,Superchupu
-tinyrainbow,3.1.1,MIT,OK,permissive,https://github.com/tinylibs/tinyrainbow,
-tldts-core,7.4.15,MIT,OK,permissive,https://github.com/remusao/tldts,Rémi Berson
-tldts,7.4.15,MIT,OK,permissive,https://github.com/remusao/tldts,Rémi Berson
+tinyrainbow,3.2.0,MIT,OK,permissive,https://github.com/tinylibs/tinyrainbow,
+tldts-core,7.4.20,MIT,OK,permissive,https://github.com/remusao/tldts,Rémi Berson
+tldts,7.4.19,MIT,OK,permissive,https://github.com/remusao/tldts,Rémi Berson
 totalist,3.0.1,MIT,OK,permissive,https://github.com/lukeed/totalist,Luke Edwards
-tough-cookie,6.0.2,BSD-3-Clause,OK,permissive,https://github.com/salesforce/tough-cookie,Jeremy Stashewsky
-tr46,6.0.0,MIT,OK,permissive,https://github.com/jsdom/tr46,Sebastian Mayr
+tough-cookie,6.1.0,BSD-3-Clause,OK,permissive,https://github.com/salesforce/tough-cookie,Jeremy Stashewsky
+tr46,7.0.0,MIT,OK,permissive,https://github.com/jsdom/tr46,Sebastian Mayr
 ts-api-utils,2.5.0,MIT,OK,permissive,https://github.com/JoshuaKGoldberg/ts-api-utils,JoshuaKGoldberg
 ts-graphviz,2.1.6,MIT,OK,permissive,https://github.com/ts-graphviz/ts-graphviz,kamiazya
 tsconfig-paths,4.2.0,MIT,OK,permissive,https://github.com/dividab/tsconfig-paths,Jonas Kello
 type-check,0.4.0,MIT,OK,permissive,https://github.com/gkz/type-check,George Zahariev
-typescript-eslint,8.70.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
-typescript,5.9.3,Apache-2.0,OK,permissive,https://github.com/microsoft/TypeScript,Microsoft Corp.
-unbash,4.0.11,ISC,OK,permissive,https://github.com/webpro-nl/unbash,Lars Kappert
+typescript-eslint,8.72.1,MIT,OK,permissive,https://github.com/typescript-eslint/typescript-eslint,
+typescript,6.0.3,Apache-2.0,OK,permissive,https://github.com/microsoft/TypeScript,Microsoft Corp.
+unbash,6.0.4,ISC,OK,permissive,https://github.com/webpro-nl/unbash,Lars Kappert
 undici-types,8.9.0,MIT,OK,permissive,https://github.com/nodejs/undici,
-undici,8.11.2,MIT,OK,permissive,https://github.com/nodejs/undici,
+undici,8.12.4,MIT,OK,permissive,https://github.com/nodejs/undici,
 uri-js,4.4.1,BSD-2-Clause,OK,permissive,https://github.com/garycourt/uri-js,Gary Court
-url-polyfill,1.1.14,MIT,OK,permissive,https://github.com/lifaon74/url-polyfill,valentin
 util-deprecate,1.0.2,MIT,OK,permissive,https://github.com/TooTallNate/util-deprecate,Nathan Rajlich
-vite,8.3.1,MIT,OK,permissive,https://github.com/vitejs/vite,Evan You
+video.js,10.3.0,Apache-2.0,OK,permissive,https://github.com/videojs/video.js,
+vite,8.3.6,MIT,OK,permissive,https://github.com/vitejs/vite,Evan You
 vitefu,1.1.3,MIT,OK,permissive,https://github.com/svitejs/vitefu,
-vitest,5.0.1,MIT,OK,permissive,https://github.com/vitest-dev/vitest,Anthony Fu
+vitest,5.1.0,MIT,OK,permissive,https://github.com/vitest-dev/vitest,Anthony Fu
 w3c-xmlserializer,6.0.0,MIT,OK,permissive,https://github.com/jsdom/w3c-xmlserializer,
 walk-up-path,4.0.0,ISC,OK,permissive,https://github.com/isaacs/walk-up-path,Isaac Z. Schlueter
 walkdir,0.4.1,MIT,OK,permissive,https://github.com/soldair/node-walkdir,Ryan Day
 wcwidth,1.0.1,MIT,OK,permissive,https://github.com/timoxley/wcwidth,Tim Oxley
 webidl-conversions,8.0.1,BSD-2-Clause,OK,permissive,https://github.com/jsdom/webidl-conversions,Domenic Denicola
 whatwg-mimetype,5.0.0,MIT,OK,permissive,https://github.com/jsdom/whatwg-mimetype,Domenic Denicola
-whatwg-url,16.0.1,MIT,OK,permissive,https://github.com/jsdom/whatwg-url,Sebastian Mayr
-whatwg-url,17.1.2,MIT,OK,permissive,https://github.com/jsdom/whatwg-url,Sebastian Mayr
+whatwg-url,17.3.0,MIT,OK,permissive,https://github.com/jsdom/whatwg-url,Sebastian Mayr
 which,2.0.2,ISC,OK,permissive,https://github.com/isaacs/node-which,Isaac Z. Schlueter
-why-is-node-running,2.3.0,MIT,OK,permissive,https://github.com/mafintosh/why-is-node-running,Mathias Buus
+why-is-node-running,3.2.1,MIT,OK,permissive,https://github.com/mafintosh/why-is-node-running,Mathias Buus
 word-wrap,1.2.5,MIT,OK,permissive,https://github.com/jonschlinkert/word-wrap,Jon Schlinkert
 wrap-ansi,9.0.2,MIT,OK,permissive,https://github.com/chalk/wrap-ansi,Sindre Sorhus
-wsl-utils,1.0.0,MIT,OK,permissive,https://github.com/sindresorhus/wsl-utils,Sindre Sorhus
+wsl-utils,1.0.1,MIT,OK,permissive,https://github.com/sindresorhus/wsl-utils,Sindre Sorhus
 xml-name-validator,5.0.0,Apache-2.0,OK,permissive,https://github.com/jsdom/xml-name-validator,Domenic Denicola
 xmlchars,2.2.0,MIT,OK,permissive,https://github.com/lddubeau/xmlchars,Louis-Dominique Dubeau
 y18n,5.0.8,ISC,OK,permissive,https://github.com/yargs/y18n,Ben Coe
@@ -443,4 +450,4 @@ yargs-parser,22.0.0,ISC,OK,permissive,https://github.com/yargs/yargs-parser,Ben 
 yargs,18.2.0,MIT,OK,permissive,https://github.com/yargs/yargs,
 yocto-queue,0.1.0,MIT,OK,permissive,https://github.com/sindresorhus/yocto-queue,Sindre Sorhus
 zimmerframe,1.1.5,MIT,OK,permissive,https://github.com/sveltejs/zimmerframe,
-zod,4.6.5,MIT,OK,permissive,https://github.com/colinhacks/zod,Colin McDonnell
+zod,4.6.7,MIT,OK,permissive,https://github.com/colinhacks/zod,Colin McDonnell

@@ -7,19 +7,19 @@ items up top.
 
 ## Regenerating
 
-The committed report describes the `v0.5.1` images (see `Generated:` and `Scope:` in
-`SBOM-SUMMARY.md`). Before a release, replace `v0.5.1` below with the tag you are about to ship
+The committed report describes the `v0.6.1` images (see `Generated:` and `Scope:` in
+`SBOM-SUMMARY.md`). Before a release, replace `v0.6.1` below with the tag you are about to ship
 (or use `:latest`) and re-run. `trivy` and `npm` must be installed; the commands write their
 intermediate JSON to the fixed `/tmp` paths that `scripts/generate-sbom-report.py` reads.
 
 ```bash
 # 1. Backend: scan the actual production image (Python packages + Debian OS packages)
 trivy image --scanners license --format json --skip-version-check \
-  davidamacey/opentranscribe-backend:v0.5.1 > /tmp/trivy-backend.json
+  davidamacey/opentranscribe-backend:v0.6.1 > /tmp/trivy-backend.json
 
 # 2. Frontend: scan the actual production image (Alpine OS packages)
 trivy image --scanners license --format json --skip-version-check \
-  davidamacey/opentranscribe-frontend:v0.5.1 > /tmp/trivy-frontend.json
+  davidamacey/opentranscribe-frontend:v0.6.1 > /tmp/trivy-frontend.json
 
 # 3. Frontend npm packages: install into an isolated temp dir so this never touches
 #    frontend/node_modules (which the dev container may be using) or requires root.

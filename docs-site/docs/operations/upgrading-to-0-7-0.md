@@ -127,3 +127,74 @@ it to `127.0.0.1` unless you need the access above.
 New installs ask "Expose directly on your LAN without HTTPS?" when HTTPS is not set up. The
 answer defaults to no, which keeps the web UI on the server only; answer yes, or set
 `FRONTEND_BIND_HOST=0.0.0.0` later, to use plain HTTP from other devices.
+
+## Settings that moved into the admin UI
+
+Some settings moved from `.env` to the admin UI (**Settings**), so an administrator can change
+them without editing a file or restarting. Nothing you configured changes on upgrade.
+
+### What happens to your existing `.env` value
+
+The first time 0.7.0 starts, each variable below that is **set** in your environment is copied
+into the database once, and a warning naming the variable appears in the backend log
+("`<NAME>` is deprecated"). After that the stored value is the one in use and the variable is
+ignored: change it in the UI, not in `.env`. A variable that is not set keeps the built-in
+default. The environment read is removed completely in v0.8.0, so delete these lines from
+`.env` at your convenience.
+
+| Variable (deprecated) | Now set in | Default |
+|---|---|---|
+| `YOUTUBE_USER_RATE_LIMIT_ENABLED` | Settings > Recovery > YouTube downloads | on |
+| `YOUTUBE_USER_RATE_LIMIT_PER_HOUR` | same | 50 |
+| `YOUTUBE_USER_RATE_LIMIT_PER_DAY` | same | 500 |
+| `YOUTUBE_AUTO_RETRY_ENABLED` | same | on |
+| `YOUTUBE_RECOVERY_BATCH_SIZE` | same | 3 |
+
+Transcript chunk sizing (`SEARCH_CHUNK_TARGET_WORDS`, `SEARCH_CHUNK_OVERLAP_WORDS`) is an
+expert setting that changes search results for the whole library; it stays an advanced
+environment setting.
+
+### Variables removed because they never had any effect
+
+These were read, then replaced by the per-user or per-deployment value on every transcription,
+so setting them did nothing. They are gone from `.env.example` and the compose files; delete
+them from your `.env`.
+
+- `VAD_THRESHOLD`, `VAD_MIN_SILENCE_MS`, `VAD_MIN_SPEECH_MS`, `VAD_SPEECH_PAD_MS`: speech
+  detection is set per user under Settings > Transcription, and the deployment-wide defaults
+  an administrator can change in the same panel (new in 0.7.0).
+- `WHISPER_HALLUCINATION_THRESHOLD`, `WHISPER_REPETITION_PENALTY`: same panel.
+- `SOURCE_LANGUAGE`: the language is chosen per user and per file.
+- `MODELS_DIRECTORY`: no code read it (the model cache is `MODEL_CACHE_DIR`).
+- The `FLOWER_USER` and `REDACTION_CONCURRENCY` lines inside the compose `environment:` blocks.
+  Both variables still work: they are read by the compose file itself (Flower's login and the
+  redaction worker's concurrency).
+- The `engine.gpu_split`, `engine.precompute_vad` and `engine.shared_volume_path` database keys
+  were never writable from the UI and are no longer read. `ENGINE_GPU_SPLIT` (environment) is
+  what decides the split-GPU layout.
+
+### Boolean variables now accept one set of spellings
+
+Every on/off environment variable accepts `true`, `1`, `yes`, `on` and `false`, `0`, `no`,
+`off` (any case). Before, about twenty-five of them (for example `ENABLE_OVERLAP_DETECTION`,
+`USE_NATIVE_SPEAKER_EMBEDDINGS`, `PIPELINE_SCRATCH_SHARED`, `PRELOAD_GPU_MODELS`,
+`ENABLE_API_DOCS`) accepted only the exact word `true` or `false`, so `1` or `no` silently did
+the opposite of what was meant. An unrecognised value now logs a warning that names the variable
+and uses the documented default. Two keep a deliberately strict reading: `ENGINE_GPU_SPLIT` is
+on only for `true` (the start script that adds the split-GPU workers reads the same word), and
+`MEDIACMS_VERIFY_SSL` turns certificate verification off only for `false`, `0` or `no`.
+
+### Offline installs: documentation port
+
+`docker-compose.offline.yml` now publishes the documentation on `DOCS_PORT` with default
+`5183`, like every other deployment (it was `3030`). Set `DOCS_PORT=3030` to keep the old port.
+
+### Media sources on a private network
+
+A MediaCMS server on a private address (for example `http://10.0.0.5:8080`) is refused by
+default, so a user cannot use the server to probe your network. A **super administrator** can
+list the exact origins to allow under Settings > Media Sources > Private media hosts. The list
+is empty after upgrade, and the cloud-metadata addresses stay blocked whatever it contains. The
+old `MEDIACMS_ALLOWED_HOSTS` environment variable only chose which hosts count as MediaCMS
+sources (a value without a scheme means `https`); it never permitted a private address and still
+does not.

@@ -24,13 +24,17 @@ half survived — the subject id, the object key, the section number.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import Any
 from typing import cast
 from unittest import mock
 
+from sqlalchemy import false
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.erasure import ErasureLedgerEntry
+from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.user import User
@@ -136,6 +140,20 @@ class _FakeQuery:
 
     def scalar(self) -> int:
         return 0
+
+    def with_entities(self, *args, **kwargs) -> _FakeQuery:
+        return self
+
+    def scalar_subquery(self) -> Any:
+        # A real (empty) subquery: the caller hands it to ``MediaFile.id.in_``, which only
+        # accepts SQL constructs.
+        return select(Comment.media_file_id).where(false()).scalar_subquery()
+
+    def distinct(self) -> _FakeQuery:
+        return self
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(())
 
 
 class _FakeSession:

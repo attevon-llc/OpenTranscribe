@@ -107,6 +107,12 @@ def test_retry_summary_returns_503_with_the_settings_sentence(unreadable_setting
         "app.services.uuid_helpers.get_file_by_uuid_with_permission", lambda *a, **k: media_file
     )
     monkeypatch.setattr(mod, "require_processing_allowed_for_file", lambda db, f: None)
+    # The legal-hold check needs a real database; this file is not held.
+    hold_checks: list[str] = []
+    monkeypatch.setattr(
+        "app.api.hold_refusal.refuse_if_frozen",
+        lambda db, file_id, *, actor, action: hold_checks.append(action),
+    )
     ctx = _ns(bypass=_ns(user_is_admin=False), org_id=None)
 
     with pytest.raises(ServiceUnavailableError) as exc:
@@ -114,6 +120,7 @@ def test_retry_summary_returns_503_with_the_settings_sentence(unreadable_setting
 
     assert exc.value.status_code == 503
     assert LLM_SETTINGS_UNREADABLE_MESSAGE in str(exc.value)
+    assert hold_checks == ["summary_generate"]
 
 
 def test_speaker_id_trigger_returns_503_on_an_outage(unreadable_settings, monkeypatch):
@@ -124,6 +131,11 @@ def test_speaker_id_trigger_returns_503_on_an_outage(unreadable_settings, monkey
     monkeypatch.setattr(mod, "require_processing_allowed_for_file", lambda db, f: None)
     started: list[str] = []
     monkeypatch.setattr(mod.identify_speakers_llm_task, "delay", lambda **k: started.append("x"))
+    # The legal-hold check needs a real database; this file is not held.
+    hold_checks: list[str] = []
+    monkeypatch.setattr(
+        mod, "refuse_if_frozen", lambda db, file_id, *, actor, action: hold_checks.append(action)
+    )
     ctx = _ns(bypass=_ns(user_is_admin=False), org_id=None)
 
     with pytest.raises(ServiceUnavailableError) as exc:
@@ -131,3 +143,4 @@ def test_speaker_id_trigger_returns_503_on_an_outage(unreadable_settings, monkey
 
     assert LLM_SETTINGS_UNREADABLE_MESSAGE in str(exc.value)
     assert started == []
+    assert hold_checks == ["identify_speakers"]

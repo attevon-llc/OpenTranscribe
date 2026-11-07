@@ -125,7 +125,9 @@ def test_files_are_bucketed(count, bucket):
 
 
 def test_only_files_from_the_last_seven_days_count(db_session, normal_user):
-    now = datetime.now(UTC)
+    # "Now" is pinned far in the future so the window holds only the rows this test inserts:
+    # under the parallel suite other tests' files exist, all uploaded before this moment - 7 d.
+    now = datetime(2200, 1, 1, tzinfo=UTC)
     _media_file(db_session, normal_user, now - timedelta(days=8))
     before = telemetry.build_payload(db_session, "x", now)["files_last_7d_bucket"]
     _media_file(db_session, normal_user, now - timedelta(hours=1))

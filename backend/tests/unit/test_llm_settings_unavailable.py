@@ -114,3 +114,20 @@ def test_retry_summary_returns_503_with_the_settings_sentence(unreadable_setting
 
     assert exc.value.status_code == 503
     assert LLM_SETTINGS_UNREADABLE_MESSAGE in str(exc.value)
+
+
+def test_speaker_id_trigger_returns_503_on_an_outage(unreadable_settings, monkeypatch):
+    from app.api.endpoints import summarization as mod
+
+    media_file = _ns(id=1, uuid="u", speakers=[_ns()])
+    monkeypatch.setattr(mod, "get_file_by_uuid_with_permission", lambda *a, **k: media_file)
+    monkeypatch.setattr(mod, "require_processing_allowed_for_file", lambda db, f: None)
+    started: list[str] = []
+    monkeypatch.setattr(mod.identify_speakers_llm_task, "delay", lambda **k: started.append("x"))
+    ctx = _ns(bypass=_ns(user_is_admin=False), org_id=None)
+
+    with pytest.raises(ServiceUnavailableError) as exc:
+        asyncio.run(mod.identify_speakers("u", current_user=_ns(id=1), ctx=ctx, db=_ns()))
+
+    assert LLM_SETTINGS_UNREADABLE_MESSAGE in str(exc.value)
+    assert started == []

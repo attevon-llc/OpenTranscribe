@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from app.auth.token_service import token_service
@@ -236,9 +237,13 @@ def _assert_no_held_files(db: Session, user_id: int) -> None:
         db: Database session.
         user_id: Internal id of the account being deleted.
 
+    **A comment on somebody else's held file refuses the deletion too** (legal-hold
+    freeze): the comment is part of that file's preserved record, and ``comment.user_id``
+    is NOT NULL, so it can neither be deleted nor de-attributed while the hold stands.
+
     Raises:
         ConflictError: 409 ``FILE_UNDER_LEGAL_HOLD``, naming how many files are held,
-            when the account owns at least one.
+            when the account owns at least one or commented on one.
     """
     from app.services.hold_guard import HoldRefusedError
     from app.services.hold_guard import held_pred
@@ -250,22 +255,44 @@ def _assert_no_held_files(db: Session, user_id: int) -> None:
         for row in db.query(MediaFile.id).filter(MediaFile.user_id == user_id, held_pred())
     ]
     held_count = len(held_ids)
-    if not held_count:
+    # A comment this account wrote on SOMEBODY ELSE's held file is part of that file's
+    # preserved record (legal-hold freeze), and ``comment.user_id`` is NOT NULL, so the
+    # account cannot go while it exists.
+    commented_held_ids = [
+        int(row[0])
+        for row in db.query(MediaFile.id)
+        .filter(
+            MediaFile.user_id != user_id,
+            held_pred(),
+            exists().where(Comment.media_file_id == MediaFile.id, Comment.user_id == user_id),
+        )
+        .distinct()
+    ]
+    if not held_count and not commented_held_ids:
         return
 
-    noun = "file" if held_count == 1 else "files"
-    message = (
-        f"refused: this account owns {held_count} {noun} under an active legal hold "
-        "and cannot be deleted. Release the hold before deleting."
-    )
+    if held_count:
+        noun = "file" if held_count == 1 else "files"
+        message = (
+            f"refused: this account owns {held_count} {noun} under an active legal hold "
+            "and cannot be deleted. Release the hold before deleting."
+        )
+    else:
+        noun = "file" if len(commented_held_ids) == 1 else "files"
+        message = (
+            f"refused: this account commented on {len(commented_held_ids)} {noun} under an "
+            "active legal hold, and those comments are preserved with the file. Release the "
+            "hold before deleting the account."
+        )
     logger.error(f"user deletion: REFUSED to delete user {user_id} — {message}")
     # Who holds them (platform, organization) is told; the organization hold uuids are not:
     # the caller here is a platform admin or the account owner, never the holding organization.
-    refusal = HoldRefusedError(hold_states(db, held_ids))
+    refusal = HoldRefusedError(hold_states(db, held_ids or commented_held_ids))
     raise ConflictError(
         {
             **refusal_detail(refusal.merged(), reveal_uuids=False, message=message),
             "files_under_legal_hold": held_count,
+            "commented_files_under_legal_hold": len(commented_held_ids),
         }
     )
 

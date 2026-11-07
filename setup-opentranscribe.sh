@@ -920,6 +920,12 @@ _upsert_env() {
     fi
 }
 
+# FRONTEND_BIND_HOST (issue #1332): the plain-HTTP port's host address. A non-empty value
+# already in .env is an earlier choice and is kept on a re-run.
+_set_frontend_bind_host() {
+    grep -qE '^FRONTEND_BIND_HOST=.+' .env 2>/dev/null || _upsert_env FRONTEND_BIND_HOST "$1"
+}
+
 # Resolve which release this install pins to.
 #
 # WHY PIN AT ALL
@@ -1641,6 +1647,7 @@ write_nginx_server_name_to_env() {
         echo "NGINX_SERVER_NAME=$name" >> .env
     fi
     rm -f .env.bak
+    _set_frontend_bind_host 127.0.0.1  # nginx is the front door; plain HTTP stays local
     # Unconditional, not just on the fresh-install path (issue #857): a re-run
     # against a pre-existing .env that predates this fix, or one created by a
     # different path, is not guaranteed to already be owner-only.
@@ -1653,12 +1660,15 @@ configure_https_settings() {
     if is_unattended; then
         if [[ -z "${NGINX_SERVER_NAME:-}" ]]; then
             ot_log_unattended "NGINX_SERVER_NAME not set; skipping HTTPS/NGINX setup"
+            [[ "${FRONTEND_BIND_HOST:-}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || FRONTEND_BIND_HOST="127.0.0.1"
+            _set_frontend_bind_host "$FRONTEND_BIND_HOST"
             NGINX_SERVER_NAME=""
             SSL_CONFIGURED=false
             return 0
         fi
         if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
             print_warning "NGINX_SERVER_NAME is not a valid hostname; skipping HTTPS/NGINX setup"
+            _set_frontend_bind_host 127.0.0.1
             NGINX_SERVER_NAME=""
             SSL_CONFIGURED=false
             return 0
@@ -1704,6 +1714,7 @@ configure_https_settings() {
     echo "Without HTTPS:"
     echo "  • Microphone recording only works on localhost"
     echo "  • Other devices on your network can't use recording"
+    echo "  • Sign-in passwords and transcripts cross your network unencrypted"
     echo ""
 
     # On re-run where user previously said No, add context to avoid nagging
@@ -1722,6 +1733,9 @@ configure_https_settings() {
         echo "  1. Run: cd $PROJECT_DIR && ./opentranscribe.sh setup-ssl"
         echo "  2. Or follow: https://docs.opentranscribe.app/docs/installation/small-business-lan"
         echo ""
+        read -p "Expose directly on your LAN without HTTPS? (y/N) " -n 1 -r </dev/tty
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then _set_frontend_bind_host 0.0.0.0; else _set_frontend_bind_host 127.0.0.1; fi
         NGINX_SERVER_NAME=""
         return 0
     fi
@@ -1798,25 +1812,6 @@ configure_https_settings() {
         echo "You may need to manually create certificates."
         SSL_CONFIGURED=false
     fi
-
-    # Show next steps for DNS configuration
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}📋 HTTPS Setup Next Steps${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo "To complete HTTPS setup:"
-    echo ""
-    echo "1. Configure DNS (choose one):"
-    echo "   • Router DNS: Add $NGINX_SERVER_NAME → your server IP"
-    echo "   • /etc/hosts: Add 'YOUR_SERVER_IP  $NGINX_SERVER_NAME'"
-    echo ""
-    echo "2. Trust the certificate on each device:"
-    echo "   • Copy nginx/ssl/server.crt to client devices"
-    echo "   • Import into browser/system trust store"
-    echo ""
-    echo "3. Access at: https://$NGINX_SERVER_NAME"
-    echo ""
 }
 
 #######################

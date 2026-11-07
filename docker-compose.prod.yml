@@ -125,7 +125,12 @@ services:
       dockerfile: Dockerfile.prod  # Production build with NGINX
     pull_policy: always
     ports:
-      - "${FRONTEND_PORT:-5173}:8080"  # Production NGINX port
+      # The front door when no HTTPS overlay is loaded, so it defaults to every
+      # interface. With docker-compose.nginx.yml in front, opentranscribe.sh and
+      # opentr.sh default FRONTEND_BIND_HOST to 127.0.0.1 so plain HTTP is not
+      # published beside HTTPS (issues #1264, #1332). Env, not an overlay `ports:`
+      # entry: compose appends port lists (issue #343).
+      - "${FRONTEND_BIND_HOST:-0.0.0.0}:${FRONTEND_PORT:-5173}:8080"  # Production NGINX port
     environment:
       - NODE_ENV=production  # Production mode
     healthcheck:
@@ -170,7 +175,9 @@ services:
         OT_VERSION: ${APP_VERSION:-}
     pull_policy: always
     ports:
-      - "${DOCS_PORT:-5183}:8080"
+      # Loopback by default (issue #1332): users read the docs through the
+      # frontend's /docs/ proxy, so this port only serves the host itself.
+      - "${DOCS_BIND_HOST:-127.0.0.1}:${DOCS_PORT:-5183}:8080"
     environment:
       - NODE_ENV=production
 

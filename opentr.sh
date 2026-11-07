@@ -1039,6 +1039,43 @@ add_flag_overlay() {
   fi
 }
 
+# HTTPS overlay when NGINX_SERVER_NAME is set (production only; dev's Vite needs no proxy).
+# Shared by start_app and reset_and_init. Appends to COMPOSE_FILES in the calling shell.
+add_nginx_overlay() {
+  if [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "prod" ]; then
+    if [ -f "docker-compose.nginx.yml" ]; then
+      # Check for SSL certificates
+      CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
+      KEY_FILE="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
+
+      if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
+        echo ""
+        echo "⚠️  SSL certificates not found!"
+        echo "   Expected: $CERT_FILE and $KEY_FILE"
+        echo ""
+        echo "   Generate certificates with:"
+        echo "   ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
+        echo ""
+        echo "   Or disable NGINX by commenting out NGINX_SERVER_NAME in .env"
+        exit 1
+      fi
+
+      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
+      # nginx is the front door, so the frontend's plain-HTTP port defaults to loopback
+      # (issue #1332); FRONTEND_BIND_HOST from .env (sourced at startup) still wins. Mirrors
+      # opentranscribe.sh's pin_frontend_bind_host.
+      export FRONTEND_BIND_HOST="${FRONTEND_BIND_HOST:-127.0.0.1}"
+      echo "🔒 Adding NGINX reverse proxy (HTTPS enabled)"
+      echo "   Server name: $NGINX_SERVER_NAME"
+      echo "   Access URL: https://$NGINX_SERVER_NAME"
+    else
+      echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
+    fi
+  elif [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "dev" ]; then
+    echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
+  fi
+}
+
 # Append the PKI/mTLS overlay to $COMPOSE_FILES if --with-pki was passed.
 # Replaces two ~25-line blocks that used to be duplicated verbatim in
 # start_app() and reset() (issue: PKI test-env injection design doc).
@@ -2833,36 +2870,7 @@ start_app() {
     echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
   fi
 
-  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set (production only)
-  # Dev mode uses Vite dev server directly — nginx would be redundant
-  if [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "prod" ]; then
-    if [ -f "docker-compose.nginx.yml" ]; then
-      # Check for SSL certificates
-      CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
-      KEY_FILE="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
-
-      if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
-        echo ""
-        echo "⚠️  SSL certificates not found!"
-        echo "   Expected: $CERT_FILE and $KEY_FILE"
-        echo ""
-        echo "   Generate certificates with:"
-        echo "   ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
-        echo ""
-        echo "   Or disable NGINX by commenting out NGINX_SERVER_NAME in .env"
-        exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
-      echo "🔒 Adding NGINX reverse proxy (HTTPS enabled)"
-      echo "   Server name: $NGINX_SERVER_NAME"
-      echo "   Access URL: https://$NGINX_SERVER_NAME"
-    else
-      echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
-    fi
-  elif [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
-  fi
+  add_nginx_overlay
 
   # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
   # prod to docker-compose.pki.yml; cert generation + the test-env fragment
@@ -3555,36 +3563,7 @@ reset_and_init() {
     echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
   fi
 
-  # Add NGINX reverse proxy if NGINX_SERVER_NAME is set (production only)
-  # Dev mode uses Vite dev server directly — nginx would be redundant
-  if [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "prod" ]; then
-    if [ -f "docker-compose.nginx.yml" ]; then
-      # Check for SSL certificates
-      CERT_FILE="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
-      KEY_FILE="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
-
-      if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then
-        echo ""
-        echo "⚠️  SSL certificates not found!"
-        echo "   Expected: $CERT_FILE and $KEY_FILE"
-        echo ""
-        echo "   Generate certificates with:"
-        echo "   ./scripts/generate-ssl-cert.sh $NGINX_SERVER_NAME --auto-ip"
-        echo ""
-        echo "   Or disable NGINX by commenting out NGINX_SERVER_NAME in .env"
-        exit 1
-      fi
-
-      COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.nginx.yml"
-      echo "🔒 Adding NGINX reverse proxy (HTTPS enabled)"
-      echo "   Server name: $NGINX_SERVER_NAME"
-      echo "   Access URL: https://$NGINX_SERVER_NAME"
-    else
-      echo "⚠️  NGINX_SERVER_NAME is set but docker-compose.nginx.yml not found"
-    fi
-  elif [ -n "$NGINX_SERVER_NAME" ] && [ "$ENVIRONMENT" = "dev" ]; then
-    echo "ℹ️  NGINX_SERVER_NAME is set but skipped in dev mode (Vite serves frontend directly)"
-  fi
+  add_nginx_overlay
 
   # Add PKI overlay if requested (dev routes to docker-compose.pki-dev.yml,
   # prod to docker-compose.pki.yml; cert generation + the test-env fragment

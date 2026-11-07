@@ -222,25 +222,41 @@ updates:
       # hardware validation pass, then let this ignore's own comment go stale in turn.
       - dependency-name: "nvidia/pytorch"
 
-  # Root compose files (issue #792): the `docker` ecosystem only rewrites `FROM` lines in
-  # Dockerfiles, so nothing above watched the images pinned directly in the root
-  # docker-compose*.yml files — postgres, minio, redis, opensearch, prometheus/grafana. Those
-  # first four hold every byte of user data in this app and were watched by nothing.
-  - package-ecosystem: "docker"
+  # Root compose files: the `image:` pins in docker-compose*.yml (postgres, the object
+  # store, redis, opensearch, the HTTPS proxy's nginx, prometheus/grafana, test IdPs).
+  #
+  # This MUST be the `docker-compose` ecosystem, not `docker`. Issue #792 added a `docker`
+  # entry here, but that ecosystem reads Dockerfiles and the repo root has none, so it
+  # never proposed a single compose bump; nginx sat on 1.27 while both nginx images moved
+  # to 1.31 (issue #1369). GitHub lists Docker Compose as its own ecosystem
+  # (`docker-compose`), and dependabot-core's compose fetcher matches every
+  # `docker-compose.<name>.yml` file in the directory, overlays included.
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
       interval: "monthly"
     cooldown:
       default-days: 7
     groups:
-      root-docker:
+      root-compose:
         applies-to: version-updates
         patterns:
           - "*"
-      root-docker-security:
+      root-compose-security:
         applies-to: security-updates
         patterns:
           - "*"
+    ignore:
+      # A Postgres major needs a dump/restore or pg_upgrade of the data directory; a
+      # bumped tag alone leaves the server unable to start on the existing volume.
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "docker.io/library/postgres"
+        update-types: ["version-update:semver-major"]
+      # An OpenSearch major changes index compatibility and the ML/neural plugin APIs the
+      # search layer calls; it is a planned migration, not a routine bump.
+      - dependency-name: "opensearchproject/opensearch"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "docker"
     directory: "/frontend"

@@ -39,7 +39,9 @@ services:
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
 
   nginx:
-    image: nginx:1.27-alpine
+    # Same tag as frontend/Dockerfile.prod and docs-site/Dockerfile; bump all three
+    # together (issue #1369). Dependabot's docker-compose ecosystem watches this line.
+    image: nginx:1.31.8-alpine3.24
     container_name: opentranscribe-nginx
     restart: unless-stopped
     security_opt:

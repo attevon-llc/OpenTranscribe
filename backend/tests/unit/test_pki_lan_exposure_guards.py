@@ -66,9 +66,9 @@ def _backend_ports(compose_path: Path) -> list[str]:
 def test_the_base_compose_publishes_the_backend_through_a_configurable_bind_host():
     """A hardcoded `${BACKEND_PORT}:8080` binds the wildcard address with no way to narrow it."""
     ports = _backend_ports(BASE_COMPOSE)
-    assert ports == ["${BACKEND_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-5174}:8080"], (
-        f"docker-compose.yml's backend ports are {ports!r}; a --with-pki stack needs the bind "
-        "host to be overridable so the API port can be kept off the LAN (issue #620)"
+    assert ports == ["${BACKEND_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-5174}:8080"], (
+        f"docker-compose.yml's backend ports are {ports!r}; the bind host must be overridable "
+        "and default to loopback so the API port stays off the LAN (issues #620, #1332)"
     )
 
 

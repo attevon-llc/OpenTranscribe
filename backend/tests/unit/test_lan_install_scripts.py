@@ -199,6 +199,8 @@ def _installer_harness() -> str:
                 "is_unattended",
                 "ot_log_unattended",
                 "print_warning",
+                "_upsert_env",
+                "_set_frontend_bind_host",
                 "write_nginx_server_name_to_env",
                 "configure_https_settings",
             )
@@ -222,6 +224,7 @@ def _run_unattended(tmp_path: Path, env_text: str, nginx_name: str | None, certs
 
 
 ENV_WITH_COMMENTED_NAME = "JWT=abc\n# NGINX_SERVER_NAME=\nOTHER=1\n"
+ENV_WITH_LOOPBACK_BIND = ENV_WITH_COMMENTED_NAME + "FRONTEND_BIND_HOST=127.0.0.1\n"
 
 
 def test_unattended_install_writes_the_server_name_to_env(tmp_path):
@@ -248,14 +251,15 @@ def test_unattended_install_refuses_a_hostname_it_would_splice_into_sed(tmp_path
     result = _run_unattended(tmp_path, ENV_WITH_COMMENTED_NAME, bad, certs=False)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV_WITH_COMMENTED_NAME
+    # Only the loopback bind (issue #1332) is recorded; the hostname never reaches .env.
+    assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV_WITH_LOOPBACK_BIND
     assert "RESULT name=[] ssl=[false]" in result.stdout
 
 
-def test_unattended_install_without_a_server_name_leaves_env_alone(tmp_path):
+def test_unattended_install_without_a_server_name_only_records_the_loopback_bind(tmp_path):
     result = _run_unattended(tmp_path, ENV_WITH_COMMENTED_NAME, None, certs=False)
 
-    assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV_WITH_COMMENTED_NAME
+    assert (tmp_path / ".env").read_text(encoding="utf-8") == ENV_WITH_LOOPBACK_BIND
     assert "RESULT name=[] ssl=[false]" in result.stdout
 
 

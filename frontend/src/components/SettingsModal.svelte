@@ -27,6 +27,7 @@
     prefetchSectionIntent,
     type PrefetchRole,
   } from '$lib/settings/sectionLoaders';
+  import { findSettingElement } from '$lib/search/findSettingElement';
   import { invalidateSectionData, SectionDataKey } from '$lib/settings/sectionData';
   import type { ConfirmRequest } from '$components/settings/AdminTaskHealthPanel.svelte';
   import { SupportAccessApi } from '$lib/api/supportAccess';
@@ -401,6 +402,7 @@
         // (admin) the policy floor that overrides it.
         ...(privacyRedactionVisible(privacyAccess) ? [{ id: 'content-redaction' as SettingsSection, label: $t('settings.privacyRedaction.title'), icon: 'eye-off' }] : []),
         { id: 'llm-provider' as SettingsSection, label: $t('settings.llmProvider.title'), icon: 'brain', cap: 'llm.user_settings' },
+        { id: 'llm-usage' as SettingsSection, label: $t('settings.llmUsage.title'), icon: 'activity', cap: 'llm.user_settings' },
         { id: 'ai-prompts' as SettingsSection, label: $t('settings.aiPrompts.title'), icon: 'message', cap: 'prompts.user' },
         // Org context is prompt material: OrganizationContextSettings persists
         // include_in_default_prompts / include_in_custom_prompts and nothing else reads it.
@@ -595,24 +597,6 @@
     // Let the panel render (some load data async — flashSettingControl retries).
     await tick();
     flashSettingControl(anchorText);
-  }
-
-  // Tiered lookup: prefer labels/headings, then help text, then any element.
-  function findSettingElement(container: Element, needle: string): HTMLElement | null {
-    const target = needle.trim().toLowerCase();
-    if (!target) return null;
-    const tiers = [
-      'label, .section-title, .section-header, h3, h4, h5, legend',
-      '.form-text, .field-hint, .help-text, .field-desc, .input-hint, small, p',
-      '*',
-    ];
-    for (const selector of tiers) {
-      for (const el of Array.from(container.querySelectorAll(selector))) {
-        const text = (el.textContent || '').trim().toLowerCase();
-        if (text && text.includes(target)) return el as HTMLElement;
-      }
-    }
-    return null;
   }
 
   function flashSettingControl(anchorText: string, attempt = 0) {
@@ -1318,6 +1302,17 @@
         <p class="section-description">{$t('settings.llmProvider.description')}</p>
         <LazySection load={sectionLoaders.llm} let:Component>
           <Component onSettingsChange={onAISettingsChange} {isAdmin} />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- AI usage: tokens against the limits (issue #790) -->
+    {#if activeSection === 'llm-usage'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('settings.llmUsage.title')}</h3>
+        <p class="section-description">{$t('settings.llmUsage.description')}</p>
+        <LazySection load={sectionLoaders.llmUsage} let:Component>
+          <Component {isAdmin} />
         </LazySection>
       </div>
     {/if}

@@ -7,6 +7,7 @@
  */
 import type { Translate } from '$lib/i18n';
 import { formatEta } from '$lib/utils/formatting';
+import { llmBudgetMessage } from '$lib/notifications/titles';
 
 // Notification ETA text; undefined (not '') when there is no ETA to show.
 export function formatEtaSeconds(seconds: number | null | undefined): string | undefined {
@@ -143,7 +144,7 @@ export function progressFields(
   }
 
   // Synthesize message for admin tasks that don't have one
-  let currentStep = data.message || '';
+  let currentStep = llmBudgetMessage(data, translate) || data.message || '';
   if (!currentStep && isAdminProgressType) {
     if (type.startsWith('reindex')) {
       const idx = data.indexed_files ?? data.stats?.indexed_files ?? 0;

@@ -510,7 +510,9 @@ export type ChatErrorCode =
   | 'cancelled'
   | 'connection_interrupted'
   | 'export_failed'
-  | 'transcript_not_ready';
+  | 'transcript_not_ready'
+  | 'llm_budget_exceeded'
+  | 'llm_budget_unavailable';
 
 export type ChatStreamEvent =
   | {

@@ -13,6 +13,7 @@ export type SettingsSection =
   | 'download'
   | 'ai-prompts'
   | 'llm-provider'
+  | 'llm-usage'
   | 'auto-labeling'
   | 'search-indexing'
   | 'groups'

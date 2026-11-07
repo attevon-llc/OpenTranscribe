@@ -97,3 +97,30 @@ describe('composeClientMessage', () => {
     );
   });
 });
+
+describe('a task refused by the LLM token limits (#790)', () => {
+  it.each([
+    ['user_day', 'notifications.llmBudgetExceededDay'],
+    ['instance_month', 'notifications.llmBudgetExceededMonth'],
+  ])('translates the %s refusal instead of the English sentence', (scope, key) => {
+    const data = {
+      error_code: 'llm_budget_exceeded',
+      budget_scope: scope,
+      message: 'You have reached your daily AI token limit.',
+    };
+    expect(composeClientMessage('summarization_status', data, echo)).toBe(key);
+  });
+
+  it('translates an unchecked limit and leaves every other frame alone', () => {
+    expect(
+      composeClientMessage(
+        'topic_extraction_status',
+        { error_code: 'llm_budget_unavailable' },
+        echo
+      )
+    ).toBe('notifications.llmBudgetUnavailable');
+    expect(
+      composeClientMessage('summarization_status', { error_code: 'topic_extraction_failed' }, echo)
+    ).toBeUndefined();
+  });
+});

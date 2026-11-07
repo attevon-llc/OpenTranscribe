@@ -149,16 +149,9 @@ _UNVERIFIED_REASON = (
     "review."
 )
 _USAGE_REASON = (
-    "No frontend call site found. app/api/endpoints/usage.py's own docstring "
-    "frames this as 'A core, open-source surface... as true for a self-hoster "
-    "with an OpenAI key as for a hosted tenant' — NOT a cloud-only seam (the "
-    "only usage UI found, lib/cloud/components/UsageDashboard.svelte and "
-    "UsageBadge.svelte, is the managed-edition stub, gated by isCloudEdition and "
-    "replaced wholesale in the commercial build). This is the real dead-surface "
-    "shape the whole gate exists to catch: implemented on the backend, "
-    "documented as core, reachable by no UI in this repo. Needs product review: "
-    "build the self-host usage panel the docstring promises, or correct the "
-    "docstring if this was only ever meant to back the cloud dashboard."
+    "Issue #790: the self-host AI usage panel (components/settings/LLMUsagePanel.svelte) "
+    "calls GET /usage/me; this per-day series behind a usage chart has no chart yet. "
+    "The chart is the follow-up usage-UI lane's to build, or this route's to delete."
 )
 
 _SUPPORT_ACCESS_REASON = (
@@ -264,7 +257,6 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     "/api/speaker-profiles/speakers/{speaker_uuid}/suggestions": _UNVERIFIED_REASON,
     "/api/speakers/{speaker_uuid}/verify": _UNVERIFIED_REASON,
     "/api/users": _UNVERIFIED_REASON,
-    "/api/usage/me": _USAGE_REASON,
     "/api/usage/me/daily": _USAGE_REASON,
 }
 

@@ -24,6 +24,7 @@
   import { AdminApi } from '$lib/api/admin';
   import { mediaRevocationIncomplete } from '$lib/takedownRevocation';
   import { OrgAdminApi } from '$lib/api/orgAdmin';
+  import { settingsModalStore } from '$stores/settingsModalStore';
   import TakedownStatusChip from '$components/takedown/TakedownStatusChip.svelte';
   import { toRows, type QueueRow, type QueueScope } from './quarantineRows';
   import { TAKEDOWN_NOTICE_TYPE_KEYS, labelFor } from '$lib/i18n/keyMaps';
@@ -115,6 +116,21 @@
   <!-- §B.5 P1: scope copy names what quarantine hides — never "everywhere". -->
   <p class="scope-note">
     {$t(isOrg ? 'settings.quarantine.orgScopeNote' : 'settings.quarantine.scopeNote')}
+  </p>
+
+  <!-- Quarantine and legal hold are different features (issue #576): say so where they meet. -->
+  <p class="scope-note hold-help" data-testid="quarantine-hold-help">
+    {$t('settings.quarantine.holdHelp')}
+    {#if !isOrg}
+      <button
+        type="button"
+        class="action-link"
+        data-testid="quarantine-open-holds"
+        on:click={() => settingsModalStore.setActiveSection('platform-holds')}
+      >
+        {$t('settings.quarantine.holdHelpLink')}
+      </button>
+    {/if}
   </p>
 
   <div class="view-toggle">
@@ -250,6 +266,11 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .hold-help .action-link {
+    font-size: inherit;
+    margin-inline-start: var(--space-1);
   }
 
   .scope-note {

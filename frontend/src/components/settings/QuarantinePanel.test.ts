@@ -18,6 +18,8 @@ vi.mock('$stores/locale', () => ({
 
 import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';
+import { get as readStore } from 'svelte/store';
+import { settingsModalStore } from '$stores/settingsModalStore';
 import QuarantinePanel from './QuarantinePanel.svelte';
 import { toRows } from './quarantineRows';
 
@@ -285,5 +287,33 @@ describe('toRows', () => {
     ] as never);
     expect(row).toMatchObject({ reasonWithheld: false, canRelease: true, reason: 'why' });
     expect(row.label).toBe('Title');
+  });
+
+  describe('quarantine versus legal hold wording', () => {
+    it('explains that a takedown legal hold is not the Settings legal holds feature', async () => {
+      get.mockResolvedValue({ data: { files: [], total: 0 } } as never);
+      render(QuarantinePanel);
+
+      expect(screen.getByTestId('quarantine-hold-help')).toHaveTextContent(
+        'settings.quarantine.holdHelp'
+      );
+    });
+
+    it('links the platform queue to Settings > Legal holds', async () => {
+      get.mockResolvedValue({ data: { files: [], total: 0 } } as never);
+      render(QuarantinePanel);
+
+      await fireEvent.click(screen.getByTestId('quarantine-open-holds'));
+
+      expect(readStore(settingsModalStore).activeSection).toBe('platform-holds');
+    });
+
+    it('offers no link from the organization queue, whose admins may lack that section', async () => {
+      get.mockResolvedValue({ data: { files: [], total: 0 } } as never);
+      render(QuarantinePanel, { scope: 'organization' });
+
+      expect(screen.getByTestId('quarantine-hold-help')).toBeInTheDocument();
+      expect(screen.queryByTestId('quarantine-open-holds')).toBeNull();
+    });
   });
 });

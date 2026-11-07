@@ -105,32 +105,33 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+          {#if autoExtractEnabled}
+            <!-- Depends on the switch above, so it sits directly beneath it (label, then control). -->
+            <div class="dependent-field" data-testid="threshold-field">
+              <label for="threshold" class="form-label">
+                {$t('settings.audioExtraction.threshold')}
+                <span class="label-hint">{$t('settings.audioExtraction.thresholdHint')}</span>
+              </label>
+              <div class="threshold-input-group">
+                <input
+                  id="threshold"
+                  type="number"
+                  min="1"
+                  max="10000"
+                  bind:value={extractionThresholdMb}
+                  class="form-input threshold-input"
+                />
+                <span class="threshold-unit" dir="ltr">MB</span>
+              </div>
+              <p class="input-hint">
+                {$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })}
+              </p>
+            </div>
+          {/if}
         </div>
       </div>
 
       {#if autoExtractEnabled}
-        <!-- Extraction Threshold -->
-        <div class="form-group">
-          <label for="threshold" class="form-label">
-            {$t('settings.audioExtraction.threshold')}
-            <span class="label-hint">{$t('settings.audioExtraction.thresholdHint')}</span>
-          </label>
-          <div class="threshold-input-group">
-            <input
-              id="threshold"
-              type="number"
-              min="1"
-              max="10000"
-              bind:value={extractionThresholdMb}
-              class="form-input threshold-input"
-            />
-            <span class="threshold-unit">MB</span>
-          </div>
-          <p class="input-hint">
-            {$t('settings.audioExtraction.thresholdInfo', { size: extractionThresholdMb })}
-          </p>
-        </div>
-
         <!-- Show Modal -->
         <div class="form-group">
           <div class="toggle-group">
@@ -341,6 +342,16 @@
 
   input:checked + .toggle-slider:before {
     transform: translateX(24px);
+  }
+
+  .dependent-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    padding-inline-start: var(--space-4);
+    border-top: 1px solid var(--border-color);
   }
 
   .threshold-input-group {

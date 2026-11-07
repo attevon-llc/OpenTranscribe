@@ -112,6 +112,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email configuration recipients and sender must be valid email addresses.
 - The email configuration "Test" endpoint is now documented as it behaves: it connects and logs in, and does not send a message.
 
+- **System statistics > AI models** card: the long explanation of the reranker threads moved behind an info icon so the card stays compact.
+- **Quarantine screen wording**: the "Legal hold" column, badge and tab are now named for the takedown's own legal hold, and a help line explains that quarantine and Settings > Legal holds are separate features, with a link to Legal holds (all 12 languages). Behaviour is unchanged.
+- **Takedown notices (admin)**: the Add-notice form now has a Cancel; Export is one button with a CSV/JSON format menu instead of two buttons, and it is disabled with an explanation when there are no notices to export.
+- **Settings > Audio Extraction**: the file-size field now sits directly under the "Extract Audio from Videos" switch it depends on (label above the field), instead of between the other two choices.
+- **Settings > Recording** is now titled "Microphone Recording" and says it applies when you record from your microphone in the web page, not to uploaded files (all 12 languages).
+- **Settings > AI usage matches the other settings pages**: its cards were missing the shared settings form styling, so headings looked bold and unlike the sibling sections.
 - In Arabic and other right-to-left languages, the player's time readout showed total time before elapsed time and touched the volume slider; it now reads "elapsed / total" with a gap.
 - The file player's settings menu no longer lays out its closed Speed and Captions lists under the main list, where screen readers found a second "Speed" item.
 - The development server answered every server-rendered page with an error after the route-store change in this release; the page store now reads the current page only while a page renders.

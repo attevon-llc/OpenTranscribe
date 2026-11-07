@@ -607,30 +607,35 @@ class TestSpeakerUpdateDisplayNameLeak:
 
 
 class TestRenamePropagationMultiFile:
-    def _run(self, db, file_uuids, monkeypatch):
+    def _run(self, db, file_uuids, monkeypatch, stamped=None):
+        """Run the real task against real rows; only the OpenSearch writes are stood in.
+
+        ``extract_file_index_metadata`` is deliberately NOT stubbed: a hand-written copy of
+        its return dict went stale when the ``availability`` field was added (#1101), the
+        task's ``KeyError`` was swallowed by its per-file guard, and every digest silently
+        stopped regenerating in this test. The real reader keeps the contract in sync.
+        ``stamped`` (file_uuid -> {plane: availability}) records what each plane was told.
+        """
         from app.tasks import rename_digest_task as rpt
 
-        monkeypatch.setattr(
-            "app.tasks.search_indexing_task.extract_file_index_metadata",
-            lambda db, media_file, file_id: {
-                "title": "t",
-                "tag_names": [],
-                "upload_time": None,
-                "language": "en",
-                "content_type": "video/mp4",
-                "duration": None,
-                "file_size": 1000,
-                "collection_ids": [],
-                "accessible_user_ids": None,
-                "organization_id": None,
-            },
-        )
+        record: dict[str, dict[str, str]] = {} if stamped is None else stamped
+
+        def _plane(name: str) -> Callable[..., None]:
+            def _write(self: object, *, file_uuid: str, base_metadata: dict, **_kw: object):
+                record.setdefault(file_uuid, {})[name] = base_metadata["availability"]
+
+            return _write
+
         monkeypatch.setattr(
             "app.services.search.pipelines.is_neural_pipeline_available", lambda: False
         )
         monkeypatch.setattr(
             "app.services.search.indexing_service.TranscriptIndexingService._index_digest_plane",
-            lambda self, **kwargs: None,
+            _plane("digest"),
+        )
+        monkeypatch.setattr(
+            "app.services.search.indexing_service.TranscriptIndexingService._index_summary_plane",
+            _plane("summary"),
         )
 
         sent: list[tuple] = []
@@ -643,6 +648,32 @@ class TestRenamePropagationMultiFile:
             kwargs={"file_uuids": file_uuids, "new_name": "New Name", "speaker_id": 1}
         ).get()
         return result, sent
+
+    def test_both_planes_are_restamped_with_each_files_real_availability(
+        self, bridge_session, monkeypatch
+    ):
+        """A rename rebuilds the digest and summary planes of every file it touched, and a
+        quarantined file's rebuilt documents carry ``quarantined`` so they stay out of every
+        search surface instead of being republished as available."""
+        from app.services.search.availability_field import AVAILABLE
+        from app.services.search.availability_field import QUARANTINED
+
+        db = bridge_session
+        owner = _mk_user(db)
+        clean = _mk_file(db, owner=owner, quarantined=False)
+        hidden = _mk_file(db, owner=owner, quarantined=True)
+        stamped: dict[str, dict[str, str]] = {}
+
+        result, _sent = self._run(
+            db, [str(clean.uuid), str(hidden.uuid)], monkeypatch, stamped=stamped
+        )
+
+        assert result["errors"] == 0
+        assert result["regenerated"] == 2
+        assert stamped == {
+            str(clean.uuid): {"digest": AVAILABLE, "summary": AVAILABLE},
+            str(hidden.uuid): {"digest": QUARANTINED, "summary": QUARANTINED},
+        }
 
     def test_drops_quarantined_uuids_and_recomputes_the_count(self, bridge_session, monkeypatch):
         db = bridge_session

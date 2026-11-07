@@ -43,6 +43,15 @@
  * node is unchanged (16,884 -> 16,909 B). It cannot be removed from app code, so the two closure
  * budgets are raised by the measured delta plus the usual ~4% headroom, and the entry-chunk
  * budget is lowered to follow the measured drop.
+ *
+ * Video.js 10 mini player (issue #1327 Lane D, owner decision Q1), 2026-11-07, same command on
+ * the tree before/after the change, gzip level 9:
+ *   total JS              2,649,972 B (261 files) -> 2,767,562 B (325 files), +117,590 B
+ *   first-load closure      146,223 B -> 146,334 B; entry chunks 3,796 B -> 3,803 B
+ * Of the delta, 55,642 B is the one Video.js code chunk, loaded with the search and speakers
+ * routes (never first load); the other ~62 KB is 63 lazily loaded locale chunks, of which a
+ * viewer fetches one. Plyr stays until Lane E removes it (about -34 KB). The total-JS budget
+ * is raised to about 4% above the new measurement; the other budgets are unchanged.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize, relative } from 'node:path';
@@ -81,8 +90,10 @@ export const FIRST_LOAD_GZIP_BUDGET = 147 * 1024;
  * before the comment composer, i.e. 90 B of headroom left, and 2,649,803 B with it. 7,733 B of
  * that 7,973 B delta is translated copy in the 12 lazily loaded locale chunks (a user downloads
  * one, about 650 B), so it is content, not a regression. Reset to about 3% above the new measure.
+ * Raised for the Video.js mini player (#1327, owner decision Q1): measured 2,767,562 B, budget
+ * about 4% above it (see the header).
  */
-export const TOTAL_JS_GZIP_BUDGET = 2666 * 1024;
+export const TOTAL_JS_GZIP_BUDGET = 2811 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;

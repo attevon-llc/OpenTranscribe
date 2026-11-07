@@ -57,6 +57,7 @@ from app.services import llm_reasoning
 from app.services.chat import limits
 from app.services.chat.context_resolver import count_scope_files
 from app.services.chat.context_resolver import resolve_scope_file_uuids
+from app.services.chat.context_resolver import unscoped_hidden_file_uuids
 from app.services.chat.frames import sse
 from app.services.chat.hooks import ChatDispatchContext
 from app.services.chat.hooks import fire_before_message
@@ -291,6 +292,9 @@ def _prepare_turn(
             # Speakers filter WITHIN the resolved recordings rather than
             # reducing them, so it is passed straight to retrieval.
             speakers = scope.speakers
+        hidden_file_uuids = (
+            unscoped_hidden_file_uuids(db, ctx, file_uuids) if use_context else frozenset()
+        )
 
         assistant_uuid = str(uuid_pkg.uuid4())
         fire_before_message(
@@ -354,6 +358,7 @@ def _prepare_turn(
             "question": content,
             "history": history,
             "file_uuids": file_uuids,
+            "hidden_file_uuids": hidden_file_uuids,
             "speakers": speakers,
             "settings": chat_settings,
             "use_context": use_context,

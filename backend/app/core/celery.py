@@ -222,6 +222,7 @@ celery_app = Celery(
         "app.tasks.erasure_receipt_reverify",
         "app.tasks.privacy_purge_task",
         "app.tasks.privacy_label_resync_task",
+        "app.tasks.telemetry",
         "app.tasks.thumbnail",
         "app.tasks.thumbnail_migration",
         "app.tasks.embedding_migration_v4",

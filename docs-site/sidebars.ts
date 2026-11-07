@@ -125,6 +125,7 @@ const sidebars: SidebarsConfig = {
         'operations/audit-integrity',
         'operations/support-access',
         'operations/gdpr-erasure',
+        'operations/telemetry',
         'legal/legal-documents',
         'operations/runbooks',
       ],

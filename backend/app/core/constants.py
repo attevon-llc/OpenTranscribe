@@ -725,3 +725,30 @@ LLM_BUDGET_LOCAL_UNLIMITED_KEY = "llm.budget.local_unlimited"
 DEFAULT_LLM_BUDGET_LOCAL_UNLIMITED = False
 #: Upper bound an admin may set for either limit (a typo guard, about 1e12 tokens).
 LLM_BUDGET_MAX_TOKENS = 1_000_000_000_000
+
+# --- Anonymous usage report (issue #1019, owner decision D14) ---------------------------
+# Double opt-in: the images ship DO_NOT_TRACK=1, so an operator first sets DO_NOT_TRACK=0 in
+# .env; then nothing is sent until a super admin turns it on in Settings -> Privacy, and
+# ``DO_NOT_TRACK``, ``OPENTRANSCRIBE_TELEMETRY=false``, ``OPENTRANSCRIBE_DEMO_MODE`` or a
+# missing receiver key force it off regardless. Logic: ``app/services/telemetry.py``; the
+# public description of every field: ``docs-site/docs/operations/telemetry.md``.
+#: ``SystemSettings`` key: ``"true"``/``"false"``. The administrator's choice.
+TELEMETRY_ENABLED_KEY = "telemetry.enabled"
+DEFAULT_TELEMETRY_ENABLED = False
+#: ``SystemSettings`` key: a random UUID4 created when the report is turned on and deleted when
+#: it is turned off. Never derived from the host, the network or any account.
+TELEMETRY_INSTALL_ID_KEY = "telemetry.install_id"
+#: ``SystemSettings`` keys: ISO-8601 UTC times of the last accepted send and the last attempt.
+#: The due check reads the attempt, so an unreachable receiver is tried once a day, not hourly.
+TELEMETRY_LAST_SENT_AT_KEY = "telemetry.last_sent_at"
+TELEMETRY_LAST_ATTEMPT_AT_KEY = "telemetry.last_attempt_at"
+#: Bumped whenever a field is added or removed, in the same change as the docs page.
+TELEMETRY_SCHEMA_VERSION = 1
+#: One report a day, spread by a per-install offset of up to an hour either side so that
+#: installs do not all report on the same minute.
+TELEMETRY_INTERVAL_SECONDS = 24 * 3600
+TELEMETRY_JITTER_SECONDS = 3600
+#: The whole request, connect included. No retry: a failure waits for the next day.
+TELEMETRY_TIMEOUT_SECONDS = 5.0
+#: The event name the receiver files the report under.
+TELEMETRY_EVENT_NAME = "opentranscribe_heartbeat"

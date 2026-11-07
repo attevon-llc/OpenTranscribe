@@ -341,6 +341,12 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   inference stays ON by default and every place it is shown or configured says it is inferred
   automatically and can be turned off (`privacy.gender.*`). The org **redaction floor** (#1279) is a
   later release: `OrgPolicy.redaction_floor` is in the contract but this client neither reads nor sends it.
+- **`UsageReportCard`** (issue #1019, super_admin) sits on the Privacy & Redaction **policy** tab under
+  `SelfErasureAdminCard`. The opt-in anonymous usage report: a `PrivacySwitchCard` switch (locked
+  while the server reports any `off_reasons` and the report is off; a stored "on" that is forced off
+  can still be switched off), the server's reasons translated through `$lib/settings/usageReport`,
+  the last send time, and `preview` rendered verbatim (the server builds it with the function that
+  sends). Never compute or describe the payload client-side.
 - **Audit screens: `AuditLogViewer` (super_admin, platform-wide) and `OrgAuditLogPanel`
   (org admin, issue #1277) are two thin shells over the SAME `audit/AuditLogFilters.svelte` and
   `audit/AuditLogTable.svelte`.** `orgView` is the only difference: a member picker

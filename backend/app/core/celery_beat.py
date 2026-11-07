@@ -197,6 +197,13 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute="7,22,37,52"),
         "options": {"queue": CeleryQueues.CPU, "priority": 8},  # CPUPriority.MAINTENANCE
     },
+    "usage-report": {
+        "task": "telemetry.usage_report",
+        # Hourly at :47. Opt-in anonymous usage report (issue #1019): one settings read and
+        # nothing else unless an administrator turned it on, then one small POST a day.
+        "schedule": crontab(minute=47),
+        "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+    },
 }
 
 
@@ -242,4 +249,5 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "session-cap-sweep": BeatEffect.MUTATING,  # revokes sessions
     "media-mirror-check-schedule": BeatEffect.MUTATING,  # stamps settings, copies media out
     "directory-sync-check-schedule": BeatEffect.INGEST,  # pulls users from the directory
+    "usage-report": BeatEffect.MUTATING,  # sends the opt-in usage report out, stamps settings
 }

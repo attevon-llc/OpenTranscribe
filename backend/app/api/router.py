@@ -20,6 +20,7 @@ from .endpoints import admin_scim_tokens
 from .endpoints import admin_settings
 from .endpoints import admin_storage_integrity
 from .endpoints import admin_takedown_notices
+from .endpoints import admin_telemetry
 from .endpoints import admin_timing
 from .endpoints import asr_local_model
 from .endpoints import asr_provider_policy
@@ -425,6 +426,9 @@ include_router_with_consistency(
 include_router_with_consistency(
     legal_processing_gate.router, prefix="/admin/legal-processing-gate", tags=["admin"]
 )
+# Opt-in anonymous usage report (issue #1019, super_admin). Under /admin, so a support grant
+# is refused by prefix.
+include_router_with_consistency(admin_telemetry.router, prefix="/admin/telemetry", tags=["admin"])
 include_router_with_consistency(
     admin_hf_token.router,
     prefix="/admin/hf-token",

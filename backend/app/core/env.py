@@ -100,3 +100,8 @@ def env_bool(name: str, default: bool = False) -> bool:
         return False
     logger.warning("Invalid boolean %s=%r; using default %s", name, raw, default)
     return default
+
+
+def env_str(name: str, default: str = "") -> str:
+    """Stripped string value; unset or blank yields ``default``. Read at call time."""
+    return _raw(name) or default

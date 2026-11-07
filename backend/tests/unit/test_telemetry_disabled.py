@@ -10,6 +10,10 @@ Every switch asserted here was verified against the shipped dependency, not assu
   itself, so the code-level default must run BEFORE pyannote is imported.
 * ``HF_HUB_DISABLE_TELEMETRY`` / ``DO_NOT_TRACK`` — huggingface_hub reads them into module
   constants at import (``send_telemetry`` and the User-Agent version fingerprint).
+  ``DO_NOT_TRACK=1`` also keeps OpenTranscribe's own opt-in usage report off (#1019), so an
+  operator who allows that report sets ``DO_NOT_TRACK=0``. Every installed library that reads
+  ``DO_NOT_TRACK`` must therefore have its own switch here as well, so that 0 re-enables nothing
+  third-party (``test_every_do_not_track_reader_has_its_own_switch``).
 * ``DENO_NO_UPDATE_CHECK`` — the deno binary yt-dlp spawns fetched its latest release from
   dl.deno.land (observed: ``$DENO_DIR/latest.txt`` written) unless set.
 * ``MINIO_UPDATE=off`` — MinIO resolved ``dl.min.io`` on every server start (DNS-logged)
@@ -45,6 +49,15 @@ BACKEND_TELEMETRY_OFF = {
     "HF_HUB_DISABLE_TELEMETRY": "1",
     "DO_NOT_TRACK": "1",
     "DENO_NO_UPDATE_CHECK": "1",
+}
+
+#: Installed packages that read ``DO_NOT_TRACK``, each with the switch above that turns the same
+#: call off on its own, so an operator's ``DO_NOT_TRACK=0`` (which allows the opt-in usage report)
+#: switches no library's telemetry back on.
+DO_NOT_TRACK_READERS = {
+    # huggingface_hub/constants.py: HF_HUB_DISABLE_TELEMETRY = _is_true(HF_HUB_DISABLE_TELEMETRY)
+    # or _is_true(DO_NOT_TRACK), and nothing else in the package reads DO_NOT_TRACK.
+    "huggingface_hub": "HF_HUB_DISABLE_TELEMETRY",
 }
 
 #: Values that would switch one of the above back ON if an overlay set them.
@@ -191,6 +204,36 @@ def test_no_overlay_reenables_telemetry() -> None:
                     violations.append(f"{compose_file.name}:{name}: {var}={value!r}")
     assert checked >= len(BACKEND_TELEMETRY_OFF), "no telemetry switch found in any compose file"
     assert violations == [], f"compose files re-enable telemetry: {violations}"
+
+
+def _do_not_track_readers() -> set[str]:
+    """Top-level installed packages with ``DO_NOT_TRACK`` anywhere in their Python source."""
+    import site
+
+    roots = {Path(p) for p in site.getsitepackages() if Path(p).is_dir()}
+    readers: set[str] = set()
+    for root in roots:
+        for path in root.rglob("*.py"):
+            try:
+                if b"DO_NOT_TRACK" in path.read_bytes():
+                    readers.add(path.relative_to(root).parts[0])
+            except OSError:
+                continue
+    return readers
+
+
+def test_every_do_not_track_reader_has_its_own_switch() -> None:
+    """DO_NOT_TRACK=0 (allowing the usage report) must not turn any library's telemetry on."""
+    readers = _do_not_track_readers()
+    assert "huggingface_hub" in readers, "scanner found nothing: is the environment installed?"
+    uncovered = sorted(readers - set(DO_NOT_TRACK_READERS))
+    assert uncovered == [], (
+        f"{uncovered} read DO_NOT_TRACK: give each its own off switch in BACKEND_TELEMETRY_OFF "
+        "and an entry in DO_NOT_TRACK_READERS"
+    )
+    for package, switch in DO_NOT_TRACK_READERS.items():
+        assert switch in BACKEND_TELEMETRY_OFF, f"{package}: {switch} is not enforced"
+        assert switch != "DO_NOT_TRACK", f"{package} must not rely on DO_NOT_TRACK alone"
 
 
 @pytest.mark.parametrize("service_name", sorted(THIRD_PARTY_OFF))
@@ -428,3 +471,112 @@ def test_privacy_env_respects_operator_choice() -> None:
         check=True,
     ).stdout.split()
     assert out == ["true", "1"]
+
+
+# --- OpenTranscribe's own opt-in usage report (issue #1019) ------------------------------
+#
+# The report is off unless a super admin turns it on, and DO_NOT_TRACK, a missing receiver
+# key, OPENTRANSCRIBE_TELEMETRY=false and the demo flag each force it off even then. These
+# drive the real sender (services/telemetry.send_if_due) with every httpx request recorded and
+# real sockets refused, so "nothing was sent" is observed, not inferred.
+
+_REPORT_OFF_SWITCHES = ("DO_NOT_TRACK", "OPENTRANSCRIBE_TELEMETRY", "OPENTRANSCRIBE_DEMO_MODE")
+
+
+@pytest.fixture
+def report_sends(monkeypatch):
+    """Requests the sender makes; a permissive environment with a receiver key configured."""
+    import socket
+
+    import httpx
+
+    sent: list = []
+
+    def record(self, request, **_kwargs):
+        sent.append(request)
+        return httpx.Response(200, request=request)
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("a real connection was attempted")
+
+    for name in _REPORT_OFF_SWITCHES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY", "phc_test_key")
+    monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_ENDPOINT", "https://receiver.invalid/e/")
+    monkeypatch.setattr(httpx.Client, "send", record)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    return sent
+
+
+def _run_report_task() -> str:
+    from app.tasks.telemetry import usage_report_task
+
+    result: dict[str, str] = usage_report_task.run()
+    return result["status"]
+
+
+def _force_enabled(db) -> None:
+    """The admin's switch ON, written directly, as if it was turned on before a switch changed."""
+    from app.core import constants
+    from app.services.system_settings_service import set_setting
+
+    set_setting(db, constants.TELEMETRY_ENABLED_KEY, True)
+    set_setting(db, constants.TELEMETRY_INSTALL_ID_KEY, "11111111-1111-4111-8111-111111111111")
+
+
+@pytest.fixture
+def task_uses_test_session(db_session, monkeypatch):
+    """Point the task's session_scope at the test's savepointed session."""
+    import contextlib
+
+    from app.db import session_utils
+
+    @contextlib.contextmanager
+    def scope():
+        yield db_session
+
+    monkeypatch.setattr(session_utils, "session_scope", scope)
+    return db_session
+
+
+def test_the_usage_report_sends_nothing_by_default(task_uses_test_session, report_sends):
+    assert _run_report_task() == "disabled"
+    assert report_sends == []
+
+
+@pytest.mark.parametrize(
+    ("env", "value"),
+    [
+        ("DO_NOT_TRACK", "1"),
+        ("OPENTRANSCRIBE_TELEMETRY", "false"),
+        ("OPENTRANSCRIBE_DEMO_MODE", "true"),
+    ],
+)
+def test_the_usage_report_sends_nothing_when_an_env_switch_forbids_it(
+    task_uses_test_session, report_sends, monkeypatch, env, value
+):
+    _force_enabled(task_uses_test_session)
+    monkeypatch.setenv(env, value)
+
+    assert _run_report_task() == "blocked"
+    assert report_sends == []
+
+
+def test_the_usage_report_sends_nothing_without_a_receiver_key(
+    task_uses_test_session, report_sends, monkeypatch
+):
+    _force_enabled(task_uses_test_session)
+    monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY", "")
+
+    assert _run_report_task() == "blocked"
+    assert report_sends == []
+
+
+def test_the_usage_report_control_sends_exactly_one_request_when_allowed(
+    task_uses_test_session, report_sends
+):
+    """Positive control: the recorder does see a send, so the zeros above are real zeros."""
+    _force_enabled(task_uses_test_session)
+
+    assert _run_report_task() == "sent"
+    assert len(report_sends) == 1

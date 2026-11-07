@@ -148,6 +148,7 @@ _ENV_READ_WRAPPER_NAMES = {
     "env_int",
     "env_float",
     "env_bool",
+    "env_str",
     "_raw",
 }
 
@@ -558,7 +559,6 @@ LIBRARY_CONSUMED_COMPOSE_ENV: dict[str, str] = {
     "MKL_NUM_THREADS": "Intel MKL thread cap; the redaction worker sets it for torch/numpy",
     "PYANNOTE_METRICS_ENABLED": "pyannote telemetry switch (app/core/privacy_env.py)",
     "HF_HUB_DISABLE_TELEMETRY": "huggingface_hub telemetry switch (app/core/privacy_env.py)",
-    "DO_NOT_TRACK": "third-party telemetry opt-out (app/core/privacy_env.py)",
     "DENO_NO_UPDATE_CHECK": "deno update-check switch for yt-dlp's JS runtime",
 }
 

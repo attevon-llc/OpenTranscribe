@@ -193,3 +193,20 @@ describe('fullscreen and the full-window fallback (plan row 28)', () => {
     expect(root.hasAttribute('data-full-window')).toBe(true);
   });
 });
+
+describe('mini player time readout', () => {
+  it('draws one separator: the library already renders "/", so no CSS adds a second', async () => {
+    const { container } = await mount();
+    const separator = container.querySelector('.mini-time media-time-separator');
+    expect(separator?.textContent?.trim()).toBe('/');
+    const source = readFileSync(COMPONENT_FILE, 'utf8');
+    expect(source).not.toMatch(/media-time-separator::(before|after)/);
+  });
+
+  it('keeps "elapsed / total" left to right in right-to-left languages', () => {
+    const source = readFileSync(COMPONENT_FILE, 'utf8');
+    const rule = source.match(/:global\(\.mini-time\)\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(rule).toMatch(/direction:\s*ltr/);
+    expect(rule).toMatch(/unicode-bidi:\s*isolate/);
+  });
+});

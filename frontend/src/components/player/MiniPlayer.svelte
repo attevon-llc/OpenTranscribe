@@ -560,7 +560,11 @@
     display: inline-flex;
   }
 
+  /* A timestamp reads "elapsed / total" left to right in every locale (as in player.css). The
+     separator's "/" comes from the library; adding one in CSS showed "//". */
   .mini-player :global(.mini-time) {
+    direction: ltr;
+    unicode-bidi: isolate;
     display: inline-flex;
     gap: var(--space-1);
     padding-inline: var(--space-1);
@@ -569,8 +573,7 @@
     white-space: nowrap;
   }
 
-  .mini-player :global(.mini-time media-time-separator::before) {
-    content: '/';
+  .mini-player :global(.mini-time media-time-separator) {
     opacity: 0.6;
   }
 

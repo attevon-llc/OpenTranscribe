@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The FIPS-mode security suites run as their own CI job, `backend-fips-tests`.
 - `./opentr.sh start dev --with-ldap-test` also serves LDAPS on port 6360 with a certificate from a generated test CA, so certificate verification is tested end to end.
 - An extension-surface contract: `CLOUD_SEAM_VERSION` is 14, and a test fails when a module an extension imports moves without the surface list being updated.
+- `scripts/release-tidy.sh` lists, and with `--yes` removes, what a finished release leaves behind (merged local branches, `rel-*` fresh stacks, registered test leftovers), reusing `git branch -d`, `./opentr.sh fresh-destroy` and `scripts/cleanup-test-data.py` (#1370). `./opentr.sh fresh-list --names` prints bare deployment names for scripts.
+- Organization administrators can set the full redaction floor (forced categories, toxicity threshold, PII entity types, custom words, redacted exports, masking before LLM) from the organization privacy panel when `redaction.policy` is on (#1279).
+- Settings, Authentication, Auth Email has a "Test connection" button that checks the designated mail configuration's connection and credentials without sending a message (#1265).
+- A test fails when a docs page is missing from the docs-site sidebar (#1310). Pre-commit now validates `.github/dependabot.yml` and the workflows (check-jsonschema) and lints workflows with actionlint.
+- `OT_PORT_PROBE` lets tests replace the `--fresh` port-collision probe (#1367).
 
 ### Changed
 
@@ -26,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The legacy diarization model directory comes from `DIAR_NATIVE_LEGACY_MODELS_DIR` instead of a fixed path.
 - The search modules read the OpenSearch client when they run, not at import, so a client created after startup is used everywhere.
 - The GDPR erasure tests no longer wait on object-storage retries; they took about a minute each and now take under a second.
+- **Production ports bind to loopback by default.** The API (5174) and docs (5183) ports listen on `127.0.0.1` (`BACKEND_BIND_HOST`, new `DOCS_BIND_HOST`); with the HTTPS proxy configured the plain web UI port (5173) does too (new `FRONTEND_BIND_HOST`). Without HTTPS the installer asks before publishing plain HTTP on the network (default no) and says that sign-in credentials would cross it unencrypted. `BACKEND_BIND_HOST` also defaults to loopback in development. See "Upgrading to 0.7.0" (#1332, #1264).
+- The HTTPS reverse proxy runs `nginx:1.31.8-alpine3.24`, matching the frontend and docs images (#1369). Dependabot now watches the image pins in the compose files.
+- The frontend bundle gate computes the first-load closure from Vite's build manifest, fails the build if a locale file is in the first load, and enforces ratchet budgets on the entry chunks, the first-load closure and total JS (#794).
+- The shared object-storage client keeps a connection pool sized to the API thread pool (40 by default) instead of 10, with the same retry policy and certificate handling (#1378). The bundled object store image can be mirrored with an identical digest; the procedure is in the object storage docs.
+- Migration `v458` adds a partial index on `speaker(media_file_id)` for voiceprint-named speakers. The index is built concurrently after the upgrade with a bounded lock wait and retried on each start until present, so a long transaction can delay it but never hang startup (#1328).
+- The release `tag` stage fast-forwards `release/<x.y>` to a patch tag and refuses a diverged branch (#1371).
+- The development frontend container no longer runs as root: an entrypoint repairs ownership of reused `node_modules` and `.svelte-kit` volumes and runs Vite as the owner of the bind-mounted source (#1372). `scripts/frontend-check.sh` reports an unwritable build directory before `vite build` empties it.
+- `./opentranscribe.sh update` lists `BACKEND_BIND_HOST=0.0.0.0`, the old template value, as stale.
 
 ### Removed
 
@@ -58,6 +71,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The frontend docs no longer list `VITE_API_BASE_URL`, which nothing reads.
 - The release now ships `service-credentials.sh`, which the installed probe scripts import.
 - Saving the LDAP settings panel no longer clears TLS settings that come from `.env`. A value in the panel wins over `.env`; an empty field keeps the `.env` value, and the admin Test connection resolves settings the same way a login does.
+- **The idle-in-transaction session timeout now applies on every install**, not only installs with separate database roles: startup sets it on the app role and every pooled connection sets it too. It is no longer sent as a startup parameter, which connection proxies such as RDS Proxy and PgBouncer reject (#1381).
+- LLM speaker identification records a provider failure as a failed task with an error code instead of "completed, 0 suggestions" (#1365).
+- A settings-database outage is reported as "LLM settings unavailable" (503) by the LLM status, connection test, summarization, speaker identification and summary retry paths, and the UI shows that message instead of asking users to configure a provider (#1365).
+- A summary retry checks LLM availability for the file's owner; it used to check with no user and never retried (#1365).
+- Batch topic extraction results carry the code `topic_extraction_failed` instead of exception text (#1365).
+- The admin LDAP "Test connection" uses the saved bind password when the password field is left blank, as a login does. A typed password still wins, and the saved password is only used against the saved server, transport and bind DN.
+- `./opentr.sh rebuild-frontend` and `rebuild-backend` refuse options they do not implement; an ignored `--fresh` or `--dry-run` used to rebuild the default stack.
+- The offline compose file no longer publishes Flower on all interfaces in addition to the loopback binding.
+- `scripts/pki/issue-test-server-cert.sh` no longer misreads a matching certificate under `pipefail`.
 
 ### Security
 

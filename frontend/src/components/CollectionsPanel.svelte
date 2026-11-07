@@ -17,6 +17,8 @@
   import Spinner from './ui/Spinner.svelte';
   import EmptyState from './ui/EmptyState.svelte';
   import CollectionsList from '$components/collections/CollectionsList.svelte';
+  import HeldCollectionCard from '$components/collections/HeldCollectionCard.svelte';
+  import { heldCount, refreshHeldCount } from '$lib/legalHold/heldCount';
   import SharedCollectionsSection from '$components/collections/SharedCollectionsSection.svelte';
   import CollectionFormModal from '$components/collections/CollectionFormModal.svelte';
 
@@ -24,6 +26,8 @@
   export let selectedMediaIds: string[] = [];  // UUIDs
   export let onCollectionSelect: (collectionId: string) => void = () => {};  // UUID
   export let viewMode: 'manage' | 'add' = 'manage';
+  /** The computed "Legal hold" collection was chosen: the gallery filters to held files. */
+  export let onHeldSelect: (() => void) | null = null;
 
   // State
   let collections: Collection[] = [];
@@ -422,6 +426,7 @@
     fetchCollections();
     fetchPrompts();
     fetchSharedCollections();
+    if (onHeldSelect) refreshHeldCount();
   });
 
   onDestroy(() => {
@@ -498,6 +503,12 @@
         </button>
       {/if}
     </div>
+  {/if}
+
+  <!-- The computed "Legal hold" collection: manage mode only (nothing is added to it), and
+       shown even when the person owns no collection of their own. -->
+  {#if onHeldSelect && viewMode === 'manage'}
+    <HeldCollectionCard count={$heldCount} on:select={() => onHeldSelect?.()} />
   {/if}
 
   {#if loading}

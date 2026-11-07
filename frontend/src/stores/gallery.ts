@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/env';
 import type { MediaFile } from '$lib/types/media';
 import type { HiddenMode } from '$lib/api/hiddenMedia';
@@ -55,6 +55,7 @@ export interface GalleryState {
   filterOwnershipFilter: 'all' | 'mine' | 'shared';
   filterSelectedOwners: string[]; // Owner UUIDs (issue #966)
   filterHiddenMode: HiddenMode; // The caller's hidden files (issue #1102)
+  filterHeld: boolean; // The computed "Legal hold" tag/collection: held files only (held=true)
   filterSortBy: string;
   filterSortOrder: 'asc' | 'desc';
 }
@@ -91,6 +92,14 @@ export interface GalleryActions {
   notifyHiddenChanged: () => void;
   /** Which of the caller's hidden files the gallery lists (issue #1102); reloads the list. */
   setHiddenMode: (mode: HiddenMode) => void;
+  /** Admin-only: place a legal hold on the selection (legal-hold plan, Lane D). */
+  triggerPlaceHold: () => void;
+  /**
+   * Show only held files (the computed "Legal hold" tag and collection), or stop. The held set
+   * is itself a collection, so turning it on clears a selected collection. `notify: false`
+   * when the caller reloads the list itself.
+   */
+  setHeldFilter: (held: boolean, notify?: boolean) => void;
   appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => void;
   resetPagination: () => void;
   setLoadingMore: (loading: boolean) => void;
@@ -122,6 +131,7 @@ const initialState: GalleryState = {
   filterOwnershipFilter: 'all',
   filterSelectedOwners: [],
   filterHiddenMode: 'exclude',
+  filterHeld: false,
   filterSortBy: 'upload_time',
   filterSortOrder: 'desc',
 };
@@ -147,6 +157,8 @@ function createGalleryStore() {
   const cancelProcessingTrigger = writable<number>(0);
   const quarantineTrigger = writable<number>(0);
   const hiddenChangedTrigger = writable<number>(0);
+  const placeHoldTrigger = writable<number>(0);
+  const heldChangedTrigger = writable<number>(0);
 
   return {
     subscribe,
@@ -346,6 +358,19 @@ function createGalleryStore() {
       hiddenChangedTrigger.update((n) => n + 1);
     },
 
+    triggerPlaceHold: () => {
+      placeHoldTrigger.update((n) => n + 1);
+    },
+
+    setHeldFilter: (held: boolean, notify = true) => {
+      update((state) => ({
+        ...state,
+        filterHeld: held,
+        filterSelectedCollectionId: held ? null : state.filterSelectedCollectionId,
+      }));
+      if (notify) heldChangedTrigger.update((n) => n + 1);
+    },
+
     appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => {
       update((state) => {
         // Guard against undefined/null data from failed API responses
@@ -436,6 +461,7 @@ function createGalleryStore() {
         filterOwnershipFilter: 'all',
         filterSelectedOwners: [],
         filterHiddenMode: 'exclude',
+        filterHeld: false,
         filterSortBy: 'upload_time',
         filterSortOrder: 'desc',
       }));
@@ -588,6 +614,27 @@ function createGalleryStore() {
       return quarantineTrigger.subscribe((value) => {
         if (hasInitialized && value > 0) {
           callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onPlaceHoldTrigger: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return placeHoldTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    /** The held filter changed; the callback gets the new value. */
+    onHeldChanged: (callback: (held: boolean) => void) => {
+      let hasInitialized = false;
+      return heldChangedTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(get({ subscribe }).filterHeld);
         }
         hasInitialized = true;
       });

@@ -50,6 +50,12 @@ of that page. They render the file grid/list, header, filters, sort, and bulk-ac
   (reads `galleryStore`). Split out of the old `GalleryActionButtons.svelte` by #747 so each
   half sits in the row it belongs to; there is no single "gallery action buttons" component
   any more, only these two.
+- `GalleryHeldFilter.svelte` — the computed "Legal hold" tag chip, rendered into
+  `FilterSidebar`'s `tags-leading` slot (gallery only), shown while `held_count > 0`; toggles
+  `galleryStore.setHeldFilter` (`held=true`). `GalleryLegalHold.svelte` — the Organize menu's
+  "Place legal hold" (admins only, `holdAuthorityForCaller`): owns the shared dialog over the
+  selection and tells the page which rows to badge. Query params are built by
+  `$lib/gallery/galleryQuery` (`buildGalleryQuery`), not inline in the page.
 - `BulkTagModal.svelte` — adds or removes one tag across the selection. Reached from the
   Organize menu, and from the **Tags** button when files are selected.
 - The **Tags** button (`GalleryPrimaryActions`) sits beside Collections and picks its mode

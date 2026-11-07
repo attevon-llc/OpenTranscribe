@@ -356,7 +356,7 @@ frontend/src/routes/+layout.svelte::svelte/infinite-reactive-loop	8	v0.6.1 merge
 frontend/src/routes/+layout.svelte::svelte/no-navigation-without-resolve	5	lint: burn-down planned
 frontend/src/routes/+page.svelte::@typescript-eslint/no-explicit-any	15	lint: burn-down planned
 frontend/src/routes/+page.svelte::prefer-const	4	lint: burn-down planned
-frontend/src/routes/+page.svelte::svelte/prefer-svelte-reactivity	7	lint: burn-down planned
+frontend/src/routes/+page.svelte::svelte/prefer-svelte-reactivity	6	lint: burn-down planned
 frontend/src/routes/accept-invite/+page.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/accept-invite/+page.svelte::svelte/no-navigation-without-resolve	4	lint: burn-down planned
 frontend/src/routes/chat/[[conversationId]]/+page.svelte::no-useless-assignment	2	lint: burn-down planned

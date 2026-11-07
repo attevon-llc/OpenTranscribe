@@ -7,6 +7,7 @@
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
   import HiddenBadge from './HiddenBadge.svelte';
+  import HoldBadge from '$components/ui/HoldBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -251,6 +252,7 @@
           <div class="list-cell list-cell-title">
             <span class="file-title">{file.title || file.filename}</span>
             <HiddenBadge {file} showUnhide={false} />
+            <HoldBadge hold={file.hold} />
           </div>
 
           <!-- Speakers -->

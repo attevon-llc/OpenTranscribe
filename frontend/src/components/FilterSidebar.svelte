@@ -8,6 +8,7 @@
   import axiosInstance from '../lib/axios';
   import { listTags } from '$lib/api/tags';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
+  import { fetchMetadataFilters } from '$lib/api/metadataFilters';
   import CollectionsFilter from './CollectionsFilter.svelte';
   import SearchableMultiSelect from './SearchableMultiSelect.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
@@ -528,14 +529,7 @@
   async function fetchMediaMetadata() {
     errorMetadata = null;
     try {
-      const data = await apiCache.getOrFetch(
-        cacheKey.metadataFilters(),
-        async () => {
-          const response = await axiosInstance.get('/files/metadata-filters', { params: { ownership: 'all' } });
-          return response.data;
-        },
-        CacheTTL.METADATA
-      );
+      const data = await fetchMetadataFilters();
 
       if (data.duration) {
         const minDur = Math.floor(data.duration.min ?? 0);
@@ -995,6 +989,9 @@
 
   <div class="filter-section">
     <h3>{$t('filter.tags')}</h3>
+    <!-- A page's own pseudo-tags, shown whatever the tag list's state (the gallery's computed
+         "Legal hold" chip). Search passes nothing. -->
+    <slot name="tags-leading" />
     {#if loadingTags}
       <p class="loading-text">{$t('filter.loadingTags')}</p>
     {:else if errorTags}

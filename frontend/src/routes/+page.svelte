@@ -36,6 +36,9 @@
   import GalleryGrid from '$components/gallery/GalleryGrid.svelte';
   import BulkTagModal from '$components/gallery/BulkTagModal.svelte';
   import QuarantineModal from '$components/gallery/QuarantineModal.svelte';
+  import GalleryLegalHold from '$components/gallery/GalleryLegalHold.svelte';
+  import { markHeld } from '$lib/legalHold/summary';
+  import { buildGalleryQuery } from '$lib/gallery/galleryQuery';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import type { MediaFile, DurationRange, DateRange } from '$lib/types/media';
   import type { BulkTagAction } from '$lib/types/tag';
@@ -165,7 +168,7 @@
     selectedStatuses.length > 0 ||
     dateRange.from !== null || dateRange.to !== null ||
     durationRange.min !== null || durationRange.max !== null ||
-    ownershipFilter !== 'all' || $galleryState.filterHiddenMode !== 'exclude';
+    ownershipFilter !== 'all' || $galleryState.filterHiddenMode !== 'exclude' || $galleryState.filterHeld;
 
   // Sort state — restore from gallery store
   let sortBy: string = $galleryState.filterSortBy;
@@ -176,71 +179,14 @@
     intersectionObserver.observe(infiniteScrollSentinel);
   }
 
-  // Build query parameters for API calls
+  // Build query parameters for API calls ($lib/gallery/galleryQuery owns the mapping)
   function buildQueryParams(page: number = 1): URLSearchParams {
-    const params = new URLSearchParams();
-
-    // Pagination
-    params.append('page', page.toString());
-    params.append('page_size', $galleryState.pageSize.toString());
-
-    // Sort
-    params.append('sort_by', sortBy);
-    params.append('sort_order', sortOrder);
-
-    // Search
-    if (searchQuery) {
-      params.append('search', searchQuery);
-    }
-
-    // Tags
-    if (selectedTags.length > 0) {
-      selectedTags.forEach(tag => params.append('tag', tag));
-    }
-
-    // Speakers
-    if (selectedSpeakers.length > 0) {
-      selectedSpeakers.forEach(speaker => params.append('speaker', speaker));
-    }
-
-    // Date range
-    if (dateRange.from) {
-      params.append('from_date', dateRange.from.toISOString());
-    }
-    if (dateRange.to) {
-      params.append('to_date', dateRange.to.toISOString());
-    }
-
-    // Duration range
-    if (durationRange.min !== null) {
-      params.append('min_duration', durationRange.min.toString());
-    }
-    if (durationRange.max !== null) {
-      params.append('max_duration', durationRange.max.toString());
-    }
-
-    // File types
-    if (selectedFileTypes.length > 0) {
-      selectedFileTypes.forEach(fileType => params.append('file_type', fileType));
-    }
-
-    // Statuses
-    if (selectedStatuses.length > 0) {
-      selectedStatuses.forEach(status => params.append('status', status));
-    }
-
-    // Ownership filter (backend defaults to 'mine' if omitted)
-    if (ownershipFilter) {
-      params.append('ownership', ownershipFilter);
-    }
-
-    // Specific owner(s) (issue #966) — orthogonal to the ownership bucket above
-    if (selectedOwners.length > 0) {
-      selectedOwners.forEach(ownerUuid => params.append('owner', ownerUuid));
-    }
-    params.append('hidden', $galleryState.filterHiddenMode); // the caller's hidden files (#1102)
-
-    return params;
+    return buildGalleryQuery({
+      page, pageSize: $galleryState.pageSize, sortBy, sortOrder, searchQuery, selectedTags,
+      selectedSpeakers, dateRange, durationRange, selectedFileTypes, selectedStatuses,
+      ownershipFilter, selectedOwners, hiddenMode: $galleryState.filterHiddenMode,
+      held: $galleryState.filterHeld,
+    });
   }
 
   // Fetch media files with smooth update support and pagination
@@ -532,6 +478,7 @@
     selectedTags = tags;
     selectedSpeakers = speaker;
     selectedCollectionId = collectionId;
+    if (collectionId !== null && $galleryState.filterHeld) galleryStore.setHeldFilter(false, false);
     dateRange = dates;
 
     // Handle advanced filters if provided
@@ -707,6 +654,12 @@
   function handleQuarantined(event: CustomEvent<{ uuids: string[] }>) {
     const changed = new Set(event.detail.uuids);
     files = files.map((f) => (changed.has(f.uuid) ? { ...f, is_quarantined: true } : f));
+  }
+
+  // A hold placed from the selection: badge the rows now (legal-hold plan, Lane D).
+  function handleHoldPlaced(event: CustomEvent<{ uuids: string[]; authority: 'organization' | 'platform' }>) {
+    const held = new Set(event.detail.uuids);
+    files = files.map((f) => (held.has(f.uuid) ? { ...f, hold: markHeld(f.hold, [event.detail.authority]) } : f));
   }
 
   // Rows carry no tags, so only an active tag filter can change; a refetch resets pagination.
@@ -1356,6 +1309,8 @@
     });
     // A hide, an unhide or a new hidden-files mode (#1102) changes which files this list shows.
     const unsubscribeHidden = galleryStore.onHiddenChanged(() => fetchFiles(false, true));
+    // The computed "Legal hold" collection replaces a selected real one (the store cleared its copy).
+    const unsubscribeHeld = galleryStore.onHeldChanged((held) => { if (held) selectedCollectionId = null; fetchFiles(false, true); });
 
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();
@@ -1407,6 +1362,7 @@
       unsubscribeCancelProcessing();
       unsubscribeQuarantine();
       unsubscribeHidden();
+      unsubscribeHeld();
     };
   });
 </script>
@@ -1524,6 +1480,7 @@
       <CollectionsPanel
           selectedMediaIds={Array.from(selectedFiles)}
           viewMode={selectedFiles.size > 0 ? 'add' : 'manage'}
+          onHeldSelect={() => { showCollectionsModal = false; galleryStore.setHeldFilter(true); }}
           onCollectionSelect={() => {
             // Only close modal if we're in 'add' mode and actually adding files
             if (selectedFiles.size > 0) {
@@ -1568,6 +1525,9 @@
   on:close={() => (showBulkTagModal = false)}
 />
 
+
+<!-- Place legal hold on the selection — admins only (legal-hold plan, Lane D) -->
+<GalleryLegalHold {files} on:placed={handleHoldPlaced} />
 
 <!-- Quarantine (takedown) Modal — admin-only (issue #576) -->
 <QuarantineModal

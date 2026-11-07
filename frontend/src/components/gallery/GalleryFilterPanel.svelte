@@ -5,6 +5,7 @@
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import FilterPanelToggle from '$components/ui/FilterPanelToggle.svelte';
   import GalleryHiddenFilter from './GalleryHiddenFilter.svelte';
+  import GalleryHeldFilter from './GalleryHeldFilter.svelte';
   import type { DurationRange, DateRange } from '$lib/types/media';
 
   export let showFilters: boolean;
@@ -77,6 +78,7 @@
         on:filter
         on:reset
       >
+        <GalleryHeldFilter slot="tags-leading" />
         <GalleryHiddenFilter />
       </FilterSidebar>
     </div>

@@ -62,6 +62,8 @@ export const galleryTriggers = {
   triggerSpeakerId: vi.fn(),
   triggerCancelProcessing: vi.fn(),
   notifyHiddenChanged: vi.fn(),
+  triggerPlaceHold: vi.fn(),
+  triggerQuarantine: vi.fn(),
   setSelecting: vi.fn(),
   selectAllFiles: vi.fn(),
   clearSelection: vi.fn(),

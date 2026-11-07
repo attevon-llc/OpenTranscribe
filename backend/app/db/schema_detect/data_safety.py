@@ -32,6 +32,7 @@ class DataSafetyFacts:
 
     has_media_file_trash: bool
     has_erasure_grace_subject_index: bool
+    has_user_hidden_media: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
@@ -50,6 +51,11 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
             "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE tablename = 'erasure_ledger' "
             "AND indexname = 'uq_erasure_ledger_open_grace_subject')"
         ),
+        # v465: per-user hide of media files (issue #1102). Keyed on the primary key the
+        # CREATE TABLE names; a catalog probe, so a database without the table answers False.
+        has_user_hidden_media=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'pk_user_hidden_media')"
+        ),
     )
 
 
@@ -61,7 +67,12 @@ def matches_v464(f: SchemaFacts) -> bool:
     return matches_v463(f) and f.data_safety.has_erasure_grace_subject_index
 
 
+def matches_v465(f: SchemaFacts) -> bool:
+    return matches_v464(f) and f.data_safety.has_user_hidden_media
+
+
 ARMS: tuple[Arm, ...] = (
+    (matches_v465, "v465_add_user_hidden_media"),
     (matches_v464, "v464_generalise_erasure_grace_index"),
     (matches_v463, "v463_add_media_file_trash"),
 )

@@ -99,6 +99,21 @@ PG_STORES: tuple[PgStore, ...] = (
             "file": f"media_file_id = ANY({_ANY_F})",
         },
     ),
+    # Per-user hide (v465, issue #1102): the subject's own hide rows on any file, and every
+    # user's hide rows on the files being destroyed. Both go by CASCADE.
+    PgStore(
+        "pg.user_hidden_media",
+        "user_hidden_media",
+        {
+            "user": f"user_id = :uid OR media_file_id = ANY({_ANY_F})",
+            "org_member": (
+                f"media_file_id = ANY({_ANY_F}) OR "
+                f"(user_id = :uid AND media_file_id IN ({_ORG_FILES}))"
+            ),
+            "organization": f"media_file_id = ANY({_ANY_F})",
+            "file": f"media_file_id = ANY({_ANY_F})",
+        },
+    ),
     PgStore(
         "pg.speaker_match",
         "speaker_match",

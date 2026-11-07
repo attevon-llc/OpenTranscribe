@@ -23,6 +23,7 @@ from .file_facts import FileFacts
 from .group import GroupMapping
 from .group import UserGroup
 from .group import UserGroupMember
+from .hidden_media import UserHiddenMedia
 from .invitation import EmailVerificationToken
 from .invitation import UserInvitation
 from .legal_acceptance import LegalAcceptance
@@ -120,6 +121,7 @@ __all__ = [
     "AuditOutbox",
     "UserGroup",
     "UserGroupMember",
+    "UserHiddenMedia",
     "GroupMapping",
     "CollectionShare",
     "TagShare",

@@ -15,6 +15,7 @@ import pytest
 
 from app.auth.audit_events import AuditEventType
 from app.models.media import Task
+from app.models.privacy_purge_pending import PrivacyPurgePending
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.services.privacy import purge
@@ -175,7 +176,8 @@ def test_the_audit_record_carries_actor_scope_targets_counts_and_residual(
 # A pass deletes the cluster ROWS from Postgres and then their ``cluster_<uuid>`` documents. When
 # the document delete fails, pass 2 recomputes its targets from Postgres, finds no such cluster
 # and would neither delete nor measure the document: a clean residual with a voiceprint centroid
-# still indexed. Pass 1 therefore hands pass 2 the ids it could not confirm gone.
+# still indexed. The ids therefore live in the purge's ``privacy_purge_pending`` row (v461),
+# written in the relational commit, until they are measured gone.
 # --------------------------------------------------------------------------- #
 
 VOICEPRINTS_ONLY = {"targets": ["voiceprints"], "confirm": "PURGE"}
@@ -203,6 +205,13 @@ def _fail_deletes_of(opensearch, document_id: str, *, while_active) -> None:
         return real(index, body, refresh, conflicts)
 
     opensearch.delete_by_query = flaky
+
+
+def _pending(gov, task_id: str) -> list[str] | None:
+    """The centroid ids the purge's pending row lists, or None once the row is gone."""
+    gov.db.expire_all()
+    row = gov.db.get(PrivacyPurgePending, task_id)
+    return None if row is None else list(row.cluster_uuids)
 
 
 def _loose_cluster_document(gov, world) -> str:
@@ -234,15 +243,17 @@ def test_a_centroid_document_pass_one_could_not_delete_is_deleted_and_measured_b
     document = _loose_cluster_document(gov, world)
     in_pass_one = {"yes": True}
     _fail_deletes_of(opensearch, document, while_active=lambda: in_pass_one["yes"])
-    _request_purge(client, gov, opensearch, document, scope)
+    task_id = _request_purge(client, gov, opensearch, document, scope).json()["task_id"]
 
     first = in_process_task(broker[0])
     in_pass_one["yes"] = False
+    assert document.removeprefix("cluster_") in (_pending(gov, task_id) or [])
     final = in_process_task(broker[1])
 
     assert first["second_pass"] == "scheduled"
-    assert document.removeprefix("cluster_") in broker[1]["kwargs"]["carried_cluster_uuids"]
+    assert "carried_cluster_uuids" not in broker[1]["kwargs"], "the ids live in Postgres now"
     assert document not in opensearch.ids(), "pass two retried the document pass one left"
+    assert _pending(gov, task_id) is None, "nothing is left for the re-verify"
     assert final["status"] == "completed"
     finished = [e for e in events if e["details"].get("phase") == "pass_2_completed"]
     assert finished[0]["outcome"].value == "success"
@@ -258,12 +269,15 @@ def test_a_centroid_document_that_never_deletes_fails_the_purge_it_is_never_comp
     turn_off(gov.db, gov.org, gender=False)
     document = _loose_cluster_document(gov, world)
     _fail_deletes_of(opensearch, document, while_active=lambda: True)
-    _request_purge(client, gov, opensearch, document, scope)
+    task_id = _request_purge(client, gov, opensearch, document, scope).json()["task_id"]
 
     in_process_task(broker[0])
     final = in_process_task(broker[1])
 
     assert document in opensearch.ids()
+    assert document.removeprefix("cluster_") in (_pending(gov, task_id) or []), (
+        "kept for the re-verify"
+    )
     assert final["status"] == "failed" and final["reason"] == "residual"
     assert final["residual"]["cluster_docs"] >= 1, "pass two still measures the carried id"
     finished = [e for e in events if e["details"].get("phase") == "pass_2_completed"]
@@ -271,16 +285,18 @@ def test_a_centroid_document_that_never_deletes_fails_the_purge_it_is_never_comp
 
 
 @pytest.mark.usefixtures("status_record")
-def test_a_clean_first_pass_carries_nothing_to_the_second(
+def test_a_clean_first_pass_leaves_an_empty_pending_row_the_final_pass_removes(
     client, gov, opensearch, broker, in_process_task, reindexed
 ):
     seed(gov, opensearch, gov.alice, gov.org, "orgA")
     turn_off(gov.db, gov.org, gender=False)
-    purge_via_api(client, gov, gov.alice, ME_PURGE, VOICEPRINTS_ONLY)
+    task_id = purge_via_api(client, gov, gov.alice, ME_PURGE, VOICEPRINTS_ONLY).json()["task_id"]
 
     in_process_task(broker[0])
+    assert _pending(gov, task_id) == [], "the row stays until the final pass ends"
 
-    assert broker[1]["kwargs"]["carried_cluster_uuids"] == []
+    in_process_task(broker[1])
+    assert _pending(gov, task_id) is None
 
 
 # --- the record of how an identity or a suggestion came to be (#1280 follow-up) ---------------

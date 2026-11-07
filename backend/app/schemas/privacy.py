@@ -356,8 +356,10 @@ class PurgeStatus(BaseModel):
     reason: str | None = Field(
         default=None,
         description=(
-            "Why a purge ended without running, as a neutral code. `files_protected`: every "
+            "Why a purge did not finish, as a neutral code. `files_protected`: every "
             "recording in scope is under a legal hold or has been taken down, so nothing was "
-            "deleted. Absent otherwise."
+            "deleted. `interrupted`: the purge was stopped before its final pass ended; what it "
+            "had already deleted stays deleted and the scheduled re-check removed what it left, "
+            "but it is reported failed: run it again. Absent otherwise."
         ),
     )

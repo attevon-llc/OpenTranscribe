@@ -79,6 +79,7 @@ from sqlalchemy import update
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
+from app.services.privacy import purge_pending
 from app.services.privacy.measure import GroupedCounts
 from app.services.privacy.measure import Residual
 from app.services.privacy.purge_residual import GENDER_RESIDUAL_KEYS
@@ -435,8 +436,8 @@ class PassResult:
     outcomes: dict[str, TargetOutcome] = field(default_factory=dict)
     errors: list[dict[str, Any]] = field(default_factory=list)
     #: Cluster centroid documents whose deletion this pass could not confirm. The cluster rows
-    #: are already gone from Postgres, so the next pass cannot recompute these ids: it must be
-    #: handed them (``run_purge_pass(carried_cluster_uuids=...)``) or they are never retried.
+    #: are already gone from Postgres, so the next pass cannot recompute these ids: they stay in
+    #: the purge's ``privacy_purge_pending`` row (``purge_pending.settle``) or are never retried.
     unfinished_cluster_uuids: list[str] = field(default_factory=list)
 
     def counts(self) -> GroupedCounts:
@@ -462,6 +463,7 @@ def run_purge_pass(
     session_factory: Callable[[], Session],
     reindex: Callable[[list[tuple[int, str, int]]], int] | None = None,
     carried_cluster_uuids: Iterable[str] = (),
+    pending_task_id: str | None = None,
 ) -> PassResult:
     """One full pass over the targets: relational rows, OpenSearch documents, then verification.
 
@@ -473,10 +475,13 @@ def run_purge_pass(
         targets: Which targets.
         session_factory: Opens a short session.
         reindex: See :func:`refresh_cleared_speakers`.
-        carried_cluster_uuids: ``PassResult.unfinished_cluster_uuids`` of the previous pass. A
-            pass deletes the cluster ROWS before their centroid documents, so a document whose
-            delete failed has no row left to name it; its id is carried here to be deleted and
-            measured again.
+        carried_cluster_uuids: Centroid ids a previous pass could not confirm deleted, handed
+            over directly (a pass-2 message queued before v461 still carries them this way).
+        pending_task_id: The purge's task id. The relational half records this pass's centroid
+            ids under it in the same commit that deletes the cluster rows, and every id the
+            purge's ``privacy_purge_pending`` row lists (earlier passes included) is deleted and
+            measured here. A pass deletes the cluster ROWS before their centroid documents, so a
+            document whose delete failed has nothing else left to name it.
     """
     wanted = set(targets)
     result = PassResult()
@@ -486,7 +491,12 @@ def run_purge_pass(
         outcome = TargetOutcome()
         db = session_factory()
         try:
-            done = purge_voiceprints_postgres(db, scope)
+            done = purge_voiceprints_postgres(db, scope, pending_task_id=pending_task_id)
+            if pending_task_id is not None:
+                carried_cluster_uuids = [
+                    *carried_cluster_uuids,
+                    *purge_pending.cluster_uuids(db, pending_task_id),
+                ]
             outcome.counts[POSTGRES].update(done.counts)
             refreshed = refresh_cleared_speakers(db, done.cleared, reindex)
             outcome.counts[POSTGRES]["statuses_refreshed"] = refreshed["statuses_refreshed"]

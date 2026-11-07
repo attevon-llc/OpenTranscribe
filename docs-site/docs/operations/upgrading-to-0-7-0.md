@@ -237,3 +237,24 @@ The same page shows each user their tokens today and over the last 30 days by fe
 estimated cost where the model's price is known. Models on your own server show as free; a
 `vllm` or `ollama` address on another company's server now shows as "not priced" rather than
 free.
+
+## Voiceprint purges that were interrupted
+
+**Check this if...** you run voiceprint or gender purges (Settings -> Privacy), or a purge you
+started earlier still shows as in progress.
+
+A voiceprint purge deletes in two passes a minute apart. Before 0.7.0, if the worker running a
+purge was stopped between the two passes (a crash, an out-of-memory kill, a restart at the wrong
+moment), some voice-cluster data in the search index could be left behind with nothing to retry
+it. A later purge of the same scope then reported success while that data was still there.
+
+0.7.0 records that unfinished work in the database (migration `v461_add_privacy_purge_pending`)
+at the same moment the first pass commits. A scheduled check every 15 minutes finishes any purge
+left more than an hour: it deletes and re-measures what was left, records an audit event for it,
+and marks a purge that never reached its second pass as failed with the reason `interrupted`
+instead of leaving it in progress. If you see that reason, run the purge again.
+
+The upgrade itself needs nothing from you. A purge interrupted before the upgrade is not in the
+new table, so the check cannot find it. Running an organization purge again removes leftover
+cluster data labelled with that organization; a personal purge cannot see it, because nothing in
+the database names it any more.

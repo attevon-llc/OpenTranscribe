@@ -201,6 +201,8 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     # Governance audit outbox relay (v459): small DB claims plus one sink write per event.
     "audit.outbox_relay": {"queue": CeleryQueues.UTILITY},
     "privacy.voiceprint_retention_sweep": {"queue": CeleryQueues.UTILITY},
+    # Finishes the centroid work of a purge a dead worker left (v461, issue #1334).
+    "privacy.purge_reverify": {"queue": CeleryQueues.UTILITY},
     # Benchmark-timing bookkeeping (one Redis hash -> one DB row), dispatched with a
     # countdown after postprocess. Utility, so telemetry never takes a cpu slot.
     "pipeline_timing.flush_tail": {"queue": CeleryQueues.UTILITY},

@@ -465,7 +465,11 @@ _USER_TASKS_NOT_REPLAYED = {
         "next scan re-dispatches the group"
     ),
     "privacy.purge_voiceprints": (
-        "recovery is owned by the privacy purge ledger work (#1334 item 2), not by blind replay"
+        "a replayed pass recomputes its targets from Postgres, which no longer has the clusters "
+        "the lost pass deleted; worker loss after the relational commit is recovered from the "
+        "purge's privacy_purge_pending row (v461) by the privacy.purge_reverify beat task, which "
+        "deletes and measures those centroid documents and fails the purge as 'interrupted' "
+        "(#1334)"
     ),
     "rediarize": "GPU run or a billed vendor job (pipeline exclusion above)",
 }

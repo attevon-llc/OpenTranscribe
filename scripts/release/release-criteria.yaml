@@ -374,6 +374,10 @@ stages:
         # that killed the previous version of this file.
         severity: blocking
 
+      - id: release-e2e-journeys
+        description: scripts/e2e/run-e2e-release.sh (the v0.6.0 browser journeys) exits 0 on the same fresh stack
+        severity: blocking
+
   # ─── Local build of every architecture leg. Publishes nothing. ──────────
   build:
     description: Build every declared leg locally and prove each one knows its own version

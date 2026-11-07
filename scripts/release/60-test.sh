@@ -117,6 +117,20 @@ else
         "read the per-phase output above; re-run ./scripts/run-integration-tests.sh"
 fi
 
+# The v0.6.0 browser journeys (#1282 item A), on the SAME fresh stack: run-e2e.sh reads the
+# E2E_* / *_PORT variables fresh-stack-lib.sh exported, so this cannot reach the dev stack.
+# Its own criterion, because it is a separate runner with its own exit code; the integration
+# gate above only runs the 5-file smoke set.
+journeys_rc=0
+./scripts/e2e/run-e2e-release.sh || journeys_rc=$?
+if (( journeys_rc == 0 )); then
+    record release-e2e-journeys pass
+else
+    record release-e2e-journeys fail "run-e2e-release.sh exited $journeys_rc" \
+        "read the failing journey above; re-run ./scripts/e2e/run-e2e-release.sh --fresh ${FRESH_NAME}"
+    (( rc == 0 )) && rc=1
+fi
+
 # Both halves of the contract. Reachable on both outcomes — the gate above always records
 # one — so this cannot convert a test failure (1) into a wiring-misuse exit (2).
 criteria_assert_all_checked

@@ -693,6 +693,15 @@ Enabling retention requires an explicit confirmation step -- you must check a co
 
 Shows the last run timestamp, number of files deleted, and the next scheduled run time.
 
+### Trash window
+
+The **Trash** block at the bottom of the same tab sets how many days a deleted file stays in
+the [Trash](./trash-and-hidden-files.md) before it is deleted forever: 1 to 90, default 30. It has
+its own **Save** and applies whether or not retention is enabled. A new length applies to files
+deleted from then on. Storage is freed when a file is deleted forever, not when it is moved to the
+trash. Retention expiry itself does not use the trash: files that reach the retention age are
+deleted permanently.
+
 ## Retry Settings
 
 The **Failed Task Retries** panel, in the same **Recovery** tab, controls how failed transcription tasks are retried.

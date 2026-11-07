@@ -82,6 +82,9 @@ LLDAP_TEST_CERT_SCRIPT = "scripts/pki/issue-test-server-cert.sh"
 LLDAP_TEST_CERT_SANS = ("DNS:lldap-test", "DNS:lldap", "DNS:localhost", "IP:127.0.0.1")
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
 KEYCLOAK_PORT = urllib.parse.urlsplit(KEYCLOAK_URL).port or 8180
+# What the BACKEND uses: the compose service name, which resolves inside every project's
+# network (a container name embeds one project's name and exists only there).
+KEYCLOAK_INTERNAL_URL = os.environ.get("KEYCLOAK_INTERNAL_URL", "http://keycloak:8080")
 
 # Admin credentials for the app itself (local super_admin)
 APP_ADMIN_EMAIL = "admin@example.com"
@@ -809,7 +812,7 @@ class TestOIDCConfiguration:
         # Server config - public URL (browser accesses this)
         page.fill("#oidc_server_url", KEYCLOAK_URL)
         # Internal URL (backend container to Keycloak container)
-        page.fill("#oidc_internal_url", "http://transcribe-app-keycloak-1:8080")
+        page.fill("#oidc_internal_url", KEYCLOAK_INTERNAL_URL)
         page.fill("#oidc_realm", KC_REALM)
 
         # Client config

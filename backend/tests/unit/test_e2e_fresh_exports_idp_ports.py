@@ -50,3 +50,11 @@ def test_the_auth_fixture_takes_keycloak_port_from_keycloak_url() -> None:
     assert "port=8180" not in code
     assert '_is_port_open("localhost", 8180)' not in code
     assert "KEYCLOAK_PORT" in code
+
+
+def test_the_backend_reaches_keycloak_by_service_name_not_container_name() -> None:
+    """A container name is project-specific; the compose service name resolves in any project."""
+    code = LDAP_E2E.read_text()
+
+    assert "transcribe-app-keycloak" not in code
+    assert '"http://keycloak:8080"' in code

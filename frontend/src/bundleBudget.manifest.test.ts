@@ -3,7 +3,7 @@
  * so nothing here needs a real build. The locale case is the must-fire control: a layout that
  * statically imports a locale JSON must fail the gate, and the clean fixture must pass.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -165,5 +165,64 @@ describe('player bundle checks', () => {
     expect(r.code).toBe(1);
     expect(r.stderr.join('\n')).toContain('Video.js code in the first-load closure');
     expect(r.stderr.join('\n')).toContain('_app/immutable/chunks/rt.js');
+  });
+});
+
+/**
+ * Issue #1327: the search and speakers pages open their player only when a preview is asked
+ * for, so Video.js must not be in those routes' own static closure either. The manifest names
+ * nodes by index, so the gate finds a route's node through the generated node module.
+ */
+describe('player kept out of on-demand routes', () => {
+  const ROUTE = 'src/routes/search/+page.svelte';
+  const NODE = '.svelte-kit/generated/client-optimized/nodes/2.js';
+  const VJS_CODE = `const s=Symbol("${VIDEOJS_MARKER}default-playback-rates");export{s};`;
+
+  /** The fixture plus a search node whose static import is *page* and dynamic import the player. */
+  function withSearchNode(staticPlayer: boolean, generated = true) {
+    const f = fixture(false);
+    writeFileSync(join(f.root, 'nodes', '2.js'), 'import"../chunks/page.js";');
+    writeFileSync(join(f.root, 'chunks', 'page.js'), 'export const p=1;');
+    writeFileSync(join(f.root, 'chunks', 'player.js'), VJS_CODE);
+    const manifest = JSON.parse(readFileSync(f.manifestPath, 'utf8'));
+    manifest[NODE] = {
+      file: '_app/immutable/nodes/2.js',
+      isEntry: true,
+      imports: staticPlayer ? ['chunks/page', 'chunks/player'] : ['chunks/page'],
+      dynamicImports: staticPlayer ? [] : ['chunks/player'],
+    };
+    manifest['chunks/page'] = { file: '_app/immutable/chunks/page.js' };
+    manifest['chunks/player'] = { file: '_app/immutable/chunks/player.js' };
+    writeFileSync(f.manifestPath, JSON.stringify(manifest));
+    if (generated) {
+      mkdirSync(join(dir, '.svelte-kit/generated/client-optimized/nodes'), { recursive: true });
+      writeFileSync(
+        join(dir, NODE),
+        `export { default as component } from "../../../../${ROUTE}";`
+      );
+    }
+    return { ...f, sourceRoot: dir, playerRoutes: [ROUTE] };
+  }
+
+  it('passes when the route loads the player with a dynamic import, and prints its size', () => {
+    const r = run(withSearchNode(false));
+    expect(r.stderr).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(r.stdout.join('\n')).toMatch(
+      /src\/routes\/search\/\+page\.svelte static closure \(2 chunks\) +\d+ B gzip, no Video\.js code/
+    );
+  });
+
+  it('fails when the route imports the player statically', () => {
+    const r = run(withSearchNode(true));
+    expect(r.code).toBe(1);
+    expect(r.stderr.join('\n')).toContain(`Video.js code in the ${ROUTE} static closure`);
+    expect(r.stderr.join('\n')).toContain('_app/immutable/chunks/player.js');
+  });
+
+  it('fails closed when the route node cannot be found', () => {
+    const r = run(withSearchNode(false, false));
+    expect(r.code).toBe(1);
+    expect(r.stderr.join('\n')).toContain(`could not find the build node for ${ROUTE}`);
   });
 });

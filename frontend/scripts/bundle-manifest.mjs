@@ -16,6 +16,7 @@ import { join } from 'node:path';
 /** Manifest keys SvelteKit's SPA boots from: runtime start, app, root layout, error page. */
 const ENTRY_KEY = /(?:runtime\/client\/entry\.js|client-optimized\/app\.js)$/;
 const NODE_KEY = /client-optimized\/nodes\/[01]\.js$/;
+const ANY_NODE_KEY = /client-optimized\/nodes\/\d+\.js$/;
 const LOCALE_SRC = /(?:^|\/)i18n\/locales\/[^/]+\.json$/;
 
 /**
@@ -120,4 +121,29 @@ export const VIDEOJS_MARKER = '@videojs/';
  */
 export function filesContaining(files, read, marker) {
   return files.filter((file) => read(file).includes(marker));
+}
+
+/**
+ * Routes that show a media player only on demand (issue #1327): their own static closure must
+ * not carry Video.js, so opening the page does not download a player nobody has asked for.
+ */
+export const PLAYER_ON_DEMAND_ROUTES = [
+  'src/routes/search/+page.svelte',
+  'src/routes/speakers/+page.svelte',
+];
+
+/**
+ * Manifest key of the SvelteKit node that renders *routeFile*. The manifest names nodes by
+ * index only; the generated node module (the key, read relative to the project root) is what
+ * imports the route component, so it is matched by that import.
+ * @param {Record<string, any>} manifest
+ * @param {(key: string) => string} readSource text of a key's source module ('' if absent)
+ * @param {string} routeFile e.g. `src/routes/search/+page.svelte`
+ * @returns {string | null} the one matching key, or null when none or several match
+ */
+export function routeNodeKey(manifest, readSource, routeFile) {
+  const hits = Object.keys(manifest).filter(
+    (k) => ANY_NODE_KEY.test(k) && readSource(k).includes(`/${routeFile}"`)
+  );
+  return hits.length === 1 ? hits[0] : null;
 }

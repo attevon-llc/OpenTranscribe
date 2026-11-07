@@ -36,4 +36,4 @@ Every text-like `<input>` (text, email, password, search, number, url, tel, date
 
 See `components/ui/CLAUDE.md` (RangeSlider): rounded track, blue fill to the thumb centre, oval white-ringed
 thumb, identical for WebKit and Gecko, and `slider-dual` for the gallery duration slider. Thumb rules outside
-this file and the two Plyr player files fail `rangeSliderStructure.test.ts`.
+this file and the Plyr file-detail player (`VideoPlayer.svelte`) fail `rangeSliderStructure.test.ts`.

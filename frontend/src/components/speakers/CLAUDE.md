@@ -18,7 +18,7 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
 - `ClusterMemberList.svelte` — members of a cluster; outlier analysis, split/unassign selection.
 - `ProfilesTab.svelte` — saved speaker profiles (avatar upload, rename, gender confirm).
 - `InboxTab.svelte` / `SpeakerInboxItem.svelte` — suggestion inbox with confidence coloring.
-- `SpeakerPreviewPlayer.svelte` — Plyr mini-player for clip preview (dynamic browser-only import).
+- `SpeakerPreviewPlayer.svelte` — clip preview in the floating mini player (`player/MiniPlayer`, dynamic browser-only import).
 - `GenderBadge.svelte` — icon + translated word for a predicted gender (issue #756), consumed
   by `ClusterMemberList` (its two identical inline blocks before #756), `SpeakerClusterCard`,
   and `SpeakerInboxItem`. Takes a loosely-typed `gender: string | null | undefined` on purpose
@@ -51,8 +51,10 @@ that page. They render the cluster / profile / inbox management UI for cross-fil
 
 ## Gotchas
 
-- `SpeakerPreviewPlayer` dynamically imports `PlyrMiniPlayer` only when `browser` is true —
-  Plyr breaks SSR/hydration on refresh; keep the guard.
+- `SpeakerPreviewPlayer` dynamically imports `FloatingPreviewPlayer` only when `browser` is
+  true: this route has no `ssr = false`, and the player needs the DOM. Keep the guard until a
+  refresh of `/speakers` is verified without it (the Video.js modules themselves import cleanly
+  in Node, issue #1327).
 - Suggestions are never auto-applied — the inbox surfaces them for manual verification only.
 - **Gender i18n: `speakers.member.male`/`female` is the ONE namespace (issue #756 J8).**
   `speaker.genderMale`/`genderFemale` (used only by `SpeakerEditorPanel`) held the identical

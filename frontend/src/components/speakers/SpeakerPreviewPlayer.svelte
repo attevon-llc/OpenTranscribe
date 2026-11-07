@@ -7,8 +7,9 @@
   export let previewCurrentTime = 0;
   export let playerRef: any = null;
 
-  // Dynamic import: the player pulls in Plyr, which is browser-only (breaks SSR
-  // on page refresh — this route has no ssr=false guard).
+  // Dynamic import, browser only: this route has no ssr=false guard and the player needs the
+  // DOM. The Video.js modules import cleanly in Node, so the guard can go once a refresh of
+  // /speakers is verified without it (issue #1327).
   let FloatingPreviewPlayer: typeof import('$components/FloatingPreviewPlayer.svelte').default | null = null;
   if (browser) {
     import('$components/FloatingPreviewPlayer.svelte').then(m => { FloatingPreviewPlayer = m.default; });

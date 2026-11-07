@@ -25,7 +25,9 @@
  *
  * Issue #1327 adds two text checks, also without budget or allowance: no React runtime anywhere
  * in `_app/immutable` (`@videojs/store` installs `react` for bindings the HTML player never uses),
- * and no Video.js code in the first-load closure (the player is route-scoped).
+ * and no Video.js code in the first-load closure (the player is route-scoped). A third keeps it
+ * out of the static closure of the routes that open a player only on demand (search, speakers:
+ * `PLAYER_ON_DEMAND_ROUTES`) and prints each of those closures' size.
  *
  * Measured 2026-11-06 on a stock `nice -n 19 npx vite build` in `frontend/` (gzip level 9):
  *   entry chunks (entry/start + entry/app)     4,173 B
@@ -43,12 +45,22 @@
  * node is unchanged (16,884 -> 16,909 B). It cannot be removed from app code, so the two closure
  * budgets are raised by the measured delta plus the usual ~4% headroom, and the entry-chunk
  * budget is lowered to follow the measured drop.
+ *
+ * Video.js 10 mini player (issue #1327 Lane D, owner decision Q1), 2026-11-07, same command on
+ * the tree before/after the change, gzip level 9:
+ *   total JS              2,649,972 B (261 files) -> 2,767,562 B (325 files), +117,590 B
+ *   first-load closure      146,223 B -> 146,334 B; entry chunks 3,796 B -> 3,803 B
+ * Of the delta, 55,642 B is the one Video.js code chunk, loaded with the search and speakers
+ * routes (never first load); the other ~62 KB is 63 lazily loaded locale chunks, of which a
+ * viewer fetches one. Plyr stays until Lane E removes it (about -34 KB). The total-JS budget
+ * is raised to about 4% above the new measurement; the other budgets are unchanged.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import {
+  PLAYER_ON_DEMAND_ROUTES,
   REACT_RUNTIME_MARKER,
   VIDEOJS_MARKER,
   filesContaining,
@@ -56,6 +68,7 @@ import {
   localeOffenders,
   localeSentinels,
   manifestClosure,
+  routeNodeKey,
 } from './bundle-manifest.mjs';
 
 /**
@@ -81,8 +94,10 @@ export const FIRST_LOAD_GZIP_BUDGET = 147 * 1024;
  * before the comment composer, i.e. 90 B of headroom left, and 2,649,803 B with it. 7,733 B of
  * that 7,973 B delta is translated copy in the 12 lazily loaded locale chunks (a user downloads
  * one, about 650 B), so it is content, not a regression. Reset to about 3% above the new measure.
+ * Raised for the Video.js mini player (#1327, owner decision Q1): measured 2,767,562 B, budget
+ * about 4% above it (see the header).
  */
-export const TOTAL_JS_GZIP_BUDGET = 2666 * 1024;
+export const TOTAL_JS_GZIP_BUDGET = 2811 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;
@@ -293,7 +308,7 @@ function metricLine(label, result, base, allowance) {
  * Run the gate against a built `_app/immutable` directory. Pure apart from reading *root*.
  * @param {{ root: string, env?: Record<string, string | undefined>,
  *   base?: { node: number, closure: number }, manifestPath?: string | null,
- *   localeDir?: string | null,
+ *   localeDir?: string | null, sourceRoot?: string | null, playerRoutes?: string[],
  *   extra?: { entry: number, firstLoad: number, totalJs: number } }} options
  * @returns {{ code: number, stdout: string[], stderr: string[] }}
  */
@@ -303,6 +318,8 @@ export function run({
   base = { node: ROOT_LAYOUT_GZIP_BUDGET, closure: ROOT_LAYOUT_CLOSURE_GZIP_BUDGET },
   manifestPath = null,
   localeDir = null,
+  sourceRoot = null,
+  playerRoutes = PLAYER_ON_DEMAND_ROUTES,
   extra = {
     entry: ENTRY_CHUNKS_GZIP_BUDGET,
     firstLoad: FIRST_LOAD_GZIP_BUDGET,
@@ -375,7 +392,15 @@ export function run({
       `check-bundle-budget: WARNING ${ENV_ALLOWANCE_REASON} is set but both allowances are 0; it is ignored`
     );
   }
-  const manifestResult = manifestChecks({ root, manifestPath, localeDir, extra, allowance });
+  const manifestResult = manifestChecks({
+    root,
+    manifestPath,
+    localeDir,
+    sourceRoot,
+    playerRoutes,
+    extra,
+    allowance,
+  });
   out.push(...manifestResult.lines);
   err.push(...manifestResult.errors);
   if (manifestResult.errors.length > 0 && !(node.over || total.over)) {
@@ -403,7 +428,15 @@ function jsFiles(dir) {
  * Vite/SvelteKit upgrade that moves it cannot silently disable the gate.
  * @returns {{ lines: string[], errors: string[] }}
  */
-function manifestChecks({ root, manifestPath, localeDir, extra, allowance }) {
+function manifestChecks({
+  root,
+  manifestPath,
+  localeDir,
+  sourceRoot,
+  playerRoutes,
+  extra,
+  allowance,
+}) {
   if (!manifestPath) return { lines: [], errors: [] };
   if (!existsSync(manifestPath)) {
     return {
@@ -474,6 +507,39 @@ function manifestChecks({ root, manifestPath, localeDir, extra, allowance }) {
   } else {
     lines.push('check-bundle-budget: no Video.js code in the first-load closure');
   }
+  if (sourceRoot) {
+    const readSource = (key) => {
+      try {
+        return readFileSync(join(sourceRoot, key), 'utf8');
+      } catch {
+        return '';
+      }
+    };
+    for (const route of playerRoutes) {
+      const key = routeNodeKey(manifest, readSource, route);
+      if (!key) {
+        errors.push(`check-bundle-budget: could not find the build node for ${route}`);
+        continue;
+      }
+      const routeClosure = manifestClosure(manifest, [key]);
+      const routeFiles = [...new Set(routeClosure.map((k) => manifest[k].file))];
+      const routeVjs = filesContaining(routeFiles, readChunk, VIDEOJS_MARKER);
+      const label = `${route} static closure (${routeFiles.length} chunks)  ${size(
+        routeClosure
+      )} B gzip`;
+      if (routeVjs.length > 0) {
+        errors.push(
+          `check-bundle-budget: FAILED, Video.js code in the ${label}: ${routeVjs
+            .sort()
+            .join(
+              ', '
+            )}. The route opens its player on demand; load it with import() (issue #1327).`
+        );
+      } else {
+        lines.push(`check-bundle-budget: ${label}, no Video.js code`);
+      }
+    }
+  }
   if (localeDir) {
     const bad = localeOffenders(manifest, closure, readChunk, localeSentinels(localeDir));
     if (bad.length > 0) {
@@ -496,6 +562,7 @@ function main() {
     root,
     manifestPath: join(frontend, '.svelte-kit', 'output', 'client', '.vite', 'manifest.json'),
     localeDir: join(frontend, 'src', 'lib', 'i18n', 'locales'),
+    sourceRoot: frontend,
   });
   for (const line of stdout) console.log(line);
   for (const line of stderr) console.error(line);

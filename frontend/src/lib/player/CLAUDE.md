@@ -26,8 +26,9 @@ library-neutral `PlayerHandle` here, so the swap changes the adapter, not the ap
   (`timeupdate`, `play`, `pause`, `playing`, `seeking`, `seeked`, `ended`, `error`) through
   `listenToMedia`, never through the library's event API. Every candidate library keeps those.
 - **Hosts:** `components/VideoPlayer.svelte` (variant `full`) and
-  `components/PlyrMiniPlayer.svelte` (variant `mini`). `FloatingPreviewPlayer.getPlayer()` hands
-  the search and speakers pages a `PlayerHandle`; they only call `play()`/`pause()`.
+  `components/player/MiniPlayer.svelte` (the floating preview, on Video.js; see
+  `components/player/CLAUDE.md`). `FloatingPreviewPlayer.getPlayer()` hands the search and
+  speakers pages a `PlayerHandle`; they only call `play()`/`pause()`.
 - `seek()` is pre-metadata safe: before the library knows the duration it assigns
   `media.currentTime` directly, which the browser keeps as the start position.
 - **Guard:** `playerSeam.guard.test.ts` fails on a `plyr` import (static, dynamic, `vi.mock`, CSS
@@ -54,15 +55,16 @@ library-neutral `PlayerHandle` here, so the swap changes the adapter, not the ap
 
 ## Video.js 10 modules
 
-| File               | Purpose                                                                                                                                                                                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `types.ts`         | `PlayerHandle`                                                                                                                                                                                                                                                                  |
-| `videojsStore.ts`  | `VideojsStore`, the store slice these modules use (type-checked against the real video and audio stores), plus `captionTracks`/`captionsShowing`                                                                                                                                |
-| `videojsHandle.ts` | `createVideojsHandle(media, store)`: store actions once attached, the element before that. `seek` always writes the element at once (#647, `$lib/utils/mediaReady`)                                                                                                             |
-| `prefs.ts`         | Remembered volume, mute, rate and captions in `localStorage['opentr:playerPrefs']`; carries a viewer's `localStorage['plyr']` choices over once. `bindPlayerPrefs(store, media)` restores on attach and on each new caption track list, then saves changes. Captions default ON |
-| `i18n.ts`          | `PLAYER_LOCALE_PACKS` (one lazy `/register` chunk per app locale; English is built in) and `bindPlayerLocale($locale)`. `<media-i18n>` follows `<html lang>`/`dir`, which `$stores/locale` already sets                                                                         |
-| `hotkeys.ts`       | `PLAYER_HOTKEYS` for `<media-hotkey>` (page-wide on file detail, container-scoped on the mini player) and `attachLoopHotkey` for `L`, which Video.js has no action for. `j`/`l` are not bound to seek (owner question Q2)                                                       |
-| `fakeVideojs.ts`   | Test-only fake store and media element. jsdom cannot run the custom elements; Playwright proves the real ones                                                                                                                                                                   |
+| File               | Purpose                                                                                                                                                                                                                                                                                                               |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.ts`         | `PlayerHandle`                                                                                                                                                                                                                                                                                                        |
+| `videojsStore.ts`  | `VideojsStore`, the store slice these modules use (type-checked against the real video and audio stores), plus `captionTracks`/`captionsShowing`                                                                                                                                                                      |
+| `videojsHandle.ts` | `createVideojsHandle(media, store)`: store actions once attached, the element before that. `seek` always writes the element at once (#647, `$lib/utils/mediaReady`)                                                                                                                                                   |
+| `prefs.ts`         | Remembered volume, mute, rate and captions in `localStorage['opentr:playerPrefs']`; carries a viewer's `localStorage['plyr']` choices over once. `bindPlayerPrefs(store, media)` restores on attach and on each new caption track list, then saves changes. Captions default ON                                       |
+| `i18n.ts`          | `PLAYER_LOCALE_PACKS` (one lazy `/register` chunk per app locale; English is built in) and `bindPlayerLocale($locale)`. `<media-i18n>` follows `<html lang>`/`dir`, which `$stores/locale` already sets                                                                                                               |
+| `hotkeys.ts`       | `PLAYER_HOTKEYS` for `<media-hotkey>` (page-wide on file detail, container-scoped on the mini player) and `attachLoopHotkey` for `L`, which Video.js has no action for. `j`/`l` are not bound to seek (owner question Q2)                                                                                             |
+| `fullWindow.ts`    | The mini player's full-window fallback where the element Fullscreen API is missing (iPhone): `supportsElementFullscreen()` and `attachFullWindowKeys` (`F` in the player, Escape anywhere). Video.js has no such mode (`migrate-from-plyr.md`)                                                                        |
+| `fakeVideojs.ts`   | Test-only fake store and media element. jsdom does upgrade the real custom elements and runs their store, so labels, translations, the status region and hotkeys are unit-testable (`components/player/MiniPlayer.controls.test.ts`); playback, layout and the Popover top layer are not, and Playwright proves those |
 
 Values the prefs binding saves are read from the media element, not store state: the store
 learns of a rate or caption-mode change from a media event a task later, so reading it right

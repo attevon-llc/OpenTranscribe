@@ -57,7 +57,8 @@ export function playerHotkeys(
 /** Plyr's `selectors.editable`: where a bare key is typing, not a shortcut. */
 const EDITABLE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
 
-function isEditable(target: EventTarget | null): boolean {
+/** Whether a key event aimed at *target* is someone typing (the player must ignore it). */
+export function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest(EDITABLE) !== null;
 }
 
@@ -70,7 +71,7 @@ export function attachLoopHotkey(target: EventTarget, media: HTMLMediaElement): 
     if (!(event instanceof KeyboardEvent) || event.defaultPrevented || event.repeat) return;
     if (event.key.toLowerCase() !== 'l') return;
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-    if (isEditable(event.target)) return;
+    if (isEditableTarget(event.target)) return;
     event.preventDefault();
     media.loop = !media.loop;
   };

@@ -103,8 +103,7 @@ engine (`backend/tests/conftest.py:323`), so it cannot be reused directly.
 Not present (checked): any `pg_stat_statements`, `auto_explain` or `log_min_duration_statement`
 setting in a compose file; any `pg_trgm` extension or trigram index; any `raiseload` or `lazy=`
 on a model relationship (every relationship is the default lazy `select`); the
-`scripts/test-in-worktree.sh` that the root `CLAUDE.md` mentions (the file does not exist in this
-checkout, see risk R7).
+removed `scripts/test-in-worktree.sh` (see risk R7).
 
 ## 3. Hot-path inventory and hypotheses
 
@@ -423,9 +422,9 @@ All of:
 1. Next number: run `python3 scripts/release-tests/lib/alembic-head.py backend` at implementation
    time and check the lane table in `backend/alembic/CLAUDE.md`. At writing: head
    `v467_add_content_hold_authority`, `v466` reserved for the organization-owner lane, so the next
-   free number is `v468` **unless another lane has taken it since**. Add a row for this lane to that
+   free number is `v469` (`v468_add_organization_owner` belongs to data-safety lane L7) **unless another lane has taken it since**. Add a row for this lane to that
    table in the same commit as the revision. Never reuse a number that reached any database.
-2. One revision for the whole wave's measured indexes, e.g. `v468_query_review_indexes`. It runs
+2. One revision for the whole wave's measured indexes, e.g. `v469_query_review_indexes`. It runs
    **no DDL** in `upgrade()` (module docstring copies v458's reasoning: `CREATE INDEX CONCURRENTLY`
    waits for every transaction that can see the table, so building it inside the startup upgrade
    could hang startup). `downgrade()` runs `DROP INDEX IF EXISTS <name>` per index (destroys no data).
@@ -666,7 +665,7 @@ then `exists`.
 | R4 | Seeded rows trigger periodic jobs (LLM summarisation, ASR). | Keep the injector's inertness rules (`completed_at` NULL, terminal statuses); `completed_at`-dependent statements are measured inside rolled-back transactions. |
 | R5 | A lane edits `.py` under `backend/app/` while a measurement runs on a stack bind-mounted to that checkout (hot reload dispatches `search_index_maintenance`). | Measure only from a quiet worktree; the perf stack is started from the worktree being measured and nobody edits it during the window. |
 | R6 | The count helper misses statements from a thread or engine it did not listen on. | Listen on the test connection and the app engine; the helper self-test includes a `SessionLocal()` path. If a third engine appears, fail the self-test rather than count silently. |
-| R7 | The root `CLAUDE.md` names `scripts/test-in-worktree.sh`, which does not exist in this checkout. | Use 6.1 step 5 (live dev DB for no-schema lanes, a `--fresh` stack for L5). Fix the stale reference in the root `CLAUDE.md` in L0 (small find: fix now + CHANGELOG line, no issue). |
+| R7 | `scripts/test-in-worktree.sh` was removed on this branch (CHANGELOG: `./scripts/run-backend-tests.sh --throwaway-db` replaces it); master's root `CLAUDE.md` still names it, and this branch's already does not. | Use `./scripts/run-backend-tests.sh --throwaway-db` for DB-backed tests without the stack, and a `--fresh` stack for L5. Nothing to fix. |
 | R8 | Revision number collision with another v0.7.0 lane. | Derive at implementation time, reserve in the lane table in the same commit, coordinator re-chains at merge. |
 | R9 | `held_pred` / `not_held_pred` are shared by destroy guards; a rewrite could weaken a legal-hold guarantee. | Do not change them. Add a separate filter-only form and test it returns the same id set as `held_file_ids()` on a seeded mix. |
 | R10 | K1 (`GET /tasks`) rewrite changes filtering semantics silently. | Parity test against the old Python path on a seeded set first, delete the old path in the same lane once green. |

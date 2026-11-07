@@ -278,17 +278,18 @@ Differences from the platform path, each deliberate:
 
 Three different things keep a file from disappearing. Do not mix them up:
 
-| | Quarantine (takedown) | Legal hold (operator) | Organization hold |
-|---|---|---|---|
-| Set by | An operator, or an organization administrator for its own files | The operator, with the takedown | An organization administrator, on files or a whole collection |
-| Stored in | `media_file.is_quarantined` | `media_file.legal_hold` | `content_hold` / `content_hold_file` |
-| The owner can still see and play the file | No | Yes (when not quarantined) | Yes |
-| Blocks delete, cancel-upload, account deletion, retention, GDPR erasure | Retention only | Yes | Yes |
-| Blocks reprocess and retry | No | Yes | Yes |
-| Transcript edits | Not reachable (the file is hidden) | Refused (a hold freezes the content) | Refused (a hold freezes the content) |
-| Released by | Whoever holds the takedown | The operator | An administrator of that organization only; staff cannot release it through the product |
+| | Quarantine (takedown) | Takedown's legal hold | Operator hold (no takedown) | Organization hold |
+|---|---|---|---|---|
+| Set by | An operator, or an organization administrator for its own files | The operator, with the takedown | A platform administrator, on files or a whole collection | An organization administrator, on files or a whole collection |
+| Stored in | `media_file.is_quarantined` | `media_file.legal_hold` | `content_hold` / `content_hold_file` with `authority = 'platform'` | `content_hold` / `content_hold_file` with `authority = 'organization'` |
+| The owner can still see and play the file | No | Yes (when not quarantined) | Yes | Yes |
+| Blocks delete, cancel-upload, account deletion, retention, GDPR erasure | Retention only | Yes | Yes | Yes |
+| Blocks reprocess and retry | No | Yes | Yes | Yes |
+| Transcript edits | Not reachable (the file is hidden) | Refused (a hold freezes the content) | Refused (a hold freezes the content) | Refused (a hold freezes the content) |
+| Has a reason, matter reference and history | No | No | Yes | Yes |
+| Released by | Whoever holds the takedown | The operator, from the quarantine screen | A platform administrator, in Settings > Legal holds or `POST /api/admin/holds/{uuid}/release` | An administrator of that organization only; staff cannot release it through the product |
 
-`services/hold_guard.py` answers "held by anyone" for the last two, and a scan test fails on any
+`services/hold_guard.py` answers "held by anyone" for the last three, and a scan test fails on any
 other reader of the platform flag. A refusal (`409 FILE_UNDER_LEGAL_HOLD`) says whether the
 platform, the organization or both hold the file; an organization administrator additionally gets
 the hold ids to release. The hold's reason is administrator-only text and appears in no refusal,

@@ -25,6 +25,10 @@ You can also assign files to collections during upload -- see [Organizing During
 - **Courses**: Lecture series
 - **Interviews**: Research interview sets
 
+## Files under a legal hold
+
+Held files are gathered automatically under a locked **Legal hold** entry in the collections list. It is not a real collection and cannot be edited, shared or deleted. A held file cannot be added to or removed from a collection, and a collection that contains a held file cannot be deleted, until the hold is released. See [Legal holds](./legal-holds.md).
+
 ## Managing Collections
 
 - Add/remove files

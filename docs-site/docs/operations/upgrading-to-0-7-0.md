@@ -351,6 +351,8 @@ was: every change to a held file's content is refused with `409` and
 `detail.error = "FILE_UNDER_LEGAL_HOLD"` (the same answer a delete of a held file already gave),
 and each refusal is recorded as `content.hold.refused` with the action that was tried.
 
+For what a hold means for users and administrators, see [Legal holds](../user-guide/legal-holds.md).
+
 Routes that used to succeed on a held file and now answer `409 FILE_UNDER_LEGAL_HOLD`:
 
 - Transcript: `PUT /api/files/{uuid}/transcript/segments/{segment_uuid}`,

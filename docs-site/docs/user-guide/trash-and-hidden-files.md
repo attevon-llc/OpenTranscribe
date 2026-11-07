@@ -60,7 +60,7 @@ file's time ends. People a file is shared with cannot delete, restore or delete 
 
 ## Holds and takedowns
 
-- A file under a legal or organization hold cannot be moved to the trash.
+- A file under a legal hold (see [Legal holds](./legal-holds.md)) cannot be moved to the trash.
 - A hold placed on a file that is already in the trash keeps it there: it stays restorable and is
   never deleted forever while held, even after its date. Once the last hold is released, a file
   whose time has ended is deleted forever within the hour.

@@ -356,6 +356,57 @@ docker exec opentranscribe-redis redis-cli info memory
 
 For most deployments, Redis memory usage stays under 100 MB. It primarily stores Celery task metadata and results, not large data.
 
+## LLM Throughput
+
+Summaries, chat answers and speaker identification all wait on the LLM, so their speed is set by a
+chain of limits: the **innermost one binds**. Raising an outer limit does nothing while an inner one
+is lower, so size the chain together. In order from the request outward:
+
+```
+requests the caller sends at once  <  app concurrency limits  <  vLLM --max-num-seqs
+```
+
+### vLLM side
+
+The test overlay (`docker-compose.llm-test.yml`) starts vLLM with these flags; the same flags apply
+to any vLLM you point OpenTranscribe at.
+
+| Flag | Overlay default | Notes |
+|------|-----------------|-------|
+| `--max-num-seqs` | 16 (`LLM_TEST_VLLM_MAX_SEQS`) | Sequences decoded together. The hard ceiling on parallel requests; anything above it queues. |
+| `--max-num-batched-tokens` | 20000 (`LLM_TEST_VLLM_BATCHED_TOKENS`) | Do not raise it expecting more throughput. Measured on this host, 32768 was **worse**: the KV cache shrank and "Maximum concurrency" fell from 16.45x to 12.03x. |
+| `--limit-mm-per-prompt` | `{"image":0,"audio":0,"video":0}` | A text-only workload must zero every modality, including `"video":0`. A modality left at its default reserves memory that the KV cache then does not get. |
+
+Read the numbers vLLM actually gave you in its startup log instead of guessing:
+
+```bash
+./opentr.sh logs <your-vllm-service> | rg "GPU KV cache size|Maximum concurrency"
+```
+
+`GPU KV cache size` is the total token budget; `Maximum concurrency for N tokens per request` is how
+many full-length requests fit at once. If that number is below `--max-num-seqs`, the KV cache binds
+first, not the sequence limit.
+
+Measured on 2026-08-21 (160-token answers, about 1,700-word prompts): 12 concurrent requests finished
+in about 7.1 s against 6.7 s for one, an 11.3x throughput gain with flat per-request latency. A
+single stream leaves the GPU mostly idle; parallelism is nearly free until a limit above binds.
+
+### App side
+
+| Limit | Where | Default | Effect |
+|-------|-------|---------|--------|
+| Summary slices in parallel | `services/llm_summarization.py` (`max_workers = min(num_chunks, 4)`) | 4, fixed in code | A long transcript is summarized in slices; at most 4 are in flight per summary, so one summary never uses more than 4 vLLM sequences. |
+| Chat streams per user | `chat.limits.max_concurrent_streams` (`core/chat_defaults.py`) | 6 | Simultaneous streaming answers one user can hold open. Edit in the admin chat settings. |
+| NLP Celery worker | `--concurrency ${NLP_CONCURRENCY:-4}` (`docker-compose.yml`) | 4 | Summaries and other LLM tasks that run at once. Total sequences wanted is roughly `NLP_CONCURRENCY x 4` for summaries. |
+
+Worked example: with `--max-num-seqs 16`, the NLP worker at 4 and 4 slices per summary asks vLLM for
+up to 16 sequences, exactly the server ceiling. Raise `NLP_CONCURRENCY` past 4 only after raising
+`--max-num-seqs` (and checking "Maximum concurrency" above still covers it); otherwise the extra
+tasks just queue inside vLLM and per-summary latency rises with no throughput gain.
+
+For evaluation runs, `scripts/run-summary-eval.sh --concurrency N` applies the same reasoning to the
+summary-quality harness. See [Testing](../developer-guide/testing.md#summary-evaluation-concurrency).
+
 ## Celery Worker Tuning
 
 ### Worker Configuration

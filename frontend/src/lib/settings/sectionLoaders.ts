@@ -41,6 +41,7 @@ export const sectionLoaders = {
   orgAuditLog: () => import('$components/settings/OrgAuditLogPanel.svelte'),
   legalHolds: () => import('$components/settings/LegalHoldsPanel.svelte'),
   orgPrivacy: () => import('$components/settings/OrgPrivacyPolicyPanel.svelte'),
+  orgErasures: () => import('$components/settings/OrgScheduledErasuresPanel.svelte'),
   takedownNotices: () => import('$components/settings/TakedownNoticesPanel.svelte'),
   myTakedowns: () => import('$components/settings/MyTakedownsPanel.svelte'),
   supportApprovals: () => import('$components/settings/SupportAccessApprovalsPanel.svelte'),
@@ -135,6 +136,7 @@ const LEAD_LOADER: Partial<Record<SettingsSection, SectionLoaderKey>> = {
   'org-holds': 'legalHolds',
   'platform-holds': 'legalHolds',
   'org-privacy': 'orgPrivacy',
+  'org-erasures': 'orgErasures',
   // Data & Storage: the shell is the lead chunk; its first tab loads on arrival.
   'data-management': 'dataManagement',
   'data-integrity': 'dataManagement',

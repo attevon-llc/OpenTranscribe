@@ -34,6 +34,7 @@ class DataSafetyFacts:
     has_erasure_grace_subject_index: bool
     has_user_hidden_media: bool
     has_content_hold_authority: bool
+    has_organization_owner: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
@@ -63,6 +64,10 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
             "SELECT EXISTS(SELECT 1 FROM pg_constraint "
             "WHERE conname = 'ck_content_hold_authority_org')"
         ),
+        # v468: the organization's owner. Keyed on the FK the revision creates last.
+        has_organization_owner=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'fk_organization_owner_user')"
+        ),
     )
 
 
@@ -82,7 +87,12 @@ def matches_v467(f: SchemaFacts) -> bool:
     return matches_v465(f) and f.data_safety.has_content_hold_authority
 
 
+def matches_v468(f: SchemaFacts) -> bool:
+    return matches_v467(f) and f.data_safety.has_organization_owner
+
+
 ARMS: tuple[Arm, ...] = (
+    (matches_v468, "v468_add_organization_owner"),
     (matches_v467, "v467_add_content_hold_authority"),
     (matches_v465, "v465_add_user_hidden_media"),
     (matches_v464, "v464_generalise_erasure_grace_index"),

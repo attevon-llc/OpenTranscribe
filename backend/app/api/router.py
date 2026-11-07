@@ -54,6 +54,7 @@ from .endpoints import org_admin
 from .endpoints import org_admin_audit
 from .endpoints import org_admin_erasure
 from .endpoints import org_admin_holds
+from .endpoints import org_admin_ownership
 from .endpoints import org_admin_policy
 from .endpoints import org_admin_takedown
 from .endpoints import pipeline_settings
@@ -263,6 +264,14 @@ include_router_with_consistency(
 # and refused under a support grant (a grant must never schedule an organization's erasure).
 include_router_with_consistency(
     org_admin_erasure.router,
+    prefix="/org-admin",
+    tags=["org-admin"],
+    capability="organizations",
+    refuse_under_grant=True,
+)
+# Hand the organization to another administrator (v468): owner only, refused under a grant.
+include_router_with_consistency(
+    org_admin_ownership.router,
     prefix="/org-admin",
     tags=["org-admin"],
     capability="organizations",

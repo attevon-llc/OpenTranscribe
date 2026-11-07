@@ -73,6 +73,9 @@ class AuditEventType(StrEnum):
     ERASURE_CANCELLED = "gdpr.erasure.cancelled"
     ERASURE_EXECUTION_STARTED = "gdpr.erasure.execution_started"
     ADMIN_ROLE_CHANGE = "admin.role.change"
+    # The organization's owner changed (v468): handed to another admin, or named by the operator.
+    # ``details`` holds the previous and new owner's uuids and who acted: never a name.
+    ORG_OWNER_CHANGE = "org.owner.change"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 
     # Abuse / DMCA / safe-harbor takedown events

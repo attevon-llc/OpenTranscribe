@@ -481,6 +481,7 @@ _MODERN_CHAIN: list[Step] = [
         "v467_add_content_hold_authority",
         markers={("constraint", "ck_content_hold_authority_org")},
     ),
+    step("v468_add_organization_owner", markers={("constraint", "fk_organization_owner_user")}),
 ]
 
 
@@ -581,8 +582,8 @@ def test_every_ladder_revision_is_pinned_by_a_test_above():
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 67
-    assert len(pinned) == 111
+    assert len(_MODERN_CHAIN) == 68
+    assert len(pinned) == 112
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -674,8 +675,9 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "conname = 'ck_media_file_trash_state'",  # v463
         "tablename = 'erasure_ledger' AND indexname = 'uq_erasure_ledger_open_grace_subject'",
         "conname = 'pk_user_hidden_media'",  # v465
-        # v467, the last probe
-        "conname = 'ck_content_hold_authority_org'",
+        "conname = 'ck_content_hold_authority_org'",  # v467
+        # v468, the last probe
+        "conname = 'fk_organization_owner_user'",
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]
     assert positions == sorted(positions), f"probe eras ran out of order: {positions}"

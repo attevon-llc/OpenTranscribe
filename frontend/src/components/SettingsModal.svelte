@@ -428,7 +428,7 @@
         items: [
           ...(orgAdminCapOn(capState, 'billing') ? [{ id: 'billing' as SettingsSection, label: $t('billing.navLabel'), icon: 'credit-card' }] : []),
           ...(orgAdminCapOn(capState, 'usage_dashboard') ? [{ id: 'usage' as SettingsSection, label: $t('usage.navLabel'), icon: 'activity' }] : []),
-          ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }] : []),
+          ...(orgAdminCapOn(capState, 'organizations') ? [{ id: 'team' as SettingsSection, label: $t('team.navLabel'), icon: 'users' }, { id: 'org-erasures' as SettingsSection, label: $t('orgErasures.navLabel'), icon: 'trash' }] : []),
           // issue #1253: the organization's own takedown queue. Server-enforced by the
           // `org.takedown` capability (unlike the platform queue's UI-only `admin.takedown`).
           ...(orgAdminCapOn(capState, 'org.takedown') ? [{ id: 'org-takedown' as SettingsSection, label: $t('settings.quarantine.orgNavLabel'), icon: 'shield-off' }] : []),
@@ -1549,6 +1549,16 @@
       <div class="content-section">
         <h3 class="section-title">{$t('orgAudit.title')}</h3>
         <LazySection load={sectionLoaders.orgAuditLog} let:Component>
+          <Component />
+        </LazySection>
+      </div>
+    {/if}
+
+    <!-- Cloud edition — scheduled organization/member erasures (org admins only, issue #1105) -->
+    {#if activeSection === 'org-erasures' && orgAdminCapOn(capState, 'organizations')}
+      <div class="content-section">
+        <h3 class="section-title">{$t('orgErasures.title')}</h3>
+        <LazySection load={sectionLoaders.orgErasures} let:Component>
           <Component />
         </LazySection>
       </div>

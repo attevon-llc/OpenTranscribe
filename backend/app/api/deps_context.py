@@ -31,6 +31,7 @@ from app.core.tenancy import OrgScope  # noqa: F401 — re-exported for callers
 from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
 from app.db.base import get_db
 from app.models.user import User
+from app.services import organization_owner
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
 from app.services.platform_bypass import PlatformBypass
@@ -114,10 +115,17 @@ def get_base_context(
     routes (and ``require_org_admin``) cannot be broken by a stale one.
     """
     org_id, org_role = resolve_org_context(request, db, current_user)
+    # Only an org admin can be the owner, so everyone else skips the lookup.
+    owner_id = (
+        organization_owner.owner_user_id(db, org_id)
+        if org_id is not None and org_role == "org:admin"
+        else None
+    )
     return RequestContext(
         user=current_user,
         org_id=org_id,
         org_role=org_role,
+        org_owner_user_id=owner_id,
         bypass=build_bypass(db, current_user, org_id),
     )
 
@@ -238,6 +246,33 @@ def require_org_admin(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Organization administrator access required",
+        )
+    return ctx
+
+
+def require_org_owner(
+    ctx: RequestContext = Depends(require_org_admin),
+) -> RequestContext:
+    """FastAPI dependency: the caller must be the OWNER of their organization.
+
+    The authority for the acts only the accountable person may take (scheduling the erasure of
+    the whole organization, handing the ownership over). 403 for an org admin who is not the
+    owner; 409 ``org_owner_required`` while the organization has no owner at all (its owner's
+    account is gone), because then no admin may act and the answer to "why" is a state of the
+    organization, not a fault of the caller. A deployment operator names a new owner through
+    ``services.organization_owner.set_owner``.
+    """
+    if ctx.org_owner_user_id is None:
+        raise coded_error(
+            status.HTTP_409_CONFLICT,
+            "org_owner_required",
+            "This organization has no owner. Ask the operator of this deployment to name one.",
+        )
+    if not ctx.is_org_owner:
+        raise coded_error(
+            status.HTTP_403_FORBIDDEN,
+            "org_owner_only",
+            "Only the owner of the organization can do this.",
         )
     return ctx
 

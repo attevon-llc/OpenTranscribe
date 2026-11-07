@@ -190,6 +190,7 @@
      --------------------------------------------------------------------- */
   --text-on-solid: #ffffff; /* label on --primary-color, any --*-solid fill, or media */
   --text-on-warning: #1e293b; /* label on the amber warning fill: 6.81:1 (white is 2.15:1) */
+  --media-letterbox: #000000; /* behind a video picture and its controls: black in both themes, like the picture */
 
   /* Boundary of an input, select, switch off-track or checkbox: 3:1 against the surface
      (SC 1.4.11). --border-color is decorative and stays lighter. 3.28:1 on white. */

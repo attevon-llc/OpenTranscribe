@@ -24,6 +24,8 @@ const SRC = path.resolve(__dirname, '..');
 const THEME_INVARIANT: Record<string, string> = {
   '--text-on-solid': 'white label on a solid fill: the fills are dark in both themes',
   '--text-on-warning': 'dark label on the amber fill, which is the same amber in both themes',
+  '--media-letterbox':
+    'the bars around a video picture are black in both themes, as the picture is',
   '--error-solid': 'solid danger fill, one value like --primary-color (white 4.83:1)',
   '--error-solid-hover': 'hover of --error-solid',
   '--warning-solid': 'amber fill carrying a dark label',

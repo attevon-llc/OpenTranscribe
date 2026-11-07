@@ -101,6 +101,19 @@ TEST_INDEX_SPECS: list[ArtifactSpec] = [
         'speaker index suites (OPENSEARCH_SPEAKER_INDEX repointed; _v3/_v4/_v3_backup)',
     ),
     _spec(
+        'availability-world',
+        rf'test_trash_lifecycle_{_H10}_(chunks|transcripts|speakers(_v3|_v4|_v3_backup)?)',
+        TIER_A,
+        'fixtures/availability_index_world.py (trash/quarantine index lifecycle suites)',
+    ),
+    _spec(
+        'quarantine-filters-absent',
+        rf'test_search_filters_quarantine_{_H12}_(absent|speakers_absent(_v3|_v4|_v3_backup)?)',
+        TIER_A,
+        'integration/test_search_filters_quarantine.py (transcript/speaker settings repointed '
+        'at names a lazy write path could create)',
+    ),
+    _spec(
         'privacy-speakers',
         rf'test_priv_spk_{_H12}(_v3|_v4|_v3_backup)?',
         TIER_A,

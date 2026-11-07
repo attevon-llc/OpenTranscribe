@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/run-summary-eval.sh replay-merge --concurrency N` runs arms in parallel and checkpoints, so an interrupted merge resumes.
 - The monitoring overlay ships tested alert rules (including a stuck governance outbox), Alertmanager and a node exporter. Alerts reach the app through a webhook that needs `ALERTMANAGER_WEBHOOK_TOKEN` and is refused at the HTTPS proxy, and appear as notifications. The backend healthcheck uses `/health/ready`, and text-mode logs carry the request id (#791).
 - An optional anonymous usage report, off by default and a double opt-in: the images ship `DO_NOT_TRACK=1`, so an operator first sets `DO_NOT_TRACK=0` in `.env` and restarts, then a super admin turns it on in Settings, Privacy & redaction. It sends about once a day a random install ID, the version and a rough count of files added in the last week; the settings card shows exactly what would be sent. `OPENTRANSCRIBE_TELEMETRY=false` also forces it off, and nothing is sent until a receiver key is configured (#1019).
+- The file list and collection file lists can be filtered to files under a legal hold (or not under one), the filter options report how many of your visible files are held, and each listed file says whether the platform or your organization holds it. A hold's reason and identifiers are never shown in lists.
 
 ### Changed
 

@@ -674,6 +674,24 @@ _E2E_LITERAL_NOT_PERSISTED: dict[str, str] = {
         "through the UI, and a killed run's comment goes with its file (Comment cascades from "
         "MediaFile), whose name the sweep recognises"
     ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e comment on a held file ": (
+        "the text of a comment on an owned_media_factory (e2e-owned-) file; it goes with the "
+        "file (Comment cascades from MediaFile), whose name the sweep recognises"
+    ),
+    "backend/tests/e2e/test_legal_hold_ui.py::forced edit ": (
+        "a title the server refuses with 409 FILE_UNDER_LEGAL_HOLD; it is never stored"
+    ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e legal hold ": (
+        "the reason of the test's operator hold; released in a finally, and the released "
+        "content_hold row is the hold's audit record, which the product keeps by design (no "
+        "delete path exists for any hold), so it is not a name a sweep could or should remove"
+    ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e-matter-": (
+        "the matter reference on the same released hold record as 'e2e legal hold '"
+    ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e matter closed ": (
+        "the release reason on the same released hold record as 'e2e legal hold '"
+    ),
     "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-processing-": (
         "a filename inside seeded notification records in a throwaway browser context's "
         "localStorage; no file or row exists server-side"

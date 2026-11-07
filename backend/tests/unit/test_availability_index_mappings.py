@@ -57,11 +57,14 @@ class _MappingClient:
 
 
 def test_every_new_speaker_index_maps_availability(monkeypatch):
-    from app.services.opensearch_service import client as os_client
+    from types import SimpleNamespace
+
     from app.services.opensearch_service import indices
 
     client = _MappingClient()
-    monkeypatch.setattr(os_client, "opensearch_client", client)
+    # Patch the client the module under test actually reads (``indices._client``), so no real
+    # index is created and the stand-in is visibly scoped to ``indices``.
+    monkeypatch.setattr(indices, "_client", SimpleNamespace(opensearch_client=client))
 
     indices._ensure_versioned_speaker_index("speakers_t_v3", 512)
     indices.create_speaker_index_v4("speakers_t_v4")

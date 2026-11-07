@@ -248,13 +248,14 @@ class _Analyzer:
         return []
 
     def creates(self, call: ast.Call) -> str | None:
+        qualified_names = self._qualified(call)
+        if any(q.split(".", 1)[0] in self.patched for q in qualified_names):
+            return None  # the called module's primitive is monkeypatched: nothing real runs
         direct = created_kind(call)
         if direct:
             return direct
-        for qualified in self._qualified(call):
+        for qualified in qualified_names:
             if qualified in self.creators:
-                if qualified.split(".", 1)[0] in self.patched:
-                    return None  # the module's primitive is monkeypatched: nothing real runs
                 return self.creators[qualified]
         return None
 

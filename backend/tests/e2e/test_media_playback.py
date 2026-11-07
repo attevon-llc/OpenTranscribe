@@ -340,6 +340,7 @@ class TestVideoPlayback:
     ) -> None:
         player = _open_file(browser_page, base_url, owned_video["uuid"])
         _show_first_cue(player)
+        cue_start = player.first_cue_start()
         expect(player.caption_speaker().first).to_be_visible(timeout=15_000)
         player.control("captions").first.click()
         expect(player.caption_speaker().first).to_be_hidden()
@@ -347,11 +348,20 @@ class TestVideoPlayback:
         browser_page.reload()
         player = MediaPlayer.file_detail(browser_page)
         player.wait_for_metadata()
-        _show_first_cue(player)
+        # Off means the track is disabled, and a browser does not fetch a disabled track's
+        # cues, so wait for the track itself and park in the cue timed before the reload.
+        player.wait_for_caption_track()
+        player.set_time(cue_start + 0.2)
         # Captions come on ~0.5 s after the track loads for everyone else; give it longer.
         browser_page.wait_for_timeout(2000)
         assert player.captions_on() is False
         expect(player.caption_speaker().first).to_be_hidden()
+
+        # Off is a remembered choice, not a track that failed to load: switching captions
+        # back on fetches the cues and shows the speaker.
+        player.control("captions").first.click()
+        player.captions_loaded()
+        expect(player.caption_speaker().first).to_be_visible(timeout=15_000)
 
     def test_keyboard_shortcuts_reach_the_player(
         self, browser_page: Page, base_url: str, owned_video: dict

@@ -198,6 +198,18 @@ class MediaPlayer:
         """The speaker name rendered in the current caption cue."""
         return self.container.locator(".speaker")
 
+    def wait_for_caption_track(self, timeout: int = 30_000) -> None:
+        """Wait until the server-built caption track is attached to the element.
+
+        Its cues may not be there: a browser does not fetch a ``disabled`` track, which is
+        what a viewer who switched captions off gets, so use :meth:`captions_loaded` only
+        where captions are on.
+        """
+        self.wait_for(
+            "Array.from(m.textTracks).some(t => t.kind === 'captions' || t.kind === 'subtitles')",
+            timeout=timeout,
+        )
+
     def captions_loaded(self, timeout: int = 30_000) -> None:
         """Wait until the server-built caption track has cues in the element."""
         self.wait_for(

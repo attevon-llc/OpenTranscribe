@@ -11,11 +11,7 @@ the switch only works if it is set before the library is first imported:
   then reported (model origin, file duration, speaker counts, a per-process session id).
 * ``huggingface_hub`` snapshots ``HF_HUB_DISABLE_TELEMETRY`` / ``DO_NOT_TRACK`` into module
   constants at import; they control ``send_telemetry`` and the library/torch versions it
-  appends to the User-Agent of model downloads. ``HF_HUB_DISABLE_TELEMETRY`` alone turns it
-  off, so ``DO_NOT_TRACK`` is NOT defaulted here: it is the operator's own cross-tool signal,
-  and it also forces off OpenTranscribe's opt-in usage report (``app/services/telemetry.py``).
-  Setting it on the operator's behalf would make that report impossible to enable and the
-  admin screen unable to tell an operator's choice from our default.
+  appends to the User-Agent of model downloads.
 * ``deno`` (spawned by yt-dlp for YouTube challenges) inherits this environment and checks
   ``dl.deno.land`` for a newer release once a day unless ``DENO_NO_UPDATE_CHECK`` is set.
 
@@ -31,6 +27,7 @@ import os
 TELEMETRY_OFF_DEFAULTS: dict[str, str] = {
     "PYANNOTE_METRICS_ENABLED": "false",
     "HF_HUB_DISABLE_TELEMETRY": "1",
+    "DO_NOT_TRACK": "1",
     "DENO_NO_UPDATE_CHECK": "1",
 }
 

@@ -208,13 +208,13 @@ ENV HF_HOME=/home/user/.cache/huggingface \
     SENTENCE_TRANSFORMERS_HOME=/home/user/.cache/sentence-transformers
 
 # No third-party telemetry or update checks from a running container: pyannote's OTLP
-# metrics to otel.pyannote.ai, huggingface_hub telemetry and deno's daily dl.deno.land
-# release check. Evidence per switch: app/core/privacy_env.py (the in-code backstop);
-# guarded by tests/unit/test_telemetry_disabled.py. DO_NOT_TRACK is deliberately NOT set
-# here: it is the operator's own signal, and it also turns off OpenTranscribe's opt-in
-# usage report, so an image default would make that report impossible to enable.
+# metrics to otel.pyannote.ai, huggingface_hub telemetry, DO_NOT_TRACK for any library
+# honoring it, and deno's daily dl.deno.land release check. Evidence per switch:
+# app/core/privacy_env.py (the in-code backstop); guarded by
+# tests/unit/test_telemetry_disabled.py.
 ENV PYANNOTE_METRICS_ENABLED=false \
     HF_HUB_DISABLE_TELEMETRY=1 \
+    DO_NOT_TRACK=1 \
     DENO_NO_UPDATE_CHECK=1
 
 # ---------------------------------------------------------------------------

@@ -67,6 +67,7 @@ services:
       # Third-party telemetry / update checks OFF by default (see app/core/privacy_env.py).
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # ⚠️ BARE ENTRY, NO `=` AND NO DEFAULT — same reasoning as SPEAKRS_ARENA_SHRINK below:
       # it is not established whether diar-server treats an empty string the same as

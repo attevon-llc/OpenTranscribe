@@ -291,6 +291,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Tenancy mode (auto|single|multi); see docs/security/tenant-boundaries.md
       - TENANCY_MODE=${TENANCY_MODE:-auto}
@@ -409,6 +410,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Tenancy mode, kept in step with backend (auto|single|multi)
       - TENANCY_MODE=${TENANCY_MODE:-auto}
@@ -472,6 +474,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -575,6 +578,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - PRELOAD_CPU_WHISPER=true
       # ffmpeg preprocess threading (opt-in CPU-contention control; default off).
@@ -649,6 +653,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Only this worker preloads the redaction models (Presidio+GLiNER, toxicity).
       - PRELOAD_REDACTION_MODELS=true
@@ -718,6 +723,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -765,6 +771,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -828,6 +835,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -874,6 +882,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as backend)
       - POSTGRES_HOST=postgres
@@ -960,6 +969,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -1029,6 +1039,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -1098,6 +1109,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Internal Docker network settings (same as other workers)
       - POSTGRES_HOST=postgres
@@ -1198,6 +1210,7 @@ services:
       # per-switch evidence). A self-hosted install must not report to anyone on its own.
       - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
       - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
       # The "flower" default is for development only: docker-compose.prod.yml refuses

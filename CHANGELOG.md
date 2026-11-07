@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Super administrators can allow MediaCMS sources on private network addresses (Settings, Media Sources). The list starts empty and is not seeded from `MEDIACMS_ALLOWED_HOSTS`; a refused address gets the same message whatever it resolves to.
 - The YouTube download policy and the default voice-activity settings are admin settings; the YouTube policy is seeded once from the old environment values (#566).
 - `scripts/run-summary-eval.sh replay-merge --concurrency N` runs arms in parallel and checkpoints, so an interrupted merge resumes.
+- The monitoring overlay ships tested alert rules (including a stuck governance outbox), Alertmanager and a node exporter. Alerts reach the app through a webhook that needs `ALERTMANAGER_WEBHOOK_TOKEN` and is refused at the HTTPS proxy, and appear as notifications. The backend healthcheck uses `/health/ready`, and text-mode logs carry the request id (#791).
 
 ### Changed
 
@@ -101,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The frontend reloads capabilities and reconnects realtime updates when an account hold is cleared.
 - The GDPR erasure receipt now covers the LLM token counters.
 - Backend tests release idle database connections between tests, so a parallel run no longer exhausts the test database's connection limit.
+- A voiceprint purge whose worker stopped between its two passes could leave voice-cluster data in the search index and later report success. The unfinished work is now recorded in the same transaction as the first pass (migration `v461`), and a scheduled re-check every 15 minutes finishes it and marks such a purge failed with the reason `interrupted` (#1334).
 
 ### Security
 

@@ -102,10 +102,10 @@ require_env_file_or_die() {
 # worktree. Empty means "no specific device", which that helper already handles.
 : "${GPU_DEVICE_ID:=}"
 # --with-pki host ports (docker-compose.pki.yml / docker-compose.pki-dev.yml).
-# Both are already guarded with `:-` at every read site, but listed here too
-# per the contract this block documents.
+# Both are guarded with `:-` at every read site; listed per this block's contract.
 : "${PKI_HTTPS_PORT:=}"
 : "${PKI_HTTP_PORT:=}"
+: "${OT_PORT_PROBE:=}"  # fresh_port_in_use test hook (#1367)
 # Grace period (seconds) for CUDA-holding services on stop/down/restart (issue #782).
 # scripts/common.sh (sourced above) already assigns this with `${OT_STOP_GRACE_GPU:-30}`,
 # which satisfies `set -u` on its own — this entry exists for the drift-guard contract
@@ -1731,7 +1731,7 @@ ot_port_holder_is_ours() {
 # Return 0 if a TCP port is bound on localhost, 1 otherwise (bash /dev/tcp, no netstat/ss). $OT_PORT_PROBE, when set, is run as `$OT_PORT_PROBE <port>` instead, so tests need not depend on host ports.
 fresh_port_in_use() {
   local port="$1"
-  if [ -n "${OT_PORT_PROBE:-}" ]; then "$OT_PORT_PROBE" "$port"; return; fi
+  if [ -n "${OT_PORT_PROBE:-}" ]; then "${OT_PORT_PROBE:-}" "$port"; return; fi
   (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&-; return 0; }
   return 1
 }

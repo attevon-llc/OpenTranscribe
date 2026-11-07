@@ -14229,6 +14229,21 @@
         "title": "PrivacyDecision",
         "type": "object"
       },
+      "PrivateHosts": {
+        "description": "The allowlist, as normalised ``scheme://host[:port]`` strings.",
+        "properties": {
+          "hosts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Hosts",
+            "type": "array"
+          }
+        },
+        "title": "PrivateHosts",
+        "type": "object"
+      },
       "ProcessingGateDocument": {
         "description": "A document the active provider serves, offered as a requirement.",
         "properties": {
@@ -23558,6 +23573,95 @@
         "title": "UserUpdate",
         "type": "object"
       },
+      "VadDefaults": {
+        "description": "The deployment's speech-detection defaults.",
+        "properties": {
+          "vad_min_silence_ms": {
+            "title": "Vad Min Silence Ms",
+            "type": "integer"
+          },
+          "vad_min_speech_ms": {
+            "title": "Vad Min Speech Ms",
+            "type": "integer"
+          },
+          "vad_speech_pad_ms": {
+            "title": "Vad Speech Pad Ms",
+            "type": "integer"
+          },
+          "vad_threshold": {
+            "title": "Vad Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "vad_threshold",
+          "vad_min_silence_ms",
+          "vad_min_speech_ms",
+          "vad_speech_pad_ms"
+        ],
+        "title": "VadDefaults",
+        "type": "object"
+      },
+      "VadDefaultsUpdate": {
+        "additionalProperties": false,
+        "description": "Fields to change; omitted fields keep their stored value.",
+        "properties": {
+          "vad_min_silence_ms": {
+            "anyOf": [
+              {
+                "maximum": 5000.0,
+                "minimum": 100.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Min Silence Ms"
+          },
+          "vad_min_speech_ms": {
+            "anyOf": [
+              {
+                "maximum": 5000.0,
+                "minimum": 50.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Min Speech Ms"
+          },
+          "vad_speech_pad_ms": {
+            "anyOf": [
+              {
+                "maximum": 2000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Speech Pad Ms"
+          },
+          "vad_threshold": {
+            "anyOf": [
+              {
+                "maximum": 0.95,
+                "minimum": 0.1,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vad Threshold"
+          }
+        },
+        "title": "VadDefaultsUpdate",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -25072,6 +25176,109 @@
           }
         },
         "title": "WatchSourcesList",
+        "type": "object"
+      },
+      "YoutubeSettings": {
+        "description": "The effective policy.",
+        "properties": {
+          "auto_retry_enabled": {
+            "title": "Auto Retry Enabled",
+            "type": "boolean"
+          },
+          "recovery_batch_size": {
+            "title": "Recovery Batch Size",
+            "type": "integer"
+          },
+          "user_rate_limit_enabled": {
+            "title": "User Rate Limit Enabled",
+            "type": "boolean"
+          },
+          "user_rate_limit_per_day": {
+            "title": "User Rate Limit Per Day",
+            "type": "integer"
+          },
+          "user_rate_limit_per_hour": {
+            "title": "User Rate Limit Per Hour",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_rate_limit_enabled",
+          "user_rate_limit_per_hour",
+          "user_rate_limit_per_day",
+          "auto_retry_enabled",
+          "recovery_batch_size"
+        ],
+        "title": "YoutubeSettings",
+        "type": "object"
+      },
+      "YoutubeSettingsUpdate": {
+        "additionalProperties": false,
+        "description": "Fields to change; omitted fields keep their stored value.",
+        "properties": {
+          "auto_retry_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Retry Enabled"
+          },
+          "recovery_batch_size": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Batch Size"
+          },
+          "user_rate_limit_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Rate Limit Enabled"
+          },
+          "user_rate_limit_per_day": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Rate Limit Per Day"
+          },
+          "user_rate_limit_per_hour": {
+            "anyOf": [
+              {
+                "maximum": 100000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Rate Limit Per Hour"
+          }
+        },
+        "title": "YoutubeSettingsUpdate",
         "type": "object"
       },
       "_EngineSettingsUpdate": {
@@ -28605,6 +28812,78 @@
         ]
       }
     },
+    "/api/admin/media-private-hosts": {
+      "get": {
+        "description": "Return the private hosts media sources may use.",
+        "operationId": "get_private_hosts_api_admin_media_private_hosts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateHosts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Private Hosts",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Replace the allowlist.",
+        "operationId": "put_private_hosts_api_admin_media_private_hosts_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PrivateHosts"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivateHosts"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put Private Hosts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/privacy-policy": {
       "get": {
         "description": "The instance layer of the privacy policy (super_admin).",
@@ -30509,6 +30788,78 @@
         ]
       }
     },
+    "/api/admin/transcription-defaults": {
+      "get": {
+        "description": "Return the deployment's speech-detection defaults.",
+        "operationId": "get_transcription_defaults_api_admin_transcription_defaults_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VadDefaults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Transcription Defaults",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Update the deployment defaults (only provided fields).",
+        "operationId": "put_transcription_defaults_api_admin_transcription_defaults_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VadDefaultsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VadDefaults"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Put Transcription Defaults",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/user-approvals": {
       "get": {
         "description": "List accounts awaiting administrator approval, oldest first.\n\nOldest first because this is a queue: the person who has been waiting longest\nis the one to deal with next. Paginated on the same shape as\n``GET /admin/users``.",
@@ -31546,6 +31897,78 @@
           }
         ],
         "summary": "Admin Unlock Account",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/youtube-settings": {
+      "get": {
+        "description": "Return the effective YouTube ingestion policy.",
+        "operationId": "get_youtube_settings_api_admin_youtube_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YoutubeSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Youtube Settings",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Update the policy (only provided fields).",
+        "operationId": "update_youtube_settings_api_admin_youtube_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YoutubeSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YoutubeSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Update Youtube Settings",
         "tags": [
           "admin"
         ]

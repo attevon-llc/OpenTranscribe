@@ -9,7 +9,8 @@ RUN apk add --no-cache \
     python3 \
     make \
     g++ \
-    git
+    git \
+    su-exec
 
 # Copy package files
 COPY package.json package-lock.json ./
@@ -26,8 +27,17 @@ COPY . .
 # Ensure the fonts directory has the correct permissions
 RUN chmod -R 755 static/fonts
 
+# Own the dirs docker-compose.override.yml mounts anonymous volumes over, so a NEW volume (which
+# Docker populates from the image) starts out owned by `node`. Volumes that already exist keep
+# their old root ownership; the entrypoint repairs those (issue #1372).
+RUN mkdir -p .svelte-kit && chown -R node:node node_modules .svelte-kit
+
+COPY docker-entrypoint.dev.sh /usr/local/bin/docker-entrypoint.dev.sh
+RUN chmod 755 /usr/local/bin/docker-entrypoint.dev.sh
+
 # Expose port 5173 for Vite dev server
 EXPOSE 5173
 
-# Start the development server
+# Starts as root only to repair volume ownership, then su-execs to the bind-mount owner.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.dev.sh"]
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

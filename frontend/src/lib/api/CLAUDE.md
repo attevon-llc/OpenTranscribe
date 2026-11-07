@@ -41,6 +41,8 @@ call these functions, not `axios` directly.
   voiceprint switch, instance switches, the three purges and the purge status); the organization routes
   (`/org-admin/policy`) are `OrgAdminApi.getPolicy/updatePolicy/purgePolicyData`. Every purge sends the
   literal `confirm: 'PURGE'` (`PURGE_CONFIRM_WORD`); the UI makes the person type it.
+  `trash.ts` covers the trash (#1101): `GET /files/trash`, restore, purge, empty, and the bulk `delete`/`restore`
+  actions the gallery uses; `getTrashRetentionDays` reads the window for the delete confirmation.
   `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
   (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 

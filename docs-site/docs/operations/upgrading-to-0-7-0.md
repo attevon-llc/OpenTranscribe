@@ -291,8 +291,10 @@ chat documents, and its database row, with no way back. From 0.7.0 every delete 
 moves the file to the trash instead (migration `v463_add_media_file_trash` added the columns).
 The file disappears from the gallery, search, chat, exports and every other view straight away,
 but nothing is destroyed until its time in the trash ends: 30 days by default. Change it in
-**Settings -> Data Management -> Retention** (1 to 90 days). The new length applies to files
-deleted from then on; a file already in the trash keeps the date it was given.
+**Settings -> Data & Storage -> File Retention** (1 to 90 days). The new length applies to files
+deleted from then on; a file already in the trash keeps the date it was given. Deleted files are
+listed, restored and deleted forever on the new **Trash** page, linked from the gallery toolbar
+(see [Trash](../user-guide/trash-and-hidden-files.md)).
 
 What changes for API clients and scripts:
 
@@ -325,7 +327,7 @@ the trash either.
 
 What does not change:
 
-- Retention (**Settings -> Data Management -> Retention**) still deletes expired files
+- Retention (**Settings -> Data & Storage -> File Retention**) still deletes expired files
   permanently at the end of the retention period, without passing through the trash. It skips
   files that are already in the trash, which are destroyed when their own time ends.
 - A GDPR erasure or an account deletion destroys the person's files at once, including any in

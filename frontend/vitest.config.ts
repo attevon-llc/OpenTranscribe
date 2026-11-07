@@ -41,6 +41,7 @@ export default defineConfig({
       '$app/navigation': path.resolve('./src/test-mocks/app-navigation.ts'),
       '$app/state': path.resolve('./src/test-mocks/app-state.svelte.ts'),
       '$app/env': path.resolve('./src/test-mocks/app-env.ts'),
+      '$app/paths': path.resolve('./src/test-mocks/app-paths.ts'),
     },
   },
   test: {

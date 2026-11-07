@@ -386,7 +386,7 @@ Click **Select Files** in the gallery toolbar, tick files (or **Select all**), t
 | **Organize** | **Add to Collection** | Add the files to a collection |
 | **Organize** | **Add or Edit Tags** | Apply a tag to all selected files (see [Tags](./tags.md)) |
 | **Organize** | **Export SRT / Export WebVTT / Export Text** | Bulk export transcripts as a ZIP |
-| (button) | **Delete N selected** | Delete the files and their data; only a file's owner or an organization admin can delete a file |
+| (button) | **Delete N selected** | Move the files to the [Trash](./trash-and-hidden-files.md), where they can be restored until their time ends; only a file's owner or an organization admin can delete a file |
 
 Administrators also see **Quarantine** in the Organize menu (see the [Admin Panel](./admin-panel.md)). All bulk operations report per-file success/failure results.
 
@@ -398,7 +398,7 @@ If a file is stuck in `processing` status or has failed:
 2. **Retry** -- Click **Retry** on a file listed under **Files That Need Attention** in **My Files Status**, or select failed files in the gallery and choose **Retry Failed** from the **Process** menu
 3. **Cancel and retry** -- For stuck processing files, select them and choose **Cancel Processing** from the **Process** menu, then **Retry Failed**
 4. **Recover** -- Click **Request Recovery for All** in **My Files Status** to attempt automatic recovery of stuck files
-5. **Force delete** (admin only) -- Deleting files that are still processing offers to cancel their processing and delete them (**Force Delete Processing Files**)
+5. **Delete** -- Deleting a file that is still processing cancels its processing and moves it to the [Trash](./trash-and-hidden-files.md); restored, it comes back as cancelled and can be reprocessed
 
 The system automatically detects stuck files (processing longer than the threshold, default 2 hours) and provides recovery recommendations.
 

@@ -51,6 +51,8 @@ const CASES: Array<[string, string | null, string[], boolean]> = [
   ['group_member_removed', 'group-member-removed', SHARE, false],
   ['file_takedown', null, ['files'], false],
   ['file_takedown_released', null, ['files'], false],
+  ['file_trashed', 'file-trashed', ['files'], true],
+  ['file_restored', 'file-restored', ['files'], true],
   ['auto_label_status', 'auto-label-status', [], false],
   // Plain notification types: no side effect, not consumed.
   ['transcription_status', null, [], false],

@@ -157,6 +157,12 @@ export const MENU_ICONS = {
     line(12, 3, 12, 15),
   ],
   retry: [poly('23 4 23 10 17 10'), d('M20.49 15a9 9 0 1 1-2.12-9.36L23 10')],
+  // The trash (issue #1101): the bin, and "bring it back" (counter-clockwise, unlike retry).
+  trash: [
+    poly('3 6 5 6 21 6'),
+    d('M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'),
+  ],
+  restore: [poly('1 4 1 10 7 10'), d('M3.51 15a9 9 0 1 0 2.13-9.36L1 10')],
   warning: [
     d('M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'),
     line(12, 9, 12, 13),

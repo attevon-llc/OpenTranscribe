@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import Spinner from '../ui/Spinner.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
+  import TrashRetentionSetting from '$components/settings/TrashRetentionSetting.svelte';
   import axiosInstance from '$lib/axios';
   import {
     loadSectionData,
@@ -505,6 +506,8 @@
         {saving ? $t('settings.retention.savingButton') : $t('settings.retention.saveButton')}
       </button>
     </div>
+
+    <TrashRetentionSetting />
   {/if}
 </div>
 

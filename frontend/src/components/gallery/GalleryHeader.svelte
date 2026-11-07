@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { resolve } from '$app/paths';
   import { t } from '$stores/locale';
   import SearchBar from '$components/ui/SearchBar.svelte';
   import GalleryCountChip from '$components/gallery/GalleryCountChip.svelte';
@@ -7,6 +8,7 @@
   import GalleryViewToggle from '$components/gallery/GalleryViewToggle.svelte';
   import GalleryPrimaryActions from '$components/gallery/GalleryPrimaryActions.svelte';
   import GallerySelectionActions from '$components/gallery/GallerySelectionActions.svelte';
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   const sortOptions: SortOption[] = [
@@ -83,6 +85,11 @@
       <GallerySelectionActions {files} />
     </div>
     <div class="toolbar-row-right">
+      <!-- Deleted files go to the trash (issue #1101); this is the way back to them. -->
+      <a href={resolve('/trash')} class="trash-link" data-testid="gallery-trash-link">
+        <MenuIcon name="trash" />
+        <span>{$t('gallery.trashLink')}</span>
+      </a>
       <SortDropdown
         {sortOptions}
         {sortBy}
@@ -131,6 +138,24 @@
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
+  }
+
+  .trash-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    padding-block: var(--space-1-5);
+    padding-inline: var(--space-2-5);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    text-decoration: none;
+  }
+
+  .trash-link:hover {
+    background: var(--hover-color);
+    color: var(--text-color);
   }
 
   .toolbar-search {

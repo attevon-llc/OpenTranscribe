@@ -42,6 +42,7 @@ from app.services.content_audit import MAX_MEMBERSHIP_UUIDS
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import stage_content_event
 from app.services.content_hold_queries import held_by_collection_hold
+from app.services.content_hold_queries import list_hold_summaries
 from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
 from app.services.formatting_service import FormattingService
@@ -309,6 +310,10 @@ def get_collection_media(
         pattern=HIDDEN_MODE_PATTERN,
         description="Your hidden files: 'exclude' (default), 'include', or 'only'",
     ),
+    # The computed "Legal hold" filter, the same param as the gallery list.
+    held: bool | None = Query(
+        None, description="Legal hold: true = only held files, false = only files not held"
+    ),
     # Sort parameters
     sort_by: str = Query(
         "upload_time",
@@ -382,6 +387,7 @@ def get_collection_media(
         "file_type": file_type,
         "status": status,
         "transcript_search": transcript_search,
+        "held": held,
         "user_id": current_user.id if own_files_only else None,
         # The collection was resolved in this scope, and a file joins a collection only
         # from the same scope, so gating the transcript index by it drops nothing.
@@ -420,6 +426,7 @@ def get_collection_media(
     # One privacy view for the page (see the main list endpoint, #1280).
     privacy = PrivacyView(db)
     hidden_ids = hidden_file_ids_among(db, current_user.id, (f.id for f in result))
+    holds = list_hold_summaries(db, (f.id for f in result))
 
     # Format each file with URLs and formatted fields
     formatted_files = []
@@ -427,6 +434,7 @@ def get_collection_media(
         set_file_urls(file, ctx.bypass)
         formatted_file = FormattingService.format_media_file(file, file.speakers, privacy=privacy)
         formatted_file.is_hidden = file.id in hidden_ids
+        formatted_file.hold = holds[file.id]
         formatted_files.append(formatted_file)
 
     # Calculate pagination metadata

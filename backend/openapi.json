@@ -10183,6 +10183,16 @@
             ],
             "title": "Frame Rate"
           },
+          "hold": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HoldSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "imohash": {
             "anyOf": [
               {
@@ -36479,6 +36489,24 @@
             }
           },
           {
+            "description": "Legal hold: true = only held files, false = only files not held",
+            "in": "query",
+            "name": "held",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Legal hold: true = only held files, false = only files not held",
+              "title": "Held"
+            }
+          },
+          {
             "description": "Field to sort by: upload_time, completed_at, filename, duration, file_size",
             "in": "query",
             "name": "sort_by",
@@ -38257,6 +38285,24 @@
               "pattern": "^(exclude|include|only)$",
               "title": "Hidden",
               "type": "string"
+            }
+          },
+          {
+            "description": "Legal hold: true = only held files, false = only files not held",
+            "in": "query",
+            "name": "held",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Legal hold: true = only held files, false = only files not held",
+              "title": "Held"
             }
           },
           {

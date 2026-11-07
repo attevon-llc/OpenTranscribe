@@ -15,7 +15,7 @@
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
   import SearchAutocomplete from '$components/search/SearchAutocomplete.svelte';
   import SortDropdown, { type SortOption } from '$components/ui/SortDropdown.svelte';
-  import FloatingPreviewPlayer from '$components/FloatingPreviewPlayer.svelte';
+  import type { PlayerHandle } from '$lib/player/types';
   import {
     parseSearchUrl,
     buildPageUrlParams,
@@ -74,10 +74,29 @@
 
   // Sticky preview player state
   let previewData: { fileUuid: string; title: string; startTime: number; speaker: string; contentType: string } | null = null;
-  // `playing` follows the real player (Plyr play/pause; `ended` also reports pause), so a
+  // `playing` follows the real player (native play/pause; `ended` also reports pause), so a
   // result card shows pause only while audio is actually running.
   let activePreview: { fileUuid: string; startTime: number; playing: boolean } | null = null;
-  let previewPlayer: FloatingPreviewPlayer | null = null;
+  let previewPlayer: { getPlayer(): PlayerHandle | null } | null = null;
+  // The player brings Video.js (about 56 KB gzip), so it is fetched with the first preview, in
+  // parallel with that preview's stream URL, not with the page (issue #1327). The bundle gate
+  // fails if it ever becomes a static import of this route again.
+  type PreviewPlayerComponent = typeof import('$components/FloatingPreviewPlayer.svelte').default;
+  let FloatingPreviewPlayer: PreviewPlayerComponent | null = null;
+  let previewPlayerLoad: Promise<PreviewPlayerComponent | null> | null = null;
+
+  /** The player component, loaded once; resolves null (and retries next time) if the fetch fails. */
+  function loadPreviewPlayer(): Promise<PreviewPlayerComponent | null> {
+    previewPlayerLoad ??= import('$components/FloatingPreviewPlayer.svelte').then(
+      (m) => (FloatingPreviewPlayer = m.default),
+      (err) => {
+        console.error('Failed to load the preview player:', err);
+        previewPlayerLoad = null;
+        return null;
+      }
+    );
+    return previewPlayerLoad;
+  }
   // Each click bumps this; a stream-URL fetch that resolves after a newer click is dropped.
   let previewRequest = 0;
 
@@ -393,6 +412,7 @@
     // drops its pause state at the click rather than after the URL round trip.
     const request = ++previewRequest;
     activePreview = { fileUuid: data.fileUuid, startTime: data.startTime, playing: false };
+    const playerLoad = loadPreviewPlayer();
 
     // Tear down existing preview to force full re-render
     previewData = null;
@@ -418,6 +438,11 @@
     if (request !== previewRequest) {
       // A newer click won while the URL was in flight: don't leave its refresher running.
       media.refresher.stop();
+      return;
+    }
+    if (!(await playerLoad) || request !== previewRequest) {
+      media.refresher.stop();
+      if (request === previewRequest) activePreview = null;
       return;
     }
     previewMediaUrl = media.url;
@@ -716,8 +741,9 @@
   </div>
 
   <!-- Sticky Floating Preview Player -->
-  {#if previewData}
-    <FloatingPreviewPlayer
+  {#if previewData && FloatingPreviewPlayer}
+    <svelte:component
+      this={FloatingPreviewPlayer}
       bind:this={previewPlayer}
       title={previewData.title}
       subtitle={previewCurrentSpeaker}

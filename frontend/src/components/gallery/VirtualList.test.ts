@@ -223,3 +223,17 @@ describe('status label language', () => {
     expect(container.querySelector('.list-cell-status')?.textContent).not.toContain('Completed');
   });
 });
+
+describe('technical values in right-to-left languages', () => {
+  it('keeps the file size left to right (Arabic showed "KB 45")', async () => {
+    const items = [file('f0', { formatted_file_size: '45 KB' })];
+    const { container } = render(VirtualList, {
+      props: { items, scrollContainer: scrollContainerWithHeight(400) },
+    });
+    await tick();
+    const size = [...container.querySelectorAll('.file-list-row *')].find(
+      (el) => el.textContent?.trim() === '45 KB' && el.children.length === 0
+    );
+    expect(size?.getAttribute('dir')).toBe('ltr');
+  });
+});

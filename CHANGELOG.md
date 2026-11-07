@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In right-to-left languages the gallery showed file sizes as "KB 45"; they now read "45 KB".
 - On a held file's page the "Video" or "Audio" heading broke mid-word ("Vide" / "o") to make room for the locked action buttons; the buttons now wrap under the heading instead.
 - In right-to-left languages a transcript line in a left-to-right language showed its final punctuation at the start (".and administration"); each transcript line now takes the direction of its own text.
 - In right-to-left languages the gallery's duration filter put its maximum handle outside the slider, where it could not be dragged; the slider and its labels now read left to right in every language, like the player's sliders.

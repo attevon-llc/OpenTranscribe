@@ -276,3 +276,21 @@ describe('VirtualGrid status label language', () => {
     expect(indicator.getAttribute('aria-label')).toBe('common.completed');
   });
 });
+
+describe('VirtualGrid technical values in right-to-left languages', () => {
+  it('keeps the file size left to right (Arabic showed "KB 45")', async () => {
+    const { container } = render(VirtualGrid, {
+      props: {
+        items: [file('f0', { formatted_file_size: '45 KB' })],
+        scrollContainer: scrollContainerWithHeight(800),
+      },
+    });
+    setWrapperWidth(container, 900);
+    await tick();
+    await tick();
+    const size = [...container.querySelectorAll('.meta-line span')].find(
+      (el) => el.textContent === '45 KB'
+    );
+    expect(size?.getAttribute('dir')).toBe('ltr');
+  });
+});

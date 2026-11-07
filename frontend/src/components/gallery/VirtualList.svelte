@@ -281,7 +281,7 @@
 
           <!-- Size -->
           <div class="list-cell list-cell-size">
-            {file.formatted_file_size || '-'}
+            <span dir="ltr">{file.formatted_file_size || '-'}</span>
           </div>
 
           <!-- Status -->

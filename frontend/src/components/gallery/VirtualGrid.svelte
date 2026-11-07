@@ -322,7 +322,7 @@
                       <span>{file.formatted_upload_date}</span>
                       {#if file.formatted_file_size}
                         <span class="meta-dot">&middot;</span>
-                        <span>{file.formatted_file_size}</span>
+                        <span dir="ltr">{file.formatted_file_size}</span>
                       {/if}
                       {#if file.speaker_summary && file.speaker_summary.count > 0}
                         <span class="meta-dot">&middot;</span>

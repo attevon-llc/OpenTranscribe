@@ -18,6 +18,7 @@ from collections.abc import Iterable
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 
 from app.core.config import settings
 from app.db.audit_protection import PRUNE_FUNCTION
@@ -124,6 +125,50 @@ def _read_only_present(conn: Connection) -> list[str]:
         for n in _READ_ONLY_TABLES
         if conn.execute(text("SELECT to_regclass(:n) IS NOT NULL"), {"n": f"public.{n}"}).scalar()
     ]
+
+
+def apply_idle_timeout_to_role(conn: Connection, role: str, timeout_ms: int) -> bool:
+    """``ALTER ROLE ... SET idle_in_transaction_session_timeout`` for the runtime role.
+
+    Runs on EVERY install (single-role included), unlike the grant reconcile. Inside a
+    savepoint so a role that may not alter itself (managed hosts) leaves the caller's
+    transaction usable; the runtime engine's per-connection ``SET`` is the fallback then.
+    ``timeout_ms <= 0`` resets the role setting so disabling the backstop takes effect.
+
+    Returns:
+        True if the role setting was applied, False if the server refused it.
+    """
+    ident = _quote(conn, role)
+    stmt = (
+        f"ALTER ROLE {ident} SET idle_in_transaction_session_timeout = {int(timeout_ms)}"
+        if timeout_ms > 0
+        else f"ALTER ROLE {ident} RESET idle_in_transaction_session_timeout"
+    )
+    try:
+        with conn.begin_nested():
+            conn.exec_driver_sql(stmt)
+    except DBAPIError as exc:
+        logger.warning(
+            "Could not set idle_in_transaction_session_timeout on role %s (%s); "
+            "relying on the per-connection SET",
+            role,
+            type(exc.orig).__name__,
+        )
+        return False
+    return True
+
+
+def apply_idle_timeout_from_settings() -> None:
+    """Apply the idle-in-transaction backstop to the runtime role, owner connection."""
+    role = settings.POSTGRES_APP_USER or make_url(settings.DATABASE_URL).username
+    if not role:
+        return
+    engine = create_migration_engine()
+    try:
+        with engine.begin() as conn:
+            apply_idle_timeout_to_role(conn, role, settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS)
+    finally:
+        engine.dispose()
 
 
 def reconcile_from_settings() -> None:

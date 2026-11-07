@@ -440,6 +440,11 @@ def run_migrations() -> None:
 
         reconcile_from_settings()
 
+        # Every install, not only the role split: session backstop on the runtime role (#1381).
+        from app.db.roles import apply_idle_timeout_from_settings
+
+        apply_idle_timeout_from_settings()
+
         logger.info("Database migrations complete")
     finally:
         # Release from the SAME session that took it — advisory locks are

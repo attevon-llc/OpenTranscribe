@@ -34,15 +34,41 @@ def migration_database_url() -> str:
     return url.render_as_string(hide_password=False)
 
 
-def set_audit_maintenance_on_connect(dbapi_connection: Any, _connection_record: Any) -> None:
-    """``PoolEvents.connect`` listener: session-level ``SET`` of the maintenance switch."""
-    previous = dbapi_connection.autocommit
-    dbapi_connection.autocommit = True
-    try:
-        with dbapi_connection.cursor() as cursor:
-            cursor.execute(f"SET {AUDIT_MAINTENANCE_GUC} = 'on'")
-    finally:
-        dbapi_connection.autocommit = previous
+class SessionSet:
+    """``PoolEvents.connect`` listener running one session-level ``SET`` statement."""
+
+    def __init__(self, statement: str) -> None:
+        self.statement = statement
+
+    def __call__(self, dbapi_connection: Any, _connection_record: Any) -> None:
+        previous = dbapi_connection.autocommit
+        dbapi_connection.autocommit = True
+        try:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute(self.statement)
+        finally:
+            dbapi_connection.autocommit = previous
+
+
+set_audit_maintenance_on_connect = SessionSet(f"SET {AUDIT_MAINTENANCE_GUC} = 'on'")
+"""``PoolEvents.connect`` listener: session-level ``SET`` of the maintenance switch."""
+
+
+def install_idle_in_transaction_timeout(engine: Engine, timeout_ms: int) -> Engine:
+    """Apply ``idle_in_transaction_session_timeout`` to every connection ``engine`` opens.
+
+    Same pool ``connect`` ``SET`` pattern as the audit switch below, for the same reason: a
+    libpq ``options=-c`` startup parameter is rejected by connection proxies (RDS Proxy,
+    PgBouncer). ``timeout_ms`` is coerced to ``int`` so no config text reaches the SQL. 0 or
+    less installs nothing (the server/role default applies).
+    """
+    if int(timeout_ms) > 0:
+        event.listen(
+            engine,
+            "connect",
+            SessionSet(f"SET idle_in_transaction_session_timeout = {int(timeout_ms)}"),
+        )
+    return engine
 
 
 def install_audit_maintenance_switch(engine: Engine) -> Engine:

@@ -17,6 +17,11 @@ const KEYS = [
   'settings.recording.description',
   'takedown.admin.export',
   'takedown.admin.exportEmpty',
+  'settings.quarantine.columnLegalHold',
+  'settings.quarantine.legalHoldBadge',
+  'settings.quarantine.tabLegalHold',
+  'settings.quarantine.holdHelp',
+  'settings.quarantine.holdHelpLink',
 ];
 const OTHERS = readdirSync(DIR)
   .filter((f) => f.endsWith('.json') && f !== 'en.json')
@@ -31,6 +36,12 @@ describe('owner-review copy is translated, not just present', () => {
   it('says recording settings are for the microphone in the web page', () => {
     expect(en['settings.recording.title'].toLowerCase()).toContain('microphone');
     expect(en['settings.recording.description'].toLowerCase()).toContain('web page');
+  });
+
+  it('keeps a takedown legal hold distinct from Settings > Legal holds in the quarantine copy', () => {
+    expect(en['settings.quarantine.columnLegalHold'].toLowerCase()).toContain('takedown');
+    expect(en['settings.quarantine.holdHelp']).toMatch(/separate/);
+    expect(en['settings.quarantine.holdHelp']).toMatch(/without quarantining it/);
   });
 
   for (const locale of OTHERS) {

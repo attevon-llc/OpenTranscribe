@@ -6113,7 +6113,7 @@
   "settings.quarantine.description": "Dateien unter Quarantäne prüfen und freigeben. Dateien werden nach Missbrauchs- oder DMCA-Meldungen unter Quarantäne gestellt.",
   "settings.quarantine.scopeNote": "Eine Datei unter Quarantäne wird in der Galerie, in der Suche, bei der Wiedergabe und bei Downloads ausgeblendet, bis sie freigegeben wird.",
   "settings.quarantine.tabQuarantined": "Unter Quarantäne",
-  "settings.quarantine.tabLegalHold": "Unter Legal Hold",
+  "settings.quarantine.tabLegalHold": "Mit rechtlicher Sperre",
   "settings.quarantine.loadFailed": "Quarantäneliste konnte nicht geladen werden",
   "settings.quarantine.emptyTitle": "Keine Dateien in dieser Ansicht",
   "settings.quarantine.emptyMessage": "Derzeit steht keine Datei unter Quarantäne oder Legal Hold.",
@@ -6122,9 +6122,9 @@
   "settings.quarantine.columnReason": "Grund",
   "settings.quarantine.columnTakenDown": "In Quarantäne seit",
   "settings.quarantine.columnBy": "Von",
-  "settings.quarantine.columnLegalHold": "Legal Hold",
+  "settings.quarantine.columnLegalHold": "Rechtliche Sperre der Entfernung",
   "settings.quarantine.columnActions": "Aktionen",
-  "settings.quarantine.legalHoldBadge": "Legal Hold",
+  "settings.quarantine.legalHoldBadge": "Aufbewahrt",
   "settings.quarantine.release": "Freigeben",
   "settings.quarantine.liftHold": "Legal Hold aufheben",
   "settings.quarantine.releaseSuccess": "Datei freigegeben",
@@ -6761,5 +6761,7 @@
   "speakerHistory.kind.merge": "Zusammengeführt",
   "speakerHistory.kind.purge": "Stimmabdruckdaten entfernt",
   "takedown.admin.export": "Exportieren",
-  "takedown.admin.exportEmpty": "Es gibt noch keine Meldungen zum Exportieren."
+  "takedown.admin.exportEmpty": "Es gibt noch keine Meldungen zum Exportieren.",
+  "settings.quarantine.holdHelp": "Quarantäne und rechtliche Sperre sind getrennte Funktionen. Eine Entfernung kann eine eigene rechtliche Sperre tragen, die die Datei bewahrt, solange sie entfernt ist. Eine in den Einstellungen gesetzte rechtliche Sperre bewahrt eine Datei, ohne sie zu entfernen.",
+  "settings.quarantine.holdHelpLink": "Rechtliche Sperren öffnen"
 }

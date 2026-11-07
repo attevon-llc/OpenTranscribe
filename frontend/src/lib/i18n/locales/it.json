@@ -6129,7 +6129,7 @@
   "settings.quarantine.description": "Esamina e rilascia i file in quarantena. I file vengono messi in quarantena in seguito a segnalazioni di abuso o DMCA.",
   "settings.quarantine.scopeNote": "Un file in quarantena resta nascosto nella galleria, nella ricerca, nella riproduzione e nei download finché non viene rilasciato.",
   "settings.quarantine.tabQuarantined": "In quarantena",
-  "settings.quarantine.tabLegalHold": "Sotto vincolo legale",
+  "settings.quarantine.tabLegalHold": "Con blocco legale",
   "settings.quarantine.loadFailed": "Impossibile caricare la coda di quarantena",
   "settings.quarantine.emptyTitle": "Nessun file in questa vista",
   "settings.quarantine.emptyMessage": "Al momento nulla è in quarantena o sotto vincolo legale.",
@@ -6138,9 +6138,9 @@
   "settings.quarantine.columnReason": "Motivo",
   "settings.quarantine.columnTakenDown": "In quarantena dal",
   "settings.quarantine.columnBy": "Da",
-  "settings.quarantine.columnLegalHold": "Vincolo legale",
+  "settings.quarantine.columnLegalHold": "Blocco legale della rimozione",
   "settings.quarantine.columnActions": "Azioni",
-  "settings.quarantine.legalHoldBadge": "Vincolo legale",
+  "settings.quarantine.legalHoldBadge": "Conservato",
   "settings.quarantine.release": "Rilascia",
   "settings.quarantine.liftHold": "Rimuovi vincolo legale",
   "settings.quarantine.releaseSuccess": "File rilasciato",
@@ -6777,5 +6777,7 @@
   "speakerHistory.kind.merge": "Unito",
   "speakerHistory.kind.purge": "Dati dell'impronta vocale rimossi",
   "takedown.admin.export": "Esporta",
-  "takedown.admin.exportEmpty": "Non ci sono ancora segnalazioni da esportare."
+  "takedown.admin.exportEmpty": "Non ci sono ancora segnalazioni da esportare.",
+  "settings.quarantine.holdHelp": "Quarantena e blocco legale sono funzioni separate. Una rimozione può avere un proprio blocco legale, che conserva il file mentre è rimosso. Un blocco legale impostato nelle Impostazioni conserva un file senza rimuoverlo.",
+  "settings.quarantine.holdHelpLink": "Apri Blocchi legali"
 }

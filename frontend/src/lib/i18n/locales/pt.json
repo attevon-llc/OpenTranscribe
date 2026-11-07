@@ -6129,7 +6129,7 @@
   "settings.quarantine.description": "Revise e libere os arquivos em quarentena. Os arquivos entram em quarentena após denúncias de abuso ou DMCA.",
   "settings.quarantine.scopeNote": "Um arquivo em quarentena fica oculto da galeria, da pesquisa, da reprodução e dos downloads até ser liberado.",
   "settings.quarantine.tabQuarantined": "Em quarentena",
-  "settings.quarantine.tabLegalHold": "Sob retenção legal",
+  "settings.quarantine.tabLegalHold": "Com retenção legal",
   "settings.quarantine.loadFailed": "Não foi possível carregar a fila de quarentena",
   "settings.quarantine.emptyTitle": "Nenhum arquivo nesta visualização",
   "settings.quarantine.emptyMessage": "No momento nada está em quarentena ou sob retenção legal.",
@@ -6138,9 +6138,9 @@
   "settings.quarantine.columnReason": "Motivo",
   "settings.quarantine.columnTakenDown": "Em quarentena desde",
   "settings.quarantine.columnBy": "Por",
-  "settings.quarantine.columnLegalHold": "Retenção legal",
+  "settings.quarantine.columnLegalHold": "Retenção legal da remoção",
   "settings.quarantine.columnActions": "Ações",
-  "settings.quarantine.legalHoldBadge": "Retenção legal",
+  "settings.quarantine.legalHoldBadge": "Preservado",
   "settings.quarantine.release": "Liberar",
   "settings.quarantine.liftHold": "Remover retenção legal",
   "settings.quarantine.releaseSuccess": "Arquivo liberado",
@@ -6777,5 +6777,7 @@
   "speakerHistory.kind.merge": "Mesclado",
   "speakerHistory.kind.purge": "Dados de impressão vocal removidos",
   "takedown.admin.export": "Exportar",
-  "takedown.admin.exportEmpty": "Ainda não há notificações para exportar."
+  "takedown.admin.exportEmpty": "Ainda não há notificações para exportar.",
+  "settings.quarantine.holdHelp": "Quarentena e retenção legal são funções separadas. Uma remoção pode ter sua própria retenção legal, que preserva o arquivo enquanto ele está removido. Uma retenção legal definida em Configurações mantém um arquivo sem removê-lo.",
+  "settings.quarantine.holdHelpLink": "Abrir Retenções legais"
 }

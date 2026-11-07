@@ -6129,7 +6129,7 @@
   "settings.quarantine.description": "Revise y libere los archivos en cuarentena. Los archivos pasan a cuarentena tras denuncias por abuso o avisos DMCA.",
   "settings.quarantine.scopeNote": "Un archivo en cuarentena se oculta de la galería, la búsqueda, la reproducción y las descargas hasta que se libera.",
   "settings.quarantine.tabQuarantined": "En cuarentena",
-  "settings.quarantine.tabLegalHold": "Con retención legal",
+  "settings.quarantine.tabLegalHold": "Con retención legal de retirada",
   "settings.quarantine.loadFailed": "No se pudo cargar la cola de cuarentena",
   "settings.quarantine.emptyTitle": "No hay archivos en esta vista",
   "settings.quarantine.emptyMessage": "Actualmente no hay nada en cuarentena ni con retención legal.",
@@ -6138,9 +6138,9 @@
   "settings.quarantine.columnReason": "Motivo",
   "settings.quarantine.columnTakenDown": "En cuarentena desde",
   "settings.quarantine.columnBy": "Por",
-  "settings.quarantine.columnLegalHold": "Retención legal",
+  "settings.quarantine.columnLegalHold": "Retención legal de la retirada",
   "settings.quarantine.columnActions": "Acciones",
-  "settings.quarantine.legalHoldBadge": "Retención legal",
+  "settings.quarantine.legalHoldBadge": "Conservado",
   "settings.quarantine.release": "Liberar",
   "settings.quarantine.liftHold": "Levantar retención legal",
   "settings.quarantine.releaseSuccess": "Archivo liberado",
@@ -6777,5 +6777,7 @@
   "speakerHistory.kind.merge": "Fusionado",
   "speakerHistory.kind.purge": "Datos de huella de voz eliminados",
   "takedown.admin.export": "Exportar",
-  "takedown.admin.exportEmpty": "Aún no hay avisos que exportar."
+  "takedown.admin.exportEmpty": "Aún no hay avisos que exportar.",
+  "settings.quarantine.holdHelp": "La cuarentena y la retención legal son funciones distintas. Una retirada puede llevar su propia retención legal, que conserva el archivo mientras está retirado. Una retención legal definida en Ajustes conserva un archivo sin retirarlo.",
+  "settings.quarantine.holdHelpLink": "Abrir Retenciones legales"
 }

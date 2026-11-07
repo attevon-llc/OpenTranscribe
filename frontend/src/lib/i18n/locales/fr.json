@@ -6129,7 +6129,7 @@
   "settings.quarantine.description": "Examinez et libérez les fichiers en quarantaine. Les fichiers sont mis en quarantaine après des signalements d'abus ou des demandes DMCA.",
   "settings.quarantine.scopeNote": "Un fichier en quarantaine est masqué dans la galerie, la recherche, la lecture et les téléchargements jusqu'à sa libération.",
   "settings.quarantine.tabQuarantined": "En quarantaine",
-  "settings.quarantine.tabLegalHold": "Sous conservation légale",
+  "settings.quarantine.tabLegalHold": "Avec conservation légale",
   "settings.quarantine.loadFailed": "Impossible de charger la file de quarantaine",
   "settings.quarantine.emptyTitle": "Aucun fichier dans cette vue",
   "settings.quarantine.emptyMessage": "Rien n'est actuellement en quarantaine ni sous conservation légale.",
@@ -6138,9 +6138,9 @@
   "settings.quarantine.columnReason": "Motif",
   "settings.quarantine.columnTakenDown": "Mis en quarantaine le",
   "settings.quarantine.columnBy": "Par",
-  "settings.quarantine.columnLegalHold": "Conservation légale",
+  "settings.quarantine.columnLegalHold": "Conservation légale du retrait",
   "settings.quarantine.columnActions": "Actions",
-  "settings.quarantine.legalHoldBadge": "Conservation légale",
+  "settings.quarantine.legalHoldBadge": "Conservé",
   "settings.quarantine.release": "Libérer",
   "settings.quarantine.liftHold": "Lever la conservation légale",
   "settings.quarantine.releaseSuccess": "Fichier libéré",
@@ -6777,5 +6777,7 @@
   "speakerHistory.kind.merge": "Fusionné",
   "speakerHistory.kind.purge": "Données d'empreinte vocale supprimées",
   "takedown.admin.export": "Exporter",
-  "takedown.admin.exportEmpty": "Il n'y a pas encore d'avis à exporter."
+  "takedown.admin.exportEmpty": "Il n'y a pas encore d'avis à exporter.",
+  "settings.quarantine.holdHelp": "La quarantaine et la conservation légale sont deux fonctions distinctes. Un retrait peut porter sa propre conservation légale, qui préserve le fichier pendant qu'il est retiré. Une conservation légale définie dans les paramètres conserve un fichier sans le retirer.",
+  "settings.quarantine.holdHelpLink": "Ouvrir Conservations légales"
 }

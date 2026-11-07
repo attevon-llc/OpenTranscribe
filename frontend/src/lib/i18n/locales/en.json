@@ -6113,7 +6113,7 @@
   "settings.quarantine.description": "Review quarantined files and release them. Files are quarantined after abuse or DMCA reports.",
   "settings.quarantine.scopeNote": "A quarantined file is hidden from the gallery, search, playback and downloads until it is released.",
   "settings.quarantine.tabQuarantined": "Quarantined",
-  "settings.quarantine.tabLegalHold": "Under legal hold",
+  "settings.quarantine.tabLegalHold": "With a takedown legal hold",
   "settings.quarantine.loadFailed": "Could not load the quarantine queue",
   "settings.quarantine.emptyTitle": "No files in this view",
   "settings.quarantine.emptyMessage": "Nothing is currently quarantined or under legal hold.",
@@ -6122,9 +6122,9 @@
   "settings.quarantine.columnReason": "Reason",
   "settings.quarantine.columnTakenDown": "Quarantined on",
   "settings.quarantine.columnBy": "By",
-  "settings.quarantine.columnLegalHold": "Legal hold",
+  "settings.quarantine.columnLegalHold": "Takedown legal hold",
   "settings.quarantine.columnActions": "Actions",
-  "settings.quarantine.legalHoldBadge": "Legal hold",
+  "settings.quarantine.legalHoldBadge": "Kept on hold",
   "settings.quarantine.release": "Release",
   "settings.quarantine.liftHold": "Lift legal hold",
   "settings.quarantine.releaseSuccess": "File released",
@@ -6761,5 +6761,7 @@
   "speakerHistory.kind.merge": "Merged",
   "speakerHistory.kind.purge": "Voiceprint data removed",
   "takedown.admin.export": "Export",
-  "takedown.admin.exportEmpty": "There are no notices to export yet."
+  "takedown.admin.exportEmpty": "There are no notices to export yet.",
+  "settings.quarantine.holdHelp": "Quarantine and legal hold are separate. A takedown can carry its own legal hold, which preserves the file while it is quarantined. A legal hold set in Settings keeps a file without quarantining it.",
+  "settings.quarantine.holdHelpLink": "Open Legal holds"
 }

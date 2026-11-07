@@ -6113,7 +6113,7 @@
   "settings.quarantine.description": "Beoordeel bestanden in quarantaine en geef ze vrij. Bestanden gaan in quarantaine na misbruikmeldingen of DMCA-meldingen.",
   "settings.quarantine.scopeNote": "Een bestand in quarantaine is verborgen in de galerij en bij zoeken, afspelen en downloaden totdat het wordt vrijgegeven.",
   "settings.quarantine.tabQuarantined": "In quarantaine",
-  "settings.quarantine.tabLegalHold": "Onder juridische bewaarplicht",
+  "settings.quarantine.tabLegalHold": "Met juridische bewaring",
   "settings.quarantine.loadFailed": "Kan de quarantainewachtrij niet laden",
   "settings.quarantine.emptyTitle": "Geen bestanden in deze weergave",
   "settings.quarantine.emptyMessage": "Er staat momenteel niets in quarantaine of onder juridische bewaarplicht.",
@@ -6122,9 +6122,9 @@
   "settings.quarantine.columnReason": "Reden",
   "settings.quarantine.columnTakenDown": "In quarantaine geplaatst op",
   "settings.quarantine.columnBy": "Door",
-  "settings.quarantine.columnLegalHold": "Juridische bewaarplicht",
+  "settings.quarantine.columnLegalHold": "Juridische bewaring bij verwijdering",
   "settings.quarantine.columnActions": "Acties",
-  "settings.quarantine.legalHoldBadge": "Bewaarplicht",
+  "settings.quarantine.legalHoldBadge": "Bewaard",
   "settings.quarantine.release": "Vrijgeven",
   "settings.quarantine.liftHold": "Bewaarplicht opheffen",
   "settings.quarantine.releaseSuccess": "Bestand vrijgegeven",
@@ -6761,5 +6761,7 @@
   "speakerHistory.kind.merge": "Samengevoegd",
   "speakerHistory.kind.purge": "Stemafdrukgegevens verwijderd",
   "takedown.admin.export": "Exporteren",
-  "takedown.admin.exportEmpty": "Er zijn nog geen meldingen om te exporteren."
+  "takedown.admin.exportEmpty": "Er zijn nog geen meldingen om te exporteren.",
+  "settings.quarantine.holdHelp": "Quarantaine en juridische bewaring zijn afzonderlijke functies. Een verwijdering kan een eigen juridische bewaring hebben, die het bestand bewaart zolang het is verwijderd. Een juridische bewaring uit de Instellingen bewaart een bestand zonder het te verwijderen.",
+  "settings.quarantine.holdHelpLink": "Juridische bewaringen openen"
 }

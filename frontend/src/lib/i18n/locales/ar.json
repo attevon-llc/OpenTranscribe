@@ -6177,7 +6177,7 @@
   "settings.quarantine.description": "راجع الملفات المعزولة وأفرج عنها. تُعزل الملفات بعد بلاغات إساءة الاستخدام أو إشعارات DMCA.",
   "settings.quarantine.scopeNote": "يُخفى الملف المعزول من المعرض والبحث والتشغيل والتنزيل إلى أن يتم الإفراج عنه.",
   "settings.quarantine.tabQuarantined": "معزول",
-  "settings.quarantine.tabLegalHold": "قيد الحجز القانوني",
+  "settings.quarantine.tabLegalHold": "مع حجز قانوني للإزالة",
   "settings.quarantine.loadFailed": "تعذر تحميل قائمة انتظار العزل",
   "settings.quarantine.emptyTitle": "لا توجد ملفات في هذا العرض",
   "settings.quarantine.emptyMessage": "لا يوجد حاليًا أي ملف معزول أو قيد الحجز القانوني.",
@@ -6186,9 +6186,9 @@
   "settings.quarantine.columnReason": "السبب",
   "settings.quarantine.columnTakenDown": "تاريخ العزل",
   "settings.quarantine.columnBy": "بواسطة",
-  "settings.quarantine.columnLegalHold": "الحجز القانوني",
+  "settings.quarantine.columnLegalHold": "الحجز القانوني للإزالة",
   "settings.quarantine.columnActions": "الإجراءات",
-  "settings.quarantine.legalHoldBadge": "حجز قانوني",
+  "settings.quarantine.legalHoldBadge": "محفوظ بالحجز",
   "settings.quarantine.release": "إطلاق",
   "settings.quarantine.liftHold": "رفع الحجز القانوني",
   "settings.quarantine.releaseSuccess": "تم إطلاق الملف",
@@ -6825,5 +6825,7 @@
   "speakerHistory.kind.merge": "دُمج",
   "speakerHistory.kind.purge": "أُزيلت بيانات البصمة الصوتية",
   "takedown.admin.export": "تصدير",
-  "takedown.admin.exportEmpty": "لا توجد إشعارات للتصدير بعد."
+  "takedown.admin.exportEmpty": "لا توجد إشعارات للتصدير بعد.",
+  "settings.quarantine.holdHelp": "الحجر والحجز القانوني أمران منفصلان. يمكن أن تحمل الإزالة حجزاً قانونياً خاصاً بها يحفظ الملف أثناء إزالته. أما الحجز القانوني المحدَّد في الإعدادات فيحفظ الملف دون إزالته.",
+  "settings.quarantine.holdHelpLink": "فتح الحجوزات القانونية"
 }

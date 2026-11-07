@@ -22,20 +22,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 
-// Plyr fails to construct here on purpose, so `player` stays permanently
+// The player fails to construct here on purpose, so `player` stays permanently
 // null while `mediaElement` and `videoUrl` are both valid — reproducing the
 // exact state of the race (child's own init reactive statement having not
 // (yet, or ever) resolved) without depending on Svelte's effect-scheduling
-// order to land a real unit test in the right window.
-vi.mock('plyr', () => {
-  class ThrowingPlyr {
-    constructor() {
-      throw new Error('Plyr never constructs in this test — player stays null');
-    }
-  }
-  return { default: ThrowingPlyr };
-});
-vi.mock('plyr/dist/plyr.css', () => ({}));
+// order to land a real unit test in the right window. The seam is mocked, not
+// the library behind it (issue #1327).
+vi.mock('$lib/player/plyrHandle', () => ({
+  createPlyrPlayer: () => {
+    throw new Error('the player never constructs in this test — player stays null');
+  },
+  viewerTurnedCaptionsOff: () => false,
+}));
 
 vi.mock('$stores/locale', () => ({
   t: {
@@ -58,7 +56,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe('seekToTime without a constructed Plyr instance', () => {
+describe('seekToTime without a constructed player', () => {
   it('still seeks the raw media element when `player` is null', async () => {
     const { container, component } = render(VideoPlayer, {
       props: {

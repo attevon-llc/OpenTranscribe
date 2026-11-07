@@ -3,6 +3,7 @@
   import { t } from '$stores/locale';
   import { formatClock } from '$lib/utils/formatting';
   import PlyrMiniPlayer from '$components/PlyrMiniPlayer.svelte';
+  import type { PlayerHandle } from '$lib/player/types';
 
   // Display
   export let title: string;
@@ -28,7 +29,7 @@
 
   // Re-expose the inner player so coordinators can pause/seek it. Keyed on
   // fileId:startTime (see {#key}); the ref is rebound on each new preview.
-  export function getPlayer() {
+  export function getPlayer(): PlayerHandle | null {
     return innerPlayer?.getPlayer() ?? null;
   }
 

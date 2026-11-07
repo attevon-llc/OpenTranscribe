@@ -1,11 +1,12 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-  import Plyr from 'plyr';
-  import 'plyr/dist/plyr.css';
   import { t } from '$stores/locale';
   import { fetchCaptionTrack } from '$lib/api/captions';
   import { applyMediaSeek, waitForMediaMetadata, HAVE_METADATA } from '$lib/utils/mediaReady';
   import { playableSourceType } from '$lib/utils/mediaType';
+  import { createPlyrPlayer, viewerTurnedCaptionsOff } from '$lib/player/plyrHandle';
+  import { listenToMedia, mediaDuration } from '$lib/player/mediaEvents';
+  import type { OwnedPlayer } from '$lib/player/types';
   import type { PlaybackMode } from '$lib/api/mediaUrl';
   import Spinner from './ui/Spinner.svelte';
 
@@ -23,7 +24,8 @@
 
   const dispatch = createEventDispatcher();
 
-  let player: Plyr | null = null;
+  let player: OwnedPlayer | null = null;
+  let stopListening: (() => void) | null = null;
   let mediaElement: HTMLVideoElement | HTMLAudioElement;
   let currentTime = 0;
   let duration = 0;
@@ -61,18 +63,18 @@
 
   // External seek function for waveform and transcript clicks
   export async function seekToTime(time: number) {
-    // Use the raw bound element, not `(player as any).media` — that requires
-    // Plyr to have been constructed first, which is itself async (this
+    // Use the raw bound element, not `player.media` — that requires the
+    // player to have been constructed first, which is itself async (this
     // component's own `$: if (videoUrl && mediaElement && !player)
-    // initializePlyr()`). A caller (e.g. the `?t=` deep-link handler) firing
+    // initializePlayer()`). A caller (e.g. the `?t=` deep-link handler) firing
     // in the same reactivity flush as this component's mount can land here
     // BEFORE that reactive statement has run, i.e. while `player` is still
     // null. The old code's `if (!player) return` silently dropped exactly
     // that seek — the same "act on not-yet-ready state" shape #649 found and
     // fixed in WaveformPlayer's click handler, here unmasked by removing the
     // caller's incidental delay rather than caused by it. `mediaElement` is
-    // bound directly on the <video>/<audio> tag and needs no Plyr instance.
-    const media = mediaElement ?? ((player as any)?.media as HTMLMediaElement | undefined);
+    // bound directly on the <video>/<audio> tag and needs no player instance.
+    const media = mediaElement ?? player?.media;
     if (!media) {
       return;
     }
@@ -114,23 +116,14 @@
     // best-effort: `player` may still not exist yet if this resolved before
     // Plyr was constructed, in which case Plyr will simply pick up the
     // media element's already-seeked position when it initializes.
-    if (player && Math.abs((player.currentTime ?? 0) - time) > 0.05) {
-      player.currentTime = time;
+    if (player && Math.abs((player.media.currentTime ?? 0) - time) > 0.05) {
+      player.seek(time);
     }
   }
 
   // Monotonic id of the latest caption fetch: a slow response must not overwrite a newer one.
   let captionsRequestId = 0;
   let captionsShownOriginal: boolean | null = null;
-
-  /** Whether the viewer switched captions off in Plyr (its stored preference). */
-  function captionsTurnedOffByUser(): boolean {
-    try {
-      return JSON.parse(localStorage.getItem('plyr') || '{}')?.captions === false;
-    } catch {
-      return false;
-    }
-  }
 
   /**
    * (Re)load the caption track from the server: on player ready, after a transcript or
@@ -163,8 +156,7 @@
     }
 
     try {
-      const videoElement = (activePlayer as any).media as HTMLVideoElement;
-      trackElement = videoElement?.querySelector('track[kind="captions"]') as HTMLTrackElement;
+      trackElement = activePlayer.media.querySelector('track[kind="captions"]') as HTMLTrackElement;
       if (!trackElement) {
         return;
       }
@@ -184,14 +176,13 @@
       if (!textTrack) {
         return;
       }
-      // 'hidden' loads the cues without native rendering; Plyr draws them itself and
+      // 'hidden' loads the cues without native rendering; the player draws them itself and
       // shows them only while its CC toggle is on, so the viewer's choice is kept.
       textTrack.mode = 'hidden';
       currentLoadHandler = () => {
         textTrack.mode = 'hidden';
-        const plyrCaptions = (activePlayer as any).captions;
-        if (!captionsTurnedOffByUser() && plyrCaptions && !plyrCaptions.toggled) {
-          activePlayer.toggleCaptions(true);
+        if (!viewerTurnedCaptionsOff() && !activePlayer.captionsVisible) {
+          activePlayer.setCaptionsVisible(true);
         }
       };
       trackElement.addEventListener('load', currentLoadHandler, { once: true });
@@ -204,123 +195,71 @@
     updateSubtitles();
   }
 
-  function initializePlyr() {
+  function initializePlayer() {
     if (!mediaElement || player) {
       return;
     }
 
-    const isAudio = playsAsAudio;
-    const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-
-    // Build controls array based on media type and platform - YouTube style layout
-    const controls = [
-      'play-large',
-      'play',
-      'current-time', // Elapsed time
-      'duration', // Total time
-      'progress' // Progress bar will be repositioned via CSS
-    ];
-
-    // Add volume controls first, then CC to the right of volume
-    controls.push('mute', 'volume');
-
-    // Add captions only for video - to the right of volume
-    if (!isAudio) {
-      controls.push('captions');
-    }
-
-    // Add remaining controls
-    controls.push('settings');
-    if (!isAudio) {
-      controls.push('pip');
-    }
-    if (isMac) {
-      controls.push('airplay');
-    }
-    if (!isAudio) {
-      controls.push('fullscreen');
-    }
-
-    // Settings menu options
-    const settings = isAudio ? ['speed'] : ['captions', 'speed'];
-
-    const plyrConfig = {
-      controls,
-      settings,
-      iconUrl: '/plyr.svg',
-      // Plyr's default points at cdn.plyr.io and is requested by the browser whenever a
-      // player is destroyed or its source changes; serve it locally so no third party is hit.
-      blankVideo: '/plyr-blank.mp4',
-      keyboard: { global: true },
-      tooltips: { controls: true },
-      captions: {
-        active: true,
-        language: 'auto',
-        update: true
-      },
-      playsinline: true,
-      fullscreen: { iosNative: true }
-    };
-
     try {
-      // Initialize Plyr
-      const newPlayer = new Plyr(mediaElement, plyrConfig);
+      const media = mediaElement;
+      const newPlayer = createPlyrPlayer(media, {
+        variant: 'full',
+        audio: playsAsAudio,
+        onReady: () => {
+          duration = mediaDuration(media);
+          dispatch('loadedmetadata', { duration });
+
+          // Load the caption track once the player has finished wiring its own captions UI.
+          if (file?.status === 'completed') {
+            setTimeout(() => {
+              updateSubtitles();
+            }, 500);
+          }
+        }
+      });
       player = newPlayer;
       activeSrc = videoUrl;
 
-      // Set up event listeners
-      newPlayer.on('ready', () => {
-        duration = newPlayer.duration;
-        dispatch('loadedmetadata', { duration });
-
-        // Load the caption track once Plyr has finished wiring its own captions UI.
-        if (file?.status === 'completed') {
-          setTimeout(() => {
-            updateSubtitles();
-          }, 500);
+      stopListening = listenToMedia(media, {
+        timeupdate: () => {
+          currentTime = media.currentTime;
+          duration = mediaDuration(media);
+          dispatch('timeupdate', {
+            currentTime,
+            duration
+          });
+        },
+        play: () => dispatch('play'),
+        pause: () => dispatch('pause'),
+        ended: () => dispatch('ended'),
+        seeking: () => {
+          isSeeking = true;
+          dispatch('seeking');
+        },
+        seeked: () => {
+          if (seekSpinnerTimer !== null) {
+            clearTimeout(seekSpinnerTimer);
+            seekSpinnerTimer = null;
+          }
+          isSeeking = false;
+          dispatch('seeked');
+        },
+        // A media error while seeking would otherwise leave the spinner up until
+        // the fallback timer.
+        error: () => {
+          if (seekSpinnerTimer !== null) {
+            clearTimeout(seekSpinnerTimer);
+            seekSpinnerTimer = null;
+          }
+          isSeeking = false;
         }
       });
-
-      newPlayer.on('timeupdate', () => {
-        currentTime = newPlayer.currentTime;
-        duration = newPlayer.duration;
-        dispatch('timeupdate', {
-          currentTime,
-          duration
-        });
-      });
-
-      newPlayer.on('play', () => dispatch('play'));
-      newPlayer.on('pause', () => dispatch('pause'));
-      newPlayer.on('ended', () => dispatch('ended'));
-      newPlayer.on('seeking', () => {
-        isSeeking = true;
-        dispatch('seeking');
-      });
-      newPlayer.on('seeked', () => {
-        if (seekSpinnerTimer !== null) {
-          clearTimeout(seekSpinnerTimer);
-          seekSpinnerTimer = null;
-        }
-        isSeeking = false;
-        dispatch('seeked');
-      });
-      // A media error while seeking would otherwise leave the spinner up until
-      // the fallback timer.
-      newPlayer.on('error', () => {
-        if (seekSpinnerTimer !== null) {
-          clearTimeout(seekSpinnerTimer);
-          seekSpinnerTimer = null;
-        }
-        isSeeking = false;
-      });
-
     } catch (error) {
-      console.error('Error creating Plyr player:', error);
+      console.error('Error creating the media player:', error);
     }
   }
 
-  function destroyPlyr() {
+  function destroyPlayer() {
     // Clean up subtitle blob URL
     if (currentSubtitleBlobUrl) {
       URL.revokeObjectURL(currentSubtitleBlobUrl);
@@ -333,29 +272,32 @@
       currentLoadHandler = null;
     }
 
+    stopListening?.();
+    stopListening = null;
+
     if (player) {
       try {
         player.destroy();
         player = null;
       } catch (error) {
-        console.error('Error destroying Plyr player:', error);
+        console.error('Error destroying the media player:', error);
       }
     }
   }
 
   onMount(() => {
     if (videoUrl && mediaElement) {
-      initializePlyr();
+      initializePlayer();
     }
   });
 
   onDestroy(() => {
-    destroyPlyr();
+    destroyPlayer();
   });
 
   // Watch for changes to videoUrl or mediaElement to initialize player
   $: if (videoUrl && mediaElement && !player) {
-    initializePlyr();
+    initializePlayer();
   }
 
   // Seamless presigned-URL refresh: reload the new credential but resume exactly
@@ -367,7 +309,8 @@
   async function hotSwapVideoSource(newUrl: string) {
     activeSrc = newUrl;
     if (!player || !mediaElement) return;
-    const media = ((player as any).media as HTMLMediaElement | undefined) ?? mediaElement;
+    const activePlayer = player;
+    const media = activePlayer.media;
     const resumeAt = media.currentTime;
     const wasPlaying = !media.paused && !media.ended;
     const sourceEl = media.querySelector('source');
@@ -375,10 +318,7 @@
     media.load();
     await seekToTime(resumeAt);
     if (wasPlaying) {
-      const playResult = player.play();
-      if (playResult && typeof playResult.catch === 'function') {
-        playResult.catch(() => {});
-      }
+      activePlayer.play().catch(() => {});
     }
   }
 </script>

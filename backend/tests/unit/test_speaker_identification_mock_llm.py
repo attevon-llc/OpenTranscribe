@@ -20,6 +20,7 @@ import requests
 from urllib3.util import Retry
 
 from app.core.config import settings
+from app.models.media import Task as TaskModel
 from app.models.speaker import Speaker
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig
@@ -149,18 +150,20 @@ def test_a_prediction_for_a_label_the_file_does_not_have_is_dropped_quietly(
     assert speakers["SPEAKER_00"].suggested_name == "Alex Morgan"
 
 
-def test_a_provider_that_errors_writes_no_suggestion_and_does_not_crash_the_task(
+def test_a_provider_that_errors_fails_the_task_with_an_error_code(
     db_session, normal_user, identify
 ):
-    """The provider failing is logged and swallowed inside identify_speakers (it returns an
-    ``error`` dict), so the file simply gets no LLM suggestion."""
+    """A provider fault is a failed run (recorded with a code), not "succeeded with 0"."""
     identify.model["name"] = "mock-error"
     media_file, _ = make_transcribed_file(db_session, normal_user, speakers=2)
 
     result = identify.run(media_file)
 
-    assert result["status"] == "success", result
-    assert result["predictions_count"] == 0
+    assert result["status"] == "error", result
+    assert result["error_code"] == "llm_identification_failed"
+    task_row = db_session.query(TaskModel).filter(TaskModel.media_file_id == media_file.id).one()
+    assert task_row.status == "failed"
+    assert task_row.error_message.startswith("Identification process failed")
     assert [c["model"] for c in identify.calls()] == ["mock-error"]
     assert all(s.suggested_name is None for s in _speakers(db_session, media_file).values())
 
@@ -172,6 +175,6 @@ def test_a_reply_that_is_not_json_writes_no_suggestion(db_session, normal_user, 
 
     result = identify.run(media_file)
 
-    assert result["status"] == "success", result
-    assert result["predictions_count"] == 0
+    assert result["status"] == "error", result
+    assert result["error_code"] == "llm_identification_failed"
     assert all(s.suggested_name is None for s in _speakers(db_session, media_file).values())

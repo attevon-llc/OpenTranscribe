@@ -647,6 +647,19 @@ def identify_speakers_llm_task(self, file_uuid: str):
                 update_task_status(db, task_id, "completed", progress=1.0, completed=True)
             return {"status": "skipped", "reason": "LLM not configured", "file_id": file_id}
 
+        if predictions.get("error"):
+            # A provider fault or unusable reply is a failed run, not "succeeded with 0
+            # suggestions": nothing would otherwise tell anyone to run it again.
+            error_msg = str(predictions["error"])
+            logger.error(f"Speaker identification for file {file_id} failed: {error_msg}")
+            _mark_identification_failed(task_id, error_msg)
+            return {
+                "status": "error",
+                "error_code": "llm_identification_failed",
+                "message": error_msg,
+                "file_id": file_id,
+            }
+
         # Phase 3 — write (short sessions, Postgres only).
         _store_speaker_predictions(file_id, predictions, predictions.pop("llm_provenance", None))
         with session_scope() as db:
@@ -739,4 +752,7 @@ def _generate_predictions(
     except Exception as e:
         logger.error(f"LLM speaker identification failed: {type(e).__name__}: {e}")
         logger.error("Full traceback:", exc_info=True)
-        return {"speaker_predictions": [], "error": str(e)}
+        return {
+            "speaker_predictions": [],
+            "error": f"LLM identification failed ({type(e).__name__})",
+        }

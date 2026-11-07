@@ -20,8 +20,6 @@ const RAW_INPUT_ALLOWLIST: Record<string, string> = {};
 
 const THUMB_RULE_ALLOWLIST: Record<string, string> = {
   'styles/range-slider.css': 'the central slider stylesheet',
-  'components/VideoPlayer.svelte':
-    'Plyr generates its inputs at runtime; only vendor pseudo-element selectors can style them',
 };
 
 const SELF = 'components/ui/RangeSlider.svelte';
@@ -106,7 +104,7 @@ describe('hasRawRangeInput (detector self-test)', () => {
     expect(hasRawRangeInput('<input type="number" />')).toBe(false);
     expect(hasRawRangeInput('<input type="checkbox" bind:checked />')).toBe(false);
     expect(
-      hasRawRangeInput('<style>:global(.plyr input[type="range"]) { color: red }</style>')
+      hasRawRangeInput('<style>:global(.player input[type="range"]) { color: red }</style>')
     ).toBe(false);
     expect(hasRawRangeInput('<RangeSlider id="a" label="b" bind:value />')).toBe(false);
     expect(hasRawRangeInput('<input class="range-input" placeholder="type range" />')).toBe(false);

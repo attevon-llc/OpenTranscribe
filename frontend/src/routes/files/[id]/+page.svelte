@@ -998,5 +998,4 @@
     border-color: rgba(59, 130, 246, 0.4);
   }
 
-  /* All Plyr styling is now handled in VideoPlayer.svelte */
 </style>

@@ -2,11 +2,11 @@
  * DEFECT THIS CATCHES (issue #649, found via live browser verification of
  * this same PR): `seekToTime` used to read the raw media element through
  * `(player as any).media`, and early-returned entirely if `player` (the
- * Plyr instance) didn't exist yet: `if (!player) return;`.
+ * player instance) didn't exist yet: `if (!player) return;`.
  *
  * That is a race, not a safety check. `player` is set by this component's
  * OWN reactive statement (`$: if (videoUrl && mediaElement && !player)
- * initializePlyr()`), which is independent of — and can resolve AFTER — the
+ * initializing the player`), which is independent of — and can resolve AFTER — the
  * `?t=` deep-link handler in `components/fileDetail/FilePlayer.svelte`, which calls
  * `videoPlayerComponent.seekToTime(...)` as soon as `videoPlayerComponent`
  * is bound. Once #649 removed the artificial 500ms sleep that used to sit in
@@ -16,8 +16,8 @@
  * requested timestamp — confirmed live, not just in this suite.
  *
  * The fix: use the raw `mediaElement` (bound directly on the `<video>`/
- * `<audio>` tag, independent of Plyr) as the primary seek target, and treat
- * `player` as optional best-effort sync for Plyr's own progress bar.
+ * `<audio>` tag, independent of the player library) as the primary seek target, and treat
+ * `player` as optional best-effort sync for the library's own progress bar.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';

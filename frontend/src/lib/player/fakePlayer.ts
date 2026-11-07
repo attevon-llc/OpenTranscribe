@@ -1,7 +1,7 @@
 /**
  * A fake `OwnedPlayer` for component tests (issue #1327).
  *
- * Host tests mock the adapter module (`vi.mock('$lib/player/plyrHandle', ...)`) with
+ * Host tests mock the adapter module (`vi.mock('$lib/player/videojsPlayer', ...)`) with
  * `createFakePlayer`, so they exercise the seam instead of whichever library is behind it.
  * jsdom cannot run a real player; real playback is proven by `backend/tests/e2e/test_media_playback.py`.
  * Test-only: no production module imports this.

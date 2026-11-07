@@ -11,7 +11,7 @@ elements' API: they render their own `<video>`/`<audio>` and take a `PlayerHandl
 ## Key files
 
 - `MediaPlayer.svelte` — the file-detail player: `<media-i18n>` > `<video-player>`/`<audio-player>`
-  (with Plyr's speed list, `default-playback-rates` up to 4x) > `PlayerSurface`. Props `audio`,
+  (with the speed list, `default-playback-rates` up to 4x) > `PlayerSurface`. Props `audio`,
   `variant`, `media` (the slotted element, for the caption overlay). Binds the player locale.
 - `PlayerSurface.svelte` — the `<media-container>`: the slotted media, the caption overlay
   (video), the controls, `<media-hotkey>` per `PLAYER_HOTKEYS` (page-wide for `full`, container

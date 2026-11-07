@@ -392,7 +392,7 @@ class TestVideoPlayback:
 
 
 # ---------------------------------------------------------------------------
-# What the replacement adds over Plyr (#1327 lane C): each of these fails on Plyr
+# What the Video.js player adds over the Plyr it replaced (#1327): each of these failed on Plyr
 # ---------------------------------------------------------------------------
 
 #: Any Arabic letter: a control named in Arabic, not in English.

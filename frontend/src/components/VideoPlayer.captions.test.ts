@@ -140,7 +140,7 @@ describe('caption track', () => {
 
 /**
  * Whether the track shows is no longer decided here: `$lib/player/prefs` turns captions on
- * unless the viewer switched them off (and carries a choice made under Plyr over), tested in
+ * unless the viewer switched them off (and carries a choice made under the previous player over), tested in
  * `prefs.test.ts` and end to end in `test_media_playback.py`. The player only loads the cues.
  */
 describe('loading the cues', () => {

@@ -6,12 +6,12 @@
  * https://videojs.org/docs/framework/html/reference/components/hotkey
  * The library skips unmodified shortcuts in editable fields and ignores held-key repeats of
  * toggles. It binds `j`/`l` to seek in its packaged skins; we do not (owner question Q2:
- * `L` keeps toggling loop as it did under Plyr, and the arrow keys already seek 10 s).
+ * `L` keeps toggling loop as it did before the Video.js move, and the arrow keys already seek 10 s).
  * Video.js has no loop action, so `attachLoopHotkey` is the one shortcut we handle
  * ourselves, with the same typing safety.
  *
  * Scope: the file-detail player owns its page, so its bindings are page-wide
- * (`target="document"`, Plyr's `keyboard.global`); the floating mini player listens only on
+ * (`target="document"`); the floating mini player listens only on
  * its own container so it never fights the page underneath.
  */
 import type { HotkeyProps } from '@videojs/html';
@@ -26,9 +26,9 @@ export interface PlayerHotkey {
   value?: number;
 }
 
-/** Plyr's `seekTime` default, kept for the arrow keys. */
+/** Seconds the arrow keys seek. */
 export const SEEK_STEP_SECONDS = 10;
-/** Plyr stepped volume by 0.1 on Up/Down; the library default is 0.05. */
+/** Up/Down step volume by 0.1; the library default is 0.05. */
 const VOLUME_STEP = 0.1;
 
 export const PLAYER_HOTKEYS: readonly PlayerHotkey[] = Object.freeze([
@@ -54,7 +54,7 @@ export function playerHotkeys(
   return PLAYER_HOTKEYS.map((h) => ({ ...h, target: scope }));
 }
 
-/** Plyr's `selectors.editable`: where a bare key is typing, not a shortcut. */
+/** Where a bare key is typing, not a shortcut. */
 const EDITABLE = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
 
 /** Whether a key event aimed at *target* is someone typing (the player must ignore it). */

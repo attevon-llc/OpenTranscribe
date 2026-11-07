@@ -324,7 +324,7 @@ describe('click-to-seek', () => {
   it('dispatches exactly ONE seek for a real mouse click (mousedown + click)', async () => {
     // DEFECT THIS CATCHES (issue #645): the canvas had on:click AND on:mousedown
     // and both seeked, so every click on the waveform issued two identical seeks
-    // to the media element — two Plyr seeks plus two raw seeks, four
+    // to the media element — two player seeks plus two raw seeks, four
     // `currentTime` assignments, per single click. Measured live before the fix.
     mockAxios.get.mockResolvedValue({ data: { waveform: [1, 2, 3] } });
     const onSeek = vi.fn();

@@ -4,18 +4,18 @@
  * Video.js 10 deliberately leaves persistence to the app ("Video.js does not write
  * preferences to storage"); this follows its documented restore-then-save pattern:
  * https://videojs.org/docs/framework/html/guides/user-preferences
- * and closes the gap its Plyr guide lists ("Persist preferences in your app"):
+ * and closes the gap its migration guide lists ("Persist preferences in your app"):
  * https://videojs.org/docs/framework/html/guides/migrate-from-plyr
  *
  * Captions default to ON (plan #1327 row 23): they turn on unless the viewer switched them
- * off. A viewer's choices made under Plyr (`localStorage['plyr']`) are carried over once.
+ * off. A viewer's choices made under the previous player (`localStorage['plyr']`) are carried over once.
  * Storage can be missing or throw (private modes, embedded contexts), so every access is
  * guarded and playback never depends on it.
  */
 import { captionTracks, captionsShowing, type VideojsStore } from './videojsStore';
 
 export const PLAYER_PREFS_KEY = 'opentr:playerPrefs';
-/** Plyr's own storage key (`plyr/src/js/storage.js`), read once to migrate. */
+/** The previous player's storage key, read once to migrate remembered choices. */
 export const LEGACY_PLYR_KEY = 'plyr';
 
 export interface PlayerPrefs {

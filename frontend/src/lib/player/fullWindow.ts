@@ -5,8 +5,7 @@
  * `allow="fullscreen"`), Video.js falls back to the video's native presentation, which drops
  * our controls, or hides the button altogether
  * (https://videojs.org/docs/framework/html/guides/fullscreen, "Availability and constraints").
- * Plyr's mini player filled the window instead (`fullscreen.fallback`), and the Video.js Plyr
- * guide lists that as having no matching feature
+ * The previous player filled the window instead, and Video.js has no matching feature
  * (https://videojs.org/docs/framework/html/guides/migrate-from-plyr), so the host keeps it: a
  * CSS class fills the viewport, this module decides when to use it and owns the keys.
  */
@@ -16,7 +15,7 @@ type FullscreenDocument = Pick<Document, 'fullscreenEnabled'> & {
   webkitFullscreenEnabled?: boolean;
 };
 
-/** Whether *doc* can put an element fullscreen. Plyr's own test (`fullscreen.js`, `nativeSupported`). */
+/** Whether *doc* can put an element fullscreen. The standard check: `fullscreenEnabled`, or the webkit-prefixed flag. */
 export function supportsElementFullscreen(doc: FullscreenDocument = document): boolean {
   return Boolean(doc.fullscreenEnabled || doc.webkitFullscreenEnabled);
 }

@@ -81,8 +81,7 @@ min max step disabled hint decimals unit format valueText defaultValue class`; e
     (`data-testid`, `aria-*`, `dir`) land on the native input; `on:input`/`on:change` forward the
     native events. **Contract: every slider uses `ui/RangeSlider`; its styling lives in
     `src/styles/range-slider.css`** (tokens `--slider-*`, `.range-input`). Raw `type="range"` in a
-    template, or `::-webkit-slider-thumb`/`::-moz-range-thumb` rules outside that stylesheet and the
-    two Plyr player files, fail `rangeSliderStructure.test.ts` (allowlist entries need a written
+    template, or `::-webkit-slider-thumb`/`::-moz-range-thumb` rules outside that stylesheet, fail `rangeSliderStructure.test.ts` (allowlist entries need a written
     reason). The input stays native (keyboard, RTL direction) but the track is drawn from
     `--range-fill` (0..1, set inline by the component) because the native accent-color fill stops at
     the thumb centre and left a grey cap at the maximum; `--range-dir` mirrors it in RTL. The look is a
@@ -160,7 +159,7 @@ clipped by any `overflow: auto` ancestor.
   `components/floatingPanel.convention.test.ts` fails on a `.svelte` file that styles a
   dropdown/menu/popover/listbox/suggestion/panel `position: absolute|fixed` without the action; its
   `ALLOWED` map holds the only exceptions, each with a written reason (viewport-pinned drawers, hover-only
-  tooltips, the third-party Plyr menus, `DateRangePicker`'s own bottom-sheet placement).
+  tooltips, `DateRangePicker`'s own bottom-sheet placement).
 
 ## Gotchas
 

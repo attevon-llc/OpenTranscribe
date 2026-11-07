@@ -23,7 +23,7 @@
   export let media: HTMLMediaElement | null = null;
 
   /**
-   * Plyr's speed list, kept (plan row 20). Video.js offers 0.5 to 2 unless the player is given
+   * The speed list, kept (plan row 20). Video.js offers 0.5 to 2 unless the player is given
    * its own list (https://videojs.org/docs/framework/html/reference/api/feature-playback-rate).
    */
   const PLAYBACK_RATES = '0.5 0.75 1 1.25 1.5 1.75 2 4';

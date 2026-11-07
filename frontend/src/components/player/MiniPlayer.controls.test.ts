@@ -5,7 +5,7 @@
  * live region and the keyboard wiring are checked here without a browser. What jsdom cannot
  * do (actual playback, layout, the Popover top layer) is left to Playwright
  * (`backend/tests/e2e/test_media_playback.py`). Nothing is mocked: these must fail on any
- * player that lacks the capability, which is how they were watched red on the Plyr build.
+ * player that lacks the capability, which is how they were watched red on the previous build.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/svelte';
@@ -145,7 +145,7 @@ describe('keyboard: scoped to the player (plan rows 30-31)', () => {
 });
 
 describe('speed (plan rows 19-20)', () => {
-  it('offers Plyr speeds up to 4x', async () => {
+  it('offers speeds up to 4x', async () => {
     const { container } = await mount({ contentType: 'audio/mpeg' });
     const player = container.querySelector('audio-player') as HTMLElement & {
       store: { state: { playbackRates: readonly number[] } };

@@ -3,7 +3,7 @@
  *
  * jsdom runs the custom elements and their store (it cannot decode media, so playback state is
  * driven through the element's own events), which lets these pin what the replacement adds over
- * Plyr: control labels in the UI language, a screen-reader status region, Plyr's 4x speed kept,
+ * the previous player: control labels in the UI language, a screen-reader status region, the 4x speed kept,
  * page-wide shortcuts that skip typing, and no video-only controls on audio. The browser-only
  * parts (layout, RTL mirroring, real playback) are in `backend/tests/e2e/test_media_playback.py`.
  */
@@ -90,7 +90,7 @@ describe('file-detail player controls (Video.js)', () => {
     await vi.waitFor(() => expect(announcer.textContent).toContain('Playing'));
   });
 
-  it('offers Plyr’s speeds including 4x in the settings menu', async () => {
+  it('offers the speeds including 4x in the settings menu', async () => {
     const { container } = await mount(video);
     await vi.waitFor(() => {
       const labels = Array.from(

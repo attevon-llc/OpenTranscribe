@@ -13,7 +13,7 @@
   export let variant: 'full' | 'mini' = 'full';
   export let media: HTMLMediaElement | null = null;
 
-  // The file page owns its page, so its shortcuts are page-wide (Plyr's `keyboard.global`);
+  // The file page owns its page, so its shortcuts are page-wide (`target="document"`);
   // the mini player's stay inside it. An omitted `value` is the element's own default.
   $: hotkeys = playerHotkeys(variant === 'full' ? 'document' : 'player');
 </script>

@@ -195,8 +195,13 @@ def _source_counts(
     return counts
 
 
-def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
-    """Remove quarantined files from a search response (non-admin).
+def _drop_quarantined_search_hits(
+    db: Session, response: Any, *, include_quarantined: bool = False
+) -> Any:
+    """Remove unavailable files from a search response.
+
+    Trashed files always go; quarantined ones stay only with ``include_quarantined`` (the
+    reviewer's list exemption, ``unavailable_list_exempt``).
 
     The hidden files 404 on detail/stream anyway (the per-resource gate), so this
     just keeps them out of the result list/snippets too — the search-snippet
@@ -217,7 +222,9 @@ def _drop_quarantined_search_hits(db: Session, response: Any) -> Any:
     hits = getattr(response, "results", None) or []
     if not hits:
         return response
-    quarantined = unavailable_among(db, (getattr(h, "file_uuid", None) for h in hits))
+    quarantined = unavailable_among(
+        db, (getattr(h, "file_uuid", None) for h in hits), include_quarantined=include_quarantined
+    )
     if not quarantined:
         return response
     kept = [h for h in hits if str(h.file_uuid) not in quarantined]

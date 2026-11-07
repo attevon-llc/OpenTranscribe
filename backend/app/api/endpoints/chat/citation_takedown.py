@@ -45,14 +45,14 @@ def drop_quarantined_citations(
             review; pass ``unavailable_list_exempt(ctx.bypass)``, never the bare admin role.
 
     Returns:
-        ``citations`` unchanged when ``include_quarantined`` or empty; otherwise a new list
-        with every citation whose ``file_uuid`` is quarantined removed.
+        ``citations`` unchanged when none names an unavailable file; otherwise a new list
+        without them. A trashed file is unavailable even with ``include_quarantined``.
     """
-    if include_quarantined or not citations:
+    if not citations:
         return citations
 
     uuids = {c["file_uuid"] for c in citations if c.get("file_uuid")}
-    quarantined = unavailable_among(db, uuids)
+    quarantined = unavailable_among(db, uuids, include_quarantined=include_quarantined)
     if not quarantined:
         return citations
 
@@ -78,14 +78,14 @@ def drop_quarantined_citations_bulk(
         A new list of citation lists, each filtered exactly as
         :func:`drop_quarantined_citations` would filter it alone.
     """
-    if include_quarantined or not list_of_citation_lists:
+    if not list_of_citation_lists:
         return list_of_citation_lists
 
     uuids: set[str] = set()
     for citations in list_of_citation_lists:
         uuids.update(c["file_uuid"] for c in citations if c.get("file_uuid"))
 
-    quarantined = unavailable_among(db, uuids)
+    quarantined = unavailable_among(db, uuids, include_quarantined=include_quarantined)
     if not quarantined:
         return list_of_citation_lists
 

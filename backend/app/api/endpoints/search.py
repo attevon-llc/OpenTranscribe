@@ -214,11 +214,12 @@ def search_transcripts(
             sources=transcript_sources if explicit_sources else None,
         )
 
-        # Abuse/DMCA: the OpenSearch transcript index has no quarantine field, so
-        # drop any taken-down files from the result page against the DB (page-sized,
-        # one IN query). Admins keep visibility for review.
-        if not unavailable_list_exempt(ctx.bypass):
-            search_response = _drop_quarantined_search_hits(db, search_response)
+        # The transcript index carries no takedown field, so drop unavailable files from
+        # the result page against the DB (page-sized, one IN query). An exempt reviewer
+        # keeps quarantined hits; a trashed file is dropped for everyone.
+        search_response = _drop_quarantined_search_hits(
+            db, search_response, include_quarantined=unavailable_list_exempt(ctx.bypass)
+        )
 
         payload = _search_response_to_schema(search_response)
         _attach_visible_collections(db, ctx, payload["results"])

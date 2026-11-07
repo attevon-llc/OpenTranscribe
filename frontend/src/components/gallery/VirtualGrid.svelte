@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
+  import HiddenBadge from './HiddenBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -338,6 +339,11 @@
                   </div>
                 </div>
               </a>
+              {#if file.is_hidden}
+                <div class="card-hidden" class:selecting={isSelecting}>
+                  <HiddenBadge {file} />
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
@@ -468,6 +474,23 @@
   }
 
   /* --- Selection checkbox (top-right, Apple Photos style) --- */
+
+  /* The "Hidden" pill (issue #1102) sits in the thumbnail's top corner, beside the
+     selection checkbox when there is one. Logical insets so it follows RTL. */
+  .card-hidden {
+    position: absolute;
+    top: var(--space-1-5);
+    inset-inline-end: var(--space-1-5);
+    z-index: var(--z-sticky);
+    padding: var(--space-0-5) var(--space-1-5);
+    border-radius: var(--radius-2xl);
+    background-color: var(--surface-color);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .card-hidden.selecting {
+    inset-inline-end: var(--space-8);
+  }
 
   .file-selector {
     position: absolute;

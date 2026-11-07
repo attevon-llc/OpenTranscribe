@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { browser } from '$app/env';
 import type { MediaFile } from '$lib/types/media';
+import type { HiddenMode } from '$lib/api/hiddenMedia';
 
 // LocalStorage key for view mode persistence
 const VIEW_MODE_STORAGE_KEY = 'gallery-view-mode';
@@ -53,6 +54,7 @@ export interface GalleryState {
   filterSelectedStatuses: string[];
   filterOwnershipFilter: 'all' | 'mine' | 'shared';
   filterSelectedOwners: string[]; // Owner UUIDs (issue #966)
+  filterHiddenMode: HiddenMode; // The caller's hidden files (issue #1102)
   filterSortBy: string;
   filterSortOrder: 'asc' | 'desc';
 }
@@ -85,6 +87,10 @@ export interface GalleryActions {
   /** Admin-only takedown (issue #576). Every status is quarantinable, deliberately
    * — do not filter to `completed` the way the chat/summarize entries do. */
   triggerQuarantine: () => void;
+  /** Some files were hidden or unhidden for the caller (issue #1102): reload the list. */
+  notifyHiddenChanged: () => void;
+  /** Which of the caller's hidden files the gallery lists (issue #1102); reloads the list. */
+  setHiddenMode: (mode: HiddenMode) => void;
   appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => void;
   resetPagination: () => void;
   setLoadingMore: (loading: boolean) => void;
@@ -115,6 +121,7 @@ const initialState: GalleryState = {
   filterSelectedStatuses: [],
   filterOwnershipFilter: 'all',
   filterSelectedOwners: [],
+  filterHiddenMode: 'exclude',
   filterSortBy: 'upload_time',
   filterSortOrder: 'desc',
 };
@@ -139,6 +146,7 @@ function createGalleryStore() {
   const speakerIdTrigger = writable<number>(0);
   const cancelProcessingTrigger = writable<number>(0);
   const quarantineTrigger = writable<number>(0);
+  const hiddenChangedTrigger = writable<number>(0);
 
   return {
     subscribe,
@@ -329,6 +337,15 @@ function createGalleryStore() {
       quarantineTrigger.update((n) => n + 1);
     },
 
+    notifyHiddenChanged: () => {
+      hiddenChangedTrigger.update((n) => n + 1);
+    },
+
+    setHiddenMode: (mode: HiddenMode) => {
+      update((state) => ({ ...state, filterHiddenMode: mode }));
+      hiddenChangedTrigger.update((n) => n + 1);
+    },
+
     appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => {
       update((state) => {
         // Guard against undefined/null data from failed API responses
@@ -418,6 +435,7 @@ function createGalleryStore() {
         filterSelectedStatuses: [],
         filterOwnershipFilter: 'all',
         filterSelectedOwners: [],
+        filterHiddenMode: 'exclude',
         filterSortBy: 'upload_time',
         filterSortOrder: 'desc',
       }));
@@ -568,6 +586,16 @@ function createGalleryStore() {
     onQuarantineTrigger: (callback: (value: number) => void) => {
       let hasInitialized = false;
       return quarantineTrigger.subscribe((value) => {
+        if (hasInitialized && value > 0) {
+          callback(value);
+        }
+        hasInitialized = true;
+      });
+    },
+
+    onHiddenChanged: (callback: (value: number) => void) => {
+      let hasInitialized = false;
+      return hiddenChangedTrigger.subscribe((value) => {
         if (hasInitialized && value > 0) {
           callback(value);
         }

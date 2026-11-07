@@ -4,6 +4,7 @@
   import { t } from '$stores/locale';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import FilterPanelToggle from '$components/ui/FilterPanelToggle.svelte';
+  import GalleryHiddenFilter from './GalleryHiddenFilter.svelte';
   import type { DurationRange, DateRange } from '$lib/types/media';
 
   export let showFilters: boolean;
@@ -75,7 +76,9 @@
         selectedOwners={selectedOwners}
         on:filter
         on:reset
-      />
+      >
+        <GalleryHiddenFilter />
+      </FilterSidebar>
     </div>
   {/if}
 </div>

@@ -123,11 +123,12 @@ describe('markers', () => {
 });
 
 describe('label keys', () => {
-  it('names only the two ambiguous filter subjects', () => {
-    // FILTERED fires twice per turn; two rows both reading "Filtered" looks
-    // like a bug rather than two different filters.
+  it('names only the ambiguous filter subjects', () => {
+    // FILTERED fires more than once per turn; two rows both reading "Filtered"
+    // looks like a bug rather than two different filters.
     expect(subjectLabelKey('quarantine')).toBe('chat.trace.node.quarantine');
     expect(subjectLabelKey('masking')).toBe('chat.trace.node.masking');
+    expect(subjectLabelKey('hidden')).toBe('chat.trace.node.hidden');
     expect(subjectLabelKey('plan')).toBeNull();
     expect(subjectLabelKey(null)).toBeNull();
   });

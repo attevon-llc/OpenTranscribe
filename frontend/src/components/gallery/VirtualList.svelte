@@ -6,6 +6,7 @@
   import { t } from '$stores/locale';
   import { prefetchFileDetails, cancelPrefetch } from '$lib/prefetch';
   import FileStatusIndicator from './FileStatusIndicator.svelte';
+  import HiddenBadge from './HiddenBadge.svelte';
   import type { MediaFile } from '$lib/types/media';
 
   export let items: MediaFile[] = [];
@@ -249,6 +250,7 @@
           <!-- Title -->
           <div class="list-cell list-cell-title">
             <span class="file-title">{file.title || file.filename}</span>
+            <HiddenBadge {file} showUnhide={false} />
           </div>
 
           <!-- Speakers -->
@@ -503,13 +505,19 @@
     color: var(--primary-on-surface);
   }
 
+  /* Flex so the "Hidden" pill (issue #1102) sits beside the title, which still ellipsizes. */
   .list-cell-title {
     min-width: 0;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1-5);
   }
 
   .file-title {
     display: block;
+    min-width: 0;
+    flex: 0 1 auto;
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-primary);

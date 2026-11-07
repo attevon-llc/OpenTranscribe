@@ -162,7 +162,7 @@
     selectedStatuses.length > 0 ||
     dateRange.from !== null || dateRange.to !== null ||
     durationRange.min !== null || durationRange.max !== null ||
-    ownershipFilter !== 'all';
+    ownershipFilter !== 'all' || $galleryState.filterHiddenMode !== 'exclude';
 
   // Sort state — restore from gallery store
   let sortBy: string = $galleryState.filterSortBy;
@@ -264,6 +264,7 @@
     if (selectedOwners.length > 0) {
       selectedOwners.forEach(ownerUuid => params.append('owner', ownerUuid));
     }
+    params.append('hidden', $galleryState.filterHiddenMode); // the caller's hidden files (#1102)
 
     return params;
   }
@@ -1406,6 +1407,8 @@
     const unsubscribeQuarantine = galleryStore.onQuarantineTrigger(() => {
       openQuarantineModal();
     });
+    // A hide, an unhide or a new hidden-files mode (#1102) changes which files this list shows.
+    const unsubscribeHidden = galleryStore.onHiddenChanged(() => fetchFiles(false, true));
 
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();
@@ -1456,6 +1459,7 @@
       unsubscribeSpeakerId();
       unsubscribeCancelProcessing();
       unsubscribeQuarantine();
+      unsubscribeHidden();
     };
   });
 </script>

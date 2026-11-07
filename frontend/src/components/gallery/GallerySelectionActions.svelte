@@ -16,6 +16,8 @@
   import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
+  import { HiddenMediaApi, HIDDEN_LIMIT_ERROR } from '$lib/api/hiddenMedia';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import type { MediaFile } from '$lib/types/media';
 
   export let files: MediaFile[] = [];
@@ -37,6 +39,9 @@
   // `can_delete === false` only: responses that do not compute it leave it unset.
   $: hasDeletableSelected = selectedFileObjects.some(f => f.can_delete !== false);
   $: hasReprocessable = selectedFileObjects.some(f => f.status === 'completed' || f.status === 'error' || f.status === 'cancelled');
+  // Per-user hide (issue #1102): each entry is offered only when it would change something.
+  $: hasShownSelected = selectedFileObjects.some(f => !f.is_hidden);
+  $: hasHiddenSelected = selectedFileObjects.some(f => f.is_hidden);
 
   // Dropdown states
   let showProcessMenu = false;
@@ -93,6 +98,30 @@
   function handleSpeakerId() { galleryStore.triggerSpeakerId(); closeAllMenus(); }
   function handleCancelProcessing() { galleryStore.triggerCancelProcessing(); closeAllMenus(); }
   function handleQuarantine() { galleryStore.triggerQuarantine(); closeAllMenus(); }
+
+  /** Hide the selection from (or show it in) the caller's own views. Nobody else is affected. */
+  async function handleSetHidden(hidden: boolean) {
+    closeAllMenus();
+    const uuids = selectedFileObjects.filter((f) => !!f.is_hidden !== hidden).map((f) => f.uuid);
+    if (!uuids.length) return;
+    try {
+      const results = await HiddenMediaApi.setHiddenMany(uuids, hidden);
+      const changed = results.filter((r) => r.success).length;
+      if (changed > 0) {
+        toastStore.success(
+          $t(hidden ? 'gallery.hidden.hiddenCount' : 'gallery.hidden.unhiddenCount', { count: changed })
+        );
+      }
+      if (results.some((r) => r.error === HIDDEN_LIMIT_ERROR)) {
+        toastStore.error($t('gallery.hidden.limitReached'));
+      } else if (changed < results.length) {
+        toastStore.error($t('gallery.hidden.someFailed', { count: results.length - changed }));
+      }
+      galleryStore.notifyHiddenChanged();
+    } catch (err) {
+      toastStore.error(getErrorMessage(err, $t('gallery.hidden.failed')));
+    }
+  }
 
   /**
    * Hand the selection to /chat.
@@ -351,6 +380,27 @@
             >
               <MenuIcon name="format-txt" />
               {$t('gallery.bulk.exportTxt')}
+            </button>
+            <div class="dropdown-divider"></div>
+            <button
+              class="dropdown-item"
+              on:click={() => handleSetHidden(true)}
+              disabled={!hasShownSelected}
+              title={$t('gallery.hidden.hideTooltip')}
+              data-testid="gallery-hide-selected"
+            >
+              <MenuIcon name="eye-off" />
+              {$t('gallery.hidden.hide')}
+            </button>
+            <button
+              class="dropdown-item"
+              on:click={() => handleSetHidden(false)}
+              disabled={!hasHiddenSelected}
+              title={$t('gallery.hidden.unhideTooltip')}
+              data-testid="gallery-unhide-selected"
+            >
+              <MenuIcon name="eye" />
+              {$t('gallery.hidden.show')}
             </button>
             {/if}
             {#if isAdmin}

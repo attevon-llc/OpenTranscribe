@@ -61,6 +61,7 @@ export const galleryTriggers = {
   triggerRetryFailed: vi.fn(),
   triggerSpeakerId: vi.fn(),
   triggerCancelProcessing: vi.fn(),
+  notifyHiddenChanged: vi.fn(),
   setSelecting: vi.fn(),
   selectAllFiles: vi.fn(),
   clearSelection: vi.fn(),

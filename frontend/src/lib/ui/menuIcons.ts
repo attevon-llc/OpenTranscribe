@@ -169,6 +169,14 @@ export const MENU_ICONS = {
   // A shield: "this is protected" (a legal hold), distinct from the lock of a restricted collection.
   shield: [d('M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z')],
   lock: [rect(3, 11, 18, 11, 2), d('M7 11V7a5 5 0 0 1 10 0v4')],
+  // An eye and a struck-out eye: show in / hide from the caller's own views (issue #1102).
+  eye: [d('M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z'), circle(12, 12, 3)],
+  'eye-off': [
+    d('M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94'),
+    d('M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19'),
+    d('M14.12 14.12a3 3 0 1 1-4.24-4.24'),
+    line(1, 1, 23, 23),
+  ],
   clipboard: [
     d('M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2'),
     rect(8, 2, 8, 4, 1),

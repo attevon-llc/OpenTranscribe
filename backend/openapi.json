@@ -18400,7 +18400,7 @@
         "type": "object"
       },
       "SpeakerIdentity": {
-        "description": "How the speaker's CURRENT identity came to be (read-only; issue #1280).\n\n``by`` is present only for the file's owner, an administrator of the file's organization\nand a platform administrator whose reach covers the file (any administrator in\nsingle-tenant mode; in multi-tenant mode only under a support-access grant); every other\nviewer gets ``source`` and ``at``. ``null`` for\nthe whole object means unknown (written before the record existed, or never named) or\nwithheld because a voiceprint made it and the file's voiceprints are off. Only the current\nstate is kept; the full change history is tracked in issue #1336.",
+        "description": "How the speaker's CURRENT identity came to be (read-only; issue #1280).\n\n``by`` is present only for the file's owner, an administrator of the file's organization\nand a platform administrator whose reach covers the file (any administrator in\nsingle-tenant mode; in multi-tenant mode only under a support-access grant); every other\nviewer gets ``source`` and ``at``. ``null`` for\nthe whole object means unknown (written before the record existed, or never named) or\nwithheld because a voiceprint made it and the file's voiceprints are off. Only the current\nstate is here; every change is in the speaker's identity history (``SpeakerIdentityEvent``).",
         "properties": {
           "at": {
             "anyOf": [
@@ -18480,6 +18480,117 @@
           }
         },
         "title": "SpeakerIdentityActor",
+        "type": "object"
+      },
+      "SpeakerIdentityEvent": {
+        "description": "One entry of a speaker's identity history (read-only; issue #1336).\n\n``before`` / ``after`` hold only the fields the change touched: ``name``, ``profile``\n(``{uuid, name}``, or ``{deleted: true}`` once the profile is gone), ``suggested_name``,\n``suggestion_source``, ``identity_source``, ``merged_name`` (a speaker merge). ``withheld``\nlists the fields whose previous value a voiceprint wrote: that value is kept only in the\nvoiceprint's own entry.",
+        "properties": {
+          "actor": {
+            "$ref": "#/components/schemas/SpeakerIdentityEventActor"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Origin"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "kind",
+          "at",
+          "actor"
+        ],
+        "title": "SpeakerIdentityEvent",
+        "type": "object"
+      },
+      "SpeakerIdentityEventActor": {
+        "description": "Who made one recorded change: ``user`` (named only to who may see it) or ``system``.",
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SpeakerIdentityActor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "SpeakerIdentityEventActor",
         "type": "object"
       },
       "SpeakerMetadataHint": {
@@ -20920,6 +21031,80 @@
           "created_at"
         ],
         "title": "Task",
+        "type": "object"
+      },
+      "TelemetryStatus": {
+        "description": "What the admin card shows. ``preview`` is the exact request body that would be sent.",
+        "properties": {
+          "enabled": {
+            "description": "The administrator's choice (off by default).",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "endpoint": {
+            "description": "Where the report goes.",
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "last_sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sent At"
+          },
+          "off_reasons": {
+            "description": "Deployment settings that force the report off, whatever the choice.",
+            "items": {
+              "enum": [
+                "do_not_track",
+                "env_disabled",
+                "demo",
+                "no_receiver"
+              ],
+              "type": "string"
+            },
+            "title": "Off Reasons",
+            "type": "array"
+          },
+          "preview": {
+            "additionalProperties": true,
+            "description": "The request body, built by the same function the sender uses.",
+            "title": "Preview",
+            "type": "object"
+          },
+          "sending": {
+            "description": "True only when enabled and nothing forces it off.",
+            "title": "Sending",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "sending",
+          "off_reasons",
+          "endpoint",
+          "preview"
+        ],
+        "title": "TelemetryStatus",
+        "type": "object"
+      },
+      "TelemetryUpdate": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "TelemetryUpdate",
         "type": "object"
       },
       "Token": {
@@ -30768,6 +30953,78 @@
         "summary": "Notify Takedown Notice",
         "tags": [
           "admin-takedown-notices"
+        ]
+      }
+    },
+    "/api/admin/telemetry": {
+      "get": {
+        "description": "The usage report's state and the exact request it would send.",
+        "operationId": "get_telemetry_status_api_admin_telemetry_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Telemetry Status",
+        "tags": [
+          "admin"
+        ]
+      },
+      "put": {
+        "description": "Turn the usage report on or off.",
+        "operationId": "set_telemetry_enabled_api_admin_telemetry_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelemetryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Set Telemetry Enabled",
+        "tags": [
+          "admin"
         ]
       }
     },
@@ -48741,6 +48998,70 @@
           }
         ],
         "summary": "Get Speaker Cross Media Occurrences",
+        "tags": [
+          "speakers"
+        ]
+      }
+    },
+    "/api/speakers/{speaker_uuid}/identity-history": {
+      "get": {
+        "description": "The speaker's recorded name, link and suggestion changes, newest first.\n\nAnyone who may read the speaker may read its history (tenant, quarantine, share and platform\ngrant are checked by ``require_speaker_access``). While the file's voiceprints are off, what\na voiceprint produced is withheld; the person behind a change is named only to the viewers\nwho see ``identity.by`` on the speaker itself.",
+        "operationId": "get_speaker_identity_history_api_speakers__speaker_uuid__identity_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "speaker_uuid",
+            "required": true,
+            "schema": {
+              "title": "Speaker Uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SpeakerIdentityEvent"
+                  },
+                  "title": "Response Get Speaker Identity History Api Speakers  Speaker Uuid  Identity History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Speaker Identity History",
         "tags": [
           "speakers"
         ]

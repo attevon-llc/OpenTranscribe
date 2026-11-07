@@ -19,7 +19,7 @@ export interface SpeakerIdentity {
 }
 
 /** The kinds of change the identity history records (backend `EVENT_KINDS`). */
-export type SpeakerIdentityEventKind =
+type SpeakerIdentityEventKind =
   | 'rename'
   | 'name_cleared'
   | 'link'

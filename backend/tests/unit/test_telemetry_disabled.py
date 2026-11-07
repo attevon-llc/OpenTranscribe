@@ -520,8 +520,9 @@ def _force_enabled(db) -> None:
     from app.core import constants
     from app.services.system_settings_service import set_setting
 
-    set_setting(db, constants.TELEMETRY_ENABLED_KEY, True)
+    # Same row order as telemetry.set_enabled, so the two never take these locks crosswise.
     set_setting(db, constants.TELEMETRY_INSTALL_ID_KEY, "11111111-1111-4111-8111-111111111111")
+    set_setting(db, constants.TELEMETRY_ENABLED_KEY, True)
 
 
 @pytest.fixture
@@ -544,6 +545,9 @@ def test_the_usage_report_sends_nothing_by_default(task_uses_test_session, repor
     assert report_sends == []
 
 
+# These write the unique telemetry `system_settings` rows inside the test's open transaction,
+# as do test_telemetry_report.py and tests/api/test_admin_telemetry.py: one worker runs them all.
+@pytest.mark.xdist_group("telemetry_setting")
 @pytest.mark.parametrize(
     ("env", "value"),
     [
@@ -562,6 +566,7 @@ def test_the_usage_report_sends_nothing_when_an_env_switch_forbids_it(
     assert report_sends == []
 
 
+@pytest.mark.xdist_group("telemetry_setting")
 def test_the_usage_report_sends_nothing_without_a_receiver_key(
     task_uses_test_session, report_sends, monkeypatch
 ):
@@ -572,6 +577,7 @@ def test_the_usage_report_sends_nothing_without_a_receiver_key(
     assert report_sends == []
 
 
+@pytest.mark.xdist_group("telemetry_setting")
 def test_the_usage_report_control_sends_exactly_one_request_when_allowed(
     task_uses_test_session, report_sends
 ):

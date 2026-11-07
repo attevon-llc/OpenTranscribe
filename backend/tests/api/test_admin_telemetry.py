@@ -101,3 +101,20 @@ def test_no_receiver_key_refuses(client, super_admin_token_headers, allowed, mon
 
     assert response.status_code == 409
     assert response.json()["detail"]["reasons"] == ["no_receiver"]
+
+
+def test_the_refusal_carries_the_switches_codes_never_the_exceptions_text(
+    client, super_admin_token_headers, allowed, monkeypatch
+):
+    # The raise names a reason the switches do not: only an echo of the exception shows "demo".
+    def refuse(_db, _enabled):
+        raise telemetry.TelemetryRefusedError([telemetry.REASON_DEMO])
+
+    monkeypatch.setenv("DO_NOT_TRACK", "1")
+    monkeypatch.setattr(telemetry, "set_enabled", refuse)
+
+    response = client.put(URL, headers=super_admin_token_headers, json={"enabled": True})
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {"code": "telemetry_refused", "reasons": ["do_not_track"]}
+    assert telemetry.REASON_DEMO not in response.text

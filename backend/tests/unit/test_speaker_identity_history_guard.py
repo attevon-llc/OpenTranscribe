@@ -109,8 +109,12 @@ def test_only_a_voiceprint_row_goes_and_only_under_the_purge_switch(world):
     assert (_exists(conn, machine), _exists(conn, person)) == (False, True)
 
 
-def test_truncate_is_refused(world):
+@pytest.mark.ddl_exclusive
+def test_truncate_is_refused(db_session, world):
+    # TRUNCATE takes ACCESS EXCLUSIVE before the guard trigger refuses it, so it needs the
+    # suite-wide lock; `world`'s connection is db_session's, which is what the marker covers.
     conn, speaker = world
+    assert conn is db_session.connection()
     _event(conn, speaker.id)
     with assert_refused(conn):
         conn.execute(text("TRUNCATE speaker_identity_event"))

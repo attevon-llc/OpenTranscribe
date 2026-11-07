@@ -54,6 +54,7 @@ from app.models.media import MediaFile
 from app.models.system_settings import SystemSettings
 from app.schemas.telemetry import TelemetryOffReason
 from app.services.system_settings_service import get_settings_map
+from app.services.system_settings_service import insert_setting_if_absent
 from app.services.system_settings_service import set_setting
 
 if TYPE_CHECKING:
@@ -223,6 +224,13 @@ def _delete_keys(db: Session, keys: list[str]) -> None:
         settings_cache.invalidate(key)
 
 
+def _write_enabled(db: Session, enabled: bool) -> None:
+    """Store the switch; the row is created race-free first, so ``set_setting`` only updates."""
+    description = "Send the anonymous usage report"
+    insert_setting_if_absent(db, constants.TELEMETRY_ENABLED_KEY, enabled, description)
+    set_setting(db, constants.TELEMETRY_ENABLED_KEY, enabled, description)
+
+
 def set_enabled(db: Session, enabled: bool) -> None:
     """Turn the report on (refused while :func:`off_reasons` has any) or off.
 
@@ -233,11 +241,12 @@ def set_enabled(db: Session, enabled: bool) -> None:
         reasons = off_reasons()
         if reasons:
             raise TelemetryRefusedError(reasons)
-        if not read_state(db)["install_id"]:
-            set_setting(db, constants.TELEMETRY_INSTALL_ID_KEY, str(uuid.uuid4()))
-        set_setting(db, constants.TELEMETRY_ENABLED_KEY, True, "Send the anonymous usage report")
+        # Create-if-absent rather than read-then-insert: two admins turning it on at once
+        # both succeed and keep whichever id was written first.
+        insert_setting_if_absent(db, constants.TELEMETRY_INSTALL_ID_KEY, str(uuid.uuid4()))
+        _write_enabled(db, True)
         return
-    set_setting(db, constants.TELEMETRY_ENABLED_KEY, False, "Send the anonymous usage report")
+    _write_enabled(db, False)
     _delete_keys(
         db,
         [

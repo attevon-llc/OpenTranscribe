@@ -67,10 +67,12 @@ def set_telemetry_enabled(
     """Turn the usage report on or off."""
     try:
         telemetry.set_enabled(db, body.enabled)
-    except telemetry.TelemetryRefusedError as exc:
+    except telemetry.TelemetryRefusedError:
+        # The reasons are re-read from the switches, never taken off the exception, so nothing a
+        # raise carries can reach the response.
         raise HTTPException(
             status_code=409,
-            detail={"code": "telemetry_refused", "reasons": exc.reasons},
+            detail={"code": "telemetry_refused", "reasons": telemetry.off_reasons()},
         ) from None
     client_ip, user_agent = _get_client_info(request)
     audit_logger.log(

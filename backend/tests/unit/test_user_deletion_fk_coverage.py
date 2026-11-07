@@ -300,6 +300,17 @@ _ACTOR: dict[str, Disposition] = {
         "the source, time and origin of the identity stay. NULL already means 'a task wrote it "
         "or unknown', so no reader has a new case.",
     ),
+    "speaker_identity_event.actor_user_id": Disposition(
+        SET_NULL,
+        "SpeakerIdentityEvent",
+        DB_SET_NULL,
+        DB_SET_NULL,
+        "v462 (#1336). The person who made one change in a speaker's identity history. The "
+        "history belongs to the speaker (speaker_id CASCADE) and outlives the actor; the v462 "
+        "guard refuses every UPDATE of a recorded row except this column going to NULL, so the "
+        "SET NULL is the only way an erased actor stops being named. actor_kind stays 'user', "
+        "so the entry still reads as a person's change.",
+    ),
     "media_file.quarantined_by": Disposition(
         SET_NULL,
         "MediaFile",

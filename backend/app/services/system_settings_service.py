@@ -10,6 +10,8 @@ import json
 import logging
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
@@ -162,6 +164,33 @@ def set_setting(
 
     settings_cache.invalidate(key)
     return setting
+
+
+def insert_setting_if_absent(
+    db: Session, key: str, value: Any, description: str | None = None
+) -> str | None:
+    """Create a setting only when no row holds ``key``; return the stored value either way.
+
+    ``INSERT ... ON CONFLICT (key) DO NOTHING`` (PostgreSQL docs, INSERT, "ON CONFLICT
+    Clause"): a concurrent writer of the same key waits for the other transaction and then
+    inserts nothing, where :func:`set_setting`'s read-then-insert fails the second writer on
+    the unique index. The value returned is whichever writer's row won.
+    """
+    str_value = str(value).lower() if isinstance(value, bool) else str(value)
+    db.execute(
+        pg_insert(SystemSettings)
+        .values(key=key, value=str_value, description=description)
+        .on_conflict_do_nothing(index_elements=[SystemSettings.key])
+    )
+    db.commit()
+
+    from app.core import settings_cache
+
+    settings_cache.invalidate(key)
+    stored: str | None = db.execute(
+        select(SystemSettings.value).where(SystemSettings.key == key)
+    ).scalar_one_or_none()
+    return stored
 
 
 def _set_settings_batch(db: Session, updates: dict[str, tuple[Any, str | None]]) -> None:

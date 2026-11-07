@@ -98,7 +98,7 @@ part of the existing rehearse outcome. Resumable like every phase (`.phase/<n>.d
 | `fc_check_system_stats` | `/system/stats` carries the reranker row AND its `setting` equals `CHAT_RERANKER_TORCH_THREADS` read from the backend container's env, with a positive integer cap (or `null` only under `torch_env`) | yes | yes | yes |
 | `fc_check_org_endpoints_404` | organization routes answer 404 on a community install | yes | yes | yes |
 | `fc_check_aws_bucket_message` | AWS ASR test with no bucket fails naming `AWS_TRANSCRIBE_BUCKET` | yes | yes | yes |
-| `fc_check_post_processing` | every notification stage is terminal and not failed; Gender row `skipped` when attributes pre-exist | yes | yes | yes |
+| `fc_check_post_processing` | two labels: every notification stage is terminal and not failed; Gender row `skipped` when attributes pre-exist | yes | yes | yes |
 | `fc_check_exports` | txt/json/csv/srt/vtt/md and docx/pdf (via the job stream) are real files (magic bytes, headings) | yes | yes | yes |
 | `fc_check_voiceprints_toggle` | voiceprints off hides a voice-made name, on restores it (seeded by SQL, row restored after) | yes | yes | no |
 | `fc_check_label_index_resync` | on the REAL chunk index (`lib/os-probe.py` inside the backend container): a SQL-only name change is seen by the app's own drift scan; hiding then showing voiceprints makes the label leave then re-enter the index through the actual resync worker, and the drift scan is clean after each | yes | yes | no |

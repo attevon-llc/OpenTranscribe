@@ -412,6 +412,79 @@ CASES: list[tuple[str, tuple[str, ...], int]] = [
         ),
         1,
     ),
+    # Split labels (#1308 D): each scope judges only its own claim.
+    # terminal scope ignores the Gender row entirely (none reported) ...
+    (
+        "post-processing",
+        (
+            _j(_with(GOOD_PP, tasks={"search_indexing": {"state": "done", "at": 1}})),
+            "2",
+            "2",
+            "10",
+            "terminal",
+        ),
+        0,
+    ),
+    # ... but still fails on an unfinished task
+    (
+        "post-processing",
+        (
+            _j(_with(GOOD_PP, tasks={"search_indexing": {"state": "started", "at": 1}})),
+            "2",
+            "2",
+            "10",
+            "terminal",
+        ),
+        1,
+    ),
+    # gender scope does not re-judge other tasks: a failed unrelated task, Gender skipped -> pass
+    (
+        "post-processing",
+        (
+            _j(
+                _with(
+                    GOOD_PP,
+                    tasks={
+                        "search_indexing": {"state": "failed", "at": 1},
+                        "speaker_attributes": {"state": "skipped", "at": 1},
+                    },
+                )
+            ),
+            "2",
+            "2",
+            "10",
+            "gender",
+        ),
+        0,
+    ),
+    # gender scope still fails on the #1313 regression and on a missing Gender row
+    (
+        "post-processing",
+        (
+            _j(
+                _with(
+                    GOOD_PP,
+                    tasks={"speaker_attributes": {"state": "done", "at": 30, "started_at": 20}},
+                )
+            ),
+            "2",
+            "2",
+            "10",
+            "gender",
+        ),
+        1,
+    ),
+    (
+        "post-processing",
+        (
+            _j(_with(GOOD_PP, tasks={"search_indexing": {"state": "done", "at": 1}})),
+            "2",
+            "2",
+            "10",
+            "gender",
+        ),
+        1,
+    ),
     # detection itself wrote them (50 > started 20): legitimate, but the branch is not exercised
     (
         "post-processing",

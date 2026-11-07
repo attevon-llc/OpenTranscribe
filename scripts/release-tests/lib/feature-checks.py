@@ -282,12 +282,19 @@ def sse_ready(text: str) -> Verdict:
 
 
 def post_processing(
-    raw: str, speakers: str = '0', predicted: str = '0', max_predicted: str = ''
+    raw: str,
+    speakers: str = '0',
+    predicted: str = '0',
+    max_predicted: str = '',
+    scope: str = 'both',
 ) -> Verdict:
     """Every reported task reached ``done``/``skipped``; the Gender row skipped on pre-existing attributes.
 
     ``speakers``/``predicted`` count the file's speakers and those carrying attributes;
     ``max_predicted`` is the newest ``attributes_predicted_at`` as epoch seconds.
+    ``scope`` splits the two claims so each gets its own label and verdict (#1308 D): ``terminal``
+    judges only the first, ``gender`` only the second (and still fails when no run is known),
+    ``both`` is the combined verdict.
     """
     body = _load(raw)
     if not isinstance(body, dict) or not isinstance(body.get('tasks'), dict):
@@ -297,8 +304,10 @@ def post_processing(
     bad = {
         k: v.get('state') for k, v in body['tasks'].items() if v.get('state') not in GOOD_TERMINAL
     }
-    if bad:
+    if bad and scope != 'gender':
         return FAIL, f'task(s) not finished cleanly: {bad}'
+    if scope == 'terminal':
+        return PASS, 'all tasks finished'
     attrs = body['tasks'].get('speaker_attributes')
     if attrs is None:
         return FAIL, 'no speaker_attributes (Gender) row was reported'

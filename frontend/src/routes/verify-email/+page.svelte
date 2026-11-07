@@ -14,7 +14,7 @@
    *    UI must never imply which — that would be an account-existence oracle
    *    reachable with no session.
    */
-  import { page } from '$app/state';
+  import { pageStore } from '$stores/pageStore';
   import { t } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
   import { verifyEmail, resendEmailVerification } from '$lib/api/invitations';
@@ -31,7 +31,7 @@
   let resendPending = false;
   let resendNotice = '';
 
-  $: tokenParam = page.url.searchParams.get('token') || '';
+  $: tokenParam = $pageStore.url.searchParams.get('token') || '';
 
   onMount(() => {
     void runVerification();

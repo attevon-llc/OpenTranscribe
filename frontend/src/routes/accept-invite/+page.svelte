@@ -13,7 +13,7 @@
    *    outside. Anything else turns this page into a token oracle.
    */
   import { goto } from '$app/navigation';
-  import { page } from '$app/state';
+  import { pageStore } from '$stores/pageStore';
   import { t } from '$stores/locale';
   import { loadPasswordPolicy, buildPasswordRequirements, FALLBACK_PASSWORD_POLICY, type PasswordPolicy } from '$lib/passwordPolicy';
   import { loginWithOIDC, loginWithPKI } from '$stores/auth';
@@ -43,7 +43,7 @@
   let submitting = false;
   let ssoPending = false;
 
-  $: tokenParam = page.url.searchParams.get('token') || '';
+  $: tokenParam = $pageStore.url.searchParams.get('token') || '';
 
   // Requirement bullets come from the server's active policy (nist / stig / custom), not a
   // hardcoded list: under nist there are no composition rules and the minimum is 15.

@@ -89,7 +89,9 @@ indexing → WebSocket notification.
   expected blob is on disk at its size — `snapshot_download` writes `refs/main` before it
   downloads on a branch, so `is_complete` alone can be briefly true with files missing.
 - **Cancellation, recovery and retries**: `transcription/cancellation.py` (what a user cancel does when the cooperative flag is missed), `recovery.py` / `recovery_tasks.py` (startup and periodic recovery), superseded task rows (#1185), ONE retry policy in `services/transcription_retry.py`, retries keep their place, and a cold shutdown hands the stage back rather than acking it. Detail: `backend/app/tasks/transcription/CLAUDE.md`.
-- `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40.
+- `erasure_reconciliation.py` — `gdpr.erasure_reconcile`, **utility** queue, daily 04:40; and
+  `gdpr.erasure_execute_due` (hourly :35, issue #1105), phase 0 alone: scheduled erasures run within
+  an hour of `scheduled_for`, the daily sweep stays the guarantee.
   Finishes GDPR Art. 17 erasures that a legal hold deferred, and re-erases subjects a
   backup restore brought back. `takedown_service.release_file` calls its
   `notify_hold_released` for latency; **the schedule is the guarantee** — a hold can also

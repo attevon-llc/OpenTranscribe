@@ -135,6 +135,14 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute=40, hour=4),
         "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
     },
+    "gdpr-erasure-execute-due": {
+        "task": "gdpr.erasure_execute_due",
+        # Hourly at :35. Runs scheduled erasures (self-service and organization) whose time has
+        # come; the 04:40 reconcile runs the same executor and stays the guarantee, this is the
+        # latency (issue #1105). One indexed query returning nothing when none is due.
+        "schedule": crontab(minute=35),
+        "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+    },
     "legal-acceptance-retention-sweep": {
         "task": "legal.acceptance_retention_sweep",
         # Daily at 05:10, after the 04:10-04:55 sweeps. Deletes pseudonymised legal
@@ -234,6 +242,7 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "chat-retention-sweep": BeatEffect.MUTATING,  # deletes chat history
     "account-inactivity-sweep": BeatEffect.MUTATING,  # disables accounts
     "gdpr-erasure-reconcile": BeatEffect.MUTATING,  # erases subjects' data
+    "gdpr-erasure-execute-due": BeatEffect.MUTATING,  # runs scheduled erasures
     "legal-acceptance-retention-sweep": BeatEffect.MUTATING,  # deletes acceptance records
     "audit-outbox-relay": BeatEffect.MUTATING,  # copies audit events out, marks/deletes rows
     "audit-retention-sweep": BeatEffect.MUTATING,  # deletes audit rows

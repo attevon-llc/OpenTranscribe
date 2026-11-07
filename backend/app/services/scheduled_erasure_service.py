@@ -441,8 +441,12 @@ def _would_remove_last_super_admin(db: Session, user_id: int) -> bool:
 
 
 def _execute_one(db: Session, entry_id: int, now: datetime) -> bool:
-    """Flip one due entry to ``pending`` and run its erasure. False when it was not due."""
-    entry = db.get(ErasureLedgerEntry, entry_id)
+    """Flip one due entry to ``pending`` and run its erasure. False when it was not due.
+
+    The row lock serialises the hourly tick and the daily sweep: a second executor waits, then
+    sees ``pending`` and leaves it.
+    """
+    entry = db.get(ErasureLedgerEntry, entry_id, with_for_update=True)
     if (
         entry is None
         or entry.status != "deferred"

@@ -260,6 +260,19 @@ def erasure_reconciliation_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=Tr
     }
 
 
+@celery_app.task(name="gdpr.erasure_execute_due", priority=UtilityPriority.BACKGROUND)
+def erasure_execute_due() -> dict:
+    """Run the scheduled erasures whose time has come (hourly; issue #1105).
+
+    The latency half of phase 0: the daily sweep above runs the same executor and stays the
+    guarantee, this tick keeps a 72-hour organization erasure from running up to a day late.
+    Overlapping runs are safe: the executor locks each entry before flipping it to ``pending``.
+    """
+    from app.services import scheduled_erasure_service as scheduled_erasure
+
+    return {"status": "ok", **scheduled_erasure.execute_due_requests()}
+
+
 def notify_hold_released(file: MediaFile) -> None:
     """Nudge the sweep after a legal hold is lifted. Never raises, never blocks.
 

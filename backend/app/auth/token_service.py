@@ -41,6 +41,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.bulk_revocation import PendingBulkRevocation
 from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 from app.auth.refresh_tokens import RefreshTokenOps
+from app.auth.revocation_backlog import PendingEpochs
 from app.auth.revocation_error import RevocationError
 from app.auth.revocation_fallback import is_revoked_from_database
 from app.auth.session import InMemoryStore
@@ -96,6 +97,8 @@ class TokenService(RefreshTokenOps):
         # Wall-clock second Redis came back, and when the tokens older than that expire.
         self._recovered_at: int | None = None
         self._recovery_window_ends = 0.0
+        # User epochs stamped while Redis was unreachable, replayed when it is back.
+        self._pending_epochs = PendingEpochs()
 
     @property
     def degraded(self) -> bool:
@@ -167,6 +170,7 @@ class TokenService(RefreshTokenOps):
         self._store = recovered
         self._degraded = False
         logger.info("Redis recovered; token revocation is shared across replicas again")
+        self._pending_epochs.flush(recovered)
 
     def _predates_recovery(self, issued_at: int | None) -> bool:
         """Whether a token may have been revoked while Redis was unreachable."""
@@ -380,7 +384,13 @@ class TokenService(RefreshTokenOps):
         Sockets already open were authenticated before the epoch existed, so every
         API process is also asked to close the user's sockets opened by now
         (``publish_session_revocation``). That is best-effort too: if it fails, an
-        open socket lasts until it reconnects, and the handshake then refuses it.
+        open socket lasts until it reconnects or its token expires, and the handshake
+        then refuses it.
+
+        An epoch that does not reach Redis (write failed, or this process is running on
+        its in-memory fallback) is kept in a backlog and replayed when Redis answers
+        again (``auth/revocation_backlog.py``), so replicas that never lost Redis start
+        refusing the tokens too.
 
         Returns:
             True when the epoch was recorded.
@@ -389,13 +399,20 @@ class TokenService(RefreshTokenOps):
             return False
         ttl = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60
         epoch = int(datetime.now(UTC).timestamp())
+        key = f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}"
+        store = self.store
         stamped = True
         try:
-            self.store.set(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}", str(epoch), ex=ttl)
+            store.set(key, str(epoch), ex=ttl)
         except Exception as exc:
             record_degradation("token_revocation", "database")
             logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
             stamped = False
+            self._mark_degraded()
+        if not stamped or self._degraded:
+            self._pending_epochs.remember(key, epoch, ttl)
+        elif self._pending_epochs:
+            self._pending_epochs.flush(store)
         publish_session_revocation(user_uuid, epoch)
         return stamped
 

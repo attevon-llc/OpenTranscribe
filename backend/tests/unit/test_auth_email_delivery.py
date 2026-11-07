@@ -129,13 +129,14 @@ class RecordingWatchMailer:
         self.calls = []
         self.result = result
 
-    def send_email(self, config, recipients, subject, html_body, timeout=30):
+    def send_email(self, config, recipients, subject, html_body, timeout=30, text_body=None):
         self.calls.append(
             {
                 "config": config,
                 "recipients": recipients,
                 "subject": subject,
                 "html": html_body,
+                "text": text_body,
                 "timeout": timeout,
             }
         )

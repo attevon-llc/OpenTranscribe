@@ -33,8 +33,6 @@ import re
 import smtplib
 import ssl
 from collections.abc import Callable
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import TYPE_CHECKING
 
 from app.auth.utils import mask_identifier as _mask_email
@@ -422,7 +420,7 @@ class EmailService:
             self._assert_link_is_deliverable(credential_link, subject)
 
         if config is not None:
-            self._send_via_config(config, to, subject, html_body)
+            self._send_via_config(config, to, subject, html_body, text_body)
             return
         self._send_via_env_smtp(to, subject, html_body, text_body)
 
@@ -452,11 +450,11 @@ class EmailService:
 
     @staticmethod
     def _send_via_config(
-        config: EmailNotificationConfig, to: str, subject: str, html_body: str
+        config: EmailNotificationConfig, to: str, subject: str, html_body: str, text_body: str
     ) -> None:
         """Send through the designated DB-backed provider."""
         ok, detail = watch_email_service.send_email(
-            config, [to], subject, html_body, timeout=SMTP_TIMEOUT
+            config, [to], subject, html_body, timeout=SMTP_TIMEOUT, text_body=text_body
         )
         if ok:
             logger.info("Sent %r to %s via email config %r", subject, _mask_email(to), config.name)
@@ -474,12 +472,9 @@ class EmailService:
     @staticmethod
     def _send_via_env_smtp(to: str, subject: str, html_body: str, text_body: str) -> None:
         """Send through the env-configured SMTP server (STARTTLS or implicit SSL)."""
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = settings.SMTP_FROM
-        msg["To"] = to
-        msg.attach(MIMEText(text_body, "plain"))
-        msg.attach(MIMEText(html_body, "html"))
+        msg = watch_email_service.build_message(
+            settings.SMTP_FROM, to, subject, html_body, text_body
+        )
 
         server = None
         try:
@@ -494,7 +489,7 @@ class EmailService:
             server = _env_smtp_connect()
             if settings.SMTP_USER:
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.sendmail(settings.SMTP_FROM, [to], msg.as_string())
+            server.send_message(msg, from_addr=settings.SMTP_FROM, to_addrs=[to])
         except Exception as e:
             # Never fall back to logging the body: for a password reset that body
             # is a live single-use credential.

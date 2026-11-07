@@ -17,14 +17,18 @@ here at send time. All functions are best-effort and return ``(ok, message)``.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import html
 import logging
 import smtplib
 import ssl
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from email.message import EmailMessage
+from email.utils import formatdate
+from email.utils import make_msgid
+from email.utils import parseaddr
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 from app.utils.encryption import decrypt_api_key
 from app.utils.smtp_transport import SMTP_DEFAULT_PORT
@@ -44,21 +48,49 @@ _GRAPH_SENDMAIL = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
 DEFAULT_TIMEOUT = 30
 
 
+def build_message(
+    sender: str, recipient: str, subject: str, html_body: str, text_body: str | None = None
+) -> EmailMessage:
+    """Build one outbound message addressed to a single recipient.
+
+    ``multipart/alternative`` (plain text first, HTML second) when a text body is given,
+    otherwise a single HTML part. ``Date`` and a ``Message-ID`` in the sender's domain
+    are always set; filters score their absence as spam.
+    """
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg["Date"] = formatdate(localtime=False, usegmt=True)
+    msg["Message-ID"] = make_msgid(domain=parseaddr(sender)[1].rpartition("@")[2] or None)
+    if text_body is None:
+        msg.set_content(html_body, subtype="html")
+    else:
+        msg.set_content(text_body)
+        msg.add_alternative(html_body, subtype="html")
+    return msg
+
+
 def send_email(
     config: EmailNotificationConfig,
     recipients: list[str],
     subject: str,
     html_body: str,
     timeout: int = DEFAULT_TIMEOUT,
+    text_body: str | None = None,
 ) -> tuple[bool, str]:
-    """Send an HTML email via the config's provider. Returns ``(ok, message)``."""
+    """Send an email via the config's provider. Returns ``(ok, message)``.
+
+    Each recipient gets their own message, addressed only to them, so no recipient sees
+    the others and one refused address does not stop the rest.
+    """
     if not recipients:
         return False, "No recipients"
     try:
         if config.provider in ("smtp", "exchange"):
-            return _send_smtp(config, recipients, subject, html_body, timeout)
+            return _send_smtp(config, recipients, subject, html_body, text_body, timeout)
         if config.provider == "m365":
-            return _send_m365(config, recipients, subject, html_body)
+            return _send_m365(config, recipients, subject, html_body, text_body)
         return False, f"Unknown email provider: {config.provider}"
     except Exception as e:  # noqa: BLE001
         logger.error("Email send failed (%s): %s", config.provider, e)
@@ -128,7 +160,8 @@ def _send_smtp(
     config: EmailNotificationConfig,
     recipients: list[str],
     subject: str,
-    html: str,
+    html_body: str,
+    text_body: str | None,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> tuple[bool, str]:
     host, port, use_tls, username, password = _smtp_params(config)
@@ -138,20 +171,24 @@ def _send_smtp(
     if problem:
         return False, problem
     sender = config.from_address or username or "noreply@opentranscribe"
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText(html, "html"))
+    envelope_sender = parseaddr(sender)[1] or sender
 
     smtp = _smtp_connect(host, port, use_tls, timeout)
+    refused = 0
     try:
         if username and password:
             smtp.login(username, password)
-        smtp.sendmail(sender, recipients, msg.as_string())
+        for recipient in recipients:
+            msg = build_message(sender, recipient, subject, html_body, text_body)
+            try:
+                smtp.send_message(msg, from_addr=envelope_sender, to_addrs=[recipient])
+            except smtplib.SMTPRecipientsRefused:
+                refused += 1
     finally:
         with contextlib.suppress(Exception):
             smtp.quit()
+    if refused:
+        return False, f"{refused} of {len(recipients)} recipient(s) were refused"
     return True, f"Sent to {len(recipients)} recipient(s)"
 
 
@@ -195,7 +232,11 @@ def _m365_token(config: EmailNotificationConfig) -> str:
 
 
 def _send_m365(
-    config: EmailNotificationConfig, recipients: list[str], subject: str, html: str
+    config: EmailNotificationConfig,
+    recipients: list[str],
+    subject: str,
+    html_body: str,
+    text_body: str | None,
 ) -> tuple[bool, str]:
     import requests
 
@@ -203,26 +244,31 @@ def _send_m365(
     if not sender:
         return False, "M365 requires a from_address (the sending mailbox)"
     token = _m365_token(config)
-    # The body is written inline so mypy checks it against requests' `JsonType` in
-    # context; bound to a local first it widens to `dict[str, object]`, which is not JSON.
-    resp = requests.post(
-        _GRAPH_SENDMAIL.format(sender=sender),
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        json={
-            "message": {
-                "subject": subject,
-                "body": {"contentType": "HTML", "content": html},
-                "toRecipients": [{"emailAddress": {"address": a}} for a in recipients],
-            },
-            "saveToSentItems": False,
-        },
-        timeout=30,
-    )
-    if resp.status_code in (200, 202):
-        return True, f"Sent to {len(recipients)} recipient(s) via Graph"
-    # Status only: the response body can quote recipients and tenant details.
-    logger.warning("Microsoft Graph sendMail was rejected: HTTP %s", resp.status_code)
-    return False, f"Graph sendMail failed: HTTP {resp.status_code}"
+    # Graph's JSON message cannot carry an alternative text part or our own Message-ID, so
+    # each message goes as MIME (documented: POST sendMail with Content-Type text/plain and a
+    # base64-encoded MIME body). The sender goes in the URL path and is percent-encoded.
+    url = _GRAPH_SENDMAIL.format(sender=quote(sender, safe=""))
+    rejected = 0
+    last_status = 0
+    for recipient in recipients:
+        msg = build_message(sender, recipient, subject, html_body, text_body)
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "text/plain"},
+            data=base64.b64encode(msg.as_bytes()),
+            timeout=30,
+        )
+        if resp.status_code not in (200, 202):
+            # Status only: the response body can quote recipients and tenant details.
+            logger.warning("Microsoft Graph sendMail was rejected: HTTP %s", resp.status_code)
+            rejected += 1
+            last_status = resp.status_code
+    if rejected:
+        return (
+            False,
+            f"Graph sendMail failed for {rejected} of {len(recipients)}: HTTP {last_status}",
+        )
+    return True, f"Sent to {len(recipients)} recipient(s) via Graph"
 
 
 def _test_m365(config: EmailNotificationConfig) -> tuple[bool, str]:
@@ -233,6 +279,23 @@ def _test_m365(config: EmailNotificationConfig) -> tuple[bool, str]:
 # --------------------------------------------------------------------------- #
 # HTML builder
 # --------------------------------------------------------------------------- #
+def build_scan_summary_text(source_name: str, summary: dict) -> str:
+    """Render the plain-text alternative to :func:`build_scan_summary_html`."""
+    lines = [
+        "OpenTranscribe - Watch Source Scan",
+        f"Source: {source_name}",
+        "",
+        f"Files found: {summary.get('found', 0)}",
+        f"Imported: {summary.get('imported', 0)}",
+        f"Skipped: {summary.get('skipped', 0)}",
+        f"Stitched groups: {summary.get('stitch_groups', 0)}",
+        f"Errors: {summary.get('errors', 0)}",
+        "",
+        "This is an automated notification from OpenTranscribe.",
+    ]
+    return "\n".join(lines)
+
+
 def build_scan_summary_html(source_name: str, summary: dict) -> str:
     """Render a compact HTML scan-summary email body."""
     rows = "".join(

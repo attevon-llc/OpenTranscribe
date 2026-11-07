@@ -80,3 +80,13 @@ describe('parity script plural rules', () => {
     expect(out).toContain('self-test OK');
   });
 });
+
+describe('speakers review count', () => {
+  const REVIEW = 'speakers.clusters.emptyReviewDesc';
+
+  it('en: one waiting speaker reads in the singular ("1 speakers have" before)', async () => {
+    const t = await translator('en', en);
+    expect(t(REVIEW, { count: 1 })).toContain('1 speaker has no match and is waiting');
+    expect(t(REVIEW, { count: 3 })).toContain('3 speakers have no match and are waiting');
+  });
+});

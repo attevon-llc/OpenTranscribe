@@ -80,12 +80,9 @@ class EngineConfig:
             [
                 "engine.transcriber_backend",
                 "engine.diarizer_backend",
-                "engine.gpu_split",
-                "engine.precompute_vad",
                 "engine.boundary_acoustic_recheck_enabled",
                 "engine.boundary_acoustic_cosine_margin",
                 "engine.boundary_acoustic_max_word_dur",
-                "engine.shared_volume_path",
             ],
         )
 
@@ -117,8 +114,9 @@ class EngineConfig:
                 or os.getenv("ENGINE_DIARIZER_BACKEND")
                 or "native"
             ),
-            gpu_split=_bool("engine.gpu_split", "ENGINE_GPU_SPLIT"),
-            precompute_vad=_bool("engine.precompute_vad", "ENGINE_PRECOMPUTE_VAD"),
+            # Deployment topology and a stub: no admin field writes these, so env only.
+            gpu_split=gpu_split_enabled(),
+            precompute_vad=env_bool("ENGINE_PRECOMPUTE_VAD", False),
             boundary_acoustic_recheck_enabled=_bool(
                 "engine.boundary_acoustic_recheck_enabled",
                 "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED",
@@ -133,9 +131,7 @@ class EngineConfig:
                 "ENGINE_BOUNDARY_ACOUSTIC_MAX_WORD_DUR",
                 1.0,
             ),
-            shared_volume_path=(
-                vals.get("engine.shared_volume_path") or resolve_engine_shared_volume_path()
-            ),
+            shared_volume_path=resolve_engine_shared_volume_path(),
         )
 
     @classmethod

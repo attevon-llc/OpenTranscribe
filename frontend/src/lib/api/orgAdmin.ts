@@ -7,6 +7,7 @@ import type {
   PurgeTarget,
 } from '$lib/api/privacy';
 import { PURGE_CONFIRM_WORD } from '$lib/api/privacy';
+import type { HoldAuthority } from '$lib/types/hold';
 
 /**
  * Organization-scoped takedown (issue #1253): `/org-admin/files/...`.
@@ -68,9 +69,16 @@ export interface OrgAuditQuery {
   resource_uuid?: string;
 }
 
-/** An organization hold as its administrators see it (issue #1276). */
+/**
+ * A hold as the administrators who manage it see it (`HoldOut`): an organization's on
+ * `/org-admin/holds` (issue #1276), the operator's on `/admin/holds` (`$lib/api/adminHolds`).
+ */
 export interface OrgHold {
   uuid: string;
+  /** Who placed it. Absent on a server older than the operator hold. */
+  authority?: HoldAuthority;
+  /** The holding organization; null for an operator hold. */
+  organization_uuid?: string | null;
   scope: 'file' | 'collection';
   collection_uuid: string | null;
   collection_name: string | null;

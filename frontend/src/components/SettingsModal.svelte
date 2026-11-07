@@ -11,6 +11,7 @@
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { isCloudEdition } from '$lib/edition';
   import { orgPrivacyVisible } from '$lib/settings/privacyPolicy';
+  import { orgAdminCapOn as orgCapOn } from '$lib/settings/orgAdminAccess';
   import { settingsModalStore, type SettingsSection } from '$stores/settingsModalStore';
   import { toastStore } from '$stores/toast';
   import axiosInstance from '$lib/axios';
@@ -128,6 +129,7 @@
     // admin
     'admin-users': 'admin',
     quarantine: 'admin',
+    'platform-holds': 'admin',
     'takedown-notices': 'admin',
     'data-management': 'admin',
     'support-access': 'admin',
@@ -339,12 +341,8 @@
       ? 'profile'
       : sidebarRowFor(activeSection); // aliases highlight the row that now holds them
 
-  // Cloud-edition org-admin gating: the new billing/usage/team panels are only
-  // surfaced when the backend marks their capability as enabled AND audience as
-  // 'org_admin' (so regular org members don't see billing controls). The
-  // capability must be enabled too — a disabled cap hides the panel entirely.
-  const orgAdminCapOn = (state: typeof $capabilities, key: string) =>
-    isCloudEdition && isCapabilityEnabled(state, key) && state.audience[key] === 'org_admin';
+  // Cloud-edition org-admin gating ($lib/settings/orgAdminAccess, shared with the legal-hold actions).
+  const orgAdminCapOn = (state: typeof $capabilities, key: string) => orgCapOn(state, key, isCloudEdition);
 
   // The privacy panel (issue #1280) additionally needs the person to BE an organization
   // administrator, and it lives in core: a deployment that replaces $lib/cloud still gets it.
@@ -456,6 +454,8 @@
           // refuses.
           { id: 'quarantine' as SettingsSection, label: $t('settings.quarantine.navLabel'), icon: 'shield-off', cap: 'admin.takedown' },
           { id: 'takedown-notices' as SettingsSection, label: $t('takedown.admin.navLabel'), icon: 'file-text', cap: 'admin.takedown' },
+          // Operator legal holds without a takedown (legal-hold plan §8.4); ungated like the takedown routes.
+          { id: 'platform-holds' as SettingsSection, label: $t('holds.platform.navLabel'), icon: 'shield' },
           ...(tenancyMulti ? [{ id: 'support-access' as SettingsSection, label: $t('settings.supportAccess.navLabel'), icon: 'life-buoy' }] : [])
         ]
       }
@@ -1415,6 +1415,16 @@
       </div>
     {/if}
 
+    <!-- Operator legal holds, no takedown (legal-hold plan §8.4); release lives here only -->
+    {#if activeSection === 'platform-holds'}
+      <div class="content-section">
+        <h3 class="section-title">{$t('holds.platform.title')}</h3>
+        <LazySection load={sectionLoaders.legalHolds} let:Component>
+          <Component scope="platform" />
+        </LazySection>
+      </div>
+    {/if}
+
     <!-- Takedown notice records (issue #1254) -->
     {#if activeSection === 'takedown-notices'}
       <div class="content-section">
@@ -1548,8 +1558,8 @@
     {#if activeSection === 'org-holds' && orgAdminCapOn(capState, 'org.legal_hold')}
       <div class="content-section">
         <h3 class="section-title">{$t('holds.title')}</h3>
-        <LazySection load={sectionLoaders.orgHolds} let:Component>
-          <Component />
+        <LazySection load={sectionLoaders.legalHolds} let:Component>
+          <Component scope="organization" />
         </LazySection>
       </div>
     {/if}

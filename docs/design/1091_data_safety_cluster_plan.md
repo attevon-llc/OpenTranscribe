@@ -8,6 +8,27 @@ org content on member removal), #1105 (owner-only delayed org/member erase). #11
 permissions) is **closed** (landed in #1119) and is a dependency, not work.
 **Milestone:** v0.7.0, due 2026-11-30. Section 8 recommends a cut line.
 
+## Lead decisions (2026-11-07, override the body below where they conflict)
+
+- **OD-1 is decided as option B, not the recommended A.** Retention expiry keeps hard-deleting at
+  N days exactly as today; the trash applies only to deletes a person makes. Reason: keeping data
+  past the configured retention period (N days plus the trash window) conflicts with the GDPR
+  storage-limitation principle (Art. 5(1)(e)), and an operator who configured N days expects the
+  data gone at N days. Consequences: `trash_origin` only ever holds `'user'` (the `'retention'`
+  value stays allowed by the CHECK so the column shape need not change if the decision is
+  revisited), §3.5 option B applies (retention skips trashed rows so it never shortens a trash
+  window, L2), and nothing in L1 routes retention through the trash.
+- **OD-2..OD-5 are accepted as recommended.**
+- **Migration numbers are re-assigned** because the identity-history lane holds v462:
+  identity-history **v462**, L1 `add_media_file_trash` **v463**, L6
+  `generalise_erasure_grace_index` **v464**, L5 `add_user_hidden_media` **v465**, L7
+  `add_organization_owner` **v466**. L8's transfer table takes the next free number when it is
+  built (v0.8.0). The revision names in §2.2 and §8 keep their old numbers in the prose below;
+  read them through this mapping. Each lane still chains after the head it derives, and the
+  coordinator re-chains at merge.
+- **The five §1.3 quarantine leaks are in L1's scope**, each with a test that is red on the
+  pre-L1 tree.
+
 Written for an implementation agent with **no** conversation history. Paths are relative to the
 repo root; `app/` means `backend/app/`. Line numbers drift: search for the quoted symbol before
 editing. Read these first, in this order, and do not duplicate them:

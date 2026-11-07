@@ -664,6 +664,11 @@ _E2E_LITERAL_NOT_PERSISTED: dict[str, str] = {
         "the display_name written onto speaker rows of an injected e2e-owned- transcript; the "
         "rows are removed with that file by purge_injected, and the file name is swept"
     ),
+    "backend/tests/e2e/test_file_comments.py::e2e comment ": (
+        "the text of a comment on an owned_media_factory (e2e-owned-) file; the test deletes it "
+        "through the UI, and a killed run's comment goes with its file (Comment cascades from "
+        "MediaFile), whose name the sweep recognises"
+    ),
     "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-processing-": (
         "a filename inside seeded notification records in a throwaway browser context's "
         "localStorage; no file or row exists server-side"

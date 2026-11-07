@@ -727,12 +727,10 @@
 
       <!-- Right column: Transcript, then comments (issue #748 — comments moved here from
            the left column, below everything else in the transcript column). -->
-      {#if redactionPending}
-        <section class="transcript-column">
+      <section class="transcript-column">
+        {#if redactionPending}
           <RedactionPendingPanel />
-        </section>
-      {:else if file && file.transcript_segments}
-        <section class="transcript-column">
+        {:else if file && file.transcript_segments}
           <TranscriptDisplay
           bind:file
           {currentTime}
@@ -770,16 +768,7 @@
             on:rescan={triggerRedaction}
             on:toggleOriginal={toggleShowOriginal}
           />
-
-          <CommentSection
-            fileId={file?.uuid ? String(file.uuid) : ''}
-            {currentTime}
-            on:seekTo={handleSeekTo}
-            on:commentsChanged={(e) => (commentCount = e.detail.count)}
-          />
-        </section>
-      {:else}
-        <section class="transcript-column">
+        {:else}
           <div class="no-transcript">
             {#if file?.status === 'processing' || file?.status === 'pending'}
               <div class="processing-placeholder">
@@ -791,15 +780,18 @@
               <p>{$t('fileDetail.noTranscript')}</p>
             {/if}
           </div>
+        {/if}
 
-          <CommentSection
-            fileId={file?.uuid ? String(file.uuid) : ''}
-            {currentTime}
-            on:seekTo={handleSeekTo}
-            on:commentsChanged={(e) => (commentCount = e.detail.count)}
-          />
-        </section>
-      {/if}
+        <!-- Outside the branches on purpose: comments are the viewer's own annotations, not
+             transcript text, so a transcript withheld for redaction must not take the form
+             with it. One instance also keeps the list across a branch change. -->
+        <CommentSection
+          fileId={file?.uuid ? String(file.uuid) : ''}
+          {currentTime}
+          on:seekTo={handleSeekTo}
+          on:commentsChanged={(e) => (commentCount = e.detail.count)}
+        />
+      </section>
     </div>
 
   {:else}

@@ -12,6 +12,7 @@
   import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '../stores/toast';
+  import { getErrorMessage } from '$lib/utils/apiError';
   import { t, locale } from '$stores/locale';
 
   // The Svelte component is exported by default automatically
@@ -97,12 +98,12 @@
               });
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed');
-              toastStore.error($t('comments.loadFailed', { error: lastError.message }));
+              toastStore.error($t('comments.loadFailed', { error: getErrorMessage(lastError, lastError?.message) }));
               return;
             }
           }
         } else {
-          toastStore.error($t('comments.loadFailed', { error: error.message }));
+          toastStore.error($t('comments.loadFailed', { error: getErrorMessage(error, error?.message) }));
           return;
         }
       }
@@ -150,7 +151,7 @@
       } else if (err.code === 'ERR_NETWORK') {
         toastStore.error($t('comments.networkError'));
       } else {
-        toastStore.error($t('comments.loadFailed', { error: err.message }));
+        toastStore.error($t('comments.loadFailed', { error: getErrorMessage(err, err?.message) }));
       }
     } finally {
       loading = false;
@@ -232,12 +233,12 @@
               // Successfully added comment using root endpoint
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
-              toastStore.error($t('comments.addFailed', { error: lastError.message }));
+              toastStore.error($t('comments.addFailed', { error: getErrorMessage(lastError, lastError?.message) }));
               return;
             }
           }
         } else {
-          toastStore.error($t('comments.addFailed', { error: error.message }));
+          toastStore.error($t('comments.addFailed', { error: getErrorMessage(error, error?.message) }));
           return;
         }
       }
@@ -275,7 +276,7 @@
       } else if (err.code === 'ERR_NETWORK') {
         toastStore.error($t('comments.networkError'));
       } else {
-        toastStore.error($t('comments.addFailed', { error: err.message }));
+        toastStore.error($t('comments.addFailed', { error: getErrorMessage(err, err?.message) }));
       }
     }
   }
@@ -324,7 +325,7 @@
       if (err.response && err.response.status === 401) {
         toastStore.error($t('comments.loginRequiredToEdit'));
       } else {
-        toastStore.error($t('comments.editFailed', { error: err.message }));
+        toastStore.error($t('comments.editFailed', { error: getErrorMessage(err, err?.message) }));
       }
     }
   }
@@ -365,7 +366,7 @@
       if (err.response && err.response.status === 401) {
         toastStore.error($t('comments.loginRequiredToDelete'));
       } else {
-        toastStore.error($t('comments.deleteFailed', { error: err.message }));
+        toastStore.error($t('comments.deleteFailed', { error: getErrorMessage(err, err?.message) }));
       }
     }
   }
@@ -464,6 +465,9 @@
           {$t('comments.addComment')}
         </button>
       </div>
+      {#if newComment.trim() && timestampInput === null}
+        <p class="form-hint">{$t('comments.mustAddTextAndTime')}</p>
+      {/if}
     </form>
   </div>
   {/if}
@@ -673,6 +677,12 @@
   }
 
 
+
+  .form-hint {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+  }
 
   .form-actions {
     display: flex;

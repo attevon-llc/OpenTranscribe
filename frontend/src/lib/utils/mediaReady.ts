@@ -11,9 +11,9 @@ export const HAVE_METADATA = 1;
 
 /**
  * How long to keep waiting for `loadedmetadata` before giving up on syncing
- * Plyr's own clock. This is NOT the seek latency: `applyMediaSeek` issues the
+ * the player's own clock. This is NOT the seek latency: `applyMediaSeek` issues the
  * seek to the media element immediately, so the user's playhead moves without
- * waiting for this. Reaching the timeout only means Plyr's progress bar is
+ * waiting for this. Reaching the timeout only means the player's progress bar is
  * re-synced late.
  */
 export const METADATA_WAIT_TIMEOUT_MS = 15000;

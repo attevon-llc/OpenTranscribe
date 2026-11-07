@@ -53,7 +53,6 @@ npm,frontend,call-bind-apply-helpers,1.0.2,MIT,lockfile,OK,no
 npm,frontend,clsx,2.1.1,MIT,lockfile,OK,no
 npm,frontend,combined-stream,1.0.8,MIT,lockfile,OK,no
 npm,frontend,commander,15.0.0,MIT,lockfile,OK,no
-npm,frontend,custom-event-polyfill,1.0.7,MIT,lockfile,OK,no
 npm,frontend,date-fns,4.4.0,MIT,lockfile,OK,no
 npm,frontend,debug,4.4.3,MIT,lockfile,OK,no
 npm,frontend,delayed-stream,1.0.0,MIT,lockfile,OK,no
@@ -98,7 +97,6 @@ npm,frontend,lightningcss-linux-x64-gnu,1.33.0,MPL-2.0,lockfile,REVIEW,no
 npm,frontend,lightningcss-linux-x64-musl,1.33.0,MPL-2.0,lockfile,REVIEW,no
 npm,frontend,lightningcss-win32-arm64-msvc,1.33.0,MPL-2.0,lockfile,REVIEW,no
 npm,frontend,lightningcss-win32-x64-msvc,1.33.0,MPL-2.0,lockfile,REVIEW,no
-npm,frontend,loadjs,4.3.0,MIT,lockfile,OK,no
 npm,frontend,locate-character,3.0.0,MIT,lockfile,OK,no
 npm,frontend,magic-string,0.30.21,MIT,lockfile,OK,no
 npm,frontend,marked,18.1.2,MIT,lockfile,OK,no
@@ -110,10 +108,8 @@ npm,frontend,murmurhash3js-revisited,3.0.0,MIT,lockfile,OK,no
 npm,frontend,nanoid,3.3.20,MIT,lockfile,OK,no
 npm,frontend,picocolors,1.1.1,ISC,lockfile,OK,no
 npm,frontend,picomatch,4.0.7,MIT,lockfile,OK,no
-npm,frontend,plyr,3.8.5,MIT,lockfile,OK,no
 npm,frontend,postcss,8.5.32,MIT,lockfile,OK,no
 npm,frontend,proxy-from-env,2.1.0,MIT,lockfile,OK,no
-npm,frontend,rangetouch,2.0.1,MIT,lockfile,OK,no
 npm,frontend,react,19.3.1,MIT,lockfile,OK,no
 npm,frontend,react-compiler-runtime,1.0.0,MIT,lockfile,OK,no
 npm,frontend,rolldown,1.2.15,MIT,lockfile,OK,no
@@ -124,7 +120,6 @@ npm,frontend,svelte-multiselect,11.8.0,MIT,lockfile,OK,no
 npm,frontend,tinyglobby,0.2.17,MIT,lockfile,OK,no
 npm,frontend,typescript,6.0.3,Apache-2.0,lockfile,OK,no
 npm,frontend,undici-types,8.9.0,MIT,lockfile,OK,no
-npm,frontend,url-polyfill,1.1.14,MIT,lockfile,OK,no
 npm,frontend,video.js,10.3.0,Apache-2.0,lockfile,OK,no
 npm,frontend,vite,8.3.5,MIT,lockfile,OK,no
 npm,frontend,yaml,2.9.1,ISC,lockfile,OK,no

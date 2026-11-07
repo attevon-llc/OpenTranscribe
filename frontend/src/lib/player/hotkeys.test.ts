@@ -1,5 +1,5 @@
 /**
- * Keyboard shortcuts (plan #1327 rows 30-31): Plyr's set, declared once for both players,
+ * Keyboard shortcuts (plan #1327 rows 30-31): the app's set, declared once for both players,
  * plus `L` toggling loop, which Video.js has no action for.
  * https://videojs.org/docs/framework/html/guides/keyboard-shortcuts
  */
@@ -14,7 +14,7 @@ afterEach(() => {
 const bound = (keys: string) => PLAYER_HOTKEYS.filter((h) => h.keys === keys);
 
 describe('PLAYER_HOTKEYS', () => {
-  it('declares every Plyr shortcut the app had (row 31)', () => {
+  it('declares every shortcut the app had (row 31)', () => {
     expect(bound('Space')).toEqual([{ keys: 'Space', action: 'togglePaused' }]);
     expect(bound('k')).toEqual([{ keys: 'k', action: 'togglePaused' }]);
     expect(bound('0-9')).toEqual([{ keys: '0-9', action: 'seekToPercent' }]);
@@ -23,7 +23,7 @@ describe('PLAYER_HOTKEYS', () => {
     expect(bound('c')).toEqual([{ keys: 'c', action: 'toggleSubtitles' }]);
   });
 
-  it('seeks 10 s on the arrow keys and steps volume by 10% as Plyr did', () => {
+  it('seeks 10 s on the arrow keys and steps volume by 10% as before', () => {
     expect(SEEK_STEP_SECONDS).toBe(10);
     expect(bound('ArrowLeft')).toEqual([{ keys: 'ArrowLeft', action: 'seekStep', value: -10 }]);
     expect(bound('ArrowRight')).toEqual([{ keys: 'ArrowRight', action: 'seekStep', value: 10 }]);

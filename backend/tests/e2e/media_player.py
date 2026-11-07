@@ -1,18 +1,17 @@
 """Library-neutral page object for the app's media players (issue #1327).
 
-The player library is being replaced (``docs/design/1327_plyr_replacement_plan.md``), so the
-playback tests must not know which one is on the page. They talk to this object instead:
+The players run on Video.js 10 (``docs/design/1327_plyr_replacement_plan.md``), but the
+playback tests must not depend on the library. They talk to this object instead:
 
 * **Media state** is read from the ``<video>``/``<audio>`` element itself (``#player`` on the
   file page, the element inside ``.sticky-preview`` for the floating preview). Every library
-  keeps a real media element, so these reads survive the swap unchanged.
+  keeps a real media element, so these reads survive a library change unchanged.
 * **Controls** are found by ARIA role and accessible name, never by a library class name.
-  The names live in ONE table, :data:`CONTROL_NAMES`, and match the English UI. The file-page
-  player is Video.js 10, whose labels are translated with the UI language (so a test that
-  needs English names runs in the English UI, the default); the floating preview is still
-  Plyr until #1327 lane D. Both libraries' English labels match the same patterns: "Play",
-  "Pause", "Enable/Disable captions", "Settings", "Speed", "Enter picture-in-picture" /
-  "PIP", "Enter fullscreen".
+  The names live in ONE table, :data:`CONTROL_NAMES`, and match the English UI. Both players
+  are Video.js 10, whose labels are translated with the UI language (so a test that needs
+  English names runs in the English UI, the default). The English labels are "Play", "Pause",
+  "Enable/Disable captions", "Settings", "Speed", "Enter picture-in-picture" / "PIP",
+  "Enter fullscreen".
 * **App-owned labels** (search preview, speaker preview, waveform) are read from
   ``frontend/src/lib/i18n/locales/en.json`` through :func:`app_label`, so a copy change in the
   app cannot silently break a selector.

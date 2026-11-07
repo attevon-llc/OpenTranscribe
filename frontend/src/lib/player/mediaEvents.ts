@@ -28,7 +28,7 @@ export function listenToMedia(media: HTMLMediaElement, handlers: MediaEventHandl
  * The element's duration in seconds, or 0 while it is unknown.
  *
  * `HTMLMediaElement.duration` is `NaN` before metadata and `Infinity` for an unbounded stream;
- * the players report 0 for both (the value Plyr's own `duration` getter returned).
+ * the players report 0 for both (the previous player's behaviour).
  */
 export function mediaDuration(media: HTMLMediaElement): number {
   const { duration } = media;

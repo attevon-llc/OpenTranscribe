@@ -66,6 +66,16 @@
  * chunks, about 62 KB in total, of which a viewer downloads one, about 1.3 KB). Plyr is still
  * shipped for the mini player until lane E removes it (about 34 KB back). The total-JS budget is
  * raised by the delta plus ~4% of it (124,592 + 4,984 B), rounded up to whole KiB.
+ *
+ * Plyr removed (issue #1327 lane E), 2026-11-07, stock `nice -n 19 npm run build` on the lane tree
+ * before/after, gzip level 9:
+ *   total JS              2,747,197 B -> 2,747,199 B  (no change: no module imported `plyr` any
+ *                                                      more after lane D, so the package was
+ *                                                      already tree-shaken out of the bundle)
+ *   first-load closure      146,291 B ->   146,293 B; entry chunks 3,772 B -> 3,772 B
+ * The planned -34 KB therefore never appears here; removing the dependency only shrinks
+ * `node_modules` and the licence inventory. The total-JS budget is lowered from 2,811 KiB to
+ * 2,791 KiB (about 4% above the measurement, whole KiB); no other budget changes.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize, relative } from 'node:path';
@@ -111,7 +121,7 @@ export const FIRST_LOAD_GZIP_BUDGET = 147 * 1024;
  * With both players merged (they share the lazy locale chunks) it measured 2,747,199 B on
  * 2026-11-07, 4.6% under this budget, so it is kept.
  */
-export const TOTAL_JS_GZIP_BUDGET = 2811 * 1024;
+export const TOTAL_JS_GZIP_BUDGET = 2791 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;

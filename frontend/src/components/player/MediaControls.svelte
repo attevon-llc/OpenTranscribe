@@ -36,7 +36,7 @@
 </script>
 
 {#if !audio}
-  <!-- The large centre button (Plyr's play-large); shown only while paused. -->
+  <!-- The large centre button (the large play button); shown only while paused. -->
   <media-play-button class="big-play">
     <media-icon name="play"></media-icon>
   </media-play-button>

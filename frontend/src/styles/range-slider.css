@@ -3,8 +3,7 @@
  *
  * Every native <input type="range"> in the app goes through
  * `components/ui/RangeSlider.svelte`, which applies `.range-input` below. The design
- * lives in the custom properties so the media players (VideoPlayer.svelte, whose
- * Plyr-generated inputs can only be reached with vendor pseudo-element selectors, and
+ * lives in the custom properties so the media players (VideoPlayer.svelte and
  * player/MiniPlayer.svelte) read the same values instead of repeating them.
  *
  * The standard slider is the browser's native <input type="range"> (keyboard behaviour

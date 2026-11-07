@@ -21,7 +21,7 @@ All versions below come from `package.json`.
   the build is a pure SPA (no SSR, no server routes)
 - Plain CSS with custom properties (`src/styles/theme.css`); there is no Tailwind
 - **i18next** for translations (12 locales)
-- Plyr for media playback, `@ffmpeg/ffmpeg` (a self-built FFmpeg.wasm core) for in-browser audio
+- Video.js 10 (`@videojs/html`) for media playback, `@ffmpeg/ffmpeg` (a self-built FFmpeg.wasm core) for in-browser audio
   extraction, `marked` + DOMPurify + KaTeX for chat markdown
 - **Vitest** + Testing Library (jsdom) for unit and component tests; ESLint 10 and Prettier for
   linting and formatting

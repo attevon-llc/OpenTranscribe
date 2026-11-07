@@ -1,6 +1,6 @@
 import type { PageLoad } from './$types';
 
-// Disable SSR to prevent Plyr module resolution errors
+// SPA mode: the page builds on browser-only APIs (media elements, Video.js custom elements)
 export const ssr = false;
 
 export const load: PageLoad = ({ params }) => {

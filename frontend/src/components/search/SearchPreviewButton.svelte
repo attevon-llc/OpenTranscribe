@@ -1,7 +1,7 @@
 <script context="module" lang="ts">
   /**
    * `idle`: this occurrence is not the one in the floating player.
-   * `playing` / `paused`: it is, and the player reports that state (Plyr `play`/`pause`;
+   * `playing` / `paused`: it is, and the player reports that state (the player's `play`/`pause`;
    * `ended` also reports `pause`). `paused` covers a clip whose autoplay was blocked.
    */
   export type PreviewPlaybackState = 'idle' | 'playing' | 'paused';

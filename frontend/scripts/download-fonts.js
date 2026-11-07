@@ -50,28 +50,6 @@ async function downloadFile(url) {
   }
 }
 
-// Download Plyr SVG icons
-async function downloadPlyrIcons() {
-  try {
-    const publicDir = join(__dirname, '../public');
-    const plyrSvgPath = join(publicDir, 'plyr.svg');
-    const plyrSvgUrl = 'https://cdn.plyr.io/3.7.8/plyr.svg';
-
-    // Create public directory if it doesn't exist
-    if (!existsSync(publicDir)) {
-      mkdirSync(publicDir, { recursive: true });
-    }
-
-    console.log('Downloading Plyr icons...');
-    const svgData = await downloadFile(plyrSvgUrl);
-    writeFileSync(plyrSvgPath, svgData);
-    console.log('Downloaded plyr.svg');
-  } catch (error) {
-    console.error('Error downloading Plyr icons:', error.message);
-    throw error;
-  }
-}
-
 // Download all font files
 async function downloadFonts() {
   try {
@@ -119,7 +97,6 @@ async function downloadFonts() {
 // Main function
 async function main() {
   await downloadFonts();
-  await downloadPlyrIcons();
 }
 
 main();

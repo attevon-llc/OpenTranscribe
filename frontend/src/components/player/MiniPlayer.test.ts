@@ -12,7 +12,7 @@
  * HAVE_FUTURE_DATA), which is STRICTER than the metadata gate above and had no fallback if
  * `canplay` never fired.
  *
- * Ported from the Plyr mini player (issue #1327): the cases drive the `PlayerHandle` seam, so
+ * Ported from the previous mini player (issue #1327): the cases drive the `PlayerHandle` seam, so
  * they hold whichever library builds the controls. The controls themselves are covered by
  * `MiniPlayer.controls.test.ts`.
  */

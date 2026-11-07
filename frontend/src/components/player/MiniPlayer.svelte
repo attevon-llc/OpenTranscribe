@@ -51,7 +51,7 @@
   export let fileId: string = '';
   export let compact: boolean = true;
 
-  /** Plyr's speed list, 4x included (plan row 20); the library's default list stops at 2. */
+  /** The speed list, 4x included (plan row 20); the library's default list stops at 2. */
   const PLAYBACK_RATES = '0.5 0.75 1 1.25 1.5 1.75 2 4';
 
   const dispatch = createEventDispatcher();
@@ -76,7 +76,7 @@
 
   $: isVideo = contentType?.startsWith('video/');
   // Container-scoped, so the panel never takes keys from the page under it. The mini player
-  // has no captions or picture-in-picture control (Plyr's had neither), and where the browser
+  // has no captions or picture-in-picture control (the previous player had neither), and where the browser
   // cannot put an element fullscreen `F` is the full-window toggle instead.
   $: hotkeys = playerHotkeys('player')
     .filter(({ action }) => {
@@ -195,7 +195,7 @@
 
   function setFullWindow(on: boolean) {
     if (on === fullWindow) return;
-    // Plyr's fallback locked the page behind the player the same way.
+    // The previous fallback locked the page behind the player the same way.
     if (on) {
       bodyOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
@@ -308,7 +308,7 @@
                 </media-tooltip>
 
                 {#if !isVideo}
-                  <!-- Plyr's mini player had a volume slider for audio only. -->
+                  <!-- The mini player has a volume slider for audio only. -->
                   <media-volume-slider class="mini-volume">
                     <media-slider-track class="mini-track">
                       <media-slider-fill class="mini-fill"></media-slider-fill>

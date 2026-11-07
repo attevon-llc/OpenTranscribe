@@ -3,8 +3,7 @@
  * that element sits inside a `<video-player>`/`<audio-player>` (rendered by
  * `components/player/MediaPlayer.svelte`).
  *
- * Same shape as the Plyr adapter (`createPlyrPlayer(media, options)`), so a host swaps one
- * import. It wires the three app-side pieces Video.js leaves to the app:
+ * It wires the three app-side pieces Video.js leaves to the app:
  * - remembered volume, mute, speed and captions (`bindPlayerPrefs`, which also turns captions
  *   on unless the viewer switched them off), per
  *   https://videojs.org/docs/framework/html/guides/user-preferences;

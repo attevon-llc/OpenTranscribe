@@ -37,7 +37,7 @@ coordinator). Its request-shaping and preview logic lives in `$lib/mediaSearch/`
   already restricted to what the caller may see (`services/collection_visibility.py`); never
   look collections up client-side.
 - `SearchPreviewButton.svelte` — the per-occurrence play control, state
-  `idle | playing | paused`. `activePreview.playing` follows the floating player's Plyr
+  `idle | playing | paused`. `activePreview.playing` follows the floating player's
   `play`/`pause` events (`ended` reports `pause`), so the glyph never claims "playing" for a
   paused clip. Primary colour when active, never `--error-color`.
 - `SearchOccurrence.svelte` — one snippet row; renders the backend's `<mark>` /

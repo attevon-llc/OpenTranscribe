@@ -21,6 +21,7 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.speaker import Speaker
 from app.models.user import User
+from app.services.hold_guard import unheld_file_ids
 from app.services.permission_service import file_ids_in_scope
 from app.services.request_context import RequestContext
 from app.services.speaker_profile_activity import touch_profile_interaction
@@ -164,6 +165,8 @@ def confirm_profile_gender(
             Speaker.profile_id == profile.id,
             Speaker.user_id == current_user.id,
             Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
+            # A held file's speaker keeps the gender it had when held (legal-hold freeze).
+            Speaker.media_file_id.in_(unheld_file_ids()),
         )
         .update(
             {"predicted_gender": gender, "gender_confirmed_by_user": True},

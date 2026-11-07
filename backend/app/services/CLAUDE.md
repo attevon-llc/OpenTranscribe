@@ -97,7 +97,7 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   Routes call `record_file_event` (a row or a uuid; the uuid is resolved only after the opt-in gate, so
   the file page pays no query when auditing is off) after the read or the content exists, never before a
   refusal. `AuditedResource.conversation` covers chat exports. **Governance events** (membership,
-  visibility, hold place/release, a transcript edit on a held file) go through
+  visibility, hold place/release, a comment on a held file) go through
   `stage_content_event` instead, BEFORE the commit: it stages the event as an `audit_outbox` row in
   the change's own transaction (`audit_outbox.py`, v459, issue #1329) and RAISES on failure, so the
   change and its record commit or roll back together. After the commit, call
@@ -116,8 +116,8 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   places and releases holds (`place_file_hold`, `place_collection_hold`, `release_hold`);
   it never commits. The endpoint stages the audit event with `record_hold_change` BEFORE its
   commit; what must follow the commit (storage object lock, the erasure-sweep nudge, delivering the
-  staged event) is a `HoldChange` that `finish_hold_change` performs. `record_edit_on_held_file` is
-  likewise called BEFORE the edit's commit and raises rather than let an edit commit unrecorded. `content_hold_queries.py` holds the read-side questions.
+  staged event) is a `HoldChange` that `finish_hold_change` performs. **A hold freezes the file's content**
+  (v0.7.0): writes refuse via `api/hold_refusal.refuse_if_frozen` / `assert_content_mutable` / `unheld_file_ids()`, tasks skip a frozen file (`tasks/hold_skip.py`), a new comment is staged as `content.hold.annotation`; `tests/unit/test_hold_freeze_coverage.py` must classify every write route and task. `content_hold_queries.py` holds the read-side questions.
 - **Org audit view** — `org_audit_view.py` resolves `actor_display` / `target_display` /
   `resource_display` for the organization admin's audit screen at READ time (three queries per page), and
   only inside the org: a non-member (left, operator, failed login) or another tenant's / personal /

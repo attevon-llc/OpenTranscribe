@@ -318,7 +318,7 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |
 | **Content moderation** | `admin.file.quarantine`, `admin.file.release` (also written when an organization administrator acts on their own organization's files; the event records the actor's role and which authority held the file; outcome `partial` with `details.media_revocation` when storage could not revoke, or restore, the file's already-issued media links), `admin.takedown_notice.create`, `admin.takedown_notice.update`, `admin.takedown_notice.notify`, `admin.takedown_notice.export` (notice records: ids, the notice type and counts only, never the basis or a reason) |
 | **Data integrity** | `admin.data_integrity.purge` (a forced orphan purge) |
-| **Legal holds** | `content.hold.place`, `content.hold.release` (scope and file count; never the reason or matter reference), `content.hold.refused` (the action attempted and who holds it), `content.transcript.edit` (a transcript segment was edited, or its speaker reassigned, while the file was under a hold: the segment id, the fields changed and who holds the file, never the text. Editing a held file is allowed; this is its trail) |
+| **Legal holds** | `content.hold.place`, `content.hold.release` (scope and file count; never the reason or matter reference), `content.hold.refused` (the action attempted and who holds it), `content.hold.annotation` (a comment was added to a held file: the comment id and who holds the file, never its text), `content.transcript.edit` (written before 0.7.0 when a held file's transcript was edited; a held file now refuses edits, so it is no longer recorded) |
 | **Audit** | `audit.export` (an audit log was exported: platform or organization scope, format, row count, whether it was truncated) |
 | **Collections** | `collection.visibility.change` (a collection was restricted or opened up: the new mode and how many members lost sight of it, never its name), `collection.membership.change` (files were added to or removed from a collection: the counts, up to 100 file ids, and `details.source`: `manual`, `auto_label` or `bulk_group`; the file or collection name is never recorded), `resource.share` and `resource.unshare` (a collection or tag was shared: the typed `resource_type`, `resource_uuid` and `tenant_scope` fields identify it) |
 | **Content access** | `content.file.view`, `content.media.access` (`details.kind`: `stream_url`, `download_prepare`, `download_stream`), `content.export` (format, surface and file count; `details.surface` is `transcript` (also a Markdown, Word or PDF export, named by `details.format`), `subtitles`, `summary`, `chat` or `bulk`, and a bulk export writes one event per file). Opening a recording is `surface: detail`, and its thumbnail, captions and transcript pages are part of that one view. Recorded only while [content access auditing](#content-access-auditing) is on |
@@ -344,8 +344,8 @@ The `content.*` events record who opened a recording, asked for its media or exp
 transcript. They are written in large numbers, so they are **off by default**: a **super admin**
 turns them on with **Content access auditing** at the top of the Audit Logs section, with no
 environment variable and no restart (it takes effect within about 30 seconds). Collection
-visibility and membership changes, placing and releasing a legal hold, and a transcript edit on a
-held file (`content.transcript.edit`) are not governed by this switch: they are recorded whether it
+visibility and membership changes, placing and releasing a legal hold, and a comment added to a
+held file (`content.hold.annotation`) are not governed by this switch: they are recorded whether it
 is on or off, and they are recorded **in the same database transaction as the change**. If the
 event cannot be written to the database, the change is not made either. If the audit log itself
 (the search index behind this viewer) is unavailable, the change goes ahead and the event waits in
@@ -419,8 +419,11 @@ An **organization administrator** can place a **legal hold** on files, or on a w
 capability; the community edition has no organizations). While a hold is in force, nobody can
 delete the held files (their owner included), retention will not purge them, an account or erasure
 request cannot remove them, and they cannot be reprocessed or retried, because regenerating a
-transcript replaces the evidence. Editing a transcript is still allowed, and the held files stay
-readable, searchable and playable.
+transcript replaces the evidence. A hold also **freezes the file's content** as it was: its
+transcript, speakers, title and other details, summary, topics, tags, collections and existing
+comments cannot be changed, and background work (a new summary, topic extraction, voice matching,
+auto-labelling, a redaction rescan) skips it. Held files stay readable, searchable, playable,
+exportable and downloadable, and anyone who can see one can still add a comment.
 
 - **Place a hold:** choose a collection or paste file IDs (one per line, up to 500), give a reason
   (10 to 2,000 characters) and optionally a matter reference. Only files and collections of your own
@@ -432,17 +435,17 @@ readable, searchable and playable.
   erasure request that was waiting on a file is retried when its last hold is released.
 - **The reason is for your organization's administrators only.** It is never copied into the audit
   log, a notification or a file response. Everyone who can see a held file or collection sees a
-  **Legal hold** badge and, when they try to delete or reprocess it, a message saying whether the
+  **Legal hold** badge and, when they try to change, delete or reprocess it, a message saying whether the
   service operator, your organization or both hold it; only an organization administrator is given
   the hold ids.
 - **Platform staff cannot place or release an organization's hold** through the product, even a super
   admin: the screen and its API are for that organization's administrators, with no platform bypass.
 - **Audit:** placing and releasing a hold are recorded whatever the content-auditing switch says (`content.hold.place`,
   `content.hold.release`), in the same database transaction as the hold itself, so a hold is never
-  placed or released without its record; so is a transcript edit to a held file
-  (`content.transcript.edit`). A refused delete, cancel-upload, reprocess, retry, collection
-  delete or removal from a held collection is recorded too (`content.hold.refused`: the action and
-  who holds it), on a best-effort basis. See [Content access auditing](#content-access-auditing)
+  placed or released without its record; so is a comment added to a held file
+  (`content.hold.annotation`). Every refused change (an edit, a delete, a reprocess, a tag or
+  collection change and so on) is recorded too (`content.hold.refused`: the action and who holds
+  it), on a best-effort basis. See [Content access auditing](#content-access-auditing)
   for what "recorded" guarantees, and [Audit Log Viewer](#audit-log-viewer).
 - **Erasing an organization** keeps the organization (and defers the rest) while any of its holds is
   in force.

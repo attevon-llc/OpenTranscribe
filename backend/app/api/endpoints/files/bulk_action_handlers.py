@@ -2,7 +2,7 @@
 
 Each ``_handle_*`` turns one file and one verb into a ``BulkActionResult`` rather than
 raising, so a batch reports per-file outcomes. Retry and reprocess, which share the
-retry-ceiling and hold gates, live in ``bulk_rework_actions``; the dispatching loop and the
+retry-ceiling gate, live in ``bulk_rework_actions``; the dispatching loop and the
 route are in ``bulk_actions``.
 """
 
@@ -45,6 +45,59 @@ class BulkActionResult(BaseModel):
     message: str
     error: str | None = None
     outcome: BulkTagOutcome | None = None
+
+
+#: Bulk verbs that change a file's content, and the ``content.hold.refused`` action each is
+#: recorded as when the file is held (legal-hold freeze). Delete and the trash verbs refuse
+#: through ``trash_service``; cancel only acts during the initial run; hide is a view preference.
+BULK_FREEZE_ACTIONS: dict[str, str] = {
+    "retry": "retry",
+    "recover": "recover",
+    "reprocess": "reprocess",
+    "summarize": "summary_generate",
+    "identify_speakers": "identify_speakers",
+    "redact": "redaction_rescan",
+    "add_tag": "tag_add",
+    "remove_tag": "tag_remove",
+}
+
+#: The verbs that regenerate the transcript keep the reprocess wording.
+_REWORK_VERBS = frozenset({"retry", "recover", "reprocess"})
+
+
+def bulk_hold_refusal(
+    db: Session,
+    file_uuid: str,
+    file_id: int,
+    verb: str,
+    *,
+    actor: User | None,
+    request: Request | None = None,
+) -> BulkActionResult | None:
+    """This file's ``FILE_UNDER_LEGAL_HOLD`` row when ``verb`` would change a held file.
+
+    ``None`` when the verb is not a content change or the file is free. Audited like a
+    single-file refusal; the message is fixed text, never an exception's.
+    """
+    from app.api.hold_refusal import audit_hold_refusals
+    from app.services.hold_guard import FREEZE_REFUSAL
+    from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
+    from app.services.hold_guard import REPROCESS_REFUSAL
+    from app.services.hold_guard import hold_states
+
+    action = BULK_FREEZE_ACTIONS.get(verb)
+    if action is None:
+        return None
+    held = hold_states(db, [file_id])
+    if not held:
+        return None
+    audit_hold_refusals(db, held, actor=actor, action=action, request=request)
+    return BulkActionResult(
+        file_uuid=file_uuid,
+        success=False,
+        message=REPROCESS_REFUSAL if verb in _REWORK_VERBS else FREEZE_REFUSAL,
+        error=LEGAL_HOLD_ERROR_CODE,
+    )
 
 
 def _handle_delete_action(

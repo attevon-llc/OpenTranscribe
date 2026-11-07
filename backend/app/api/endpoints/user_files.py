@@ -23,6 +23,7 @@ from sqlalchemy.orm import defer
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
+from app.api.hold_refusal import refuse_reprocess_if_held
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed_for_file
@@ -408,6 +409,7 @@ def retry_file_processing(
         )
         file_id = media_file.id
         require_processing_allowed_for_file(db, media_file)
+        refuse_reprocess_if_held(db, int(file_id), actor=current_user, action="retry")
 
         # Check if retry is appropriate. A NULL `status` fails this membership test and so
         # lands in this branch — where `.status.value` would raise AttributeError and turn a

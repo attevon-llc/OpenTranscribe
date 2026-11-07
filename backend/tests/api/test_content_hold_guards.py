@@ -26,6 +26,7 @@ from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.services import content_hold_service as holds
 from app.services import file_cleanup_service
+from app.services.hold_guard import REPROCESS_REFUSAL
 from app.services.hold_guard import held_pred
 from app.services.hold_guard import hold_state
 from app.services.hold_guard import not_held_pred
@@ -360,9 +361,10 @@ def test_reprocess_and_retry_are_refused_while_held_and_say_so(client, gov):
         detail = response.json()["detail"]
         assert detail["error"] == "FILE_UNDER_LEGAL_HOLD"
         assert detail["held_by"] == ["organization"]
-        assert "Editing the transcript is still allowed" in detail["message"]
+        # A hold now freezes the content, so the text no longer promises that edits work.
+        assert detail["message"] == REPROCESS_REFUSAL
 
-    from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
+    from app.api.hold_refusal import refuse_reprocess_if_held
 
     with pytest.raises(HTTPException):
         refuse_reprocess_if_held(gov.db, f.id)

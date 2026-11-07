@@ -127,6 +127,9 @@ async def retry_summary(
     )
     file_id = media_file.id
     require_processing_allowed_for_file(db, media_file)
+    from app.api.hold_refusal import refuse_if_frozen
+
+    refuse_if_frozen(db, int(file_id), actor=current_user, action="summary_generate")
 
     # Check if retry is needed and possible
     if str(media_file.summary_status) == "disabled":

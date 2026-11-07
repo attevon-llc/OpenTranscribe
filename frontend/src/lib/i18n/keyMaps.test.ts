@@ -110,3 +110,16 @@ describe('ORG_AUDIT_EVENT_KEYS: scheduled erasure events (#1105)', () => {
     );
   });
 });
+
+describe('ORG_AUDIT_EVENT_KEYS: legal-hold freeze events (v0.7.0)', () => {
+  it('labels a comment on a held file, and keeps the historic transcript-edit label', () => {
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['content.hold.annotation']).toBe(
+      'orgAudit.event.holdAnnotation'
+    );
+    // No longer emitted (a held file now refuses edits), but rows already in the log must
+    // still read as words, not as a raw identifier.
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['content.transcript.edit']).toBe(
+      'orgAudit.event.transcriptEditedHeld'
+    );
+  });
+});

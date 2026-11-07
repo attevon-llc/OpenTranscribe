@@ -1,8 +1,10 @@
 """Bulk ``retry`` and ``reprocess``: the two actions that reset a file and re-dispatch it.
 
 They mirror the single-file ``/retry`` (``management``) and ``/reprocess`` (``reprocess``)
-routes gate for gate -- status, legal hold, retry ceiling, media availability -- and report
-a refusal as that file's ``BulkActionResult`` instead of aborting the batch.
+routes gate for gate -- status, retry ceiling, media availability -- and report a refusal as
+that file's ``BulkActionResult`` instead of aborting the batch. The legal-hold gate runs before
+either, in ``bulk_actions`` (``bulk_action_handlers.bulk_hold_refusal``), for every verb that
+changes a file.
 """
 
 from sqlalchemy.orm import Session
@@ -15,19 +17,6 @@ from app.services import system_settings_service
 from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils.file_retry import reset_file_for_retry
 from app.utils.file_retry import transcript_is_regenerable
-
-
-def _held_result(db: Session, file_uuid: str, file_id: int) -> BulkActionResult | None:
-    """The per-file refusal of a bulk reprocess or retry on a held file; ``None`` when free."""
-    from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
-    from app.services.hold_guard import REPROCESS_REFUSAL
-    from app.services.hold_guard import hold_state
-
-    if not hold_state(db, int(file_id)).held:
-        return None
-    return BulkActionResult(
-        file_uuid=file_uuid, success=False, message=REPROCESS_REFUSAL, error=LEGAL_HOLD_ERROR_CODE
-    )
 
 
 def _handle_retry_action(
@@ -60,10 +49,6 @@ def _handle_retry_action(
             message=f"File cannot be retried in current status: {db_file.status}",
             error="INVALID_STATUS",
         )
-
-    held = _held_result(db, file_uuid, file_id)
-    if held is not None:
-        return held
 
     if reset_retry_count and not is_admin:
         return BulkActionResult(
@@ -147,10 +132,6 @@ def _handle_reprocess_action(
             message=f"Cannot reprocess file in {db_file.status} status",
             error="INVALID_STATUS",
         )
-
-    held = _held_result(db, file_uuid, file_id)
-    if held is not None:
-        return held
 
     if not is_admin:
         ceiling_message = system_settings_service.retry_ceiling_message(

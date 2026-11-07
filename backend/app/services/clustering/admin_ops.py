@@ -9,6 +9,7 @@ from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
+from app.services.hold_guard import hold_states
 from app.services.permission_service import file_ids_in_scope
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
@@ -168,7 +169,11 @@ def merge_clusters(
         self._assigned.owner_ids.add(user_id)
         self._assigned.cluster_uuids |= {source_uuid, target_uuid}
         if target.promoted_to_profile_id is not None:
-            _adopt_target_profile(self, target, moved, source_profile_id, user_id)
+            # A held file's speaker joins the target cluster (grouping) but is not relinked
+            # or renamed: its file's content is preserved as it was (legal-hold freeze).
+            held_files = hold_states(self.db, {int(s.media_file_id) for s in moved})
+            relinkable = [s for s in moved if int(s.media_file_id) not in held_files]
+            _adopt_target_profile(self, target, relinkable, source_profile_id, user_id)
 
         self.db.commit()
         self._rename_tracker.flush(self.db)
@@ -246,6 +251,9 @@ def split_cluster(
             return None
 
         speakers_to_move = [s for s in speakers_to_move if s.cluster_id == source.id]
+        # A split is an unassignment; a speaker on a held file keeps its identity.
+        held_files = hold_states(self.db, {int(s.media_file_id) for s in speakers_to_move})
+        speakers_to_move = [s for s in speakers_to_move if int(s.media_file_id) not in held_files]
         if not speakers_to_move:
             logger.warning("No speakers from source cluster to split")
             return None

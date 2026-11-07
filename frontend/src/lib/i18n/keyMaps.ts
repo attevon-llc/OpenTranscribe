@@ -319,6 +319,7 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'content.hold.place': 'orgAudit.event.holdPlace',
   'content.hold.release': 'orgAudit.event.holdRelease',
   'content.hold.refused': 'orgAudit.event.holdRefused',
+  'content.hold.annotation': 'orgAudit.event.holdAnnotation',
   'content.transcript.edit': 'orgAudit.event.transcriptEditedHeld',
   'transcript.view_unredacted': 'orgAudit.event.transcriptRevealed',
   'org.policy.change': 'orgAudit.event.policyChange',

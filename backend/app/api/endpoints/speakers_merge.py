@@ -89,6 +89,17 @@ def merge_speakers(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Speakers must be in the same file or have the same owner",
         )
+    # A merge rewrites the speaker of every segment the source had: on a held file (either
+    # side) that is a change to preserved content, so it is refused (legal-hold freeze).
+    from app.api.hold_refusal import refuse_if_frozen
+
+    refuse_if_frozen(
+        db,
+        {int(source_speaker.media_file_id), int(target_speaker.media_file_id)},
+        actor=current_user,
+        action="speaker_merge",
+        request=request,
+    )
 
     # Store profile IDs for embedding updates
     source_profile_id = int(source_speaker.profile_id) if source_speaker.profile_id else None
@@ -105,38 +116,17 @@ def merge_speakers(
 
     # Capture the source identity before the row disappears
     source_speaker_uuid = str(source_speaker.uuid)
-    target_speaker_uuid_str = str(target_speaker.uuid)
-    # The file whose segments just moved onto the target (the source's own).
-    segments_file = source_speaker.media_file
-    # ...and the clusters/profile it belonged to, which the CASCADE is about to forget.
+    # The clusters/profile the source belonged to, which the CASCADE is about to forget.
     # Its voiceprint stays until the background task has folded it into the target.
     source_impact = capture_speaker_impact(db, [source_speaker_id], removed=False, reindex=False)
     # The source's voice now lives in the target, so a correction the user made on it
     # (not this profile, not that speaker) must outlive the CASCADE that drops its rows.
     carry_blacklist(db, int(source_speaker_id), int(target_speaker.id))
 
-    # A merge rewrites the speaker of every segment the source had, which is an edit of the
-    # transcript: on a held file it is allowed and recorded (issues #1307, #1329). Staged in the
-    # merge's own transaction, so the merge and its record commit or roll back together;
-    # nothing is staged for a file nobody holds.
-    from app.services import audit_outbox
-    from app.services.content_hold_service import record_edit_on_held_file
-
-    record_edit_on_held_file(
-        db,
-        request,
-        current_user,
-        segments_file,
-        kind="speaker_merge",
-        speaker_uuids=[source_speaker_uuid, target_speaker_uuid_str],
-        bypass=ctx.bypass,
-    )
-
     record_speaker_merge(target_speaker, user_id=current_user.id, merged=source_speaker)
     # Delete the source speaker
     db.delete(source_speaker)
     db.commit()
-    audit_outbox.deliver_staged(db)
 
     # The source is no longer a member: its clusters and profile drop it NOW, not when the
     # background task gets to it (issue #1214). The target side waits for the averaged

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.tenancy import UNSCOPED
@@ -36,6 +37,8 @@ from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
+from app.services.hold_guard import held_file_ids
+from app.services.hold_guard import unheld_file_ids
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.utils.speaker_identity_source import hides_link
@@ -64,6 +67,9 @@ def apply_profile_name_to_speakers(
     confident ``suggested_name`` is indexed under the *suggestion*, and a member
     with neither is indexed under the raw diarizer label. Keying on the profile's
     own previous name would match nothing for either (issue #605).
+
+    Members on a file under a legal hold are left with the name they had when it was held
+    (legal-hold freeze, plan §3.5): their file's content is preserved as it was.
 
     Only members whose link is VISIBLE under their file's voiceprint decision are rewritten
     (a link a voiceprint made is hidden while voiceprints are off, so that speaker is not
@@ -94,7 +100,10 @@ def apply_profile_name_to_speakers(
         profile has no members — distinct from "no such profile", which the caller
         decides.
     """
-    linked_query = db.query(Speaker).filter(Speaker.profile_id == profile_id)
+    linked_query = db.query(Speaker).filter(
+        Speaker.profile_id == profile_id,
+        Speaker.media_file_id.in_(unheld_file_ids()),
+    )
     if restrict_to_user_id is not None:
         linked_query = linked_query.filter(Speaker.user_id == restrict_to_user_id)
     # A speaker's tenant is its FILE's: the pipeline never stamps ``Speaker.organization_id``.
@@ -141,3 +150,16 @@ def apply_profile_name_to_speakers(
         f"Applied profile {profile_id} name '{new_name}' to {len(linked_speakers)} speaker(s)"
     )
     return renames
+
+
+def held_member_count(db: Session, profile_id: int) -> int:
+    """How many of the profile's member speakers are on a held file (and so keep their name)."""
+    return int(
+        db.query(func.count(Speaker.id))
+        .filter(
+            Speaker.profile_id == profile_id,
+            Speaker.media_file_id.in_(held_file_ids()),
+        )
+        .scalar()
+        or 0
+    )

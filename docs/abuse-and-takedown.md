@@ -285,7 +285,7 @@ Three different things keep a file from disappearing. Do not mix them up:
 | The owner can still see and play the file | No | Yes (when not quarantined) | Yes |
 | Blocks delete, cancel-upload, account deletion, retention, GDPR erasure | Retention only | Yes | Yes |
 | Blocks reprocess and retry | No | Yes | Yes |
-| Transcript edits | Not reachable (the file is hidden) | Allowed | Allowed (a hold protects the transcript from being regenerated, not from the owner's edits) |
+| Transcript edits | Not reachable (the file is hidden) | Refused (a hold freezes the content) | Refused (a hold freezes the content) |
 | Released by | Whoever holds the takedown | The operator | An administrator of that organization only; staff cannot release it through the product |
 
 `services/hold_guard.py` answers "held by anyone" for the last two, and a scan test fails on any

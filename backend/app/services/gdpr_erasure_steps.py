@@ -23,6 +23,8 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.file_cleanup_service import purge_media_file
 from app.services.gdpr_voiceprint_erasure import _erase_profile_embedding
+from app.services.hold_guard import held_pred
+from app.services.hold_guard import unheld_file_ids
 from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
 
 
@@ -110,6 +112,41 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
             )
 
 
+def _delete_comments_deferring_held(db: Session, comments: Any, summary: dict[str, Any]) -> int:
+    """Delete ``comments`` except those on a held file, which are deferred like the file.
+
+    A comment on a file under a legal hold is part of that file's preserved record (the
+    legal-hold freeze; GDPR Art. 17(3)(e)). It is kept, each such file is counted in
+    ``legal_holds_skipped`` (so the ledger entry is ``deferred`` / ``legal_hold`` and the
+    sweep retries it once the hold is released) and reported in ``errors``. The subject's
+    ``user`` row is then retained, as for a held file of their own: ``comment.user_id`` is
+    NOT NULL.
+
+    Returns:
+        How many comments were deleted.
+    """
+    held_files = [
+        str(row[0])
+        for row in db.query(MediaFile.uuid)
+        .filter(
+            held_pred(),
+            MediaFile.id.in_(comments.with_entities(Comment.media_file_id).scalar_subquery()),
+        )
+        .distinct()
+    ]
+    for file_uuid in held_files:
+        summary["legal_holds_skipped"] += 1
+        summary["errors"].append(
+            {
+                "file_uuid": file_uuid,
+                "error": "skipped: comment on a file under an active "
+                "legal hold (GDPR Art. 17(3)(e))",
+            }
+        )
+    deletable = comments.filter(Comment.media_file_id.in_(unheld_file_ids()))
+    return int(deletable.delete(synchronize_session=False))
+
+
 def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]) -> list[str]:
     """Delete a single user's profile/collection rows that survive file cleanup.
 
@@ -178,8 +215,8 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     # files are already gone via purge_media_file's ORM cascade; these are the
     # ones no per-file pass can see, and both FKs are NOT NULL / NO ACTION, so
     # leaving them turns `db.delete(user)` into a foreign-key violation.
-    summary["comments_deleted"] = (
-        db.query(Comment).filter(Comment.user_id == user_id).delete(synchronize_session=False)
+    summary["comments_deleted"] = _delete_comments_deferring_held(
+        db, db.query(Comment).filter(Comment.user_id == user_id), summary
     )
     summary["tasks_deleted"] = (
         db.query(Task).filter(Task.user_id == user_id).delete(synchronize_session=False)

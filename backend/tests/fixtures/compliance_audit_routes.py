@@ -103,6 +103,8 @@ _NO_DRIVER = (
     "no test drives this route's hold refusal and reads the event: force-delete needs a platform "
     "admin acting through a write grant, and member removal a collection-scoped hold"
 )
+#: The suite that drives every legal-hold freeze refusal and reads its event back.
+_FREEZE = "api/test_hold_freeze_routes.py"
 AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     # Takedown and its platform legal hold. The quarantine/release payload is being reshaped on
     # another branch; the live case asserts actor + target + event name only.
@@ -238,8 +240,63 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     ("DELETE", "/api/collections/{collection_uuid}"): A(
         ("CONTENT_HOLD_REFUSED",), pinned_by="api/test_org_admin_holds.py"
     ),
+    # Content writes a legal hold freezes (v0.7.0): each refuses a held file, audited.
     ("DELETE", "/api/collections/{collection_uuid}/media"): A(
-        ("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("DELETE", "/api/comments/{comment_uuid}"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("DELETE", "/api/files/{file_uuid}/suggestions"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("DELETE", "/api/speaker-profiles/profiles/{profile_uuid}"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("DELETE", "/api/tags"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("DELETE", "/api/tags/files/{file_uuid}/tags/{tag_name}"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("PATCH", "/api/tags/{tag_uuid}"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/collections/{collection_uuid}/media"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/files/batch-extract"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/files/{file_uuid}/apply"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/files/{file_uuid}/auto-label"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/files/{file_uuid}/extract"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/files/{file_uuid}/identify-speakers"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/files/{file_uuid}/recover"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/files/{file_uuid}/retry-summary"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/files/{file_uuid}/summarize"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/my-files/{file_uuid}/retry"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/speaker-profiles/speakers/{speaker_uuid}/assign-profile"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/speakers"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/speakers/{speaker_uuid}/confirm-gender"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/speakers/{speaker_uuid}/merge/{target_speaker_uuid}"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/speakers/{speaker_uuid}/verify"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("POST", "/api/tags/files/{file_uuid}/tags"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/tags/promote"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/tags/{tag_uuid}/merge"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("POST", "/api/tasks/retry/{file_uuid}"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("PUT", "/api/comments/{comment_uuid}"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("PUT", "/api/files/{file_uuid}"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("PUT", "/api/files/{file_uuid}/transcript/segments/{segment_uuid}"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
+    ),
+    ("PUT", "/api/speakers/{speaker_uuid}"): A(("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE),
+    ("PUT", "/api/transcripts/segments/{segment_uuid}/speaker"): A(
+        ("CONTENT_HOLD_REFUSED",), pinned_by=_FREEZE
     ),
     # Resolves the grant itself instead of through get_current_context.
     ("GET", "/api/files/{file_uuid}/thumbnail"): A(("SUPPORT_ACCESS_USED",), "thumbnail-use"),

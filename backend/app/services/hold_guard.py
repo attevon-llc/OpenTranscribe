@@ -19,6 +19,15 @@ learns that the file is held and by whom (``platform`` or ``organization``): a p
 whom to ask. The hold uuids are the handle for a release screen, so an organization
 administrator is given their organization's and an instance administrator the platform's, never
 the other's; the reason is never in a refusal at all.
+
+**A hold freezes the file's content** (legal-hold plan, docs/design/legal_hold_ux_freeze_plan.md
+§3). Under FRCP 37(e) a party must take reasonable steps to preserve information; this
+deployment keeps no transcript versions (issue #46), so an edit to a held file would overwrite
+the only copy of what was held. Every content write therefore refuses a held file
+(:func:`assert_content_mutable`, or ``app.api.hold_refusal.refuse_if_frozen`` on a route) and
+every background write skips a frozen one (:func:`frozen_states`, :func:`not_held_pred`);
+``tests/unit/test_hold_freeze_coverage.py`` fails on a write path that does neither. Revisit
+when #46 ships: with append-only versions, edits could be allowed and every version preserved.
 """
 
 from __future__ import annotations
@@ -28,6 +37,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import ColumnElement
+from sqlalchemy import Select
 from sqlalchemy import and_
 from sqlalchemy import exists
 from sqlalchemy import or_
@@ -53,19 +63,68 @@ LEGAL_HOLD_REFUSAL = (
 )
 
 #: Refusal text for reprocessing or retrying a held file. Reprocessing replaces the transcript,
-#: which is exactly what a hold exists to prevent; EDITING it is a different act (it is audited
-#: and stays allowed), so the text says so.
+#: which is exactly what a hold exists to prevent.
 REPROCESS_REFUSAL = (
     "refused: the file is under an active legal hold, so its transcript cannot be regenerated. "
-    "Release the hold before reprocessing. Editing the transcript is still allowed."
+    "Release the hold before reprocessing."
 )
 
 #: Refusal text for deleting the summary or a speaker of a held file. Both are rebuilt only by
 #: reprocessing, which a hold also refuses, so deleting them would be unrecoverable.
 DESTROY_DERIVED_REFUSAL = (
     "refused: the file is under an active legal hold, so its speakers and summary cannot be "
-    "deleted. Release the hold first. Editing the transcript is still allowed."
+    "deleted. Release the hold first."
 )
+
+#: Refusal text for any other change to a held file's content (an edit, a rename, a tag, a
+#: collection change, a new summary). Fixed text: a refusal never echoes an exception.
+FREEZE_REFUSAL = (
+    "refused: the file is under an active legal hold, so its content is preserved exactly as "
+    "it was. You can still read, search, play, export and download it, and add a comment. An "
+    "administrator must release the hold before it can be changed."
+)
+
+#: The closed vocabulary of ``content.hold.refused``'s ``details.action``. The first four were
+#: written before the freeze and are kept verbatim: they are already in tenants' audit logs.
+FREEZE_ACTIONS: tuple[str, ...] = (
+    "delete",
+    "cancel_upload",
+    "summary_delete",
+    "speaker_delete",
+    "segment_edit",
+    "segment_speaker",
+    "speaker_merge",
+    "speaker_create",
+    "speaker_update",
+    "speaker_link",
+    "speaker_verify",
+    "speaker_gender",
+    "file_update",
+    "summary_generate",
+    "identify_speakers",
+    "topic_extract",
+    "topic_apply",
+    "topic_dismiss",
+    "auto_label",
+    "redaction_rescan",
+    "tag_add",
+    "tag_remove",
+    "tag_merge",
+    "tag_delete",
+    "collection_add",
+    "remove_from_collection",
+    "delete_collection",
+    "comment_edit",
+    "comment_delete",
+    "reprocess",
+    "retry",
+    "recover",
+    "profile_delete",
+)
+
+#: Statuses of a file whose initial processing run has not finished. A hold placed during that
+#: run preserves the content as of its end, so the run itself is not a change to held content.
+_IN_FLIGHT_STATUSES = frozenset({"pending", "processing"})
 
 HELD_BY_PLATFORM = "platform"
 HELD_BY_ORGANIZATION = "organization"
@@ -143,6 +202,16 @@ def held_pred() -> ColumnElement[bool]:
 def not_held_pred() -> ColumnElement[bool]:
     """SQL predicate: the ``MediaFile`` row is held by nobody. ``legal_hold`` is NOT NULL."""
     return and_(MediaFile.legal_hold.is_(False), ~_active_hold_covers_file())
+
+
+def unheld_file_ids() -> Select[tuple[int]]:
+    """``SELECT id`` of the files nobody holds, for ``<file column>.in_(...)`` in a write."""
+    return select(MediaFile.id).where(not_held_pred())
+
+
+def held_file_ids() -> Select[tuple[int]]:
+    """``SELECT id`` of the held files, for ``<file column>.in_(...)``."""
+    return select(MediaFile.id).where(held_pred())
 
 
 def hold_states(db: Session, file_ids: Iterable[int]) -> dict[int, HoldState]:
@@ -239,3 +308,48 @@ def refusal_detail(
     if holds:
         detail["holds"] = holds
     return detail
+
+
+def is_frozen_state(state: HoldState | None, status: object) -> bool:
+    """Whether a file in ``state`` with processing ``status`` is frozen (held and not in flight)."""
+    if state is None or not state.held:
+        return False
+    value = getattr(status, "value", status)
+    return str(value) not in _IN_FLIGHT_STATUSES
+
+
+def frozen_states(db: Session, file_ids: Iterable[int]) -> dict[int, HoldState]:
+    """The held files among ``file_ids`` whose initial run has finished (one query for status).
+
+    For background work: a task dispatched for a file held while it was still being processed
+    finishes that run; anything after it is a separate write and is skipped.
+    """
+    held = hold_states(db, file_ids)
+    if not held:
+        return {}
+    statuses: dict[int, object] = {
+        int(file_id): status
+        for file_id, status in db.execute(
+            select(MediaFile.id, MediaFile.status).where(MediaFile.id.in_(held))
+        )
+    }
+    return {
+        file_id: state
+        for file_id, state in held.items()
+        if is_frozen_state(state, statuses.get(file_id))
+    }
+
+
+def is_frozen(db: Session, file_id: int) -> bool:
+    """Whether one file is frozen; the per-file form of :func:`frozen_states`."""
+    return int(file_id) in frozen_states(db, [file_id])
+
+
+def assert_content_mutable(db: Session, file_ids: Iterable[int]) -> None:
+    """Raise :class:`HoldRefusedError` when any of ``file_ids`` is held; else return.
+
+    The service-level freeze guard (a request-scoped write). It refuses whenever the file is
+    held, like :func:`assert_not_held`: a person cannot edit a file that is still processing,
+    so the in-flight nuance of :func:`frozen_states` is for background work only.
+    """
+    assert_not_held(db, file_ids)

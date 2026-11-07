@@ -33,6 +33,7 @@ from app.api.endpoints.files.bulk_action_handlers import _handle_identify_speake
 from app.api.endpoints.files.bulk_action_handlers import _handle_recover_action
 from app.api.endpoints.files.bulk_action_handlers import _handle_summarize_action
 from app.api.endpoints.files.bulk_action_handlers import _redact_if_enabled
+from app.api.endpoints.files.bulk_action_handlers import bulk_hold_refusal
 from app.api.endpoints.files.bulk_rework_actions import _handle_reprocess_action
 from app.api.endpoints.files.bulk_rework_actions import _handle_retry_action
 from app.api.endpoints.files.bulk_trash_actions import TRASH_BULK_ACTIONS
@@ -150,6 +151,14 @@ def _process_single_file_action(
         min_permission="editor",
     )
     file_id = db_file.id
+
+    # A held file's content is preserved as it was (legal-hold freeze): this file is refused,
+    # the rest of the batch carries on.
+    held = bulk_hold_refusal(
+        db, file_uuid, int(file_id), action, actor=current_user, request=http_request
+    )
+    if held is not None:
+        return held
 
     if action in PROCESSING_BULK_ACTIONS:
         # The legal processing gate, per file, for the file OWNER. A refusal is this file's

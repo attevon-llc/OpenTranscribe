@@ -38,8 +38,9 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.files.reprocess import refuse_reprocess_if_held
 from app.api.endpoints.prompts_access import require_usable_prompt_uuid
+from app.api.hold_refusal import refuse_if_frozen
+from app.api.hold_refusal import refuse_reprocess_if_held
 from app.auth.audit_events import AuditEventType
 from app.core.exceptions import DomainError
 from app.db.base import get_db
@@ -113,6 +114,7 @@ async def trigger_summarization(
         min_permission="editor",
     )
     require_processing_allowed_for_file(db, media_file)
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="summary_generate")
     file_id = media_file.id
 
     # An explicit prompt must be one the caller may use (system, own, or shared within
@@ -556,6 +558,7 @@ async def identify_speakers(
         min_permission="editor",
     )
     require_processing_allowed_for_file(db, media_file)
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="identify_speakers")
     file_id = media_file.id
 
     # Check if file has speakers to identify

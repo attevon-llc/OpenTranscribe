@@ -36,6 +36,7 @@ from app.core.exceptions import OpenTranscribeError
 from app.models.sharing import TagShare
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.hold_guard import assert_content_mutable
 from app.services.tag_scope import accessible_file_ids_subquery
 from app.services.tag_scope import is_system_tag
 from app.services.tag_scope import system_tag
@@ -254,6 +255,9 @@ def _move_associations(db: Session, survivor: Tag, doomed_ids: list[int]) -> lis
     affected = list(
         dict.fromkeys(int(link.media_file_id) for link in links if link.media_file_id is not None)
     )
+    # A held file's tags are preserved as they were (legal-hold freeze): a fold that would
+    # re-point one is refused before anything moves.
+    assert_content_mutable(db, affected)
     keeper: dict[int, FileTag] = {
         int(link.media_file_id): link
         for link in db.query(FileTag).filter(
@@ -345,6 +349,7 @@ def merge_tags(
             of two opposite merges fails instead of destroying the first's survivor).
         TagTenantMismatchError: A source belongs to another tenant than the
             target. Folding into a system tag is always allowed.
+        HoldRefusedError: A source tag is on a file under a legal hold.
     """
     locked = lock_tags(db, [target_id, *source_ids])
     target = locked.get(target_id)
@@ -400,6 +405,7 @@ def rename_tag(
     Raises:
         InvalidTagNameError: The new name is empty once normalized.
         TagNotFoundError: The tag no longer exists.
+        HoldRefusedError: A confirmed merge would re-point a held file's tag.
     """
     cleaned = clean_tag_name(new_name)
     normalized = normalize_tag_name(cleaned)
@@ -445,6 +451,7 @@ def delete_tags(
 
     Raises:
         TagNotFoundError: Any of the tags no longer exists.
+        HoldRefusedError: A tag is on a file under a legal hold.
     """
     if not tag_ids:
         return TagMutationOutcome(impact=TagImpactReport())
@@ -452,6 +459,8 @@ def delete_tags(
     tags = _require_all(lock_tags(db, ids), ids)
     impact = preview_tag_impact(db, ids, user_id=user_id, organization_id=organization_id)
     affected = _file_ids_of(db, ids)
+    # Deleting a tag a held file carries would change that file's preserved record.
+    assert_content_mutable(db, affected)
     deleted_uuids = [tag.uuid for tag in tags]
     system_scope = touches_system_tag(tags)
 
@@ -538,6 +547,7 @@ def promote_tags_to_shared(
 
     Raises:
         TagNotFoundError: A requested tag (or a chosen survivor) no longer exists.
+        HoldRefusedError: A fold would re-point a tag on a file under a legal hold.
     """
     if not tag_ids:
         return TagMutationOutcome(impact=TagImpactReport())

@@ -461,6 +461,14 @@ def summarize_transcript_task(
         logger.info(f"Summary of {file_uuid} refused: {refusal.message}")
         return skipped_result(refusal)
 
+    from app.tasks.hold_skip import file_is_frozen
+    from app.tasks.hold_skip import skipped_for_hold
+
+    # A held file's summary is preserved as it was (legal-hold freeze): nothing is written,
+    # ``summary_status`` included.
+    if file_is_frozen(file_uuid=file_uuid):
+        return skipped_for_hold("summarize_transcript_task", file_uuid=file_uuid)
+
     try:
         # Phase 1 — read (DB session open, Postgres only).
         inputs = _load_summarization_inputs(file_uuid, task_id, force_regenerate)

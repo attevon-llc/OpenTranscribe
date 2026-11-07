@@ -51,6 +51,7 @@ from app.services import audit_outbox
 from app.services.content_audit import AuditedResource
 from app.services.content_audit import record_content_event
 from app.services.content_audit import stage_content_event
+from app.services.hold_guard import HoldState
 from app.services.hold_guard import hold_states
 
 if TYPE_CHECKING:
@@ -317,39 +318,21 @@ def finish_hold_change(
     audit_outbox.deliver_staged(db)
 
 
-def record_edit_on_held_file(
+def record_hold_annotation(
     db: Session,
     request: Request | None,
     actor: User,
     file: MediaFile,
+    comment_uuid: str,
     *,
-    kind: str,
-    segment_uuid: str | None = None,
-    fields: Iterable[str] = (),
-    speaker_uuids: Iterable[str] = (),
     bypass: Any = None,
 ) -> bool:
-    """Audit a transcript edit made while ``file`` is under a legal hold (issues #1307, #1329).
+    """Stage ``content.hold.annotation`` for a new comment on a held file; nothing when free.
 
-    A hold blocks destruction, not correction, so the edit goes ahead; what the hold changes
-    is that the edit is now on the record. Call it BEFORE the edit commits: the event is staged
-    in the same transaction (the transactional outbox, ``services/audit_outbox``), so the edit
-    and its record commit or roll back together, and an audit sink outage only delays the event
-    (the caller hands it to the sink with ``audit_outbox.deliver_staged`` after the commit). A
-    file nobody holds stages nothing (the ordinary edit is not a governance event), and the
-    event is not opt-in: held files are few and this is the trail the hold exists to keep.
-
-    It raises like any other write of the edit's transaction: if the hold cannot be read or the
-    event cannot be staged, the edit fails with it rather than committing unrecorded.
-
-    Args:
-        kind: ``segment_edit`` (text or times), ``segment_speaker`` (reassignment) or
-            ``speaker_merge`` (every segment of one speaker moved onto another).
-        segment_uuid: The segment's uuid, for the single-segment kinds. An id, never its text.
-        fields: Names of the columns changed (``text``, ``start_time``, ``end_time``). Never
-            their values.
-        speaker_uuids: The speakers a merge involved, source and target. Ids, never names.
-        bypass: The request's platform bypass, so a support-access grant is recorded.
+    A hold freezes the file's content, but a new comment is an annotation beside it, not a
+    change to it, so it is allowed and put on the record. Call it BEFORE the comment commits:
+    the event is staged in that transaction (the outbox), so the comment and its record commit
+    or roll back together. Raises like any write of that transaction.
 
     Returns:
         Whether an event was staged.
@@ -357,23 +340,13 @@ def record_edit_on_held_file(
     state = hold_states(db, [int(file.id)]).get(int(file.id))
     if state is None or not state.held:
         return False
-    details: dict[str, Any] = {
-        "kind": kind,
-        "fields": sorted(fields),
-        "held_by": state.held_by,
-    }
-    if segment_uuid is not None:
-        details["segment_uuid"] = segment_uuid
-    speakers = sorted(speaker_uuids)
-    if speakers:
-        details["speaker_uuids"] = speakers
     return stage_content_event(
         db,
         request,
-        event=AuditEventType.CONTENT_TRANSCRIPT_EDIT,
+        event=AuditEventType.CONTENT_HOLD_ANNOTATION,
         actor=actor,
         resource=AuditedResource.file(file),
-        details=details,
+        details={"comment_uuid": comment_uuid, "held_by": state.held_by},
         bypass=bypass,
     )
 
@@ -400,3 +373,30 @@ def record_hold_refusal(
         details={"action": action, "held_by": held_by},
         dedup=False,
     )
+
+
+def record_file_hold_refusals(
+    db: Session,
+    request: Request | None,
+    actor: User,
+    states: dict[int, HoldState],
+    *,
+    action: str,
+) -> None:
+    """:func:`record_hold_refusal` for each held file in ``states``.
+
+    The write of each event is best-effort (:func:`record_hold_refusal`). The files are read
+    without autoflush: a refusal can come after a service staged changes it then abandoned, and
+    those must not be flushed by the audit's own read.
+    """
+    with db.no_autoflush:
+        rows = db.query(MediaFile).filter(MediaFile.id.in_(sorted(states))).all()
+    for row in rows:
+        record_hold_refusal(
+            db,
+            request,
+            actor,
+            AuditedResource.file(row),
+            action=action,
+            held_by=states[int(row.id)].held_by,
+        )

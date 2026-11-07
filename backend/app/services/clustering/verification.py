@@ -17,6 +17,7 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerProfile
 from app.services.file_availability import exclude_unavailable
+from app.services.hold_guard import hold_states
 from app.services.permission_service import org_scope_pred
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_cleanup import SpeakerImpact
@@ -161,6 +162,7 @@ class _Batch:
     failed: int = 0
     errors: list[str] = field(default_factory=list)
     blocked_uuids: list[str] = field(default_factory=list)
+    held_skipped: int = 0
 
     def fail(self, error: str) -> None:
         self.errors.append(error)
@@ -335,8 +337,12 @@ def batch_verify_speakers(
         display_name: Display name (for "name" action).
         override_unassignment: Lift the correction that blocks this one speaker.
 
+    A speaker on a file under a legal hold is not changed: it is counted in ``held_skipped``
+    and explained in ``errors`` (legal-hold freeze).
+
     Returns:
-        Summary dict with updated_count, failed_count, errors, blocked_speaker_uuids.
+        Summary dict with updated_count, failed_count, errors, blocked_speaker_uuids,
+        held_skipped.
 
     Raises:
         ValueError: ``override_unassignment`` with other than exactly one speaker.
@@ -363,6 +369,8 @@ def batch_verify_speakers(
     )
     speakers_by_uuid = {str(s.uuid): s for s, _ in speaker_rows}
     file_org_by_uuid = {str(s.uuid): org for s, org in speaker_rows}
+    # A speaker on a held file keeps the identity it had when held (legal-hold freeze).
+    held_files = hold_states(self.db, {int(s.media_file_id) for s, _ in speaker_rows})
     b = _Batch(
         user_id=user_id,
         action=action,
@@ -385,6 +393,10 @@ def batch_verify_speakers(
                 speaker, file_org, user_id, organization_id, profile
             ):
                 b.fail(f"Speaker {suuid} not found")
+                continue
+            if int(speaker.media_file_id) in held_files:
+                b.held_skipped += 1
+                b.fail(f"Speaker {suuid} is on a file under a legal hold")
                 continue
             _verify_speaker(self, b, suuid, speaker)
 
@@ -425,4 +437,5 @@ def batch_verify_speakers(
         "failed_count": b.failed,
         "errors": b.errors,
         "blocked_speaker_uuids": b.blocked_uuids,
+        "held_skipped": b.held_skipped,
     }

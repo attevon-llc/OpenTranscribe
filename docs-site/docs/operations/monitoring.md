@@ -226,7 +226,7 @@ type. Starting a step again supersedes the file's older active row of that step.
 
 ### Governance audit outbox
 
-Governance audit events (a transcript edit on a held file, placing or releasing a legal hold, a
+Governance audit events (a comment added to a held file, placing or releasing a legal hold, a
 collection's visibility or membership changing) are written to the `audit_outbox` table in the
 same transaction as the change, then delivered to the audit log. Delivery is tried right after
 the request and then by the `audit.outbox_relay` task every minute, with a delay that doubles

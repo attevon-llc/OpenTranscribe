@@ -27,6 +27,7 @@ from app.api.endpoints.files.filtering import LIST_SPEAKER_COLUMNS
 from app.api.endpoints.files.filtering import apply_all_filters
 from app.api.endpoints.files.filtering import hidden_speaker_name_clause
 from app.api.endpoints.media_collections_access import _hold_refusal
+from app.api.hold_refusal import refuse_if_frozen
 from app.auth.audit_events import AuditEventType
 from app.db.base import get_db
 from app.models.collection import Collection
@@ -162,6 +163,9 @@ def add_media_to_collection(
     existing_ids = {member[0] for member in existing_members}
     new_ids = set(media_file_ids) - existing_ids
 
+    # A held file's collections are part of its preserved record (legal-hold freeze).
+    refuse_if_frozen(db, new_ids, actor=current_user, action="collection_add", request=request)
+
     # Add new members
     added_count = 0
     added_file_ids = []
@@ -254,6 +258,10 @@ def remove_media_from_collection(
             ctx=ctx,
             action="remove_from_collection",
         )
+    # Any other held file is frozen too: its collections are part of its preserved record.
+    refuse_if_frozen(
+        db, present_ids, actor=current_user, action="remove_from_collection", request=request
+    )
 
     # Remove members
     removed_count = (

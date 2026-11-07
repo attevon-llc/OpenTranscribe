@@ -6,7 +6,8 @@ users alike, so this file walks the matrix rather than one happy path: a persona
 their own file, an organization member on their own organization file, a member on another
 member's file reached through an organization collection or a viewer/editor share, an
 organization admin, a personal user on a file shared with them, and a file under a legal
-hold. For each reachable cell it lists, creates (both create routes), edits and deletes.
+hold. For each reachable cell it lists, creates (both create routes), edits and deletes; on the
+held file the edit and delete are refused (a hold freezes the file's content, v0.7.0).
 
 Requests run as a named user in a named tenant by overriding the two auth dependencies, the
 same shape ``tests/api/test_tag_tenancy.py`` uses, so the org context is exactly the one the
@@ -201,6 +202,10 @@ CELLS = [
 ]
 
 
+#: Cells whose file is under a legal hold (its existing comments are frozen).
+HELD_CELLS = frozenset({"legal_hold_own_file"})
+
+
 @pytest.mark.parametrize("cell_name", CELLS)
 class TestCommentMatrix:
     def test_detail_page_is_readable(self, client, db_session, cell_name):
@@ -235,15 +240,22 @@ class TestCommentMatrix:
             assert [c["uuid"] for c in listed.json()] == [body["uuid"]]
 
             edited = client.put(f"{COMMENTS}/{body['uuid']}", json={"text": "edited"})
-            assert edited.status_code == 200, edited.text
-            assert edited.json()["text"] == "edited"
-
             deleted = client.delete(f"{COMMENTS}/{body['uuid']}")
-            assert deleted.status_code == 204, deleted.text
-        assert (
+        remaining = (
             db_session.query(Comment).filter(Comment.media_file_id == cell.media_file.id).count()
-            == 0
         )
+        if cell_name in HELD_CELLS:
+            # A legal hold freezes the file's content: a new comment is allowed (and recorded),
+            # but an existing one can be neither changed nor removed.
+            for refused in (edited, deleted):
+                assert refused.status_code == 409, refused.text
+                assert refused.json()["detail"]["error"] == "FILE_UNDER_LEGAL_HOLD"
+            assert remaining == 1
+            return
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["text"] == "edited"
+        assert deleted.status_code == 204, deleted.text
+        assert remaining == 0
 
     def test_add_without_a_timestamp(self, client, db_session, cell_name):
         """A general comment (no timestamp) is a valid comment: the column is nullable."""

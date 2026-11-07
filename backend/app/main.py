@@ -23,6 +23,7 @@ from starlette.responses import JSONResponse
 from starlette.responses import Response
 
 from app.api.endpoints.alertmanager_webhook import router as alertmanager_webhook_router
+from app.api.hold_refusal import hold_refused_handler
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
@@ -44,6 +45,7 @@ from app.middleware.csrf import CSRFMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
+from app.services.hold_guard import HoldRefusedError
 from app.startup.maintenance import _clear_stale_task_state
 from app.startup.maintenance import _run_availability_reconcile
 from app.startup.maintenance import _run_imohash_recompute
@@ -405,6 +407,9 @@ async def handle_domain_error(request: Request, exc: DomainError) -> Response:
         request, HTTPException(status_code=exc.status_code, detail=exc.detail, headers=exc.headers)
     )
 
+
+# A HoldRefusedError no route translated (legal-hold freeze backstop): 409 FILE_UNDER_LEGAL_HOLD.
+app.add_exception_handler(HoldRefusedError, hold_refused_handler)
 
 # FastAPI's default 422, with any echoed credential removed from the body (core/validation_errors).
 app.add_exception_handler(RequestValidationError, validation_error_handler)  # type: ignore[arg-type]

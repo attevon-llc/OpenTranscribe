@@ -26,6 +26,7 @@ from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
 from app.models.speaker import SpeakerProfile
 from app.services.embedding_mode_service import voiceprint_model_id
+from app.services.hold_guard import unheld_file_ids
 from app.services.opensearch_service import get_speaker_embedding
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy import policy as privacy_policy
@@ -395,7 +396,7 @@ def _snapshot_trigger(db: Session, updated_speaker: Speaker) -> dict[str, Any]:
 
 
 def _load_candidates(db: Session, trigger: dict[str, Any]) -> list[dict[str, Any]]:
-    """The user's other in-tenant speakers, minus those a correction forbids (#1233)."""
+    """The user's other in-tenant speakers on unheld files, minus those a correction forbids."""
     candidates = [
         {
             "id": int(row.id),
@@ -415,6 +416,9 @@ def _load_candidates(db: Session, trigger: dict[str, Any]) -> list[dict[str, Any
             Speaker.user_id == trigger["user_id"],
             Speaker.id != trigger["id"],
             Speaker.media_file_id.in_(file_ids_in_scope(trigger["organization_id"])),
+            # A held file's speakers keep the identity they had when held: no auto-applied
+            # name and no new suggestion (legal-hold freeze, plan §3.5).
+            Speaker.media_file_id.in_(unheld_file_ids()),
         )
         .all()
     ]

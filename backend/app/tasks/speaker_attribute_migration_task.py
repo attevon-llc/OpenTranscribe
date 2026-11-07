@@ -95,11 +95,19 @@ def _reset_all_speaker_attributes(
     a layer back on is meant to restore. Turning a layer off hides data; only the audited purge
     deletes it.
 
+    Speakers on a held file are never reset (legal-hold freeze).
+
     Returns the number of speakers reset.
     """
-    from app.models.speaker import Speaker
 
-    query = db.query(Speaker).filter(Speaker.attributes_predicted_at.isnot(None))
+    from app.models.speaker import Speaker
+    from app.services.hold_guard import unheld_file_ids
+
+    query = db.query(Speaker).filter(
+        Speaker.attributes_predicted_at.isnot(None),
+        # A held file's speakers keep what they hold (legal-hold freeze).
+        Speaker.media_file_id.in_(unheld_file_ids()),
+    )
     if exclude_file_ids:
         query = query.filter(Speaker.media_file_id.notin_(exclude_file_ids))
     count = query.update(
@@ -182,6 +190,12 @@ def _gender_result_writer(
     # The final authority, read at the write: a run planned before a layer was switched off
     # (or an inference that outlived the switch) must leave the speakers untouched, and that
     # includes NOT stamping attributes_predicted_at so a later opt-in still finds them pending.
+    from app.tasks.hold_skip import file_is_frozen
+
+    # A held file's speakers keep the attributes they had when held (legal-hold freeze).
+    if file_is_frozen(file_id=prepared.media_file_id):
+        logger.info("Gender write skipped for %s: under a legal hold", prepared.file_uuid)
+        return 0
     with session_scope() as db:
         flags = resolve_speaker_attribute_flags_for_file(db, prepared.media_file_id)
     if not flags.gender_prediction_allowed:

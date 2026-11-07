@@ -319,6 +319,13 @@ def update_segment_speaker(
             detail="Not authorized to modify this transcript segment",
         )
 
+    # A reassignment edits a held file's transcript, so it is refused (legal-hold freeze).
+    from app.api.hold_refusal import refuse_if_frozen
+
+    refuse_if_frozen(
+        db, int(media_file.id), actor=current_user, action="segment_speaker", request=request
+    )
+
     # Track original speaker_id for change detection
     original_speaker_id: int | None = int(segment.speaker_id) if segment.speaker_id else None
 
@@ -330,24 +337,8 @@ def update_segment_speaker(
     # Update the segment's speaker
     segment.speaker_id = new_speaker_id  # type: ignore[assignment]
 
-    # Editing a held file is allowed, but it is audited (issues #1307, #1329). Staged in the
-    # edit's own transaction, so the edit and its record commit or roll back together; stages
-    # nothing for a file nobody holds.
-    from app.services import audit_outbox
-    from app.services.content_hold_service import record_edit_on_held_file
-
-    record_edit_on_held_file(
-        db,
-        request,
-        current_user,
-        media_file,
-        kind="segment_speaker",
-        segment_uuid=segment_uuid,
-        bypass=ctx.bypass,
-    )
     db.commit()
     db.refresh(segment)
-    audit_outbox.deliver_staged(db)
 
     # Handle side effects of speaker change (cleanup orphans, refresh analytics, embeddings)
     cleanup_residual = _handle_speaker_change(

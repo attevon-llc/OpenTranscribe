@@ -22,6 +22,7 @@ from app.api.endpoints.tags._common import _tag_response
 from app.api.endpoints.tags._common import _writable_uuids
 from app.api.endpoints.tags._common import _write_rights
 from app.api.endpoints.tags._common import router
+from app.api.hold_refusal import refuse_if_frozen
 from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.db.base import get_db
@@ -218,6 +219,8 @@ def add_tag_to_file(
         min_permission=REQUIRED_PERMISSION,
         conceal_inaccessible=True,
     )
+    # Before the tag is resolved: resolving may create one, which a refusal must not leave.
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="tag_add")
     if "name" not in tag_data:
         raise _invalid_name()
     requested = TagBase(name=tag_data["name"])
@@ -267,6 +270,7 @@ def remove_tag_from_file(
         conceal_inaccessible=True,
     )
     file_id = media_file.id
+    refuse_if_frozen(db, int(file_id), actor=current_user, action="tag_remove")
     tag = attached_tag_named(db, file_id, tag_name)
     if tag is None:
         raise _tag_not_found()

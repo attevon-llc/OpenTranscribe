@@ -119,6 +119,7 @@ from app.services.erasure_receipt.measure import Measurement
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
 from app.services.gdpr_erasure_steps import _actor_kind
+from app.services.gdpr_erasure_steps import _delete_comments_deferring_held
 from app.services.gdpr_erasure_steps import _delete_owner_scoped_rows
 from app.services.gdpr_erasure_steps import _delete_profiles
 from app.services.gdpr_erasure_steps import _erase_avatar_objects
@@ -490,7 +491,7 @@ def erase_org_member_data(
     if created_before is not None:
         comment_query = comment_query.filter(Comment.created_at <= created_before)
         task_query = task_query.filter(Task.created_at <= created_before)
-    summary["comments_deleted"] = comment_query.delete(synchronize_session=False)
+    summary["comments_deleted"] = _delete_comments_deferring_held(db, comment_query, summary)
     summary["tasks_deleted"] = task_query.delete(synchronize_session=False)
     # The member's hide rows on the tenant's files (v465): which of the organization's
     # recordings they chose not to see is data about them, and their account outlives this.

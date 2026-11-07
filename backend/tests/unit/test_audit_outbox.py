@@ -1,6 +1,7 @@
 """The governance audit outbox (v459, issue #1329) against the real database.
 
-* The event row commits and rolls back WITH the change it describes (a held-file edit, a hold).
+* The event row commits and rolls back WITH the change it describes (a comment on a held
+  file, a hold).
 * A sink outage leaves rows pending with a backoff; a later relay delivers each exactly once,
   including after a crash between the sink write and the ``sent`` mark (``op_type=create``).
 * A rejected document stops being retried; stuck rows raise ``audit_outbox_stuck_events``.
@@ -29,7 +30,7 @@ from sqlalchemy.orm import Session
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.core.config import settings
-from app.models.media import TranscriptSegment
+from app.models.media import Comment
 from app.services import audit_outbox
 from app.services import content_hold_service as holds
 from app.services.content_audit import AuditedResource
@@ -113,24 +114,28 @@ def _make_due(db, uuids: list[str]) -> None:
     )
 
 
-def _held_file_with_segment(gov):
+def _held_file(gov):
     media_file = gov.file(gov.alice)
-    segment = TranscriptSegment(
-        media_file_id=media_file.id, start_time=0.0, end_time=1.0, text="before"
-    )
-    gov.db.add(segment)
     change = holds.place_file_hold(
         gov.db, org_id=gov.org.id, actor=gov.admin, files=[media_file], reason=REASON
     )
     gov.db.commit()
-    return media_file, segment, change
+    return media_file, change
 
 
-def _edit_events(db, media_file) -> list[Any]:
+def _comment(gov, media_file) -> Comment:
+    comment = Comment(media_file_id=media_file.id, user_id=gov.alice.id, text="an annotation")
+    gov.db.add(comment)
+    gov.db.flush()
+    return comment
+
+
+def _annotation_events(db, media_file) -> list[Any]:
     return list(
         db.execute(
             text(
-                "SELECT status FROM audit_outbox WHERE event_type = 'content.transcript.edit' "
+                "SELECT status, payload FROM audit_outbox "
+                "WHERE event_type = 'content.hold.annotation' "
                 "AND payload->>'resource_uuid' = :f"
             ),
             {"f": str(media_file.uuid)},
@@ -141,44 +146,48 @@ def _edit_events(db, media_file) -> list[Any]:
 # --------------------------------------------------------------- one transaction, both or neither
 
 
-def test_a_held_file_edit_and_its_event_commit_together(gov, sink):
-    media_file, segment, _ = _held_file_with_segment(gov)
+def test_a_comment_on_a_held_file_and_its_annotation_event_commit_together(gov, sink):
+    media_file, _ = _held_file(gov)
 
-    segment.text = "after"
-    staged = holds.record_edit_on_held_file(
-        gov.db, None, gov.alice, media_file, kind="segment_edit", fields=["text"]
-    )
+    comment = _comment(gov, media_file)
+    staged = holds.record_hold_annotation(gov.db, None, gov.alice, media_file, str(comment.uuid))
     assert staged is True
     assert sink.writes == 0, "nothing reaches the sink before the commit"
     gov.db.commit()
 
-    assert [r.status for r in _edit_events(gov.db, media_file)] == ["pending"]
+    (row,) = _annotation_events(gov.db, media_file)
+    assert row.status == "pending"
+    assert row.payload["details"] == {
+        "comment_uuid": str(comment.uuid),
+        "held_by": ["organization"],
+    }
+    assert "an annotation" not in str(row.payload), "the comment's text is never recorded"
 
 
-def test_a_rolled_back_edit_leaves_no_event(gov, sink):
-    media_file, segment, _ = _held_file_with_segment(gov)
+def test_a_rolled_back_comment_leaves_no_event(gov, sink):
+    media_file, _ = _held_file(gov)
 
-    # The test session's own rollback would undo the whole test transaction, so the edit's
+    # The test session's own rollback would undo the whole test transaction, so the comment's
     # transaction is a savepoint here; rolling it back is what a failed request does.
-    edit = gov.db.begin_nested()
-    segment.text = "after"
-    holds.record_edit_on_held_file(
-        gov.db, None, gov.alice, media_file, kind="segment_edit", fields=["text"]
-    )
-    edit.rollback()
+    attempt = gov.db.begin_nested()
+    comment = _comment(gov, media_file)
+    comment_id = comment.id
+    holds.record_hold_annotation(gov.db, None, gov.alice, media_file, str(comment.uuid))
+    attempt.rollback()
 
-    assert _edit_events(gov.db, media_file) == []
-    assert gov.db.get(TranscriptSegment, segment.id).text == "before"
+    assert _annotation_events(gov.db, media_file) == []
+    assert gov.db.get(Comment, comment_id) is None
 
 
-def test_a_free_file_edit_stages_nothing(gov, sink):
+def test_a_comment_on_a_free_file_stages_nothing(gov, sink):
     media_file = gov.file(gov.alice)
+    comment = _comment(gov, media_file)
     assert (
-        holds.record_edit_on_held_file(gov.db, None, gov.alice, media_file, kind="segment_edit")
+        holds.record_hold_annotation(gov.db, None, gov.alice, media_file, str(comment.uuid))
         is False
     )
     gov.db.commit()
-    assert _edit_events(gov.db, media_file) == []
+    assert _annotation_events(gov.db, media_file) == []
 
 
 def test_placing_a_hold_commits_its_event_and_a_rollback_drops_it(gov, sink):

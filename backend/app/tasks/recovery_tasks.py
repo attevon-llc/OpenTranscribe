@@ -155,6 +155,7 @@ def youtube_metadata_backfill(self: Any, user_id: int) -> dict:
     Returns:
         ``{candidate_rows, matched, updated}``.
     """
+    from app.services.hold_guard import not_held_pred
     from app.services.minio_bucket_admin import MinIOService
 
     svc = MinIOService()
@@ -173,6 +174,8 @@ def youtube_metadata_backfill(self: Any, user_id: int) -> dict:
             .filter(
                 MediaFile.user_id == user_id,
                 MediaFile.duration.isnot(None),
+                # A held file's title is preserved as it was (legal-hold freeze).
+                not_held_pred(),
             )
             .all()
         )

@@ -155,6 +155,9 @@ PG_STORES: tuple[PgStore, ...] = (
     PgStore("pg.chat_project", "chat_project", {"user": "user_id = :uid"}),
     PgStore("pg.upload_batch", "upload_batch", {"user": "user_id = :uid"}),
     PgStore("pg.user_media_source", "user_media_source", {"user": "user_id = :uid"}),
+    # The subject's daily LLM token counters (issue #790). The instance's monthly rows have no
+    # user and are not personal data.
+    PgStore("pg.llm_token_budget", "llm_token_budget", {"user": "user_id = :uid"}),
     PgStore(
         "pg.organization_membership",
         "organization_membership",

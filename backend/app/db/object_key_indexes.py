@@ -32,6 +32,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import DBAPIError
 
+from app.db import concurrent_indexes
+
 logger = logging.getLogger(__name__)
 
 TABLE = "media_file"  # pg_indexes lookup only
@@ -63,6 +65,16 @@ class KeyIndex:
     def predicate(self) -> sa.ColumnElement[bool]:
         # '' is the placeholder an upload row carries until its object exists.
         return sa.and_(self.col.is_not(None), self.col != "")
+
+    def spec(self) -> concurrent_indexes.IndexSpec:
+        """The same index as a shared-builder spec (``col IS NOT NULL AND col <> ''``)."""
+        return concurrent_indexes.IndexSpec(
+            self.name,
+            TABLE,
+            (self.column,),
+            where=f"{self.column} IS NOT NULL AND {self.column} <> ''",
+            unique=True,
+        )
 
     def index(self) -> sa.Index:
         """The ``sa.Index`` (``CREATE UNIQUE INDEX ... WHERE``) for this column."""
@@ -168,11 +180,8 @@ def _skip_for_duplicates(conn: Connection, index: KeyIndex) -> bool:
     return True
 
 
-#: How long a concurrent build may wait for other sessions' open transactions, per statement.
-#: ``CREATE INDEX CONCURRENTLY`` waits for every transaction that could still see the table, so
-#: one forgotten idle-in-transaction session would otherwise hold startup (and a test run) for as
-#: long as it stays open. A timed-out build is reported ``failed`` and retried on the next start.
-BUILD_LOCK_TIMEOUT_SECONDS = 120
+#: Re-exported: the per-statement wait lives with the shared builder (``concurrent_indexes``).
+BUILD_LOCK_TIMEOUT_SECONDS = concurrent_indexes.BUILD_LOCK_TIMEOUT_SECONDS
 
 
 def ensure_indexes_concurrently(
@@ -180,9 +189,9 @@ def ensure_indexes_concurrently(
 ) -> dict[str, str]:
     """Build every missing index with ``CREATE UNIQUE INDEX CONCURRENTLY``; never raise.
 
-    ``conn`` must be an AUTOCOMMIT connection: a concurrent build cannot run in a transaction.
-    An INVALID index left by an earlier failed build is dropped first (also concurrently).
-    Each statement waits at most ``lock_timeout_seconds`` for other transactions to finish.
+    ``conn`` must be an AUTOCOMMIT connection; the build, the INVALID-leftover cleanup and the
+    lock timeout are ``concurrent_indexes.ensure_concurrently``. An index whose column holds
+    duplicates is skipped (logged and reported by :func:`status`).
 
     Returns:
         ``{index_name: "exists" | "built" | "skipped_duplicates" | "failed"}``.
@@ -192,53 +201,14 @@ def ensure_indexes_concurrently(
     """
     if conn.get_execution_options().get("isolation_level") != "AUTOCOMMIT":
         raise ValueError("ensure_indexes_concurrently needs an AUTOCOMMIT connection")
-    outcome: dict[str, str] = {}
-    present = existing_indexes(conn)
-    broken = invalid_indexes(conn)
-    if all(index.name in present for index in INDEXES):
-        return {index.name: "exists" for index in INDEXES}
-    conn.execute(text(f"SET lock_timeout = '{int(lock_timeout_seconds)}s'"))
-    try:
-        _build_missing(conn, present, broken, outcome)
-    finally:
-        conn.execute(text("RESET lock_timeout"))
-    return outcome
-
-
-def _build_missing(
-    conn: Connection, present: set[str], broken: set[str], outcome: dict[str, str]
-) -> None:
-    for index in INDEXES:
-        if index.name in present:
-            outcome[index.name] = "exists"
-            continue
-        try:
-            if index.name in broken:
-                conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index.name}"))
-            if _skip_for_duplicates(conn, index):
-                outcome[index.name] = "skipped_duplicates"
-                continue
-            sa.Index(
-                index.name,
-                index.col,
-                unique=True,
-                postgresql_where=index.predicate,
-                postgresql_concurrently=True,
-            ).create(conn)
-            outcome[index.name] = "built"
-        except DBAPIError:
-            outcome[index.name] = "failed"
-            logger.error("Could not build %s; startup continues", index.name, exc_info=True)
-            _drop_invalid_leftover(conn, index)
-
-
-def _drop_invalid_leftover(conn: Connection, index: KeyIndex) -> None:
-    """Remove the INVALID index a failed concurrent build leaves behind (best effort)."""
-    try:
-        if index.name in invalid_indexes(conn):
-            conn.execute(text(f"DROP INDEX CONCURRENTLY IF EXISTS {index.name}"))
-    except DBAPIError:
-        logger.error("Could not drop the invalid index %s", index.name, exc_info=True)
+    by_name = {i.name: i for i in INDEXES}
+    outcome = concurrent_indexes.ensure_concurrently(
+        conn,
+        [i.spec() for i in INDEXES],
+        lock_timeout_seconds=lock_timeout_seconds,
+        skip=lambda c, spec: _skip_for_duplicates(c, by_name[spec.name]),
+    )
+    return {n: ("skipped_duplicates" if o == "skipped" else o) for n, o in outcome.items()}
 
 
 def ensure_indexes(conn: Connection) -> dict[str, str]:

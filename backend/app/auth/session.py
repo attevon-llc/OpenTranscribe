@@ -32,8 +32,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
 
-from app.auth.degradation import record_degradation
 from app.core.config import settings
+from app.core.degradation import record_degradation
 
 if TYPE_CHECKING:
     import redis

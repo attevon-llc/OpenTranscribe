@@ -27,11 +27,11 @@ from typing import Any
 from typing import Protocol
 from typing import TypedDict
 
-from app.auth.degradation import record_degradation
 from app.auth.lockout_store import InMemoryLockoutStore
 from app.auth.lockout_store import _get_memory_fallback_store
 from app.auth.lockout_store import _get_store
 from app.auth.utils import mask_identifier
+from app.core.degradation import record_degradation
 from app.core.process_auth_settings import get_process_auth_settings
 
 

@@ -39,7 +39,6 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.bulk_revocation import PendingBulkRevocation
-from app.auth.degradation import record_degradation
 from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 from app.auth.refresh_tokens import RefreshTokenOps
 from app.auth.revocation_error import RevocationError
@@ -49,6 +48,7 @@ from app.auth.session import get_redis_client
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
+from app.core.degradation import record_degradation
 from app.core.security import accepted_algorithms
 from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken

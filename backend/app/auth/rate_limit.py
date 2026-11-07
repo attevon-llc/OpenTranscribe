@@ -26,8 +26,8 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse
 
-from app.auth.degradation import record_degradation
 from app.core.config import settings
+from app.core.degradation import record_degradation
 
 logger = logging.getLogger(__name__)
 

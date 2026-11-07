@@ -1,13 +1,13 @@
 """``record_degradation``: the shared "control ran without its state store" counter.
 
-One copy in ``auth/degradation.py`` replaced four byte-identical ones. Its contract is that
+One copy in ``core/degradation.py`` replaced four byte-identical ones. Its contract is that
 it can never raise: it runs on the fallback path, when infrastructure is already degraded.
 """
 
 import pytest
 
-from app.auth.degradation import record_degradation
 from app.core import metrics as metrics_module
+from app.core.degradation import record_degradation
 
 
 class _Counter:
@@ -49,7 +49,7 @@ def test_a_raising_metric_is_swallowed_so_auth_never_fails_on_it(monkeypatch, ca
 
     monkeypatch.setattr(metrics_module, "security_state_degraded_total", _Exploding())
 
-    with caplog.at_level("DEBUG", logger="app.auth.degradation"):
+    with caplog.at_level("DEBUG", logger="app.core.degradation"):
         record_degradation("oidc_state", "local")  # must not raise
 
     assert any("Could not record security degradation metric" in r.message for r in caplog.records)

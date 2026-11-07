@@ -10,7 +10,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.auth.degradation import record_degradation
+from app.core.degradation import record_degradation
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 

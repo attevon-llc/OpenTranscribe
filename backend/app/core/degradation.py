@@ -1,4 +1,8 @@
-"""The metric every auth control bumps when it runs without its shared state store."""
+"""The metric a security control bumps when it runs without its shared state store.
+
+Lives in core, beside the metrics registry it writes to, so both the auth package and the
+core auth-settings loader can call it without crossing the layer contract.
+"""
 
 import logging
 

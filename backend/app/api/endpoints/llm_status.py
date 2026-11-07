@@ -11,11 +11,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services.llm_service import LLMService
 from app.services.llm_service import is_llm_available
 from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +123,8 @@ def test_llm_connection(
         Dictionary containing connection test results
     """
     try:
-        llm_service = LLMService.create_from_settings(user_id=current_user.id)
+        with llm_settings_outage_as_503():
+            llm_service = LLMService.create_from_settings(user_id=current_user.id)
         if llm_service is None:
             return {
                 "success": False,
@@ -141,6 +144,8 @@ def test_llm_connection(
             "model": llm_service.config.model,
         }
 
+    except DomainError:
+        raise
     except Exception as e:
         logger.exception(f"Error testing LLM connection: {e}")
         return {

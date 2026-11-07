@@ -45,6 +45,22 @@ backend/venv/bin/python scripts/generate-sbom-report.py
 The script writes its `.csv`, `.md` and `SBOM-SUMMARY.md` files to this directory
 (`security-reports/license-compliance/`).
 
+## Pinned-requirements inventory (offline-regenerable)
+
+`pinned-requirements-licenses.csv` is the licence class of every package in the resolved closure of
+`backend/requirements.txt`, `requirements-nodeps.txt` and `requirements-lite.txt`, plus the production
+entries of `frontend/package-lock.json`. Unlike the image scans below it needs no built image, and
+`backend/tests/unit/test_license_report_covers_pins.py` fails when a pin or lockfile entry is missing
+from it (so a changed pin forces a regeneration). It is not part of `scripts/release/50-scan.sh`:
+that stage scans locally built images with trivy, while this file needs a pip resolve (minutes, network).
+Regenerate it whenever a requirements file or the lockfile changes, and before each release:
+
+```bash
+backend/venv/bin/python scripts/check-requirements-resolve.py --report-dir /tmp/pip-reports
+python3 scripts/check-licenses.py --pip-report-dir /tmp/pip-reports --out-dir /tmp/license-evidence
+cp /tmp/license-evidence/license-gate.csv security-reports/license-compliance/pinned-requirements-licenses.csv
+```
+
 ## Why trivy image scans, not `pip freeze` / `npm ls`
 
 The license source of truth is **what's actually inside the shipped Docker image** —

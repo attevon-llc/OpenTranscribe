@@ -108,6 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Recovering a stuck task that has no media file, such as a privacy purge, no longer logs a spurious error.
 - An interrupted voiceprint purge shows its own message asking you to run it again.
 - Log records no longer run an import to look up the request id, which every log line did in text mode.
+- Gender detection reports that its model is not loaded instead of failing with a `NoneType` error.
 
 ### Security
 

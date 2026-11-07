@@ -375,6 +375,7 @@ def _handle_update_profile_action(
         db,
         profile_id,
         new_name,
+        actor_user_id=current_user.id,
         restrict_to_user_id=None if bypass.sees_all_in_scope else current_user.id,
         organization_id=organization_id,
     )

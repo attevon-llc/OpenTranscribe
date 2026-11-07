@@ -252,7 +252,12 @@ def split_cluster(
 
         # Leave the source as an unassignment: membership, promoted profile, blacklist.
         impact = detach_from_cluster(
-            self.db, source, speakers_to_move, blacklist=True, tracker=self._rename_tracker
+            self.db,
+            source,
+            speakers_to_move,
+            blacklist=True,
+            tracker=self._rename_tracker,
+            user_id=user_id,
         )
 
         # Create new cluster (same tenant scope as the source — members

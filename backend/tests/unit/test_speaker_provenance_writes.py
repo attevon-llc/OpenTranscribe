@@ -241,7 +241,7 @@ def test_the_background_profile_step_keeps_the_record_the_request_made(db_sessio
     speaker = _voice_suggested(db_session, normal_user)
     speaker.display_name = "Alice"
     record_human_identity(speaker, user_id=normal_user.id, origin="typed")
-    clear_suggestion(speaker)
+    clear_suggestion(speaker, user_id=None)
     first = (speaker.identity_source_at, dict(speaker.identity_source_detail))
     db_session.commit()
 
@@ -529,7 +529,9 @@ def test_unlinking_the_profile_a_voiceprint_named_forgets_the_whole_record(db_se
     )
     db_session.commit()
 
-    unlink_from_profile(db_session, [speaker], int(profile.id), SpeakerRenameTracker())
+    unlink_from_profile(
+        db_session, [speaker], int(profile.id), SpeakerRenameTracker(), user_id=None
+    )
     db_session.commit()
 
     row = _fresh(db_session, speaker.id)
@@ -567,7 +569,12 @@ def test_a_cluster_split_is_an_unassignment_that_clears_the_profiles_record(
 
     with patch("app.services.speaker_cleanup.reconcile_speaker_impact"):
         detach_from_cluster(
-            db_session, cluster, [speaker], blacklist=False, tracker=SpeakerRenameTracker()
+            db_session,
+            cluster,
+            [speaker],
+            blacklist=False,
+            tracker=SpeakerRenameTracker(),
+            user_id=None,
         )
     db_session.commit()
 

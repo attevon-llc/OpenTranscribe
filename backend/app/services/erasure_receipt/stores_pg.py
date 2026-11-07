@@ -220,6 +220,12 @@ EXEMPT_TABLES: dict[str, str] = {
     "speaker_cannot_link": _CASCADE_SPEAKER,
     "speaker_profile_blacklist": _CASCADE_SPEAKER,
     "speaker_correction_carryover": _CASCADE_SPEAKER,
+    # De-attributed, not deleted, where it outlives the subject: a change the subject made on
+    # another account's file is that file's history (like an organization tag, pg.tag.org).
+    "speaker_identity_event": (
+        _CASCADE_SPEAKER + "; the actor key is FK SET NULL, so a change the subject made on "
+        "another account's file stays with that file, de-attributed"
+    ),
     "content_hold_file": _CASCADE_FILE,
     "watch_source_file": "FK SET NULL: the import record outlives the file, detached (no content)",
     "watch_source_email": "removed by ON DELETE CASCADE with the watch source (pg.watch_source)",

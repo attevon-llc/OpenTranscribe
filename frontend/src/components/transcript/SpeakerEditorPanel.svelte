@@ -6,6 +6,7 @@
   import { formatClock } from '$lib/utils/formatting';
   import SpeakerMerge from '$components/SpeakerMerge.svelte';
   import SpeakerPrivacyNotice from '$components/privacy/SpeakerPrivacyNotice.svelte';
+  import SpeakerIdentityHistory from '$components/speakers/SpeakerIdentityHistory.svelte';
   import FileVoiceprintConsent from '$components/privacy/FileVoiceprintConsent.svelte';
   import { user } from '$stores/auth';
   import { t } from '$stores/locale';
@@ -281,6 +282,10 @@
                 </span>
               {/if}
             </div>
+          {/if}
+
+          {#if speaker.uuid}
+            <SpeakerIdentityHistory speakerUuid={speaker.uuid} />
           {/if}
 
           <div class="speaker-content-below">

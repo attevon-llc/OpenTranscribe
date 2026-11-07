@@ -113,6 +113,8 @@ def _handle_reprocess_action(
     max_speakers: int | None = None,
     num_speakers: int | None = None,
     disable_diarization: bool = False,
+    *,
+    user_id: int | None,
 ) -> BulkActionResult:
     """Handle reprocess action for bulk operations.
 
@@ -213,7 +215,7 @@ def _handle_reprocess_action(
                     error="RESET_FAILED",
                 )
 
-        clear_selective_data(db, db_file, stages)
+        clear_selective_data(db, db_file, stages, user_id=user_id)
         dispatch_selective_tasks(
             file_uuid,
             stages,

@@ -38,7 +38,7 @@ def _rename(db, user, source, *, off):
             )
         )
         db.commit()
-    renames = apply_profile_name_to_speakers(db, profile.id, "Alice Smith")
+    renames = apply_profile_name_to_speakers(db, profile.id, "Alice Smith", actor_user_id=None)
     return speaker, renames
 
 

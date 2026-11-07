@@ -49,7 +49,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "v463_add_media_file_trash"
-down_revision = "v461_add_privacy_purge_pending"
+down_revision = "v462_add_speaker_identity_event"
 branch_labels = None
 depends_on = None
 

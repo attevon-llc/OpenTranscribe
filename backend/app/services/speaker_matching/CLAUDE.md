@@ -243,7 +243,12 @@ suggestion UIs with its confidence and nothing more; accepting it writes `displa
   `identity.by` is shown only to the file's owner, an org admin of its organization and a platform admin whose reach covers the file (`_can_see_actor` asks `bypass.allows`: single mode any admin, multi mode only under a grant, which records the use; a bare `user_is_admin` is NOT the test), and an account named by an erasure request is the `{"erased": true}` marker, never a name.
   The two JSONB columns are `JSONB(none_as_null=True)`: a plain JSONB stores Python `None` as the JSON
   value `null`, which is not SQL NULL and made the purge's residual check see a cleared record. This is
-  the CURRENT state; the append-only history is issue #1336 (v0.7.0), the query review #1337.
+  the CURRENT state; the query review is #1337. Every change is ALSO appended to
+  `speaker_identity_event` (#1336, v462): the helpers leave an attribution note on the row and the
+  Session `before_flush` listener in `models/speaker_identity_event.py` writes the row in the same
+  flush, so the non-restamping helpers (`after_unlink`, `after_name_cleared`, `clear_suggestion`,
+  `mark_review_skipped`, `after_skip`) take a REQUIRED `user_id`. A bulk `UPDATE` must also call
+  `services/speaker_identity_history.record_bulk_identity_events` (the AST gate checks it).
   The AST gate also now rejects a direct assignment to any of these columns and does not accept a
   reader helper (`hides_link`) as "recording".
 - **Existing indexes**: `services/speaker_label_backfill.py`, an arm of the existing

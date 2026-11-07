@@ -12,8 +12,8 @@ objects built ONLY by the functions below so their shape stays closed and small:
 Pure functions: nothing here touches the database. The writers that store the result are the
 ``record_*`` helpers in :mod:`app.utils.speaker_identity_source`.
 
-This is the *current* state only. The full append-only history of who changed what and when is
-tracked in issue #1336 (v0.7.0).
+This is the *current* state only. Each change is also appended, with a copy of its record, to
+the speaker's identity history (``speaker_identity_event``, issue #1336).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from numbers import Real
 from typing import Any
 from typing import SupportsFloat
 
-from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
 # --- identity origins -------------------------------------------------------------------------
 

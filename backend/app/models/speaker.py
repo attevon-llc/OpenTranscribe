@@ -136,20 +136,25 @@ class Speaker(Base):
     media_file_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("media_file.id", ondelete="CASCADE"), nullable=False
     )
+    # active_history on the identity columns: the identity history (#1336) records the value
+    # BEFORE a write, so it is loaded even when the writer never read it.
     profile_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("speaker_profile.id", ondelete="SET NULL"), nullable=True
+        Integer,
+        ForeignKey("speaker_profile.id", ondelete="SET NULL"),
+        nullable=True,
+        active_history=True,
     )
     name: Mapped[str] = mapped_column(
         String, nullable=False
     )  # Original name from diarization (e.g., "SPEAKER_01")
     display_name: Mapped[str | None] = mapped_column(
-        String, nullable=True
+        String, nullable=True, active_history=True
     )  # User-assigned display name
     suggested_name: Mapped[str | None] = mapped_column(
-        String, nullable=True
+        String, nullable=True, active_history=True
     )  # AI-suggested name from LLM or embedding match
     suggestion_source: Mapped[str | None] = mapped_column(
-        String, nullable=True
+        String, nullable=True, active_history=True
     )  # "llm_analysis" (a guess; never the label), "voice_match"/"profile_match" (voiceprint), "user_skipped"
     verified: Mapped[bool | None] = mapped_column(
         Boolean, default=False
@@ -160,12 +165,14 @@ class Speaker(Base):
     # v449 (#1280): who wrote display_name / profile_id -- "voiceprint", "voiceprint_link",
     # "human", or NULL (before v449, or never named; read as human). Written only through
     # app/utils/speaker_identity_source.py; the privacy policy hides and purges by it.
-    identity_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    identity_source: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, active_history=True
+    )
     # v449 (#1280 follow-up): the rest of the record of how the CURRENT identity and
     # recommendation came to be. Written by the same helpers as identity_source / the suggestion
     # fields. identity_source_user_id is the person who made or confirmed the identity (NULL = a
     # task, or unknown); it is not a relationship because a second user FK would make
-    # Speaker.user ambiguous. The full append-only history is issue #1336.
+    # Speaker.user ambiguous. Every change is also appended to speaker_identity_event (#1336).
     identity_source_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

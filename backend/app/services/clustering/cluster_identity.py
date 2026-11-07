@@ -221,6 +221,7 @@ def unassign_speakers(
         speakers_to_remove,
         blacklist=blacklist,
         tracker=self._rename_tracker,
+        user_id=user_id,
     )
     impact.owner_ids.add(user_id)
     try:

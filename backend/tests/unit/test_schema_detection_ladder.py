@@ -466,6 +466,10 @@ _MODERN_CHAIN: list[Step] = [
         "v461_add_privacy_purge_pending",
         markers={("constraint", "ck_privacy_purge_pending_array")},
     ),
+    step(
+        "v462_add_speaker_identity_event",
+        markers={("trigger", "trg_speaker_identity_event_guard")},
+    ),
     step("v463_add_media_file_trash", markers={("constraint", "ck_media_file_trash_state")}),
 ]
 
@@ -567,8 +571,8 @@ def test_every_ladder_revision_is_pinned_by_a_test_above():
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 63
-    assert len(pinned) == 107
+    assert len(_MODERN_CHAIN) == 64
+    assert len(pinned) == 108
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -656,6 +660,7 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "conname = 'ck_audit_outbox_status'",  # v459
         "indexname = 'uq_llm_token_budget_counter'",  # v460
         "conname = 'ck_privacy_purge_pending_array'",  # v461
+        "tgname = 'trg_speaker_identity_event_guard'",  # v462
         "conname = 'ck_media_file_trash_state'",  # v463, the last probe
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]

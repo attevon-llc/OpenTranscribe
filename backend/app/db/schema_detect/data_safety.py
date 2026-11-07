@@ -1,7 +1,7 @@
 """Schema detection, v463 onward: the data-safety cluster (trash, hide, scheduled erasure, owner).
 
 v461 closed the governance era (``governance.py``); this era builds on its top rung
-(``governance.matches_v461``). ``probe()`` issues this era's queries after every older era's;
+(``governance.matches_v462``). ``probe()`` issues this era's queries after every older era's;
 ``ARMS`` is this era's slice of the newest-first ladder (``ladder.py``), and its first arm is the
 top of it.
 
@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING
 
-from app.db.schema_detect.governance import matches_v461
+from app.db.schema_detect.governance import matches_v462
 from app.db.schema_detect.probe import check_exists
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
 
 
 def matches_v463(f: SchemaFacts) -> bool:
-    return matches_v461(f) and f.data_safety.has_media_file_trash
+    return matches_v462(f) and f.data_safety.has_media_file_trash
 
 
 ARMS: tuple[Arm, ...] = ((matches_v463, "v463_add_media_file_trash"),)

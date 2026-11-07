@@ -19,6 +19,12 @@ be missed, so this walks ``backend/app`` and fails on any function that
 
 A reader helper (``hides_link`` ...) does NOT count: it was once accepted by accident.
 
+The append-only identity history (issue #1336) rides on the same check. An ORM write is recorded
+by the flush listener from the helpers' attribution notes, so the helper call above is what
+attributes it. A BULK write (``.values()`` / ``.update()`` / raw SQL) never reaches a flush, so it
+must ALSO be covered by ``record_bulk_identity_events`` from ``services/speaker_identity_history``
+(reported as ``<field> (history)``).
+
 The check is PER WRITE, not per function. A helper call covers a write only if it runs whenever
 the write runs: a helper in one branch of an ``if`` does not cover a write in the other branch or
 outside it, and a helper in a loop body or an ``except`` handler covers only what shares that
@@ -47,6 +53,10 @@ import pytest
 
 APP = Path(__file__).resolve().parents[2] / "app"
 HELPER_MODULE = "app.utils.speaker_identity_source"
+HISTORY_MODULE = "app.services.speaker_identity_history"
+#: What records the history of a bulk write (#1336).
+HISTORY_HELPERS = frozenset({"record_bulk_identity_events"})
+HISTORY = " (history)"
 _IDENTITY_FIELDS = frozenset({"display_name", "profile_id"})
 _SUGGESTION_FIELDS = frozenset({"suggested_name", "suggestion_source"})
 #: Columns only the helpers may assign.
@@ -68,6 +78,9 @@ IDENTITY_HELPERS = frozenset(
         "after_unlink",
         "after_name_cleared",
         "after_skip",
+        # Attribute a change that leaves the source as it is (#1336).
+        "record_profile_rename",
+        "record_speaker_merge",
         # SQL-side twin for the purge's bulk UPDATE: nulls the source and its record together.
         "cleared_provenance_values",
     }
@@ -89,11 +102,6 @@ _ALLOWED: dict[str, str] = {
     "services/ingest_artifacts/service.py::__init__": (
         "not a Speaker: a plain roster entry object holding a label for the facts digest"
     ),
-    "services/speaker_profile_rename.py::apply_profile_name_to_speakers": (
-        "a person renamed the PROFILE and its linked speakers show the new name; who made each "
-        "speaker's identity does not change, so the recorded source, person and detail stay. "
-        "The profile's own change history is issue #1336"
-    ),
     "services/speaker_status_service.py::add_computed_status": (
         "setattr over the closed set of computed-status columns (_PERSISTED_STATUS_FIELDS); "
         "none of them is a name, a link, a suggestion or the record of either"
@@ -103,6 +111,12 @@ _ALLOWED: dict[str, str] = {
     ),
 }
 
+
+#: The fields a ``.values(**cleared_*_values())`` SQL twin writes, as one write.
+SQL_TWIN = "<sql twin>"
+_TWINS = frozenset({"cleared_provenance_values", "cleared_suggestion_values"})
+#: Fields whose bulk write must also be recorded in the identity history.
+_HISTORY_FIELDS = _IDENTITY_FIELDS | _SUGGESTION_FIELDS | {SQL_TWIN}
 
 _SQL_UPDATE = re.compile(
     r"\bupdate\s+\"?speaker\"?\s+set\b(?P<rest>.*?)(?:\bwhere\b|$)", re.I | re.S
@@ -117,6 +131,8 @@ class Write:
     line: int
     field: str
     node: ast.AST
+    #: A bulk ``UPDATE`` / raw SQL write: it bypasses the flush listener that records history.
+    bulk: bool = False
 
 
 def _own_nodes(func: ast.AST) -> Iterator[ast.AST]:
@@ -157,14 +173,23 @@ def _bulk_writes(node: ast.Call, *, constructor: bool, bulk: bool) -> list[Write
     """Guarded fields written by a constructor / ``.values()`` / ``.update()`` call."""
     found: list[Write] = []
     if constructor or bulk:
-        found.extend(Write(node.lineno, kw.arg, node) for kw in node.keywords if kw.arg in _FIELDS)
+        found.extend(
+            Write(node.lineno, kw.arg, node, bulk=bulk) for kw in node.keywords if kw.arg in _FIELDS
+        )
+        # ``.values(**cleared_suggestion_values())``: the SQL twins write their fields too.
+        if bulk:
+            for kw in node.keywords:
+                twin = kw.value.func if kw.arg is None and isinstance(kw.value, ast.Call) else None
+                name = twin.id if isinstance(twin, ast.Name) else None
+                if name in _TWINS:
+                    found.append(Write(node.lineno, SQL_TWIN, node, bulk=True))
     if bulk:
         for dictionary in (a for a in node.args if isinstance(a, ast.Dict)):
             for key in dictionary.keys:
                 if isinstance(key, ast.Constant) and key.value in _FIELDS:
-                    found.append(Write(node.lineno, str(key.value), node))
+                    found.append(Write(node.lineno, str(key.value), node, bulk=True))
                 elif isinstance(key, ast.Attribute) and key.attr in _FIELDS:
-                    found.append(Write(node.lineno, key.attr, node))
+                    found.append(Write(node.lineno, key.attr, node, bulk=True))
     return found
 
 
@@ -198,7 +223,9 @@ def _writes(func: ast.AST) -> list[Write]:
             )
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             if id(node) not in prose:
-                found.extend(Write(node.lineno, f, node) for f in _fields_in_sql(node.value))
+                found.extend(
+                    Write(node.lineno, f, node, bulk=True) for f in _fields_in_sql(node.value)
+                )
     return found
 
 
@@ -298,18 +325,22 @@ def _needed(field: str) -> frozenset[str] | None:
         return IDENTITY_HELPERS
     if field in _SUGGESTION_FIELDS:
         return SUGGESTION_HELPERS
-    if field == DYNAMIC:
+    if field in (DYNAMIC, SQL_TWIN):
         return IDENTITY_HELPERS | SUGGESTION_HELPERS
     return None
 
 
 def _helper_names(tree: ast.AST) -> dict[str, str]:
-    """Local alias -> helper name, for every helper the module imports from HELPER_MODULE."""
+    """Local alias -> helper name, for every helper imported from HELPER_MODULE / HISTORY_MODULE."""
     names: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == HELPER_MODULE:
             for alias in node.names:
                 if alias.name in IDENTITY_HELPERS | SUGGESTION_HELPERS:
+                    names[alias.asname or alias.name] = alias.name
+        elif isinstance(node, ast.ImportFrom) and node.module == HISTORY_MODULE:
+            for alias in node.names:
+                if alias.name in HISTORY_HELPERS:
                     names[alias.asname or alias.name] = alias.name
     return names
 
@@ -329,8 +360,13 @@ def unmarked_writers(source: str) -> list[tuple[str, int, str]]:
         for write in _writes(func):
             needed = _needed(write.field)
             chains = [chain for name, chain in helpers if needed and name in needed]
-            if needed is None or not _covered(_guards(write.node, parents, func), chains):
+            where = _guards(write.node, parents, func)
+            if needed is None or not _covered(where, chains):
                 out.append((func.name, write.line, write.field))
+            if write.bulk and write.field in _HISTORY_FIELDS:
+                recorded = [chain for name, chain in helpers if name in HISTORY_HELPERS]
+                if not _covered(where, recorded):
+                    out.append((func.name, write.line, write.field + HISTORY))
     return out
 
 
@@ -404,6 +440,7 @@ def test_detector_fires_on_an_unmarked_assignment():
         ("rename", "display_name"),
         ("link", "profile_id"),
         ("bulk", "display_name"),
+        ("bulk", "display_name (history)"),
     }
 
 
@@ -411,12 +448,12 @@ def test_detector_fires_on_an_unmarked_assignment():
     "body",
     [
         "    speaker.display_name = name\n    record_human_identity(speaker, user_id=1, origin='typed')\n",
-        "    speaker.profile_id = 1\n    after_unlink(speaker)\n",
+        "    speaker.profile_id = 1\n    after_unlink(speaker, user_id=None)\n",
         "    speaker.suggested_name = name\n    record_suggestion(speaker, source='s', name=name, confidence=1, detail={})\n",
-        "    speaker.suggested_name = None\n    clear_suggestion(speaker)\n",
-        "    speaker.suggestion_source = 'user_skipped'\n    mark_review_skipped(speaker)\n",
+        "    speaker.suggested_name = None\n    clear_suggestion(speaker, user_id=None)\n",
+        "    speaker.suggestion_source = 'user_skipped'\n    mark_review_skipped(speaker, user_id=None)\n",
         "    speaker.display_name = name\n    speaker.suggested_name = name\n"
-        "    record_human_identity(speaker, user_id=1, origin='typed')\n    clear_suggestion(speaker)\n",
+        "    record_human_identity(speaker, user_id=1, origin='typed')\n    clear_suggestion(speaker, user_id=None)\n",
         "    speaker.display_name = name\n    _record_identity_source_on_edit(speaker, u)\n",
     ],
 )
@@ -480,14 +517,20 @@ def test_detector_fires_on_an_unmarked_bulk_suggestion_write():
         "def purge(db):\n"
         "    db.execute(update(Speaker).values(suggested_name=None, suggestion_source=None))\n"
     )
-    assert {f for _, _, f in unmarked_writers(source)} == {"suggested_name", "suggestion_source"}
+    assert {f for _, _, f in unmarked_writers(source)} == {
+        "suggested_name",
+        "suggestion_source",
+        "suggested_name (history)",
+        "suggestion_source (history)",
+    }
 
 
 # --- the shapes an earlier per-function scan could not see --------------------------------------
 
 _IMPORTS = (
     f"from {HELPER_MODULE} import record_human_identity, record_machine_identity, "
-    "cleared_suggestion_values, clear_suggestion, record_suggestion\n"
+    "cleared_suggestion_values, cleared_provenance_values, clear_suggestion, record_suggestion\n"
+    f"from {HISTORY_MODULE} import record_bulk_identity_events\n"
 )
 
 
@@ -501,24 +544,24 @@ def _fires(body: str) -> set[tuple[str, str]]:
         # an attribute-keyed dictionary, the form SQLAlchemy accepts beside the string keys
         (
             "def a(db):\n    db.query(Speaker).update({Speaker.display_name: None})\n",
-            {("a", "display_name")},
+            {("a", "display_name"), ("a", "display_name (history)")},
         ),
         (
             "def a(db):\n    db.execute(update(Speaker).values({Speaker.suggested_name: None}))\n",
-            {("a", "suggested_name")},
+            {("a", "suggested_name"), ("a", "suggested_name (history)")},
         ),
         # raw SQL
         (
             "def a(db):\n    db.execute(text('UPDATE speaker SET display_name = NULL WHERE id = 1'))\n",
-            {("a", "display_name")},
+            {("a", "display_name"), ("a", "display_name (history)")},
         ),
         (
             "def a(db):\n    db.execute(text('update \"speaker\" set profile_id = 3, name = x'))\n",
-            {("a", "profile_id")},
+            {("a", "profile_id"), ("a", "profile_id (history)")},
         ),
         (
             "def a(db):\n    db.execute(text('INSERT INTO speaker (name, suggested_name) VALUES (1, 2)'))\n",
-            {("a", "suggested_name")},
+            {("a", "suggested_name"), ("a", "suggested_name (history)")},
         ),
         # a field named by a variable on a speaker
         (
@@ -598,11 +641,77 @@ def test_detector_fires_on_the_shapes_a_per_function_scan_missed(body, expected)
         "    try:\n        record_human_identity(speaker, user_id=1, origin='typed')\n"
         "    except ValueError:\n        pass\n"
         "    speaker.display_name = 'x'\n",
-        # the SQL-side twin of the suggestion helpers
+        # the SQL-side twin of the suggestion helpers, with the bulk write's history recorded
         "def a(db):\n"
         "    db.execute(update(Speaker).values(**cleared_suggestion_values()))\n"
-        "    db.execute(update(Speaker).values({Speaker.suggested_name: None}))\n",
+        "    db.execute(update(Speaker).values({Speaker.suggested_name: None}))\n"
+        "    record_bulk_identity_events(db, [1], kind='purge', user_id=None, detail={})\n",
     ],
 )
 def test_detector_stays_clean_on_what_is_recorded_or_not_a_speaker_name(body):
     assert unmarked_writers(_IMPORTS + body) == []
+
+
+# --- the identity history of a bulk write (#1336) ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # the purge's shape, history forgotten: the twin alone is a bulk identity write
+        (
+            "def a(db):\n    db.execute(update(Speaker).values(**cleared_provenance_values()))\n",
+            {("a", "<sql twin> (history)")},
+        ),
+        (
+            "def a(db):\n    db.execute(update(Speaker).values(**cleared_suggestion_values()))\n",
+            {("a", "<sql twin> (history)")},
+        ),
+        # the history recorded in another branch does not cover the write
+        (
+            "def a(db, c):\n"
+            "    db.execute(update(Speaker).values(**cleared_provenance_values()))\n"
+            "    if c:\n"
+            "        record_bulk_identity_events(db, [1], kind='purge', user_id=None, detail={})\n",
+            {("a", "<sql twin> (history)")},
+        ),
+        # an ORM helper is not a bulk write's history
+        (
+            "def a(db, speaker):\n"
+            "    db.execute(update(Speaker).values(display_name=None))\n"
+            "    record_human_identity(speaker, user_id=1, origin='typed')\n",
+            {("a", "display_name (history)")},
+        ),
+    ],
+)
+def test_detector_fires_on_a_bulk_write_without_its_history(body, expected):
+    assert _fires(body) == expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "def a(db):\n"
+        "    db.execute(update(Speaker).values(**cleared_provenance_values()))\n"
+        "    record_bulk_identity_events(db, [1], kind='purge', user_id=None, detail={})\n",
+        # an ORM write is recorded at flush, by the listener: no bulk history needed
+        "def a(speaker):\n"
+        "    speaker.display_name = 'x'\n"
+        "    record_human_identity(speaker, user_id=1, origin='typed')\n",
+        # a bulk write of a column the history does not track
+        "def a(db):\n    db.execute(update(Speaker).values(cluster_id=None))\n",
+    ],
+)
+def test_detector_stays_clean_on_a_recorded_bulk_write(body):
+    assert unmarked_writers(_IMPORTS + body) == []
+
+
+def test_the_scan_sees_the_bulk_writers_and_their_history():
+    """Guard the guard: the purge's bulk writes are found AND found recorded."""
+    flagged, writers = _scan()
+    for known in (
+        "services/privacy/purge_voiceprints.py::_revert_machine_identities",
+        "services/privacy/purge_voiceprints.py::purge_voiceprints_postgres",
+    ):
+        assert known in writers
+        assert known not in flagged

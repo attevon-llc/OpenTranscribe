@@ -415,6 +415,7 @@ def update_speaker_profile(
                 db,
                 int(profile_id),
                 name,
+                actor_user_id=current_user.id,
                 restrict_to_user_id=None if ctx.bypass.sees_all_in_scope else current_user.id,
                 organization_id=profile.organization_id,
             )
@@ -545,7 +546,9 @@ def delete_speaker_profile(
                 cluster.label = None  # type: ignore[assignment]
 
         # The one unlink rule, shared with a cluster unassign (#1233).
-        impact.relabel_speaker_ids |= unlink_from_profile(db, speakers, int(profile_id), tracker)
+        impact.relabel_speaker_ids |= unlink_from_profile(
+            db, speakers, int(profile_id), tracker, user_id=current_user.id
+        )
 
         # Delete avatar from MinIO if exists
         if profile.avatar_path:

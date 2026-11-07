@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints import speakers_debug
+from app.api.endpoints import speakers_history
 from app.api.endpoints import speakers_merge
 from app.api.endpoints import speakers_occurrences
 from app.api.endpoints import speakers_suggestions
@@ -144,6 +145,7 @@ router.include_router(speakers_debug.router)
 router.include_router(speakers_occurrences.router)
 router.include_router(speakers_suggestions.router)
 router.include_router(speakers_merge.router)
+router.include_router(speakers_history.router)
 
 
 # --- SECTION: SINGLE-PARAM ROUTES (catch-all, must come last) ---
@@ -179,7 +181,9 @@ def _set_no_cache_headers(response: Response) -> None:
     response.headers["Expires"] = "0"
 
 
-def _apply_verification_on_display_name(speaker: Speaker, speaker_update: SpeakerUpdate) -> None:
+def _apply_verification_on_display_name(
+    speaker: Speaker, speaker_update: SpeakerUpdate, *, user_id: int
+) -> None:
     """Mark speaker as verified when display name is set.
 
     Clears ``suggested_name``/``confidence`` — the *active pending suggestion*
@@ -196,7 +200,7 @@ def _apply_verification_on_display_name(speaker: Speaker, speaker_update: Speake
     """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
         speaker.verified = True  # type: ignore[assignment]
-        clear_suggestion(speaker)
+        clear_suggestion(speaker, user_id=user_id)
 
 
 def _record_identity_source_on_edit(
@@ -226,7 +230,7 @@ def _record_identity_source_on_edit(
                 else ORIGIN_TYPED,
             )
         else:
-            after_name_cleared(speaker)
+            after_name_cleared(speaker, user_id=user_id)
     elif speaker_update.verified is True and (speaker.display_name or speaker.profile_id):
         record_human_identity(speaker, user_id=user_id, origin=ORIGIN_CONFIRMED)
 
@@ -341,7 +345,7 @@ def update_speaker(
     _record_identity_source_on_edit(
         speaker, speaker_update, user_id=current_user.id, profile_action=profile_action
     )
-    _apply_verification_on_display_name(speaker, speaker_update)
+    _apply_verification_on_display_name(speaker, speaker_update, user_id=current_user.id)
 
     # Commit to PostgreSQL immediately
     db.commit()

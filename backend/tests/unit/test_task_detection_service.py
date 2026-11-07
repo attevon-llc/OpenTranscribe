@@ -603,7 +603,7 @@ def test_rejecting_every_suggestion_on_a_file_does_not_re_offer_speaker_id(
     db_session.refresh(speaker)
 
     with patch.object(LLMService, "is_configured_for_user", return_value=True):
-        _reject_speaker_suggestion(speaker, speaker.id, db_session)
+        _reject_speaker_suggestion(speaker, speaker.id, db_session, user_id=normal_user.id)
 
         results = service.identify_incomplete_post_transcription_files(db_session)
 

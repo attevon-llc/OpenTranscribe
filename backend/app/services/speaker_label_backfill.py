@@ -4,7 +4,7 @@ Before the owner decision of 2026-10-12, ``canonical_speaker_label`` treated any
 ``suggested_name`` at confidence >= 0.75 as the speaker's name, whoever produced it. A speaker
 the LLM speaker-ID task had *guessed* at was therefore indexed (chunks, digests, summaries,
 facts) under the guess. The rule now accepts a suggestion only when a voiceprint match produced
-it (``utils/speaker_labels.EMBEDDING_SUGGESTION_SOURCES``), so those documents hold a label
+it (``utils/speaker_name_rules.EMBEDDING_SUGGESTION_SOURCES``), so those documents hold a label
 Postgres no longer resolves to.
 
 A row with NO source is selected too. Migration ``v439`` has already given its voiceprint
@@ -39,7 +39,7 @@ from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import get_setting_int
 from app.services.system_settings_service import set_setting
 from app.utils.speaker_labels import DEFAULT_SUGGESTION_CONFIDENCE_THRESHOLD
-from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
+from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
 logger = logging.getLogger(__name__)
 

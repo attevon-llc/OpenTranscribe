@@ -96,7 +96,7 @@ def test_revision_chain_has_one_head():
     config = get_alembic_config()
     config.set_main_option("script_location", str(_PATH.parents[1]))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_revision(REVISION).down_revision == "v461_add_privacy_purge_pending"
+    assert scripts.get_revision(REVISION).down_revision == "v462_add_speaker_identity_event"
     assert len(set(scripts.get_heads())) == 1
 
 

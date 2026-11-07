@@ -24,10 +24,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.utils.speaker_labels import EMBEDDING_SUGGESTION_SOURCES
 from app.utils.speaker_labels import UNKNOWN_SPEAKER_LABEL
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
+from app.utils.speaker_name_rules import EMBEDDING_SUGGESTION_SOURCES
 
 pytestmark = pytest.mark.unit
 

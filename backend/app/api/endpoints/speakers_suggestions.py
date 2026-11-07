@@ -274,7 +274,9 @@ def _rejected_profile_ids(db: Session, speaker: Speaker, linked_profile_id: int 
     return rejected
 
 
-def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -> dict[str, Any]:
+def _reject_speaker_suggestion(
+    speaker: Speaker, speaker_id: int, db: Session, *, user_id: int
+) -> dict[str, Any]:
     """Handle rejection of a speaker identification suggestion.
 
     Clears ``suggested_name`` alongside ``confidence`` (issue #605) — nulling
@@ -324,9 +326,14 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
     if old_profile_id is not None:
         for cluster in _clusters_promoted_to_holding(db, old_profile_id, int(speaker_id)):
             impact |= detach_from_cluster(
-                db, cluster, [speaker], blacklist=True, tracker=superseded
+                db,
+                cluster,
+                [speaker],
+                blacklist=True,
+                tracker=superseded,
+                user_id=user_id,
             )
-        unlink_from_profile(db, [speaker], old_profile_id, superseded)
+        unlink_from_profile(db, [speaker], old_profile_id, superseded, user_id=user_id)
     rejected_ids = sorted(_rejected_profile_ids(db, speaker, old_profile_id))
     for profile_id in rejected_ids:
         record_unassignment(
@@ -336,9 +343,10 @@ def _reject_speaker_suggestion(speaker: Speaker, speaker_id: int, db: Session) -
 
     # Mark as verified but don't assign to profile - use setattr for proper type handling
     speaker.profile_id = None
-    after_unlink(speaker)  # idempotent after unlink_from_profile; covers a speaker with no link
+    # idempotent after unlink_from_profile; covers a speaker with no link
+    after_unlink(speaker, user_id=user_id)
     speaker.verified = True
-    clear_suggestion(speaker)
+    clear_suggestion(speaker, user_id=user_id, rejected=True)
     after = canonical_speaker_label_for_row(speaker)
     db.commit()
 
@@ -460,7 +468,7 @@ def _dispatch_verify_action(
         return _accept_speaker_profile_match(speaker, speaker_id, profile_id, current_user, db)
 
     if action == "reject":
-        return _reject_speaker_suggestion(speaker, speaker_id, db)
+        return _reject_speaker_suggestion(speaker, speaker_id, db, user_id=current_user.id)
 
     if action == "create_profile":
         if not profile_name:

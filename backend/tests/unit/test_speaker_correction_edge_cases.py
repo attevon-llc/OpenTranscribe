@@ -438,7 +438,7 @@ def test_rejecting_a_profile_identification_is_honoured_by_retroactive_matching(
     d = _voiced(db_session, normal_user, speaker_os_seams, VC)  # control
     db_session.commit()
 
-    _reject_speaker_suggestion(c, int(c.id), db_session)
+    _reject_speaker_suggestion(c, int(c.id), db_session, user_id=normal_user.id)
     db_session.expire_all()
 
     monkeypatch.setattr(speaker_update, "_send_bulk_update_notification", lambda *a: None)
@@ -465,7 +465,7 @@ def test_rejecting_a_suggestion_blocks_the_profile_it_named(
     s.suggested_name, s.confidence = "bob", 0.8
     db_session.commit()
 
-    _reject_speaker_suggestion(s, int(s.id), db_session)
+    _reject_speaker_suggestion(s, int(s.id), db_session, user_id=normal_user.id)
 
     db_session.expire_all()
     assert _blacklisted(db_session, s.id, bob.id)

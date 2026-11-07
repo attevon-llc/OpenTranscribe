@@ -33,7 +33,17 @@ row, ``identity_source_at`` (when the current source was recorded), ``identity_s
 ``identity_source_detail`` (the origin: see :mod:`app.utils.speaker_identity_detail`). Every
 writer of ``suggested_name`` / ``suggestion_source`` goes through :func:`record_suggestion`,
 :func:`clear_suggestion` or :func:`mark_review_skipped`, which keep ``suggestion_detail`` in
-step. This is the CURRENT state only; the append-only history is issue #1336 (v0.7.0).
+step. This is the CURRENT state only.
+
+The append-only history (issue #1336) hangs off the same helpers. They stay pure, but each also
+leaves a small attribution note on the row (:data:`HISTORY_NOTES_KEY` in the row's SQLAlchemy
+``InstanceState.info``: the person, an explicit change kind, an origin record), which the flush
+listener in :mod:`app.models.speaker_identity_event` turns into a ``speaker_identity_event`` row
+in the same transaction. The helpers that do not re-record the source (:func:`after_unlink`,
+:func:`after_name_cleared`, :func:`clear_suggestion`, :func:`mark_review_skipped`,
+:func:`after_skip`) therefore take a REQUIRED ``user_id``: every caller states who acted
+(``None`` = a task). :func:`record_profile_rename` and :func:`record_speaker_merge` exist only to
+attribute changes that leave the source as it is.
 
 While a file's voiceprints are off, the provenance of a machine identity (and the detail of a
 voiceprint suggestion) is withheld exactly like the name and link it describes
@@ -46,14 +56,18 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm.attributes import flag_dirty
+
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_USER_SKIPPED
 from app.utils.speaker_identity_detail import ORIGIN_VOICE_SUGGESTION_SKIPPED
 from app.utils.speaker_identity_detail import accepted_suggestion_snapshot
 from app.utils.speaker_identity_detail import human_detail
 from app.utils.speaker_identity_detail import voiceprint_detail
-from app.utils.speaker_labels import is_assigned_speaker_name
-from app.utils.speaker_labels import is_embedding_suggestion_source
+from app.utils.speaker_identity_history import ORIGIN_SPEAKER_MERGED
+from app.utils.speaker_name_rules import is_assigned_speaker_name
+from app.utils.speaker_name_rules import is_embedding_suggestion_source
 
 VOICEPRINT = "voiceprint"
 VOICEPRINT_LINK = "voiceprint_link"
@@ -70,6 +84,26 @@ MACHINE_IDENTITY_SOURCES: frozenset[str] = frozenset({VOICEPRINT, VOICEPRINT_LIN
 #: recognised as voiceprint-made (owner decision Q1: the count is quoted by the upgrade note).
 #: Value: JSON ``{"revision": ..., "stamped": <int>, "recorded_at": <timestamp>}``.
 BACKFILL_RECORD_SETTING_KEY = "privacy.identity_source_backfill"
+
+#: Key of the attribution notes in a row's ``InstanceState.info`` (consumed at flush).
+HISTORY_NOTES_KEY = "speaker_identity_history_notes"
+
+
+def _note(speaker: Any, **note: Any) -> None:
+    """Leave who acted (and, optionally, what kind of change it was) for the history row.
+
+    A plain object (a unit test's stand-in) has no instance state and is never flushed, so there
+    is nothing to note. The row is marked dirty so a change that writes no column (a speaker
+    merge, a skip) still reaches the flush listener.
+    """
+    state = sa_inspect(speaker, raiseerr=False)
+    if state is None:
+        return
+    state.info.setdefault(HISTORY_NOTES_KEY, []).append(
+        {k: v for k, v in note.items() if v is not None}
+    )
+    if state.session_id is not None and state.key is not None:
+        flag_dirty(speaker)
 
 
 def _stamp(
@@ -121,7 +155,7 @@ def record_machine_link(speaker: Any, *, detail: dict[str, Any]) -> None:
     """A voiceprint path linked this speaker to a profile without writing its name.
 
     The row now records the machine's link, so the person who typed the name that was already
-    there is no longer named in it (only the current state is kept; the history is issue #1336).
+    there is no longer named in it (the earlier record stays in the identity history, #1336).
     """
     source = VOICEPRINT if speaker.identity_source == VOICEPRINT else VOICEPRINT_LINK
     _stamp(speaker, source, user_id=None, detail=detail)
@@ -148,6 +182,7 @@ def record_human_identity(
             holds the accepted suggestion the request has since cleared. Honoured only when the
             speaker is already ``human`` with a timestamp.
     """
+    _note(speaker, user_id=user_id)
     if keep_recorded and speaker.identity_source == HUMAN and speaker.identity_source_at:
         return
     detail = human_detail(
@@ -160,8 +195,10 @@ def record_human_identity(
     _stamp(speaker, HUMAN, user_id=user_id, detail=detail)
 
 
-def after_unlink(speaker: Any) -> None:
+def after_unlink(speaker: Any, *, user_id: int | None) -> None:
     """The speaker's profile link was just removed; settle what the remaining name is.
+
+    ``user_id`` is the person who removed it (``None``: a task), for the history.
 
     An emptied name leaves nothing to describe (NULL). A ``voiceprint_link`` row's
     remaining name predates the link the machine added, so the row reverts to NULL
@@ -169,19 +206,23 @@ def after_unlink(speaker: Any) -> None:
     carries the machine-written name. Reverting to NULL clears the recorded time, person and
     detail with it: there is no identity left to describe.
     """
+    _note(speaker, user_id=user_id)
     name_left = is_assigned_speaker_name(speaker.display_name)
     if not name_left or speaker.identity_source == VOICEPRINT_LINK:
         _stamp(speaker, None, user_id=None, detail=None)
 
 
-def after_name_cleared(speaker: Any) -> None:
+def after_name_cleared(speaker: Any, *, user_id: int | None) -> None:
     """A person emptied the speaker's name without unlinking its profile.
+
+    ``user_id`` is that person, for the history.
 
     With no link left there is no identity to describe (NULL). With a link left, a
     ``voiceprint`` row keeps the machine's link and becomes ``voiceprint_link`` (the name the
     machine wrote is gone; the link stays hideable and purgeable); a ``human`` or
     ``voiceprint_link`` row is unchanged. A name still present is not a clearing.
     """
+    _note(speaker, user_id=user_id)
     if is_assigned_speaker_name(speaker.display_name):
         return
     if speaker.profile_id is None:
@@ -190,7 +231,7 @@ def after_name_cleared(speaker: Any) -> None:
         speaker.identity_source = VOICEPRINT_LINK
 
 
-def after_skip(speaker: Any) -> None:
+def after_skip(speaker: Any, *, user_id: int | None) -> None:
     """A person dismissed this speaker from the Inbox, which sets ``verified`` without choosing a name.
 
     A skip is a review marker, not a confirmation, so it must not turn a voiceprint's
@@ -199,7 +240,10 @@ def after_skip(speaker: Any) -> None:
     treat its ``verified`` flag and its suggestion as the voiceprint's (hidden while off,
     cleared by a purge, which returns it to the Inbox). A speaker that already has a name or
     a link keeps the provenance whoever wrote it recorded.
+
+    ``user_id`` is the person who skipped, for the history (the row records the skip as theirs).
     """
+    _note(speaker, user_id=user_id, kind="skipped")
     if not is_embedding_suggestion_source(speaker.suggestion_source):
         return
     if speaker.profile_id is not None or is_assigned_speaker_name(speaker.display_name):
@@ -266,28 +310,62 @@ def record_suggestion(
     return True
 
 
-def clear_suggestion(speaker: Any) -> None:
+def clear_suggestion(speaker: Any, *, user_id: int | None, rejected: bool = False) -> None:
     """Withdraw the pending recommendation: the name, its confidence and its recorded origin.
+
+    ``user_id`` is the person who withdrew it (``None``: a task); ``rejected`` records the
+    change as that person's explicit rejection rather than a side effect.
 
     ``suggestion_source`` is deliberately left alone, as every caller before this helper did:
     ``task_detection_service`` reads it standalone as "has LLM speaker identification already
     run on this file" and no display reader trusts it without a ``suggested_name``.
     """
+    _note(speaker, user_id=user_id, kind="suggestion_rejected" if rejected else None)
     speaker.suggested_name = None
     speaker.confidence = None
     speaker.suggestion_detail = None
 
 
-def mark_review_skipped(speaker: Any) -> None:
+def mark_review_skipped(speaker: Any, *, user_id: int | None) -> None:
     """An Inbox skip: remember the speaker was reviewed, but only when no source is recorded.
 
     Overwriting a real source (``llm_analysis``) would erase the marker
-    ``task_detection_service`` reads. The detail says only that a person skipped it.
+    ``task_detection_service`` reads. The detail says only that a person skipped it. The skip is
+    recorded in the history as ``user_id``'s either way.
     """
+    _note(speaker, user_id=user_id, kind="skipped")
     if speaker.suggestion_source:
         return
     speaker.suggestion_source = "user_skipped"
     speaker.suggestion_detail = {"origin": ORIGIN_USER_SKIPPED}
+
+
+def record_profile_rename(speaker: Any, *, user_id: int | None) -> None:
+    """A person renamed the profile this speaker is linked to, and the speaker shows the new name.
+
+    Who made the speaker's identity does not change (the source, person and detail stay); the
+    history records the rename as ``user_id``'s.
+    """
+    _note(speaker, user_id=user_id)
+
+
+def record_speaker_merge(speaker: Any, *, user_id: int | None, merged: Any) -> None:
+    """``speaker`` absorbed the segments of ``merged``, which is then deleted with its history.
+
+    The identity is unchanged, so this writes only the history row (``merge``): the absorbed
+    speaker's uuid, and the name it showed. A name a voiceprint wrote is not copied (it is
+    voiceprint output a purge must be able to remove); the diarizer label stands in for it.
+    """
+    name = merged.display_name
+    if not is_assigned_speaker_name(name) or merged.identity_source == VOICEPRINT:
+        name = merged.name
+    _note(
+        speaker,
+        user_id=user_id,
+        kind="merge",
+        before={"merged_name": name},
+        detail={"origin": ORIGIN_SPEAKER_MERGED, "merged_speaker_uuid": str(merged.uuid)},
+    )
 
 
 def cleared_provenance_values() -> dict[str, None]:

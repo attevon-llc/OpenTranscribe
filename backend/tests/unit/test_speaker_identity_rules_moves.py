@@ -231,7 +231,7 @@ def test_unlink_from_profile_clears_only_profile_derived_names_and_other_profile
     c.profile_id, c.display_name = carol.id, "Carol"
     tracker = SpeakerRenameTracker()
 
-    unlinked = moves.unlink_from_profile(db_session, [a, b, c], bob.id, tracker)
+    unlinked = moves.unlink_from_profile(db_session, [a, b, c], bob.id, tracker, user_id=None)
 
     assert unlinked == {a.id, b.id}
     assert (a.profile_id, a.verified, a.display_name, a.suggested_name) == (None, False, None, None)
@@ -246,7 +246,7 @@ def test_unlink_from_profile_clears_only_profile_derived_names_and_other_profile
     assert tracker.pending == [(f.id, "Bob", "SPEAKER_00")]
 
     ghost = SpeakerRenameTracker()
-    assert moves.unlink_from_profile(db_session, [c], 10**9, ghost) == set()
+    assert moves.unlink_from_profile(db_session, [c], 10**9, ghost, user_id=None) == set()
     assert c.profile_id == carol.id and ghost.pending == []
 
 
@@ -298,7 +298,9 @@ def test_detach_from_cluster_removes_membership_and_records_only_when_asked(
     cl = make_cluster(db_session, normal_user, a, b, c, promoted_to=bob.id)
     tracker = SpeakerRenameTracker()
 
-    impact = moves.detach_from_cluster(db_session, cl, [a], blacklist=blacklist, tracker=tracker)
+    impact = moves.detach_from_cluster(
+        db_session, cl, [a], blacklist=blacklist, tracker=tracker, user_id=None
+    )
     db_session.flush()
 
     assert cl.member_count == 2
@@ -322,7 +324,7 @@ def test_detach_from_cluster_without_a_profile_touches_no_profile(db_session, no
     cl = make_cluster(db_session, normal_user, a, b)
 
     impact = moves.detach_from_cluster(
-        db_session, cl, [a], blacklist=True, tracker=SpeakerRenameTracker()
+        db_session, cl, [a], blacklist=True, tracker=SpeakerRenameTracker(), user_id=None
     )
     db_session.flush()
 

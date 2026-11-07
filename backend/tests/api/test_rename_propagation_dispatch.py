@@ -839,7 +839,7 @@ class TestReprocessSpeakerLLMStageClear:
         )
 
         with patch(_DELAY) as delay_mock:
-            clear_selective_data(db_session, media_file, ["speaker_llm"])
+            clear_selective_data(db_session, media_file, ["speaker_llm"], user_id=None)
 
         delay_mock.assert_called_once()
         assert delay_mock.call_args.kwargs["file_uuid"] == str(media_file.uuid)

@@ -1241,7 +1241,11 @@
     margin: 0;
   }
 
+  /* The range slider library has no RTL mode (its handles are placed from the left edge), so
+     the scale and its min/max labels read left to right in every language, like the player's
+     sliders. */
   .slider-labels {
+    direction: ltr;
     display: flex;
     justify-content: space-between;
     font-size: 0.75rem;
@@ -1251,6 +1255,7 @@
   }
 
   .slider-wrapper {
+    direction: ltr;
     padding: 0 0.25rem;
     font-size: 0.75rem;
   }

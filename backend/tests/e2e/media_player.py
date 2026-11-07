@@ -129,8 +129,22 @@ class MediaPlayer:
         self.wait_for(f"Math.abs(m.currentTime - {seconds}) <= {tolerance}", timeout=timeout)
 
     def set_time(self, seconds: float) -> None:
-        """Move the playhead directly on the element (test setup, not a control under test)."""
-        self.page.evaluate(f"() => {{ {self._js_media()}.currentTime = {seconds}; }}")
+        """Move the playhead directly on the element (test setup, not a control under test).
+
+        Returns once the element has fired ``seeked``, not merely once ``currentTime`` reads
+        the new value (which is at once). A player learns of the seek from the element's
+        events a task later, and a shortcut pressed before then steps from the OLD position
+        (measured: 3 of 12 ArrowRight presses after a seek to 20 s landed on 10 s).
+        """
+        self.page.evaluate(
+            f"""() => new Promise((resolve, reject) => {{
+              const m = {self._js_media()};
+              const timer = setTimeout(() => reject(new Error('no seeked event in 10 s')), 10000);
+              m.addEventListener('seeked', () => {{ clearTimeout(timer); resolve(); }},
+                                 {{once: true}});
+              m.currentTime = {seconds};
+            }})"""
+        )
         self.wait_until_near(seconds, 0.3)
 
     def pause_media(self) -> None:

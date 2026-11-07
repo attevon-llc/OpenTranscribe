@@ -38,7 +38,6 @@ on.
 
 ```
 GET /api/usage/me?days=30          # totals + per-model breakdown
-GET /api/usage/me/daily?days=30    # daily series, for charting
 ```
 
 `days` accepts 1–365 and defaults to 30.

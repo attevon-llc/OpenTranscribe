@@ -536,7 +536,7 @@ def test_retroactive_auto_label_endpoint_passes_the_active_tenant(client, world,
 
 
 # --------------------------------------------------------------------------- #
-# GET /usage/me, /usage/me/daily                                              #
+# GET /usage/me                                                               #
 # --------------------------------------------------------------------------- #
 
 
@@ -556,11 +556,9 @@ def test_usage_reports_only_the_active_tenant(client, world, relation, stamped, 
 
     with _acting_as(w.alice, _acting_org(w, relation)):
         summary = client.get("/api/usage/me")
-        daily = client.get("/api/usage/me/daily")
 
     assert summary.status_code == 200, summary.text
     assert summary.json()["totals"]["total_tokens"] == (123 if visible else 0)
-    assert sum(d["total_tokens"] for d in daily.json()["series"]) == (123 if visible else 0)
 
 
 # --------------------------------------------------------------------------- #

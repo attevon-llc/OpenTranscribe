@@ -14,13 +14,31 @@
  * A derived build (one that replaces `$lib/cloud`) may add a bounded, reasoned allowance
  * through `BUNDLE_BUDGET_ALLOWANCE_*` environment variables (issue #1255). The allowance is
  * capped here, malformed values exit 2, and an active allowance is printed on every run.
- * Headroom is printed for both metrics on every run, pass or fail. See `frontend/CLAUDE.md`,
+ * Headroom is printed for every metric on every run, pass or fail. See `frontend/CLAUDE.md`,
  * "Bundle budget gate".
+ *
+ * Issue #794 adds three checks computed from Vite's build manifest (`scripts/bundle-manifest.mjs`):
+ * no locale JSON in the first-load static closure (start + app entries, root layout and error
+ * nodes); a budget on the entry chunks; a budget on the first-load closure; and a budget on
+ * the total JS shipped. The locale check has no budget and no allowance: a locale in first load
+ * is always a defect (they are `import.meta.glob` lazy loaders, `src/lib/i18n/index.ts`).
+ *
+ * Measured 2026-11-06 on a stock `nice -n 19 npx vite build` in `frontend/` (gzip level 9):
+ *   entry chunks (entry/start + entry/app)     4,173 B
+ *   first-load closure (45 chunks)           139,858 B
+ *   total JS (251 files under _app/immutable) 2,566,185 B
+ * Ratchet: a budget moves only in a reviewed PR that states a new measurement.
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import {
+  firstLoadRoots,
+  localeOffenders,
+  localeSentinels,
+  manifestClosure,
+} from './bundle-manifest.mjs';
 
 /**
  * Gzip bytes of the root layout node. Headroom policy (issue #1255): keep about 10% above the
@@ -34,6 +52,13 @@ export const ROOT_LAYOUT_GZIP_BUDGET = 22 * 1024;
  * measured 130,981 B (the closure is large, so a smaller fraction is the same absolute room).
  */
 export const ROOT_LAYOUT_CLOSURE_GZIP_BUDGET = 136 * 1024;
+
+/** Gzip bytes of the entry chunks (start + app); measured 4,173 B, about 20% headroom (tiny chunk, so a larger fraction is still small). */
+export const ENTRY_CHUNKS_GZIP_BUDGET = 5120;
+/** Gzip bytes of the manifest first-load closure; measured 139,858 B, about 4% headroom. */
+export const FIRST_LOAD_GZIP_BUDGET = 142 * 1024;
+/** Gzip bytes of all JS under `_app/immutable`; measured 2,566,185 B, about 3% headroom. */
+export const TOTAL_JS_GZIP_BUDGET = 2580 * 1024;
 
 /** The most a derived build may add to the node budget. Raising it is a core PR. */
 export const MAX_ALLOWANCE_NODE_BYTES = 3072;
@@ -243,13 +268,22 @@ function metricLine(label, result, base, allowance) {
 /**
  * Run the gate against a built `_app/immutable` directory. Pure apart from reading *root*.
  * @param {{ root: string, env?: Record<string, string | undefined>,
- *   base?: { node: number, closure: number } }} options
+ *   base?: { node: number, closure: number }, manifestPath?: string | null,
+ *   localeDir?: string | null,
+ *   extra?: { entry: number, firstLoad: number, totalJs: number } }} options
  * @returns {{ code: number, stdout: string[], stderr: string[] }}
  */
 export function run({
   root,
   env = process.env,
   base = { node: ROOT_LAYOUT_GZIP_BUDGET, closure: ROOT_LAYOUT_CLOSURE_GZIP_BUDGET },
+  manifestPath = null,
+  localeDir = null,
+  extra = {
+    entry: ENTRY_CHUNKS_GZIP_BUDGET,
+    firstLoad: FIRST_LOAD_GZIP_BUDGET,
+    totalJs: TOTAL_JS_GZIP_BUDGET,
+  },
 }) {
   const out = [];
   const err = [];
@@ -317,18 +351,105 @@ export function run({
       `check-bundle-budget: WARNING ${ENV_ALLOWANCE_REASON} is set but both allowances are 0; it is ignored`
     );
   }
+  const manifestResult = manifestChecks({ root, manifestPath, localeDir, extra, allowance });
+  out.push(...manifestResult.lines);
+  err.push(...manifestResult.errors);
+  if (manifestResult.errors.length > 0 && !(node.over || total.over)) {
+    return { code: 1, stdout: out, stderr: err };
+  }
   if (node.over || total.over) {
     const which = [node.over && 'root layout', total.over && 'static closure'].filter(Boolean);
     err.push(`check-bundle-budget: FAILED, over budget: ${which.join(', ')}. ${HINT}`);
     return { code: 1, stdout: out, stderr: err };
   }
+  if (manifestResult.errors.length > 0) return { code: 1, stdout: out, stderr: err };
   out.push('check-bundle-budget: OK');
   return { code: 0, stdout: out, stderr: err };
 }
 
+/** Every `.js` under *dir*, recursively (sizes the total-JS budget). */
+function jsFiles(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? jsFiles(join(dir, d.name)) : d.name.endsWith('.js') ? [join(dir, d.name)] : []
+  );
+}
+
+/**
+ * Manifest-based checks (issue #794). Fails closed: a missing manifest is an error, so a
+ * Vite/SvelteKit upgrade that moves it cannot silently disable the gate.
+ * @returns {{ lines: string[], errors: string[] }}
+ */
+function manifestChecks({ root, manifestPath, localeDir, extra, allowance }) {
+  if (!manifestPath) return { lines: [], errors: [] };
+  if (!existsSync(manifestPath)) {
+    return {
+      lines: [],
+      errors: [`check-bundle-budget: build manifest not found at ${manifestPath}`],
+    };
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const dist = join(root, '..', '..');
+  const readChunk = (file) => readFileSync(join(dist, file), 'utf8');
+  const { entries, roots } = firstLoadRoots(manifest);
+  if (entries.length !== 2 || roots.length < 3) {
+    return {
+      lines: [],
+      errors: [
+        `check-bundle-budget: could not find the SvelteKit entry chunks in the manifest (${roots.length} roots)`,
+      ],
+    };
+  }
+  const closure = manifestClosure(manifest, roots);
+  const size = (keys) =>
+    [...new Set(keys.map((k) => manifest[k].file))].reduce(
+      (sum, f) => sum + gzipSize(readFileSync(join(dist, f))),
+      0
+    );
+  const entry = evaluate(size(entries), extra.entry);
+  const first = evaluate(size(closure), extra.firstLoad + allowance.closureBytes);
+  const totalSize = jsFiles(root).reduce((sum, f) => sum + gzipSize(readFileSync(f)), 0);
+  const total = evaluate(totalSize, extra.totalJs + allowance.closureBytes);
+  const lines = [
+    metricLine('entry chunks', entry, extra.entry, 0),
+    metricLine(
+      `first-load closure (${closure.length} chunks)`,
+      first,
+      extra.firstLoad,
+      allowance.closureBytes
+    ),
+    metricLine('total JS', total, extra.totalJs, allowance.closureBytes),
+  ];
+  const errors = [];
+  const over = [
+    entry.over && 'entry chunks',
+    first.over && 'first-load closure',
+    total.over && 'total JS',
+  ].filter(Boolean);
+  if (over.length > 0)
+    errors.push(`check-bundle-budget: FAILED, over budget: ${over.join(', ')}. ${HINT}`);
+  if (localeDir) {
+    const bad = localeOffenders(manifest, closure, readChunk, localeSentinels(localeDir));
+    if (bad.length > 0) {
+      errors.push(
+        `check-bundle-budget: FAILED, locale JSON in the first-load closure: ${bad.join(
+          '; '
+        )}. Locales must load through the lazy import.meta.glob loaders in src/lib/i18n/index.ts.`
+      );
+    } else {
+      lines.push('check-bundle-budget: no locale JSON in the first-load closure');
+    }
+  }
+  return { lines, errors };
+}
+
 function main() {
-  const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', '_app', 'immutable');
-  const { code, stdout, stderr } = run({ root });
+  const frontend = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const root = join(frontend, 'dist', '_app', 'immutable');
+  const { code, stdout, stderr } = run({
+    root,
+    manifestPath: join(frontend, '.svelte-kit', 'output', 'client', '.vite', 'manifest.json'),
+    localeDir: join(frontend, 'src', 'lib', 'i18n', 'locales'),
+  });
   for (const line of stdout) console.log(line);
   for (const line of stderr) console.error(line);
   process.exit(code);

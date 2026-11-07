@@ -176,6 +176,12 @@ layout node (`nodes/0.*.js`, 22 KiB gzip) and its static import closure (136 KiB
 every page load pays for them, `/login` included. Heavy, conditionally shown components must be
 loaded with a dynamic `import()`.
 
+Issue #794 adds checks computed from Vite's build manifest (`.svelte-kit/output/client/.vite/manifest.json`,
+`scripts/bundle-manifest.mjs`): **no locale JSON in the first-load static closure** (start and app entries,
+root layout and error nodes; no budget, no allowance), an entry-chunk budget (5 KiB gzip), a first-load
+closure budget (142 KiB gzip) and a total-JS budget (2580 KiB gzip). Measurements and date are in the
+`check-bundle-budget.mjs` header. A missing manifest fails the gate. Tests: `src/bundleBudget.manifest.test.ts`.
+
 - **Headroom is printed for both metrics on every run, pass or fail**, with a `LOW` marker under
   512 B. A failing run still shows the passing metric's margin. Exit codes: `0` pass, `1` over
   budget (or no/ambiguous root node), `2` misconfigured allowance.

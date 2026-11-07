@@ -76,9 +76,12 @@ services:
       # Key format: <key-name>:<base64-encoded-32-byte-key>
       # Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
       - MINIO_KMS_SECRET_KEY=${MINIO_KMS_SECRET_KEY:-}
-      # The "off" default is for development installs without a key; production
-      # startup validation requires "on" (see .env.example).
-      - MINIO_KMS_AUTO_ENCRYPTION=${MINIO_KMS_AUTO_ENCRYPTION:-off}
+      # On unless .env says otherwise, so MinIO needs MINIO_KMS_SECRET_KEY to start (the
+      # installers generate one; opentr.sh/opentranscribe.sh `start` replace the
+      # .env.example placeholder). To store objects unencrypted on purpose, set BOTH
+      # MINIO_KMS_AUTO_ENCRYPTION=off and ALLOW_UNENCRYPTED_OBJECT_STORE=true: production
+      # startup validation refuses "off" without the opt-out.
+      - MINIO_KMS_AUTO_ENCRYPTION=${MINIO_KMS_AUTO_ENCRYPTION:-on}
       # No phone-home: MinIO resolves dl.min.io for an update check on EVERY server start
       # unless MINIO_UPDATE=off (verified by DNS logging). Callhome is already off unless a
       # SUBNET license is registered; set explicitly so the intent is visible.

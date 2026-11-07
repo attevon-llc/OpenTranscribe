@@ -736,10 +736,12 @@ TASK_REPLAY_MAX_ATTEMPTS=2           # Default: 2 (0 = never re-send)
 TASK_REPLAY_MAX_AGE_SECONDS=86400    # Default: 86400
 ```
 
-A production deployment refuses to start unless `MINIO_KMS_AUTO_ENCRYPTION` is `on` (with a valid
-`MINIO_KMS_SECRET_KEY`) or `ALLOW_UNENCRYPTED_OBJECT_STORE=true` is set. The opt-out is for
-installs that knowingly keep objects unencrypted (for example when encryption is provided by the
-disk or storage layer); it does nothing else. **Back up `MINIO_KMS_SECRET_KEY`**: if it is lost,
+`MINIO_KMS_AUTO_ENCRYPTION` is `on` unless `.env` sets it, so bundled MinIO needs a valid
+`MINIO_KMS_SECRET_KEY` to start. A production deployment refuses to start with it `off` unless
+`ALLOW_UNENCRYPTED_OBJECT_STORE=true` is also set. The opt-out is for installs that knowingly keep
+objects unencrypted (for example when encryption is provided by the disk or storage layer) and
+needs both lines, `MINIO_KMS_AUTO_ENCRYPTION=off` and `ALLOW_UNENCRYPTED_OBJECT_STORE=true`; it
+does nothing else. **Back up `MINIO_KMS_SECRET_KEY`**: if it is lost,
 every object encrypted with it is permanently unreadable. Development stacks and installs using an
 external object store (`STORAGE_BACKEND` other than `minio`) are not checked.
 
@@ -917,8 +919,8 @@ failure it exists to prevent. Keep the prefix out of any bucket lifecycle expira
 # MinIO Server-Side Encryption at Rest (AES-256-GCM)
 # Generate with: echo "opentranscribe-key:$(openssl rand -base64 32)"
 MINIO_KMS_SECRET_KEY=auto_generated_on_install
-MINIO_KMS_AUTO_ENCRYPTION=on  # Set to 'on' to enable
-# ALLOW_UNENCRYPTED_OBJECT_STORE=true  # deliberate opt-out, see below
+MINIO_KMS_AUTO_ENCRYPTION=on  # Default: on (also when unset)
+# ALLOW_UNENCRYPTED_OBJECT_STORE=true  # deliberate opt-out, with MINIO_KMS_AUTO_ENCRYPTION=off
 
 # API Key Encryption (for LLM keys stored in database)
 ENCRYPTION_KEY=auto_generated_on_install  # NEVER change after first use

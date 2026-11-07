@@ -1801,7 +1801,7 @@ case "${1:-help}" in
         # able to `start`; it just doesn't get the auto-fix and hits the pre-existing
         # MinIO KMS error, exactly as it did before common.sh was ever sourced here.
         if declare -F ensure_minio_kms_secret >/dev/null; then
-            ensure_minio_kms_secret ".env"
+            ensure_minio_kms_secret ".env" || exit 1
         fi
         # Unconditional owner-only lock (issue #857) -- not reachable via
         # ensure_minio_kms_secret alone once a real key is already in place.

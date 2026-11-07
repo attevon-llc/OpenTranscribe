@@ -33,7 +33,7 @@ See [Backup & Restore](./backup-restore.md). Then update:
 
 A production install refuses to start when `FLOWER_PASSWORD` is unset or a default
 (`flower`, `changeme`, a `CHANGE_ME` placeholder), or when the bundled object store does not
-encrypt objects (`MINIO_KMS_AUTO_ENCRYPTION` is not `on`). An install made by the current
+encrypt objects (`MINIO_KMS_AUTO_ENCRYPTION` is set to anything but `on`). An install made by the current
 installer already has both. Otherwise add these lines to `.env` **before** you run the update:
 
 ```bash
@@ -55,8 +55,16 @@ production configuration no longer falls back to the development password `flowe
 Back up `MINIO_KMS_SECRET_KEY` somewhere safe: objects written from then on are encrypted with
 it, and if it is lost they cannot be read again. Objects stored before encryption was turned on
 stay readable. To keep storing objects unencrypted on purpose, set
-`ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead of the two encryption lines. See
-[environment variables](../configuration/environment-variables.md).
+`MINIO_KMS_AUTO_ENCRYPTION=off` and `ALLOW_UNENCRYPTED_OBJECT_STORE=true` instead of the two
+encryption lines. See [environment variables](../configuration/environment-variables.md).
+
+Object-store encryption is now **on by default** in every install, development included:
+`MINIO_KMS_AUTO_ENCRYPTION` counts as `on` when `.env` does not set it, and MinIO cannot start
+without `MINIO_KMS_SECRET_KEY`. An `.env` with neither line (written by hand, or trimmed) now
+needs the key, or the two opt-out lines above. From 0.7.0 on, `./opentranscribe.sh start` (and
+`update` on a production install) stops with these instructions before MinIO is started. It never
+invents a key for an existing install, because a key you have not backed up puts every object
+written with it at risk.
 
 ## LDAP certificate verification
 

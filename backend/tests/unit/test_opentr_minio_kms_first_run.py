@@ -347,8 +347,52 @@ def test_an_empty_value_is_left_untouched(tmp_path):
     Generating a key nobody asked for on every invocation would be a surprise,
     not a fix — this function only replaces the SHIPPED placeholder.
     """
-    after, _ = _run_ensure(tmp_path, "MINIO_KMS_SECRET_KEY=\n")
-    assert after.strip() == "MINIO_KMS_SECRET_KEY="
+    after, _ = _run_ensure(tmp_path, "MINIO_KMS_SECRET_KEY=\nMINIO_KMS_AUTO_ENCRYPTION=off\n")
+    assert after == "MINIO_KMS_SECRET_KEY=\nMINIO_KMS_AUTO_ENCRYPTION=off\n"
+
+
+@pytest.mark.parametrize(
+    "initial",
+    [
+        "MINIO_KMS_SECRET_KEY=\n",
+        "OTHER=1\n",
+        "MINIO_KMS_SECRET_KEY=\nMINIO_KMS_AUTO_ENCRYPTION=on\n",
+    ],
+    ids=["empty-key", "no-key-line", "empty-key-explicit-on"],
+)
+def test_no_key_while_encryption_is_on_refuses_without_writing(tmp_path, initial):
+    """Encryption is on by default (docker-compose.yml), and MinIO cannot boot it without
+    a key. The function refuses with the remedy instead of letting MinIO crash-loop, and
+    never invents a key for an install that may already hold data.
+    """
+    env_file = tmp_path / "scratch.env"
+    env_file.write_text(initial)
+    proc = subprocess.run(
+        ["bash", "-c", f'source "{COMMON}"; ensure_minio_kms_secret "{env_file}"'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert proc.returncode == 1, proc.stdout
+    assert "MINIO_KMS_AUTO_ENCRYPTION=off" in proc.stdout
+    assert "ALLOW_UNENCRYPTED_OBJECT_STORE=true" in proc.stdout
+    assert env_file.read_text() == initial
+
+
+def test_no_key_is_fine_for_an_external_object_store(tmp_path):
+    after, _ = _run_ensure(tmp_path, "STORAGE_BACKEND=s3\n")
+    assert after == "STORAGE_BACKEND=s3\n"
+
+
+@pytest.mark.parametrize("script", ["opentr.sh", "opentranscribe.sh"])
+def test_start_paths_stop_when_the_key_check_refuses(script):
+    """opentr.sh runs without `set -e`, so an unchecked call would start MinIO anyway."""
+    text = (REPO_ROOT / script).read_text()
+    calls = re.findall(r"^\s*ensure_minio_kms_secret \"\.env\".*$", text, re.MULTILINE)
+    assert calls, f"{script} never calls ensure_minio_kms_secret"
+    for call in calls:
+        assert call.rstrip().endswith("|| exit 1"), f"{script}: {call.strip()}"
 
 
 def test_two_matching_lines_refuse_rather_than_guess(tmp_path):

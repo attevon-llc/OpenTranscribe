@@ -107,21 +107,6 @@ check_docker() {
   exit 1
 }
 
-# Generate a real MinIO KMS secret key on first run if .env.example's shipped
-# placeholder was never replaced (issue #614).
-#
-# MinIO's KMS auto-encryption (MINIO_KMS_AUTO_ENCRYPTION=on, the .env.example
-# default) requires MINIO_KMS_SECRET_KEY in the form <key-name>:<base64-encoded-
-# 32-byte-key> -- see the minio service's own comment in docker-compose.yml.
-# .env.example ships MINIO_KMS_SECRET_KEY=CHANGE_ME_auto_generated_on_install,
-# which is not that format, so a genuinely fresh `cp .env.example .env` +
-# `./opentr.sh start dev` refused to boot MinIO until an operator manually
-# generated a real key. scripts/install-offline-package.sh and
-# windows-installer/generate-secrets.ps1 already generate a value in this exact
-# format for THEIR OWN first-run paths (opentranscribe-key:$(openssl rand
-# -base64 32)); this is the same generation, for the one first-run path neither
-# of those covers -- a plain `./opentr.sh start dev` / `start prod`.
-#
 # read_env_value KEY [ENV_FILE]
 #   Reads one plain-config value out of a dotenv file, honouring the dotenv inline-comment
 #   convention: a `#` PRECEDED BY WHITESPACE starts a comment, a bare `#` inside a value does
@@ -201,9 +186,13 @@ ot_detect_lan_ip() {
   return 0
 }
 
-# Only touches the SHIPPED PLACEHOLDER. An empty or already-customized value is
-# left alone -- either means an operator made a deliberate choice (e.g. leaving
-# KMS auto-encryption off), and this must never clobber a real key.
+# Generate a real MinIO KMS secret key on first run if .env.example's shipped placeholder
+# was never replaced (issue #614): MinIO needs <key-name>:<base64-32-bytes> (see the minio
+# service in docker-compose.yml), the same format the offline and Windows installers write.
+# Only the SHIPPED PLACEHOLDER is rewritten: never clobber a real key, never invent one for
+# an install that may already hold data. An EMPTY key while auto-encryption is on (the
+# compose default since 0.7.0) cannot boot MinIO, so that returns 1 with the remedy instead
+# of a crash loop; an explicit MINIO_KMS_AUTO_ENCRYPTION=off is left alone.
 ensure_minio_kms_secret() {
   local env_file="${1:-.env}"
   [ -f "$env_file" ] || return 0
@@ -234,32 +223,35 @@ ensure_minio_kms_secret() {
     *CHANGE_ME*)
       local generated
       generated="opentranscribe-key:$(openssl rand -base64 32)"
-      # No confirmation prompt for this .env edit -- deliberate deviation from this
-      # repo's usual ".env is never overwritten without confirmation" rule, because the
-      # value being replaced is ONLY ever the shipped placeholder (never a real key --
-      # see the case guard above and the "left alone" comment below), so there is
-      # nothing of the operator's to lose. What IS consequential is the generated key
-      # itself: MinIO decrypts every object it wrote under KMS auto-encryption with
-      # whatever key was active at write time, so losing this value after real data
-      # has been encrypted with it makes that data permanently unreadable. Warn loudly
-      # rather than silently.
+      # No confirmation prompt (unlike other .env edits): only the shipped placeholder is
+      # replaced, so nothing of the operator's is lost. The generated key is what matters:
+      # losing it makes every object encrypted with it unreadable, so warn loudly.
       sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${generated}|" "$env_file"
-      # A fresh install is `cp .env.example .env` → mode 0644, and GNU `sed -i` preserves
-      # mode. The value just written is the one REAL secret in an otherwise placeholder-only
-      # file, and losing it makes every KMS-encrypted object permanently unreadable — so it
-      # must not stay world-readable. Matches scripts/install-offline-package.sh:541, which
-      # this generation was modelled on and which already does exactly this.
+      # `cp .env.example .env` leaves mode 0644 and `sed -i` keeps it; the real secret just
+      # written must not stay world-readable (as install-offline-package.sh also does).
       ensure_env_permissions "$env_file"
       echo "🔑 Generated MINIO_KMS_SECRET_KEY in ${env_file} (replaced the .env.example placeholder) so MinIO KMS auto-encryption can boot."
       echo "⚠️  BACK UP this value now: ${env_file}'s MINIO_KMS_SECRET_KEY. MinIO decrypts every"
       echo "   object written under KMS auto-encryption with this exact key -- if it is lost,"
       echo "   everything encrypted with it becomes permanently unreadable, with no recovery."
-      # opentr.sh already `set -a; source ./.env`'d the placeholder into this
-      # shell's environment before this runs, and docker compose's variable
-      # interpolation prefers an inherited shell env var over re-reading .env
-      # -- without this re-export, the freshly-patched file would be silently
-      # ignored by the very `docker compose up` this is meant to unblock.
+      # opentr.sh already sourced the placeholder into this shell, and compose prefers an
+      # inherited env var over .env, so re-export or the patched file is ignored.
       export MINIO_KMS_SECRET_KEY="$generated"
+      ;;
+    "")
+      local storage kms
+      storage=$(read_env_value STORAGE_BACKEND "$env_file" | tr '[:upper:]' '[:lower:]')
+      kms=$(read_env_value MINIO_KMS_AUTO_ENCRYPTION "$env_file" | tr '[:upper:]' '[:lower:]')
+      case "${storage:-minio}" in minio) ;; *) return 0 ;; esac
+      case "${kms:-on}" in on|true|1) ;; *) return 0 ;; esac
+      echo "❌ ${env_file} has no MINIO_KMS_SECRET_KEY, but object-store encryption is on"
+      echo "   (MINIO_KMS_AUTO_ENCRYPTION defaults to on), so MinIO cannot start. Either add a key"
+      echo "   and BACK IT UP -- objects written from then on are unreadable without it:"
+      echo "     MINIO_KMS_SECRET_KEY=opentranscribe-key:<output of: openssl rand -base64 32>"
+      echo "   or, to store objects unencrypted on purpose, add both:"
+      echo "     MINIO_KMS_AUTO_ENCRYPTION=off"
+      echo "     ALLOW_UNENCRYPTED_OBJECT_STORE=true"
+      return 1
       ;;
   esac
 }

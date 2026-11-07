@@ -11,6 +11,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[3]
 LIB = REPO / "scripts" / "lib" / "service-credentials.sh"
 STRONG = "FLOWER_PASSWORD=0123456789abcdef0123456789abcdef\n"
@@ -70,8 +72,33 @@ def test_both_set_passes_silently(tmp_path: Path) -> None:
 
 
 def test_explicit_unencrypted_opt_out_passes(tmp_path: Path) -> None:
-    r = _run(tmp_path, STRONG + "ALLOW_UNENCRYPTED_OBJECT_STORE=true\n")
+    r = _run(
+        tmp_path,
+        STRONG + "MINIO_KMS_AUTO_ENCRYPTION=off\nALLOW_UNENCRYPTED_OBJECT_STORE=true\n",
+    )
     assert r.returncode == 0
+
+
+def test_unset_encryption_switch_means_on_and_a_real_key_passes(tmp_path: Path) -> None:
+    """docker-compose.yml defaults MINIO_KMS_AUTO_ENCRYPTION to on, so a key is enough."""
+    r = _run(tmp_path, STRONG + "MINIO_KMS_SECRET_KEY=opentranscribe-key:abc\n")
+    assert r.returncode == 0, r.stdout
+
+
+@pytest.mark.parametrize(
+    "key_line",
+    ["", "MINIO_KMS_SECRET_KEY=\n", "MINIO_KMS_SECRET_KEY=CHANGE_ME_auto_generated_on_install\n"],
+    ids=["absent", "empty", "placeholder"],
+)
+def test_encryption_on_without_a_usable_key_is_refused(tmp_path: Path, key_line: str) -> None:
+    """MinIO cannot start with auto-encryption on and no key, whatever the opt-out says."""
+    for switch in ("", "MINIO_KMS_AUTO_ENCRYPTION=on\n"):
+        r = _run(tmp_path, STRONG + switch + key_line)
+        assert r.returncode == 1, (switch, key_line)
+        assert "MINIO_KMS_SECRET_KEY is unset or a placeholder" in r.stdout
+    r = _run(tmp_path, STRONG + key_line + "ALLOW_UNENCRYPTED_OBJECT_STORE=true\n")
+    assert r.returncode == 1, "the opt-out alone does not turn the compose default off"
+    assert "MINIO_KMS_AUTO_ENCRYPTION=off" in r.stdout
 
 
 def test_opt_out_does_not_excuse_a_weak_flower_password(tmp_path: Path) -> None:

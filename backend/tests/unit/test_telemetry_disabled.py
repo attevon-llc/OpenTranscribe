@@ -8,8 +8,12 @@ Every switch asserted here was verified against the shipped dependency, not assu
   unset (the old default) POSTed to otel.pyannote.ai; ``false`` made zero requests, including
   on flush/shutdown. If unset at import, the module writes ``"true"`` into ``os.environ``
   itself, so the code-level default must run BEFORE pyannote is imported.
-* ``HF_HUB_DISABLE_TELEMETRY`` / ``DO_NOT_TRACK`` — huggingface_hub reads them into module
+* ``HF_HUB_DISABLE_TELEMETRY`` — huggingface_hub reads it (or ``DO_NOT_TRACK``) into module
   constants at import (``send_telemetry`` and the User-Agent version fingerprint).
+* ``DO_NOT_TRACK`` is deliberately NOT defaulted by the images, compose or ``privacy_env``: it
+  is the operator's signal and also forces off OpenTranscribe's opt-in usage report (#1019).
+  Every installed library that reads it must have its own switch above
+  (``test_every_do_not_track_reader_has_its_own_switch``).
 * ``DENO_NO_UPDATE_CHECK`` — the deno binary yt-dlp spawns fetched its latest release from
   dl.deno.land (observed: ``$DENO_DIR/latest.txt`` written) unless set.
 * ``MINIO_UPDATE=off`` — MinIO resolved ``dl.min.io`` on every server start (DNS-logged)
@@ -43,8 +47,15 @@ REPO_ROOT = BACKEND_DIR.parent
 BACKEND_TELEMETRY_OFF = {
     "PYANNOTE_METRICS_ENABLED": "false",
     "HF_HUB_DISABLE_TELEMETRY": "1",
-    "DO_NOT_TRACK": "1",
     "DENO_NO_UPDATE_CHECK": "1",
+}
+
+#: Installed packages that read ``DO_NOT_TRACK``, each with the switch that turns the same
+#: call off without it. A new reader fails ``test_every_do_not_track_reader_has_its_own_switch``.
+DO_NOT_TRACK_READERS = {
+    # huggingface_hub/constants.py: HF_HUB_DISABLE_TELEMETRY = _is_true(HF_HUB_DISABLE_TELEMETRY)
+    # or _is_true(DO_NOT_TRACK), and nothing else in the package reads DO_NOT_TRACK.
+    "huggingface_hub": "HF_HUB_DISABLE_TELEMETRY",
 }
 
 #: Values that would switch one of the above back ON if an overlay set them.
@@ -191,6 +202,61 @@ def test_no_overlay_reenables_telemetry() -> None:
                     violations.append(f"{compose_file.name}:{name}: {var}={value!r}")
     assert checked >= len(BACKEND_TELEMETRY_OFF), "no telemetry switch found in any compose file"
     assert violations == [], f"compose files re-enable telemetry: {violations}"
+
+
+def _do_not_track_readers() -> set[str]:
+    """Top-level installed packages with ``DO_NOT_TRACK`` anywhere in their Python source."""
+    import site
+
+    roots = {Path(p) for p in site.getsitepackages() if Path(p).is_dir()}
+    readers: set[str] = set()
+    for root in roots:
+        for path in root.rglob("*.py"):
+            try:
+                if b"DO_NOT_TRACK" in path.read_bytes():
+                    readers.add(path.relative_to(root).parts[0])
+            except OSError:
+                continue
+    return readers
+
+
+def test_every_do_not_track_reader_has_its_own_switch() -> None:
+    """Not defaulting DO_NOT_TRACK must not switch any library's telemetry back on."""
+    readers = _do_not_track_readers()
+    assert "huggingface_hub" in readers, "scanner found nothing: is the environment installed?"
+    uncovered = sorted(readers - set(DO_NOT_TRACK_READERS))
+    assert uncovered == [], (
+        f"{uncovered} read DO_NOT_TRACK: give each its own off switch in BACKEND_TELEMETRY_OFF "
+        "and an entry in DO_NOT_TRACK_READERS"
+    )
+    for package, switch in DO_NOT_TRACK_READERS.items():
+        assert switch in BACKEND_TELEMETRY_OFF, f"{package}: {switch} is not enforced"
+
+
+def test_do_not_track_is_left_to_the_operator() -> None:
+    """No backend image, compose service or the in-code backstop sets DO_NOT_TRACK itself.
+
+    An image default would force the opt-in usage report off on every install, and the admin
+    screen could not tell an operator's choice from ours. The operator's value still reaches
+    every service through ``env_file: .env``.
+    """
+    backend_names = set(_backend_services())
+    offenders = [
+        f"{path.name}:{name}"
+        for path in COMPOSE_FILES
+        for name, service in (_load(path).get("services") or {}).items()
+        if name in backend_names and "DO_NOT_TRACK" in _env_map(service or {})
+    ]
+    offenders += [
+        f"backend/{name}"
+        for name in BACKEND_DOCKERFILES
+        if "DO_NOT_TRACK" in _dockerfile_final_stage_env(BACKEND_DIR / name)
+    ]
+    from app.core.privacy_env import TELEMETRY_OFF_DEFAULTS
+
+    if "DO_NOT_TRACK" in TELEMETRY_OFF_DEFAULTS:
+        offenders.append("app/core/privacy_env.py")
+    assert offenders == [], f"DO_NOT_TRACK defaulted by: {offenders}"
 
 
 @pytest.mark.parametrize("service_name", sorted(THIRD_PARTY_OFF))

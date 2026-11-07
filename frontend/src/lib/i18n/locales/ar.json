@@ -3094,6 +3094,7 @@
   "notifications.analyticsUpdate": "تحديث التحليلات",
   "notifications.backupUpdate": "النسخ الاحتياطي لقاعدة البيانات",
   "notifications.mediaMirrorUpdate": "مرآة الوسائط",
+  "notifications.monitoringAlert": "تنبيه المراقبة",
   "notifications.downloadProgress": "تقدم التنزيل",
   "notifications.audioExtraction": "استخراج الصوت",
   "notifications.fileUpload": "رفع الملف",

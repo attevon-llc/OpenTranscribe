@@ -11,7 +11,6 @@ from urllib.parse import quote
 from pydantic import ValidationInfo
 from pydantic import field_validator
 from pydantic import model_validator
-from pydantic_settings import BaseSettings
 from pydantic_settings import NoDecode
 from pydantic_settings import SettingsConfigDict
 
@@ -24,6 +23,7 @@ from app.core.env import env_bool
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
+from app.core.settings_proxy_auth import ProxyAuthSettings
 from app.utils.cpu_budget import parse_thread_count_setting
 
 _config_logger = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
     return search_filter.replace("{username_attr}", username_attr)
 
 
-class Settings(BaseSettings):
+class Settings(ProxyAuthSettings):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
@@ -1251,30 +1251,8 @@ class Settings(BaseSettings):
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     PKI_TRUSTED_PROXIES: str = os.getenv("PKI_TRUSTED_PROXIES", "")
 
-    # ===== Trusted-header (reverse-proxy) Configuration =====
-    # An authenticating reverse proxy asserts the identity in a header. Everything
-    # here is also settable in the admin UI (category "proxy"), which wins; these are
-    # the .env fallbacks and, for PROXY_ENABLED/PROXY_TRUSTED_PROXIES, what the
-    # startup guard in main.py can see before a database session exists.
-    PROXY_ENABLED: bool = env_bool("PROXY_ENABLED", False)
-    # Comma-separated IPs/CIDRs allowed to assert identity headers. EMPTY MEANS
-    # REFUSE EVERY ASSERTION — the fail-closed state the feature is built around.
-    PROXY_TRUSTED_PROXIES: str = os.getenv("PROXY_TRUSTED_PROXIES", "")
-    PROXY_EMAIL_HEADER: str = os.getenv("PROXY_EMAIL_HEADER", "X-Forwarded-Email")
-    PROXY_NAME_HEADER: str = os.getenv("PROXY_NAME_HEADER", "X-Forwarded-User")
-    # No default: a groups header drives in-app group membership, so reading one
-    # nobody configured would hand a proxy privilege it was never granted.
-    PROXY_GROUPS_HEADER: str = os.getenv("PROXY_GROUPS_HEADER", "")
-    PROXY_GROUPS_SEPARATOR: str = os.getenv("PROXY_GROUPS_SEPARATOR", ",")
-    # Opt-in, and capped at 'admin' by app/auth/proxy/assertion.py. Empty = off.
-    PROXY_ROLE_HEADER: str = os.getenv("PROXY_ROLE_HEADER", "")
-    # Optional defence in depth: a constant-time-compared value the proxy must send
-    # in X-OpenTranscribe-Proxy-Secret, so an allowlisted-but-misconfigured proxy is
-    # not by itself sufficient for takeover.
-    PROXY_SHARED_SECRET: str = os.getenv("PROXY_SHARED_SECRET", "")
-    # Comma-separated email domain allowlist. Empty admits every domain.
-    PROXY_ALLOWED_DOMAINS: str = os.getenv("PROXY_ALLOWED_DOMAINS", "")
-    PROXY_JIT_PROVISIONING: bool = env_bool("PROXY_JIT_PROVISIONING", True)
+    # Alertmanager webhook bearer token (issue #791); empty = the endpoint refuses every request.
+    ALERTMANAGER_WEBHOOK_TOKEN: str = ""
 
     # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")

@@ -1,0 +1,106 @@
+# Alerting rules for OpenTranscribe (issue #791).
+# Format: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+# Validated by `promtool check rules` and unit-tested by `promtool test rules`
+# (monitoring/prometheus/tests/opentranscribe_test.yml); see
+# https://prometheus.io/docs/prometheus/latest/configuration/unit_testing_rules/
+# Run both with scripts/check-prometheus-rules.sh.
+
+groups:
+  - name: opentranscribe-availability
+    rules:
+      - alert: BackendDown
+        expr: up{job="opentranscribe-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend /metrics is not scrapeable"
+          description: "Prometheus cannot scrape {{ $labels.instance }} (job {{ $labels.job }}) for 2 minutes."
+
+      # Worker metrics are off unless WORKER_METRICS_PORT is set, in which case every
+      # worker target is down by design. `and on() (count(... == 1) > 0)` keeps this
+      # silent until at least one worker is being scraped, so it flags a worker that
+      # stopped answering rather than a deployment that never enabled the port.
+      - alert: WorkerMetricsTargetDown
+        expr: |
+          up{job="opentranscribe-workers"} == 0
+          and on() (count(up{job="opentranscribe-workers"} == 1) > 0)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A Celery worker stopped serving metrics"
+          description: "{{ $labels.instance }} is down while other workers are still scraped."
+
+      - alert: HostMetricsDown
+        expr: up{job="node-exporter"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node-exporter is not scrapeable, so disk alerts are blind"
+          description: "Prometheus cannot scrape {{ $labels.instance }}."
+
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alertmanager is not scrapeable, so alerts may not be delivered"
+          description: "Prometheus cannot scrape {{ $labels.instance }}."
+
+  - name: opentranscribe-capacity
+    rules:
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|ramfs"}
+          ) < 0.10
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "Less than 10% free on {{ $labels.mountpoint }}"
+          description: "{{ $labels.instance }} {{ $labels.mountpoint }} has {{ $value | humanizePercentage }} free."
+
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_depth > 50
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Queue {{ $labels.queue }} has more than 50 pending tasks for 15 minutes"
+          description: "celery_queue_depth{queue=\"{{ $labels.queue }}\"} is {{ $value }}. Scale workers or check for a stuck consumer."
+
+      - alert: CeleryQueueStarved
+        expr: celery_queue_oldest_message_age_seconds > 1800
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Oldest message in {{ $labels.queue }} has waited over 30 minutes"
+          description: "celery_queue_oldest_message_age_seconds is {{ $value }}."
+
+  - name: opentranscribe-integrity
+    rules:
+      # The counter only moves when a security control falls back to a weaker state
+      # (see backend/app/core/metrics.py), so any increase is worth a look.
+      - alert: SecurityStateDegraded
+        expr: increase(security_state_degraded_total[10m]) > 0
+        labels:
+          severity: high
+        annotations:
+          summary: "A security control fell back to a degraded state"
+          description: "control={{ $labels.control }} fallback={{ $labels.fallback }}"
+
+      # Events committed more than 15 minutes ago that the audit log never received.
+      - alert: AuditOutboxStuck
+        expr: audit_outbox_stuck_events > 0
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "Governance audit events are not reaching the audit log"
+          description: "{{ $value }} stuck. The cause is in audit_outbox.last_error."

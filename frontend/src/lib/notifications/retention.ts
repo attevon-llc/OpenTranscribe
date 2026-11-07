@@ -52,6 +52,8 @@ export const RETENTION_BY_TYPE: Record<NotificationType, RetentionClass> = {
   // In-flight transfer state.
   download_progress: 'persistent',
   // Admin/system notices: the operator may need to find them later.
+  // A firing alert the operator must be able to find later (issue #791).
+  monitoring_alert: 'persistent',
   reindex_progress: 'persistent',
   reindex_complete: 'persistent',
   reindex_stopped: 'persistent',

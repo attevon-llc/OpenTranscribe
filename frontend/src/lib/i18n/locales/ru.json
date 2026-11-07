@@ -3086,6 +3086,7 @@
   "notifications.analyticsUpdate": "Обновление данных аналитики",
   "notifications.backupUpdate": "Резервная копия базы данных",
   "notifications.mediaMirrorUpdate": "Зеркало медиафайлов",
+  "notifications.monitoringAlert": "Оповещение мониторинга",
   "notifications.downloadProgress": "Ход скачивания",
   "notifications.audioExtraction": "Извлечение звука",
   "notifications.fileUpload": "Загрузка файла на сервер",

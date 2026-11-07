@@ -121,6 +121,12 @@ jobs:
       - name: Prove the mypy hook still rejects mistyped code
         run: scripts/mypy-hook-negative-control.sh
 
+      # Alerting rules (issue #791): `promtool check config|rules`, `promtool test rules`
+      # and `amtool check-config`, run from the same digest-pinned images the monitoring
+      # overlay deploys. Always-run, like the mypy negative control above.
+      - name: Check Prometheus alerting rules and Alertmanager config
+        run: scripts/check-prometheus-rules.sh
+
       - name: Generate pre-commit summary
         if: always()
         run: |

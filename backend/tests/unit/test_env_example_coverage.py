@@ -629,3 +629,65 @@ def test_compose_environment_allowlists_have_no_stale_entries():
     assert not gone, f"allowlisted but no longer in any compose environment: {sorted(gone)}"
     now_read = set(LIBRARY_CONSUMED_COMPOSE_ENV) & readers
     assert not now_read, f"allowlisted but code now reads them: {sorted(now_read)}"
+
+
+# --- A second BaseSettings class is a second configuration path (issue #791) -------------
+#
+# A ``BaseSettings`` subclass reads the environment on its own, so the scanners above, which
+# follow the ``settings`` singleton, never see its fields: a variable can ship undocumented and
+# unchecked. Only these modules may define one.
+SANCTIONED_SETTINGS_MODULES = {
+    "app/core/config.py": "the Settings class",
+    "app/core/startup_validation.py": "ServiceCredentialSettings, which shares Settings.model_config",
+}
+SANCTIONED_SETTINGS_PREFIX = "app/core/settings_"  # cohesive mixins Settings inherits from
+
+
+def _settings_classes_in(
+    source: str, known: frozenset[str] = frozenset({"BaseSettings"})
+) -> list[str]:
+    """Names of classes that (transitively, within this source) derive from a settings base."""
+    tree = ast.parse(source)
+    bases = set(known)
+    found: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            names = {
+                b.id if isinstance(b, ast.Name) else getattr(b, "attr", "") for b in node.bases
+            }
+            if names & bases:
+                bases.add(node.name)
+                found.append(node.name)
+    return found
+
+
+def _stray_settings_classes() -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for path in sorted(APP_DIR.rglob("*.py")):
+        rel = path.relative_to(APP_DIR.parent).as_posix()
+        if rel in SANCTIONED_SETTINGS_MODULES or rel.startswith(SANCTIONED_SETTINGS_PREFIX):
+            continue
+        found = _settings_classes_in(path.read_text(encoding="utf-8"))
+        if found:
+            out[rel] = found
+    return out
+
+
+def test_no_basesettings_subclass_outside_the_sanctioned_config_modules():
+    assert _stray_settings_classes() == {}, (
+        "Add the fields to app.core.config.Settings (or a settings_* mixin it inherits), "
+        "so the env guards can see them."
+    )
+
+
+def test_the_settings_class_scanner_fires_on_a_stray_subclass():
+    src = (
+        "from pydantic_settings import BaseSettings\nclass _Mine(BaseSettings):\n    X: str = ''\n"
+    )
+    assert _settings_classes_in(src) == ["_Mine"]
+    chained = src + "class _Child(_Mine):\n    Y: int = 0\n"
+    assert _settings_classes_in(chained) == ["_Mine", "_Child"]
+
+
+def test_the_settings_class_scanner_stays_clean_on_ordinary_classes():
+    assert _settings_classes_in("class A:\n    pass\nclass B(dict):\n    pass\n") == []

@@ -1024,7 +1024,8 @@ overlay_banner() {
     monitoring)
       echo "📈 Adding Monitoring overlay (docker-compose.monitoring.yml)"
       echo "   Prometheus: http://localhost:${PROMETHEUS_PORT:-5186}"
-      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)" ;;
+      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)"
+      echo "   Alertmanager: http://localhost:${ALERTMANAGER_PORT:-5188}  (webhook token: ALERTMANAGER_WEBHOOK_TOKEN)" ;;
   esac
 }
 
@@ -1242,7 +1243,7 @@ fresh_prepare_diar_native_models_dir() {
   return 1
 }
 FRESH_SMB_SERVICES=(smb-test)
-FRESH_MONITORING_SERVICES=(prometheus grafana)
+FRESH_MONITORING_SERVICES=(prometheus grafana alertmanager node-exporter)
 # Real GPU-backed LLM (--with-llm-test). This was the ONE aux overlay #347 never
 # covered, and it is the worst one to leave out: both services hard-code a
 # container_name AND publish a loopback port, so a fresh stack silently collided
@@ -1551,6 +1552,7 @@ FRESH_SMB_PORT_VARS=(
 FRESH_MONITORING_PORT_VARS=(
   "GRAFANA_PORT=5185"           # grafana    → :3000
   "PROMETHEUS_PORT=5186"        # prometheus → :9090
+  "ALERTMANAGER_PORT=5188"      # alertmanager → :9093
 )
 FRESH_LLM_TEST_PORT_VARS=(
   "LLM_TEST_PORT=5195"          # vLLM   → :8000
@@ -2993,9 +2995,7 @@ start_app() {
   if [ -n "$WITH_MONITORING_FLAG" ]; then
     if [ -f "docker-compose.monitoring.yml" ]; then
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.monitoring.yml"
-      echo "📈 Adding Monitoring overlay (docker-compose.monitoring.yml)"
-      echo "   Prometheus: http://localhost:${PROMETHEUS_PORT:-5186}"
-      echo "   Grafana:    http://localhost:${GRAFANA_PORT:-5185}  (admin / \$GRAFANA_PASSWORD, default admin)"
+      overlay_banner monitoring
     else
       echo "⚠️  --with-monitoring specified but docker-compose.monitoring.yml not found"
     fi

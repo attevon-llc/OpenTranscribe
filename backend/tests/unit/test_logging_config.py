@@ -87,7 +87,7 @@ def test_configure_logging_text_uses_the_text_formatter(monkeypatch):
     assert isinstance(handler, logging.StreamHandler)
     assert handler.formatter is not None
     assert handler.formatter._fmt == _TEXT_FMT
-    assert handler.filters == []
+    assert any(isinstance(f, RequestIdFilter) for f in handler.filters)
 
 
 def test_configure_logging_marks_the_handler_as_managed(monkeypatch):
@@ -238,6 +238,23 @@ def test_request_id_filter_treats_empty_string_as_missing(monkeypatch):
     assert getattr(record, "request_id", None) == "-"
 
 
+def test_text_mode_log_line_carries_the_request_id(monkeypatch):
+    """Issue #791: the default LOG_FORMAT is text, and it used to drop the id entirely."""
+    import io
+
+    monkeypatch.setattr("app.core.logging_config.settings.LOG_FORMAT", "text")
+    monkeypatch.setattr("app.middleware.audit.get_request_id", lambda: "req-text-42", raising=False)
+    root = configure_logging_and_get_root()
+    handler = root.handlers[0]
+    assert isinstance(handler, logging.StreamHandler)
+    stream = io.StringIO()
+    handler.setStream(stream)
+
+    logging.getLogger("t").info("hello")
+
+    assert "[req-text-42] hello" in stream.getvalue()
+
+
 # =============================================================================
 # Module-level format constants
 # =============================================================================
@@ -245,7 +262,7 @@ def test_format_constants_contain_the_expected_fields():
     assert "%(levelname)s" in _JSON_FMT
     assert "%(message)s" in _JSON_FMT
     assert "%(asctime)s" in _JSON_FMT
-    assert _TEXT_FMT == "%(asctime)s %(levelname)s:%(name)s:%(message)s"
+    assert _TEXT_FMT == "%(asctime)s %(levelname)s:%(name)s:[%(request_id)s] %(message)s"
 
 
 def configure_logging_and_get_root() -> logging.Logger:

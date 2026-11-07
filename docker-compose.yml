@@ -329,7 +329,7 @@ services:
       # and was causing "dependency failed to start: container is unhealthy"
       # errors even with start_period=600s. Clean exit 7 is treated correctly
       # as a "not ready yet" signal while the container is still in start_period.
-      test: ["CMD", "curl", "-sf", "--connect-timeout", "2", "--max-time", "4", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-sf", "--connect-timeout", "2", "--max-time", "4", "http://localhost:8080/health/ready"]
       interval: 10s
       timeout: 10s
       retries: 5

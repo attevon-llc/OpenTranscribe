@@ -1011,6 +1011,7 @@
   "notifications.analyticsUpdate": "Mise à Jour des Analyses",
   "notifications.backupUpdate": "Sauvegarde de la base de données",
   "notifications.mediaMirrorUpdate": "Miroir des médias",
+  "notifications.monitoringAlert": "Alerte de supervision",
   "notifications.audioExtraction": "Extraction Audio",
   "notifications.clearAll": "Effacer toutes les notifications",
   "notifications.closePanel": "Fermer le panneau de notifications",

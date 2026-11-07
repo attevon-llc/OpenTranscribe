@@ -3078,6 +3078,7 @@
   "notifications.analyticsUpdate": "Analyse-update",
   "notifications.backupUpdate": "Databaseback-up",
   "notifications.mediaMirrorUpdate": "Mediaspiegeling",
+  "notifications.monitoringAlert": "Monitoringmelding",
   "notifications.downloadProgress": "Downloadvoortgang",
   "notifications.audioExtraction": "Audio-extractie",
   "notifications.fileUpload": "Bestandsupload",

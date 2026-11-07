@@ -22,6 +22,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.responses import Response
 
+from app.api.endpoints.alertmanager_webhook import router as alertmanager_webhook_router
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
@@ -419,6 +420,9 @@ from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
 
+# Alertmanager webhook, also at ROOT: bearer-authenticated, nginx denies /internal/.
+app.include_router(alertmanager_webhook_router)
+
 # SCIM 2.0 provisioning, mounted at ROOT rather than under API_PREFIX: RFC 7644 §3.1
 # fixes the base path, and every IdP connector appends "/Users" to whatever base URL
 # it is given. Its errors must be SCIM Error resources, not FastAPI's {"detail": ...},
@@ -504,9 +508,9 @@ def readiness_check() -> JSONResponse | dict[str, Any]:
     # Schema freshness. ALWAYS reported, conditionally critical.
     #
     # Reported unconditionally so the schema state of any deployment is
-    # observable over HTTP — the release harness reads it to assert an upgrade
-    # actually migrated, instead of shelling `docker exec opentranscribe-postgres
-    # psql`, which hardcodes a container name and breaks on --fresh stacks.
+    # observable over HTTP, so a caller can assert an upgrade actually migrated
+    # without shelling `docker exec opentranscribe-postgres psql`. No release
+    # script reads it today.
     #
     # Critical ONLY when a migrate job owns migrations (issue #284 A1.4): a
     # replica that did not run Alembic itself must prove the DB is at head before

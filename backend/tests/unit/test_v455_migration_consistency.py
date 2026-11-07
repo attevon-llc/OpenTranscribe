@@ -72,7 +72,8 @@ def test_the_model_checks_and_indexes_exist_in_the_database(db_session):
     table = cast(Table, ErasureLedgerEntry.__table__)
     declared = {c.name for c in table.constraints if c.name}
     assert {str(n) for n in declared if str(n).startswith("ck_")} <= checks
-    assert {"uq_erasure_ledger_open_self_request", "ix_erasure_ledger_due_grace"} <= indexes
+    # v464 replaced v455's per-user unique index with the per-subject one.
+    assert {"uq_erasure_ledger_open_grace_subject", "ix_erasure_ledger_due_grace"} <= indexes
 
 
 @pytest.mark.ddl_exclusive

@@ -225,10 +225,15 @@ class ErasureLedgerEntry(Base):
         CheckConstraint(COUNTERS_NUMERIC_SQL, name="ck_erasure_ledger_counters_numeric"),
         CheckConstraint(SUBJECT_IDENTIFIED_SQL, name="ck_erasure_ledger_subject_identified"),
         CheckConstraint(REQUEST_DIGEST_SQL, name="ck_erasure_ledger_request_digest"),
-        # One open self-service request per user, enforced by the database (race-safe).
+        # One open scheduled erasure per subject (type, user, organization), enforced by the
+        # database (race-safe). v464 widened v455's per-user index: a member erasure and the same
+        # person's own account-erasure request are different subjects. COALESCE because a unique
+        # index treats NULLs as distinct (an organization entry has no user).
         Index(
-            "uq_erasure_ledger_open_self_request",
-            "subject_user_id",
+            "uq_erasure_ledger_open_grace_subject",
+            "subject_type",
+            text("COALESCE(subject_user_id, 0)"),
+            text("COALESCE(subject_organization_id, 0)"),
             unique=True,
             postgresql_where=text("deferred_reason = 'grace_period' AND status = 'deferred'"),
         ),

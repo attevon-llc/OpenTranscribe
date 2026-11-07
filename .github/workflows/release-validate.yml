@@ -142,7 +142,7 @@ jobs:
           # The release-tests harness is included deliberately. It is the most
           # destructive code in the repository -- it calls `docker volume rm` and
           # `rm -rf` against paths it computes at runtime -- and the pre-commit
-          # shellcheck hook only inspects files a given PR happens to touch. A
+          # hook for this check only inspects files a given PR happens to touch. A
           # quoting bug in guardrails.sh is not something to find by changing it.
           shellcheck --severity=warning \
             setup-opentranscribe.sh \

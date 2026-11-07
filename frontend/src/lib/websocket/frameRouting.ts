@@ -77,6 +77,12 @@ const FRAME_ROUTES: Readonly<Record<string, FrameRoute>> = {
   // cached file lists before the (persistent) notification.
   file_takedown: { scopes: ['files'] },
   file_takedown_released: { scopes: ['files'] },
+  // Trash and restore (issue #1101), sent to the owner, the actor and the organization's
+  // administrators. The gallery drops or refetches the file and the trash page reloads; no
+  // bell entry, since the actor already has a toast and an org admin would get one per
+  // member delete.
+  file_trashed: { event: 'file-trashed', scopes: ['files'], consumed: true },
+  file_restored: { event: 'file-restored', scopes: ['files'], consumed: true },
   // For AutoLabelSettings; the progress card follows.
   auto_label_status: { event: 'auto-label-status' },
 };

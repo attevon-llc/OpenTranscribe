@@ -29,6 +29,7 @@ from app.services.bedrock_settings import resolve_region
 from app.services.llm_chunking import LLMChunkingMixin
 from app.services.llm_health import LLMHealthMixin
 from app.services.llm_json_extract import LLMJsonExtractMixin
+from app.services.llm_metering import LLMMeteringMixin
 from app.services.llm_payloads import LLMPayloadMixin
 from app.services.llm_speaker_id import LLMSpeakerIdMixin
 from app.services.llm_stream import TRANSIENT_HTTP_STATUSES
@@ -115,6 +116,7 @@ class LLMEndpointBlockedError(Exception):
 
 
 class LLMService(
+    LLMMeteringMixin,
     LLMPayloadMixin,
     LLMSummarizationMixin,
     LLMChunkingMixin,
@@ -161,6 +163,8 @@ class LLMService(
         self._session_lock = threading.Lock()
         self._pinned_stack: ExitStack | None = None
         self._pinned: tuple[str, requests.Session, PinnedTarget] | None = None
+        self.budget_user_id: int | None = None  # see LLMMeteringMixin
+        self._local: bool | None = None
 
         self.endpoints = self._build_endpoints(config.base_url)
 
@@ -444,36 +448,6 @@ class LLMService(
         payload = self._prepare_payload(messages, **kwargs)
         return self._send_llm_request(url, payload, self._get_headers(), timeout)
 
-    def chat_completion(self, messages: list[dict[str, str]], **kwargs: Any) -> LLMResponse:
-        """Send a chat completion request to the LLM provider.
-
-        Every call, successful or not, is reported to the open usage run
-        (``services/llm_usage.py``) so no task has to count tokens itself.
-        """
-        from app.services import llm_usage
-
-        call = llm_usage.CallUsage()
-        try:
-            response = self._chat_completion_untracked(messages, call, **kwargs)
-        except Exception:
-            llm_usage.note_call(
-                provider=self.config.provider.value,
-                model=self.config.model,
-                messages=messages,
-                call=call,
-                success=False,
-            )
-            raise
-        call.content = response.content
-        llm_usage.note_call(
-            provider=self.config.provider.value,
-            model=self.config.model,
-            messages=messages,
-            call=call,
-            success=True,
-        )
-        return response
-
     def _chat_completion_untracked(
         self, messages: list[dict[str, str]], call: "CallUsage", **kwargs: Any
     ) -> LLMResponse:
@@ -601,7 +575,7 @@ class LLMService(
                 continue
             yield str(line)
 
-    def chat_completion_stream(
+    def _chat_completion_stream_untracked(
         self,
         messages: list[dict[str, str]],
         cancel_event: threading.Event | None = None,
@@ -838,7 +812,9 @@ class LLMService(
                 temperature=float(user_settings.temperature),
                 bedrock=bedrock,
             )
-            return LLMService(config)
+            service = LLMService(config)
+            service.budget_user_id = user_id
+            return service
         except (ValueError, KeyError, TypeError) as e:
             # A database error is not "unavailable": it propagates as an outage.
             logger.error(f"Could not build LLMService from config {config_id}: {e}")
@@ -1007,7 +983,10 @@ class LLMService(
         try:
             resolved = LLMService._resolve_user_llm_settings(db, user_id)
             if resolved is None:
-                return LLMService.create_from_system_settings()
+                system = LLMService.create_from_system_settings()
+                if system is not None:
+                    system.budget_user_id = user_id
+                return system
             user_settings = resolved.settings
 
             # Create config from user settings - USER'S DECLARED CONTEXT WINDOW, narrowed
@@ -1036,7 +1015,9 @@ class LLMService(
             logger.info(
                 f"Created LLMService for user {user_id}: {resolved.provider}/{user_settings.model_name}, user_context_window={user_settings.max_tokens}"
             )
-            return LLMService(config)
+            service = LLMService(config)
+            service.budget_user_id = user_id
+            return service
 
         except (ValueError, TypeError, KeyError) as e:
             logger.error(f"Configuration error for user {user_id}: {e}")

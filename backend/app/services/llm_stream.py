@@ -89,6 +89,9 @@ class LLMStreamEvent:
             (throttling, overload, 503) that is expected to clear on its own. The
             chat layer uses it to tell the user "try again in a moment" instead of
             a generic failure.
+        code: ``error`` only — a stable code when the failure is ours rather than the
+            provider's (``llm_budget_exceeded`` / ``llm_budget_unavailable``: the token
+            limits refused the call and nothing was sent).
     """
 
     type: str
@@ -100,6 +103,7 @@ class LLMStreamEvent:
     finish_reason: str | None = None
     message: str = ""
     transient: bool = False
+    code: str | None = None
 
 
 # JSON-from-LLM variants differ: this one parses ONE whole payload to a dict, no fence/prose handling.

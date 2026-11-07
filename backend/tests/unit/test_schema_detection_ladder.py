@@ -460,6 +460,7 @@ _MODERN_CHAIN: list[Step] = [
         "v458_speaker_machine_identity_index",
         markers={("index", "ix_speaker_machine_identity_media_file")},
     ),
+    step("v460_add_llm_token_budget", markers={("index", "uq_llm_token_budget_counter")}),
 ]
 
 
@@ -551,8 +552,8 @@ def test_every_ladder_revision_is_pinned_by_a_test_above():
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 59
-    assert len(pinned) == 103
+    assert len(_MODERN_CHAIN) == 60
+    assert len(pinned) == 104
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -636,7 +637,8 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "FROM user_setting s",  # v434
         "conname = 'speaker_identity_source_user_id_fkey'",  # v449
         "conname = 'ck_legal_acceptance_subject'",  # v451
-        "indexname = 'ix_speaker_machine_identity_media_file'",  # v458, the last probe
+        "indexname = 'ix_speaker_machine_identity_media_file'",  # v458
+        "indexname = 'uq_llm_token_budget_counter'",  # v460, the last probe
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]
     assert positions == sorted(positions), f"probe eras ran out of order: {positions}"

@@ -607,7 +607,7 @@ IMPORTANT GUIDELINES:
         ]
 
         # Provider-specific optimizations
-        kwargs = {"temperature": 0.1}
+        kwargs: dict[str, Any] = {"temperature": 0.1}
 
         if llm_service.config.provider in [LLMProvider.CLAUDE, LLMProvider.ANTHROPIC]:
             # Claude: Use response prefilling to force structured output

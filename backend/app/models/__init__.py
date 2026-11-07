@@ -25,6 +25,7 @@ from .group import UserGroupMember
 from .invitation import EmailVerificationToken
 from .invitation import UserInvitation
 from .legal_acceptance import LegalAcceptance
+from .llm_token_budget import LLMTokenBudget
 from .media import Analytics
 from .media import Comment
 from .media import FileStatus
@@ -129,6 +130,7 @@ __all__ = [
     "OrganizationMembership",
     "OrganizationPolicy",
     "UsageEvent",
+    "LLMTokenBudget",
     "ChatConversation",
     "ChatMessage",
     "ChatProject",

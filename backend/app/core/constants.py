@@ -693,3 +693,22 @@ LEGAL_PROCESSING_GATE_TTL_SECONDS = PRIVACY_WRITE_BACKSTOP_TTL_SECONDS
 
 #: Reads of the erasure receipts (``/admin/gdpr/erasures``, ``/org-admin/gdpr/erasures``).
 ERASURE_RECEIPT_READ_RATE_LIMIT = "120/minute"
+
+# --- LLM token limits (issue #790, owner decision D13) ----------------------------------
+# A TOKEN limit, not a dollar one: prices change and a local model costs nothing per token,
+# while tokens are what every call can be measured in. Every LLM feature (chat, summaries,
+# topics, speaker identification, the LLM redaction detector) draws on the same budget at the
+# shared ``LLMService`` call seam. ``0`` means unlimited, the default, so an upgrade changes
+# nothing until an admin sets a limit. Edited in Settings -> AI usage (admin), no restart.
+#: Tokens one user may spend per UTC day.
+LLM_BUDGET_USER_DAILY_TOKENS_KEY = "llm.budget.user_daily_tokens"
+DEFAULT_LLM_BUDGET_USER_DAILY_TOKENS = 0
+#: Tokens the whole instance may spend per UTC calendar month.
+LLM_BUDGET_INSTANCE_MONTHLY_TOKENS_KEY = "llm.budget.instance_monthly_tokens"
+DEFAULT_LLM_BUDGET_INSTANCE_MONTHLY_TOKENS = 0
+#: ``"true"`` exempts calls to a model on this deployment (``is_local_provider``) from both
+#: limits. They are still counted, so the usage view stays complete.
+LLM_BUDGET_LOCAL_UNLIMITED_KEY = "llm.budget.local_unlimited"
+DEFAULT_LLM_BUDGET_LOCAL_UNLIMITED = False
+#: Upper bound an admin may set for either limit (a typo guard, about 1e12 tokens).
+LLM_BUDGET_MAX_TOKENS = 1_000_000_000_000

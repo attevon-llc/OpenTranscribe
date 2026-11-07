@@ -69,9 +69,11 @@ def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[
     Returns:
         Dict with ``title``, ``tag_names``, ``upload_time`` (ISO string or
         None), ``language``, ``content_type``, ``duration``, ``file_size``,
-        ``collection_ids``, ``accessible_user_ids`` and ``organization_id``
-        (None for a personal file).
+        ``collection_ids``, ``accessible_user_ids``, ``organization_id``
+        (None for a personal file) and ``availability`` (the value every document
+        of the file is stamped with, issue #1101).
     """
+    from app.services.file_availability import index_availability
     from app.services.permission_service import PermissionService
 
     tag_names = [link.tag.name for link in media_file.file_tags if link.tag is not None]
@@ -88,6 +90,7 @@ def extract_file_index_metadata(db: Any, media_file: Any, file_id: int) -> dict[
         "collection_ids": [int(m.collection_id) for m in media_file.collection_memberships],
         "accessible_user_ids": PermissionService.get_users_with_file_access(db, file_id),
         "organization_id": media_file.organization_id,
+        "availability": index_availability(media_file),
     }
 
 
@@ -301,6 +304,7 @@ def index_transcript_search_task(  # noqa: C901
                 doc_speaker_names,
                 doc_title,
                 organization_id=meta["organization_id"],
+                availability=meta["availability"],
             )
         except Exception as full_doc_err:
             logger.warning(f"Full-document transcript indexing failed (non-fatal): {full_doc_err}")
@@ -322,6 +326,7 @@ def index_transcript_search_task(  # noqa: C901
             collection_ids=meta["collection_ids"],
             accessible_user_ids=meta["accessible_user_ids"],
             organization_id=meta["organization_id"],
+            availability=meta["availability"],
         )
 
         total_ms = round((time.time() - total_start) * 1000)

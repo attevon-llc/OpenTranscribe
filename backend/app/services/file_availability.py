@@ -23,6 +23,10 @@ import this module.
     choke points (``uuid_helpers.get_file_by_uuid_with_permission``) turn into a 404.
   * :func:`unavailable_among` - which of a batch of uuids are unavailable, for the post-filters
     over index-backed results (search hits, chat evidence, aggregation, persisted citations).
+  * :func:`index_availability` / :func:`index_availability_by_id` / :func:`trashed_file_ids` -
+    the value every OpenSearch writer stamps into a document's ``availability`` field
+    (``search/availability_field``, issue #1101), so the index can exclude the trash itself.
+    Index-side the field tracks the trash only: quarantine stays on its Postgres-resolved list.
   * :func:`is_notification_suppressed` / :func:`is_notification_suppressed_for_uuid` /
     :func:`filter_suppressed_file_uuids` - the WebSocket-push twin: an unavailable file's
     identity must not reach a recipient over a live event any more than through a read surface
@@ -46,6 +50,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.media import MediaFile
+from app.services.search.availability_field import AVAILABLE
+from app.services.search.availability_field import TRASHED
 from app.services.takedown_predicates import is_review_admin
 from app.services.takedown_predicates import quarantine_exempt
 from app.utils.uuid_parse import parse_uuid_or_none
@@ -155,6 +161,38 @@ def unavailable_among(
         .all()
     )
     return {str(row[0]) for row in rows}
+
+
+# --- index form -------------------------------------------------------------------------------
+
+
+def index_availability(file: MediaFile) -> str:
+    """The ``availability`` value a document of ``file`` must carry: trashed, or available."""
+    return TRASHED if getattr(file, "deleted_at", None) is not None else AVAILABLE
+
+
+def index_availability_by_id(db: Session, file_ids: Iterable[int]) -> dict[int, str]:
+    """:func:`index_availability` for a batch of file ids, in ONE query.
+
+    An id with no row is absent from the result (a purged file has no documents to stamp). A
+    query error propagates: a writer must not guess a value it could not read.
+    """
+    ids = sorted({int(i) for i in file_ids if i is not None})
+    if not ids:
+        return {}
+    rows = db.query(MediaFile.id, MediaFile.deleted_at).filter(MediaFile.id.in_(ids)).all()
+    return {int(row[0]): TRASHED if row[1] is not None else AVAILABLE for row in rows}
+
+
+def trashed_file_ids(db: Session) -> list[int]:
+    """Every trashed file's id, ascending: the set whose documents must read ``trashed``."""
+    rows = (
+        db.query(MediaFile.id)
+        .filter(unavailable_pred(include_quarantined=True))
+        .order_by(MediaFile.id)
+        .all()
+    )
+    return [int(row[0]) for row in rows]
 
 
 # --- WebSocket notification form --------------------------------------------------------------

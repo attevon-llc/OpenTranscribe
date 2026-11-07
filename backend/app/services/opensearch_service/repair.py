@@ -12,6 +12,8 @@ from app.services.opensearch_service.aliases import get_speaker_embedding_dimens
 from app.services.opensearch_service.aliases import invalidate_active_speaker_index_cache
 from app.services.opensearch_service.client import _is_index_corruption_error
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.search.availability_field import AVAILABILITY_FIELD
+from app.services.search.availability_field import AVAILABILITY_MAPPING
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +155,35 @@ def _drop_rebuild_index(rebuild_index: str) -> None:
         logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
 
 
+def _rebuild_document(source: dict[str, Any]) -> dict[str, Any]:
+    """A speaker document for the rebuild index, from the corrupted index's ``_source``.
+
+    ``organization_id`` and ``availability`` are carried over only when present: a personal
+    document must stay org-less, and a rebuild must not bring a trashed file's voices back
+    (#1101).
+    """
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    doc: dict[str, Any] = {
+        "speaker_id": source.get("speaker_id"),
+        "speaker_uuid": str(source["speaker_uuid"]),
+        "profile_id": source.get("profile_id"),
+        "profile_uuid": str(source["profile_uuid"]) if source.get("profile_uuid") else None,
+        "user_id": source.get("user_id"),
+        "name": source.get("name"),
+        "display_name": source.get("display_name"),
+        "collection_ids": source.get("collection_ids", []),
+        "media_file_id": source.get("media_file_id"),
+        "segment_count": source.get("segment_count", 1),
+        "created_at": now,
+        "updated_at": now,
+        "embedding": source["embedding"],
+    }
+    for carried in ("organization_id", AVAILABILITY_FIELD):
+        if source.get(carried) is not None:
+            doc[carried] = source[carried]
+    return doc
+
+
 def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[str, Any]:
     """Rebuild the speakers index from PostgreSQL + speakers_v4 data.
 
@@ -234,6 +265,7 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
                         "media_file_id",
                         "segment_count",
                         "organization_id",
+                        AVAILABILITY_FIELD,
                         "embedding",
                     ],
                 }
@@ -281,6 +313,7 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
                     "collection_ids": {"type": "integer"},
                     "media_file_id": {"type": "integer"},
                     "organization_id": {"type": "integer"},
+                    AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
                     "segment_count": {"type": "integer"},
                     "created_at": {"type": "date"},
                     "updated_at": {"type": "date"},
@@ -317,26 +350,7 @@ def rebuild_speaker_index(db: "Any", allow_empty_rebuild: bool = False) -> dict[
                         }
                     }
                 )
-                doc = {
-                    "speaker_id": source.get("speaker_id"),
-                    "speaker_uuid": str(source["speaker_uuid"]),
-                    "profile_id": source.get("profile_id"),
-                    "profile_uuid": str(source["profile_uuid"])
-                    if source.get("profile_uuid")
-                    else None,
-                    "user_id": source.get("user_id"),
-                    "name": source.get("name"),
-                    "display_name": source.get("display_name"),
-                    "collection_ids": source.get("collection_ids", []),
-                    "media_file_id": source.get("media_file_id"),
-                    "segment_count": source.get("segment_count", 1),
-                    "created_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                    "updated_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                    "embedding": source["embedding"],
-                }
-                if source.get("organization_id") is not None:
-                    doc["organization_id"] = source["organization_id"]
-                bulk_body.append(doc)
+                bulk_body.append(_rebuild_document(source))
 
             # Bulk index in batches of 500
             batch_size = 1000  # 500 action pairs

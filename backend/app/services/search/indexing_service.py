@@ -9,6 +9,8 @@ from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import get_opensearch_client
 
+from .availability_field import AVAILABILITY_FIELD
+from .availability_field import AVAILABLE
 from .chunking_service import chunk_transcript_by_speaker_turns
 from .embedding_provenance import active_embedding_model
 from .index_admin import ensure_chunks_index_exists
@@ -50,6 +52,7 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
         organization_id: int | None = None,
+        availability: str = AVAILABLE,
     ) -> dict[str, Any]:
         """Chunk and index a transcript.
 
@@ -74,6 +77,12 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
             accessible_user_ids: List of user IDs with access to this file.
                 Includes owner + users/groups with collection shares.
                 If None, defaults to [user_id] (owner only).
+            organization_id: The file's tenant (None = personal).
+            availability: The file's trash state, from
+                ``file_availability.index_availability`` (issue #1101). Stamped on every
+                chunk, digest and summary document, so a reindex of a trashed file writes
+                trashed documents. Every production caller passes it
+                (``tests/unit/test_index_writers_stamp_availability.py``).
 
         Returns:
             Dict of indexing stats. ``chunk_count`` 0 with a ``reason`` means there
@@ -141,6 +150,7 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
         for chunk in chunks:
             chunk["indexed_at"] = now
             chunk["accessible_user_ids"] = effective_user_ids
+            chunk[AVAILABILITY_FIELD] = availability
             chunk[digest_mapping.DOC_TYPE_FIELD] = digest_mapping.DOC_TYPE_CHUNK
             # The pipeline embeds this field, not `content` — see
             # `_build_neural_ingest_pipeline`. BM25 still scores `content`.
@@ -230,6 +240,7 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
                 "file_size": file_size,
                 "collection_ids": collection_ids or [],
                 "accessible_user_ids": effective_user_ids,
+                AVAILABILITY_FIELD: availability,
                 "indexed_at": now,
                 "embedding_model": provenance if use_neural else None,
                 **({} if organization_id is None else {"organization_id": organization_id}),
@@ -312,6 +323,7 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
         collection_ids: list[int] | None = None,
         accessible_user_ids: list[int] | None = None,
         organization_id: int | None = None,
+        availability: str = AVAILABLE,
     ) -> int:
         """Re-chunk and re-index a single transcript.
 
@@ -352,6 +364,7 @@ class TranscriptIndexingService(ChunkPlaneMixin, DigestPlaneMixin, SummaryPlaneM
             collection_ids=collection_ids,
             accessible_user_ids=accessible_user_ids,
             organization_id=organization_id,
+            availability=availability,
         )
         chunk_count: int = result.get("chunk_count", 0)
         return chunk_count

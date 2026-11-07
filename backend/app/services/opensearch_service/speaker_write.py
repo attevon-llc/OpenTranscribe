@@ -1,4 +1,10 @@
-"""Writes of speaker (voiceprint) embeddings, single and bulk, v3 and v4."""
+"""Writes of speaker (voiceprint) embeddings, single and bulk, v3 and v4.
+
+A per-file voiceprint document carries its file's trash state (``availability``, issue
+#1101), read from the row at write time (:func:`availability_by_file`), so a voice written
+for a trashed file is never matchable. The kNN readers exclude it with
+``availability_field.exclude_unavailable_clause``.
+"""
 
 import datetime
 import logging
@@ -16,8 +22,28 @@ from app.services.opensearch_service.repair import _repair_index
 from app.services.privacy.consent import has_voiceprint_consent_hooks
 from app.services.privacy.policy import assert_voiceprint_write_allowed
 from app.services.privacy.policy import declined_file_ids
+from app.services.search.availability_field import AVAILABILITY_FIELD
 
 logger = logging.getLogger(__name__)
+
+
+def availability_by_file(file_ids: set[Any]) -> dict[int, str]:
+    """Each file's ``availability`` value, one query; files without a row are absent."""
+    from app.db.session_utils import session_scope
+    from app.services.file_availability import index_availability_by_id
+
+    ids = {int(i) for i in file_ids if i is not None}
+    if not ids:
+        return {}
+    with session_scope() as db:
+        return index_availability_by_id(db, ids)
+
+
+def stamp_availability(doc: dict[str, Any], states: dict[int, str]) -> None:
+    """Put the file's ``availability`` on a per-file voiceprint document (none on others)."""
+    file_id = doc.get("media_file_id")
+    if file_id is not None and int(file_id) in states:
+        doc[AVAILABILITY_FIELD] = states[int(file_id)]
 
 
 def add_speaker_embedding_v4(
@@ -106,6 +132,7 @@ def add_speaker_embedding_v4(
         }
         if organization_id is not None:
             doc["organization_id"] = organization_id
+        stamp_availability(doc, availability_by_file({media_file_id}))
 
         # Index the document to the v4 staging index using UUID as document ID
         response: dict[str, Any] = _client.opensearch_client.index(
@@ -172,6 +199,7 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
 
     per_entry_file_check = has_voiceprint_consent_hooks()
     declined_in_batch = _declined_files_of(embeddings_data)
+    availability = availability_by_file({d.get("media_file_id") for d in embeddings_data})
 
     for data in embeddings_data:
         speaker_uuid = data.get("speaker_uuid")
@@ -228,6 +256,7 @@ def bulk_add_speaker_embeddings_v4(embeddings_data: list[dict[str, Any]]) -> dic
         }
         if data.get("organization_id") is not None:
             v4_doc["organization_id"] = data["organization_id"]
+        stamp_availability(v4_doc, availability)
         bulk_body.append(v4_doc)
         accepted += 1
 
@@ -317,6 +346,7 @@ def add_speaker_embedding(
             f"Indexing speaker {speaker_uuid} (ID: {speaker_id}) with embedding length: {emb_len}"
         )
 
+        states = availability_by_file({media_file_id})
         # Prepare document (organization_id only written for org files)
         doc = {
             "speaker_id": speaker_id,
@@ -335,6 +365,7 @@ def add_speaker_embedding(
         }
         if organization_id is not None:
             doc["organization_id"] = organization_id
+        stamp_availability(doc, states)
 
         # Index the document using UUID as document ID
         response: dict[str, Any] = _client.opensearch_client.index(
@@ -395,6 +426,7 @@ def add_speaker_embedding(
                     }
                     if organization_id is not None:
                         doc["organization_id"] = organization_id
+                    stamp_availability(doc, availability_by_file({media_file_id}))
                     response = _client.opensearch_client.index(
                         index=index_name,
                         body=doc,

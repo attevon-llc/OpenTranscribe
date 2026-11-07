@@ -13,6 +13,7 @@ from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
 from app.core.queues import UtilityPriority
 from app.services.post_processing_status import tracks_post_processing
+from app.services.search.availability_field import AVAILABILITY_FIELD
 from app.tasks.search_indexing_task import extract_file_index_metadata
 
 logger = logging.getLogger(__name__)
@@ -299,6 +300,7 @@ def index_file_summary(file_id: int) -> dict[str, Any]:
             "file_size": meta["file_size"],
             "collection_ids": meta["collection_ids"],
             "accessible_user_ids": meta["accessible_user_ids"],
+            AVAILABILITY_FIELD: meta["availability"],
             "indexed_at": None,
             "embedding_model": provenance,
             **(

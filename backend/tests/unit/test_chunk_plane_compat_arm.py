@@ -62,8 +62,10 @@ _ALLOWED: dict[str, str] = {
         "G5: the tenant stamp keys on file_uuid and must reach every plane, or a "
         "digest stays personal-scope inside an organization."
     ),
-    "tasks/tenant_backfill_task.py::_update_by_query": (
-        "The generic helper the backfill above drives; same reason."
+    "services/search/availability_stamp.py::_stamped_trashed_ids": (
+        "G5: lists every file whose documents read availability:trashed, to un-stamp the "
+        "restored ones. A trashed file's digests and summary leaves are stamped too, so a "
+        "chunk-only listing would leave a restored file's digests hidden."
     ),
     "tasks/opensearch_integrity_task.py::_cleanup_index_by_field": (
         "A whole-file orphan sweep across several indices. Its unit of work is the "

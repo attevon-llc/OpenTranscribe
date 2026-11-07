@@ -286,13 +286,10 @@ def _speaker_indices(client: Any) -> list[str]:
 
 def _update_by_query(client: Any, index_name: str, query: dict, script: dict, label: str) -> int:
     """Run one update_by_query, returning the updated-doc count (0 on error)."""
+    from app.services.opensearch_service.update_by_query import update_by_query
+
     try:
-        resp = client.update_by_query(
-            index=index_name,
-            refresh=True,
-            conflicts="proceed",
-            body={"query": query, "script": script},
-        )
+        resp = update_by_query(client, index_name, query, script)
         return int(resp.get("updated", 0))
     except Exception as e:  # noqa: BLE001
         logger.error(f"Speaker backfill ({label}) failed in {index_name}: {e}")

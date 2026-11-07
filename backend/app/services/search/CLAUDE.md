@@ -142,6 +142,25 @@ is a fresh `collection_ids` on the chunks, so `update_file_access_index` rewrite
 dispatches it. A bare `{"terms": {"accessible_user_ids": ...}}` in a new reader hides files the rest
 of the app lets the caller open.
 
+## The trash is an index field, not an exclusion list (#1101)
+
+A trashed file keeps its documents until purge. Every per-file document (chunks, digests,
+summary leaves, the legacy `transcripts` doc, per-file voiceprints) carries `availability`
+(`availability_field.py`: `available` | `trashed`, keyword). Readers exclude with
+`must_not term availability: trashed`, never a positive term: documents written before the
+field existed have no value and must stay visible. `access_filter_clause` ANDs it into the ACL,
+so every chunk-plane reader gets it; every speaker kNN body calls
+`availability_field.exclude_unavailable_clause()` (`tests/unit/test_knn_bodies_exclude_unavailable.py`
+guards new ones). Writers stamp the value from the row (`file_availability.index_availability`;
+`tests/unit/test_index_writers_stamp_availability.py`), and `trash_service` rewrites it in place
+on trash/restore through `availability_stamp.stamp_files` (update_by_query, `refresh=True`); a
+failure converges via `search.availability_reconcile`. Mapping: additive step 4 on the chunks
+index, `indices.ensure_field_mapping` on transcripts/speaker indices at startup, no reindex.
+Do NOT model the trash on `quarantine_exclusion.py`: that Postgres-resolved `must_not terms`
+list fails closed with a 503 past 10,000 ids, and a 30-day org trash passes that. Quarantine
+itself is not in the index yet (it still uses that list); the Postgres post-filter
+(`unavailable_among`) stays as the belt for both.
+
 ## Gotchas
 
 - **Do NOT add `aggs` to the collapsed hybrid body** (grep "Do NOT add" in `collapse_bodies.py`):

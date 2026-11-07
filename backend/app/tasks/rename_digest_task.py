@@ -14,6 +14,7 @@ from typing import Any
 
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
+from app.services.search.availability_field import AVAILABILITY_FIELD
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ def regenerate_rename_digests(
                 "file_size": meta["file_size"],
                 "collection_ids": meta["collection_ids"],
                 "accessible_user_ids": meta["accessible_user_ids"] or [user_id],
+                AVAILABILITY_FIELD: meta["availability"],
                 "indexed_at": now,
                 "embedding_model": provenance,
                 **(

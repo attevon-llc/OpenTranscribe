@@ -7,6 +7,7 @@ from typing import Any
 from app.core.embedding_models import get_speaker_index
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.search.availability_field import exclude_unavailable_clause
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,8 @@ def get_speakers_in_collection(collection_id: int, user_id: int) -> list[dict[st
                     "must": [
                         {"term": {"user_id": user_id}},
                         {"term": {"collection_ids": collection_id}},
-                    ]
+                    ],
+                    "filter": [exclude_unavailable_clause()],
                 }
             },
             "size": size_limit,  # Upper bound for speakers per collection; log warning if exceeded

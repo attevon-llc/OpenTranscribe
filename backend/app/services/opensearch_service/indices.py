@@ -16,6 +16,8 @@ from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.client import _is_alias
 from app.services.opensearch_service.client import _safe_index_exists
+from app.services.search.availability_field import AVAILABILITY_FIELD
+from app.services.search.availability_field import AVAILABILITY_MAPPING
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,8 @@ def _ensure_versioned_speaker_index(index_name: str, dimension: int) -> None:
                     "user_id": {"type": "integer"},
                     # Tenant scope (cloud-edition seam; absent on personal docs)
                     "organization_id": {"type": "integer"},
+                    # Trash state of the per-file voiceprint's file (#1101)
+                    AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
                     "name": {"type": "keyword"},
                     "display_name": {"type": "keyword"},
                     "collection_ids": {"type": "integer"},
@@ -139,6 +143,8 @@ def transcript_index_body() -> dict[str, Any]:
                 # Tenant stamp (#1027): present only on org files, so the
                 # personal scope's ``must_not exists`` gate matches the rest.
                 "organization_id": {"type": "integer"},
+                # Trash state (#1101): readers exclude "trashed", a missing value is live.
+                AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
                 "content": {"type": "text"},
                 "speakers": {"type": "keyword"},
                 "tags": {"type": "keyword"},
@@ -157,25 +163,32 @@ def transcript_index_body() -> dict[str, Any]:
 #: the hot ``ensure_indices_exist`` path pays the ``get_mapping`` round trip once.
 _tenant_mapping_checked: set[str] = set()
 
+#: Indices whose ``availability`` mapping this process already verified (same reason).
+_availability_mapping_checked: set[str] = set()
 
-def ensure_transcript_tenant_mapping(client: Any, index_name: str) -> str:
-    """Add ``organization_id`` to an existing ``transcripts`` index that predates it.
 
-    ``transcript_index_body`` carries the field, but only a NEW index is created from
-    it; an index from before the tenant stamp would otherwise get the field only through
-    dynamic mapping, on the first stamped write, as ``long``. Adding a field no document
-    has yet is an additive ``put_mapping``: no reindex and no downtime. Documents written
-    before the stamp still need ``app.tasks.tenant_backfill_task`` to be stamped.
+def ensure_field_mapping(
+    client: Any, index_name: str, field_name: str, definition: dict[str, Any]
+) -> str:
+    """Add ``field_name`` to an existing index that predates it, with an additive ``put_mapping``.
+
+    An index body carries the field, but only a NEW index is created from it; an index from
+    before would otherwise get the field only through dynamic mapping, on the first write that
+    carries it, typed by guess (a string becomes ``text`` with a ``keyword`` sub-field, a number
+    ``long``). Adding a field no document has yet is an additive ``put_mapping`` (OpenSearch docs,
+    "Create or update mappings": new fields can be added to an existing index): no reindex and
+    no downtime. Documents written before keep no value until they are next written or stamped.
 
     Args:
         client: OpenSearch client.
-        index_name: The transcripts index (or an alias of it).
+        index_name: The index (or an alias of it).
+        field_name: The field to ensure.
+        definition: Its mapping, e.g. ``{"type": "keyword"}``.
 
     Returns:
-        ``"absent"`` (no such index), ``"added"``, ``"present"``, or
-        ``"present_as_<type>"`` when dynamic mapping already created the field with
-        another type — left alone: ``term``/``exists`` still work on it, and changing a
-        field's type needs a reindex.
+        ``"absent"`` (no such index), ``"added"``, ``"present"``, or ``"present_as_<type>"``
+        when dynamic mapping already created the field with another type: left alone, because
+        changing a field's type needs a reindex.
     """
     if not client.indices.exists(index=index_name):
         return "absent"
@@ -184,21 +197,48 @@ def ensure_transcript_tenant_mapping(client: Any, index_name: str) -> str:
     properties: dict[str, Any] = {}
     for index_mapping in mapping.values():
         properties.update(index_mapping.get("mappings", {}).get("properties", {}))
-    field = properties.get("organization_id")
+    field = properties.get(field_name)
     if field is None:
-        client.indices.put_mapping(
-            index=index_name, body={"properties": {"organization_id": {"type": "integer"}}}
-        )
-        logger.info(f"Added the organization_id mapping to existing index '{index_name}'")
+        client.indices.put_mapping(index=index_name, body={"properties": {field_name: definition}})
+        logger.info(f"Added the {field_name} mapping to existing index '{index_name}'")
         return "added"
     field_type = field.get("type")
-    if field_type == "integer":
+    if field_type == definition.get("type"):
         return "present"
     logger.warning(
-        f"Index '{index_name}' maps organization_id as {field_type!r} (dynamic mapping), "
-        "not integer; the tenant gate still works, a reindex would normalise it"
+        f"Index '{index_name}' maps {field_name} as {field_type!r} (dynamic mapping), "
+        f"not {definition.get('type')!r}; left as it is, a reindex would normalise it"
     )
     return f"present_as_{field_type}"
+
+
+def ensure_transcript_tenant_mapping(client: Any, index_name: str) -> str:
+    """Add ``organization_id`` to an existing ``transcripts`` index that predates it (#1115).
+
+    Documents written before the tenant stamp still need ``app.tasks.tenant_backfill_task``.
+    An ``organization_id`` created by dynamic mapping (``long``) is left alone: ``term`` and
+    ``exists`` still work on it. Returns what :func:`ensure_field_mapping` returns.
+    """
+    return ensure_field_mapping(client, index_name, "organization_id", {"type": "integer"})
+
+
+def _ensure_availability_mappings(client: Any) -> None:
+    """Give the transcripts index and every speaker index the ``availability`` field (#1101).
+
+    The chunks index gets it through its additive step 4 (``search/index_schema``). Each index
+    has its own guard so one failure does not skip the rest; a failed index is retried on the
+    next call because it is not recorded as checked.
+    """
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
+
+    for index_name in (settings.OPENSEARCH_TRANSCRIPT_INDEX, *speaker_embedding_indices()):
+        if index_name in _availability_mapping_checked:
+            continue
+        try:
+            ensure_field_mapping(client, index_name, AVAILABILITY_FIELD, AVAILABILITY_MAPPING)
+            _availability_mapping_checked.add(index_name)
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            logger.error(f"Could not verify the availability mapping of '{index_name}': {e}")
 
 
 def ensure_indices_exist() -> None:
@@ -249,6 +289,9 @@ def ensure_indices_exist() -> None:
         _ensure_versioned_speaker_index(get_speaker_index_v4(), PYANNOTE_EMBEDDING_DIMENSION_V4)
 
         _restore_v3_from_backup(v3_index)
+
+        # After every index above exists: a fresh index already has the field (no-op here).
+        _ensure_availability_mappings(_client.opensearch_client)
 
         # Ensure the 'speakers' alias exists pointing to something
         alias_name = get_speaker_index()
@@ -316,6 +359,8 @@ def create_speaker_index_v4(index_name: str | None = None) -> bool:
                     "user_id": {"type": "integer"},
                     # Tenant scope (cloud-edition seam; absent on personal docs)
                     "organization_id": {"type": "integer"},
+                    # Trash state of the per-file voiceprint's file (#1101)
+                    AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
                     "name": {"type": "keyword"},
                     "display_name": {"type": "keyword"},
                     "collection_ids": {"type": "integer"},

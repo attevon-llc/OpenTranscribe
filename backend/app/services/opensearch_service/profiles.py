@@ -16,6 +16,7 @@ from app.services.opensearch_service.client import _safe_index_exists
 from app.services.opensearch_service.client import _speaker_org_filter_clauses
 from app.services.opensearch_service.indices import ensure_indices_exist
 from app.services.privacy.policy import assert_voiceprint_write_allowed
+from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,9 @@ def msearch_profile_knn_batch(
             ]
         # Tenant gate on profile documents (org term, else exclude org-stamped).
         must_filters.extend(_speaker_org_filter_clauses(organization_id))
+        # Profile documents carry no file, so this is a no-op today; it keeps every kNN body
+        # on the one helper (tests/unit/test_knn_bodies_exclude_unavailable.py).
+        must_filters.append(exclude_unavailable_clause())
 
         # Build msearch body
         msearch_body: list[dict[str, Any]] = []
@@ -376,6 +380,7 @@ def find_matching_profiles(
                                     {"term": {"user_id": user_id}},
                                     {"term": {"document_type": "profile"}},
                                     *_speaker_org_filter_clauses(organization_id),
+                                    exclude_unavailable_clause(),
                                 ]
                             }
                         },

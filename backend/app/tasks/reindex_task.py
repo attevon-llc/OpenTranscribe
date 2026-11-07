@@ -67,6 +67,7 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
     """
     from app.models.media import TranscriptSegment
     from app.models.speaker import Speaker
+    from app.services.file_availability import index_availability
     from app.services.permission_service import PermissionService
     from app.services.privacy.gates import voiceprints_allowed
     from app.utils.speaker_identity_source import visible_profile_id
@@ -183,6 +184,8 @@ def _extract_file_metadata(db: Any, media_file: Any) -> dict[str, Any] | None:
         "collection_ids": collection_id_list,
         "accessible_user_ids": accessible_user_ids,
         "organization_id": media_file.organization_id,
+        # A reindex of a trashed file writes trashed documents, not live ones (#1101).
+        "availability": index_availability(media_file),
     }
 
 
@@ -526,6 +529,7 @@ def reindex_batch_task(
                     collection_ids=metadata["collection_ids"],
                     accessible_user_ids=metadata.get("accessible_user_ids"),
                     organization_id=metadata.get("organization_id"),
+                    availability=metadata["availability"],
                 )
 
                 local_stats["indexed"] += 1

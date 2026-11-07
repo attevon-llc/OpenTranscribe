@@ -29,6 +29,11 @@ docs, "Current Date/Time"), so a restore whose request transaction began a momen
 back a row whose objects were already being destroyed. The wall clock at evaluation has no
 such window.
 
+Search, chat retrieval and speaker matching learn the new state through the ``availability``
+field on the file's OpenSearch documents (``search/availability_stamp``), rewritten in place
+right after each trash/restore commit. A failed stamp never undoes the commit: the Postgres
+post-filter keeps hits out meanwhile and ``search.availability_reconcile`` converges the index.
+
 Retention expiry does **not** come through here: it keeps hard-deleting at N days (owner
 decision OD-1 B), so ``trash_origin`` is only ever ``'user'`` from this module.
 """
@@ -57,6 +62,8 @@ from app.services.content_audit import stage_content_event
 from app.services.hold_guard import assert_not_held
 from app.services.hold_guard import held_pred
 from app.services.hold_guard import not_held_pred
+from app.services.search.availability_field import AVAILABLE
+from app.services.search.availability_field import TRASHED
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -170,7 +177,7 @@ def _after_trash(db: Session, trashed: Sequence[MediaFile], actor: User) -> None
                 cancel_active_task(db, int(f.id))
             except Exception:  # noqa: BLE001 - the file is trashed either way
                 logger.warning("trash: could not cancel the task of file %s", f.uuid, exc_info=True)
-    _after_state_change(db, trashed, actor, NOTIFICATION_TYPE_FILE_TRASHED)
+    _after_state_change(db, trashed, actor, NOTIFICATION_TYPE_FILE_TRASHED, TRASHED)
 
 
 def restore_files(
@@ -216,7 +223,7 @@ def restore_files(
         db.refresh(f)
     audit_outbox.deliver_staged(db)
     if restored:
-        _after_state_change(db, restored, actor, NOTIFICATION_TYPE_FILE_RESTORED)
+        _after_state_change(db, restored, actor, NOTIFICATION_TYPE_FILE_RESTORED, AVAILABLE)
     return restored, [f for i, f in sorted(by_id.items()) if i not in restored_ids]
 
 
@@ -330,10 +337,38 @@ def dispatch_purge(file_ids: Sequence[int]) -> None:
         logger.warning("trash: purge dispatch failed; the hourly tick will purge", exc_info=True)
 
 
+def _stamp_index(files: Sequence[MediaFile], availability: str) -> None:
+    """Rewrite the files' index documents to ``availability``; a retry task on any shortfall.
+
+    Synchronous (``refresh=True``), so the response to a trash already reads without the file
+    in counts and facets. Never raises: the state change is committed and stays committed.
+    """
+    from app.services.search.availability_stamp import dispatch_reconcile
+    from app.services.search.availability_stamp import stamp_files
+
+    file_ids = [int(f.id) for f in files]
+    try:
+        complete = stamp_files(file_ids, availability).complete
+    except Exception:  # noqa: BLE001 - the post-filter covers the gap; the retry converges it
+        logger.warning("trash: index stamp failed; dispatching a reconcile", exc_info=True)
+        complete = False
+    if not complete:
+        dispatch_reconcile(file_ids)
+
+
 def _after_state_change(
-    db: Session, files: Sequence[MediaFile], actor: User, notification_type: str
+    db: Session,
+    files: Sequence[MediaFile],
+    actor: User,
+    notification_type: str,
+    availability: str,
 ) -> None:
-    """Invalidate the caches a trash or restore changes, and announce it over WebSocket."""
+    """Stamp the index, invalidate the caches a trash or restore changes, announce it.
+
+    The stamp comes first so the corpus-version bump below makes chat re-retrieve against an
+    index that already agrees.
+    """
+    _stamp_index(files, availability)
     try:
         from app.services.chat.retrieval_cache import bump_corpus_version
 

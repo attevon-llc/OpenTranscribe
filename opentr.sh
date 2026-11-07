@@ -1728,10 +1728,10 @@ ot_port_holder_is_ours() {
   [ "$label" = "$(ot_compose_project)" ]
 }
 
-# Return 0 if a TCP port is already bound on localhost, 1 otherwise.
+# Return 0 if a TCP port is bound on localhost, 1 otherwise (bash /dev/tcp, no netstat/ss). $OT_PORT_PROBE, when set, is run as `$OT_PORT_PROBE <port>` instead, so tests need not depend on host ports.
 fresh_port_in_use() {
   local port="$1"
-  # bash /dev/tcp probe — no netstat/ss dependency.
+  if [ -n "${OT_PORT_PROBE:-}" ]; then "$OT_PORT_PROBE" "$port"; return; fi
   (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null && { exec 3>&- 3<&-; return 0; }
   return 1
 }

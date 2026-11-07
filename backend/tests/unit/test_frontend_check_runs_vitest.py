@@ -30,6 +30,7 @@ duplication is gone; test 4 below is what keeps it gone.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import textwrap
@@ -183,3 +184,52 @@ def test_the_recheck_reuses_the_same_check_set():
         f"main() invokes checks directly instead of via run_all_checks: {strays}. A second "
         "hand-written list is how a step gets added to one path and forgotten in the other."
     )
+
+
+# --------------------------------------------------------------------------------------
+# 5: an unwritable build output is reported before `vite build` empties dist (#1372).
+# --------------------------------------------------------------------------------------
+
+
+def _run_writable_check(workdir: Path) -> subprocess.CompletedProcess[str]:
+    harness = textwrap.dedent(
+        f"""
+        set -- --no-claude --check-only
+        source <(sed 's/^main$//' {SCRIPT!s})
+        cd {workdir!s}
+        check_build_output_writable dist
+        """
+    )
+    return subprocess.run(["bash", "-c", harness], capture_output=True, text=True, timeout=60)
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="root can write anywhere; the check needs a non-root user"
+)
+def test_unwritable_dist_subdirectory_fails_with_an_ownership_message(tmp_path: Path):
+    """Must-fire: a read-only directory under dist is named, with the chown fix."""
+    locked = tmp_path / "dist" / "assets"
+    locked.mkdir(parents=True)
+    (locked / "x.js").write_text("x")
+    locked.chmod(0o555)
+    try:
+        proc = _run_writable_check(tmp_path)
+    finally:
+        locked.chmod(0o755)
+    assert proc.returncode != 0, proc.stdout
+    assert "not writable" in proc.stdout and "chown" in proc.stdout, proc.stdout
+    assert "dist/assets" in proc.stdout, proc.stdout
+
+
+def test_writable_or_absent_dist_passes(tmp_path: Path):
+    """Must-stay-clean: no dist at all, and a normal writable dist, both pass."""
+    assert _run_writable_check(tmp_path).returncode == 0
+    (tmp_path / "dist" / "assets").mkdir(parents=True)
+    assert _run_writable_check(tmp_path).returncode == 0
+
+
+def test_build_is_skipped_when_the_output_is_unwritable():
+    """The vite build must sit in the else-branch of the writability check, never before it."""
+    body = _uncommented(_function_body("run_all_checks"))
+    check_at = body.index("check_build_output_writable")
+    assert check_at < body.index("npm run build"), "writability check must precede the build"

@@ -124,16 +124,18 @@ jobs:
       - name: Generate pre-commit summary
         if: always()
         run: |
-          echo "## Pre-commit Check Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pre-commit hooks executed on all files (pre-commit AND pre-push stages)." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Hooks Executed:" >> $GITHUB_STEP_SUMMARY
-          echo "- Code formatting (Ruff, Prettier)" >> $GITHUB_STEP_SUMMARY
-          echo "- Linting (Ruff, mypy, ESLint)" >> $GITHUB_STEP_SUMMARY
-          echo "- Security checks (Gitleaks, Bandit)" >> $GITHUB_STEP_SUMMARY
-          echo "- Shell script validation (shellcheck)" >> $GITHUB_STEP_SUMMARY
-          echo "- Dockerfile linting (Hadolint)" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Pre-commit Check Results"
+            echo ""
+            echo "Pre-commit hooks executed on all files (pre-commit AND pre-push stages)."
+            echo ""
+            echo "### Hooks Executed:"
+            echo "- Code formatting (Ruff, Prettier)"
+            echo "- Linting (Ruff, mypy, ESLint)"
+            echo "- Security checks (Gitleaks, Bandit)"
+            echo "- Shell script validation (shellcheck)"
+            echo "- Dockerfile linting (Hadolint)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Detects which parts of the tree a PR touches, so the expensive suites can skip
   # work that cannot possibly be affected. Job-level (not workflow-level `paths:`)

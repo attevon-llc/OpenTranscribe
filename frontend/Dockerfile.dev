@@ -11,17 +11,25 @@ RUN apk add --no-cache \
     g++ \
     git
 
+# Run as the image's non-root `node` user (uid 1000, the usual host developer uid). As root, the
+# dev server writes root-owned files (vite timestamp bundles, build leftovers) into the
+# ./frontend bind mount, and the host-side `vite build` then fails to empty `dist` (issue #1372).
+# A host user with a different uid needs `user: "<uid>"` on the frontend service.
+RUN chown node:node /app
+USER node
+
 # Copy package files
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 
 # Install dependencies
 RUN npm install
 
 # Create static directory for fonts
-RUN mkdir -p static/fonts
+# .svelte-kit is an anonymous volume in docker-compose.override.yml; it takes this ownership.
+RUN mkdir -p static/fonts .svelte-kit
 
 # Copy application code
-COPY . .
+COPY --chown=node:node . .
 
 # Ensure the fonts directory has the correct permissions
 RUN chmod -R 755 static/fonts

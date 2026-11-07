@@ -76,6 +76,20 @@ print_success() { echo -e "${GREEN}[frontend-check]${NC} $1"; }
 print_error()   { echo -e "${RED}[frontend-check]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[frontend-check]${NC} $1"; }
 
+# `vite build` runs with emptyOutDir, so it rmdirs `dist` before writing anything. A directory
+# a root-run container left in the bind mount makes that fail with a bare EACCES and a half-
+# emptied `dist` (issue #1372). Say so up front, with the fix. Run from FRONTEND_DIR (run_step).
+check_build_output_writable() {
+    local blocked
+    [ $# -gt 0 ] || set -- dist .svelte-kit
+    blocked="$(find "$@" -type d ! -writable -print -quit 2>/dev/null || true)"
+    [ -z "$blocked" ] && return 0
+    echo "frontend/$blocked is not writable by $(id -un) (owner: $(stat -c %U "$blocked"))."
+    echo "A container running as root probably wrote it into the ./frontend bind mount."
+    echo "Fix: sudo chown -R $(id -u):$(id -g) frontend/dist frontend/.svelte-kit"
+    return 1
+}
+
 # Check node_modules exist
 check_node_modules() {
     if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
@@ -256,7 +270,16 @@ run_all_checks() {
     # out to `docker buildx`; measured at 91.8 s of a 328 s whole-tree run (issue #688), which
     # is why it lives at pre-push stage rather than commit stage.
     if [ "$BUILD_ENABLED" = true ]; then
-        run_step "vite build" "" npm run build
+        local writable_out=""
+        if writable_out=$(cd "$FRONTEND_DIR" && check_build_output_writable 2>&1); then
+            run_step "vite build" "" npm run build
+        else
+            print_error "$writable_out"
+            CHECK_FAILED=true
+            CHECK_OUTPUT="${CHECK_OUTPUT}
+--- build output writable failures ---
+${writable_out}"
+        fi
     fi
 }
 

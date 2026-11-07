@@ -209,3 +209,17 @@ describe('interaction', () => {
     expect(gotoCalls).toHaveLength(0); // the error trigger must not also navigate
   });
 });
+
+describe('status label language', () => {
+  it('labels a status in the reader language, not the server English display_status', async () => {
+    const items = [file('f0', { status: 'completed', display_status: 'Completed' })];
+    const { container } = render(VirtualList, {
+      props: { items, scrollContainer: scrollContainerWithHeight(400) },
+    });
+    await tick();
+
+    const indicator = container.querySelector('.status-indicator') as HTMLElement;
+    expect(indicator.getAttribute('aria-label')).toBe('common.completed');
+    expect(container.querySelector('.list-cell-status')?.textContent).not.toContain('Completed');
+  });
+});

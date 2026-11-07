@@ -259,3 +259,20 @@ describe('VirtualGrid speaker count label', () => {
     expect(source).not.toMatch(/\}\s*spk\b/);
   });
 });
+
+describe('VirtualGrid status label language', () => {
+  it('labels a status in the reader language, not the server English display_status', async () => {
+    const { container } = render(VirtualGrid, {
+      props: {
+        items: [file('f0', { status: 'completed', display_status: 'Completed' })],
+        scrollContainer: scrollContainerWithHeight(800),
+      },
+    });
+    setWrapperWidth(container, 900);
+    await tick();
+    await tick();
+    const indicator = container.querySelector('.status-indicator') as HTMLElement;
+    expect(indicator.getAttribute('title')).toBe('common.completed');
+    expect(indicator.getAttribute('aria-label')).toBe('common.completed');
+  });
+});

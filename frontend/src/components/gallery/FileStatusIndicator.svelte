@@ -17,7 +17,8 @@
   import type { MediaFileStatus } from '$lib/types/media';
 
   export let status: MediaFileStatus;
-  /** Backend-formatted status text (`file.display_status`) — preferred over the local i18n fallback. */
+  /** Replaces the translated label (the gallery passes the error-details hint). Never pass the
+   *  server's `file.display_status`: it is always English, so Arabic showed "Completed". */
   export let displayStatus: string | undefined = undefined;
   /** True only for `error` with a `user_message` to show — the one status with a click target. */
   export let clickable = false;

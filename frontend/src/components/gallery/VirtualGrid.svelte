@@ -333,7 +333,7 @@
                            terminal value by a running task while this flag stays correct. -->
                       <FileStatusIndicator
                         status={file.is_quarantined ? 'quarantined' : file.status}
-                        displayStatus={file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : file.display_status}
+                        displayStatus={file.status === 'error' && file.user_message ? $t('gallery.errorClickForDetails') : undefined}
                         clickable={file.status === 'error' && !!file.user_message}
                         on:click={() => handleErrorClick(file)}
                       />

@@ -60,7 +60,7 @@ describe('FileStatusIndicator', () => {
     }
   );
 
-  it('prefers file.display_status over the local i18n fallback when supplied', () => {
+  it('prefers a caller-supplied label over the translated one', () => {
     const { container } = render(FileStatusIndicator, {
       props: { status: 'processing', displayStatus: 'Transcribing (42%)' },
     });

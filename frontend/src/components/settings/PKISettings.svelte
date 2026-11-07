@@ -110,7 +110,7 @@
 
     <div class="form-group">
       <label for="pki_ca_cert_path">{$t('settings.pki.caCertPath')}</label>
-      <input
+      <input dir="ltr"
         id="pki_ca_cert_path"
         type="text"
         bind:value={formData.pki_ca_cert_path}
@@ -129,7 +129,7 @@
       <div class="form-row">
         <div class="form-group">
           <label for="pki_cert_header">{$t('settings.pki.certHeader')}</label>
-          <input
+          <input dir="ltr"
             id="pki_cert_header"
             type="text"
             bind:value={formData.pki_cert_header}
@@ -142,7 +142,7 @@
 
         <div class="form-group">
           <label for="pki_cert_dn_header">{$t('settings.pki.dnHeader')}</label>
-          <input
+          <input dir="ltr"
             id="pki_cert_dn_header"
             type="text"
             bind:value={formData.pki_cert_dn_header}
@@ -156,7 +156,7 @@
 
       <div class="form-group">
         <label for="pki_trusted_proxies">{$t('settings.pki.trustedProxies')}</label>
-        <input
+        <input dir="ltr"
           id="pki_trusted_proxies"
           type="text"
           bind:value={formData.pki_trusted_proxies}
@@ -231,7 +231,7 @@
 
     <div class="form-group">
       <label for="pki_admin_dns">{$t('settings.pki.adminDns')}</label>
-      <textarea
+      <textarea dir="ltr"
         id="pki_admin_dns"
         bind:value={formData.pki_admin_dns}
         on:input={handleChange}

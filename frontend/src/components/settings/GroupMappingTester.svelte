@@ -88,7 +88,7 @@
   {#if mode === 'claims'}
     <div class="form-group">
       <label for="mapping-test-claims">{$t('settings.groupMappings.test.claimsLabel')}</label>
-      <textarea
+      <textarea dir="ltr"
         id="mapping-test-claims"
         class="form-control form-textarea"
         bind:value={claimsText}

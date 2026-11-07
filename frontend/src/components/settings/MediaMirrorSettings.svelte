@@ -265,7 +265,7 @@
     <div class="fields-grid">
       <div class="field-group">
         <label class="field-label" for="mirror-schedule">{$t('settings.backup.mirror.schedule')}</label>
-        <input
+        <input dir="ltr"
           id="mirror-schedule"
           type="text"
           bind:value={schedule}
@@ -302,7 +302,7 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="mirror-destination">{$t('settings.backup.mirror.destination')}</label>
-          <input id="mirror-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="mirror-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
           <span class="field-hint">
             {#if mountOk}
               <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mirror.mountOk')}</span>
@@ -317,27 +317,27 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="mirror-s3-endpoint">{$t('settings.backup.mirror.s3Endpoint')}</label>
-          <input id="mirror-s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-region">{$t('settings.backup.mirror.s3Region')}</label>
-          <input id="mirror-s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-bucket">{$t('settings.backup.mirror.s3Bucket')}</label>
-          <input id="mirror-s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-prefix">{$t('settings.backup.mirror.s3Prefix')}</label>
-          <input id="mirror-s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe-media/" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe-media/" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-access-key">{$t('settings.backup.mirror.s3AccessKey')}</label>
-          <input id="mirror-s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
+          <input dir="ltr" id="mirror-s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="mirror-s3-secret-key">{$t('settings.backup.mirror.s3SecretKey')}</label>
-          <input
+          <input dir="ltr"
             id="mirror-s3-secret-key"
             type="password"
             bind:value={s3SecretKey}

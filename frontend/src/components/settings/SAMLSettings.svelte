@@ -119,7 +119,7 @@
 
     <div class="form-group">
       <label for="saml_sp_entity_id">{$t('settings.saml.spEntityId')}</label>
-      <input
+      <input dir="ltr"
         id="saml_sp_entity_id"
         type="text"
         bind:value={formData.saml_sp_entity_id}
@@ -132,7 +132,7 @@
 
     <div class="form-group">
       <label for="saml_sp_acs_url">{$t('settings.saml.spAcsUrl')}</label>
-      <input
+      <input dir="ltr"
         id="saml_sp_acs_url"
         type="text"
         bind:value={formData.saml_sp_acs_url}
@@ -145,7 +145,7 @@
 
     <div class="form-group">
       <label for="saml_sp_sls_url">{$t('settings.saml.spSlsUrl')}</label>
-      <input
+      <input dir="ltr"
         id="saml_sp_sls_url"
         type="text"
         bind:value={formData.saml_sp_sls_url}
@@ -159,7 +159,7 @@
     <div class="form-group">
       <label for="saml_metadata_url">{$t('settings.saml.metadataUrl')}</label>
       <div class="input-with-button">
-        <input id="saml_metadata_url" type="text" value={metadataUrl} readonly />
+        <input dir="ltr" id="saml_metadata_url" type="text" value={metadataUrl} readonly />
         <button type="button" class="btn btn-small" on:click={copyMetadataUrl}>
           {$t('settings.saml.copy')}
         </button>
@@ -173,7 +173,7 @@
 
     <div class="form-group">
       <label for="saml_sp_x509_cert">{$t('settings.saml.spX509Cert')}</label>
-      <textarea
+      <textarea dir="ltr"
         id="saml_sp_x509_cert"
         bind:value={formData.saml_sp_x509_cert}
         on:input={handleChange}
@@ -187,7 +187,7 @@
     <div class="form-group">
       <label for="saml_sp_private_key">{$t('settings.saml.spPrivateKey')}</label>
       <div class="input-with-toggle">
-        <input
+        <input dir="ltr"
           id="saml_sp_private_key"
           type={showPrivateKey ? 'text' : 'password'}
           bind:value={privateKeyInput}
@@ -220,7 +220,7 @@
 
     <div class="form-group">
       <label for="saml_idp_entity_id">{$t('settings.saml.idpEntityId')}</label>
-      <input
+      <input dir="ltr"
         id="saml_idp_entity_id"
         type="text"
         bind:value={formData.saml_idp_entity_id}
@@ -233,7 +233,7 @@
 
     <div class="form-group">
       <label for="saml_idp_sso_url">{$t('settings.saml.idpSsoUrl')}</label>
-      <input
+      <input dir="ltr"
         id="saml_idp_sso_url"
         type="text"
         bind:value={formData.saml_idp_sso_url}
@@ -246,7 +246,7 @@
 
     <div class="form-group">
       <label for="saml_idp_slo_url">{$t('settings.saml.idpSloUrl')}</label>
-      <input
+      <input dir="ltr"
         id="saml_idp_slo_url"
         type="text"
         bind:value={formData.saml_idp_slo_url}
@@ -259,7 +259,7 @@
 
     <div class="form-group">
       <label for="saml_idp_x509_cert">{$t('settings.saml.idpX509Cert')}</label>
-      <textarea
+      <textarea dir="ltr"
         id="saml_idp_x509_cert"
         bind:value={formData.saml_idp_x509_cert}
         on:input={handleChange}
@@ -313,7 +313,7 @@
 
     <div class="form-group">
       <label for="saml_email_attribute">{$t('settings.saml.emailAttribute')}</label>
-      <input
+      <input dir="ltr"
         id="saml_email_attribute"
         type="text"
         bind:value={formData.saml_email_attribute}
@@ -325,7 +325,7 @@
 
     <div class="form-group">
       <label for="saml_name_attribute">{$t('settings.saml.nameAttribute')}</label>
-      <input
+      <input dir="ltr"
         id="saml_name_attribute"
         type="text"
         bind:value={formData.saml_name_attribute}
@@ -337,7 +337,7 @@
 
     <div class="form-group">
       <label for="saml_groups_attribute">{$t('settings.saml.groupsAttribute')}</label>
-      <input
+      <input dir="ltr"
         id="saml_groups_attribute"
         type="text"
         bind:value={formData.saml_groups_attribute}
@@ -353,7 +353,7 @@
 
     <div class="form-group">
       <label for="saml_admin_group">{$t('settings.saml.adminGroup')}</label>
-      <input
+      <input dir="ltr"
         id="saml_admin_group"
         type="text"
         bind:value={formData.saml_admin_group}
@@ -365,7 +365,7 @@
 
     <div class="form-group">
       <label for="saml_allowed_groups">{$t('settings.saml.allowedGroups')}</label>
-      <input
+      <input dir="ltr"
         id="saml_allowed_groups"
         type="text"
         bind:value={formData.saml_allowed_groups}
@@ -382,7 +382,7 @@
 
     <div class="form-group">
       <label for="saml_blocked_groups">{$t('settings.saml.blockedGroups')}</label>
-      <input
+      <input dir="ltr"
         id="saml_blocked_groups"
         type="text"
         bind:value={formData.saml_blocked_groups}

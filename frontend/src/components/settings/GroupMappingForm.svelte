@@ -103,7 +103,7 @@
     <div class="modal-body">
       <div class="form-group">
         <label for="mapping-claim">{$t('settings.groupMappings.claimValue')}</label>
-        <input
+        <input dir="ltr"
           type="text"
           id="mapping-claim"
           class="form-control"

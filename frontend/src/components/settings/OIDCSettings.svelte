@@ -244,7 +244,7 @@
 
     <div class="form-group">
       <label for="oidc_server_url">{$t('settings.oidc.serverUrlPublic')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_server_url"
         type="text"
         bind:value={formData.oidc_server_url}
@@ -257,7 +257,7 @@
 
     <div class="form-group">
       <label for="oidc_internal_url">{$t('settings.oidc.serverUrlInternal')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_internal_url"
         type="text"
         bind:value={formData.oidc_internal_url}
@@ -270,7 +270,7 @@
 
     <div class="form-group">
       <label for="oidc_discovery_url">{$t('settings.oidc.discoveryUrl')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_discovery_url"
         type="text"
         bind:value={formData.oidc_discovery_url}
@@ -283,7 +283,7 @@
 
     <div class="form-group" class:superseded={discoveryActive}>
       <label for="oidc_realm">{$t('settings.oidc.realm')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_realm"
         type="text"
         bind:value={formData.oidc_realm}
@@ -317,7 +317,7 @@
     <div class="form-row">
       <div class="form-group">
         <label for="oidc_client_id">{$t('settings.oidc.clientId')}</label>
-        <input
+        <input dir="ltr"
           id="oidc_client_id"
           type="text"
           bind:value={formData.oidc_client_id}
@@ -330,7 +330,7 @@
       <div class="form-group">
         <label for="oidc_client_secret">{$t('settings.oidc.clientSecret')}</label>
         <div class="input-with-toggle">
-          <input
+          <input dir="ltr"
             id="oidc_client_secret"
             type={showSecret ? 'text' : 'password'}
             bind:value={clientSecretInput}
@@ -361,7 +361,7 @@
     <div class="form-group">
       <label for="oidc_callback_url">{$t('settings.oidc.callbackUrl')}</label>
       <div class="input-with-button">
-        <input
+        <input dir="ltr"
           id="oidc_callback_url"
           type="text"
           bind:value={formData.oidc_callback_url}
@@ -424,7 +424,7 @@
     {#if formData.oidc_verify_audience}
       <div class="form-group indented">
         <label for="oidc_audience">{$t('settings.oidc.expectedAudience')}</label>
-        <input
+        <input dir="ltr"
           id="oidc_audience"
           type="text"
           bind:value={formData.oidc_audience}
@@ -441,7 +441,7 @@
 
     <div class="form-group">
       <label for="oidc_admin_role">{$t('settings.oidc.adminRoleName')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_admin_role"
         type="text"
         bind:value={formData.oidc_admin_role}
@@ -454,7 +454,7 @@
 
     <div class="form-group">
       <label for="oidc_roles_claim">{$t('settings.oidc.rolesClaim')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_roles_claim"
         type="text"
         bind:value={formData.oidc_roles_claim}
@@ -473,7 +473,7 @@
 
     <div class="form-group">
       <label for="oidc_allowed_groups">{$t('settings.oidc.allowedGroups')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_allowed_groups"
         type="text"
         bind:value={formData.oidc_allowed_groups}
@@ -490,7 +490,7 @@
 
     <div class="form-group">
       <label for="oidc_blocked_groups">{$t('settings.oidc.blockedGroups')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_blocked_groups"
         type="text"
         bind:value={formData.oidc_blocked_groups}
@@ -508,7 +508,7 @@
 
     <div class="form-group">
       <label for="oidc_scopes">{$t('settings.oidc.scopes')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_scopes"
         type="text"
         bind:value={formData.oidc_scopes}
@@ -521,7 +521,7 @@
 
     <div class="form-group">
       <label for="oidc_issuer">{$t('settings.oidc.issuer')}</label>
-      <input
+      <input dir="ltr"
         id="oidc_issuer"
         type="text"
         bind:value={formData.oidc_issuer}

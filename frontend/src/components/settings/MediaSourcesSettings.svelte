@@ -183,7 +183,7 @@
               <div class="form-row">
                 <div class="form-field">
                   <label for="edit-hostname">{$t('settings.mediaSources.hostname')}</label>
-                  <input id="edit-hostname" type="text" bind:value={editHostname} class="form-input" placeholder="media.example.com" aria-describedby="edit-hostname-hint" />
+                  <input dir="ltr" id="edit-hostname" type="text" bind:value={editHostname} class="form-input" placeholder="media.example.com" aria-describedby="edit-hostname-hint" />
                   <p id="edit-hostname-hint" class="field-hint">{$t('settings.mediaSources.hostnameHint')}</p>
                   {#if isPlainHttpSource(editHostname)}
                     <p class="http-warning" role="alert">{$t('settings.mediaSources.plainHttpWarning')}</p>
@@ -201,7 +201,7 @@
                 </div>
                 <div class="form-field">
                   <label for="edit-password">{$t('settings.mediaSources.password')}</label>
-                  <input id="edit-password" type="password" bind:value={editPassword} class="form-input" autocomplete="new-password"
+                  <input dir="ltr" id="edit-password" type="password" bind:value={editPassword} class="form-input" autocomplete="new-password"
                     placeholder={source.has_credentials ? '••••••••' : ''} />
                 </div>
               </div>
@@ -353,7 +353,7 @@
           <div class="form-row">
             <div class="form-field">
               <label for="new-hostname">{$t('settings.mediaSources.hostname')}</label>
-              <input id="new-hostname" type="text" bind:value={newHostname} class="form-input" placeholder="media.example.com" aria-describedby="new-hostname-hint" />
+              <input dir="ltr" id="new-hostname" type="text" bind:value={newHostname} class="form-input" placeholder="media.example.com" aria-describedby="new-hostname-hint" />
               <p id="new-hostname-hint" class="field-hint">{$t('settings.mediaSources.hostnameHint')}</p>
               {#if isPlainHttpSource(newHostname)}
                 <p class="http-warning" role="alert">{$t('settings.mediaSources.plainHttpWarning')}</p>
@@ -371,7 +371,7 @@
             </div>
             <div class="form-field">
               <label for="new-password">{$t('settings.mediaSources.password')}</label>
-              <input id="new-password" type="password" bind:value={newPassword} class="form-input" autocomplete="new-password" />
+              <input dir="ltr" id="new-password" type="password" bind:value={newPassword} class="form-input" autocomplete="new-password" />
             </div>
           </div>
           <div class="form-row">

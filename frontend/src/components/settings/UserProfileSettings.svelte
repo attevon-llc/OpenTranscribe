@@ -173,7 +173,7 @@
       <form on:submit|preventDefault={updateProfile} class="settings-form">
         <div class="form-group">
           <label for="email">{$t('auth.email')}</label>
-          <input
+          <input dir="ltr"
             type="email"
             id="email"
             class="form-control"

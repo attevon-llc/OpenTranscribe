@@ -11,13 +11,17 @@
 #   merged-branch   local branch fully merged into --base (default master): `git branch -d`,
 #                   which refuses an unmerged branch or one checked out in a worktree.
 #                   Never the base, release/*, or the current branch.
-#   fresh-stack     `rel-*` fresh deployments listed by `./opentr.sh fresh-list`:
+#   fresh-stack     `rel-*` fresh deployments from `./opentr.sh fresh-list --names`:
 #                   `./opentr.sh fresh-destroy <name> --yes`.
 #   test-leftovers  per --project: `./opentr.sh test-cleanup --project P` (its own registered
 #                   shapes and age guard; --dry-run is passed through when not --yes).
-# Listed only, never removed: git worktrees, /tmp/ot-redcheck.* trees (remove by hand).
+#   scratch-trees  `/tmp/ot-redcheck.*` and the other registered test tmp shapes, through
+#                   scripts/cleanup-test-data.py --planes tmp (owner, shape and age guards;
+#                   --execute-unambiguous only with --yes). Needs no running stack.
+# Listed only, never removed: git worktrees (remove by hand).
 #
-# OT_TIDY_OPENTR overrides the opentr.sh path (the unit test points it at a fake).
+# OT_TIDY_OPENTR / OT_TIDY_CLEANUP_DATA override the opentr.sh and cleanup-test-data.py
+# commands (the unit test points them at fakes).
 # Exit: 0 ok · 1 a delegated step failed · 2 misuse.
 
 set -uo pipefail
@@ -59,14 +63,19 @@ else
 fi
 
 echo "== fresh-stack (rel-*) =="
+# Capture first: a failing listing must be an error, never an empty list.
+if ! fresh_names="$("$OPENTR" fresh-list --names)"; then
+    echo "release-tidy: '$OPENTR fresh-list --names' failed; cannot tell which fresh stacks exist" >&2
+    exit 1
+fi
 while IFS= read -r name; do
-    [ -n "$name" ] || continue
+    case "$name" in rel-*) ;; *) continue ;; esac
     if $YES; then
         "$OPENTR" fresh-destroy "$name" --yes || rc=1
     else
         echo "  would destroy fresh stack: $name"
     fi
-done < <("$OPENTR" fresh-list 2>/dev/null | sed -n 's/^  • \(rel-[^ ]*\) .*/\1/p')
+done <<< "$fresh_names"
 
 echo "== test-leftovers =="
 if [ ${#PROJECTS[@]} -eq 0 ]; then
@@ -80,7 +89,20 @@ for p in "${PROJECTS[@]}"; do
     fi
 done
 
+echo "== scratch-trees =="
+if [ -n "${OT_TIDY_CLEANUP_DATA:-}" ]; then
+    cleanup_cmd=("$OT_TIDY_CLEANUP_DATA")
+elif [ -x "$REPO_ROOT/backend/venv/bin/python" ]; then
+    cleanup_cmd=("$REPO_ROOT/backend/venv/bin/python" "$REPO_ROOT/scripts/cleanup-test-data.py")
+else
+    cleanup_cmd=(python3 "$REPO_ROOT/scripts/cleanup-test-data.py")
+fi
+if $YES; then
+    "${cleanup_cmd[@]}" --planes tmp --execute-unambiguous || rc=1
+else
+    "${cleanup_cmd[@]}" --planes tmp || rc=1
+fi
+
 echo "== listed only (remove by hand) =="
 git worktree list | sed 's/^/  worktree: /'
-for d in "${TMPDIR:-/tmp}"/ot-redcheck.*; do [ -d "$d" ] && echo "  scratch: $d"; done
 exit "$rc"

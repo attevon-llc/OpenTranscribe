@@ -26,9 +26,9 @@ pytestmark = [
 _FAKE_OPENTR = """#!/bin/bash
 echo "$@" >> "$FAKE_LOG"
 if [ "$1" = fresh-list ]; then
-  echo "Fresh deployments:"
-  echo "  • rel-0-7-0  (project otfresh-rel-0-7-0, 0 container(s) running, standard dev ports)"
-  echo "  • mine  (project otfresh-mine, 2 container(s) running, standard dev ports)"
+  [ -n "${FAKE_LIST_FAIL:-}" ] && exit 3
+  echo rel-0-7-0
+  echo mine
 fi
 exit 0
 """
@@ -60,12 +60,19 @@ def repo(tmp_path: Path) -> Path:
     return r
 
 
-def _run(repo: Path, tmp_path: Path, *args: str) -> tuple[subprocess.CompletedProcess, Path]:
+def _run(
+    repo: Path, tmp_path: Path, *args: str, extra_env: dict[str, str] | None = None
+) -> tuple[subprocess.CompletedProcess, Path]:
     log = tmp_path / "fake.log"
     fake = tmp_path / "opentr.sh"
     fake.write_text(_FAKE_OPENTR)
     fake.chmod(0o755)
+    cleanup = tmp_path / "cleanup-data"
+    cleanup.write_text('#!/bin/bash\necho "CLEANUP $@" >> "$FAKE_LOG"\n')
+    cleanup.chmod(0o755)
     env = {
+        **(extra_env or {}),
+        "OT_TIDY_CLEANUP_DATA": str(cleanup),
         "PATH": os.environ["PATH"],
         "OT_TIDY_OPENTR": str(fake),
         "FAKE_LOG": str(log),
@@ -139,3 +146,22 @@ def test_never_issues_a_prune_or_volume_removal() -> None:
     assert "prune" not in code
     assert "--volumes" not in code
     assert "docker " not in code
+
+
+@pytest.mark.unit
+def test_a_failing_fresh_list_is_an_error_not_an_empty_list(repo: Path, tmp_path: Path) -> None:
+    proc, log = _run(repo, tmp_path, "--yes", extra_env={"FAKE_LIST_FAIL": "1"})
+
+    assert proc.returncode == 1
+    assert "fresh-list --names" in proc.stderr
+    assert not any(c.startswith("fresh-destroy") for c in log.read_text().splitlines())
+
+
+@pytest.mark.unit
+def test_scratch_trees_go_through_the_registered_tmp_plane(repo: Path, tmp_path: Path) -> None:
+    _, dry_log = _run(repo, tmp_path)
+    assert "CLEANUP --planes tmp" in dry_log.read_text().splitlines()
+
+    (tmp_path / "fake.log").unlink()
+    _, yes_log = _run(repo, tmp_path, "--yes")
+    assert "CLEANUP --planes tmp --execute-unambiguous" in yes_log.read_text().splitlines()

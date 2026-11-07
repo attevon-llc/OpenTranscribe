@@ -38,8 +38,8 @@ if [ ! -f ".env" ]; then
     if [ -f "${_ot_main_root}/.env" ]; then
       _ot_env_rel="$(realpath --relative-to="$PWD" "${_ot_main_root}/.env" 2>/dev/null || echo "${_ot_main_root}/.env")"
       if ln -s "$_ot_env_rel" .env 2>/dev/null; then
-        echo "🔗 No .env in this worktree — linked it from the main checkout (${_ot_env_rel})."
-        echo "   Contents are never read by this script; edit ${_ot_main_root}/.env directly."
+        echo "🔗 No .env in this worktree — linked it from the main checkout (${_ot_env_rel})." >&2
+        echo "   Contents are never read by this script; edit ${_ot_main_root}/.env directly." >&2
       fi
     fi
     unset _ot_main_root _ot_env_rel
@@ -168,7 +168,7 @@ show_help() {
   echo "                                         - Start an isolated dev stack (own project + volumes)"
   echo "  stop --fresh [name]                    - Stop a fresh deployment (volumes kept)"
   echo "  status --fresh [name]                  - Status of a fresh deployment"
-  echo "  fresh-list                             - List all fresh deployments + their volumes"
+  echo "  fresh-list [--names]                   - List all fresh deployments + their volumes (--names: bare names, one per line)"
   echo "  fresh-destroy <name> [--yes]           - Remove a fresh deployment (containers+volumes, confirmed;"
   echo "                                           --yes skips the prompt, needed without a tty)"
   echo ""
@@ -1960,9 +1960,10 @@ fresh_status() {
 }
 
 # `fresh-list` — list all known fresh deployments (by generated overlay) plus
-# their running containers and volumes.
+# their running containers and volumes. `--names`: bare names only (scripts/release-tidy.sh).
 fresh_list() {
-  echo "🧪 Fresh deployments:"
+  local names_only=false; [ "${1:-}" = "--names" ] && names_only=true
+  $names_only || echo "🧪 Fresh deployments:"
   if [ -d "$FRESH_OVERLAY_DIR" ] && ls "${FRESH_OVERLAY_DIR}"/*.yml >/dev/null 2>&1; then
     local f n proj running offset ports
     for f in "${FRESH_OVERLAY_DIR}"/*.yml; do
@@ -1971,6 +1972,7 @@ fresh_list() {
       # skip both or fresh_project_name mangles the suffix into a bogus second entry.
       case "$f" in *-ports.yml|*-baked.yml) continue;; esac
       n="$(basename "$f" .yml)"
+      if $names_only; then echo "$n"; continue; fi
       proj="$(fresh_project_name "$n")"
       running="$(docker ps --filter "name=^${proj}-" --format '{{.Names}}' 2>/dev/null | wc -l | tr -d ' ')"
       offset="$(fresh_read_offset "$n")"
@@ -1981,11 +1983,9 @@ fresh_list() {
       fi
       echo "  • ${n}  (project ${proj}, ${running} container(s) running, ${ports})"
     done
-  else
+  elif ! $names_only; then
     echo "  (none — create with ./opentr.sh start dev --fresh <name>)"
-  fi
-  echo ""
-  echo "Fresh named volumes:"
+  fi; $names_only && return 0; echo ""; echo "Fresh named volumes:"
   docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^otfresh-' || echo "  (none)"
 }
 
@@ -4226,7 +4226,7 @@ case "$1" in
     ;;
 
   fresh-list)
-    fresh_list
+    fresh_list "${2:-}"
     ;;
 
   test-cleanup)

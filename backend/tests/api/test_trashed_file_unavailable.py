@@ -20,8 +20,13 @@ from datetime import timedelta
 import pytest
 from fastapi import status
 
+from app.models.collection import Collection
+from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerClusterMember
+from app.models.speaker import SpeakerProfile
 from app.services import file_availability
 from app.services.platform_access import TenancyMode
 from app.services.platform_bypass import PlatformBypass
@@ -136,6 +141,97 @@ def test_gallery_drops_a_trashed_file_for_owner_and_admin(
 
     assert str(media_file.uuid) not in _gallery_uuids(client, user_token_headers)
     assert str(media_file.uuid) not in _gallery_uuids(client, admin_token_headers)
+
+
+def test_owners_facet_drops_the_owner_of_only_a_trashed_file(
+    client, user_token_headers, normal_user, db_session
+):
+    media_file = _file(db_session, normal_user)
+
+    def owners() -> set[str]:
+        response = client.get("/api/files/owners", headers=user_token_headers)
+        assert response.status_code == status.HTTP_200_OK, response.text
+        return {str(row["uuid"]) for row in response.json()}
+
+    assert str(normal_user.uuid) in owners()
+    _trash(db_session, media_file, normal_user)
+    assert str(normal_user.uuid) not in owners()
+
+
+def test_collections_on_files_refuses_a_trashed_file(
+    client, user_token_headers, normal_user, db_session
+):
+    media_file = _file(db_session, normal_user)
+    collection = Collection(
+        uuid=uuid.uuid4(), name=f"trash-{uuid.uuid4().hex[:8]}", user_id=normal_user.id
+    )
+    db_session.add(collection)
+    db_session.commit()
+    db_session.add(
+        CollectionMember(
+            uuid=uuid.uuid4(), collection_id=collection.id, media_file_id=media_file.id
+        )
+    )
+    db_session.commit()
+    params = {"file_uuids": [str(media_file.uuid)]}
+
+    before = client.get("/api/collections/for-files", params=params, headers=user_token_headers)
+    assert before.status_code == status.HTTP_200_OK, before.text
+    _trash(db_session, media_file, normal_user)
+    after = client.get("/api/collections/for-files", params=params, headers=user_token_headers)
+    assert after.status_code == status.HTTP_404_NOT_FOUND, after.text
+
+
+def test_stuck_files_drop_a_trashed_file(client, user_token_headers, normal_user, db_session):
+    media_file = _file(db_session, normal_user, status="orphaned")
+
+    def stuck() -> set[str]:
+        response = client.get("/api/files/management/stuck", headers=user_token_headers)
+        assert response.status_code == status.HTTP_200_OK, response.text
+        return {row["uuid"] for row in response.json()["stuck_files"]}
+
+    assert str(media_file.uuid) in stuck()
+    _trash(db_session, media_file, normal_user)
+    assert str(media_file.uuid) not in stuck()
+
+
+def test_profile_counts_and_cluster_members_drop_a_trashed_file(
+    client, user_token_headers, normal_user, db_session
+):
+    profile = SpeakerProfile(uuid=uuid.uuid4(), user_id=normal_user.id, name="P trash")
+    db_session.add(profile)
+    db_session.commit()
+    kept = _file(db_session, normal_user)
+    trashed = _file(db_session, normal_user)
+    _speaker(db_session, normal_user, kept, profile_id=profile.id)
+    speaker = _speaker(db_session, normal_user, trashed, profile_id=profile.id)
+    cluster = SpeakerCluster(uuid=uuid.uuid4(), user_id=normal_user.id, member_count=1)
+    db_session.add(cluster)
+    db_session.flush()
+    db_session.add(
+        SpeakerClusterMember(
+            uuid=uuid.uuid4(), cluster_id=cluster.id, speaker_id=speaker.id, confidence=0.9
+        )
+    )
+    db_session.commit()
+
+    def counts() -> tuple[int, int]:
+        response = client.get("/api/speaker-profiles/profiles", headers=user_token_headers)
+        assert response.status_code == status.HTTP_200_OK, response.text
+        entry = next(p for p in response.json() if str(p["uuid"]) == str(profile.uuid))
+        return entry["media_count"], entry["instance_count"]
+
+    def members() -> list[dict[str, object]]:
+        response = client.get(f"/api/speaker-clusters/{cluster.uuid}", headers=user_token_headers)
+        assert response.status_code == status.HTTP_200_OK, response.text
+        found: list[dict[str, object]] = response.json()["members"]
+        return found
+
+    assert counts() == (2, 2)
+    assert len(members()) == 1
+    _trash(db_session, trashed, normal_user)
+    assert counts() == (1, 1)
+    assert members() == []
 
 
 # --- the rule's own functions -----------------------------------------------------------------

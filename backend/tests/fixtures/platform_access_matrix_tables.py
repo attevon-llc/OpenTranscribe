@@ -39,7 +39,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/asr-settings/config/{config_uuid}": "caller",
     "GET /api/asr-settings/status": "caller",
     "GET /api/collections": "bypass",
-    "GET /api/collections/for-files": "caller",
+    "GET /api/collections/for-files": "bypass",
     "GET /api/collections/shared-with-me": "bypass",
     "GET /api/collections/{collection_uuid}": "bypass",
     "GET /api/collections/{collection_uuid}/media": "bypass",

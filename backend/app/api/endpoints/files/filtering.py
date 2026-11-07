@@ -23,6 +23,7 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
 from app.services.file_availability import available_pred
+from app.services.file_availability import unavailable_list_exempt
 from app.services.platform_bypass import PlatformBypass
 from app.utils.sql_like import escape_like
 
@@ -504,7 +505,10 @@ def get_accessible_owners(
     return (
         db.query(User)
         .join(MediaFile, MediaFile.user_id == User.id)
-        .filter(file_pred)
+        .filter(
+            file_pred,
+            available_pred(include_quarantined=unavailable_list_exempt(bypass)),
+        )
         .distinct()
         .order_by(User.full_name, User.email)
         .limit(OWNER_FACET_LIMIT)

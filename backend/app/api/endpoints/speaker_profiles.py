@@ -18,11 +18,13 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.db.base import get_db
+from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
+from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import PermissionService
 from app.services.permission_service import org_scope_pred
@@ -57,9 +59,14 @@ def _owner_names_for_shared(
 
 
 def _profile_media_instance_counts(
-    db: Session, profile_ids: list[int]
+    db: Session, profile_ids: list[int], *, include_quarantined: bool = False
 ) -> dict[int, tuple[int, int]]:
-    """Per-profile ``(media_count, instance_count)``, hiding voiceprint links the policy hides."""
+    """Per-profile ``(media_count, instance_count)`` over available files only.
+
+    Hides voiceprint links the policy hides, and every speaker of an unavailable (trashed or
+    quarantined) file: the profile would otherwise report appearances no read surface shows.
+    ``include_quarantined`` is the list exemption (``unavailable_list_exempt``).
+    """
     from sqlalchemy import func as sa_func
 
     # A link a voiceprint made is not counted while its file's voiceprints are off
@@ -81,7 +88,12 @@ def _profile_media_instance_counts(
             sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
             sa_func.count(Speaker.id).label("instance_count"),
         )
-        .filter(Speaker.profile_id.in_(profile_ids), ~link_hidden)
+        .join(MediaFile, MediaFile.id == Speaker.media_file_id)
+        .filter(
+            Speaker.profile_id.in_(profile_ids),
+            ~link_hidden,
+            available_pred(include_quarantined=include_quarantined),
+        )
         .group_by(Speaker.profile_id)
         .all()
     )
@@ -206,7 +218,9 @@ def list_speaker_profiles(
         owner_names = _owner_names_for_shared(db, profiles, current_user.id)
         profile_ids = [p.id for p in profiles]
 
-        counts_by_profile = _profile_media_instance_counts(db, profile_ids)
+        counts_by_profile = _profile_media_instance_counts(
+            db, profile_ids, include_quarantined=unavailable_list_exempt(ctx.bypass)
+        )
 
         # Most common gender per profile, as the privacy policy allows it (#1280): this is
         # the DERIVED gender, a majority vote over the member speakers. A profile whose

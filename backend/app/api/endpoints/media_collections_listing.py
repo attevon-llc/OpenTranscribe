@@ -24,6 +24,7 @@ from app.api.endpoints.media_collections_access import UNKNOWN_TIMESTAMP
 from app.api.endpoints.media_collections_access import _can_change_visibility
 from app.api.endpoints.media_collections_access import _get_prompt_info
 from app.api.endpoints.media_collections_access import _tenant_pred
+from app.core.exceptions import ResourceNotFoundError
 from app.db.base import get_db
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
@@ -39,6 +40,7 @@ from app.schemas.user import UserBrief
 from app.services.collection_visibility import visible_collection_ids
 from app.services.content_hold_queries import collection_hold_summaries
 from app.services.file_availability import exclude_unavailable
+from app.services.file_availability import is_unavailable_for
 from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import PermissionService
 from app.services.request_context import RequestContext
@@ -219,10 +221,13 @@ def list_collections_on_files(
     from app.models.collection import CollectionMember
     from app.models.media import MediaFile
 
-    file_ids = [
-        get_by_uuid(db, MediaFile, file_uuid, error_message="File not found").id
-        for file_uuid in file_uuids
-    ]
+    file_ids = []
+    for file_uuid in file_uuids:
+        media_file = get_by_uuid(db, MediaFile, file_uuid, error_message="File not found")
+        # An unavailable file answers like a missing one: its membership is not readable.
+        if is_unavailable_for(ctx.bypass, media_file):
+            raise ResourceNotFoundError("File not found")
+        file_ids.append(media_file.id)
     selection_size = len(set(file_ids))
     rows = (
         db.query(Collection, func.count(func.distinct(CollectionMember.media_file_id)))

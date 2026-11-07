@@ -14,6 +14,8 @@ set -uo pipefail
 source ./scripts/common.sh
 # shellcheck source=scripts/lib/ldap-test-overlay.sh
 source ./scripts/lib/ldap-test-overlay.sh
+# shellcheck source=scripts/lib/fresh-prod.sh
+source ./scripts/lib/fresh-prod.sh
 
 # .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
 # get one automatically -- only the main checkout does. Left alone, every
@@ -380,7 +382,8 @@ resolve_diar_native_models_dir() {
 
 # Build production images locally (backend + frontend)
 build_prod_images() {
-  echo "🥽 Building production Docker images locally..."
+  local tag="${OT_IMAGE_TAG:-latest}" # a --fresh prod deployment tags its own (fresh_prod_dispatch)
+  echo "🥽 Building production Docker images locally (tag: ${tag})..."
 
   # Build identity (issue #1273). The backend build context is ./backend, so the repo-root
   # VERSION file is not in the image: without these args a locally built prod backend reports
@@ -390,30 +393,30 @@ build_prod_images() {
   local build_time
   build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-  echo "🧱 Building backend image (davidamacey/opentranscribe-backend:latest)..."
+  echo "🧱 Building backend image (davidamacey/opentranscribe-backend:${tag})..."
   docker build \
     --build-arg "APP_VERSION=${APP_VERSION}" \
     --build-arg "GIT_SHA=${GIT_SHA}" \
     --build-arg "BUILD_TIME=${build_time}" \
-    -t davidamacey/opentranscribe-backend:latest -f backend/Dockerfile.prod backend || {
+    -t "davidamacey/opentranscribe-backend:${tag}" -f backend/Dockerfile.prod backend || {
     echo "❌ Backend image build failed"
     exit 1
   }
 
-  echo "🧱 Building frontend image (davidamacey/opentranscribe-frontend:latest)..."
+  echo "🧱 Building frontend image (davidamacey/opentranscribe-frontend:${tag})..."
   docker build \
     --build-arg "GIT_SHA=${GIT_SHA}" \
-    -t davidamacey/opentranscribe-frontend:latest -f frontend/Dockerfile.prod frontend || {
+    -t "davidamacey/opentranscribe-frontend:${tag}" -f frontend/Dockerfile.prod frontend || {
     echo "❌ Frontend image build failed"
     exit 1
   }
 
-  echo "🧱 Building docs image (davidamacey/opentranscribe-docs:latest)..."
+  echo "🧱 Building docs image (davidamacey/opentranscribe-docs:${tag})..."
   # The docs build context is docs-site/, so pass the repo-root VERSION in explicitly —
   # docusaurus.config.ts cannot read ../VERSION from inside the container.
   docker build --build-arg DOCS_BASE_URL=/docs/ \
     --build-arg "OT_VERSION=${APP_VERSION}" \
-    -t davidamacey/opentranscribe-docs:latest docs-site || {
+    -t "davidamacey/opentranscribe-docs:${tag}" docs-site || {
     echo "❌ Docs image build failed"
     exit 1
   }
@@ -1284,7 +1287,7 @@ fresh_generate_overlay() {
     for svc in "${FRESH_NAMED_SERVICES[@]}" ${aux_services[@]+"${aux_services[@]}"}; do
       echo "  ${svc}:"
       echo "    container_name: ${proj}-${svc}"
-      if [ "$svc" = "frontend" ]; then
+      if [ "$svc" = "frontend" ] && [ "${ENVIRONMENT:-dev}" != "prod" ]; then
         # Two Vite dev servers running side by side (this fresh stack +
         # the main one) share the host's fs.inotify.max_user_instances
         # (128 on this host) and the second one dies with EMFILE watching
@@ -1296,7 +1299,7 @@ fresh_generate_overlay() {
         echo "      - CHOKIDAR_USEPOLLING=true"
         echo "      - CHOKIDAR_INTERVAL=${CHOKIDAR_INTERVAL:-300}"
       fi
-      if [ "$svc" = "backend" ] && [ -n "$offset" ] && [ "$offset" != "0" ]; then
+      if [ "$svc" = "backend" ] && [ -n "$offset" ] && [ "$offset" != "0" ] && [ "${ENVIRONMENT:-dev}" != "prod" ]; then
         # A --port-offset stack is served from an OFFSET Vite origin
         # (http://localhost:<5173+offset>), but backend/app/core/config.py's
         # CORS_ORIGINS default is the two UNOFFSET dev URLs. The WebSocket
@@ -1947,10 +1950,16 @@ print_data_paths() {
 # container_name overlay LAST so its re-pinning wins. NAS is never included.
 fresh_compose_chain() {
   local name="$1"
-  local chain="-f docker-compose.yml -f docker-compose.override.yml"
+  local chain="-f docker-compose.yml -f docker-compose.override.yml" aux
+  # A prod deployment records docker-compose.prod.yml (+ local.yml) in .aux: they replace the dev
+  # override and must stay ahead of the GPU/nginx/PKI overlays, as in start_app (#1264 item 5).
+  if fresh_read_aux "$name" | grep -qx 'docker-compose.prod.yml'; then
+    chain="-f docker-compose.yml -f docker-compose.prod.yml"
+    fresh_read_aux "$name" | grep -qx 'docker-compose.local.yml' && chain="$chain -f docker-compose.local.yml"
+  fi
   [ -f "docker-compose.gpu.yml" ] && chain="$chain -f docker-compose.gpu.yml"
-  local aux
   while IFS= read -r aux; do
+    case "$aux" in docker-compose.prod.yml | docker-compose.local.yml) continue ;; esac
     [ -n "$aux" ] && [ -f "$aux" ] && chain="$chain -f $aux"
   done < <(fresh_read_aux "$name")
   [ -f "${FRESH_OVERLAY_DIR}/${name}.yml" ] && chain="$chain -f ${FRESH_OVERLAY_DIR}/${name}.yml"
@@ -2428,8 +2437,8 @@ start_app() {
   FRESH_PROJECT=""
   FRESH_OVERLAY=""
   if [ -n "$FRESH_FLAG" ]; then
-    if [ "$ENVIRONMENT" != "dev" ]; then
-      echo "❌ --fresh is only supported in dev mode (./opentr.sh start dev --fresh [name])"
+    if [ "$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod" ]; then
+      echo "❌ --fresh is only supported in dev and prod mode (./opentr.sh start dev|prod --fresh [name])"
       exit 1
     fi
     FRESH_NAME="$(fresh_sanitize_name "$FRESH_NAME")"
@@ -2503,9 +2512,12 @@ start_app() {
       _aux_files+=("$(overlay_file_for WITH_LLM_TEST_FLAG)")
     fi
     if [ -n "$WITH_PKI_FLAG" ]; then
-      _port_vars+=("${FRESH_PKI_PORT_VARS[@]}")
-      _aux_files+=("docker-compose.pki-dev.yml" "scripts/pki/test-certs/pki-test.compose.yml")
+      if [ "$ENVIRONMENT" = "dev" ]; then # prod's PKI overlay is recorded by fresh_prod_dispatch
+        _port_vars+=("${FRESH_PKI_PORT_VARS[@]}")
+        _aux_files+=("docker-compose.pki-dev.yml" "scripts/pki/test-certs/pki-test.compose.yml")
+      fi
     fi
+    fresh_prod_dispatch
     fresh_apply_port_offset "$_offset" "${_port_vars[@]}"
 
     # Refuse to start when a port this stack needs is already bound. At offset 0
@@ -2523,9 +2535,9 @@ start_app() {
       if [ -n "$_holder" ]; then
         echo "ℹ️  Those ports are held by this same fresh deployment (${FRESH_PROJECT}) — re-upping in place."
       elif [ "$_offset" -eq 0 ]; then
-        echo "❌ Cannot start fresh deployment on the standard dev ports — already bound:${_busy}"
+        echo "❌ Cannot start fresh deployment on the standard ports — already bound:${_busy}"
         echo "   The main stack appears to be running. Either stop it, or run side-by-side:"
-        echo "   ./opentr.sh start dev --fresh ${FRESH_NAME} --port-offset 100"
+        echo "   ./opentr.sh start ${ENVIRONMENT} --fresh ${FRESH_NAME} --port-offset 100"
         exit 1
       else
         echo "❌ Cannot start fresh deployment '${FRESH_NAME}' with --port-offset ${_offset} — already bound:${_busy}"
@@ -2560,27 +2572,14 @@ start_app() {
     export DIAR_NATIVE_MODELS_DIR
     DIAR_NATIVE_MODELS_DIR="$(fresh_diar_native_models_dir "$FRESH_NAME")"
 
-    # Decide, right now, whether the native diarization sidecar will load for THIS
-    # deployment — using add_diar_native_overlay's own predicate (engine.diarizer_backend
-    # defaults to native AND the isolated DIAR_NATIVE_MODELS_DIR just above already holds
-    # an export OR a HUGGINGFACE_TOKEN is configured to produce one on this startup) —
-    # and record it in the aux set below if so.
-    #
-    # This MUST happen here, not left to start_app's real call (mode "start") to the same
-    # function later on: that call runs after $COMPOSE_FILES is built, which is after
-    # fresh_write_aux/fresh_generate_overlay a few lines down have already run. An
-    # AUTO-LOADED sidecar decided after the .aux file is written is recorded nowhere, so
-    # stop/status/fresh-destroy address a different compose chain than the one actually
-    # brought up — exactly the #347 shape .aux exists to prevent. `predict` mode makes the
-    # identical decision (setting WITH_DIAR_NATIVE_FLAG and printing the same banner)
-    # without touching $COMPOSE_FILES, which does not exist yet at this point in
-    # start_app; the real call later sees WITH_DIAR_NATIVE_FLAG already set and just adds
-    # the overlay, so the banner does not print twice.
-    #
-    # An explicit --with-diar-native (WITH_DIAR_NATIVE_FLAG already non-empty from CLI
-    # parsing above) is unaffected — add_diar_native_overlay's own auto-detect is guarded
-    # on the flag being unset, so `predict` is a no-op for that case and this block still
-    # records it correctly.
+    # Decide NOW whether the native diarization sidecar will load for this deployment (same
+    # predicate as add_diar_native_overlay: backend defaults to native AND the isolated models dir
+    # holds an export or a HUGGINGFACE_TOKEN can produce one) and record it in the aux set. It
+    # must precede fresh_write_aux below: an auto-loaded sidecar decided later is recorded
+    # nowhere, so stop/status/fresh-destroy would address a different chain (the #347 shape).
+    # `predict` decides without touching $COMPOSE_FILES, which does not exist yet; the real call
+    # later sees WITH_DIAR_NATIVE_FLAG set and only adds the overlay. An explicit
+    # --with-diar-native is unaffected.
     add_diar_native_overlay predict
     if [ -n "$WITH_DIAR_NATIVE_FLAG" ]; then
       _aux_services+=("${FRESH_DIAR_NATIVE_SERVICES[@]}")
@@ -2612,7 +2611,7 @@ start_app() {
     if [ "$_offset" -ne 0 ]; then
       echo "   Port offset: +${_offset} (recorded in $(fresh_offset_file "$FRESH_NAME"))"
     else
-      echo "   Port offset: none — standard dev ports"
+      echo "   Port offset: none — standard ports"
     fi
     echo "   Published ports:$(fresh_port_summary)"
     echo "   diar-native models: ${DIAR_NATIVE_MODELS_DIR} (isolated copy, not the live export)"
@@ -2769,7 +2768,7 @@ start_app() {
 
     # Note: Database schema is managed by Alembic migrations on backend startup
 
-    if [ "$PULL_FLAG" = "--pull" ]; then
+    if [ "$PULL_FLAG" = "--pull" ] && [ -z "$DRY_RUN_FLAG" ]; then
       echo "⬇️  Forcing pull of latest production images from Docker Hub..."
       # shellcheck disable=SC2086
       docker compose $COMPOSE_FILES pull || {
@@ -2781,7 +2780,7 @@ start_app() {
     if [ "$BUILD_FLAG" = "--build" ]; then
       echo "🔄 Starting services in PRODUCTION mode with LOCAL BUILD (testing before push)..."
       echo "⚠️  Building backend and frontend images locally instead of pulling from Docker Hub"
-      build_prod_images
+      [ -n "$DRY_RUN_FLAG" ] || build_prod_images # a dry run must not build
       # Add local override to prevent pulling from Docker Hub (overrides pull_policy: always)
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.local.yml"
       # Force no-pull at `up` time. pull_policy:never in the override is NOT reliably honored

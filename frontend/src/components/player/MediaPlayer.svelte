@@ -5,19 +5,16 @@
    * Markup only: the host renders its media element in the default slot, builds the
    * `PlayerHandle` with `$lib/player/videojsPlayer` and listens to native media events.
    * Structure, per https://videojs.org/docs/framework/html/guides/build-your-own-skin:
-   * `<media-i18n>` (labels follow `<html lang>`/`dir`) > `<video-player>`/`<audio-player>`
-   * (the store) > `<media-container>` (fullscreen target, hotkey and gesture surface) > the
-   * media, the caption overlay, the controls, the shortcuts, the screen-reader announcer and
-   * the media error dialog.
+   * `<media-i18n>` (labels follow `<html lang>`/`dir`) > `<video-player>` or `<audio-player>`
+   * (the store, one preset each) > `PlayerSurface` (the `<media-container>` and everything in
+   * it).
    */
   import { onDestroy } from 'svelte';
   import { locale } from '$stores/locale';
   import { bindPlayerLocale } from '$lib/player/i18n';
-  import { playerHotkeys } from '$lib/player/hotkeys';
   import './elements';
   import './player.css';
-  import CaptionOverlay from './CaptionOverlay.svelte';
-  import MediaControls from './MediaControls.svelte';
+  import PlayerSurface from './PlayerSurface.svelte';
 
   /** `<audio>`: the audio player and its controls (no captions, PiP or fullscreen). */
   export let audio = false;
@@ -31,47 +28,17 @@
    */
   const PLAYBACK_RATES = '0.5 0.75 1 1.25 1.5 1.75 2 4';
 
-  // The file page owns its page, so its shortcuts are page-wide (Plyr's `keyboard.global`);
-  // the mini player's stay inside it.
-  $: hotkeys = playerHotkeys(variant === 'full' ? 'document' : 'player');
-
   onDestroy(bindPlayerLocale(locale));
 </script>
 
 <media-i18n class="media-player" data-variant={variant}>
-  <svelte:element this={audio ? 'audio-player' : 'video-player'} default-playback-rates={PLAYBACK_RATES}>
-    <media-container class="media-surface" class:audio>
-      <slot />
-      {#if !audio}
-        <CaptionOverlay {media} />
-      {/if}
-      <MediaControls {audio} {variant} />
-
-      {#each hotkeys as hotkey (hotkey.keys)}
-        <media-hotkey
-          keys={hotkey.keys}
-          action={hotkey.action}
-          target={hotkey.target}
-          {...hotkey.value === undefined ? {} : { value: hotkey.value }}
-        ></media-hotkey>
-      {/each}
-      {#if !audio}
-        <media-gesture type="tap" action="togglePaused" pointer="mouse" region="center"></media-gesture>
-        <media-gesture type="tap" action="toggleControls" pointer="touch"></media-gesture>
-        <media-gesture type="doubletap" action="seekStep" region="left"></media-gesture>
-        <media-gesture type="doubletap" action="toggleFullscreen" region="center"></media-gesture>
-        <media-gesture type="doubletap" action="seekStep" region="right"></media-gesture>
-      {/if}
-
-      <media-status-announcer class="status-announcer"></media-status-announcer>
-
-      <media-error-dialog>
-        <media-dialog-popup class="error-dialog">
-          <media-dialog-title class="error-title"></media-dialog-title>
-          <media-dialog-description></media-dialog-description>
-          <media-dialog-close class="error-close"></media-dialog-close>
-        </media-dialog-popup>
-      </media-error-dialog>
-    </media-container>
-  </svelte:element>
+  {#if audio}
+    <audio-player default-playback-rates={PLAYBACK_RATES}>
+      <PlayerSurface audio {variant} {media}><slot /></PlayerSurface>
+    </audio-player>
+  {:else}
+    <video-player default-playback-rates={PLAYBACK_RATES}>
+      <PlayerSurface {variant} {media}><slot /></PlayerSurface>
+    </video-player>
+  {/if}
 </media-i18n>

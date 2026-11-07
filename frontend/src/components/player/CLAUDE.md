@@ -11,10 +11,12 @@ their own `<video>`/`<audio>` in `MediaPlayer`'s slot and call `$lib/player/vide
 ## Key files
 
 - `MediaPlayer.svelte` — `<media-i18n>` > `<video-player>`/`<audio-player>` (with Plyr's speed
-  list, `default-playback-rates` up to 4x) > `<media-container>`: the slotted media, the caption
-  overlay (video), the controls, `<media-hotkey>` per `PLAYER_HOTKEYS` (page-wide for `full`,
-  container for `mini`), touch/mouse gestures (video), the screen-reader `<media-status-announcer>`
-  and the media error dialog. Props `audio`, `variant`, `media`. Binds the player locale.
+  list, `default-playback-rates` up to 4x) > `PlayerSurface`. Props `audio`, `variant`, `media`
+  (the slotted element, for the caption overlay). Binds the player locale.
+- `PlayerSurface.svelte` — the `<media-container>`: the slotted media, the caption overlay
+  (video), the controls, `<media-hotkey>` per `PLAYER_HOTKEYS` (page-wide for `full`, container
+  for `mini`), touch/mouse gestures (video), the screen-reader `<media-status-announcer>` and the
+  media error dialog.
 - `MediaControls.svelte` — centre play button (video), time slider, play, mute, volume (always
   on `full`/audio), time, captions (video), settings, PiP + AirPlay (`full` video), fullscreen
   (video). Tooltips link to triggers by per-instance ids.

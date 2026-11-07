@@ -45,8 +45,8 @@ from app.schemas.self_erasure import SelfErasureSettings
 from app.schemas.self_erasure import SelfErasureSettingsUpdate
 from app.schemas.self_erasure import SelfErasureStatus
 from app.services import self_erasure_service as service
-from app.services.self_erasure_reauth import can_reauthenticate
-from app.services.self_erasure_reauth import verify_reauth
+from app.services.reauth import can_reauthenticate
+from app.services.reauth import verify_reauth
 from app.services.support_access_service import coded_error
 from app.services.system_settings_service import set_setting
 

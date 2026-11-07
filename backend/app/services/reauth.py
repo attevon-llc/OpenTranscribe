@@ -1,8 +1,9 @@
-"""Re-authentication for a self-service erasure request (#1354, decision D4).
+"""Re-authentication for a destructive request: the caller proves who they are again (#1354 D4).
 
-The caller proves they are the account holder again, in the request itself: their password (an
-account that can sign in with one) or a current TOTP code (an account with MFA enabled). An
-account with neither route -- an SSO-only account without MFA -- gets ``reauth_unavailable`` and
+Used by the account holder's own erasure request (#1354) and by an organization admin's
+scheduled member or organization erasure (#1105). The caller re-authenticates in the request
+itself: their password (an account that can sign in with one) or a current TOTP code (an account
+with MFA enabled). An account with neither route -- an SSO-only account without MFA -- gets ``reauth_unavailable`` and
 is pointed at the operator, rather than being let through on the session alone.
 """
 

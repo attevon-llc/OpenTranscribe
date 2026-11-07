@@ -123,8 +123,11 @@ def erase_org_member(
         target = scheduled.member_of_organization(db, org_id, user_uuid)
     except scheduled.ScheduledErasureError as error:
         if error.code == "user_not_found":
-            raise HTTPException(status_code=404, detail=error.message) from error
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error.message) from error
+            raise HTTPException(status_code=404, detail="User not found") from error
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not a member of your organization",
+        ) from error
     _require_reauth(db, ctx.user, body)
     try:
         entry = scheduled.schedule_for_organization(

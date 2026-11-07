@@ -99,6 +99,28 @@ def test_every_postgres_selector_is_valid_sql_for_every_scope_it_names(db_sessio
         assert counter(_SCOPES[kind], Captured(), db_session) == 0
 
 
+def test_a_users_token_counters_are_counted_and_go_with_the_user(db_session, normal_user):
+    """The subject's daily counters are a store; the instance's monthly row is not theirs."""
+    store = next(s for s in STORES if s.key == "pg.llm_token_budget")
+    scope = ErasureScope("user", user_id=normal_user.id)
+    db_session.execute(
+        text(
+            "INSERT INTO llm_token_budget (scope, user_id, period, used) VALUES "
+            "('user_day', :uid, '2999-01-01', 5), ('user_day', :uid, '2999-01-02', 7), "
+            "('instance_month', NULL, '2999-01', 12)"
+        ),
+        {"uid": normal_user.id},
+    )
+    assert store.count(scope, Captured(), db_session) == 2
+
+    db_session.execute(text('DELETE FROM "user" WHERE id = :uid'), {"uid": normal_user.id})
+    assert store.count(scope, Captured(), db_session) == 0
+    left = db_session.execute(
+        text("SELECT count(*) FROM llm_token_budget WHERE period = '2999-01'")
+    ).scalar_one()
+    assert left == 1
+
+
 def test_every_postgres_store_has_a_reason_when_it_keeps_data():
     keeping = [s for s in PG_STORES if s.disposition in ("retained", "de_attributed")]
     assert len(keeping) >= 4, "the stores that keep data on purpose are not being found"

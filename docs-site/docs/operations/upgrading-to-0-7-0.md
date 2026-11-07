@@ -238,6 +238,24 @@ estimated cost where the model's price is known. Models on your own server show 
 `vllm` or `ollama` address on another company's server now shows as "not priced" rather than
 free.
 
+## Organization erasures are scheduled, not immediate
+
+**Check this if...** you run organizations and call `POST /api/org-admin/gdpr/erase-user/{uuid}`
+or `POST /api/org-admin/gdpr/erase-organization` from a script.
+
+Both routes used to erase at once and answer `200` with the erasure summary. In 0.7.0 they
+answer `202` with a request receipt and the erasure runs 72 hours later (24 to 168, set by a
+super_admin), unless an organization admin cancels it with
+`POST /api/org-admin/gdpr/erasures/{ledger_uuid}/cancel`. The request now needs the admin's
+password or authenticator code in the body (`{"password": "..."}` or `{"mfa_code": "..."}`) and
+is refused under a support access grant. Read the result later from the erasure receipt. The
+super_admin erasure routes are unchanged.
+
+Migration `v464_generalise_erasure_grace_index` replaces the "one open request per user" index
+with "one open request per subject", so a member erasure and the same person's own erasure
+request no longer block each other. It needs nothing from you. Before downgrading past it,
+cancel any open organization or member erasure; the downgrade refuses otherwise.
+
 ## Voiceprint purges that were interrupted
 
 **Check this if...** you run voiceprint or gender purges (Settings -> Privacy & redaction, or Settings -> Speaker identification for your own voiceprints), or a purge you

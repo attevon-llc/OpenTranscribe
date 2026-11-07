@@ -18,13 +18,46 @@ There is no button for any of this. Erasure is irreversible and is driven by API
 | Scope | Call | Who | What goes |
 |---|---|---|---|
 | A user (account-wide) | `POST /api/admin/gdpr/erase-user/{user_uuid}` | super_admin | Every recording, profile, voiceprint, chat and setting the user owns in every tenant, then the account |
-| A member inside one organization | `POST /api/org-admin/gdpr/erase-user/{user_uuid}` | organization admin | Only the rows stamped with that organization. The account and personal data stay |
+| A member inside one organization | `POST /api/org-admin/gdpr/erase-user/{user_uuid}` | organization admin, scheduled (see below) | Only the rows stamped with that organization. The account and personal data stay |
 | One recording | `POST /api/admin/gdpr/erase-file/{file_uuid}` or `POST /api/org-admin/gdpr/erase-file/{file_uuid}` | super_admin, or an organization admin for a file of their own organization | The recording, its transcript and index documents, objects and caches |
-| An organization | `POST /api/org-admin/gdpr/erase-organization?confirm=true` | organization admin | Everything the organization owns, then the organization. Members keep their accounts |
+| An organization | `POST /api/org-admin/gdpr/erase-organization?confirm=true` | organization admin, scheduled (see below) | Everything the organization owns, then the organization. Members keep their accounts |
 
 Every call is recorded in the erasure ledger before anything is destroyed, comes back with a
 `ledger_uuid` and a `receipt`, and is idempotent. A request that cannot finish (a legal hold, an
 unreachable store) stays open and the reconciliation sweep retries it.
+
+## Organization erasures are scheduled
+
+An organization admin's member or organization erasure does not run when it is asked for. It is
+recorded and runs after a delay, so a mistaken or hostile request can be stopped:
+
+- **Re-authentication.** The request body carries the admin's password, or a current code from
+  their authenticator app: `{"password": "..."}` or `{"mfa_code": "123456"}`. A wrong value is
+  `403 reauth_required`; an account that has neither (single sign-on without MFA) gets
+  `409 reauth_unavailable` and has to ask the operator. The routes are refused under a support
+  access grant.
+- **Delay.** The answer is `202` with the request receipt (`ledger_uuid`, `requested_at`,
+  `scheduled_for`, `sla_due_at`, `request_digest`). Nothing is destroyed yet. The delay is
+  `gdpr.org_member_erasure_delay_hours` / `gdpr.org_erasure_delay_hours`, 72 hours by default,
+  24 to 168, set by a super_admin with `PUT /api/admin/self-erasure`. No scheduled erasure may
+  wait longer than 21 days (the self-service cap), so a delay plus one retry stays inside the
+  one-month deadline, which starts at the request.
+- **Cancel.** Any admin of the organization can list the open requests and withdraw one before
+  `scheduled_for`; after that the answer is `409 already_executing`:
+
+  ```bash
+  curl -s -b cookies.txt "$API/api/org-admin/gdpr/erasures"
+  curl -s -b cookies.txt -X POST "$API/api/org-admin/gdpr/erasures/$LEDGER_UUID/cancel"
+  ```
+
+- **Execution.** A job checks every hour (and the daily reconciliation again) and runs each
+  request whose time has come, as the scope it names: a member erasure never deletes the
+  person's account. A second request for the same member or organization while one is open is
+  `409 request_exists`; a member erasure and the same person's own account-erasure request can
+  both be open.
+- **Audit.** The organization's audit log shows `gdpr.erasure.scheduled`,
+  `gdpr.erasure.cancelled` and `gdpr.erasure.execution_started`, then the erasure's own
+  `admin.user.delete` records. The super_admin routes still erase at once.
 
 ## The receipt
 
@@ -39,7 +72,7 @@ curl -s -b cookies.txt "$API/api/org-admin/gdpr/erasures/$LEDGER_UUID/receipts"
 ```
 
 A whole-organization erasure removes the organization, so its receipt is readable by super_admin
-only (and is returned in the erase response). Every read is audited as `gdpr.receipt.view` with
+only. Every read is audited as `gdpr.receipt.view` with
 ids only.
 
 Each receipt has six maps of counts, keyed by store name such as `pg.media_file`,

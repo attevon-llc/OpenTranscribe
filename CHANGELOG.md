@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Organization administrators can list their organization's scheduled erasures (`GET /api/org-admin/gdpr/erasures`) and cancel one before it runs (`POST /api/org-admin/gdpr/erasures/{ledger_uuid}/cancel`). The organization audit log shows when an erasure was scheduled, cancelled and started (#1105).
 - Files now have a trash state (database revision v463). Nothing moves a file to the trash yet; the read side is ready, so a trashed file will be hidden from the gallery, file details, search, chat, exports, speaker views and live notifications for everyone, platform administrators included (#1101).
 - Ratchet guards for file size, complexity and broad exception handlers, process ids in comments, API-layer boundaries, raw environment reads, suppressions without a reason, frontend lint warnings and frontend dead code or import cycles. Each compares a count with a committed baseline in `scripts/guards/baselines/`, fails when it grows, and is checked by a test that plants a violation. New import-linter contracts keep lower layers from importing the API, task or service layers.
 - Supply-chain and publication gates for running OpenTranscribe on the public internet: GitHub Actions are pinned to commit SHAs with least-privilege tokens and audited by zizmor; CodeQL, OpenSSF Scorecard, OSV and a scheduled dependency and image scan run in CI; a dependency review blocks pull requests that add a vulnerable or copyleft package and uploads a package-change report; `scripts/check-licenses.py` classifies every shipped Python and npm package against a permissive-only policy; Dependabot waits seven days before proposing a new release; a migration guard flags table-locking operations; and `scripts/public-smoke.sh`, `scripts/check-public-headers.py` and `scripts/zap-baseline.sh` check a deployed instance from outside.
@@ -36,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An organization admin's member or organization erasure is now scheduled instead of immediate: the request needs the admin's password or authenticator code, answers `202` with a request receipt instead of `200` with the erasure summary, and runs after 72 hours (24 to 168, `gdpr.org_erasure_delay_hours` and `gdpr.org_member_erasure_delay_hours`, set by a super_admin). It is refused under a support access grant. Database revision v464 allows one open request per subject instead of per user (#1105).
+- Scheduled erasures are run hourly as well as by the daily reconciliation, so one runs within an hour of its time (#1105).
 - The ruff pre-commit hook moves to v0.16.7 and the import-linter hook is pinned to 2.15, matching `backend/requirements-dev.txt`. The test-timing baseline note in `CLAUDE.md` now says `baseline.xml` is untracked and local.
 - `nodeenv` is pinned to 1.12.0 in `backend/requirements-dev.txt`: 1.10.0, which pre-commit pulls in unpinned, crashes while reading Node's release index since it listed a Node 27 alpha, so the frontend hooks could not run.
 - pypdf is 6.21.4 in the CI and test requirements and the mypy hook.
@@ -64,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A scheduled erasure of one member's organization data, or of a whole organization, would have run as the deletion of the person's whole account; the executor now runs the erasure the request names (#1105).
 - A file under takedown no longer shows up in five places that still revealed it to its owner: the owner filter in the gallery, the "already in these collections" check when organizing selected files, the stuck-files list, speaker profile file and appearance counts, and the member list of a speaker cluster (#1101).
 - `LDAP_RECURSIVE_GROUPS` no longer has a different default expression from the other LDAP
   booleans; it is parsed by the same settings parser.

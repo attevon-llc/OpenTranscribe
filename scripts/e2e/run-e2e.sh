@@ -87,6 +87,11 @@ if [[ -n "$FRESH_NAME" ]]; then
     export POSTGRES_PORT="$((5176 + FRESH_OFFSET))"
     export OPENSEARCH_PORT="$((5180 + FRESH_OFFSET))"
     export MINIO_PORT="$((5178 + FRESH_OFFSET))"
+    # The test IdP overlays are isolated and offset too (issue #347), so the auth fixtures
+    # must follow them; otherwise they reach whatever owns the stock ports on this host.
+    export KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:$((8180 + FRESH_OFFSET))}"
+    export LLDAP_URL="${LLDAP_URL:-http://localhost:$((17170 + FRESH_OFFSET))}"
+    export LLDAP_LDAP_PORT="${LLDAP_LDAP_PORT:-$((3890 + FRESH_OFFSET))}"
 fi
 
 # Same defaults conftest.py's FRONTEND_URL/BACKEND_URL constants use, so a bare

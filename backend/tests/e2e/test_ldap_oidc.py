@@ -33,6 +33,7 @@ import re
 import socket
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import cast
@@ -53,17 +54,21 @@ from playwright.sync_api import expect
 from tests.env_gate import gate_enabled
 
 # Skip entire module unless explicitly enabled
-pytestmark = pytest.mark.skipif(
-    not gate_enabled("RUN_AUTH_E2E"),
-    reason="Auth E2E tests require RUN_AUTH_E2E=true, LLDAP/Keycloak containers, and dev env running",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not gate_enabled("RUN_AUTH_E2E"),
+        reason="Auth E2E tests require RUN_AUTH_E2E=true, LLDAP/Keycloak containers, and dev env running",
+    ),
+    # A fresh stack opens the first-run wizard over every admin page; complete it first.
+    pytest.mark.usefixtures("first_run_wizard_completed"),
+]
 
 # URLs
 # The app's own frontend/backend URLs come from the `base_url` / `backend_url` fixtures in
 # tests/e2e/conftest.py rather than module-level constants: a constant is evaluated at import
 # time, so it can never see `--base-url` / `--backend-url` and a run aimed at an isolated stack
-# silently drove the LIVE stack instead (issue #431). The IdP container URLs below stay
-# constants — they are container endpoints, not the stack under test.
+# silently drove the LIVE stack instead (issue #431). The IdP URLs below are host-published
+# ports: `./scripts/e2e/run-e2e.sh --fresh <name>` exports them with the stack's port offset.
 LLDAP_URL = os.environ.get("LLDAP_URL", "http://localhost:17170")
 LLDAP_LDAP_PORT = int(os.environ.get("LLDAP_LDAP_PORT", "3890"))
 # What the BACKEND (inside the compose network) uses. The backend refuses plaintext binds and
@@ -76,6 +81,7 @@ LLDAP_BACKEND_CA_FILE = "/etc/opentranscribe/ldap-test-ca.crt"
 LLDAP_TEST_CERT_SCRIPT = "scripts/pki/issue-test-server-cert.sh"
 LLDAP_TEST_CERT_SANS = ("DNS:lldap-test", "DNS:lldap", "DNS:localhost", "IP:127.0.0.1")
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8180")
+KEYCLOAK_PORT = urllib.parse.urlsplit(KEYCLOAK_URL).port or 8180
 
 # Admin credentials for the app itself (local super_admin)
 APP_ADMIN_EMAIL = "admin@example.com"
@@ -399,13 +405,13 @@ def ensure_keycloak_running(request, base_url: str, backend_url: str):
         "docker-compose.keycloak.yml",
         ("keycloak",),
         cwd=project_root,
-        port=8180,
+        port=KEYCLOAK_PORT,
         is_open=_is_port_open,
     )
     request.addfinalizer(lambda: stop_overlay(handle))
     if handle.started_by_test:
         for _ in range(60):
-            if _is_port_open("localhost", 8180):
+            if _is_port_open("localhost", KEYCLOAK_PORT):
                 # Kept (issue #431): Keycloak's port opens before its realm import/DB
                 # migration finishes, with no observable signal until then — this fixed
                 # grace period is what's under test, not a UI wait.

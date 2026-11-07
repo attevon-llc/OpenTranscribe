@@ -22,6 +22,8 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import field_validator
 
+from app.core import chat_defaults
+
 SearchMode = Literal["hybrid", "semantic", "keyword"]
 
 MAX_MESSAGE_CHARS = 8000
@@ -415,35 +417,57 @@ class AnswerBudget(BaseModel):
 
 
 class ChatAdminSettings(BaseModel):
-    """Platform-admin RAG knobs (all DB-backed SystemSettings; no ``.env`` vars)."""
+    """Platform-admin RAG knobs (all DB-backed SystemSettings; no ``.env`` vars).
 
-    candidate_pool: int = Field(48, ge=1, le=500)
-    final_chunks: int = Field(12, ge=1, le=100)
-    max_chunks_per_file: int = Field(4, ge=1, le=50)
-    rerank_enabled: bool = True
-    rerank_max_pairs: int = Field(50, ge=1, le=500)
-    query_rewrite_enabled: bool = True
-    cache_ttl_seconds: int = Field(300, ge=0, le=86400)
-    semantic_cache_enabled: bool = False
-    semantic_cache_threshold: float = Field(0.97, ge=0.5, le=1.0)
-    history_max_turns: int = Field(10, ge=1, le=50)
-    messages_per_hour: int = Field(120, ge=1, le=10000)
-    max_concurrent_streams: int = Field(2, ge=1, le=20)
-    retention_days: int = Field(0, ge=0, le=3650)
-    speaker_facet_content_scope: bool = False
-    speaker_stats_enabled: bool = False
-    map_tier_summaries: bool = False
-    speaker_resolver_enabled: bool = False
-    map_tier_speaker_summaries: bool = False
-    recurrence_enabled: bool = False
-    planner_enabled: bool = False
-    planner_max_parallel_legs: int = Field(4, ge=1, le=8)
-    enrichment_enabled: bool = False
-    trace_enabled: bool = False
-    context_expansion_enabled: bool = True
-    overview_citable: bool = False
-    overview_block_rule: bool = False
-    overview_after_excerpts: bool = False
+    Defaults are the ``core.chat_defaults`` constants the server applies
+    (``services/chat/settings.ChatSettings``), so the OpenAPI document cannot advertise others.
+    """
+
+    candidate_pool: int = Field(default=chat_defaults.DEFAULT_CHAT_RAG_CANDIDATE_POOL, ge=1, le=500)
+    final_chunks: int = Field(default=chat_defaults.DEFAULT_CHAT_RAG_FINAL_CHUNKS, ge=1, le=100)
+    max_chunks_per_file: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_RAG_MAX_CHUNKS_PER_FILE, ge=1, le=50
+    )
+    rerank_enabled: bool = chat_defaults.DEFAULT_CHAT_RAG_RERANK_ENABLED
+    rerank_max_pairs: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_RAG_RERANK_MAX_PAIRS, ge=1, le=500
+    )
+    query_rewrite_enabled: bool = chat_defaults.DEFAULT_CHAT_RAG_QUERY_REWRITE_ENABLED
+    cache_ttl_seconds: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_RAG_CACHE_TTL_SECONDS, ge=0, le=86400
+    )
+    semantic_cache_enabled: bool = chat_defaults.DEFAULT_CHAT_RAG_SEMANTIC_CACHE_ENABLED
+    semantic_cache_threshold: float = Field(
+        default=chat_defaults.DEFAULT_CHAT_RAG_SEMANTIC_CACHE_THRESHOLD, ge=0.5, le=1.0
+    )
+    history_max_turns: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_HISTORY_MAX_TURNS, ge=1, le=50
+    )
+    messages_per_hour: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_MESSAGES_PER_HOUR, ge=1, le=10000
+    )
+    max_concurrent_streams: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_MAX_CONCURRENT_STREAMS, ge=1, le=20
+    )
+    retention_days: int = Field(default=chat_defaults.DEFAULT_CHAT_RETENTION_DAYS, ge=0, le=3650)
+    speaker_facet_content_scope: bool = (
+        chat_defaults.DEFAULT_CHAT_AGGREGATE_SPEAKER_FACET_CONTENT_SCOPE
+    )
+    speaker_stats_enabled: bool = chat_defaults.DEFAULT_CHAT_AGGREGATE_SPEAKER_STATS_ENABLED
+    map_tier_summaries: bool = chat_defaults.DEFAULT_CHAT_MAP_TIER_SUMMARIES
+    speaker_resolver_enabled: bool = chat_defaults.DEFAULT_CHAT_SPEAKER_RESOLVER_ENABLED
+    map_tier_speaker_summaries: bool = chat_defaults.DEFAULT_CHAT_MAP_TIER_SPEAKER_SUMMARIES
+    recurrence_enabled: bool = chat_defaults.DEFAULT_CHAT_RECURRENCE_ENABLED
+    planner_enabled: bool = chat_defaults.DEFAULT_CHAT_PLANNER_ENABLED
+    planner_max_parallel_legs: int = Field(
+        default=chat_defaults.DEFAULT_CHAT_PLANNER_MAX_PARALLEL_LEGS, ge=1, le=8
+    )
+    enrichment_enabled: bool = chat_defaults.DEFAULT_CHAT_ENRICHMENT_ENABLED
+    trace_enabled: bool = chat_defaults.DEFAULT_CHAT_TRACE_ENABLED
+    context_expansion_enabled: bool = chat_defaults.DEFAULT_CHAT_CONTEXT_EXPANSION_ENABLED
+    overview_citable: bool = chat_defaults.DEFAULT_CHAT_OVERVIEW_CITABLE
+    overview_block_rule: bool = chat_defaults.DEFAULT_CHAT_OVERVIEW_BLOCK_RULE
+    overview_after_excerpts: bool = chat_defaults.DEFAULT_CHAT_OVERVIEW_AFTER_EXCERPTS
 
 
 class ChatAdminSettingsUpdate(BaseModel):

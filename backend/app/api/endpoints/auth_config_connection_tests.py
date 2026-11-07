@@ -9,6 +9,8 @@ the registration order are unchanged.
 """
 
 import logging
+from dataclasses import replace
+from typing import TYPE_CHECKING
 from typing import Any
 
 from fastapi import APIRouter
@@ -16,15 +18,21 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
 from app.core.config import settings
 from app.core.env import is_truthy
 from app.core.exceptions import DomainError
+from app.db.base import get_db
 from app.models.user import User
 from app.schemas.auth_config import LDAP_TIMEOUT_MAX_SECONDS
 from app.schemas.auth_config import LDAP_TIMEOUT_MIN_SECONDS
 from app.schemas.auth_config import AuthMethodTestResponse
+from app.services.auth_config_service import SENSITIVE_NO_CHANGE_VALUES
+
+if TYPE_CHECKING:
+    from app.auth.ldap_auth import LdapConfig
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,16 +42,20 @@ logger = logging.getLogger(__name__)
 async def test_auth_connection(
     category: str,
     config: dict[str, Any],
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> AuthMethodTestResponse:
     """Test connection for LDAP or OIDC.
 
     Tests the provided configuration without saving it. Useful for
-    validating settings before applying them.
+    validating settings before applying them. A secret the panel cannot show
+    (the saved LDAP bind password) is taken from the saved configuration when
+    the form leaves it blank; see ``_test_ldap_connection``.
 
     Args:
         category: Configuration category (ldap or oidc)
         config: Configuration values to test
+        db: Database session, read for the saved LDAP bind password
 
     Returns:
         Test result with success status and message
@@ -55,7 +67,9 @@ async def test_auth_connection(
 
     if category == "ldap":
         # ldap3 is blocking; keep it off the event loop (issue #320).
-        ldap_result: AuthMethodTestResponse = await run_in_threadpool(_test_ldap_connection, config)
+        ldap_result: AuthMethodTestResponse = await run_in_threadpool(
+            _test_ldap_connection, config, db
+        )
         return ldap_result
     elif category == "oidc":
         return await _test_oidc_connection(config)
@@ -67,6 +81,10 @@ async def test_auth_connection(
 
 
 _LDAP_TEST_FAILED = "LDAP connection failed. Please verify server address, port, and credentials."
+_LDAP_TARGET_CHANGED_MESSAGE = (
+    "Enter the bind password to test a server, transport or bind DN that differs "
+    "from the saved LDAP configuration. No connection was attempted."
+)
 _LDAP_CA_FILE_UNUSABLE = (
     "The LDAP CA certificate file is missing, unreadable or not a PEM bundle. "
     "No connection was attempted."
@@ -78,7 +96,28 @@ def _flag(value: Any) -> bool:
     return value if isinstance(value, bool) else is_truthy(str(value or ""))
 
 
-def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
+#: Fields that decide WHERE, and over what, the saved bind password would be sent.
+_BIND_TARGET_FIELDS = (
+    "server",
+    "use_ssl",
+    "use_tls",
+    "ca_cert_file",
+    "tls_server_name",
+    "tls_skip_verify",
+    "bind_dn",
+)
+
+
+def _same_bind_target(candidate: "LdapConfig", saved: "LdapConfig") -> bool:
+    """Whether ``candidate`` would send its bind password where ``saved`` does."""
+    if str(candidate.port) != str(saved.port):
+        return False
+    return all(getattr(candidate, f) == getattr(saved, f) for f in _BIND_TARGET_FIELDS)
+
+
+def _test_ldap_connection(
+    config: dict[str, Any], db: Session | None = None
+) -> AuthMethodTestResponse:
     """Test LDAP connection with provided configuration.
 
     Binds through login's own ``_connect_and_bind``, so the test negotiates
@@ -91,8 +130,19 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
     (10 s when absent; a value outside the saved setting's range is refused, not clamped),
     so the caller must run this off the event loop (issue #320).
 
+    The saved bind password is never sent to the browser, so the panel submits the
+    field blank (older clients echo a placeholder). Then the password is resolved as
+    a login resolves it: the saved, decrypted value, else ``LDAP_BIND_PASSWORD``.
+    Testing with an anonymous bind instead reported a refusal for a configuration
+    every login accepted. A typed password always wins, so new credentials can be
+    tested before saving. The saved password is only used when the submitted server,
+    port, transport and bind DN match the saved ones: otherwise the button would send
+    a secret nobody can read back to whatever host was typed in.
+
     Args:
         config: LDAP configuration to test
+        db: Database session for the saved configuration; ``None`` reads the
+            environment, as a login without a session does.
 
     Returns:
         Test result with success status, message, and optional details
@@ -103,6 +153,7 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
         from ldap3.core.exceptions import LDAPException
 
         from app.auth.ldap_auth import LdapConfig
+        from app.auth.ldap_auth import _resolve_login_config
         from app.auth.ldap_directory import LdapCaFileError
         from app.auth.ldap_directory import _close_connection
         from app.auth.ldap_directory import _connect_and_bind
@@ -130,10 +181,12 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             f"Testing LDAP connection to {server_address}:{port} (SSL={use_ssl}, StartTLS={use_tls})"
         )
 
-        bind_dn = config.get("ldap_bind_dn", "")
-        bind_password = config.get("ldap_bind_password", "")
-        if not (bind_dn and bind_password):
-            bind_dn = bind_password = ""  # anonymous bind
+        bind_dn = config.get("ldap_bind_dn") or ""
+        submitted_password = config.get("ldap_bind_password")
+        use_saved_password = bool(bind_dn) and (
+            submitted_password is None or submitted_password in SENSITIVE_NO_CHANGE_VALUES
+        )
+        bind_password = "" if use_saved_password else (submitted_password or "")
 
         try:
             timeout = int(config.get("ldap_timeout") or 10)
@@ -167,6 +220,14 @@ def _test_ldap_connection(config: dict[str, Any]) -> AuthMethodTestResponse:
             bind_password=bind_password,
             timeout=timeout,
         )
+        if use_saved_password:
+            saved = _resolve_login_config(db)
+            if _same_bind_target(cfg, saved):
+                cfg = replace(cfg, bind_password=saved.bind_password)
+            elif saved.bind_password:
+                return AuthMethodTestResponse(success=False, message=_LDAP_TARGET_CHANGED_MESSAGE)
+        if not (cfg.bind_dn and cfg.bind_password):
+            cfg = replace(cfg, bind_dn="", bind_password="")  # anonymous bind
         server = _get_ldap_server(cfg)
         problem = transport_problem(cfg, server)
         if problem is not None:

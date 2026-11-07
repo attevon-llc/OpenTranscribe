@@ -59,6 +59,13 @@ describe('PlaceHoldDialog', () => {
     expect(submit()).toBeEnabled();
   });
 
+  it('keeps the reason count "used / max" left to right in right-to-left languages', async () => {
+    // Inheriting RTL showed "2000 / 55" in Arabic; the count is a technical value.
+    open({ placer: 'platform' });
+    await fireEvent.input(reasonBox(), { target: { value: REASON } });
+    expect(screen.getByText(`${REASON.length} / 2000`).getAttribute('dir')).toBe('ltr');
+  });
+
   it('places an operator hold through /admin/holds for an instance admin', async () => {
     const placed = vi.fn();
     open({ placer: 'platform' }, { placed: (e) => placed(e.detail) });

@@ -189,7 +189,12 @@
       ></textarea>
       <span class="reason-meta" id="place-hold-reason-help">
         <small>{$t(reasonHelpKey, { min: HOLD_REASON_MIN, max: HOLD_REASON_MAX })}</small>
-        <small class="counter" class:error={reason.trim() !== '' && !reasonValid} aria-live="polite">
+        <small
+          class="counter"
+          class:error={reason.trim() !== '' && !reasonValid}
+          dir="ltr"
+          aria-live="polite"
+        >
           {$t('holds.dialog.reasonCount', { count: reasonLength, max: HOLD_REASON_MAX })}
         </small>
       </span>

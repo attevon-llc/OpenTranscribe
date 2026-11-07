@@ -1,0 +1,235 @@
+# promtool test rules monitoring/prometheus/tests/opentranscribe_test.yml
+# Every alert has one case that fires and one that must stay quiet.
+rule_files:
+  - ../rules/opentranscribe.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    name: backend-down fires
+    input_series:
+      - series: 'up{job="opentranscribe-backend", instance="backend:8080"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BackendDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: opentranscribe-backend, instance: "backend:8080"}
+            exp_annotations:
+              summary: "Backend /metrics is not scrapeable"
+              description: "Prometheus cannot scrape backend:8080 (job opentranscribe-backend) for 2 minutes."
+
+  - interval: 1m
+    name: backend-down quiet when up
+    input_series:
+      - series: 'up{job="opentranscribe-backend", instance="backend:8080"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BackendDown
+        exp_alerts: []
+
+  - interval: 1m
+    name: worker target down fires while a sibling is up
+    input_series:
+      - series: 'up{job="opentranscribe-workers", instance="celery-worker:9808"}'
+        values: '0x10'
+      - series: 'up{job="opentranscribe-workers", instance="celery-cpu-worker:9808"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: WorkerMetricsTargetDown
+        exp_alerts:
+          - exp_labels: {severity: warning, job: opentranscribe-workers, instance: "celery-worker:9808"}
+            exp_annotations:
+              summary: "A Celery worker stopped serving metrics"
+              description: "celery-worker:9808 is down while other workers are still scraped."
+
+  - interval: 1m
+    name: worker targets all down (port never enabled) stays quiet
+    input_series:
+      - series: 'up{job="opentranscribe-workers", instance="celery-worker:9808"}'
+        values: '0x10'
+      - series: 'up{job="opentranscribe-workers", instance="celery-cpu-worker:9808"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: WorkerMetricsTargetDown
+        exp_alerts: []
+
+  - interval: 1m
+    name: node-exporter down fires
+    input_series:
+      - series: 'up{job="node-exporter", instance="node-exporter:9100"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: HostMetricsDown
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node-exporter, instance: "node-exporter:9100"}
+            exp_annotations:
+              summary: "node-exporter is not scrapeable, so disk alerts are blind"
+              description: "Prometheus cannot scrape node-exporter:9100."
+
+  - interval: 1m
+    name: node-exporter up stays quiet
+    input_series:
+      - series: 'up{job="node-exporter", instance="node-exporter:9100"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: HostMetricsDown
+        exp_alerts: []
+
+  - interval: 1m
+    name: alertmanager down fires
+    input_series:
+      - series: 'up{job="alertmanager", instance="alertmanager:9093"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: AlertmanagerDown
+        exp_alerts:
+          - exp_labels: {severity: warning, job: alertmanager, instance: "alertmanager:9093"}
+            exp_annotations:
+              summary: "Alertmanager is not scrapeable, so alerts may not be delivered"
+              description: "Prometheus cannot scrape alertmanager:9093."
+
+  - interval: 1m
+    name: alertmanager up stays quiet
+    input_series:
+      - series: 'up{job="alertmanager", instance="alertmanager:9093"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: AlertmanagerDown
+        exp_alerts: []
+
+  - interval: 1m
+    name: disk low fires
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="n:9100", mountpoint="/", fstype="ext4"}'
+        values: '5x20'
+      - series: 'node_filesystem_size_bytes{instance="n:9100", mountpoint="/", fstype="ext4"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DiskSpaceLow
+        exp_alerts:
+          - exp_labels: {severity: high, instance: "n:9100", mountpoint: "/", fstype: ext4}
+            exp_annotations:
+              summary: "Less than 10% free on /"
+              description: "n:9100 / has 5% free."
+
+  - interval: 1m
+    name: disk with space and a full tmpfs stay quiet
+    input_series:
+      - series: 'node_filesystem_avail_bytes{instance="n:9100", mountpoint="/", fstype="ext4"}'
+        values: '50x20'
+      - series: 'node_filesystem_size_bytes{instance="n:9100", mountpoint="/", fstype="ext4"}'
+        values: '100x20'
+      - series: 'node_filesystem_avail_bytes{instance="n:9100", mountpoint="/run", fstype="tmpfs"}'
+        values: '0x20'
+      - series: 'node_filesystem_size_bytes{instance="n:9100", mountpoint="/run", fstype="tmpfs"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: DiskSpaceLow
+        exp_alerts: []
+
+  - interval: 1m
+    name: queue backlog fires
+    input_series:
+      - series: 'celery_queue_depth{queue="gpu"}'
+        values: '80x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CeleryQueueBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning, queue: gpu}
+            exp_annotations:
+              summary: "Queue gpu has more than 50 pending tasks for 15 minutes"
+              description: "celery_queue_depth{queue=\"gpu\"} is 80. Scale workers or check for a stuck consumer."
+
+  - interval: 1m
+    name: short queue spike stays quiet
+    input_series:
+      - series: 'celery_queue_depth{queue="gpu"}'
+        values: '80x5 0x25'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CeleryQueueBacklog
+        exp_alerts: []
+
+  - interval: 1m
+    name: starved queue fires
+    input_series:
+      - series: 'celery_queue_oldest_message_age_seconds{queue="cpu"}'
+        values: '2400x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CeleryQueueStarved
+        exp_alerts:
+          - exp_labels: {severity: warning, queue: cpu}
+            exp_annotations:
+              summary: "Oldest message in cpu has waited over 30 minutes"
+              description: "celery_queue_oldest_message_age_seconds is 2400."
+
+  - interval: 1m
+    name: fresh queue stays quiet
+    input_series:
+      - series: 'celery_queue_oldest_message_age_seconds{queue="cpu"}'
+        values: '30x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: CeleryQueueStarved
+        exp_alerts: []
+
+  - interval: 1m
+    name: security state degraded fires on an increase
+    input_series:
+      - series: 'security_state_degraded_total{control="auth_config", fallback="env"}'
+        values: '0 0 0 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: SecurityStateDegraded
+        exp_alerts:
+          - exp_labels: {severity: high, control: auth_config, fallback: env}
+            exp_annotations:
+              summary: "A security control fell back to a degraded state"
+              description: "control=auth_config fallback=env"
+
+  - interval: 1m
+    name: security state flat counter stays quiet
+    input_series:
+      - series: 'security_state_degraded_total{control="auth_config", fallback="env"}'
+        values: '3x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: SecurityStateDegraded
+        exp_alerts: []
+
+  - interval: 1m
+    name: audit outbox stuck fires
+    input_series:
+      - series: 'audit_outbox_stuck_events{}'
+        values: '2x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AuditOutboxStuck
+        exp_alerts:
+          - exp_labels: {severity: high}
+            exp_annotations:
+              summary: "Governance audit events are not reaching the audit log"
+              description: "2 stuck. The cause is in audit_outbox.last_error."
+
+  - interval: 1m
+    name: audit outbox at zero stays quiet
+    input_series:
+      - series: 'audit_outbox_stuck_events{}'
+        values: '0x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AuditOutboxStuck
+        exp_alerts: []

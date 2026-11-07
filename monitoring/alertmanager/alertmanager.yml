@@ -1,0 +1,25 @@
+# Alertmanager configuration (issue #791).
+# Reference: https://prometheus.io/docs/alerting/latest/configuration/
+#
+# Every alert goes to the backend webhook, which turns firing alerts into admin
+# notifications in the app. The webhook is bearer-authenticated: the token is the
+# compose secret `alertmanager_webhook_token` (ALERTMANAGER_WEBHOOK_TOKEN in .env), and the
+# backend refuses every request while that variable is unset. Add further receivers
+# (email, Slack, PagerDuty) next to it; see docs-site/docs/operations/monitoring.md.
+
+route:
+  receiver: opentranscribe-admins
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: opentranscribe-admins
+    webhook_configs:
+      - url: http://backend:8080/internal/alertmanager/webhook
+        send_resolved: false
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /run/secrets/alertmanager_webhook_token

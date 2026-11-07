@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import RangeSlider from '$components/ui/RangeSlider.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import PrivacySwitchCard from '$components/privacy/PrivacySwitchCard.svelte';
@@ -30,6 +31,7 @@
     isLockedAboveOrganization,
     privacyErrorKey,
   } from '$lib/settings/privacyPolicy';
+  import { DEFAULT_REDACTION_SETTINGS } from '$lib/api/redactionSettings';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
 
@@ -41,6 +43,10 @@
     { id: 'toxicity', label: 'settings.redactionPolicy.forceToxicity' },
     { id: 'profanity', label: 'settings.redactionPolicy.forceProfanity' },
   ];
+  // The same vocabulary the API validates forced_pii_entities against.
+  const PII_ENTITIES = DEFAULT_REDACTION_SETTINGS.pii_entities;
+  const DEFAULT_THRESHOLD = DEFAULT_REDACTION_SETTINGS.toxicity_threshold;
+
   const FLOOR_BOOLEANS: { id: FloorBoolean; label: string; help: string }[] = [
     {
       id: 'force_export_redacted',
@@ -133,6 +139,27 @@
     void saveFloor({ forced_categories: next });
   }
 
+  function toggleEntity(entity: string, on: boolean) {
+    const current = policy?.redaction_floor?.forced_pii_entities ?? [];
+    const next = on ? [...new Set([...current, entity])] : current.filter((e) => e !== entity);
+    void saveFloor({ forced_pii_entities: next });
+  }
+
+  function saveWords(text: string) {
+    const words = text
+      .split('\n')
+      .map((w) => w.trim())
+      .filter(Boolean);
+    const current = policy?.redaction_floor?.forced_custom_words ?? [];
+    if (words.join('\n') === current.join('\n')) return;
+    void saveFloor({ forced_custom_words: words });
+  }
+
+  function saveThreshold(value: number) {
+    if (value === policy?.redaction_floor?.force_toxicity_threshold) return;
+    void saveFloor({ force_toxicity_threshold: value });
+  }
+
   onMount(() => {
     void load();
   });
@@ -206,6 +233,50 @@
             <span>{$t(cat.label)}</span>
           </label>
         {/each}
+        {#if policy.redaction_floor.forced_categories.includes('toxicity')}
+          <RangeSlider
+            id="org-floor-threshold"
+            label={$t('settings.redactionPolicy.forceToxicityThreshold')}
+            min={0}
+            max={1}
+            step={0.05}
+            hint={$t('settings.contentRedaction.toxicityThresholdHelp')}
+            value={policy.redaction_floor.force_toxicity_threshold ?? DEFAULT_THRESHOLD}
+            disabled={busy !== null}
+            on:change={(e) => saveThreshold(Number((e.target as HTMLInputElement).value))}
+          />
+        {/if}
+
+        <h4 class="floor-subtitle">{$t('settings.contentRedaction.piiEntities')}</h4>
+        <div class="floor-entities">
+          {#each PII_ENTITIES as entity (entity)}
+            <label class="floor-row">
+              <input
+                type="checkbox"
+                data-testid="org-floor-entity-{entity}"
+                checked={policy.redaction_floor.forced_pii_entities.includes(entity)}
+                disabled={busy !== null}
+                on:change={(e) => toggleEntity(entity, e.currentTarget.checked)}
+              />
+              <span>{entity}</span>
+            </label>
+          {/each}
+        </div>
+
+        <label class="floor-words" for="org-floor-words">
+          {$t('settings.contentRedaction.customWords')}
+        </label>
+        <textarea
+          id="org-floor-words"
+          class="form-textarea"
+          data-testid="org-floor-words"
+          rows="3"
+          value={policy.redaction_floor.forced_custom_words.join('\n')}
+          placeholder={$t('settings.contentRedaction.customWordsPlaceholder')}
+          disabled={busy !== null}
+          on:change={(e) => saveWords(e.currentTarget.value)}
+        ></textarea>
+
         {#each FLOOR_BOOLEANS as flag (flag.id)}
           <label class="floor-row">
             <input
@@ -270,6 +341,23 @@
     display: flex;
     align-items: flex-start;
     gap: var(--space-2);
+    font-size: var(--font-size-md);
+    color: var(--text-color);
+  }
+
+  .floor-subtitle {
+    margin: var(--space-2) 0 0;
+    font-size: var(--font-size-md);
+    color: var(--text-color);
+  }
+
+  .floor-entities {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+    gap: var(--space-1);
+  }
+
+  .floor-words {
     font-size: var(--font-size-md);
     color: var(--text-color);
   }

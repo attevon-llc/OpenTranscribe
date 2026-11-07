@@ -85,7 +85,7 @@ backend/app/scripts/probe_torch_thread_scope.py	1	ratchet: may only go down
 backend/app/scripts/reingest_minio.py	2	ratchet: may only go down
 backend/app/scripts/whisper_batch_diag.py	1	ratchet: may only go down
 backend/app/services/account_purge.py	3	ratchet: may only go down
-backend/app/services/account_security_service.py	2	ratchet: may only go down
+backend/app/services/account_security_service.py	1	ratchet: may only go down
 backend/app/services/audio_extraction.py	1	ratchet: may only go down
 backend/app/services/ai_insights_companion.py	2	ratchet: may only go down
 backend/app/services/analytics_service.py	3	ratchet: may only go down

@@ -210,3 +210,18 @@ describe('mini player time readout', () => {
     expect(rule).toMatch(/unicode-bidi:\s*isolate/);
   });
 });
+
+describe('mini player speed values in right-to-left languages', () => {
+  it('keeps the rate button and every rate label left to right', async () => {
+    const { container } = await mount();
+    const button = container.querySelector('media-playback-rate-button [data-part="value"]');
+    expect(button?.getAttribute('dir')).toBe('ltr');
+    const template = container.querySelector(
+      'media-playback-rate-radio-group template'
+    ) as HTMLTemplateElement | null;
+    const label =
+      template?.content.querySelector('[data-part="label"]') ??
+      container.querySelector('media-playback-rate-radio-group [data-part="label"]');
+    expect(label?.getAttribute('dir')).toBe('ltr');
+  });
+});

@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In right-to-left languages the player's speed menu and the floating preview's speed button showed rates as "×1" and "×0.5"; they now read "1×" and "0.5×".
 - In right-to-left languages the legal hold dialog's reason counter read "2000 / 55"; it now reads "55 / 2000".
 - In right-to-left languages the gallery showed file sizes as "KB 45"; they now read "45 KB".
 - On a held file's page the "Video" or "Audio" heading broke mid-word ("Vide" / "o") to make room for the locked action buttons; the buttons now wrap under the heading instead.

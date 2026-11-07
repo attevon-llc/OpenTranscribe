@@ -322,7 +322,7 @@
                   id="{id}-rate"
                   commandfor="{id}-rates"
                 >
-                  <span data-part="value"></span>
+                  <span data-part="value" dir="ltr"></span>
                 </media-playback-rate-button>
                 <media-tooltip trigger="{id}-rate" side="top" class="mini-tooltip">
                   <media-text token="menu.speed">Speed</media-text>
@@ -332,7 +332,7 @@
                     <media-playback-rate-radio-group>
                       <template>
                         <media-menu-radio-item class="mini-menu-item">
-                          <span data-part="label"></span>
+                          <span data-part="label" dir="ltr"></span>
                           <media-menu-item-indicator force-mount class="mini-menu-check">
                             <media-icon name="check" aria-hidden="true"></media-icon>
                           </media-menu-item-indicator>

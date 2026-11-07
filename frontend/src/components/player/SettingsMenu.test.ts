@@ -19,3 +19,16 @@ describe('SettingsMenu boundary', () => {
     expect(container.querySelector('media-menu')?.hasAttribute('boundary')).toBe(false);
   });
 });
+
+describe('SettingsMenu speed values in right-to-left languages', () => {
+  // Arabic showed "×1" and "×0.5": a rate is a technical value, read left to right.
+  it('keeps the speed hint and every rate label left to right', () => {
+    const { container } = render(SettingsMenu, { props: { id: 's', audio: true } });
+    const speedRow = container.querySelector('media-menu-item[commandfor="s-speed"]');
+    expect(speedRow?.querySelector('[data-part="hint"]')?.getAttribute('dir')).toBe('ltr');
+    const template = container.querySelector(
+      'media-playback-rate-radio-group template'
+    ) as HTMLTemplateElement;
+    expect(template.content.querySelector('[data-part="label"]')?.getAttribute('dir')).toBe('ltr');
+  });
+});

@@ -32,7 +32,7 @@
     <media-menu-item commandfor={speedId} class="menu-row">
       <media-icon name="speed" class="menu-icon"></media-icon>
       <media-text token="menu.speed">Speed</media-text>
-      <span class="menu-hint"><span data-part="hint"></span><media-icon name="chevron" class="chevron-forward"></media-icon></span>
+      <span class="menu-hint"><span data-part="hint" dir="ltr"></span><media-icon name="chevron" class="chevron-forward"></media-icon></span>
     </media-menu-item>
     {#if !audio}
       <media-menu-item commandfor={captionsId} class="menu-row">
@@ -50,7 +50,7 @@
     <media-menu-separator class="menu-separator"></media-menu-separator>
     <media-playback-rate-radio-group class="menu-group">
       <template>
-        <media-menu-radio-item class="menu-row"><span data-part="label"></span><media-menu-item-indicator force-mount class="menu-check"><media-icon name="check"></media-icon></media-menu-item-indicator></media-menu-radio-item>
+        <media-menu-radio-item class="menu-row"><span data-part="label" dir="ltr"></span><media-menu-item-indicator force-mount class="menu-check"><media-icon name="check"></media-icon></media-menu-item-indicator></media-menu-radio-item>
       </template>
     </media-playback-rate-radio-group>
   </media-menu-content>

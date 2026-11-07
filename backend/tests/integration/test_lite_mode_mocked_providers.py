@@ -261,6 +261,8 @@ def _delete_file_until_gone(
         with contextlib.suppress(requests.RequestException):
             resp = api_session.delete(f"{backend_url}/api/files/{file_uuid}", timeout=30)
             if resp.status_code in (200, 204, 404):
+                # A delete only moves the file to the trash (#1101); destroy it too.
+                api_session.delete(f"{backend_url}/api/files/{file_uuid}/purge", timeout=30)
                 check = api_session.get(f"{backend_url}/api/files/{file_uuid}", timeout=30)
                 if check.status_code == 404:
                     return
@@ -270,6 +272,7 @@ def _delete_file_until_gone(
 
     with contextlib.suppress(requests.RequestException):
         api_session.delete(f"{backend_url}/api/files/{file_uuid}/force", timeout=30)
+        api_session.delete(f"{backend_url}/api/files/{file_uuid}/purge", timeout=30)
         if api_session.get(f"{backend_url}/api/files/{file_uuid}", timeout=30).status_code == 404:
             return
     warnings.warn(

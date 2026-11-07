@@ -557,7 +557,7 @@ class ApiSession:
             try:
                 resp = self.session.delete(f'{self.backend_url}/api/files/{file_uuid}', timeout=30)
                 if resp.status_code in (200, 204, 404):
-                    return True
+                    return self._purge_from_trash(file_uuid)
                 last = describe_failure(resp)
             except requests.RequestException as exc:
                 last = str(exc)
@@ -567,12 +567,25 @@ class ApiSession:
                 f'{self.backend_url}/api/files/{file_uuid}/force', timeout=30
             )
             if resp.status_code in (200, 204, 404):
-                return True
+                return self._purge_from_trash(file_uuid)
             last = describe_failure(resp)
         except requests.RequestException as exc:
             last = str(exc)
         print(f'  FAILED  DELETE media_file {file_uuid}: {last}')
         return False
+
+    def _purge_from_trash(self, file_uuid: str) -> bool:
+        """A delete only trashes since #1101: destroy it (202), or it was already gone (404)."""
+        try:
+            resp = self.session.delete(
+                f'{self.backend_url}/api/files/{file_uuid}/purge', timeout=30
+            )
+        except requests.RequestException as exc:
+            print(f'  FAILED  purge media_file {file_uuid}: {exc}')
+            return False
+        if resp.status_code not in (202, 404):
+            print(f'  FAILED  purge media_file {file_uuid}: {describe_failure(resp)}')
+        return resp.status_code in (202, 404)
 
     def delete_simple(self, resource: str, resource_uuid: str) -> bool:
         assert self.session is not None

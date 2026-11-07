@@ -330,6 +330,31 @@ def _bulk_delete_when_idle(api: Api, file_uuids: list[str], *, timeout: float = 
         time.sleep(0.5)
 
 
+def _purge_from_trash(api: Api, sf: SeededFile) -> None:
+    """Since #1101 every delete route only moves the file to the trash: delete it forever.
+
+    ``DELETE /purge`` makes the file due (202) and queues the destroy; the destroy is then run
+    here in process too, so the scan does not race the worker. Running it twice is harmless:
+    the second run finds no row. A cancelled (PENDING) upload is destroyed by the delete itself,
+    which ``/purge`` reports as 404.
+    """
+    from app.services.trash_purge import purge_due
+
+    resp = api.delete(f"/api/files/{sf.file_uuid}/purge")
+    assert resp.status_code in (202, 404), resp.text
+    purge_due(file_ids=[sf.file_id])
+
+
+def _assert_trashed_not_destroyed(engine, sf: SeededFile) -> None:
+    with engine.connect() as conn:
+        deleted_at = conn.execute(
+            text("SELECT deleted_at FROM media_file WHERE id = :f"), {"f": sf.file_id}
+        ).first()
+    assert deleted_at is not None and deleted_at[0] is not None, (
+        "the delete route destroyed the file instead of moving it to the trash"
+    )
+
+
 # --------------------------------------------------------------------------- per-file routes
 
 
@@ -341,6 +366,8 @@ def test_single_delete_leaves_no_residue(api, engine, admin_id, created):
 
     resp = _delete_when_idle(api, f"/api/files/{sf.file_uuid}")
     assert resp.status_code == 204, resp.text
+    _assert_trashed_not_destroyed(engine, sf)
+    _purge_from_trash(api, sf)
 
     _assert_no_residue(engine, sf, reached, edge_rows)
     _assert_foreign_citation_kept(engine, chat.message_id, chat.foreign_uuid)
@@ -357,6 +384,7 @@ def test_a_takedown_record_outlives_its_deleted_file(api, engine, admin_id, crea
     _assert_backend_sees(api, sf)
     resp = _delete_when_idle(api, f"/api/files/{sf.file_uuid}")
     assert resp.status_code == 204, resp.text
+    _purge_from_trash(api, sf)
 
     with engine.connect() as conn:
         link = conn.execute(
@@ -393,6 +421,7 @@ def test_delete_of_a_requeued_file_leaves_no_residue(api, engine, admin_id, crea
 
     resp = _delete_when_idle(api, f"/api/files/{sf.file_uuid}")
     assert resp.status_code == 204, resp.text
+    _purge_from_trash(api, sf)
 
     _assert_no_residue(engine, sf, reached, edge_rows)
 
@@ -404,6 +433,8 @@ def test_force_delete_leaves_no_residue(api, engine, admin_id, created):
 
     resp = api.delete(f"/api/files/{sf.file_uuid}/force")
     assert resp.status_code == 200, resp.text
+    _assert_trashed_not_destroyed(engine, sf)
+    _purge_from_trash(api, sf)
 
     _assert_no_residue(engine, sf, reached, edge_rows)
 
@@ -418,6 +449,8 @@ def test_bulk_delete_leaves_no_residue(api, engine, admin_id, created):
     assert [r["success"] for r in resp.json()] == [True, True], resp.json()
 
     for sf, (reached, edge_rows) in zip(files, guards, strict=True):
+        _assert_trashed_not_destroyed(engine, sf)
+        _purge_from_trash(api, sf)
         _assert_no_residue(engine, sf, reached, edge_rows)
     _assert_foreign_citation_kept(engine, chat.message_id, chat.foreign_uuid)
 
@@ -499,6 +532,7 @@ def test_surviving_cluster_centroid_forgets_a_deleted_file(api, engine, admin_id
     else:
         resp = _delete_when_idle(api, f"/api/files/{a.file_uuid}")
         assert resp.status_code == 204, resp.text
+    _purge_from_trash(api, a)
 
     _assert_centroid_rebuilt(engine, cluster, remaining, a)
 

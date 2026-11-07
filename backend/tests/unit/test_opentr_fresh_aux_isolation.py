@@ -246,3 +246,108 @@ def test_the_overlay_extractor_finds_the_flag_own_dispatch_reference():
     )
     assert _overlay_files_for_flag(fake_source, "WITH_FAKE_FLAG") == {"docker-compose.fake.yml"}
     assert _overlay_files_for_flag(fake_source, "WITH_OTHER_FLAG") == {"docker-compose.other.yml"}
+
+
+# --- prod + nginx / PKI combinations (#1264 item 5) ---------------------------------------------
+#
+# `start prod --fresh` loads docker-compose.prod.yml and, when NGINX_SERVER_NAME is set, the nginx
+# proxy (hard-coded container_name, host 80/443); --with-pki loads docker-compose.pki.yml. None of
+# those are --with-* dispatch blocks the scanner above sees, so each prod overlay is enumerated
+# here against the tables in scripts/lib/fresh-prod.sh.
+
+FRESH_PROD_LIB = OPENTR.parent / "scripts" / "lib" / "fresh-prod.sh"
+
+#: prod-chain overlay -> (lib array of its services, lib array of its port vars)
+PROD_OVERLAYS: dict[str, tuple[str | None, str | None]] = {
+    "docker-compose.nginx.yml": ("FRESH_NGINX_SERVICES", "FRESH_NGINX_PORT_VARS"),
+    "docker-compose.pki.yml": (None, "FRESH_PKI_PROD_PORT_VARS"),
+}
+
+
+def _bash_array(text: str, name: str) -> list[str]:
+    match = re.search(rf"^{name}=\((.*?)\)", text, re.DOTALL | re.MULTILINE)
+    assert match, f"{name} is not defined"
+    body = re.sub(r"#[^\n]*", "", match.group(1))
+    return [t.strip("\"'") for t in body.split()]
+
+
+def _compose_published_vars(text: str) -> dict[str, str]:
+    """``VAR -> default`` for every host port an overlay publishes via ``${VAR:-default}``."""
+    return dict(re.findall(r'-\s*"(?:\$\{\w+:-[\d.]+\}:)?\$\{(\w+):-(\d+)\}:\d+"', text))
+
+
+@pytest.fixture(scope="module")
+def prod_lib() -> str:
+    assert FRESH_PROD_LIB.is_file(), "scripts/lib/fresh-prod.sh is missing"
+    return FRESH_PROD_LIB.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("overlay", sorted(PROD_OVERLAYS))
+def test_every_prod_overlay_name_and_port_is_isolated(overlay, prod_lib):
+    services_array, ports_array = PROD_OVERLAYS[overlay]
+    text = (OPENTR.parent / overlay).read_text(encoding="utf-8")
+
+    named = re.findall(r"^  (\S+):\n(?:(?!^  \S).*\n)*?    container_name:", text, re.MULTILINE)
+    if named:
+        assert services_array, f"{overlay} hard-codes container_name but no services table"
+        assert set(named) <= set(_bash_array(prod_lib, services_array)), (
+            f"{overlay} names {named}; {services_array} must re-pin them into the fresh project"
+        )
+    published = _compose_published_vars(text)
+    assert published, f"{overlay}: port scanner found no published port (scanner is blind)"
+    recorded = dict(e.split("=") for e in _bash_array(prod_lib, ports_array or ""))
+    assert published == recorded, (
+        f"{overlay} publishes {published} but {ports_array} offsets {recorded}: a prod --fresh "
+        f"stack would bind the main stack's host port"
+    )
+
+
+def test_prod_base_ports_are_offset_by_the_shared_port_table(source):
+    prod = (OPENTR.parent / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    published = _compose_published_vars(prod)
+    assert {"FRONTEND_PORT", "DOCS_PORT"} <= set(published)
+    table = dict(
+        e.split("=") for e in re.findall(r'"(\w+_PORT=\d+)"', source.split("FRESH_PORT_VARS=(")[1])
+    )
+    for var, default in published.items():
+        assert table.get(var) == default, f"{var} is not offset by FRESH_PORT_VARS"
+
+
+def test_prod_fresh_never_loads_the_nas_overlay(source):
+    fresh_block = source.split("# ── Fresh deployment mode")[1].split('if [ -n "$GPU_SCALE_FLAG"')[
+        0
+    ]
+    assert 'NO_NAS_FLAG="--no-nas"' in fresh_block and 'NAS_FLAG=""' in fresh_block
+    assert '"$ENVIRONMENT" != "dev" ] && [ "$ENVIRONMENT" != "prod"' in fresh_block
+
+
+def _run_dispatch(prod_lib: str, env: str, *, nginx: bool, pki: bool, build: bool) -> str:
+    import subprocess
+
+    script = f"""
+set -u
+cd {OPENTR.parent}
+source scripts/lib/fresh-prod.sh
+ENVIRONMENT={env}; BUILD_FLAG={"--build" if build else ""}; WITH_PKI_FLAG={"1" if pki else ""}
+NGINX_SERVER_NAME={"x.test" if nginx else ""}; FRESH_PROJECT=otfresh-t
+_port_vars=(); _aux_files=(); _aux_services=()
+fresh_prod_dispatch
+echo "ports=${{_port_vars[*]:-}}"; echo "files=${{_aux_files[*]:-}}"; echo "svc=${{_aux_services[*]:-}}"
+echo "tag=${{OT_IMAGE_TAG:-}}"
+"""
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True).stdout
+
+
+def test_prod_dispatch_records_nginx_pki_and_project_tag(prod_lib):
+    out = _run_dispatch(prod_lib, "prod", nginx=True, pki=True, build=True)
+    assert "NGINX_HTTP_PORT=80 NGINX_HTTPS_PORT=443 PKI_HTTPS_PORT=5182" in out
+    assert "docker-compose.prod.yml docker-compose.local.yml docker-compose.nginx.yml" in out
+    assert "svc=nginx" in out
+    assert "tag=otfresh-t" in out, "a --build must not retag the main stack's :latest"
+
+
+def test_prod_dispatch_is_inert_in_dev_and_skips_nginx_without_a_server_name(prod_lib):
+    dev = _run_dispatch(prod_lib, "dev", nginx=True, pki=True, build=True)
+    assert "ports=\nfiles=\nsvc=\ntag=" in dev
+    plain = _run_dispatch(prod_lib, "prod", nginx=False, pki=False, build=False)
+    assert "nginx" not in plain and "files=docker-compose.prod.yml" in plain

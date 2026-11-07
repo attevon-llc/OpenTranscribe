@@ -55,6 +55,32 @@ fresh mode, even when `.env` defines storage paths.**
 ./opentr.sh start dev --fresh test1 --no-bindmount
 ```
 
+### Production stacks: `start prod --fresh`
+
+`--fresh` also isolates the production chain (`docker-compose.prod.yml`), which is what
+the demo rehearsal and the forwarded-header check need: a prod stack behind the nginx
+HTTPS proxy that cannot touch the live one.
+
+```bash
+# NGINX_SERVER_NAME (and its certificate) come from .env, exactly as for a normal prod start.
+./opentr.sh start prod --fresh demo1 --port-offset 300 --dry-run   # print the chain, start nothing
+./opentr.sh start prod --fresh demo1 --port-offset 300 --build     # build + run local images
+```
+
+With the nginx overlay loaded, the proxy is re-pinned to `otfresh-<name>-nginx` and its
+host ports `NGINX_HTTP_PORT` (80) and `NGINX_HTTPS_PORT` (443) take the offset
+(+300 gives 380 and 743; the HTTP-to-HTTPS redirect follows the offset HTTPS port).
+`--with-pki` isolates `PKI_HTTPS_PORT` (5182); the plain `PKI_HTTP_PORT` exists only in
+the dev PKI overlay. Containers, ports and volumes are verified isolated by rendering
+the chain with `docker compose config` (no container is started). The NAS overlay is never
+loaded. With `--build`, images are tagged `davidamacey/opentranscribe-*:otfresh-<name>`
+(`OT_IMAGE_TAG`) so the main stack's `:latest` is not retagged; `fresh-destroy` removes
+them. `--dry-run` no longer builds or pulls images.
+
+Prod needs `FLOWER_PASSWORD` (and the usual production secrets) in `.env`. The dev-only
+`CORS_ORIGINS` and Vite polling tweaks are not applied to prod; set `CORS_ORIGINS` in
+`.env` for the offset HTTPS origin if you drive the WebSocket from a browser.
+
 ### Managing fresh deployments
 
 ```bash
@@ -80,7 +106,7 @@ overlay. So fresh mode generates a tiny overlay at `.fresh/<name>.yml` that
 explicitly re-pins every service to `otfresh-<name>-*`. It is gitignored and
 regenerated on every start.
 
-The aux overlays that hard-code a container name (`lldap`, `smb-test`,
+The aux overlays that hard-code a container name (`nginx` in prod, `lldap`, `smb-test`,
 `prometheus`, `grafana`, `mock-llm`, `mock-asr`, `diar-native`, `llm-test-vllm`,
 `llm-test-ollama`) are added to that same generated overlay — but only
 when the matching `--with-*` flag is passed, since an overlay entry for a
@@ -136,7 +162,9 @@ flag is passed:
 | `--with-llm-test` | `LLM_TEST_PORT` | 5195 | vLLM |
 | `--with-llm-test` | `LLM_TEST_OLLAMA_PORT` | 5196 | Ollama alternative |
 | `--with-pki` | `PKI_HTTPS_PORT` | 5182 | PKI nginx mTLS listener |
-| `--with-pki` | `PKI_HTTP_PORT` | 5187 | PKI nginx plain-HTTP listener |
+| `--with-pki` | `PKI_HTTP_PORT` | 5187 | PKI nginx plain-HTTP listener (dev only) |
+| nginx overlay (prod) | `NGINX_HTTP_PORT` | 80 | nginx redirect listener |
+| nginx overlay (prod) | `NGINX_HTTPS_PORT` | 443 | nginx TLS listener |
 
 :::note[`LDAP_TEST_PORT`, not `LDAP_PORT`]
 `LDAP_PORT` is the **application's** LDAP client port (`.env` ships

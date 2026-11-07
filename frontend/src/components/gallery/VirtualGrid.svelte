@@ -317,15 +317,18 @@
                   <h2 class="file-name">{file.title || file.filename}</h2>
 
                   <div class="meta-line">
-                    <span>{file.formatted_upload_date}</span>
-                    {#if file.formatted_file_size}
-                      <span class="meta-dot">&middot;</span>
-                      <span>{file.formatted_file_size}</span>
-                    {/if}
-                    {#if file.speaker_summary && file.speaker_summary.count > 0}
-                      <span class="meta-dot">&middot;</span>
-                      <span>{$t('gallery.speakerCountShort', { count: file.speaker_summary.count })}</span>
-                    {/if}
+                    <!-- Only this text truncates: the hold badge and status stay whole. -->
+                    <span class="meta-text">
+                      <span>{file.formatted_upload_date}</span>
+                      {#if file.formatted_file_size}
+                        <span class="meta-dot">&middot;</span>
+                        <span>{file.formatted_file_size}</span>
+                      {/if}
+                      {#if file.speaker_summary && file.speaker_summary.count > 0}
+                        <span class="meta-dot">&middot;</span>
+                        <span>{$t('gallery.speakerCountShort', { count: file.speaker_summary.count })}</span>
+                      {/if}
+                    </span>
                     <HoldBadge hold={file.hold} />
                     <span class="status-slot">
                       <!-- Keyed off `is_quarantined`, never bare `status` (issue #576 E11):
@@ -668,8 +671,19 @@
      hover-reveal system that used to live here (`.status-wrap`/`.status-label`,
      `max-width: 0 -> 120px`, `cursor: help` with no `title`) is gone; the
      indicator now carries a real native tooltip everywhere (§5.4). */
+  .meta-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .meta-line :global(.badge) {
+    flex-shrink: 0;
+    margin-inline-start: var(--space-1);
+  }
+
   .status-slot {
-    margin-left: auto;
+    margin-inline-start: auto;
     flex-shrink: 0;
   }
 

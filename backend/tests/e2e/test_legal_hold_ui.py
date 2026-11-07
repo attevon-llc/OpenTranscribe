@@ -100,6 +100,18 @@ def test_admin_places_and_releases_a_hold_from_the_ui(
         # Gallery: the badge on the card, and the computed "Legal hold" chip lists the file.
         card = page.locator(".file-card", has_text=filename)
         expect(card.get_by_text("Legal hold")).to_be_visible(timeout=10000)
+        # The badge shares the card's one-line meta row; it once ran past the card edge and
+        # was cut to "Legal ho". The whole pill must sit inside the card.
+        fit = card.evaluate(
+            """el => {
+              const badge = el.querySelector('.meta-line .badge');
+              if (!badge) return {missing: true};
+              const c = el.getBoundingClientRect(), b = badge.getBoundingClientRect();
+              return {missing: false, inside: b.left >= c.left && b.right <= c.right,
+                      card: [c.left, c.right], badge: [b.left, b.right]};
+            }"""
+        )
+        assert fit == {**fit, "missing": False, "inside": True}, fit
         page.reload()
         page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         chip = page.locator('[data-testid="held-tag-filter"] button')

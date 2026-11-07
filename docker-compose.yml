@@ -57,6 +57,10 @@ services:
     # so the service name, volume and .env are unchanged. Pinned by digest (multi-arch
     # amd64+arm64, anonymous pull, ships curl and mc). Decision, alternatives and the revisit plan:
     # docs-site/docs/developer-guide/object-store-decision.md.
+    # Mirror (same digest, our own Docker Hub namespace; the owner pushes it, see
+    # docs-site/docs/operations/object-storage.md "Image mirror"). Switch to this line once the
+    # mirror exists, so an upstream deletion can no longer break a fresh install:
+    #   image: docker.io/davidamacey/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7
     image: docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7
     restart: always
     env_file:

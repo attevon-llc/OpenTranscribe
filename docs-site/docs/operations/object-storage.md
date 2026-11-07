@@ -252,12 +252,32 @@ Minimal variants:
 This policy has not been run through the IAM policy simulator against a live AWS bucket; validate
 it in your account before relying on it.
 
+## Image mirror
+
+To remove the dependency on a third party keeping the image online, the pinned Silo image is
+mirrored into our own Docker Hub namespace as `docker.io/davidamacey/silo`. The copy is made at the
+registry level, so the manifest digest is identical to upstream and the existing digest pin stays
+valid:
+
+```bash
+docker buildx imagetools create \
+  --tag docker.io/davidamacey/silo:RELEASE.2026-10-26T00-00-00Z \
+  docker.io/pgsty/silo:RELEASE.2026-10-26T00-00-00Z@sha256:7bb2aff6b89efe1cb1303c10fc21d579447434ed06649ac9ec05a5e2dbf30ad7
+```
+
+The mirror image reference is kept, commented out, beside the upstream line in
+`docker-compose.yml`. Until the mirror has been pushed the upstream reference stays the default;
+after the push, replace the `image:` line with the commented mirror line (same digest). A unit test
+(`test_object_store_image_pin.py`) fails if the two references ever carry different digests.
+Offline bundles and `scripts/uninstall-offline-package.sh` list the image by its upstream name, so
+update them in the same change as the switch.
+
 ## Roadmap
 
 These are plans, not part of 0.6.0:
 
-1. **Mirror the pinned Silo image into our own Docker Hub namespace**, so a third party deleting
-   an image can no longer break installs.
+1. **Switch the default to the mirrored Silo image** once it is published (see
+   [Image mirror](#image-mirror)).
 2. **Make the backend S3-generic.** The identity that signs media URLs currently uses MinIO's
    admin API. Putting it behind an interface lets operators bring another S3 store.
 3. **Evaluate SeaweedFS** (Apache-2.0, used by Sentry, PostHog and Kubeflow Pipelines) as a

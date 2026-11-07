@@ -53,6 +53,7 @@ const sidebars: SidebarsConfig = {
         'user-guide/collections',
         'user-guide/tags',
         'user-guide/trash-and-hidden-files',
+        'user-guide/legal-holds',
         'user-guide/notifications-and-about',
         'user-guide/admin-panel',
         'user-guide/erase-my-account',

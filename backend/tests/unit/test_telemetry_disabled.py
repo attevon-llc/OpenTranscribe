@@ -274,6 +274,8 @@ COMBOS: dict[str, tuple[str, ...]] = {
 def test_resolved_config_has_telemetry_off(combo: str, tmp_path: Path) -> None:
     env = {k: v for k, v in os.environ.items() if k not in BACKEND_TELEMETRY_OFF}
     env.pop("MINIO_UPDATE", None)
+    # The prod overlay refuses to render without it (test_prod_flower_password_required.py).
+    env["FLOWER_PASSWORD"] = "rendered-test-value"
     args = ["docker", "compose", "--env-file", os.devnull]
     for name in COMBOS[combo]:
         args += ["-f", name]

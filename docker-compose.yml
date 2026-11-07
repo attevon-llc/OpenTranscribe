@@ -1221,8 +1221,9 @@ services:
       - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       - CELERY_BROKER_URL=redis://${REDIS_PASSWORD:+:${REDIS_PASSWORD}@}redis:6379/0
-      # The "flower" default is for development only; production startup validation
-      # rejects an unset or default FLOWER_PASSWORD.
+      # The "flower" default is for development only: docker-compose.prod.yml refuses
+      # to render without FLOWER_PASSWORD, and production startup validation rejects
+      # known defaults.
       - FLOWER_USER=${FLOWER_USER:-admin}
       - FLOWER_PASSWORD=${FLOWER_PASSWORD:-flower}
       - TEMP_DIR=/app/temp

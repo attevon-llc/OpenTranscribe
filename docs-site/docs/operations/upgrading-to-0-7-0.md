@@ -47,6 +47,11 @@ anything when one is missing. The script you upgrade *with* is your current one,
 have that check yet, so on this first upgrade add the lines yourself first; otherwise the backend
 refuses to start and its log names the missing setting.
 
+A missing or empty `FLOWER_PASSWORD` is now also refused by Docker Compose itself: the
+production configuration no longer falls back to the development password `flower`, so every
+`./opentranscribe.sh` command that loads it, `stop` included, ends with
+`FLOWER_PASSWORD must be set in .env for production` until you add the line.
+
 Back up `MINIO_KMS_SECRET_KEY` somewhere safe: objects written from then on are encrypted with
 it, and if it is lost they cannot be read again. Objects stored before encryption was turned on
 stay readable. To keep storing objects unencrypted on purpose, set

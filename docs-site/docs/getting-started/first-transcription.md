@@ -248,10 +248,11 @@ Finds related concepts like "financial constraints", "cost overruns", etc.
 
 ### Add Comments
 
-1. **Click anywhere** in the transcript
-2. **Type your comment** in the comment field
-3. **Press Enter** to save
-4. Comments are **timestamped** and linked to that moment
+1. **Type your comment** in the Comments box under the transcript; it takes the player's time
+   when you start typing
+2. **Press Enter** (or **Add Comment**) to save
+3. Untick **Timestamp** first for a **general** comment about the whole file instead of one
+   moment
 
 ### Export Options
 

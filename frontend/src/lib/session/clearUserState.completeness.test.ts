@@ -38,6 +38,9 @@ const SCAN_ROOTS = ['stores', 'lib'];
  * `src`-relative, extension-less.
  */
 const EXEMPT: Record<string, string> = {
+  'lib/utils/domId':
+    'A counter that numbers element ids for label/aria wiring; it never holds user data, and ' +
+    'an id stays unique across a session change because the counter only grows.',
   'lib/utils/chatMarkdownExtensions':
     'Caches the lazily imported KaTeX library itself (static code, identical for every user); ' +
     'no user data is held, so it is safe to survive a session change.',

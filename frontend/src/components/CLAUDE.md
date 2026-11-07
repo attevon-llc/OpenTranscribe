@@ -68,7 +68,7 @@ sharing, etc.) that the routes compose. Primitives live in `ui/`.
   `showNotificationsPanel`; `.notifications-panel` / `.notifications-backdrop` are unchanged.
 - Subfolders: `transcript/`, `speakers/`, `settings/`, `gallery/`, `navbar/`,
   `fileStatus/`, `collections/`, `sharing/`, `groups/`, `search/`, `upload/`, `ui/`, `chat/`,
-  `fileDetail/`, `tags/`, `supportAccess/`, `users/` (each with its own `CLAUDE.md`), plus `notifications/`,
+  `fileDetail/`, `tags/`, `supportAccess/`, `users/`, `comments/` (each with its own `CLAUDE.md`), plus `notifications/`,
   `mfa/`, `legal/` and `takedown/` (none yet).
   Each subfolder holds the presentational children split out of one oversized coordinator.
 

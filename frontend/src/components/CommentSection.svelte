@@ -1,19 +1,18 @@
 <script>
-  import MenuIcon from '$components/ui/MenuIcon.svelte';
-  import { formatClock, formatDate } from '$lib/utils/formatting';
   import { supportSessionGate } from '$stores/supportSession';
   import { onMount, createEventDispatcher } from 'svelte';
-  import { slide } from 'svelte/transition';
   // Use the shared axios instance so auth token is always sent
   import axiosInstance from '../lib/axios';
   import { authStore } from '../stores/auth';
-  import TruncatedText from './TruncatedText.svelte';
   import ConfirmationModal from './ConfirmationModal.svelte';
+  import CommentComposer from '$components/comments/CommentComposer.svelte';
+  import CommentItem from '$components/comments/CommentItem.svelte';
+  import { sortComments } from '$components/comments/commentOrder';
   import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '../stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import { t, locale } from '$stores/locale';
+  import { t } from '$stores/locale';
 
   // The Svelte component is exported by default automatically
 
@@ -21,6 +20,8 @@
   export let fileId = "";
   /** @type {number} */
   export let currentTime = 0;
+  /** @type {number | null} Media length in seconds, when known; bounds a typed comment time. */
+  export let duration = null;
   $: targetId = fileId;
   $: commentsEndpoint = `/comments/files/${targetId}/comments`;
 
@@ -28,14 +29,6 @@
   let comments = [];
   /** @type {boolean} */
   let loading = true;
-  /** @type {string} */
-  let newComment = '';
-  /** @type {number|null} */
-  let timestampInput = null;
-  /** @type {string|null} */
-  let editingCommentId = null;
-  /** @type {string} */
-  let editingCommentText = '';
 
   // Confirmation modal state
   const confirmDialog = createConfirmDialog();
@@ -134,8 +127,7 @@
         // Successfully processed comments
       }
 
-      // Sort by timestamp
-      comments.sort((/** @type {{timestamp: number}} */ a, /** @type {{timestamp: number}} */ b) => a.timestamp - b.timestamp);
+      comments = sortComments(comments);
     } catch (/** @type {any} */ err) { // Handle error with proper type
       console.error('[CommentSection] Error fetching comments:', err);
       console.error('[CommentSection] Error details:', {
@@ -158,20 +150,12 @@
     }
   }
 
-  // Add a new comment
-  /** @param {Event=} event - Optional event parameter */
-  async function addComment(event) {
-    // Always prevent default form submission behavior
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    if (!newComment.trim()) return;
-
-    // Use the timestamp input if it was explicitly set, otherwise use null
-    const timestamp = timestampInput !== null ? timestampInput : null;
-
+  /**
+   * Post a comment from the composer. `timestamp` is null for a general comment.
+   * @param {{text: string, timestamp: number | null}} payload
+   * @returns {Promise<boolean>} whether the comment was saved
+   */
+  async function addComment({ text: newComment, timestamp }) {
     // Store locally for optimistic UI updates
     try {
       // Get user data from auth store
@@ -206,7 +190,7 @@
         // If the error is a 401, this is an authentication issue
         if (error.response?.status === 401) {
           toastStore.error($t('comments.loginRequiredToAdd'));
-          return;
+          return false;
         }
 
         // Try alternate endpoints as fallback if we get a 404
@@ -234,12 +218,12 @@
             } catch (/** @type {any} */ lastError) {
               console.error('[CommentSection] All endpoints failed for adding comment');
               toastStore.error($t('comments.addFailed', { error: getErrorMessage(lastError, lastError?.message) }));
-              return;
+              return false;
             }
           }
         } else {
           toastStore.error($t('comments.addFailed', { error: getErrorMessage(error, error?.message) }));
-          return;
+          return false;
         }
       }
 
@@ -256,11 +240,9 @@
         }
       };
 
-      comments = [...comments, commentWithUser];
-      comments.sort((a, b) => a.timestamp - b.timestamp);
-      newComment = '';
-      timestampInput = null;
+      comments = sortComments([...comments, commentWithUser]);
       dispatch('commentAdded', commentWithUser);
+      return true;
     } catch (/** @type {any} */ err) { // Handle error with proper type
       console.error('[CommentSection] Error adding comment:', err);
       console.error('[CommentSection] Error details:', {
@@ -278,40 +260,28 @@
       } else {
         toastStore.error($t('comments.addFailed', { error: getErrorMessage(err, err?.message) }));
       }
+      return false;
     }
   }
 
-  // Edit a comment
   /**
-   * Edit an existing comment
+   * Save an edit. The kind travels explicitly: `timestamp: null` makes it a general comment.
    * @param {string} commentId - The UUID of the comment to edit
-   * @param {string} newText - The new text for the comment
+   * @param {{text: string, timestamp: number | null}} payload
+   * @returns {Promise<boolean>} whether the edit was saved
    */
-  async function editComment(commentId, newText) {
+  async function editComment(commentId, { text: newText, timestamp }) {
     if (!newText || !newText.trim()) {
       toastStore.error($t('comments.textCannotBeEmpty'));
-      return;
+      return false;
     }
 
     try {
-      // Editing comment
-
-      // Use PUT as the backend expects PUT for updates
-      await axiosInstance.put(`/comments/${commentId}`, {
-        text: newText
-      });
-
-      // Comment edited successfully
-
-      // Update the comment in the list
-      comments = comments.map(c => c.uuid === commentId ? { ...c, text: newText } : c);
-
-      // Reset editing state if we were editing this comment
-      if (editingCommentId === commentId) {
-        editingCommentId = null;
-        editingCommentText = '';
-      }
-
+      await axiosInstance.put(`/comments/${commentId}`, { text: newText, timestamp });
+      comments = sortComments(
+        comments.map(c => c.uuid === commentId ? { ...c, text: newText, timestamp } : c)
+      );
+      return true;
     } catch (/** @type {any} */ err) {
       console.error('[CommentSection] Error editing comment:', err);
       console.error('[CommentSection] Error details:', {
@@ -327,6 +297,7 @@
       } else {
         toastStore.error($t('comments.editFailed', { error: getErrorMessage(err, err?.message) }));
       }
+      return false;
     }
   }
 
@@ -371,20 +342,6 @@
     }
   }
 
-  // Use the current playback time
-  /** @param {Event} event */
-  function useCurrentTime(event) {
-    // Prevent default button behavior
-    if (event && event.preventDefault) {
-      event.preventDefault();
-    }
-
-    // Get the current time directly from the player
-    // This ensures we get the exact current time from the player
-    timestampInput = currentTime;
-    // Set timestamp to current time
-  }
-
   // Check if the current user is the author of a comment
   /**
    * Check if the current user is the author of a comment
@@ -415,60 +372,7 @@
   <!-- Fixed comment form at the top -->
   {#if !$supportSessionGate.readOnly}
   <div class="comment-form-container">
-    <form class="comment-form" on:submit={addComment}>
-      <textarea
-        bind:value={newComment}
-        placeholder={$t('comments.placeholder')}
-        rows="2"
-        title={$t('comments.enterCommentHint')}
-      ></textarea>
-      <div class="form-actions">
-        <div class="timestamp-actions">
-            {#if timestampInput === null}
-              <button
-                type="button"
-                class="timestamp-button"
-                on:click={useCurrentTime}
-                title={$t('comments.markTimeHint')}
-              >
-                <span class="button-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12,6 12,12 16,14"/>
-                  </svg>
-                </span>
-                <span>{$t('comments.markCurrentTime')}</span>
-              </button>
-            {:else}
-              <div class="current-timestamp">
-                <span class="timestamp-value">{$t('comments.markedTime', { time: formatClock(timestampInput) })}</span>
-                <button
-                  type="button"
-                  class="clear-button"
-                  on:click|stopPropagation={() => timestampInput = null}
-                  title={$t('comments.clearTimestampHint')}
-                  aria-label={$t('comments.clearTimestampHint')}
-                >
-                  <MenuIcon name="x" size="xs" />
-                </button>
-              </div>
-            {/if}
-        </div>
-        <button
-          type="submit"
-          class="submit-button"
-          disabled={!newComment.trim() || timestampInput === null}
-          title={!newComment.trim() || timestampInput === null
-            ? $t('comments.mustAddTextAndTime')
-            : $t('comments.addCommentAtTime', { time: formatClock(timestampInput) })}
-        >
-          {$t('comments.addComment')}
-        </button>
-      </div>
-      {#if newComment.trim() && timestampInput === null}
-        <p class="form-hint">{$t('comments.mustAddTextAndTime')}</p>
-      {/if}
-    </form>
+    <CommentComposer {currentTime} {duration} submit={addComment} />
   </div>
   {/if}
 
@@ -482,83 +386,15 @@
       <EmptyState title={$t('comments.noCommentsYet')} padding="1rem" />
     {:else}
       {#each comments as comment (comment.uuid)}
-        <div class="comment-item" transition:slide={{duration: 300}}>
-          <div class="comment-header">
-            <div class="comment-user">
-              {comment.user ? (comment.user.full_name || comment.user.email || `User ${comment.user.uuid}`) : $t('comments.anonymous')}
-            </div>
-            <div class="comment-timestamp">
-              {#if comment.timestamp !== null}
-                <button
-                  type="button"
-                  class="timestamp-link"
-                  on:click={() => dispatch('seekTo', { time: comment.timestamp })}
-                  on:keydown={(e) => e.key === 'Enter' && dispatch('seekTo', { time: comment.timestamp })}
-                  aria-label={$t('comments.jumpToTimestamp', { time: formatClock(comment.timestamp) })}
-                  title={$t('comments.jumpToTime', { time: formatClock(comment.timestamp) })}
-                >
-                  {formatClock(comment.timestamp)}
-                </button>
-              {/if}
-              <span>{formatDate(comment.created_at, $locale)}</span>
-            </div>
-          </div>
-
-          {#if editingCommentId === comment.uuid}
-            <form class="edit-comment-form" on:submit|preventDefault={() => editComment(comment.uuid, editingCommentText)}>
-              <textarea
-                bind:value={editingCommentText}
-                rows="2"
-              ></textarea>
-              <div class="edit-buttons">
-                <button
-                  type="button"
-                  class="cancel-button"
-                  on:click={() => editingCommentId = null}
-                  title={$t('comments.cancelEditHint')}
-                >
-                  {$t('comments.cancel')}
-                </button>
-                <button
-                  type="submit"
-                  class="save-button"
-                  title={$t('comments.saveChangesHint')}
-                >
-                  {$t('comments.save')}
-                </button>
-              </div>
-            </form>
-          {:else}
-            <div class="comment-body">
-              <TruncatedText text={comment.text} maxLength={150} />
-            </div>
-
-            <!-- Only show edit/delete for comment author -->
-            {#if isCommentAuthor(comment.user.uuid)}
-              <div class="comment-actions">
-                <button
-                  type="button"
-                  class="edit-button"
-                  on:click={() => {
-                    editingCommentId = comment.uuid;
-                    editingCommentText = comment.text;
-                  }}
-                  title={$t('comments.editHint')}
-                >
-                  {$t('comments.edit')}
-                </button>
-                <button
-                  type="button"
-                  class="delete-button"
-                  on:click={() => deleteComment(comment.uuid)}
-                  title={$t('comments.deleteHint')}
-                >
-                  {$t('comments.delete')}
-                </button>
-              </div>
-            {/if}
-          {/if}
-        </div>
+        <CommentItem
+          {comment}
+          {currentTime}
+          {duration}
+          isAuthor={isCommentAuthor(comment.user?.uuid)}
+          save={(payload) => editComment(comment.uuid, payload)}
+          on:seekTo={(e) => dispatch('seekTo', e.detail)}
+          on:delete={() => deleteComment(comment.uuid)}
+        />
       {/each}
     {/if}
   </div>
@@ -643,14 +479,6 @@
     border-bottom: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
   }
 
-  /* Scrollable comments list container */
-  .comment-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    width: 100%;
-  }
-
   .comments-list-container {
     flex: 1;
     overflow-y: auto;
@@ -659,324 +487,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-  }
-
-  .comment-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    width: 100%;
-    max-width: none;
-  }
-
-  textarea {
-    width: 100%;
-    box-sizing: border-box;
-    resize: vertical;
-    min-height: 70px;
-  }
-
-
-
-  .form-hint {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--text-secondary);
-  }
-
-  .form-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-
-  .timestamp-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    max-width: 100%;
-    min-height: 2.5rem;
-  }
-
-  .timestamp-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background-color: var(--button-secondary-bg, rgba(59, 130, 246, 0.1));
-    border: 1px solid var(--button-secondary-border, rgba(59, 130, 246, 0.3));
-    border-radius: 6px;
-    color: var(--primary-on-surface);
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    white-space: nowrap;
-  }
-
-  .timestamp-button:hover {
-    background-color: var(--button-secondary-bg-hover, rgba(59, 130, 246, 0.2));
-    border-color: var(--primary-color);
-  }
-
-  .button-icon {
-    font-size: 1.1rem;
-    display: flex;
-    align-items: center;
-  }
-
-  .timestamp-link {
-    background: none;
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    padding: 0.2rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    color: var(--primary-on-surface);
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-    font-weight: 500;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-  }
-
-  .current-timestamp {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background-color: var(--button-secondary-bg, rgba(59, 130, 246, 0.1));
-    border: 1px solid var(--button-secondary-border, rgba(59, 130, 246, 0.3));
-    border-radius: 6px;
-    color: var(--primary-on-surface);
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .timestamp-value {
-    font-weight: 500;
-    color: var(--primary-on-surface);
-  }
-
-  .clear-button {
-    background: none;
-    border: none;
-    color: var(--text-color-secondary);
-    cursor: pointer;
-    width: 1.5rem;
-    height: 1.5rem;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    padding: 0;
-    margin-inline-start: 0.5rem;
-    opacity: 0.7;
-    transition: all 0.2s ease;
-  }
-
-  .clear-button:hover {
-    color: var(--error-color);
-    background-color: rgba(239, 68, 68, 0.1);
-    opacity: 1;
-    transform: scale(1.1);
-  }
-
-  button {
-    padding: 0.35rem 0.75rem;
-    border: none;
-    background-color: var(--primary-color);
-    color: white;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s;
-    margin: 0;
-    white-space: nowrap;
-    font-size: 0.85rem;
-  }
-
-  button:hover {
-    background-color: var(--primary-color-dark);
-  }
-
-  button:disabled {
-    background-color: var(--disabled-color, #a0aec0);
-    cursor: not-allowed;
-  }
-
-  .submit-button {
-    background-color: var(--primary-color);
-    color: white;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 10px;
-    font-size: 0.95rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .submit-button:hover:not(:disabled) {
-    background-color: #2563eb;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .submit-button:active:not(:disabled) {
-    transform: scale(1);
-  }
-
-  .submit-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-
-  .comment-item {
-    padding: 0.75rem;
-    border: 1px solid var(--border-color, rgba(120, 120, 120, 0.2));
-    border-radius: 8px;
-    background-color: var(--surface-color, rgba(255, 255, 255, 0.03));
-    transition: border-color 0.2s ease;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .comment-item:hover {
-    border-color: var(--border-color-hover, rgba(120, 120, 120, 0.3));
-  }
-
-  .comment-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
-  }
-
-  .comment-timestamp {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--text-light);
-    font-size: 0.8rem;
-  }
-
-  .timestamp-link {
-    color: var(--primary-on-surface);
-    cursor: pointer;
-  }
-
-  .timestamp-link:hover {
-    text-decoration: none;
-    background-color: rgba(59, 130, 246, 0.1);
-    color: var(--primary-color-dark);
-    border-color: var(--primary-color);
-  }
-
-  .comment-body {
-    font-size: 0.9rem;
-    line-height: 1.5;
-    margin-bottom: 0.5rem;
-  }
-
-  .comment-actions {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .edit-comment-form {
-    width: 100%;
-    margin-top: 0.5rem;
-  }
-
-  .edit-comment-form textarea {
-    width: 100%;
-    margin-bottom: 0.5rem;
-  }
-
-  .edit-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-
-  .save-button, .cancel-button {
-    padding: 0.4rem 0.8rem;
-    border-radius: 10px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    border: none;
-    min-width: 60px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .save-button {
-    background: var(--primary-color);
-    color: white;
-    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-  }
-
-  .save-button:hover {
-    background: #2563eb;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .save-button:active {
-    transform: scale(1);
-  }
-
-  .cancel-button {
-    background: #6b7280;
-    color: white;
-    border: 1px solid #6b7280;
-    box-shadow: var(--card-shadow);
-    transition: all 0.2s ease;
-  }
-
-  .cancel-button:hover {
-    background: #4b5563;
-    border: 1px solid #4b5563;
-    transform: scale(1.02);
-    box-shadow: 0 4px 8px rgba(75, 85, 99, 0.25);
-  }
-
-  .cancel-button:active {
-    transform: scale(1);
-    box-shadow: 0 2px 4px rgba(75, 85, 99, 0.2);
-  }
-
-  .edit-button {
-    background: none;
-    border: none;
-    color: var(--primary-on-surface);
-    font-size: 0.8rem;
-    cursor: pointer;
-    padding: 0;
-    margin-right: 0.5rem;
-  }
-
-  .delete-button {
-    background: none;
-    border: none;
-    color: var(--error-color);
-    font-size: 0.8rem;
-    cursor: pointer;
-    padding: 0;
   }
 
   .loading-state {

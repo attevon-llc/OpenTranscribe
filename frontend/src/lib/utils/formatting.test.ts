@@ -7,6 +7,7 @@ import {
   formatDuration,
   getInitials,
   formatClock,
+  parseClock,
   formatTimeWithMillis,
   formatSrtTimestamp,
   formatVttTimestamp,
@@ -59,6 +60,41 @@ describe('getInitials', () => {
 
   it('returns ? when neither is usable', () => {
     expect(getInitials(null, '')).toBe('?');
+  });
+});
+
+describe('parseClock (inverse of formatClock)', () => {
+  it('reads seconds, M:SS, MM:SS and H:MM:SS', () => {
+    expect(parseClock('83')).toBe(83);
+    expect(parseClock('1:23')).toBe(83);
+    expect(parseClock(' 01:23 ')).toBe(83);
+    expect(parseClock('1:02:03')).toBe(3723);
+    expect(parseClock('0:00')).toBe(0);
+  });
+  it('keeps fractional seconds', () => {
+    expect(parseClock('1:23.5')).toBe(83.5);
+  });
+  it('round-trips what formatClock prints', () => {
+    for (const s of [0, 5, 65, 599, 3661, 7322]) expect(parseClock(formatClock(s))).toBe(s);
+  });
+  it('accepts Arabic-Indic digits', () => {
+    expect(parseClock('١:٢٣')).toBe(83);
+  });
+  it('refuses minutes or seconds of 60 and over, and anything that is not a time', () => {
+    for (const bad of [
+      '1:60',
+      '1:75',
+      '1:60:00',
+      '',
+      'soon',
+      '-5',
+      '1:2:3:4',
+      '1::2',
+      ':30',
+      '1:23:',
+    ]) {
+      expect(parseClock(bad)).toBeNull();
+    }
   });
 });
 

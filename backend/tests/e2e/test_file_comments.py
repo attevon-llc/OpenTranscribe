@@ -14,7 +14,8 @@ tests, which set the organization context in process.
 
 **Dev-data safety.** Every file is created and deleted by ``owned_media_factory``; the shared
 collection and the second account are torn down by their own fixtures. Each test deletes the
-comment it adds through the UI and then checks through the API that nothing is left.
+comments it adds through the UI (one timed, one general) and then checks through the API that
+nothing is left.
 """
 
 from __future__ import annotations
@@ -41,32 +42,20 @@ def _comments(backend_url: str, token: str, file_uuid: str) -> list[dict]:
     return cast(list[dict], response.json())
 
 
-def _add_then_delete_through_the_form(page: Page, base_url: str, file_uuid: str) -> str:
-    """Add a comment with the form, see it listed, delete it; return its text."""
-    text = f"e2e comment {uuid.uuid4().hex[:8]}"
-    page.goto(f"{base_url}/files/{file_uuid}")
-    page.wait_for_load_state("networkidle")
-
+def _post_through_the_form(page: Page, file_uuid: str, text: str) -> dict:
+    """Fill the composer, press Add, and return the comment the server saved."""
     form = page.locator(".comment-form")
-    expect(form).to_be_visible(timeout=15000)
     form.locator("textarea").fill(text)
-    submit = form.locator("button.submit-button")
-    # Add stays disabled until a time is marked, and the page says so.
-    expect(submit).to_be_disabled()
-    expect(form.locator(".form-hint")).to_be_visible()
-    form.locator("button.timestamp-button").click()
-    expect(form.locator(".form-hint")).to_have_count(0)
-    expect(submit).to_be_enabled()
-
     with page.expect_response(
         lambda r: r.request.method == "POST" and f"/comments/files/{file_uuid}/comments" in r.url
     ) as created:
-        submit.click()
+        form.locator("button.submit-button").click()
     assert created.value.status == 200, created.value.text()[:300]
+    return cast(dict, created.value.json())
 
+
+def _delete_through_the_list(page: Page, text: str) -> None:
     item = page.locator(".comment-item", has_text=text)
-    expect(item).to_have_count(1, timeout=10000)
-
     item.locator("button.delete-button").click()
     with page.expect_response(
         lambda r: r.request.method == "DELETE" and "/comments/" in r.url
@@ -74,7 +63,53 @@ def _add_then_delete_through_the_form(page: Page, base_url: str, file_uuid: str)
         page.locator("button.modal-delete-button").click()
     assert deleted.value.status == 204, deleted.value.text()[:300]
     expect(page.locator(".comment-item", has_text=text)).to_have_count(0, timeout=10000)
-    return text
+
+
+def _add_then_delete_through_the_form(page: Page, base_url: str, file_uuid: str) -> list[str]:
+    """Add one timed and one general comment with the form, check both, delete both.
+
+    Returns the two texts so the caller can confirm through the API that nothing is left.
+    """
+    suffix = uuid.uuid4().hex[:8]
+    timed_text = f"e2e timed comment {suffix}"
+    general_text = f"e2e general comment {suffix}"
+    page.goto(f"{base_url}/files/{file_uuid}")
+    page.wait_for_load_state("networkidle")
+
+    form = page.locator(".comment-form")
+    expect(form).to_be_visible(timeout=15000)
+    submit = form.locator("button.submit-button")
+    toggle = form.locator(".timestamp-toggle input[type=checkbox]")
+
+    # Add is never a dead button: with no text it stays enabled and says what is missing.
+    expect(submit).to_be_enabled()
+    submit.click()
+    expect(form.locator(".form-error")).to_be_visible()
+
+    # Timed by default, at the player's time.
+    expect(toggle).to_be_checked()
+    timed = _post_through_the_form(page, file_uuid, timed_text)
+    assert isinstance(timed["timestamp"], int | float), timed
+    timed_item = page.locator(".comment-item", has_text=timed_text)
+    expect(timed_item).to_have_count(1, timeout=10000)
+    expect(timed_item.locator("button.timestamp-link")).to_be_visible()
+    expect(timed_item.locator(".general-label")).to_have_count(0)
+
+    # Unticking Timestamp makes a general comment about the whole file.
+    toggle.uncheck()
+    expect(form.locator(".kind-summary.general")).to_be_visible()
+    general = _post_through_the_form(page, file_uuid, general_text)
+    assert general["timestamp"] is None, general
+    general_item = page.locator(".comment-item", has_text=general_text)
+    expect(general_item).to_have_count(1, timeout=10000)
+    expect(general_item.locator(".general-label")).to_be_visible()
+    expect(general_item.locator("button.timestamp-link")).to_have_count(0)
+    # General comments are listed first.
+    expect(page.locator(".comment-item").first).to_contain_text(general_text)
+
+    _delete_through_the_list(page, timed_text)
+    _delete_through_the_list(page, general_text)
+    return [timed_text, general_text]
 
 
 class TestMemberCommentsOnTheFileDetailPage:
@@ -90,9 +125,9 @@ class TestMemberCommentsOnTheFileDetailPage:
         media = cast(dict, owned_media_factory(token))
         file_uuid = str(media["uuid"])
 
-        text = _add_then_delete_through_the_form(second_user_page, base_url, file_uuid)
+        texts = _add_then_delete_through_the_form(second_user_page, base_url, file_uuid)
 
-        assert all(c["text"] != text for c in _comments(backend_url, token, file_uuid))
+        assert all(c["text"] not in texts for c in _comments(backend_url, token, file_uuid))
 
     def test_viewer_adds_and_deletes_a_comment_on_a_shared_file(
         self,
@@ -108,7 +143,7 @@ class TestMemberCommentsOnTheFileDetailPage:
         file_uuid = str(media["uuid"])
         shared_collection_factory(member_file_uuids=(file_uuid,), permission="viewer")
 
-        text = _add_then_delete_through_the_form(second_user_page, base_url, file_uuid)
+        texts = _add_then_delete_through_the_form(second_user_page, base_url, file_uuid)
 
-        # Read back as the owner: the viewer's comment is gone for everyone, not just hidden.
-        assert all(c["text"] != text for c in _comments(backend_url, admin_token, file_uuid))
+        # Read back as the owner: the viewer's comments are gone for everyone, not just hidden.
+        assert all(c["text"] not in texts for c in _comments(backend_url, admin_token, file_uuid))

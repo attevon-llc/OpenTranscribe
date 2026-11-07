@@ -137,34 +137,41 @@ settings your account and edition can actually see.
 
 ## Transcript Comments
 
-Add timestamped comments to any transcript for notes, annotations, or collaboration.
+Add comments to any file for notes, annotations, or collaboration. There are two kinds:
+
+| Kind | What it is about | How to make one | How it shows in the list |
+|---|---|---|---|
+| **Timed** | A moment in the recording: something said or shown then | Leave **Timestamp** ticked (the default) | A time chip such as `1:23`; click it to jump the player there |
+| **General** | The whole file: a summary note, a follow-up task | Untick **Timestamp** before adding | A **General** label, listed above the timed comments |
+
+The line under the comment box always says which kind you are about to add ("Comment at 1:23"
+or "General comment on this file"), and the **i** button next to the box explains both kinds.
 
 ### Adding a Comment
 
-1. Open a transcript and navigate to the **Comments** section
-2. Type your comment in the text area
-3. Click **"Mark Current Time"** to attach the current playback timestamp -- a timestamp is required
-4. Click **"Add Comment"** to save
+1. Open the file and go to the **Comments** section.
+2. Type your comment. The time is taken from the player **when you start typing** and does not
+   move while you write, even if the recording keeps playing.
+3. Adjust the time if you need to: type a different time (`1:23` or `1:02:03`), use **-1 s** /
+   **+1 s** to nudge it, or **Use current time** to take the player's position now. A time past
+   the end of the recording is refused with a message next to the box.
+4. Press **Add Comment** or **Enter** (**Shift+Enter** starts a new line). With an empty box,
+   Add Comment tells you to type something first instead of doing nothing.
 
-### Timestamp-Linked Comments
-
-Every comment is linked to a specific point in the media file:
-
-- Comments display the timestamp in `MM:SS` format
-- Click the **timestamp badge** on any comment to jump the player to that moment
-- Comments are sorted chronologically by timestamp
-- You can clear and re-set the timestamp before submitting
+Comments are listed general first, then timed comments in playback order.
 
 ### Editing and Deleting Comments
 
-- **Edit**: Click the **Edit** link on your own comment, modify the text, then click **Save**
+- **Edit**: Click the **Edit** link on your own comment, modify the text, then click **Save**.
+  The editor has the same **Timestamp** box and time controls, so you can change the time or
+  switch a comment between timed and general.
 - **Delete**: Click the **Delete** link on your own comment and confirm the deletion
 - Only the comment author can edit or delete their comments
 - A confirmation dialog appears before deletion to prevent accidental removal
 
 ### Comments in Exports
 
-When exporting a transcript as `.txt`, you can optionally include comments in the export output (see [Export Options](./uploading-files.md#export-options)).
+When exporting a transcript you can optionally include comments in the export output (see [Export Options](./uploading-files.md#export-options)). General comments come first and are printed without a time; in JSON their `timestamp` is `null`, in CSV the time columns are empty, and in SRT/VTT caption files (which need a time) they appear as a cue at the start.
 
 ## Next Steps
 

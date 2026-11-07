@@ -83,19 +83,23 @@ def import_tenant_predicate(
 def _only_live_files(query: Query[MediaFile]) -> Query[MediaFile]:
     """Restrict a ``MediaFile`` query to rows a duplicate may legitimately point at.
 
-    Excludes failed/cancelled/orphaned rows and PENDING rows with no
-    ``storage_path`` (uploads that never completed), so a previous failure can
-    never block a re-upload of the same content. Shared by every helper here so
-    "a file that already exists" has exactly one definition.
+    Excludes failed/cancelled/orphaned rows, PENDING rows with no
+    ``storage_path`` (uploads that never completed) and trashed rows (issue #1101:
+    a re-upload of a file in the trash creates a new file), so neither a previous
+    failure nor a delete can block a re-upload of the same content. A quarantined
+    row still counts, as before. Shared by every helper here so "a file that
+    already exists" has exactly one definition.
     """
     from sqlalchemy import and_
     from sqlalchemy import or_
 
     from app.models.media import FileStatus
     from app.models.media import MediaFile
+    from app.services.file_availability import available_pred
 
     query = query.filter(
-        MediaFile.status.notin_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED])
+        MediaFile.status.notin_([FileStatus.ERROR, FileStatus.CANCELLED, FileStatus.ORPHANED]),
+        available_pred(include_quarantined=True),
     )
     return query.filter(
         or_(

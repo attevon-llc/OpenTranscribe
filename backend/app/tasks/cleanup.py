@@ -22,6 +22,7 @@ from app.utils.time_format import age_seconds
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+    from sqlalchemy.sql.elements import ColumnElement
 
 logger = logging.getLogger(__name__)
 
@@ -429,6 +430,26 @@ def _scheduled_retention_hour(run_time: Any) -> int:
     return hour
 
 
+def retention_guard_pred() -> ColumnElement[bool]:
+    """Rows the retention sweep may never select, whatever their age (shared with the preview).
+
+    Held (``hold_guard``), quarantined (takedown evidence, issue #664) and trashed rows
+    (issue #1101). Retention keeps HARD-deleting at N days (owner decision OD-1 B), but a file
+    already in the trash belongs to the trash's own purge: retention taking it would shorten
+    the window a person was promised for undoing their delete.
+    """
+    from sqlalchemy import and_
+
+    from app.models.media import MediaFile
+    from app.services.hold_guard import not_held_pred
+
+    return and_(
+        not_held_pred(),
+        MediaFile.is_quarantined.is_(False),
+        MediaFile.deleted_at.is_(None),
+    )
+
+
 def _select_expired_files(
     db: Session,
     config: dict,
@@ -442,8 +463,8 @@ def _select_expired_files(
     session open, and an escaping instance would lazy-load (reopening a
     transaction) the moment ``purge_media_file`` touched it.
 
-    **A file under legal hold or in quarantine is never a candidate** (issue
-    #664). ``status`` alone is not a durable guard for either: a quarantined
+    **A file under legal hold, in quarantine or in the trash is never a candidate**
+    (issues #664, #1101; :func:`retention_guard_pred`). ``status`` alone is not a durable guard for either: a quarantined
     file keeps its processing status on purpose (so a release restores it
     verbatim), and ``tasks/transcription/storage`` writes ``COMPLETED`` plus a
     fresh ``completed_at`` unconditionally when transcription finishes — so a
@@ -456,7 +477,6 @@ def _select_expired_files(
     from app.core.tenant_limits import RetentionResolverError
     from app.models.media import FileStatus
     from app.models.media import MediaFile
-    from app.services.hold_guard import not_held_pred
 
     eligible_statuses = [FileStatus.COMPLETED.value]
     if config["delete_error_files"]:
@@ -472,8 +492,7 @@ def _select_expired_files(
         )
         .filter(
             MediaFile.status.in_(eligible_statuses),
-            not_held_pred(),
-            MediaFile.is_quarantined.is_(False),
+            retention_guard_pred(),
             ((MediaFile.completed_at.isnot(None)) & (MediaFile.completed_at < query_cutoff))
             | ((MediaFile.completed_at.is_(None)) & (MediaFile.upload_time < query_cutoff)),
         )

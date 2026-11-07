@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings > AI usage matches the other settings pages**: its cards were missing the shared settings form styling, so headings looked bold and unlike the sibling sections.
 - In Arabic and other right-to-left languages, the player's time readout showed total time before elapsed time and touched the volume slider; it now reads "elapsed / total" with a gap.
 - The file player's settings menu no longer lays out its closed Speed and Captions lists under the main list, where screen readers found a second "Speed" item.
 - The development server answered every server-rendered page with an error after the route-store change in this release; the page store now reads the current page only while a page renders.

@@ -86,6 +86,16 @@ beforeEach(() => {
 });
 
 describe('LLMUsagePanel', () => {
+  it('sits inside the shared settings form scope so its cards take the sibling card styling', async () => {
+    api.getMyUsage.mockResolvedValue(usage());
+    const { container, findByText } = render(LLMUsagePanel);
+
+    await findByText('settings.llmUsage.feature.summary');
+    const cards = container.querySelectorAll('.tx-form .settings-section');
+    expect(cards.length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll('.settings-section').length).toBe(cards.length);
+  });
+
   it('shows today against the daily limit and every feature, with an estimate only where priced', async () => {
     api.getMyUsage.mockResolvedValue(usage());
     const { container, findByText } = render(LLMUsagePanel);

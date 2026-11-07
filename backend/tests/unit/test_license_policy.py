@@ -10,6 +10,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 POLICY_PATH = REPO_ROOT / "scripts" / "lib" / "license_policy.py"
 REPORT_DIR = REPO_ROOT / "security-reports" / "license-compliance"
+PINNED_INVENTORY = "pinned-requirements-licenses.csv"
 
 
 def _load_policy() -> ModuleType:
@@ -24,9 +25,16 @@ policy = _load_policy()
 
 
 def _committed_pairs() -> list[tuple[str, str]]:
-    """Every distinct (license string, committed status) pair across the committed CSVs."""
+    """Every distinct (license string, committed status) pair across the committed image reports.
+
+    ``pinned-requirements-licenses.csv`` is excluded on purpose: its ``class`` column folds in
+    per-package allowlist decisions, so it is not a pure classification of the licence string.
+    ``test_license_report_covers_pins.py`` holds it to its own contract.
+    """
     pairs: set[tuple[str, str]] = set()
     for path in sorted(REPORT_DIR.glob("*.csv")):
+        if path.name == PINNED_INVENTORY:
+            continue
         with path.open(newline="") as handle:
             for row in csv.DictReader(handle):
                 pairs.add((row["License"], row["Status"]))

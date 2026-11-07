@@ -1,10 +1,12 @@
-"""Organization content holds (issue #1276).
+"""Content holds (issue #1276; platform holds v467).
 
 A hold keeps files from being destroyed: no delete, no retention sweep, no account or GDPR
-purge, no reprocess. It is placed by an organization administrator, on one or more files or on
-a whole collection, and released explicitly; the row stays as history. The platform's own hold
-is the older ``media_file.legal_hold`` boolean, and ``services/hold_guard`` is the one place
-that answers "is this file held by anyone".
+purge, no reprocess. It is placed on one or more files or on a whole collection, and released
+explicitly; the row stays as history. ``authority`` says who placed it: an organization
+administrator (``organization``, ``organization_id`` set) or the instance's own administrator
+(``platform``, no organization). The takedown's hold is the older ``media_file.legal_hold``
+boolean, and ``services/hold_guard`` is the one place that answers "is this file held by
+anyone".
 
 ``reason`` and ``matter_ref`` are administrator-only text: they are never copied into an audit
 event, a socket message or a file response.
@@ -43,13 +45,18 @@ SCOPE_FILE = "file"
 SCOPE_COLLECTION = "collection"
 HOLD_SCOPES = (SCOPE_FILE, SCOPE_COLLECTION)
 
+AUTHORITY_ORGANIZATION = "organization"
+AUTHORITY_PLATFORM = "platform"
+#: Mirrored by ``ck_content_hold_authority`` (v467).
+HOLD_AUTHORITIES = (AUTHORITY_ORGANIZATION, AUTHORITY_PLATFORM)
+
 #: Bounds on ``ContentHold.reason`` (mirrored by ``ck_content_hold_reason_length``).
 REASON_MIN_LENGTH = 10
 REASON_MAX_LENGTH = 2000
 
 
 class ContentHold(Base):
-    """One hold an organization administrator placed. Active while ``released_at`` is NULL."""
+    """One hold an organization or platform administrator placed. Active while not released."""
 
     __tablename__ = "content_hold"
     __table_args__ = (
@@ -61,6 +68,13 @@ class ContentHold(Base):
         CheckConstraint(
             "scope = 'collection' OR collection_id IS NULL", name="ck_content_hold_collection_scope"
         ),
+        CheckConstraint(
+            "authority IN ('organization', 'platform')", name="ck_content_hold_authority"
+        ),
+        CheckConstraint(
+            "(authority = 'organization') = (organization_id IS NOT NULL)",
+            name="ck_content_hold_authority_org",
+        ),
         Index(
             "ix_content_hold_org_active",
             "organization_id",
@@ -71,14 +85,25 @@ class ContentHold(Base):
             "collection_id",
             postgresql_where=text("collection_id IS NOT NULL"),
         ),
+        # Built after the upgrade by the runner (app.db.hold_indexes), not by v467.
+        Index(
+            "ix_content_hold_platform_active",
+            "id",
+            postgresql_where=text("authority = 'platform' AND released_at IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     uuid: Mapped[uuid_pkg.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, unique=True, index=True, default=uuid7
     )
-    organization_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("organization.id", ondelete="CASCADE"), nullable=False
+    #: ``organization`` or ``platform``; an organization hold names its organization, a platform
+    #: hold never does (``ck_content_hold_authority_org``).
+    authority: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=AUTHORITY_ORGANIZATION, server_default="organization"
+    )
+    organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organization.id", ondelete="CASCADE"), nullable=True
     )
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
     collection_id: Mapped[int | None] = mapped_column(

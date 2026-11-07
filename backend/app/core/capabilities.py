@@ -40,7 +40,8 @@ same depth. Read this before assuming a key protects anything:
    ``services/content_audit.content_audit_enabled`` drops the view / media-access / export
    events while it is off (a request-time read, so a resolver may answer it per tenant).
    The platform takedown queue (``admin.takedown``, tier 2) stays ungated on purpose:
-   an operator must always be able to act on a legal notice.
+   an operator must always be able to act on a legal notice. The operator's legal holds
+   without a takedown (``/admin/holds``, v467) are ungated for the same reason and have no key.
 
    **Deployment-locked controls** (issue #1109) are server-enforced too, with
    no platform-admin bypass — they describe the deployment, not a tier:

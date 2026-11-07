@@ -538,6 +538,7 @@ def test_an_org_grant_widens_lists_only_inside_its_tenant(
 
 AUDITED_CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("/api/admin/files/quarantined", {}),
+    ("/api/admin/holds", {}),
     ("/api/admin/settings/retention-config/preview", {"retention_days": 1}),
     ("/api/admin/takedown-notices", {}),
     ("/api/admin/takedown-notices/export", {}),

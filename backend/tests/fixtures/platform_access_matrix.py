@@ -88,6 +88,14 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "returns content; by design it needs no grant (the operator must always be able to act)",
     ),
     (
+        r"^\w+ /api/admin/holds",
+        "legal-hold-action",
+        "the operator's own legal holds (v467): places, lists and releases holds on named files "
+        "or collections of any tenant; returns hold records and file names to instance admins, "
+        "never media or transcript content; by design it needs no grant (the operator must "
+        "always be able to act on a legal demand)",
+    ),
+    (
         r"^\w+ /api/admin/audit-logs|^\w+ /api/admin/auth-config/audit/",
         "audit-read",
         "reads audit events (ids, actions, timestamps); no filenames, titles or transcript text",
@@ -189,6 +197,8 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
 #: Categories whose rows must be backed by ``audit_metadata_access`` in the handler.
 AUDITED_ROUTES = (
     "GET /api/admin/files/quarantined",
+    "GET /api/admin/holds",
+    "GET /api/admin/holds/{hold_uuid}",
     "GET /api/admin/settings/retention-config/preview",
     "GET /api/admin/takedown-notices",
     "GET /api/admin/takedown-notices/export",
@@ -201,6 +211,7 @@ CATEGORY_TESTS = {
     "metadata-audited": f"{MATRIX_TEST}::test_cross_tenant_filename_listings_are_audited",
     "grant-lifecycle": "tests/api/test_support_access_lifecycle.py",
     "takedown-action": "tests/test_takedown_quarantine.py",
+    "legal-hold-action": "tests/api/test_admin_holds.py",
 }
 
 

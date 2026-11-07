@@ -1,10 +1,11 @@
-"""Wire shapes for organization content holds (issue #1276).
+"""Wire shapes for content holds (issue #1276; platform holds v467).
 
 Two audiences, kept apart on purpose. ``HoldSummary`` is on every file and collection response
 and tells ANYONE who can read the row whether it is held and by whom: no reason, no matter
-reference, and the hold uuids only when the caller administers the holding organization.
+reference, and the hold uuids only when the caller administers the holding authority (the
+organization's admin for an organization hold, an instance admin for a platform hold).
 ``HoldOut`` is the administrator's own record (reason and matter reference included) and exists
-only on ``/org-admin/holds``.
+only on ``/org-admin/holds`` and ``/admin/holds``.
 """
 
 from __future__ import annotations
@@ -29,7 +30,8 @@ class HoldSummary(BaseModel):
     held: bool = False
     #: ``platform`` and/or ``organization``. Empty when not held.
     held_by: list[str] = []
-    #: Organization hold uuids, present only for an administrator of that organization.
+    #: Hold uuids the caller can release: an organization's to its administrators, the
+    #: platform's to instance administrators. Empty for everyone else.
     hold_uuids: list[str] = []
 
 
@@ -43,7 +45,7 @@ class HoldCreate(BaseModel):
         ...,
         min_length=REASON_MIN_LENGTH,
         max_length=REASON_MAX_LENGTH,
-        description="Why the hold exists. Visible to this organization's administrators only.",
+        description="Why the hold exists. Visible to the administrators who manage the hold only.",
     )
     matter_ref: str | None = Field(
         None, max_length=255, description="An optional matter or case reference."
@@ -77,6 +79,11 @@ class HoldOut(BaseModel):
     """An administrator's view of one hold."""
 
     uuid: UUID
+    #: ``organization`` (placed by an organization administrator) or ``platform`` (placed by an
+    #: instance administrator, without a takedown).
+    authority: str
+    #: The holding organization; ``None`` for a platform hold.
+    organization_uuid: UUID | None = None
     scope: str  # "file" or "collection"
     #: Set for a collection hold while the collection exists.
     collection_uuid: UUID | None = None

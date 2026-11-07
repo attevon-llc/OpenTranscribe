@@ -210,7 +210,7 @@ Also `GET /user-settings/transcription/system-defaults`, `/download/system-defau
 
 ### Admin and Organization Admin
 ```
-/admin/users, /admin/stats, /admin/files/quarantined, /admin/data-integrity, /admin/profile-embeddings/repair
+/admin/users, /admin/stats, /admin/files/quarantined, /admin/holds, /admin/data-integrity, /admin/profile-embeddings/repair
 /admin/auth-config, /admin/backup, /admin/engine-settings, /admin/settings/retention-config, /admin/scim-tokens, /admin/takedown-notices, ...
 /org-admin/audit-logs, /org-admin/holds, /org-admin/files, /org-admin/gdpr, /org-admin/support-access
 /support-access/grants, /takedown-notices/mine

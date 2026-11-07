@@ -12,6 +12,7 @@ from .endpoints import admin_audit_integrity
 from .endpoints import admin_audit_logs
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
+from .endpoints import admin_holds
 from .endpoints import admin_identity
 from .endpoints import admin_llm_budget
 from .endpoints import admin_maintenance
@@ -209,6 +210,10 @@ include_router_with_consistency(admin_identity.router, prefix="/admin", tags=["a
 include_router_with_consistency(admin_audit_logs.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_maintenance.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_quarantine.router, prefix="/admin", tags=["admin"])
+# The instance administrator's legal holds without a takedown (v467). No capability, like the
+# takedown routes: an operator must always be able to act on a legal demand. Refused under a
+# support grant by the /admin prefix.
+include_router_with_consistency(admin_holds.router, prefix="/admin/holds", tags=["admin"])
 include_router_with_consistency(youtube_settings.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(media_private_hosts.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(transcription_defaults.router, prefix="/admin", tags=["admin"])

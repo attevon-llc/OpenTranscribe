@@ -28,7 +28,6 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -39,9 +38,7 @@ from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_HOLD_RATE_LIMIT
 from app.db.base import get_db
 from app.models.content_hold import ContentHold
-from app.models.content_hold import ContentHoldFile
 from app.models.media import MediaFile
-from app.schemas.content_hold import HeldFile
 from app.schemas.content_hold import HoldCreate
 from app.schemas.content_hold import HoldList
 from app.schemas.content_hold import HoldOut
@@ -49,15 +46,14 @@ from app.schemas.content_hold import HoldRelease
 from app.services import content_hold_service as holds
 from app.services.collection_visibility import visible_collections_by_uuid
 from app.services.content_hold_queries import list_holds
+from app.services.content_hold_records import hold_records
+from app.services.content_hold_records import people_of
 from app.services.org_audit_view import member_labels
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-#: Most covered files a single hold read lists; the list endpoint carries counts only.
-MAX_FILES_LISTED = 500
 
 _ERROR_STATUS = {
     "reason_length": status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -93,59 +89,7 @@ def _serialize(
     db: Session, org_id: int, rows: Iterable[ContentHold], *, with_files: bool = False
 ) -> list[HoldOut]:
     rows = list(rows)
-    if not rows:
-        return []
-    ids = [h.id for h in rows]
-    counts = {
-        int(hold_id): int(n)
-        for hold_id, n in db.execute(
-            select(ContentHoldFile.hold_id, func.count())
-            .where(ContentHoldFile.hold_id.in_(ids))
-            .group_by(ContentHoldFile.hold_id)
-        )
-    }
-    people = {
-        int(i) for h in rows for i in (h.placed_by_user_id, h.released_by_user_id) if i is not None
-    }
-    names = member_labels(db, org_id, people)
-    out: list[HoldOut] = []
-    for hold in rows:
-        files = None
-        if with_files:
-            files = [
-                HeldFile(uuid=f.uuid, title=f.title, filename=f.filename)
-                for f in db.execute(
-                    select(MediaFile)
-                    .join(ContentHoldFile, ContentHoldFile.media_file_id == MediaFile.id)
-                    .where(ContentHoldFile.hold_id == hold.id)
-                    .order_by(MediaFile.id)
-                    .limit(MAX_FILES_LISTED)
-                ).scalars()
-            ]
-        collection = hold.collection
-        out.append(
-            HoldOut(
-                uuid=hold.uuid,
-                scope=hold.scope,
-                collection_uuid=collection.uuid if collection is not None else None,
-                collection_name=collection.name if collection is not None else None,
-                matter_ref=hold.matter_ref,
-                reason=hold.reason,
-                placed_at=hold.placed_at,
-                placed_by_display=names.get(int(hold.placed_by_user_id))
-                if hold.placed_by_user_id is not None
-                else None,
-                released_at=hold.released_at,
-                released_by_display=names.get(int(hold.released_by_user_id))
-                if hold.released_by_user_id is not None
-                else None,
-                release_reason=hold.release_reason,
-                active=hold.released_at is None,
-                file_count=counts.get(int(hold.id), 0),
-                files=files,
-            )
-        )
-    return out
+    return hold_records(db, rows, member_labels(db, org_id, people_of(rows)), with_files=with_files)
 
 
 @router.get("", response_model=HoldList)

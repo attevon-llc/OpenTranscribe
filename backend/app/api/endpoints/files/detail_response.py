@@ -543,7 +543,12 @@ def get_media_file_detail(
         # Set caller's permission on the response
         response.my_permission = my_permission
         response.processing_steps = build_processing_steps(db_file)
-        response.hold = file_hold_summary(db, int(file_id), reveal_uuids=reveal_hold_uuids)
+        response.hold = file_hold_summary(
+            db,
+            int(file_id),
+            reveal_uuids=reveal_hold_uuids,
+            reveal_platform_uuids=current_user.is_admin,
+        )
 
         # The uploader's recorded consent claim is for the owner and the organization
         # administrators; any other viewer gets the defaults.

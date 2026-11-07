@@ -63,6 +63,7 @@ COMPLIANCE_PATH_FAMILIES: tuple[re.Pattern[str], ...] = tuple(
     for p in (
         r"^/api/(admin|org-admin)/files/\{file_uuid\}/(quarantine|release)$",
         r"^/api/org-admin/holds",
+        r"^/api/admin/holds",
         r"/gdpr/",
         r"^/api/privacy/me/purge$",
         r"^/api/admin/privacy-policy/purge$",
@@ -117,6 +118,11 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     ("POST", "/api/org-admin/holds"): A(("CONTENT_HOLD_PLACE",), "hold-place"),
     ("POST", "/api/org-admin/holds/{hold_uuid}/release"): A(
         ("CONTENT_HOLD_RELEASE",), "hold-release"
+    ),
+    # The instance administrator's legal holds without a takedown (v467).
+    ("POST", "/api/admin/holds"): A(("CONTENT_HOLD_PLACE",), pinned_by="api/test_admin_holds.py"),
+    ("POST", "/api/admin/holds/{hold_uuid}/release"): A(
+        ("CONTENT_HOLD_RELEASE",), pinned_by="api/test_admin_holds.py"
     ),
     # Exports (content.export is opt-in; the live cases switch content auditing on).
     ("GET", "/api/files/{file_uuid}/export"): A(("CONTENT_EXPORT",), "transcript-export"),
@@ -278,6 +284,8 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("GET", "/api/admin/gdpr/erasure-receipt/ignored-indices"): _READ,
     ("GET", "/api/admin/takedown-notices"): _READ,
     ("GET", "/api/admin/takedown-notices/{notice_uuid}"): _READ,
+    ("GET", "/api/admin/holds"): _READ,
+    ("GET", "/api/admin/holds/{hold_uuid}"): _READ,
     ("GET", "/api/org-admin/holds"): _READ,
     ("GET", "/api/org-admin/holds/{hold_uuid}"): _READ,
     ("GET", "/api/org-admin/policy"): _READ,

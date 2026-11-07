@@ -1,8 +1,9 @@
 """The ONE answer to "is this file held?" (issue #1276).
 
-A file can be held by the platform (``media_file.legal_hold``, set by the operator's takedown)
-or by an organization (an active ``content_hold`` covering it, set by an organization
-administrator). Every code path that would destroy a file or restart its clock asks THIS module,
+A file can be held by the platform (``media_file.legal_hold``, set by the operator's takedown,
+or an active ``content_hold`` with ``authority = 'platform'``, placed by an instance administrator
+without a takedown) or by an organization (an active ``content_hold`` with ``authority =
+'organization'``, set by an organization administrator). Every code path that would destroy a file or restart its clock asks THIS module,
 so a new hold source is one change here and not eleven guards to find. The read of
 ``MediaFile.legal_hold`` outside this module, the takedown services and the schemas is a bug:
 ``tests/unit/test_hold_guard_single_source.py`` fails on it.
@@ -15,8 +16,9 @@ Two forms, for the two shapes of caller:
 
 What a refusal tells the caller (:func:`refusal_detail`) depends on who is asking. Everybody
 learns that the file is held and by whom (``platform`` or ``organization``): a person has to know
-whom to ask. Only an organization administrator is given the hold uuids, because the uuid is
-the handle for the release screen, and the reason is never in a refusal at all.
+whom to ask. The hold uuids are the handle for a release screen, so an organization
+administrator is given their organization's and an instance administrator the platform's, never
+the other's; the reason is never in a refusal at all.
 """
 
 from __future__ import annotations
@@ -32,6 +34,8 @@ from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.content_hold import AUTHORITY_ORGANIZATION
+from app.models.content_hold import AUTHORITY_PLATFORM
 from app.models.content_hold import ContentHold
 from app.models.content_hold import ContentHoldFile
 from app.models.media import MediaFile
@@ -69,20 +73,25 @@ HELD_BY_ORGANIZATION = "organization"
 
 @dataclass(frozen=True)
 class HoldState:
-    """Who holds one file. ``held`` is true when anyone does."""
+    """Who holds one file. ``held`` is true when anyone does.
 
-    platform: bool
+    ``platform_flag`` is the takedown's ``media_file.legal_hold``; ``platform_hold_uuids`` the
+    active platform ``content_hold`` rows. Both report as ``platform`` on the wire.
+    """
+
+    platform_flag: bool
     org_hold_uuids: tuple[str, ...] = ()
+    platform_hold_uuids: tuple[str, ...] = ()
 
     @property
     def held(self) -> bool:
-        return self.platform or bool(self.org_hold_uuids)
+        return self.platform_flag or bool(self.org_hold_uuids) or bool(self.platform_hold_uuids)
 
     @property
     def held_by(self) -> list[str]:
         """``["platform"]``, ``["organization"]`` or both, in that order; empty when free."""
         by = []
-        if self.platform:
+        if self.platform_flag or self.platform_hold_uuids:
             by.append(HELD_BY_PLATFORM)
         if self.org_hold_uuids:
             by.append(HELD_BY_ORGANIZATION)
@@ -102,16 +111,20 @@ class HoldRefusedError(Exception):
 
     def merged(self) -> HoldState:
         """One state covering every refused file, for a response that names them together."""
-        uuids: list[str] = []
+        org: list[str] = []
+        platform: list[str] = []
         for state in self.states.values():
-            uuids.extend(u for u in state.org_hold_uuids if u not in uuids)
+            org.extend(u for u in state.org_hold_uuids if u not in org)
+            platform.extend(u for u in state.platform_hold_uuids if u not in platform)
         return HoldState(
-            platform=any(s.platform for s in self.states.values()), org_hold_uuids=tuple(uuids)
+            platform_flag=any(s.platform_flag for s in self.states.values()),
+            org_hold_uuids=tuple(org),
+            platform_hold_uuids=tuple(platform),
         )
 
 
 def _active_hold_covers_file() -> ColumnElement[bool]:
-    """EXISTS an unreleased organization hold covering the enclosing query's ``MediaFile``."""
+    """EXISTS an unreleased hold (any authority) covering the enclosing query's ``MediaFile``."""
     return exists().where(
         ContentHoldFile.media_file_id == MediaFile.id,
         ContentHold.id == ContentHoldFile.hold_id,
@@ -120,7 +133,10 @@ def _active_hold_covers_file() -> ColumnElement[bool]:
 
 
 def held_pred() -> ColumnElement[bool]:
-    """SQL predicate: the ``MediaFile`` row is held by the platform or by an organization."""
+    """SQL predicate: the ``MediaFile`` row is held by the platform or by an organization.
+
+    A platform ``content_hold`` row is covered by the same EXISTS as an organization's.
+    """
     return or_(MediaFile.legal_hold.is_(True), _active_hold_covers_file())
 
 
@@ -140,24 +156,29 @@ def hold_states(db: Session, file_ids: Iterable[int]) -> dict[int, HoldState]:
             select(MediaFile.id).where(MediaFile.id.in_(ids), MediaFile.legal_hold.is_(True))
         )
     }
-    org: dict[int, list[str]] = {}
-    for file_id, hold_uuid in db.execute(
-        select(ContentHoldFile.media_file_id, ContentHold.uuid)
+    rows: dict[str, dict[int, list[str]]] = {AUTHORITY_ORGANIZATION: {}, AUTHORITY_PLATFORM: {}}
+    for file_id, hold_uuid, authority in db.execute(
+        select(ContentHoldFile.media_file_id, ContentHold.uuid, ContentHold.authority)
         .join(ContentHold, ContentHold.id == ContentHoldFile.hold_id)
         .where(ContentHoldFile.media_file_id.in_(ids), ContentHold.released_at.is_(None))
         .order_by(ContentHold.id)
     ):
-        org.setdefault(int(file_id), []).append(str(hold_uuid))
+        rows[str(authority)].setdefault(int(file_id), []).append(str(hold_uuid))
+    org, by_platform = rows[AUTHORITY_ORGANIZATION], rows[AUTHORITY_PLATFORM]
     return {
-        file_id: HoldState(platform=file_id in platform, org_hold_uuids=tuple(org.get(file_id, ())))
+        file_id: HoldState(
+            platform_flag=file_id in platform,
+            org_hold_uuids=tuple(org.get(file_id, ())),
+            platform_hold_uuids=tuple(by_platform.get(file_id, ())),
+        )
         for file_id in ids
-        if file_id in platform or file_id in org
+        if file_id in platform or file_id in org or file_id in by_platform
     }
 
 
 def hold_state(db: Session, file_id: int) -> HoldState:
     """Who holds ``file_id`` right now (a free file is a state with ``held == False``)."""
-    return hold_states(db, [file_id]).get(int(file_id), HoldState(platform=False))
+    return hold_states(db, [file_id]).get(int(file_id), HoldState(platform_flag=False))
 
 
 def is_held(file: MediaFile) -> bool:
@@ -181,19 +202,40 @@ def assert_not_held(db: Session, file_ids: Iterable[int]) -> None:
         raise HoldRefusedError(held)
 
 
+def revealed_uuids(
+    state: HoldState, *, reveal_uuids: bool, reveal_platform_uuids: bool = False
+) -> list[str]:
+    """The hold uuids this caller may be given: organization ones, platform ones, or both."""
+    uuids: list[str] = []
+    if reveal_uuids:
+        uuids.extend(state.org_hold_uuids)
+    if reveal_platform_uuids:
+        uuids.extend(state.platform_hold_uuids)
+    return uuids
+
+
 def refusal_detail(
-    state: HoldState, *, reveal_uuids: bool, message: str | None = None
+    state: HoldState,
+    *,
+    reveal_uuids: bool,
+    reveal_platform_uuids: bool = False,
+    message: str | None = None,
 ) -> dict[str, Any]:
     """The ``detail`` body of a 409 for a held file.
 
-    ``held_by`` is for everybody. ``holds`` (the uuids an organization administrator releases
-    by) is added only when ``reveal_uuids`` is true. The hold's reason never appears.
+    ``held_by`` is for everybody. ``holds`` (the uuids a release screen takes) carries the
+    organization's when ``reveal_uuids`` (an administrator of that organization) and the
+    platform's when ``reveal_platform_uuids`` (an instance administrator). The hold's reason
+    never appears.
     """
     detail: dict[str, Any] = {
         "error": LEGAL_HOLD_ERROR_CODE,
         "message": message or LEGAL_HOLD_REFUSAL,
         "held_by": state.held_by,
     }
-    if reveal_uuids and state.org_hold_uuids:
-        detail["holds"] = list(state.org_hold_uuids)
+    holds = revealed_uuids(
+        state, reveal_uuids=reveal_uuids, reveal_platform_uuids=reveal_platform_uuids
+    )
+    if holds:
+        detail["holds"] = holds
     return detail

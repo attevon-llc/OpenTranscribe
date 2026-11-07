@@ -1,8 +1,14 @@
-"""Place, release and maintain organization content holds (issue #1276).
+"""Place, release and maintain content holds (issue #1276; platform holds v467).
 
 A hold is a row in ``content_hold`` plus the files it covers in ``content_hold_file``. WHETHER a
 file is held is answered by ``hold_guard`` and nowhere else; this module only changes the facts
 that answer reads.
+
+Two authorities share every function here: an ORGANIZATION hold (``org_id`` set, the holding
+organization's files and collections only) and a PLATFORM hold (``org_id=None``, placed by an
+instance administrator on any tenant's file or collection, without a takedown). Only the
+"belongs to the organization" backstops differ; the reason bounds, the file cap, the outbox
+audit, the object lock and the erasure nudge are the same code.
 
 **Writes never commit.** Every function here adds rows and flushes; the endpoint commits once.
 The audit event is staged in that same transaction by :func:`record_hold_change` (the
@@ -12,7 +18,7 @@ erasure sweep, and handing the staged event to the audit sink) is returned in a
 :class:`HoldChange` and performed by :func:`finish_hold_change`.
 
 A hold's ``reason`` and ``matter_ref`` are administrator text. They are stored, shown to the
-organization's administrators, and nothing else: not in an audit event, not over a socket, not in
+administrators of the hold's authority, and nothing else: not in an audit event, not over a socket, not in
 any file or collection response.
 """
 
@@ -32,6 +38,8 @@ from sqlalchemy.orm import Session
 from app.auth.audit_events import AuditEventType
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
+from app.models.content_hold import AUTHORITY_ORGANIZATION
+from app.models.content_hold import HOLD_AUTHORITIES
 from app.models.content_hold import REASON_MAX_LENGTH
 from app.models.content_hold import REASON_MIN_LENGTH
 from app.models.content_hold import SCOPE_COLLECTION
@@ -96,16 +104,30 @@ def _paths(files: Iterable[MediaFile]) -> list[str]:
     return [str(f.storage_path) for f in files if f.storage_path]
 
 
+def _check_authority(authority: str, org_id: int | None) -> None:
+    """An organization hold names its organization and a platform hold never does.
+
+    A caller bug, not a request error: the routes fix the authority, so this never reaches a
+    response (the database's ``ck_content_hold_authority_org`` would refuse it too).
+    """
+    if authority not in HOLD_AUTHORITIES or (authority == AUTHORITY_ORGANIZATION) != (
+        org_id is not None
+    ):
+        raise ValueError(f"hold authority {authority!r} does not match the organization given")
+
+
 def place_file_hold(
     db: Session,
     *,
-    org_id: int,
+    org_id: int | None,
     actor: User,
     files: list[MediaFile],
     reason: str,
     matter_ref: str | None = None,
+    authority: str = AUTHORITY_ORGANIZATION,
 ) -> HoldChange:
-    """Hold ``files``, all of which must belong to ``org_id``."""
+    """Hold ``files``: all of ``org_id``'s for an organization hold, any tenant's for a platform one."""
+    _check_authority(authority, org_id)
     text = clean_reason(reason)
     unique = {int(f.id): f for f in files}
     if not unique:
@@ -114,10 +136,11 @@ def place_file_hold(
         raise HoldRequestError(
             "too_many_files", f"A hold may name at most {MAX_FILES_PER_HOLD} files."
         )
-    if any(f.organization_id != org_id for f in unique.values()):
+    if org_id is not None and any(f.organization_id != org_id for f in unique.values()):
         # The caller resolves files tenant-scoped, so this is a backstop, not a path.
         raise HoldRequestError("not_org_file", "Only your organization's files can be held.")
     hold = ContentHold(
+        authority=authority,
         organization_id=org_id,
         scope=SCOPE_FILE,
         reason=text,
@@ -140,15 +163,20 @@ def place_file_hold(
 def place_collection_hold(
     db: Session,
     *,
-    org_id: int,
+    org_id: int | None,
     actor: User,
     collection: Collection,
     reason: str,
     matter_ref: str | None = None,
+    authority: str = AUTHORITY_ORGANIZATION,
 ) -> HoldChange:
-    """Hold an organization collection: its files now, and every file added later."""
+    """Hold a collection: its files now, and every file added later.
+
+    An organization hold takes only that organization's collections; a platform hold any.
+    """
+    _check_authority(authority, org_id)
     text = clean_reason(reason)
-    if collection.organization_id != org_id:
+    if org_id is not None and collection.organization_id != org_id:
         raise HoldRequestError("not_org_collection", "Only your organization's collections.")
     members = list(
         db.execute(
@@ -158,6 +186,7 @@ def place_collection_hold(
         ).scalars()
     )
     hold = ContentHold(
+        authority=authority,
         organization_id=org_id,
         scope=SCOPE_COLLECTION,
         collection_id=int(collection.id),
@@ -179,10 +208,21 @@ def place_collection_hold(
 
 
 def release_hold(
-    db: Session, *, org_id: int, actor: User, hold: ContentHold, reason: str
+    db: Session,
+    *,
+    org_id: int | None,
+    actor: User,
+    hold: ContentHold,
+    reason: str,
+    authority: str = AUTHORITY_ORGANIZATION,
 ) -> HoldChange:
-    """Release one hold. A file another hold (or the platform) still covers stays held."""
-    if hold.organization_id != org_id:
+    """Release one hold. A file another hold (or the platform) still covers stays held.
+
+    Only the hold's own authority releases it: an organization never releases a platform hold,
+    and a platform administrator never releases an organization's.
+    """
+    _check_authority(authority, org_id)
+    if hold.authority != authority or hold.organization_id != org_id:
         raise HoldRequestError("not_found", "Hold not found.")
     if hold.released_at is not None:
         raise HoldRequestError("already_released", "This hold was already released.")
@@ -232,7 +272,11 @@ def record_hold_change(
 
     Raises like any write of that transaction: a hold whose record cannot be kept is not placed.
     """
-    details: dict[str, Any] = {"scope": change.hold.scope, "file_count": change.file_count}
+    details: dict[str, Any] = {
+        "authority": change.hold.authority,
+        "scope": change.hold.scope,
+        "file_count": change.file_count,
+    }
     # Name the files: the hold's file links cascade away with a deleted file, so once a held file
     # is gone this event is the only record of what the hold covered. Ids only, never a name.
     if change.file_uuids:

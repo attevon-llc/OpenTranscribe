@@ -224,6 +224,7 @@ def _task_harness(*, retries: int, index_error: Exception):
         "collection_ids": [],
         "accessible_user_ids": [1],
         "organization_id": None,
+        "availability": "available",
     }
     service = MagicMock()
     service.index_transcript_chunks.side_effect = index_error

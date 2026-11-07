@@ -191,6 +191,7 @@ def test_digest_regeneration_replay_issues_the_same_index_calls(monkeypatch):
         "file_size": 1,
         "collection_ids": [],
         "accessible_user_ids": [],
+        "availability": "available",
     }
 
     class _Db:

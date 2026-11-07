@@ -31,10 +31,16 @@ def _bulk_write_v4_embeddings(speaker_docs: list[dict]) -> int:
         logger.error("OpenSearch client unavailable for bulk write")
         return 0
 
+    from app.services.opensearch_service.speaker_write import availability_by_file
+    from app.services.opensearch_service.speaker_write import stamp_availability
+
     v4_index = get_speaker_index_v4()
+    # A voice migrated for a trashed file is written trashed, never matchable (#1101).
+    states = availability_by_file({doc.get("media_file_id") for doc in speaker_docs})
     bulk_body: list[dict] = []
     for doc in speaker_docs:
         doc_id = doc.pop("_id")
+        stamp_availability(doc, states)
         bulk_body.append({"index": {"_index": v4_index, "_id": doc_id}})
         bulk_body.append(doc)
 

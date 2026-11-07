@@ -44,6 +44,8 @@ from typing import Any
 from app.core.config import settings
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.indices import ensure_indices_exist
+from app.services.search.availability_field import AVAILABILITY_FIELD
+from app.services.search.availability_field import AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ def index_transcript(
     embedding: list[float] | None = None,
     *,
     organization_id: int | None,
+    availability: str = AVAILABLE,
 ) -> dict[str, Any] | None:
     """
     Index a transcript in OpenSearch
@@ -75,6 +78,8 @@ def index_transcript(
         organization_id: The FILE's tenant (None = personal). Required so no writer can
             forget it (#1027): an org file's doc is stamped, a personal doc carries no
             field at all — the shape ``tenant_scope.org_filter_clauses`` gates on.
+        availability: The file's trash state (``file_availability.index_availability``,
+            issue #1101); every production caller passes it.
     """
     if not _client.opensearch_client:
         logger.warning("OpenSearch client not initialized, skipping indexing")
@@ -100,6 +105,7 @@ def index_transcript(
             "title": title,
             "tags": tags or [],
             "upload_time": datetime.datetime.now(datetime.UTC).isoformat(),  # ISO-8601 format
+            AVAILABILITY_FIELD: availability,
         }
         if organization_id is not None:
             doc["organization_id"] = organization_id

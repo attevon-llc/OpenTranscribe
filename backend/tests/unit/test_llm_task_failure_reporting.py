@@ -140,5 +140,5 @@ def test_topic_extraction_fails_once_database_retries_are_spent(
     result = tex.extract_topics_task.apply(args=[str(media_file.uuid)], retries=2).get()
 
     assert retried == []
-    assert result == {"status": "failed", "error": "OperationalError"}
+    assert result == {"status": "failed", "error": "topic_extraction_failed"}
     assert [kw["message"] for kw in sent] == ["Failed to extract topics from transcript"]

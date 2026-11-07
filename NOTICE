@@ -4,6 +4,9 @@ OpenTranscribe
 OpenTranscribe is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 See the LICENSE file for the full license text.
 
+Copyright (c) OpenTranscribe. The OpenTranscribe source code in this repository is first-party
+work licensed under AGPL-3.0; the third-party components listed below keep their own terms.
+
 This NOTICE file is required attribution for third-party components OpenTranscribe ships
 or runs at inference time. It does not replace those components' own license texts, which
 are the authoritative terms.

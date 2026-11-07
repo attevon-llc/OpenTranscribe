@@ -4,7 +4,11 @@ sidebar_position: 2
 
 # Contributing
 
-We welcome contributions to OpenTranscribe!
+:::note Contributions paused
+We are not accepting outside code contributions at the moment. Issues and discussions are still welcome.
+:::
+
+The steps below describe the development workflow for reference.
 
 ## Getting Started
 

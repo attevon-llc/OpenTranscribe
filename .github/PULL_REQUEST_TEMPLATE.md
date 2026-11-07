@@ -1,5 +1,7 @@
 # Pull Request
 
+> **Contributions paused.** We are not accepting outside code contributions at the moment. Issues and discussions are still welcome.
+
 ## Description
 Brief description of what this PR does
 

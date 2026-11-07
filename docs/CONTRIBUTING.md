@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to OpenTranscribe! This document provides guidelines and information for contributors.
 
+> **Contributions paused.** We are not accepting outside code contributions at the moment. Issues and discussions are still welcome.
+
 ## 🌟 Ways to Contribute
 
 ### 🐛 Bug Reports

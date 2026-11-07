@@ -170,7 +170,7 @@
     <div class="fields-grid">
       <div class="field-group">
         <label class="field-label" for="dirsync-schedule">{$t('settings.directorySync.schedule')}</label>
-        <input
+        <input dir="ltr"
           id="dirsync-schedule"
           type="text"
           bind:value={schedule}

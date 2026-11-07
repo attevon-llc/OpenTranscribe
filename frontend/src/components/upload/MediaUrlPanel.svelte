@@ -146,7 +146,7 @@
       {$t('uploader.mediaUrl')}
     </label>
     <div class="url-input-wrapper">
-      <input
+      <input dir="ltr"
         id="media-url"
         type="url"
         placeholder={$t('uploader.mediaUrlPlaceholder')}
@@ -183,7 +183,7 @@
           </div>
           <div class="protected-media-field">
             <label for="media-password">{$t('uploader.protectedMediaPasswordLabel')}</label>
-            <input id="media-password" type="password" class="protected-input" bind:value={mediaPassword} autocomplete="current-password" disabled={processingUrl || !$isOnline} />
+            <input dir="ltr" id="media-password" type="password" class="protected-input" bind:value={mediaPassword} autocomplete="current-password" disabled={processingUrl || !$isOnline} />
           </div>
         </div>
         <p class="protected-media-hint">{$t('uploader.protectedMediaHint')}</p>

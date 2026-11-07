@@ -304,7 +304,7 @@
   "settings.mediaSources.loading": "Loading media sources...",
   "settings.mediaSources.noSources": "No media sources configured",
   "settings.mediaSources.noSourcesHint": "Add a media source to enable authenticated downloads from protected servers. Share them with your team so they can use them too.",
-  "settings.mediaSources.hostname": "Hostname",
+  "settings.mediaSources.hostname": "Address",
   "settings.mediaSources.label": "Display Name",
   "settings.mediaSources.labelPlaceholder": "e.g. Corporate Media Server",
   "settings.mediaSources.username": "Username",

@@ -167,11 +167,11 @@
     <div class="form-row">
       <div class="form-group">
         <label for="em-from">{$t('settings.emailNotifications.fields.fromAddress')}</label>
-        <input id="em-from" type="email" class="form-input" bind:value={form.from_address} />
+        <input dir="ltr" id="em-from" type="email" class="form-input" bind:value={form.from_address} />
       </div>
       <div class="form-group">
         <label for="em-rcpt">{$t('settings.emailNotifications.fields.defaultRecipients')}</label>
-        <input id="em-rcpt" type="text" class="form-input" bind:value={form.default_recipients} placeholder="a@x.com, b@x.com" />
+        <input dir="ltr" id="em-rcpt" type="text" class="form-input" bind:value={form.default_recipients} placeholder="a@x.com, b@x.com" />
       </div>
     </div>
 
@@ -179,7 +179,7 @@
       <div class="form-row">
         <div class="form-group">
           <label for="em-host">{$t('settings.emailNotifications.fields.smtpHost')}</label>
-          <input id="em-host" type="text" class="form-input" bind:value={form.smtp_host} />
+          <input dir="ltr" id="em-host" type="text" class="form-input" bind:value={form.smtp_host} />
         </div>
         <div class="form-group">
           <label for="em-port">{$t('settings.emailNotifications.fields.smtpPort')}</label>
@@ -192,7 +192,7 @@
       </div>
       <div class="form-group">
         <label for="em-pass">{$t('settings.emailNotifications.fields.smtpPassword')}</label>
-        <input id="em-pass" type="password" class="form-input" bind:value={form.smtp_password} placeholder={editingConfig?.has_smtp_password ? $t('settings.watchSources.secretStored') : ''} />
+        <input dir="ltr" id="em-pass" type="password" class="form-input" bind:value={form.smtp_password} placeholder={editingConfig?.has_smtp_password ? $t('settings.watchSources.secretStored') : ''} />
       </div>
       <label class="checkbox-row">
         <input type="checkbox" bind:checked={form.smtp_use_tls} />
@@ -201,21 +201,21 @@
     {:else if form.provider === 'm365'}
       <div class="form-group">
         <label for="em-tenant">{$t('settings.emailNotifications.fields.tenantId')}</label>
-        <input id="em-tenant" type="text" class="form-input" bind:value={form.m365_tenant_id} />
+        <input dir="ltr" id="em-tenant" type="text" class="form-input" bind:value={form.m365_tenant_id} />
       </div>
       <div class="form-group">
         <label for="em-client">{$t('settings.emailNotifications.fields.clientId')}</label>
-        <input id="em-client" type="text" class="form-input" bind:value={form.m365_client_id} />
+        <input dir="ltr" id="em-client" type="text" class="form-input" bind:value={form.m365_client_id} />
       </div>
       <div class="form-group">
         <label for="em-secret">{$t('settings.emailNotifications.fields.clientSecret')}</label>
-        <input id="em-secret" type="password" class="form-input" bind:value={form.m365_client_secret} placeholder={editingConfig?.has_m365_secret ? $t('settings.watchSources.secretStored') : ''} />
+        <input dir="ltr" id="em-secret" type="password" class="form-input" bind:value={form.m365_client_secret} placeholder={editingConfig?.has_m365_secret ? $t('settings.watchSources.secretStored') : ''} />
       </div>
     {:else if form.provider === 'exchange'}
       <div class="form-row">
         <div class="form-group">
           <label for="em-exsrv">{$t('settings.emailNotifications.fields.exchangeServer')}</label>
-          <input id="em-exsrv" type="text" class="form-input" bind:value={form.exchange_server} />
+          <input dir="ltr" id="em-exsrv" type="text" class="form-input" bind:value={form.exchange_server} />
         </div>
         <div class="form-group">
           <label for="em-export">{$t('settings.emailNotifications.fields.smtpPort')}</label>
@@ -225,7 +225,7 @@
       <div class="form-row">
         <div class="form-group">
           <label for="em-exdom">{$t('settings.emailNotifications.fields.exchangeDomain')}</label>
-          <input id="em-exdom" type="text" class="form-input" bind:value={form.exchange_domain} />
+          <input dir="ltr" id="em-exdom" type="text" class="form-input" bind:value={form.exchange_domain} />
         </div>
         <div class="form-group">
           <label for="em-exuser">{$t('settings.emailNotifications.fields.exchangeUsername')}</label>

@@ -450,7 +450,7 @@
           <div class="form-group">
             <label for="ws-localpath">{$t('settings.watchSources.fields.localPath')}</label>
             <div class="path-row">
-              <input id="ws-localpath" type="text" class="form-input" bind:value={form.local_path} placeholder={$t('settings.watchSources.fields.localPathPlaceholder')} />
+              <input dir="ltr" id="ws-localpath" type="text" class="form-input" bind:value={form.local_path} placeholder={$t('settings.watchSources.fields.localPathPlaceholder')} />
               <button type="button" class="btn btn-secondary" on:click={() => openBrowser(form.local_path)}>{$t('settings.watchSources.browse')}</button>
             </div>
             {#if browsing}
@@ -488,31 +488,31 @@
         {:else if form.source_type === 's3'}
           <div class="form-group">
             <label for="ws-s3ep">{$t('settings.watchSources.fields.s3Endpoint')}</label>
-            <input id="ws-s3ep" type="text" class="form-input" bind:value={form.s3_endpoint_url} placeholder="https://s3.amazonaws.com (blank = AWS)" />
+            <input dir="ltr" id="ws-s3ep" type="text" class="form-input" bind:value={form.s3_endpoint_url} placeholder="https://s3.amazonaws.com (blank = AWS)" />
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="ws-s3b">{$t('settings.watchSources.fields.s3Bucket')}</label>
-              <input id="ws-s3b" type="text" class="form-input" bind:value={form.s3_bucket_name} />
+              <input dir="ltr" id="ws-s3b" type="text" class="form-input" bind:value={form.s3_bucket_name} />
             </div>
             <div class="form-group">
               <label for="ws-s3p">{$t('settings.watchSources.fields.s3Prefix')}</label>
-              <input id="ws-s3p" type="text" class="form-input" bind:value={form.s3_prefix} />
+              <input dir="ltr" id="ws-s3p" type="text" class="form-input" bind:value={form.s3_prefix} />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="ws-s3r">{$t('settings.watchSources.fields.s3Region')}</label>
-              <input id="ws-s3r" type="text" class="form-input" bind:value={form.s3_region} />
+              <input dir="ltr" id="ws-s3r" type="text" class="form-input" bind:value={form.s3_region} />
             </div>
             <div class="form-group">
               <label for="ws-s3ak">{$t('settings.watchSources.fields.s3AccessKey')}</label>
-              <input id="ws-s3ak" type="text" class="form-input" bind:value={form.s3_access_key_id} />
+              <input dir="ltr" id="ws-s3ak" type="text" class="form-input" bind:value={form.s3_access_key_id} />
             </div>
           </div>
           <div class="form-group">
             <label for="ws-s3sk">{$t('settings.watchSources.fields.s3SecretKey')}</label>
-            <input id="ws-s3sk" type="password" class="form-input" bind:value={form.s3_secret_key} placeholder={editingSource?.has_s3_secret_key ? $t('settings.watchSources.secretStored') : ''} />
+            <input dir="ltr" id="ws-s3sk" type="password" class="form-input" bind:value={form.s3_secret_key} placeholder={editingSource?.has_s3_secret_key ? $t('settings.watchSources.secretStored') : ''} />
           </div>
           <label class="checkbox-row">
             <input type="checkbox" bind:checked={form.s3_use_ssl} />
@@ -522,31 +522,31 @@
           <div class="form-row">
             <div class="form-group">
               <label for="ws-smbs">{$t('settings.watchSources.fields.smbServer')}</label>
-              <input id="ws-smbs" type="text" class="form-input" bind:value={form.smb_server} />
+              <input dir="ltr" id="ws-smbs" type="text" class="form-input" bind:value={form.smb_server} />
             </div>
             <div class="form-group">
               <label for="ws-smbsh">{$t('settings.watchSources.fields.smbShare')}</label>
-              <input id="ws-smbsh" type="text" class="form-input" bind:value={form.smb_share} />
+              <input dir="ltr" id="ws-smbsh" type="text" class="form-input" bind:value={form.smb_share} />
             </div>
           </div>
           <div class="form-group">
             <label for="ws-smbp">{$t('settings.watchSources.fields.smbPath')}</label>
-            <input id="ws-smbp" type="text" class="form-input" bind:value={form.smb_path} />
+            <input dir="ltr" id="ws-smbp" type="text" class="form-input" bind:value={form.smb_path} />
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="ws-smbu">{$t('settings.watchSources.fields.smbUsername')}</label>
-              <input id="ws-smbu" type="text" class="form-input" bind:value={form.smb_username} />
+              <input dir="ltr" id="ws-smbu" type="text" class="form-input" bind:value={form.smb_username} />
             </div>
             <div class="form-group">
               <label for="ws-smbpw">{$t('settings.watchSources.fields.smbPassword')}</label>
-              <input id="ws-smbpw" type="password" class="form-input" bind:value={form.smb_password} placeholder={editingSource?.has_smb_password ? $t('settings.watchSources.secretStored') : ''} />
+              <input dir="ltr" id="ws-smbpw" type="password" class="form-input" bind:value={form.smb_password} placeholder={editingSource?.has_smb_password ? $t('settings.watchSources.secretStored') : ''} />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label for="ws-smbd">{$t('settings.watchSources.fields.smbDomain')}</label>
-              <input id="ws-smbd" type="text" class="form-input" bind:value={form.smb_domain} />
+              <input dir="ltr" id="ws-smbd" type="text" class="form-input" bind:value={form.smb_domain} />
             </div>
             <div class="form-group">
               <label for="ws-smbport">{$t('settings.watchSources.fields.smbPort')}</label>
@@ -573,7 +573,7 @@
         </div>
         <div class="form-group">
           <label for="ws-ext">{$t('settings.watchSources.fields.fileExtensions')}</label>
-          <input id="ws-ext" type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
+          <input dir="ltr" id="ws-ext" type="text" class="form-input" bind:value={form.file_extensions} placeholder=".mp4,.mp3,.wav" />
           <p class="field-hint">{$t('settings.watchSources.extensionsHelp')}</p>
         </div>
         <div class="form-row">
@@ -615,13 +615,13 @@
         {#if form.multipart_enabled}
           <div class="form-group">
             <label for="ws-regex">{$t('settings.watchSources.fields.multipartRegex')}</label>
-            <input id="ws-regex" type="text" class="form-input" bind:value={form.multipart_regex} />
+            <input dir="ltr" id="ws-regex" type="text" class="form-input" bind:value={form.multipart_regex} />
             <p class="field-hint">{$t('settings.watchSources.regexHelp')}</p>
           </div>
           <div class="form-group">
             <label for="ws-regextest">{$t('settings.watchSources.regexTester')}</label>
             <div class="path-row">
-              <input id="ws-regextest" type="text" class="form-input" bind:value={regexSample} placeholder="meeting_P001.mp4" />
+              <input dir="ltr" id="ws-regextest" type="text" class="form-input" bind:value={regexSample} placeholder="meeting_P001.mp4" />
               <button type="button" class="btn btn-secondary" on:click={runRegexTest}>{$t('settings.watchSources.testRegex')}</button>
             </div>
             {#if regexResult}<p class="field-hint">{regexResult}</p>{/if}

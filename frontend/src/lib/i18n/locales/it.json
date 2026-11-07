@@ -304,7 +304,7 @@
   "settings.mediaSources.loading": "Caricamento delle fonti multimediali in corso...",
   "settings.mediaSources.noSources": "Nessuna fonte multimediale configurata",
   "settings.mediaSources.noSourcesHint": "Aggiungi una fonte multimediale per abilitare i download autenticati da server protetti. Condividile con il tuo team affinché possano usarle anche loro.",
-  "settings.mediaSources.hostname": "Hostname",
+  "settings.mediaSources.hostname": "Indirizzo",
   "settings.mediaSources.label": "Nome visualizzato",
   "settings.mediaSources.labelPlaceholder": "es. Server multimediale aziendale",
   "settings.mediaSources.username": "Nome utente",

@@ -95,7 +95,7 @@
 
     <div class="form-group">
       <label for="proxy_trusted_proxies">{$t('settings.proxy.trustedProxies')}</label>
-      <input
+      <input dir="ltr"
         id="proxy_trusted_proxies"
         type="text"
         bind:value={formData.proxy_trusted_proxies}
@@ -109,7 +109,7 @@
     <div class="form-group">
       <label for="proxy_shared_secret">{$t('settings.proxy.sharedSecret')}</label>
       <div class="input-with-toggle">
-        <input
+        <input dir="ltr"
           id="proxy_shared_secret"
           type={showSecret ? 'text' : 'password'}
           bind:value={sharedSecretInput}
@@ -143,7 +143,7 @@
     <div class="form-row">
       <div class="form-group">
         <label for="proxy_email_header">{$t('settings.proxy.emailHeader')}</label>
-        <input
+        <input dir="ltr"
           id="proxy_email_header"
           type="text"
           bind:value={formData.proxy_email_header}
@@ -156,7 +156,7 @@
 
       <div class="form-group">
         <label for="proxy_name_header">{$t('settings.proxy.nameHeader')}</label>
-        <input
+        <input dir="ltr"
           id="proxy_name_header"
           type="text"
           bind:value={formData.proxy_name_header}
@@ -171,7 +171,7 @@
     <div class="form-row">
       <div class="form-group">
         <label for="proxy_groups_header">{$t('settings.proxy.groupsHeader')}</label>
-        <input
+        <input dir="ltr"
           id="proxy_groups_header"
           type="text"
           bind:value={formData.proxy_groups_header}
@@ -184,7 +184,7 @@
 
       <div class="form-group">
         <label for="proxy_groups_separator">{$t('settings.proxy.groupsSeparator')}</label>
-        <input
+        <input dir="ltr"
           id="proxy_groups_separator"
           type="text"
           bind:value={formData.proxy_groups_separator}
@@ -202,7 +202,7 @@
 
     <div class="form-group">
       <label for="proxy_role_header">{$t('settings.proxy.roleHeader')}</label>
-      <input
+      <input dir="ltr"
         id="proxy_role_header"
         type="text"
         bind:value={formData.proxy_role_header}
@@ -221,7 +221,7 @@
 
     <div class="form-group">
       <label for="proxy_allowed_domains">{$t('settings.proxy.allowedDomains')}</label>
-      <input
+      <input dir="ltr"
         id="proxy_allowed_domains"
         type="text"
         bind:value={formData.proxy_allowed_domains}

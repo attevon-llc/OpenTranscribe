@@ -112,7 +112,7 @@
     <div class="form-row">
       <div class="form-group">
         <label for="ldap_server">{$t('settings.ldap.server')}</label>
-        <input
+        <input dir="ltr"
           id="ldap_server"
           type="text"
           bind:value={formData.ldap_server}
@@ -161,7 +161,7 @@
 
     <div class="form-group">
       <label for="ldap_ca_cert_file">{$t('settings.ldap.caCertFile')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_ca_cert_file"
         type="text"
         bind:value={formData.ldap_ca_cert_file}
@@ -174,7 +174,7 @@
 
     <div class="form-group">
       <label for="ldap_tls_server_name">{$t('settings.ldap.tlsServerName')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_tls_server_name"
         type="text"
         bind:value={formData.ldap_tls_server_name}
@@ -217,7 +217,7 @@
 
     <div class="form-group">
       <label for="ldap_bind_dn">{$t('settings.ldap.bindDn')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_bind_dn"
         type="text"
         bind:value={formData.ldap_bind_dn}
@@ -230,7 +230,7 @@
 
     <div class="form-group">
       <label for="ldap_bind_password">{$t('settings.ldap.bindPassword')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_bind_password"
         type="password"
         bind:value={formData.ldap_bind_password}
@@ -261,7 +261,7 @@
     <div class="form-row thirds">
       <div class="form-group">
         <label for="ldap_username_attr">{$t('settings.ldap.usernameAttr')}</label>
-        <input
+        <input dir="ltr"
           id="ldap_username_attr"
           type="text"
           bind:value={formData.ldap_username_attr}
@@ -273,7 +273,7 @@
 
       <div class="form-group">
         <label for="ldap_email_attr">{$t('settings.ldap.emailAttr')}</label>
-        <input
+        <input dir="ltr"
           id="ldap_email_attr"
           type="text"
           bind:value={formData.ldap_email_attr}
@@ -285,7 +285,7 @@
 
       <div class="form-group">
         <label for="ldap_name_attr">{$t('settings.ldap.displayNameAttr')}</label>
-        <input
+        <input dir="ltr"
           id="ldap_name_attr"
           type="text"
           bind:value={formData.ldap_name_attr}
@@ -298,7 +298,7 @@
 
     <div class="form-group">
       <label for="ldap_user_search_filter">{$t('settings.ldap.userSearchFilter')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_user_search_filter"
         type="text"
         bind:value={formData.ldap_user_search_filter}
@@ -315,7 +315,7 @@
 
     <div class="form-group">
       <label for="ldap_group_attr">{$t('settings.ldap.groupMembershipAttr')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_group_attr"
         type="text"
         bind:value={formData.ldap_group_attr}
@@ -337,7 +337,7 @@
 
     <div class="form-group">
       <label for="ldap_admin_groups">{$t('settings.ldap.adminGroups')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_admin_groups"
         type="text"
         bind:value={formData.ldap_admin_groups}
@@ -350,7 +350,7 @@
 
     <div class="form-group">
       <label for="ldap_admin_users">{$t('settings.ldap.adminUsers')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_admin_users"
         type="text"
         bind:value={formData.ldap_admin_users}
@@ -363,7 +363,7 @@
 
     <div class="form-group">
       <label for="ldap_user_groups">{$t('settings.ldap.allowedUserGroups')}</label>
-      <input
+      <input dir="ltr"
         id="ldap_user_groups"
         type="text"
         bind:value={formData.ldap_user_groups}

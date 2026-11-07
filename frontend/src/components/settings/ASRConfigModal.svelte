@@ -347,7 +347,7 @@
                 {/each}
               </select>
             {:else}
-              <input
+              <input dir="ltr"
                 id="asr-model"
                 type="text"
                 bind:value={formData.model_name}
@@ -387,7 +387,7 @@
           {#if selectedProvider.requires_access_key_id}
             <div class="form-group">
               <label for="asr-access-key-id">{$t('settings.asrProvider.fields.accessKeyId')}</label>
-              <input
+              <input dir="ltr"
                 id="asr-access-key-id"
                 type="text"
                 bind:value={formData.access_key_id}
@@ -403,7 +403,7 @@
             <div class="form-group">
               <label for="asr-apikey">{selectedProvider.requires_access_key_id ? $t('settings.asrProvider.fields.secretAccessKey') : $t('settings.asrProvider.fields.apiKey')}</label>
               <div class="input-with-toggle">
-                <input
+                <input dir="ltr"
                   id="asr-apikey"
                   type={showApiKey ? 'text' : 'password'}
                   bind:value={formData.api_key}
@@ -435,7 +435,7 @@
           {#if selectedProvider.supports_base_url}
             <div class="form-group">
               <label for="asr-baseurl">{$t('settings.asrProvider.fields.baseUrl')}</label>
-              <input
+              <input dir="ltr"
                 id="asr-baseurl"
                 type="url"
                 bind:value={formData.base_url}

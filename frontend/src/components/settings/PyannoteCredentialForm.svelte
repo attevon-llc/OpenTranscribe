@@ -146,7 +146,7 @@
       {$t('settings.speakerIdentification.pyannoteKey.inputLabel')}
     </label>
     <div class="credential-row">
-      <input
+      <input dir="ltr"
         id="pyannote-api-key"
         type="password"
         autocomplete="off"

@@ -351,7 +351,7 @@
     <div class="fields-grid">
       <div class="field-group">
         <label class="field-label" for="backup-schedule">{$t('settings.backup.schedule')}</label>
-        <input
+        <input dir="ltr"
           id="backup-schedule"
           type="text"
           bind:value={schedule}
@@ -378,7 +378,7 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="backup-destination">{$t('settings.backup.destination')}</label>
-          <input id="backup-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="backup-destination" type="text" bind:value={destination} class="form-input" spellcheck="false" />
           <span class="field-hint">
             {#if mountOk}
               <span class="mount-ok"><MenuIcon name="dot" size={10} /> {$t('settings.backup.mountOk')}</span>
@@ -394,28 +394,28 @@
       <div class="fields-grid">
         <div class="field-group">
           <label class="field-label" for="s3-endpoint">{$t('settings.backup.s3Endpoint')}</label>
-          <input id="s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
+          <input dir="ltr" id="s3-endpoint" type="text" bind:value={s3EndpointUrl} class="form-input" placeholder="https://s3.amazonaws.com" spellcheck="false" />
           <span class="field-hint">{$t('settings.backup.s3EndpointHint')}</span>
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-region">{$t('settings.backup.s3Region')}</label>
-          <input id="s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
+          <input dir="ltr" id="s3-region" type="text" bind:value={s3Region} class="form-input" placeholder="us-east-1" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-bucket">{$t('settings.backup.s3Bucket')}</label>
-          <input id="s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
+          <input dir="ltr" id="s3-bucket" type="text" bind:value={s3Bucket} class="form-input" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-prefix">{$t('settings.backup.s3Prefix')}</label>
-          <input id="s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe/" spellcheck="false" />
+          <input dir="ltr" id="s3-prefix" type="text" bind:value={s3Prefix} class="form-input" placeholder="opentranscribe/" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-access-key">{$t('settings.backup.s3AccessKey')}</label>
-          <input id="s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
+          <input dir="ltr" id="s3-access-key" type="text" bind:value={s3AccessKeyId} class="form-input" autocomplete="off" spellcheck="false" />
         </div>
         <div class="field-group">
           <label class="field-label" for="s3-secret-key">{$t('settings.backup.s3SecretKey')}</label>
-          <input
+          <input dir="ltr"
             id="s3-secret-key"
             type="password"
             bind:value={s3SecretKey}
@@ -477,7 +477,7 @@
     {#if encrypt}
       <div class="field-group encryption-field">
         <label class="field-label" for="passphrase-file">{$t('settings.backup.passphraseFile')}</label>
-        <input id="passphrase-file" type="text" bind:value={passphraseFile} class="form-input" placeholder="/backups/.passphrase" spellcheck="false" />
+        <input dir="ltr" id="passphrase-file" type="text" bind:value={passphraseFile} class="form-input" placeholder="/backups/.passphrase" spellcheck="false" />
         <span class="field-hint">{$t('settings.backup.passphraseFileHint')}</span>
       </div>
     {/if}

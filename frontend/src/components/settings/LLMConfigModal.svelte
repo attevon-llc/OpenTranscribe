@@ -547,7 +547,7 @@
                   {/if}
                 </span>
               </label>
-              <input
+              <input dir="ltr"
                 type="url"
                 id="base-url"
                 bind:value={formData.base_url}
@@ -777,7 +777,7 @@
                   {/if}
                 </button>
               </div>
-              <input
+              <input dir="ltr"
                 type={showApiKey ? 'text' : 'password'}
                 id="api-key"
                 bind:value={formData.api_key}

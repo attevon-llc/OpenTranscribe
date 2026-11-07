@@ -275,7 +275,7 @@
   "settings.mediaSources.loading": "Carregando fontes de mídia...",
   "settings.mediaSources.noSources": "Nenhuma fonte de mídia configurada",
   "settings.mediaSources.noSourcesHint": "Adicione uma fonte de mídia para habilitar downloads autenticados de servidores protegidos. Compartilhe-as com sua equipe para que também possam usá-las.",
-  "settings.mediaSources.hostname": "Nome do host",
+  "settings.mediaSources.hostname": "Endereço",
   "settings.mediaSources.label": "Nome de exibição",
   "settings.mediaSources.labelPlaceholder": "ex. Servidor de Mídia Corporativo",
   "settings.mediaSources.username": "Usuário",

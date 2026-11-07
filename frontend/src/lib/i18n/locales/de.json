@@ -2182,7 +2182,7 @@
   "settings.mediaSources.loading": "Medienquellen werden geladen...",
   "settings.mediaSources.noSources": "Keine Medienquellen konfiguriert",
   "settings.mediaSources.noSourcesHint": "Fügen Sie eine Medienquelle hinzu, um authentifizierte Downloads von geschützten Servern zu ermöglichen. Teilen Sie sie mit Ihrem Team, damit auch andere sie nutzen können.",
-  "settings.mediaSources.hostname": "Hostname",
+  "settings.mediaSources.hostname": "Adresse",
   "settings.mediaSources.label": "Anzeigename",
   "settings.mediaSources.labelPlaceholder": "z.B. Unternehmens-Medienserver",
   "settings.mediaSources.username": "Benutzername",

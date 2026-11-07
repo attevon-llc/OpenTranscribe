@@ -49,8 +49,9 @@ already satisfy — depend on the Protocol, not the concrete module, at new seam
   `purge.py` deletes, and only once the switch is off. A purge is MEASURED: `purge_voiceprints.py` (relational half + OpenSearch
   documents by the Postgres ids of the scope; an ORGANIZATION purge also deletes and measures the documents stamped with its
   `organization_id` (`purge_voiceprints.org_stamp_clause`: orphans and integer-keyed legacy documents have no row), a personal or
-  user purge never deletes by stamp; a pass hands the cluster centroid ids it could not confirm gone to the next pass as
-  `carried_cluster_uuids`, because their rows are already deleted; "outside the scope" is `not_in_scope`, a NOT EXISTS anti-join,
+  user purge never deletes by stamp; centroid ids live in `privacy_purge_pending` (v461, `purge_pending.py`), written in the
+  commit that deletes the cluster rows, never in a Celery message (#1334: `privacy.purge_reverify` finishes what a dead worker
+  left and fails that purge `interrupted`); "outside the scope" is `not_in_scope`, a NOT EXISTS anti-join,
   never `NOT IN (SELECT ...)`), `purge_residual.py` (a fresh-session,
   post-refresh check whose values must all be 0; unmeasurable = unverified, never clean), `purge.run_purge_pass` returns a
   `PassResult` with exact counts per store, and the task fails the purge on a final residual. It also reverts what a voiceprint

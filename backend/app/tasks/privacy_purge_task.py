@@ -8,9 +8,16 @@ Two passes, one task id. Pass 1 deletes. Pass 2 runs ``SECOND_PASS_DELAY_SECONDS
 repeats the same idempotent deletion, to catch a voiceprint written by something that decided
 before the switch flipped (the OpenSearch write backstop trusts a cached answer for up to
 ``PRIVACY_WRITE_BACKSTOP_TTL_SECONDS``). Pass 2 recomputes its targets from Postgres, which no
-longer has the clusters pass 1 deleted, so pass 1 hands it the ids of any cluster centroid
-document it could not confirm gone (``carried_cluster_uuids``). The task's row (``task_type="privacy_purge"``) stays
-``in_progress`` until pass 2 ends.
+longer has the clusters pass 1 deleted, so the ids of their centroid documents are kept in the
+purge's ``privacy_purge_pending`` row, written in the same commit that deletes the cluster rows
+(``services/privacy/purge_pending.py``, v461). The task's row (``task_type="privacy_purge"``)
+stays ``in_progress`` until pass 2 ends.
+
+A worker that dies after pass 1's relational commit leaves that row behind. ``privacy.purge_reverify``
+(beat) deletes and measures its documents once it is older than
+``purge_pending.REVERIFY_GRACE_SECONDS``, audits the result, and fails a purge whose final pass
+never ended with ``reason: interrupted``: the purge completes its centroid work or reports
+incomplete, never done. That row, not a blind replay, is this task's recovery from worker loss.
 
 Because a purge is irreversible and the layer can be switched back on between the request and the
 run, the task re-checks that the targets are still off before touching anything and aborts if not
@@ -27,10 +34,12 @@ from typing import Any
 from app.auth.audit_events import AuditOutcome
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
+from app.core.queues import UtilityPriority
 from app.db.base import SessionLocal
 from app.db.session_utils import session_scope
 from app.models.user import User
 from app.services.privacy import purge
+from app.services.privacy import purge_pending
 from app.services.privacy.measure import GroupedCounts
 from app.services.privacy.measure import merge_grouped
 from app.services.privacy.purge_file_guard import PROTECTION_COUNT_KEYS
@@ -43,6 +52,7 @@ from app.utils.task_utils import update_task_status
 logger = logging.getLogger(__name__)
 
 TASK_NAME = "privacy.purge_voiceprints"
+REVERIFY_TASK_NAME = "privacy.purge_reverify"
 TASK_TYPE = "privacy_purge"
 
 
@@ -74,8 +84,8 @@ def privacy_purge_task(
         actor_user_id: Who asked. Only the id travels through the broker; the audit username is
             looked up here. ``None`` for a scheduled destruction (no person asked).
         phase: 1 for the first pass; the task schedules phase 2 itself.
-        carried_cluster_uuids: Cluster centroid documents the previous pass could not confirm
-            deleted. Their Postgres rows are gone, so only the previous pass knows the ids.
+        carried_cluster_uuids: Centroid ids handed over in the message by a pass 1 queued before
+            v461; a current pass 1 leaves them in ``privacy_purge_pending`` instead.
         purge_reason: ``purge.RETENTION`` for a destruction a retention schedule decided (the
             ``files`` scope): allowed whatever the privacy switches say, and recorded in the
             audit event as ``purge_reason``. ``None`` for a privacy purge.
@@ -136,6 +146,7 @@ def privacy_purge_task(
             wanted,
             session_factory=SessionLocal,
             carried_cluster_uuids=carried_cluster_uuids or (),
+            pending_task_id=task_id,
         )
     except Exception:
         logger.exception("privacy purge %s failed in pass %s", task_id, phase)
@@ -143,13 +154,16 @@ def privacy_purge_task(
         _set_status(task_id, TASK_STATUS_FAILED, completed=True)
         return {"status": "failed", "reason": "error"}
 
+    final = phase > 1
+    if purge.VOICEPRINTS in wanted:
+        purge_pending.settle(SessionLocal, task_id, result.unfinished_cluster_uuids, final=final)
     counts = result.counts()
-    if phase > 1:
+    if final:
         # The second pass sees the same protected files; the total must not count them twice.
         for key in PROTECTION_COUNT_KEYS:
             counts[purge.POSTGRES].pop(key, None)
     residual = result.residual()
-    previous = purge.read_record(task_id) if phase > 1 else None
+    previous = purge.read_record(task_id) if final else None
     total: GroupedCounts = {purge.POSTGRES: {}, purge.OPENSEARCH: {}}
     if previous and isinstance(previous.get("counts"), dict):
         merge_grouped(total, previous["counts"])
@@ -164,7 +178,6 @@ def privacy_purge_task(
         residual_unverified=sorted(set(residual.unverified)),
     )
 
-    final = phase > 1
     # A residual after the final pass is a purge that did not do what it was asked: FAILURE,
     # never a success with a footnote. After pass 1 it is recorded and pass 2 gets to finish it.
     if not residual.ok:
@@ -184,7 +197,6 @@ def privacy_purge_task(
                     "targets": wanted,
                     "actor_user_id": actor_user_id,
                     "phase": 2,
-                    "carried_cluster_uuids": result.unfinished_cluster_uuids,
                     "purge_reason": purge_reason,
                 },
                 task_id=task_id,
@@ -211,3 +223,21 @@ def privacy_purge_task(
         task_id, TASK_STATUS_FAILED if result.errors else TASK_STATUS_COMPLETED, completed=True
     )
     return {"status": "completed", "counts": counts}
+
+
+@celery_app.task(name=REVERIFY_TASK_NAME, priority=UtilityPriority.ROUTINE)
+def privacy_purge_reverify_task(grace_seconds: float | None = None) -> dict[str, int]:
+    """Finish or report the centroid work of purges a dead worker left (``purge_pending.reverify``).
+
+    Args:
+        grace_seconds: Override of ``purge_pending.REVERIFY_GRACE_SECONDS`` (the beat passes none).
+    """
+    summary = purge_pending.reverify(
+        SessionLocal,
+        grace_seconds=purge_pending.REVERIFY_GRACE_SECONDS
+        if grace_seconds is None
+        else grace_seconds,
+    )
+    if summary["rows"]:
+        logger.info("privacy purge re-verify: %s", summary)
+    return summary

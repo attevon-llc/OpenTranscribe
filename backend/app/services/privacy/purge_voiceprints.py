@@ -48,6 +48,7 @@ from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import update
 
+from app.services.privacy import purge_pending
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import VOICEPRINT
 from app.utils.speaker_identity_source import VOICEPRINT_LINK
@@ -486,8 +487,18 @@ def _purge_clusters(
     counts["cross_scope_clusters_trimmed"] += len(mixed)
 
 
-def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
+def purge_voiceprints_postgres(
+    db: Session, scope: PurgeScope, *, pending_task_id: str | None = None
+) -> PostgresPurge:
     """The relational half of a voiceprint purge. Commits.
+
+    Args:
+        db: The session; committed once at the end.
+        scope: Whose data.
+        pending_task_id: The purge's task id. Its centroid ids are recorded in
+            ``privacy_purge_pending`` in the same commit that deletes the cluster rows
+            (:mod:`app.services.privacy.purge_pending`), so no crash can lose them. ``None``
+            records nothing (a caller that deletes and measures in one call, with no later pass).
 
     Returns:
         The counts (keys of the audit event's ``postgres`` group), the speakers whose status and
@@ -678,6 +689,8 @@ def purge_voiceprints_postgres(db: Session, scope: PurgeScope) -> PostgresPurge:
         )
     ]
     counts["suggestions_cleared"] += len(cleared_suggestions)
+    if pending_task_id is not None:
+        purge_pending.record(db, pending_task_id, scope, targets.cluster_uuids)
     db.commit()
     cleared = sorted(set(machine_ids) | set(cleared_suggestions))
     targets.cluster_uuids = list(dict.fromkeys(targets.cluster_uuids))

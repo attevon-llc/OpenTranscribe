@@ -162,6 +162,14 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute=25, hour=5),
         "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
     },
+    "privacy-purge-reverify": {
+        "task": "privacy.purge_reverify",
+        # Quarter-hourly at odd minutes. Finishes (or fails as interrupted) a voiceprint purge a
+        # dead worker left, from its privacy_purge_pending row (v461, issue #1334); one indexed
+        # query returning nothing when no purge is outstanding.
+        "schedule": crontab(minute="11,26,41,56"),
+        "options": {"queue": "utility", "priority": 5},  # UtilityPriority.ROUTINE
+    },
     "session-cap-sweep": {
         "task": "session.cap_sweep",
         # Daily at 04:55, offset from chat retention (04:10) / account
@@ -230,6 +238,7 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "audit-outbox-relay": BeatEffect.MUTATING,  # copies audit events out, marks/deletes rows
     "audit-retention-sweep": BeatEffect.MUTATING,  # deletes audit rows
     "voiceprint-retention-sweep": BeatEffect.MUTATING,  # deletes voiceprints
+    "privacy-purge-reverify": BeatEffect.MUTATING,  # deletes centroid docs, fails lost purges
     "session-cap-sweep": BeatEffect.MUTATING,  # revokes sessions
     "media-mirror-check-schedule": BeatEffect.MUTATING,  # stamps settings, copies media out
     "directory-sync-check-schedule": BeatEffect.INGEST,  # pulls users from the directory

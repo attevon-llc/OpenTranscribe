@@ -43,7 +43,10 @@ Moved intact from `backend/app/tasks/CLAUDE.md` ("Key files"). The session-lifet
   pass 2 ends and ends `failed` if a store could not be fully purged. It re-checks `purge.targets_still_enabled` when it
   starts and aborts (`reason: policy_enabled`) if the layer was switched back on. Counts live in a Redis record read by
   `GET /privacy/purge/{task_id}`; audit events carry counts only. Opens a short session per relational step and none during
-  the OpenSearch delete.
+  the OpenSearch delete. Worker loss after a pass's relational commit is recovered by `privacy.purge_reverify` (beat,
+  **utility**, quarter-hourly) from the purge's `privacy_purge_pending` row (v461, #1334): it deletes and measures the
+  centroid documents and fails a purge whose final pass never ended with `reason: interrupted`. That is why the purge task
+  is excluded from blind replay (`test_lost_task_replay.py`).
 - `rediarize_task.py` — the post stage AND the user's manual "re-detect speakers" (which
   plans with the file owner's current choice and never meters). Read phase → detector with
   no session open → `finalize_segments` re-split → write phase → voiceprint stage once

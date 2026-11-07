@@ -179,9 +179,11 @@ def _redact_through_the_batch(db_session, user, media):
     from app.api.endpoints.files.bulk_actions import BulkActionRequest
     from app.api.endpoints.files.bulk_actions import bulk_file_action
     from app.services.request_context import RequestContext
+    from tests.helpers import fake_request
 
     results = bulk_file_action(
         request=BulkActionRequest(file_uuids=[str(media.uuid)], action="redact"),
+        http_request=fake_request(),
         db=db_session,
         current_user=user,
         ctx=RequestContext(user=user),

@@ -336,3 +336,74 @@ What does not change:
 Trashed files keep their storage until they are destroyed. The administrator dashboard's file
 statistics now show how many files are in the trash and how much space they use
 (`trashed_files`, `trashed_bytes`).
+
+## A legal hold now freezes the file's content
+
+**Check this if...** you edit files through the API or a script, or anyone edits recordings that
+an administrator has placed under a legal hold (an organization hold, or the hold that comes with
+a takedown).
+
+Before 0.7.0 a legal hold blocked deleting and reprocessing a file, but its transcript, speakers,
+title, tags and the rest could still be edited; a transcript edit was recorded as
+`content.transcript.edit`. This deployment keeps no earlier versions of a transcript, so such an
+edit overwrote the only copy of what was held. From 0.7.0 a hold preserves the file exactly as it
+was: every change to a held file's content is refused with `409` and
+`detail.error = "FILE_UNDER_LEGAL_HOLD"` (the same answer a delete of a held file already gave),
+and each refusal is recorded as `content.hold.refused` with the action that was tried.
+
+Routes that used to succeed on a held file and now answer `409 FILE_UNDER_LEGAL_HOLD`:
+
+- Transcript: `PUT /api/files/{uuid}/transcript/segments/{segment_uuid}`,
+  `PUT /api/transcripts/segments/{segment_uuid}/speaker`.
+- Speakers: `POST /api/speakers`, `PUT /api/speakers/{uuid}`,
+  `POST /api/speakers/{uuid}/merge/{target_uuid}` (either speaker's file held),
+  `POST /api/speakers/{uuid}/verify`, `POST /api/speakers/{uuid}/confirm-gender`,
+  `POST /api/speaker-profiles/speakers/{uuid}/assign-profile`, and
+  `DELETE /api/speaker-profiles/profiles/{uuid}` when a speaker linked to the profile is on a
+  held file.
+- File details: `PUT /api/files/{uuid}` (title, filename, recorded date, language and every other
+  field).
+- AI features: `POST /api/files/{uuid}/summarize`, `POST /api/files/{uuid}/retry-summary`,
+  `POST /api/files/{uuid}/identify-speakers`, `POST /api/files/{uuid}/extract`,
+  `POST /api/files/{uuid}/apply`, `DELETE /api/files/{uuid}/suggestions`,
+  `POST /api/files/{uuid}/auto-label`. `POST /api/files/batch-extract` skips held files (its
+  answer gains `held_skipped`) and answers 409 only when every file asked for is held.
+- Tags: `POST /api/tags/files/{uuid}/tags`, `DELETE /api/tags/files/{uuid}/tags/{name}`, and
+  `POST /api/tags/{uuid}/merge`, `DELETE /api/tags`, `POST /api/tags/promote` and a rename with
+  `confirm_merge` (`PATCH /api/tags/{uuid}`) when a tag they would remove or fold is on a held
+  file. A plain tag rename still works.
+- Collections: `POST /api/collections/{uuid}/media` and `DELETE /api/collections/{uuid}/media`
+  for a held file (before, only a hold on the collection itself refused the removal), and
+  `DELETE /api/collections/{uuid}` when the collection contains a held file.
+- Comments: `PUT /api/comments/{uuid}` and `DELETE /api/comments/{uuid}` on a held file.
+- Recovery: `POST /api/files/{uuid}/recover`, `POST /api/tasks/retry/{uuid}` and
+  `POST /api/my-files/{uuid}/retry` now answer 409 up front instead of failing later.
+- The bulk action (`POST /api/files/management/bulk-action`) answers `200` as before; a held file's
+  row now carries `error: "FILE_UNDER_LEGAL_HOLD"` for `summarize`, `identify_speakers`, `redact`,
+  `add_tag`, `remove_tag` and `recover`, as it already did for `retry` and `reprocess`.
+
+Operations that span many files leave a held file's speaker as it was instead of refusing: renaming
+a speaker profile (`PUT /api/speaker-profiles/profiles/{uuid}`, whose answer gains
+`held_skipped`), confirming a profile's gender, and the speaker-cluster batch verify (answer gains
+`held_skipped`), unassign, promote, merge and split.
+
+Background work skips a held file once its first processing run has finished: an automatic or
+queued summary, topic extraction and auto-labelling, LLM speaker identification, speaker gender
+detection, voice matching from another file, a redaction rescan and the admin redaction reindex.
+A file that is held while it is still being processed finishes that run. Its first redaction scan
+still runs, so a held file stays readable where masking is required.
+
+Still allowed on a held file: reading, searching, playing, exporting and downloading it, rebuilding
+its search index and other derived copies, and adding a new comment, which is recorded as the new
+`content.hold.annotation` event. `content.transcript.edit` is no longer written; earlier rows stay
+in the audit log and keep their label.
+
+An account cannot be deleted (`DELETE /api/admin/users/{uuid}`, `DELETE /api/users/{uuid}`, a SCIM
+delete) while it has commented on someone else's held file: the answer is the existing
+`409 FILE_UNDER_LEGAL_HOLD`, with a new `commented_files_under_legal_hold` count. A GDPR erasure of
+such an account keeps those comments and the account row, and finishes once the hold is released,
+as it already did for the account's own held files.
+
+**What to do:** a script that changes a held file must have an administrator release the hold
+first. Handle `409` with `FILE_UNDER_LEGAL_HOLD` as "this file is preserved", not as a transient
+error to retry.

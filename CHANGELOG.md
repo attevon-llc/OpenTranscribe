@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Environment variables that nothing read are removed from `.env.example` and the code (including the `VAD_*`, `WHISPER_HALLUCINATION_*`, `SOURCE_LANGUAGE` and `MODELS_DIRECTORY` entries), and boolean environment values are parsed by one function. A test fails when an advertised variable is unread or always overridden by an admin setting (#566, #1206).
 - The chat context estimate uses the conversation's pinned model (#1364).
 - The search indexes gain a small `availability` field, added automatically at startup; no reindex is needed. A background task re-applies a file's trash state to the index every 15 minutes, so a trash or restore that could not reach the search service at that moment is corrected (#1101).
+- The search index's `availability` field also records takedowns. Files taken down before this release are marked shortly after the upgrade by a background task that runs once at startup and then every 15 minutes; no reindex is needed. Search filters, suggestions and match counts no longer answer "temporarily unavailable" when the list of taken-down files could not be read, because they no longer read one (#1253).
 
 ### Removed
 
@@ -166,6 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Authentication settings that fall back to `.env` because the database could not be read are logged as warnings and counted in `security_state_degraded_total`.
 - Every account-lifecycle check (expired, rejected, pending, held) now also applies on endpoints where sign-in is optional and on the realtime connection handshake.
 - When the LLM limit settings cannot be read, LLM calls are refused with `llm_budget_unavailable` rather than run without a limit.
+- Files taken down by an administrator are now left out of speaker matching and speaker suggestions, as they already were from the rest of the app. Search results, counts, filters, suggestions, summary search and chat leave them out through the search index itself, so these keep working however many files are taken down; administrators who review takedowns still see them in search. Releasing a file brings it back everywhere (#1253).
 
 ## [0.6.1] - 2026-11-03
 

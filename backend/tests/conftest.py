@@ -349,6 +349,10 @@ pytest_plugins = [
     # `summary_plane` + `sync_summary_plane`: seed the OpenSearch summary plane (#963) from
     # Postgres for API-level summary-search tests. Opt-in per module; nothing autouse.
     "fixtures.summary_plane",
+    # `availability_indices`: throwaway chunks/transcripts/speaker indices plus the indexing and
+    # read-surface helpers the trash and quarantine lifecycle suites share (#1101, #1253).
+    # Opt-in; nothing autouse.
+    "fixtures.availability_index_world",
     # `support_world`: two organizations, an org admin, a platform admin and a super_admin with
     # real tokens, for the support-access grant suites (#1122). Opt-in; nothing autouse.
     "fixtures.support_world",

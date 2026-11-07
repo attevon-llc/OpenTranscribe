@@ -24,6 +24,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "DELETE /api/files/{file_uuid}": "bypass",
     "DELETE /api/files/{file_uuid}/cache": "bypass",
     "DELETE /api/files/{file_uuid}/force": "bypass",
+    "DELETE /api/files/{file_uuid}/purge": "bypass",
     "DELETE /api/files/{file_uuid}/suggestions": "bypass",
     "DELETE /api/files/{file_uuid}/summary": "bypass",
     "DELETE /api/groups/{group_uuid}": "caller",
@@ -53,6 +54,7 @@ CONTENT_GUARDS: dict[str, str] = {
     "GET /api/files/management/stuck": "bypass",
     "GET /api/files/metadata-filters": "bypass",
     "GET /api/files/owners": "bypass",
+    "GET /api/files/trash": "caller",
     "GET /api/files/{file_uuid}": "bypass",
     "GET /api/files/{file_uuid}/analytics": "bypass",
     "GET /api/files/{file_uuid}/captions": "bypass",
@@ -125,6 +127,8 @@ CONTENT_GUARDS: dict[str, str] = {
     "POST /api/custom-vocabulary": "caller",
     "POST /api/custom-vocabulary/bulk": "caller",
     "POST /api/files/management/bulk-action": "bypass",
+    "POST /api/files/trash/empty": "bypass",
+    "POST /api/files/{file_uuid}/restore": "bypass",
     "POST /api/legal/acknowledgments": "bypass",
     "POST /api/files/{file_uuid}/analytics/refresh": "bypass",
     "POST /api/files/{file_uuid}/cancel": "bypass",
@@ -304,6 +308,14 @@ INLINE_ROLE_ROUTES: dict[str, tuple[str, str]] = {
 #: an admin reveal unredacted text (``reveal-widener``), keyed ``rel::function``. A widener in a
 #: function that is not listed is ``UNCLASSIFIED``: a new widener is a new decision.
 SCOPE_WIDENER_SITES: dict[str, str] = {
+    "services/trash_access.py::_sees_whole_trash": (
+        "widens the trash list (and empty trash) to every user's trashed rows; trash_query keeps "
+        "the organization predicate, so it never reaches beyond the active tenant"
+    ),
+    "services/trash_access.py::row_flags": (
+        "display hint only: whether a listed row offers restore/purge; the action routes decide "
+        "again through bypass.allows on the loaded row"
+    ),
     "services/file_availability.py::unavailable_list_exempt": (
         "decides only whether a list may include quarantined rows (never trashed ones); the list's own tenant and organization predicates are applied by the caller"
     ),
@@ -375,6 +387,9 @@ REVEAL_WIDENER_SITES: dict[str, str] = {
 #: tenant gate is applied by the caller, and the site's reason says where.
 TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     "services/file_availability.py::unavailable_list_exempt": (),
+    # Both only decide; trash_access.trash_query applies org_stamp_is beside the widening.
+    "services/trash_access.py::_sees_whole_trash": (),
+    "services/trash_access.py::row_flags": (),
     "api/endpoints/files/listing.py::list_media_files": ("org_pred",),
     "api/endpoints/files/filtering.py::get_accessible_owners": ("org_pred",),
     "api/endpoints/search_reindex.py::get_degraded_embeddings": ("org_scope_pred",),

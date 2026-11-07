@@ -380,7 +380,7 @@ def test_bulk_tag_viewer_row_carries_the_editor_requirement_and_batch_continues(
 # ---------------------------------------------------------------------------
 
 
-def test_bulk_delete_reports_forbidden_per_file_and_deletes_the_rest(
+def test_bulk_delete_reports_forbidden_per_file_and_trashes_the_rest(
     client, db_session, normal_user, other_user, other_user_auth_headers
 ):
     mine_a = _file(db_session, other_user)
@@ -407,9 +407,11 @@ def test_bulk_delete_reports_forbidden_per_file_and_deletes_the_rest(
     assert rows[1]["error"] == "FORBIDDEN"
     assert rows[1]["message"] == DELETE_FORBIDDEN_DETAIL
     db_session.expire_all()
-    assert db_session.get(MediaFile, theirs.id) is not None
-    assert db_session.get(MediaFile, mine_a.id) is None
-    assert db_session.get(MediaFile, mine_b.id) is None
+    # Since #1101 a delete moves the file to the trash: the refused file stays live, the
+    # others stay as rows with deleted_at set.
+    assert db_session.get(MediaFile, theirs.id).deleted_at is None
+    assert db_session.get(MediaFile, mine_a.id).deleted_at is not None
+    assert db_session.get(MediaFile, mine_b.id).deleted_at is not None
 
 
 def test_bulk_delete_of_a_quarantined_file_carries_the_not_found_detail(

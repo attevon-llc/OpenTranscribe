@@ -584,6 +584,7 @@ ALLOWS_KINDS: dict[str, str] = {
     "services/uuid_helpers.py::require_profile_in_scope": "speaker_profile",
     "services/delete_permissions.py::get_deletable_file": "media_file",
     "services/delete_permissions.py::can_delete_file": "media_file",
+    "services/trash_access.py::_platform_reaches": "media_file",
     "services/tag_bulk.py::_require_editor": "media_file",
     "api/endpoints/transcript_segments.py::_get_new_speaker_id": "speaker",
     "api/endpoints/media_collections_membership.py::get_collection_media": "collection",

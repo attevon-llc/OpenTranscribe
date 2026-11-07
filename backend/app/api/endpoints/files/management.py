@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import Request
 from fastapi import status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -366,11 +367,17 @@ def recover_file(
 @router.delete("/{file_uuid}/force")
 def force_delete_file(
     file_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Force delete a file (admin only)."""
+    """Move a file to the trash even while a task is running on it (admin only).
+
+    Since issue #1101 every delete is reversible, so this is the same move to the trash as
+    ``DELETE /files/{uuid}`` (whose in-flight refusal is gone too); it no longer destroys
+    anything. ``DELETE /files/{uuid}/purge`` is the explicit destroy, from the trash only.
+    """
     if not current_user.is_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -382,11 +389,11 @@ def force_delete_file(
             db,
             file_uuid,
             current_user,
-            force=True,
             organization_id=ctx.org_id,
             bypass=ctx.bypass,
+            request=request,
         )
-        return {"message": "File force deleted successfully", "file_uuid": file_uuid}
+        return {"message": "File moved to the trash", "file_uuid": file_uuid}
 
     except (HTTPException, DomainError):
         raise

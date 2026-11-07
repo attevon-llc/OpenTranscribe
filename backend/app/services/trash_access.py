@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import AccessDeniedError
 from app.core.exceptions import ResourceNotFoundError
 from app.models.media import MediaFile
+from app.models.user import User
 from app.services.delete_permissions import can_delete_file
 from app.services.file_availability import unavailable_list_exempt
 from app.services.request_context import RequestContext
@@ -141,6 +142,16 @@ def trash_page(
     return files, query.count()
 
 
+def people_of(db: Session, files: list[MediaFile]) -> dict[int, User]:
+    """The owners and deleters of ``files``, by id, in one query (for the list's names)."""
+    ids = {int(f.user_id) for f in files} | {
+        int(f.deleted_by_user_id) for f in files if f.deleted_by_user_id
+    }
+    if not ids:
+        return {}
+    return {int(u.id): u for u in db.query(User).filter(User.id.in_(ids))}
+
+
 def require_may_empty(ctx: RequestContext) -> None:
     """403 for an organization member: only an org admin (or the platform) empties an org trash."""
     if ctx.org_id is not None and not _sees_whole_trash(ctx):
@@ -180,6 +191,7 @@ __all__ = [
     "PURGE_FORBIDDEN_DETAIL",
     "RESTORE_FORBIDDEN_DETAIL",
     "can_purge",
+    "people_of",
     "get_trashed_file",
     "purgeable_query",
     "require_may_empty",

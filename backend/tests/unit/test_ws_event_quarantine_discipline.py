@@ -54,6 +54,12 @@ _RAW_CHANNEL = "websocket_notifications"
 #: to guard") plus the DMCA owner-notice chokepoint itself. A new key here is a new
 #: place quarantine can leak — write the reason like you mean it.
 _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
+    "services/trash_service.py::_notify": (
+        1,
+        "announces the trash state itself (#1101) to the owner, the actor and the org's "
+        "admins, each of whom may act on that trash; the availability-aware sender would drop "
+        "it precisely because the file is trashed",
+    ),
     "services/support_access_lifecycle.py::_send": (
         1,
         "support-access lifecycle notification to named users (request, decision, revocation); "

@@ -439,18 +439,17 @@ def test_delete_file_nonexistent_404(client, user_token_headers):
     assert response.json()["detail"] == "File not found"
 
 
-def test_delete_file_with_live_active_task_409(client, user_token_headers, normal_user, db_session):
-    """A file with a genuinely live active task is refused a plain delete.
+def test_delete_file_with_live_active_task_cancels_it_and_trashes(
+    client, user_token_headers, normal_user, db_session
+):
+    """A file with a live active task is no longer refused: it is cancelled and trashed.
 
-    ``is_file_safe_to_delete`` (``app/utils/file_retry.py``) is deliberately NOT
-    gated on ``status == PROCESSING`` — a follow-on stage on an already-``completed``
-    file (summarization/embedding/search_indexing/...) sets ``active_task_id``
-    without ever touching ``status``. Found live: a full pipeline run's DELETE right
-    after completion 409'd twice, each time against a *different* active_task_id
-    from a follow-on task, before ``/force`` was needed to clean up. This pins the
-    409 contract that behavior depends on so it can't silently regress into either
-    "always blocks" (users could never delete a completed file) or "never blocks"
-    (a real live task's output could be deleted out from under it).
+    Before #1101 this answered 409 ``FILE_NOT_SAFE_TO_DELETE``, because a delete destroyed
+    the file under a running task's feet. A delete now only moves the file to the trash,
+    which is reversible, so the running task is asked to stop (``cancel_active_task``) and
+    the delete goes through. A follow-on stage on an already-``completed`` file sets
+    ``active_task_id`` without touching ``status``, so this is the common case right after
+    a pipeline run finishes.
     """
     media_file = _make_file(
         db_session,
@@ -458,39 +457,14 @@ def test_delete_file_with_live_active_task_409(client, user_token_headers, norma
         file_status="completed",
         active_task_id="11111111-1111-1111-1111-111111111111",
     )
-    with patch("app.utils.file_retry.AsyncResult") as mock_async_result:
-        mock_async_result.return_value.state = "STARTED"
-        response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
-    assert response.status_code == status.HTTP_409_CONFLICT
-    body = response.json()["detail"]
-    assert body["error"] == "FILE_NOT_SAFE_TO_DELETE"
-    assert body["active_task_id"] == "11111111-1111-1111-1111-111111111111"
-    assert body["options"]["wait_for_completion"] is True
-    # The file survives the refused delete — a follow-up read is still 200, not 404.
-    follow_up = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers)
-    assert follow_up.status_code == status.HTTP_200_OK
-
-
-def test_delete_file_with_stale_active_task_204(
-    client, user_token_headers, normal_user, db_session
-):
-    """An ``active_task_id`` Celery no longer reports as live does not block delete.
-
-    Same file shape as the 409 case above, but the Celery-side double-check reports
-    the task already finished — proving the 409 is keyed on the task's REAL state,
-    not merely on ``active_task_id`` being non-null (a stale/never-cleared column
-    must not permanently strand a file as undeletable).
-    """
-    media_file = _make_file(
-        db_session,
-        normal_user,
-        file_status="completed",
-        active_task_id="22222222-2222-2222-2222-222222222222",
-    )
-    with patch("app.utils.file_retry.AsyncResult") as mock_async_result:
-        mock_async_result.return_value.state = "SUCCESS"
+    with patch("app.utils.task_cancel.cancel_active_task", return_value=True) as cancel:
         response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
     assert response.status_code == status.HTTP_204_NO_CONTENT
+    cancel.assert_called_once()
+    db_session.expire_all()
+    assert db_session.get(MediaFile, media_file.id).deleted_at is not None
+    follow_up = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers)
+    assert follow_up.status_code == status.HTTP_404_NOT_FOUND
 
 
 def test_delete_file_malformed_uuid_404(client, user_token_headers):

@@ -302,11 +302,10 @@ def test_force_delete_admin_200(client, admin_token_headers, normal_user, db_ses
 def test_force_delete_admin_cancels_a_live_active_task_200(
     client, admin_token_headers, normal_user, db_session
 ):
-    """``/force`` is the documented escape hatch for exactly the case a plain
-    DELETE refuses: a file with a genuinely live ``active_task_id`` (see
-    ``test_files_crud.py::test_delete_file_with_live_active_task_409``). An admin
-    must still be able to force through it — telling the task to stand down, not
-    leaving it orphaned pointing at a deleted file.
+    """``/force`` on a file with a genuinely live ``active_task_id``: the task is told to
+    stand down, not left orphaned pointing at a file in the trash. (Since #1101 a plain
+    DELETE does the same; see
+    ``test_files_crud.py::test_delete_file_with_live_active_task_cancels_it_and_trashes``.)
 
     Issue #823 changed WHAT that means. This used to assert
     ``revoke(active_task_id, terminate=True)``, which was dead on every pool type:
@@ -380,17 +379,15 @@ def test_bulk_delete_owner_success(client, user_token_headers, normal_user, db_s
     assert results[0]["success"] is True
 
 
-def test_bulk_delete_force_by_non_admin_is_not_honoured(
+def test_bulk_delete_of_a_running_file_trashes_it_and_destroys_nothing(
     client, user_token_headers, normal_user, db_session
 ):
-    """A non-admin owner cannot use bulk-action's ``force`` to bypass the
-    admin-only ``/force`` gate on a file with a genuinely live active task.
+    """Any owner's bulk delete of a file with a live task moves it to the trash (#1101).
 
-    ``DELETE /{uuid}/force`` refuses non-admins outright
-    (``test_force_delete_non_admin_403``); this pins that bulk-action's
-    ``force=true`` must not be a second, ungated path to the same operation.
-    Before the fix, ``_handle_delete_action`` forwarded the request body's
-    ``force`` straight through with no admin check at all.
+    Before #1101 a delete destroyed the file, so a live task refused it and ``force`` (admin
+    only) was the way through; a non-admin's ``force=true`` had to be ignored. A delete now
+    only trashes, which is reversible, so the task is cancelled and nothing is destroyed for
+    anyone; ``force`` is no longer read.
     """
     from unittest.mock import patch
 
@@ -400,20 +397,18 @@ def test_bulk_delete_force_by_non_admin_is_not_honoured(
         file_status="completed",
         active_task_id="44444444-4444-4444-4444-444444444444",
     )
-    with patch("app.utils.file_retry.AsyncResult") as mock_async_result:
-        mock_async_result.return_value.state = "STARTED"
+    with patch("app.core.task_cancellation.request_cancel", return_value=True):
         response = client.post(
             "/api/files/management/bulk-action",
             headers=user_token_headers,
             json={"file_uuids": [str(media_file.uuid)], "action": "delete", "force": True},
         )
     assert response.status_code == status.HTTP_200_OK
-    results = response.json()
-    assert results[0]["success"] is False
-    # The file must survive: force was silently downgraded to a normal delete,
-    # which the live active task correctly refuses (409-shaped soft failure).
-    follow_up = client.get(f"/api/files/{media_file.uuid}", headers=user_token_headers)
-    assert follow_up.status_code == status.HTTP_200_OK
+    assert response.json()[0]["success"] is True
+    db_session.expire_all()
+    row = db_session.get(MediaFile, media_file.id)
+    assert row is not None, "a bulk delete destroyed the file"
+    assert row.deleted_at is not None
 
 
 def test_bulk_delete_force_by_admin_is_honoured(

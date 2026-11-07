@@ -247,7 +247,7 @@ measure() {
         --llm-base-url "$LLM_URL" --vllm-image "${image:-unknown}" --run-dir "$RUN_DIR" --concurrency "$CONCURRENCY" \
         ${noctl[@]+"${noctl[@]}"} ${resume[@]+"${resume[@]}"} || return $?
     if [[ "$INPUTS" != smoke ]]; then
-        bench replay-merge --inputs "$INPUTS" "${ARM_ARGS[@]}" --lock "$LOCK_DIR" --llm-base-url "$LLM_URL" --run-dir "$RUN_DIR" || return $?
+        bench replay-merge --inputs "$INPUTS" "${ARM_ARGS[@]}" --lock "$LOCK_DIR" --llm-base-url "$LLM_URL" --run-dir "$RUN_DIR" --concurrency "$CONCURRENCY" || return $?
         bench judge --inputs "$INPUTS" --judge "$JUDGE" --lock "$LOCK_DIR" --run-dir "$RUN_DIR" || return $?
     fi
     bench report --inputs "$INPUTS" --lock "$LOCK_DIR" --run-dir "$RUN_DIR" \

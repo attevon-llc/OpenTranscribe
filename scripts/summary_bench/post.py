@@ -6,11 +6,13 @@ the same model the run used, `judge` to the judge, and `report` to nothing.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
 import sys
 from argparse import Namespace
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,7 @@ from tests.eval.harness.summary_verdict import decide
 from summary_bench.cli_support import load_run, merged_text_of
 from summary_bench.config import ExitCode, HarnessError
 from summary_bench.planner import LOCK_NAME
+from summary_bench.replay import MERGE_ARMS, replay_merges
 from summary_bench.report import build_metrics, write_metrics
 
 REPLAY_INPUTS = ('I1', 'I2', 'I3')
@@ -64,50 +67,58 @@ def cmd_replay_merge(args: Namespace) -> int:
     run = load_run(args)
     arms = resolve_arms(_with_flags(args, no_controls=True))
     cls, make = build_service_class(), llm_config_factory(args)
-    out: list[dict[str, Any]] = []
-    for cell_id, record in sorted(run.records.items()):
-        if (
-            record['arm'] != 'old'
-            or record['input'] not in REPLAY_INPUTS
-            or record['status'] != 'ok'
-        ):
-            continue
+    sources = {
+        cell_id: record
+        for cell_id, record in sorted(run.records.items())
+        if record['arm'] == 'old' and record['input'] in REPLAY_INPUTS and record['status'] == 'ok'
+    }
+
+    def do_merge(cell_id: str, name: str) -> dict[str, Any]:
+        record = sources[cell_id]
         entry = run.lock['inputs'][record['input']]
         render = run.rendered[record['input']]
-        for name in ('old', 'new'):
-            service = cls(make(entry['max_tokens']), arm=arms[name], seed=record['seed'])
-            with inject_arm(arms[name]), default_prompt(UNIVERSAL_CONTENT_ANALYZER_PROMPT):
-                merged = service._combine_sections(
-                    record['slices'],
-                    render.speaker_data,
-                    UNIVERSAL_CONTENT_ANALYZER_PROMPT,
-                    len(record['slices']),
-                    'English',
-                    '',
-                )
-            score = score_cell(
-                cell_id=f'{cell_id}>{name}',
-                input_id=record['input'],
-                arm=name,
-                run=record['run'],
-                status='ok',
-                void_reason=None,
-                merged=merged,
-                slice_outputs=record['slices'],
-                gold=run.gold[record['input']],
-                tail_index=entry.get('tail_index'),
-            )
-            out.append(
-                {
-                    'source': cell_id,
-                    'input': record['input'],
-                    'run': record['run'],
-                    'merge_arm': name,
-                    'carry_recall': score.carry.recall,
-                    'carry': score.carry.as_row(),
-                }
-            )
-    _write_jsonl(run.dir / 'replay.jsonl', out)
+        service = cls(make(entry['max_tokens']), arm=arms[name], seed=record['seed'])
+        merged = service._combine_sections(
+            record['slices'],
+            render.speaker_data,
+            UNIVERSAL_CONTENT_ANALYZER_PROMPT,
+            len(record['slices']),
+            'English',
+            '',
+        )
+        score = score_cell(
+            cell_id=f'{cell_id}>{name}',
+            input_id=record['input'],
+            arm=name,
+            run=record['run'],
+            status='ok',
+            void_reason=None,
+            merged=merged,
+            slice_outputs=record['slices'],
+            gold=run.gold[record['input']],
+            tail_index=entry.get('tail_index'),
+        )
+        return {
+            'source': cell_id,
+            'input': record['input'],
+            'run': record['run'],
+            'merge_arm': name,
+            'carry_recall': score.carry.recall,
+            'carry': score.carry.as_row(),
+        }
+
+    @contextlib.contextmanager
+    def arm_scope(name: str) -> Iterator[None]:
+        with inject_arm(arms[name]), default_prompt(UNIVERSAL_CONTENT_ANALYZER_PROMPT):
+            yield
+
+    out = replay_merges(
+        [(c, n) for c in sources for n in MERGE_ARMS],
+        do_merge,
+        arm_scope,
+        run.dir / 'replay.jsonl',
+        concurrency=getattr(args, 'concurrency', 1),
+    )
     by_source: dict[str, dict[str, float | None]] = {}
     for row in out:
         by_source.setdefault(row['source'], {})[row['merge_arm']] = row['carry_recall']

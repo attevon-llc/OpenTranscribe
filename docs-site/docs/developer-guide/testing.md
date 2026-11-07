@@ -179,6 +179,11 @@ calls, so 3 to 4 is the useful range there; higher only queues (see
   **not comparable** with a sequential run when it is above 1 (`runinfo.json` sets
   `latency_comparable: false`); `seconds_per_summary` is wall clock over cells, so it is the figure
   that stays meaningful.
+- `replay-merge` honours the same `--concurrency` (`run-summary-eval.sh` passes it through). All
+  `old`-rule merges run together, then all `new`-rule merges, for the same reason: the rule text is a
+  patched module global. Each finished row is appended to `replay.jsonl` immediately and a rerun
+  skips rows already there, so an interrupted replay keeps its work; `replay_summary.json` is
+  computed from that file at the end.
 
 ### Prerequisites
 

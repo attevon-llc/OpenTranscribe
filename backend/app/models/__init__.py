@@ -53,6 +53,7 @@ from .speaker import SpeakerCollection
 from .speaker import SpeakerCollectionMember
 from .speaker import SpeakerMatch
 from .speaker import SpeakerProfile
+from .speaker_identity_event import SpeakerIdentityEvent
 from .support_access import SupportAccessGrant
 from .support_access import SupportAccessUse
 from .system_settings import SystemSettings
@@ -142,4 +143,5 @@ __all__ = [
     "ErasureReceipt",
     "SupportAccessGrant",
     "SupportAccessUse",
+    "SpeakerIdentityEvent",
 ]

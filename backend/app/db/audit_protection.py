@@ -149,6 +149,16 @@ PROTECTED_TABLES: tuple[ProtectedTable, ...] = (
         own_guard="trg_legal_acceptance_guard",
         app_delete=True,
     ),
+    ProtectedTable(
+        name="speaker_identity_event",
+        nullable_on_cascade=("actor_user_id",),
+        reason=(
+            "append-only history of speaker names, links and suggestions (v462, issue #1336); "
+            "its own guard allows only the speaker's cascade and a voiceprint purge's delete"
+        ),
+        own_guard="trg_speaker_identity_event_guard",
+        app_delete=True,
+    ),
 )
 
 #: Audit-shaped tables that are deliberately not protected, each with the reason.

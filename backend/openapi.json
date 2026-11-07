@@ -26027,7 +26027,7 @@
     },
     "/api/admin/auth-config/{category}/test": {
       "post": {
-        "description": "Test connection for LDAP or OIDC.\n\nTests the provided configuration without saving it. Useful for\nvalidating settings before applying them.\n\nArgs:\n    category: Configuration category (ldap or oidc)\n    config: Configuration values to test\n\nReturns:\n    Test result with success status and message\n\nRaises:\n    HTTPException: If test is not supported for the category",
+        "description": "Test connection for LDAP or OIDC.\n\nTests the provided configuration without saving it. Useful for\nvalidating settings before applying them. A secret the panel cannot show\n(the saved LDAP bind password) is taken from the saved configuration when\nthe form leaves it blank; see ``_test_ldap_connection``.\n\nArgs:\n    category: Configuration category (ldap or oidc)\n    config: Configuration values to test\n    db: Database session, read for the saved LDAP bind password\n\nReturns:\n    Test result with success status and message\n\nRaises:\n    HTTPException: If test is not supported for the category",
         "operationId": "test_auth_connection_api_admin_auth_config__category__test_post",
         "parameters": [
           {

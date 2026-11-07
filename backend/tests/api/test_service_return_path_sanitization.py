@@ -131,14 +131,19 @@ def test_watch_source_dispatch_failure_never_leaks_the_broker_url(
 
 
 # --------------------------------------------------------------------------- #
-# 2. file_cleanup_service.purge_media_file -> DELETE /api/files/{uuid}
+# 2. file_cleanup_service.purge_media_file -> DELETE /api/files/{uuid} (cancelled upload)
 # --------------------------------------------------------------------------- #
 
 
 def test_purge_media_file_failure_never_leaks_exception_text(
     db_session, normal_user, user_token_headers, client, monkeypatch, caplog
 ):
-    media_file = _make_file(db_session, normal_user)
+    # Since #1101 the only purge a DELETE request runs itself is a cancelled (PENDING)
+    # upload; every other delete moves the file to the trash, destroyed later by a task.
+    monkeypatch.setattr(
+        "app.services.multipart_upload.abort_uploads_for_object", lambda *_a, **_k: None
+    )
+    media_file = _make_file(db_session, normal_user, status="pending")
 
     def _raise(*_args, **_kwargs):
         raise RuntimeError(f"could not delete row: connection lost to {PATH_SENTINEL}")

@@ -5,7 +5,8 @@ file's organization, or a platform admin. Before the fix every delete path
 resolved the file with ``min_permission="editor"``, so an editor share grant let
 a non-owner destroy the file, and an org admin could not delete a member's file.
 
-Covers the single route (``DELETE /api/files/{uuid}``) and the bulk route
+Since issue #1101 a delete moves the file to the trash, so "deleted" below means "no longer
+live". Covers the single route (``DELETE /api/files/{uuid}``) and the bulk route
 (``POST /api/files/management/bulk-action`` with ``action=delete``), which must
 report a per-file ``FORBIDDEN`` result instead of aborting the batch.
 """
@@ -74,9 +75,11 @@ def _share(db_session, media_file, owner, grantee, *, permission: str) -> None:
     db_session.commit()
 
 
-def _exists(db_session, media_file) -> bool:
+def _live(db_session, media_file) -> bool:
+    """Not deleted: the row is there and not in the trash (a delete trashes since #1101)."""
     db_session.expire_all()
-    return db_session.get(MediaFile, media_file.id) is not None
+    row = db_session.get(MediaFile, media_file.id)
+    return row is not None and row.deleted_at is None
 
 
 def _bulk_delete(client, headers, *uuids):
@@ -98,7 +101,7 @@ def test_owner_can_delete_own_file(client, user_token_headers, normal_user, db_s
     response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
 
     assert response.status_code == 204
-    assert not _exists(db_session, media_file)
+    assert not _live(db_session, media_file)
 
 
 def test_editor_share_cannot_delete(
@@ -112,7 +115,7 @@ def test_editor_share_cannot_delete(
 
     assert response.status_code == 403
     assert "owner" in response.json()["detail"]
-    assert _exists(db_session, media_file)
+    assert _live(db_session, media_file)
     events = [c.args[0] for c in audit.call_args_list]
     assert "file.delete.denied" in events
 
@@ -144,7 +147,7 @@ def test_org_member_cannot_delete_another_members_file(
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
     assert response.status_code == 403
-    assert _exists(db_session, media_file)
+    assert _live(db_session, media_file)
 
 
 def test_org_member_can_delete_own_org_file(
@@ -157,7 +160,7 @@ def test_org_member_can_delete_own_org_file(
     response = client.delete(f"/api/files/{media_file.uuid}", headers=user_token_headers)
 
     assert response.status_code == 204
-    assert not _exists(db_session, media_file)
+    assert not _live(db_session, media_file)
 
 
 def test_org_admin_can_delete_members_file(
@@ -171,7 +174,7 @@ def test_org_admin_can_delete_members_file(
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
     assert response.status_code == 204
-    assert not _exists(db_session, media_file)
+    assert not _live(db_session, media_file)
 
 
 def test_org_admin_of_other_org_cannot_delete(
@@ -185,7 +188,7 @@ def test_org_admin_of_other_org_cannot_delete(
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
     assert response.status_code == 403
-    assert _exists(db_session, media_file)
+    assert _live(db_session, media_file)
 
 
 def test_org_admin_cannot_delete_personal_file(
@@ -200,7 +203,7 @@ def test_org_admin_cannot_delete_personal_file(
     response = client.delete(f"/api/files/{media_file.uuid}", headers=other_user_auth_headers)
 
     assert response.status_code == 403
-    assert _exists(db_session, media_file)
+    assert _live(db_session, media_file)
 
 
 def test_platform_admin_can_delete(client, admin_token_headers, normal_user, db_session):
@@ -209,7 +212,7 @@ def test_platform_admin_can_delete(client, admin_token_headers, normal_user, db_
     response = client.delete(f"/api/files/{media_file.uuid}", headers=admin_token_headers)
 
     assert response.status_code == 204
-    assert not _exists(db_session, media_file)
+    assert not _live(db_session, media_file)
 
 
 # ---------------------------------------------------------------------------
@@ -232,8 +235,8 @@ def test_bulk_delete_reports_forbidden_per_file(
     assert results[str(shared.uuid)]["success"] is False
     assert results[str(shared.uuid)]["error"] == "FORBIDDEN"
     assert results[str(own.uuid)]["success"] is True
-    assert _exists(db_session, shared)
-    assert not _exists(db_session, own)
+    assert _live(db_session, shared)
+    assert not _live(db_session, own)
 
 
 def test_bulk_delete_org_admin_can_delete_members_file(
@@ -247,7 +250,7 @@ def test_bulk_delete_org_admin_can_delete_members_file(
 
     assert response.status_code == 200
     assert response.json()[0]["success"] is True, response.json()
-    assert not _exists(db_session, media_file)
+    assert not _live(db_session, media_file)
 
 
 @pytest.mark.parametrize("org_role", ["org:member", None])
@@ -264,7 +267,7 @@ def test_bulk_delete_non_admin_member_forbidden(
     assert response.status_code == 200
     assert response.json()[0]["success"] is False
     assert response.json()[0]["error"] == "FORBIDDEN"
-    assert _exists(db_session, media_file)
+    assert _live(db_session, media_file)
 
 
 # ---------------------------------------------------------------------------

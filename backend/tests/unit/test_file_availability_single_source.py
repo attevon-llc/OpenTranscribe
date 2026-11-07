@@ -72,7 +72,22 @@ ALLOWED: dict[str, str] = {
         "allowed to load; the decision to load it was the read rule's."
     ),
     "services/privacy/purge_file_guard.py": _DESTROY,
-    "tasks/cleanup.py::_select_expired_files": _DESTROY,
+    "tasks/cleanup.py::retention_guard_pred": (
+        "The retention sweep's (and its preview's) never-take guard: held, quarantined and "
+        "trashed rows are outside retention, so it must see them to exclude them."
+    ),
+    "services/trash_service.py": (
+        "The trash action itself (#1101): it sets, clears and conditionally updates "
+        "deleted_at / purge_after, and refuses to mark a quarantined row for purge."
+    ),
+    "services/trash_access.py": (
+        "The trash surface's own lookup and list (#1101): it selects trashed rows on purpose "
+        "and still hides quarantined ones from callers the quarantine hides them from."
+    ),
+    "services/trash_purge.py": _DESTROY,
+    "api/endpoints/files/trash.py::_row": (
+        "REPORTS deleted_at on a trash list row the trash lookup already selected."
+    ),
     "services/search/quarantine_exclusion.py::_quarantined_file_uuids": (
         "The index-side quarantine set for search (the transcript index carries no takedown "
         "field). Quarantine-only on purpose: the trash is filtered index-side by its own field "

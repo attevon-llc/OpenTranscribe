@@ -248,9 +248,9 @@ def test_purge_media_file_still_destroys_a_quarantined_file_with_no_hold(db_sess
 def test_the_interactive_delete_reports_a_hold_as_a_conflict(db_session, sample_user):
     """A refusal is not a server fault, and the admin needs to know which it was.
 
-    ``crud.delete_media_file`` turns any failed purge into a 500. A legal hold is
-    a deliberate, actionable refusal — the admin must release the hold first — so
-    it surfaces as a 409 naming the cause instead of an opaque internal error.
+    A legal hold is a deliberate, actionable refusal (the admin must release the hold
+    first), so it surfaces as a 409 naming the cause instead of an opaque internal error.
+    Since #1101 the delete moves a file to the trash, and a held file is not moved either.
     """
     from app.api.endpoints.files import crud
 
@@ -258,11 +258,13 @@ def test_the_interactive_delete_reports_a_hold_as_a_conflict(db_session, sample_
     file_id = int(held.id)
 
     with pytest.raises(HTTPException) as excinfo:
-        crud.delete_media_file(db_session, str(held.uuid), sample_user, force=True)
+        crud.delete_media_file(db_session, str(held.uuid), sample_user)
 
     assert excinfo.value.status_code == 409
     assert detail_dict(excinfo.value)["error"] == "FILE_UNDER_LEGAL_HOLD"
-    assert db_session.query(MediaFile).filter(MediaFile.id == file_id).first() is not None
+    row = db_session.query(MediaFile).filter(MediaFile.id == file_id).first()
+    assert row is not None
+    assert row.deleted_at is None
 
 
 def test_the_sweep_keeps_a_file_whose_retention_override_cannot_be_resolved(

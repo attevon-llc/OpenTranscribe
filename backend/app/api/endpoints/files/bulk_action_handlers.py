@@ -9,6 +9,7 @@ route are in ``bulk_actions``.
 import logging
 
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
@@ -49,34 +50,29 @@ def _handle_delete_action(
     db: Session,
     file_uuid: str,
     current_user: User,
-    force: bool,
-    is_admin: bool,
     bypass: PlatformBypass,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
+    request: Request | None = None,
 ) -> BulkActionResult:
-    """Handle delete action for bulk operations.
+    """Move one file of a bulk delete to the trash (issue #1101).
 
-    `force` mirrors the single-file `DELETE /{file_uuid}/force` route, which is
-    admin-only (`management.force_delete_file` checks `current_user.is_admin` before
-    ever calling `delete_media_file`). This handler used to forward the request
-    body's `force` flag straight through with no such check, so any owner could
-    set `force=true` on a bulk delete and cancel a live task + purge a file mid
-    processing -- exactly what `/force` exists to restrict to admins.
-
-    A delete the caller has no right to (issue #1103: not the owner, not an org
-    admin of the file's organization, not a platform admin) is reported as a
-    per-file ``FORBIDDEN`` result so the rest of the batch still runs.
+    Same rule as the single route (``crud.delete_media_file``): a delete the caller has no
+    right to (issue #1103: not the owner, not an org admin of the file's organization, not a
+    platform admin) is reported as a per-file ``FORBIDDEN`` result and a held file as
+    ``FILE_UNDER_LEGAL_HOLD``, so the rest of the batch still runs. Since every delete is
+    reversible there is no ``force`` any more: a file with a task in flight is trashed and
+    its task cancelled.
     """
     try:
         delete_media_file(
             db,
             file_uuid,
             current_user,
-            force=force and is_admin,
             organization_id=organization_id,
             is_org_admin=is_org_admin,
             bypass=bypass,
+            request=request,
         )
     except (HTTPException, DomainError) as e:
         from app.services.hold_guard import LEGAL_HOLD_ERROR_CODE
@@ -107,7 +103,7 @@ def _handle_delete_action(
     return BulkActionResult(
         file_uuid=file_uuid,
         success=True,
-        message="File deleted successfully",
+        message="File moved to the trash",
     )
 
 

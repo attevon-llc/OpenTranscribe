@@ -245,34 +245,41 @@ def delete_media_file(
     db: Session,
     file_uuid: str,
     current_user: User,
-    force: bool = False,
     *,
     organization_id: OrgScope = UNSCOPED,
     is_org_admin: bool = False,
     bypass: PlatformBypass = PlatformBypass.none(),
+    request: Request | None = None,
 ) -> None:
-    """
-    Delete a media file and all associated data with safety checks.
+    """Move a media file to the trash (issue #1101); nothing is destroyed here.
+
+    Delete is its own right, not "editor" (issue #1103): the owner, an ``org:admin`` of the
+    file's organization, or a platform admin (``get_deletable_file``). A file with a task in
+    flight is no longer refused: trash is reversible, so ``trash_service`` cancels the task
+    and trashes the file. The destroy happens only from the trash, when its window ends or on
+    an explicit "delete forever" (``DELETE /files/{uuid}/purge``).
 
     Args:
         db: Database session
         file_uuid: File UUID
         current_user: Current user
-        force: Force deletion even if processing is active (admin only)
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
         is_org_admin: Caller is ``org:admin`` of ``organization_id``
             (``ctx.is_org_admin``); lets an org admin delete members' files.
         bypass: The request's platform bypass (``ctx.bypass``).
-    """
-    from app.services.delete_permissions import get_deletable_file
-    from app.utils.file_retry import is_file_safe_to_delete
-    from app.utils.task_cancel import cancel_active_task
+        request: The HTTP request, for the ``file.trash`` audit event (None is allowed).
 
-    # Capability flags offered back to the client in the 409 below: whether the platform
-    # role could cancel or force this delete (class P, not a content-access decision).
-    is_admin = current_user.is_admin
-    # Delete is its own right, not "editor" (issue #1103): owner, org admin of
-    # the file's organization, or platform admin.
+    Raises:
+        HTTPException: 409 ``FILE_UNDER_LEGAL_HOLD`` when the file is held.
+    """
+    from app.services.content_audit import AuditedResource
+    from app.services.content_hold_service import record_hold_refusal
+    from app.services.delete_permissions import get_deletable_file
+    from app.services.hold_guard import HoldRefusedError
+    from app.services.hold_guard import hold_state
+    from app.services.hold_guard import refusal_detail
+    from app.services.trash_service import trash_files
+
     db_file = get_deletable_file(
         db,
         file_uuid,
@@ -281,72 +288,29 @@ def delete_media_file(
         is_org_admin=is_org_admin,
         bypass=bypass,
     )
-    file_id = db_file.id  # Get internal ID for task operations
-
-    # Check if file is safe to delete
-    is_safe, reason = is_file_safe_to_delete(db, file_id)
-
-    if not is_safe and not force:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "FILE_NOT_SAFE_TO_DELETE",
-                "message": f"Cannot delete file: {reason}",
-                "file_id": str(db_file.uuid),  # Use UUID for frontend
-                "active_task_id": db_file.active_task_id,
-                "status": db_file.status,
-                "options": {
-                    "cancel_and_delete": is_admin,
-                    "wait_for_completion": True,
-                    "force_delete": is_admin and db_file.force_delete_eligible,
-                },
-            },
-        )
-
-    # If force deletion and file has active task, cancel it first
-    if force and db_file.active_task_id:
-        logger.info(
-            f"Force deleting file {file_id}, cancelling active task {db_file.active_task_id}"
-        )
-        cancel_active_task(db, file_id)
-        # Refresh the file object
-        db.refresh(db_file)
-
-    # Delegate the actual destroy to the single canonical implementation so the
-    # interactive, bulk, retention, and orphan-cleanup paths all behave identically.
-    from app.services.content_audit import AuditedResource
-    from app.services.content_hold_service import record_hold_refusal
-    from app.services.file_cleanup_service import purge_media_file
-    from app.services.hold_guard import refusal_detail
-
-    result = purge_media_file(db, db_file)
-    if result.get("refused_legal_hold"):
+    try:
+        trash_files(db, [db_file], actor=current_user, request=request, bypass=bypass)
+    except HoldRefusedError:
+        # Read back from the database, never from the exception: the row is still locked by
+        # this transaction, so the state is the one that refused it.
+        state = hold_state(db, int(db_file.id))
         record_hold_refusal(
             db,
-            None,
+            request,
             current_user,
             AuditedResource.file(db_file),
             action="delete",
-            held_by=result["hold_state"].held_by,
+            held_by=state.held_by,
         )
-        # A legal hold is a deliberate, actionable refusal, not a server fault:
-        # the admin has to release the hold first. Reporting it as a 500 told the
-        # caller the delete had broken rather than that it had been declined. The body says
-        # WHO holds the file; only an organization admin is given the hold uuids to release.
+        # A hold is a deliberate, actionable refusal: the holder releases it first. The body
+        # says WHO holds the file; only an organization admin is given the hold uuids.
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                **refusal_detail(
-                    result["hold_state"], reveal_uuids=is_org_admin, message=result.get("error")
-                ),
+                **refusal_detail(state, reveal_uuids=is_org_admin),
                 "file_id": str(db_file.uuid),
             },
-        )
-    if not result["deleted"]:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete file from database: {result.get('error')}",
-        )
+        ) from None
 
 
 def update_single_transcript_segment(

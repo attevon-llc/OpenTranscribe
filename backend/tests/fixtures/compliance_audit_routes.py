@@ -40,6 +40,11 @@ COMPLIANCE_EVENTS: frozenset[str] = frozenset(
         "ADMIN_DATA_INTEGRITY_PURGE",
         "ADMIN_DATA_INTEGRITY_STORAGE_PURGE",
         "FILE_DELETE_DENIED",
+        "FILE_TRASH",
+        "FILE_RESTORE",
+        "FILE_PURGE_REQUESTED",
+        "FILE_PURGE",
+        "TRASH_EMPTY",
         "ADMIN_USER_DELETE",
         "ERASURE_SCHEDULED",
         "ERASURE_CANCELLED",
@@ -199,9 +204,16 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
     ("DELETE", "/api/admin/users/{user_uuid}"): A(("ADMIN_USER_DELETE",), "admin-user-delete"),
     ("DELETE", "/api/users/{user_uuid}"): A(("ADMIN_USER_DELETE",), "users-delete"),
     ("DELETE", "/api/files/{file_uuid}"): A(
-        ("FILE_DELETE_DENIED", "CONTENT_HOLD_REFUSED"),
-        ("file-delete-denied", "hold-refused-delete"),
+        ("FILE_DELETE_DENIED", "CONTENT_HOLD_REFUSED", "FILE_TRASH"),
+        ("file-delete-denied", "hold-refused-delete", "file-trash"),
     ),
+    # The trash (#1101). Moving to the trash is the DELETE above; force delete and the bulk
+    # ``delete`` / ``restore`` / ``purge`` verbs reach the same emitters through trash_service.
+    ("POST", "/api/files/{file_uuid}/restore"): A(("FILE_RESTORE",), "file-restore"),
+    ("DELETE", "/api/files/{file_uuid}/purge"): A(
+        ("FILE_PURGE_REQUESTED",), "file-purge-requested"
+    ),
+    ("POST", "/api/files/trash/empty"): A(("TRASH_EMPTY", "FILE_PURGE_REQUESTED"), "trash-empty"),
     # Destroy paths that refuse a held file or collection (``content.hold.refused``).
     ("DELETE", "/api/files/{file_uuid}/force"): A(("CONTENT_HOLD_REFUSED",), backlog=_NO_DRIVER),
     ("POST", "/api/files/management/bulk-action"): A(
@@ -290,5 +302,6 @@ DEPENDENCY_EMITTERS: dict[str, tuple[str, ...]] = {
 
 #: Events no request writes, with where they come from instead.
 NON_ROUTE_EVENTS: dict[str, str] = {
+    "FILE_PURGE": "the files.purge_trash / files.purge_trash_now tasks, with no person as actor",
     "PRIVACY_GENDER_PURGE": "same routes as the voiceprint purge, chosen by the body's targets",
 }

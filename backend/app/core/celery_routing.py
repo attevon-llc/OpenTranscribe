@@ -155,6 +155,8 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "system.reclaim_lost_tasks": {"queue": CeleryQueues.UTILITY},
     "system.reclaim_orphaned_deliveries": {"queue": CeleryQueues.UTILITY},
     "cleanup_expired_files": {"queue": CeleryQueues.UTILITY},
+    "files.purge_trash": {"queue": CeleryQueues.UTILITY},
+    "files.purge_trash_now": {"queue": CeleryQueues.UTILITY},
     "cleanup.run_periodic_cleanup": {"queue": CeleryQueues.UTILITY},
     "cleanup.deep_cleanup": {"queue": CeleryQueues.UTILITY},
     "cleanup.health_check": {"queue": CeleryQueues.UTILITY},

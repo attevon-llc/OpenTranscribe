@@ -2010,11 +2010,6 @@
             "title": "File Uuids",
             "type": "array"
           },
-          "force": {
-            "default": false,
-            "title": "Force",
-            "type": "boolean"
-          },
           "max_speakers": {
             "anyOf": [
               {
@@ -16552,6 +16547,11 @@
           "timezone": {
             "title": "Timezone",
             "type": "string"
+          },
+          "trash_retention_days": {
+            "default": 30,
+            "title": "Trash Retention Days",
+            "type": "integer"
           }
         },
         "required": [
@@ -16623,6 +16623,19 @@
               }
             ],
             "title": "Timezone"
+          },
+          "trash_retention_days": {
+            "anyOf": [
+              {
+                "maximum": 90.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Retention Days"
           }
         },
         "title": "RetentionConfigUpdate",
@@ -22394,6 +22407,163 @@
           "repetition_penalty"
         ],
         "title": "TranscriptionSystemDefaults",
+        "type": "object"
+      },
+      "TrashPage": {
+        "description": "A page of the caller's trash, newest deletion first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TrashedFile"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "retention_days"
+        ],
+        "title": "TrashPage",
+        "type": "object"
+      },
+      "TrashPurgeQueued": {
+        "description": "``202`` body of \"delete forever\" and \"empty trash\": the files made due now.",
+        "properties": {
+          "queued": {
+            "title": "Queued",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "queued"
+        ],
+        "title": "TrashPurgeQueued",
+        "type": "object"
+      },
+      "TrashedFile": {
+        "description": "One row of ``GET /files/trash``.",
+        "properties": {
+          "can_purge": {
+            "title": "Can Purge",
+            "type": "boolean"
+          },
+          "can_restore": {
+            "title": "Can Restore",
+            "type": "boolean"
+          },
+          "deleted_at": {
+            "format": "date-time",
+            "title": "Deleted At",
+            "type": "string"
+          },
+          "deleted_by_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted By Name"
+          },
+          "deleted_by_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted By Uuid"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "held": {
+            "title": "Held",
+            "type": "boolean"
+          },
+          "owner_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Name"
+          },
+          "owner_uuid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Uuid"
+          },
+          "purge_after": {
+            "format": "date-time",
+            "title": "Purge After",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "trash_origin": {
+            "title": "Trash Origin",
+            "type": "string"
+          },
+          "uuid": {
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "filename",
+          "deleted_at",
+          "purge_after",
+          "trash_origin",
+          "held",
+          "can_restore",
+          "can_purge"
+        ],
+        "title": "TrashedFile",
         "type": "object"
       },
       "TurnTakingStats": {
@@ -38867,6 +39037,97 @@
         ]
       }
     },
+    "/api/files/trash": {
+      "get": {
+        "description": "The caller's trash in the active tenant, newest deletion first.",
+        "operationId": "list_trash_api_files_trash_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "List Trash",
+        "tags": [
+          "files",
+          "files"
+        ]
+      }
+    },
+    "/api/files/trash/empty": {
+      "post": {
+        "description": "Delete forever everything in the caller's trash they may purge (held files stay).\n\n403 for an organization member: in an organization only an admin deletes forever.",
+        "operationId": "empty_trash_api_files_trash_empty_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashPurgeQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Empty Trash",
+        "tags": [
+          "files",
+          "files"
+        ]
+      }
+    },
     "/api/files/waveforms/generate": {
       "post": {
         "description": "Generate waveform data for all eligible files that don't have it.\nOnly admin users can trigger this operation.",
@@ -38977,7 +39238,7 @@
     },
     "/api/files/{file_uuid}": {
       "delete": {
-        "description": "Cancel an in-progress upload, or delete a completed file.\n\nPENDING files owned by the caller get the lightweight cancel cleanup;\nanything else falls through to the full deletion (permission and safety\nchecks, storage + search-index cleanup). Both flows share this route —\nthis router registers DELETE /{file_uuid} first, so a separate\nfull-delete route would be unreachable.",
+        "description": "Cancel an in-progress upload, or move a file to the trash.\n\nPENDING files owned by the caller get the cancel cleanup, which destroys them at once\n(an aborted upload has nothing to recover). Anything else is moved to the trash\n(issue #1101): recoverable until its window ends or someone deletes it forever with\n``DELETE /files/{uuid}/purge``. Both flows share this route — this router registers\nDELETE /{file_uuid} first, so a separate delete route would be unreachable.",
         "operationId": "cancel_upload_api_files__file_uuid__delete",
         "parameters": [
           {
@@ -39859,7 +40120,7 @@
     },
     "/api/files/{file_uuid}/force": {
       "delete": {
-        "description": "Force delete a file (admin only).",
+        "description": "Move a file to the trash even while a task is running on it (admin only).\n\nSince issue #1101 every delete is reversible, so this is the same move to the trash as\n``DELETE /files/{uuid}`` (whose in-flight refusal is gone too); it no longer destroys\nanything. ``DELETE /files/{uuid}/purge`` is the explicit destroy, from the trash only.",
         "operationId": "force_delete_file_api_files__file_uuid__force_delete",
         "parameters": [
           {
@@ -40112,6 +40373,55 @@
         ]
       }
     },
+    "/api/files/{file_uuid}/purge": {
+      "delete": {
+        "description": "Delete a trashed file forever. 409 when it is not in the trash, held or under takedown.",
+        "operationId": "purge_file_api_files__file_uuid__purge_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashPurgeQueued"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Purge File",
+        "tags": [
+          "files",
+          "files"
+        ]
+      }
+    },
     "/api/files/{file_uuid}/recover": {
       "post": {
         "description": "Attempt to recover a stuck file.",
@@ -40219,6 +40529,55 @@
         ],
         "summary": "Reprocess Media File",
         "tags": [
+          "files"
+        ]
+      }
+    },
+    "/api/files/{file_uuid}/restore": {
+      "post": {
+        "description": "Bring a file back from the trash; 409 ``NOT_RESTORABLE`` once its purge is due.",
+        "operationId": "restore_file_api_files__file_uuid__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "file_uuid",
+            "required": true,
+            "schema": {
+              "title": "File Uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaFile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Restore File",
+        "tags": [
+          "files",
           "files"
         ]
       }

@@ -834,12 +834,29 @@ def wait_until_safe_to_delete(
     return False
 
 
-def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
-    """Remove a test-created file, retrying past the window where it is still busy.
+def _purge_from_trash(backend_url: str, headers: dict[str, str], file_uuid: str) -> str | None:
+    """Delete forever a file just moved to the trash (#1101); None on success.
 
-    A file mid-pipeline answers 409, so a single DELETE is not enough. Waits out any
-    live follow-on task first (see ``wait_until_safe_to_delete``), then falls back to
-    ``/force`` so a failed test can never leave its upload in the dev library.
+    202 queues the destroy; 404 means nothing is left (a cancelled upload is destroyed by the
+    delete itself). Without this every test upload would sit in the dev trash for its window.
+    """
+    try:
+        resp = requests.delete(
+            f"{backend_url}/api/files/{file_uuid}/purge", headers=headers, timeout=30
+        )
+    except requests.RequestException as exc:
+        return f"purge DELETE raised {exc!r}"
+    if resp.status_code in (202, 404):
+        return None
+    return f"purge DELETE -> {resp.status_code} {resp.text[:200]}"
+
+
+def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
+    """Remove a test-created file: move it to the trash, then delete it forever.
+
+    Waits out any live follow-on task first (see ``wait_until_safe_to_delete``), retries
+    the delete, then falls back to ``/force``, so a failed test can never leave its upload
+    in the dev library. Since #1101 a delete only trashes, so each path ends in a purge.
     """
     headers = {"Authorization": f"Bearer {token}"}
     wait_until_safe_to_delete(backend_url, token, file_uuid)
@@ -850,6 +867,14 @@ def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
                 f"{backend_url}/api/files/{file_uuid}", headers=headers, timeout=30
             )
             if resp.status_code in (200, 204, 404):
+                purge_error = _purge_from_trash(backend_url, headers, file_uuid)
+                if purge_error is None:
+                    return
+                warnings.warn(
+                    f"delete_media_file: test upload {file_uuid} is LEFT in the trash: "
+                    f"{purge_error}",
+                    stacklevel=2,
+                )
                 return
         except requests.RequestException:
             pass
@@ -859,8 +884,12 @@ def delete_media_file(backend_url: str, token: str, file_uuid: str) -> None:
             f"{backend_url}/api/files/{file_uuid}/force", headers=headers, timeout=30
         )
         if resp.status_code in (200, 204, 404):
-            return
-        outcome = f"force DELETE -> {resp.status_code} {resp.text[:200]}"
+            purge_error = _purge_from_trash(backend_url, headers, file_uuid)
+            if purge_error is None:
+                return
+            outcome = purge_error
+        else:
+            outcome = f"force DELETE -> {resp.status_code} {resp.text[:200]}"
     except requests.RequestException as exc:
         outcome = f"force DELETE raised {exc!r}"
     # Never raise from teardown (it would mask the test's own failure), but never stay

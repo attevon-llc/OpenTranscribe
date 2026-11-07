@@ -54,6 +54,7 @@ from . import media_delivery
 from . import multipart
 from . import prepare_upload
 from . import single_file
+from . import trash
 from . import voiceprint_consent
 from .captions import router as captions_router
 from .crud import delete_media_file
@@ -132,6 +133,8 @@ def _parse_speaker_params_from_headers(request: Request | None) -> SpeakerParams
 
 
 # Include all routers
+# First: GET /trash must match before any GET /{file_uuid}.
+router.include_router(trash.router, prefix="", tags=["files"])
 router.include_router(cancel_upload.router, prefix="", tags=["files"])
 router.include_router(prepare_upload.router, prefix="", tags=["files"])
 router.include_router(voiceprint_consent.router, prefix="", tags=["files"])

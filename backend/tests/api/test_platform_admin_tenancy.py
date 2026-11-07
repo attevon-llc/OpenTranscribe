@@ -340,7 +340,9 @@ def test_community_admin_bypass_unchanged(client, admin_token_headers, db_sessio
     assert str(media_file.uuid) in listing.text
     deleted = client.delete(f"/api/files/{media_file.uuid}", headers=admin_token_headers)
     assert deleted.status_code == 204
-    assert not _exists(db_session, media_file)
+    # A delete moves the file to the trash (#1101); the admin's reach is what is pinned here.
+    db_session.expire_all()
+    assert db_session.get(MediaFile, media_file.id).deleted_at is not None
 
 
 def _metadata_events(audit) -> list:

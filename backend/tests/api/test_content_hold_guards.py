@@ -200,7 +200,9 @@ def test_the_delete_route_says_who_holds_the_file_and_only_an_org_admin_gets_the
     _release(gov, hold)
     with gov.acting_as(gov.alice):
         assert client.delete(f"/api/files/{f.uuid}").status_code == status.HTTP_204_NO_CONTENT
-    assert not _exists(gov, f)
+    # Released, the delete goes through: since #1101 it moves the file to the trash.
+    gov.db.expire_all()
+    assert gov.db.get(MediaFile, f.id).deleted_at is not None
 
 
 def test_an_editor_share_never_grants_delete_so_a_hold_is_not_the_only_gate(client, gov):

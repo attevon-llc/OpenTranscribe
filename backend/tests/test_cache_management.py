@@ -295,9 +295,18 @@ class TestCanonicalDestroy:
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
 
     def test_interactive_delete_routes_through_purge(self, db_session, sample_user, monkeypatch):
-        """crud.delete_media_file (single/bulk/force) destroys via the canonical path."""
+        """An interactive delete trashes; the trash's purge destroys via the canonical path.
+
+        Since #1101 ``crud.delete_media_file`` (single/bulk/force) only moves the file to the
+        trash. The destroy is ``trash_purge``'s, and it must still be ``purge_media_file``.
+        """
+        import contextlib
+
+        from sqlalchemy import text
+
         from app.api.endpoints.files import crud
         from app.services import file_cleanup_service
+        from app.services import trash_purge
 
         f = self._make_completed_file(db_session, sample_user, name="interactive.mp4")
         fid = int(f.id)
@@ -309,11 +318,24 @@ class TestCanonicalDestroy:
             called["hit"] = True
             return real_purge(db, file)
 
-        monkeypatch.setattr(crud, "purge_media_file", spy, raising=False)
-        # crud imports purge_media_file lazily inside the function; patch the source too.
         monkeypatch.setattr(file_cleanup_service, "purge_media_file", spy)
 
-        crud.delete_media_file(db_session, str(f.uuid), sample_user, force=True)
+        @contextlib.contextmanager
+        def _same_session():
+            yield db_session
+            db_session.commit()
+
+        monkeypatch.setattr(trash_purge, "session_scope", _same_session)
+
+        crud.delete_media_file(db_session, str(f.uuid), sample_user)
+        assert "hit" not in called, "the interactive delete destroyed instead of trashing"
+        db_session.execute(
+            text("UPDATE media_file SET purge_after = now() - interval '1 hour' WHERE id = :i"),
+            {"i": fid},
+        )
+        db_session.commit()
+
+        trash_purge.purge_due(file_ids=[fid])
         assert called.get("hit") is True
         assert db_session.query(MediaFile).filter(MediaFile.id == fid).first() is None
 

@@ -11,6 +11,7 @@ import logging
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
@@ -31,6 +32,8 @@ from app.api.endpoints.files.bulk_action_handlers import _handle_summarize_actio
 from app.api.endpoints.files.bulk_action_handlers import _redact_if_enabled
 from app.api.endpoints.files.bulk_rework_actions import _handle_reprocess_action
 from app.api.endpoints.files.bulk_rework_actions import _handle_retry_action
+from app.api.endpoints.files.bulk_trash_actions import TRASH_BULK_ACTIONS
+from app.api.endpoints.files.bulk_trash_actions import handle_trash_action
 from app.api.endpoints.files.crud import get_media_file_by_uuid
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -57,10 +60,10 @@ class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
     file_uuids: list[str]
-    # delete | retry | cancel | recover | reprocess | summarize | redact
-    # | identify_speakers | add_tag | remove_tag
+    # delete (moves to the trash) | restore | purge (delete forever, from the trash) | retry
+    # | cancel | recover | reprocess | summarize | redact | identify_speakers | add_tag
+    # | remove_tag
     action: str
-    force: bool = False
     reset_retry_count: bool = False
     # Must be set for add_tag / remove_tag; ignored by every other action.
     tag_name: str | None = None
@@ -100,7 +103,6 @@ def _process_single_file_action(
     current_user: User,
     is_admin: bool,
     bypass: PlatformBypass,
-    force: bool,
     reset_retry_count: bool,
     stages: list[str] | None = None,
     min_speakers: int | None = None,
@@ -110,6 +112,8 @@ def _process_single_file_action(
     organization_id: OrgScope = UNSCOPED,
     tag: Tag | None = None,
     is_org_admin: bool = False,
+    ctx: RequestContext | None = None,
+    http_request: Request | None = None,
 ) -> BulkActionResult:
     """Process a single file action, returning the result."""
     if action == "delete":
@@ -117,8 +121,17 @@ def _process_single_file_action(
         # not the "editor" pre-check below: an editor share must NOT pass, and an
         # org admin with no share on a member's file must (issue #1103).
         return _handle_delete_action(
-            db, file_uuid, current_user, force, is_admin, bypass, organization_id, is_org_admin
+            db,
+            file_uuid,
+            current_user,
+            bypass,
+            organization_id,
+            is_org_admin,
+            request=http_request,
         )
+    if action in TRASH_BULK_ACTIONS and ctx is not None:
+        # The trash verbs resolve the file in the trash (the lookup below 404s it).
+        return handle_trash_action(db, file_uuid, action, ctx, http_request)
 
     db_file = get_media_file_by_uuid(
         db,
@@ -188,6 +201,7 @@ def _process_single_file_action(
 @router.post("/management/bulk-action", response_model=list[BulkActionResult])
 def bulk_file_action(
     request: BulkActionRequest,
+    http_request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
@@ -226,7 +240,6 @@ def bulk_file_action(
                     current_user=current_user,
                     is_admin=is_admin,
                     bypass=ctx.bypass,
-                    force=request.force,
                     reset_retry_count=request.reset_retry_count,
                     stages=request.stages if request.stages else None,
                     min_speakers=request.min_speakers,
@@ -236,6 +249,8 @@ def bulk_file_action(
                     organization_id=ctx.org_id,
                     tag=resolution.tag,
                     is_org_admin=ctx.is_org_admin,
+                    ctx=ctx,
+                    http_request=http_request,
                 )
                 results.append(result)
             except RedactionNotEnabledError:

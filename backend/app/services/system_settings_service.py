@@ -440,10 +440,14 @@ def get_retention_config(db: Session) -> dict:
         - timezone: str (IANA timezone string)
         - last_run: str|None (ISO UTC timestamp of last run)
         - last_run_deleted: int (files deleted in last run)
+        - trash_retention_days: int (days a deleted file stays in the trash, issue #1101)
     """
+    from app.core.constants import TRASH_RETENTION_DAYS_KEY
+
     row = _get_settings_map(
         db,
         [
+            TRASH_RETENTION_DAYS_KEY,
             "files.retention_enabled",
             "files.retention_days",
             "files.delete_error_files",
@@ -461,7 +465,24 @@ def get_retention_config(db: Session) -> dict:
         "timezone": row.get("files.retention_timezone") or "UTC",
         "last_run": row.get("files.retention_last_run"),
         "last_run_deleted": _int_val(row.get("files.retention_last_run_deleted"), 0),
+        "trash_retention_days": _clamp_trash_days(row.get(TRASH_RETENTION_DAYS_KEY)),
     }
+
+
+def _clamp_trash_days(raw: str | None) -> int:
+    from app.core.constants import DEFAULT_TRASH_RETENTION_DAYS
+    from app.core.constants import MAX_TRASH_RETENTION_DAYS
+    from app.core.constants import MIN_TRASH_RETENTION_DAYS
+
+    days = _int_val(raw, DEFAULT_TRASH_RETENTION_DAYS)
+    return max(MIN_TRASH_RETENTION_DAYS, min(MAX_TRASH_RETENTION_DAYS, days))
+
+
+def get_trash_retention_days(db: Session) -> int:
+    """Days a deleted file stays in the trash (issue #1101), clamped to the allowed range."""
+    from app.core.constants import TRASH_RETENTION_DAYS_KEY
+
+    return _clamp_trash_days(get_setting(db, TRASH_RETENTION_DAYS_KEY))
 
 
 def update_retention_config(
@@ -471,6 +492,7 @@ def update_retention_config(
     delete_error_files: bool | None = None,
     run_time: str | None = None,
     timezone: str | None = None,
+    trash_retention_days: int | None = None,
 ) -> dict:
     """
     Update file retention configuration.
@@ -484,10 +506,15 @@ def update_retention_config(
         delete_error_files: Whether to also delete error files (None to keep current)
         run_time: New HH:MM daily schedule time (None to keep current)
         timezone: New IANA timezone string (None to keep current)
+        trash_retention_days: Days a deleted file stays in the trash (None to keep current).
+            Applies to files trashed from now on; a file already in the trash keeps the
+            ``purge_after`` it was given.
 
     Returns:
         Updated retention configuration
     """
+    from app.core.constants import TRASH_RETENTION_DAYS_KEY
+
     updates: dict[str, tuple[Any, str | None]] = {}
 
     if retention_enabled is not None:
@@ -514,6 +541,12 @@ def update_retention_config(
         updates["files.retention_timezone"] = (
             timezone,
             "IANA timezone for the scheduled run (e.g. America/New_York)",
+        )
+
+    if trash_retention_days is not None:
+        updates[TRASH_RETENTION_DAYS_KEY] = (
+            trash_retention_days,
+            "Days a deleted file stays in the trash before it is destroyed",
         )
 
     if updates:

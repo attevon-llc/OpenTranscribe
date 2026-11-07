@@ -116,17 +116,18 @@ def _upload_sample(base_url: str, token: str) -> str | None:
         time.sleep(3)
     print(f'# file-detail: skipped — upload never completed (status={status})')
     requests.delete(f'{base_url}/api/files/{file_uuid}', headers=headers, timeout=30)
+    # A delete only moves the file to the trash (#1101); destroy it so nothing is left behind.
+    requests.delete(f'{base_url}/api/files/{file_uuid}/purge', headers=headers, timeout=30)
     return None
 
 
 def _delete_sample(base_url: str, token: str, file_uuid: str) -> None:
     import requests
 
-    requests.delete(
-        f'{base_url}/api/files/{file_uuid}',
-        headers={'Authorization': f'Bearer {token}'},
-        timeout=30,
-    )
+    headers = {'Authorization': f'Bearer {token}'}
+    requests.delete(f'{base_url}/api/files/{file_uuid}', headers=headers, timeout=30)
+    # A delete only moves the file to the trash (#1101); destroy it so nothing is left behind.
+    requests.delete(f'{base_url}/api/files/{file_uuid}/purge', headers=headers, timeout=30)
 
 
 def _admin_token(backend_url: str) -> str | None:

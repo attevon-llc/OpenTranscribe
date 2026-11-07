@@ -73,6 +73,9 @@ class RetentionConfig(BaseModel):
     timezone: str
     last_run: str | None = None
     last_run_deleted: int = 0
+    #: Days a deleted file stays in the trash (issue #1101). Retention expiry does not use
+    #: the trash: it deletes at ``retention_days``.
+    trash_retention_days: int = 30
 
 
 class RetentionConfigUpdate(BaseModel):
@@ -83,6 +86,7 @@ class RetentionConfigUpdate(BaseModel):
     delete_error_files: bool | None = None
     run_time: str | None = None
     timezone: str | None = None
+    trash_retention_days: int | None = Field(None, ge=1, le=90)
 
     @field_validator("run_time")
     @classmethod

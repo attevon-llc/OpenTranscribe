@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
 
@@ -23,18 +24,19 @@ router = APIRouter()
 @router.delete("/{file_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 def cancel_upload(
     file_uuid: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     ctx: RequestContext = Depends(get_current_context),
 ) -> None:
     """
-    Cancel an in-progress upload, or delete a completed file.
+    Cancel an in-progress upload, or move a file to the trash.
 
-    PENDING files owned by the caller get the lightweight cancel cleanup;
-    anything else falls through to the full deletion (permission and safety
-    checks, storage + search-index cleanup). Both flows share this route —
-    this router registers DELETE /{file_uuid} first, so a separate
-    full-delete route would be unreachable.
+    PENDING files owned by the caller get the cancel cleanup, which destroys them at once
+    (an aborted upload has nothing to recover). Anything else is moved to the trash
+    (issue #1101): recoverable until its window ends or someone deletes it forever with
+    ``DELETE /files/{uuid}/purge``. Both flows share this route — this router registers
+    DELETE /{file_uuid} first, so a separate delete route would be unreachable.
     """
     # Reject a malformed UUID up front. Without this, the unparametrized
     # ``MediaFile.uuid == file_uuid`` query below sends the raw string to
@@ -70,7 +72,7 @@ def cancel_upload(
     )
 
     if not db_file:
-        # Not a pending upload owned by the caller — full delete path.
+        # Not a pending upload owned by the caller: move it to the trash.
         from app.api.endpoints.files.crud import delete_media_file
 
         delete_media_file(
@@ -80,6 +82,7 @@ def cancel_upload(
             organization_id=ctx.org_id,
             is_org_admin=ctx.is_org_admin,
             bypass=ctx.bypass,
+            request=request,
         )
         return None
 

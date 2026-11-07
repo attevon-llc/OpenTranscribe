@@ -103,6 +103,8 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
     Returns:
         Dictionary with file statistics
     """
+    from app.services.file_availability import unavailable_pred
+
     seven_days_ago = datetime.now(UTC) - timedelta(days=7)
 
     columns = [
@@ -110,6 +112,12 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
         func.count().filter(MediaFile.upload_time >= seven_days_ago).label("new"),
         func.coalesce(func.sum(MediaFile.duration), 0).label("total_duration"),
         func.coalesce(func.sum(MediaFile.file_size), 0).label("total_size"),
+        # Trashed files (issue #1101) still hold storage until their purge, so the totals keep
+        # them and these say how much of it is waiting in the trash.
+        func.count().filter(unavailable_pred(include_quarantined=True)).label("trashed_files"),
+        func.coalesce(
+            func.sum(MediaFile.file_size).filter(unavailable_pred(include_quarantined=True)), 0
+        ).label("trashed_bytes"),
     ]
 
     if include_status_breakdown:
@@ -133,6 +141,8 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
         "new": row.new if row else 0,
         "total_duration": round(float(row.total_duration), 2) if row and row.total_duration else 0,
         "total_size": int(row.total_size) if row and row.total_size else 0,
+        "trashed_files": int(row.trashed_files) if row else 0,
+        "trashed_bytes": int(row.trashed_bytes) if row and row.trashed_bytes else 0,
         "segments": total_segments,
         "speakers": total_speakers,
     }

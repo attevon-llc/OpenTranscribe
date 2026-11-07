@@ -605,7 +605,48 @@ def case_file_delete_denied(w, h) -> Expect:
     return Expect(AuditEventType.FILE_DELETE_DENIED, stranger.id, target)
 
 
+def _org_trash(w) -> None:
+    """The org admin moves the organization's file to the trash (``file.trash``)."""
+    response = w.client.delete(f"/api/files/{w.file.uuid}", headers=w.org_admin_headers)
+    assert response.status_code == 204, response.text
+
+
+def _trash_expect(w, event: AuditEventType) -> Expect:
+    return Expect(event, w.org_admin.id, (("resource_uuid", str(w.file.uuid)),), w.org.id)
+
+
+def case_file_trash(w, h) -> Expect:
+    _org_trash(w)
+    return _trash_expect(w, AuditEventType.FILE_TRASH)
+
+
+def case_file_restore(w, h) -> Expect:
+    _org_trash(w)
+    response = w.client.post(f"/api/files/{w.file.uuid}/restore", headers=w.org_admin_headers)
+    assert response.status_code == 200, response.text
+    return _trash_expect(w, AuditEventType.FILE_RESTORE)
+
+
+def case_file_purge_requested(w, h) -> Expect:
+    _org_trash(w)
+    response = w.client.delete(f"/api/files/{w.file.uuid}/purge", headers=w.org_admin_headers)
+    assert response.status_code == 202, response.text
+    return _trash_expect(w, AuditEventType.FILE_PURGE_REQUESTED)
+
+
+def case_trash_empty(w, h) -> Expect:
+    _org_trash(w)
+    response = w.client.post("/api/files/trash/empty", headers=w.org_admin_headers)
+    assert response.status_code == 202, response.text
+    target = (("resource_uuid", str(w.org.uuid)), ("resource_type", "trash"))
+    return Expect(AuditEventType.TRASH_EMPTY, w.org_admin.id, target, w.org.id)
+
+
 CASES: dict[str, Callable[[Any, Any], Expect]] = {
+    "file-trash": case_file_trash,
+    "file-restore": case_file_restore,
+    "file-purge-requested": case_file_purge_requested,
+    "trash-empty": case_trash_empty,
     "users-delete": case_users_delete,
     "org-erase": case_org_erase,
     "grant-deny": case_grant_deny,

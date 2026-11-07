@@ -222,6 +222,7 @@ ignore_imports = [
   "app.services.privacy.policy_admin -> app.tasks.privacy_purge_task",  # deliberate late binding: Celery task lookup
   "app.services.redaction.llm_guard -> app.tasks.redaction_task",  # deliberate late binding: Celery task lookup
   "app.services.redaction.service -> app.tasks.redaction_task",  # deliberate late binding: Celery task lookup
+  "app.services.trash_service -> app.tasks.trash",  # deliberate late binding: Celery task lookup
   "app.services.search.model_switch -> app.tasks.reindex_task",  # deliberate late binding: Celery task lookup
   "app.services.search.reindex_dispatch -> app.tasks.search_indexing_task",  # deliberate late binding: Celery task lookup
   "app.services.speaker_label_backfill -> app.tasks.ingest_artifacts_task",  # deliberate late binding: Celery task lookup
@@ -254,6 +255,7 @@ ignore_imports = [
   "app.utils.db_helpers -> app.models.speaker",  # upward import, module level: removal planned (layering)
   "app.utils.file_hash -> app.models.media",  # upward import, function level: removal planned (layering)
   "app.utils.file_hash -> app.models.organization",  # upward import, function level: removal planned (layering)
+  "app.utils.file_hash -> app.services.file_availability",  # upward import, function level: the one availability rule decides what counts as a duplicate (#1101)
   "app.utils.file_hash -> app.services.file_cleanup_service",  # upward import, function level: v0.6.1 guarded duplicate cleanup; removal planned (layering)
   "app.utils.file_retry -> app.models.media",  # upward import, module level: removal planned (layering)
   "app.utils.file_retry -> app.models.speaker",  # upward import, function level: removal planned (layering)
@@ -270,6 +272,7 @@ ignore_imports = [
   "app.utils.stats_helpers -> app.models.media",  # upward import, module level: removal planned (layering)
   "app.utils.stats_helpers -> app.models.speaker",  # upward import, module level: removal planned (layering)
   "app.utils.stats_helpers -> app.models.user",  # upward import, module level: removal planned (layering)
+  "app.utils.stats_helpers -> app.services.file_availability",  # upward import, function level: trashed-file counts through the one availability rule (#1101)
   "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
   "app.utils.stats_helpers -> app.transcription.diar_sidecar_status",  # upward import, function level: removal planned (layering)
   "app.utils.stuck_file_recovery -> app.models.media",  # upward import, module level: removal planned (layering)
@@ -314,6 +317,7 @@ forbidden_modules = ["app.services", "app.tasks", "app.api"]
 allow_indirect_imports = true
 unmatched_ignore_imports_alerting = "error"
 ignore_imports = [
+  "app.utils.file_hash -> app.services.file_availability",  # upward import, function level: the one availability rule decides what counts as a duplicate (#1101)
   "app.utils.file_hash -> app.services.file_cleanup_service",  # upward import, function level: v0.6.1 guarded duplicate cleanup; removal planned (layering)
   "app.utils.file_retry -> app.services.hold_guard",  # upward import, function level: removal planned (layering)
   "app.utils.file_retry -> app.services.minio_service",  # upward import, function level: removal planned (layering)
@@ -322,6 +326,7 @@ ignore_imports = [
   "app.utils.file_retry -> app.tasks.search_file_field_tasks",  # deliberate late binding: Celery task lookup
   "app.utils.lite_mode -> app.services.pipeline_plan",  # upward import, function level: removal planned (layering)
   "app.utils.speaker_labels -> app.services.privacy.redact_view",  # upward import, function level: removal planned (layering)
+  "app.utils.stats_helpers -> app.services.file_availability",  # upward import, function level: trashed-file counts through the one availability rule (#1101)
   "app.utils.stats_helpers -> app.services.search.settings_service",  # upward import, function level: removal planned (layering)
   "app.utils.stuck_file_recovery -> app.services.system_settings_service",  # upward import, module level: removal planned (layering)
   "app.utils.stuck_file_recovery -> app.services.takedown_service",  # upward import, function level: removal planned (layering)

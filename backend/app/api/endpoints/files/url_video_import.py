@@ -89,9 +89,13 @@ def _check_duplicate_video(
     Raises:
         HTTPException: If a duplicate video is found (409 Conflict).
     """
+    from app.services.file_availability import available_pred
+
+    # A trashed copy is not a duplicate (issue #1101): re-importing creates a new file.
     base = db.query(MediaFile).filter(
         MediaFile.user_id == user_id,
         org_stamp_is(MediaFile.organization_id, organization_id),
+        available_pred(include_quarantined=True),
     )
 
     # Check by source_url first (works for all platforms)

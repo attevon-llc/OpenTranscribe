@@ -143,7 +143,13 @@ def update_garbage_cleanup_configuration(
 def _get_retention_eligible_files(
     db: Session, retention_days: int, delete_error_files: bool
 ) -> list[MediaFile]:
-    """Query files eligible for deletion under the given retention parameters."""
+    """Query files eligible for deletion under the given retention parameters.
+
+    Applies the sweep's own guard (``tasks.cleanup.retention_guard_pred``: held, quarantined
+    and trashed files are never taken), so the preview lists what a run would delete.
+    """
+    from app.tasks.cleanup import retention_guard_pred
+
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     eligible_statuses = [FileStatus.COMPLETED]
     if delete_error_files:
@@ -158,6 +164,7 @@ def _get_retention_eligible_files(
                 and_(MediaFile.completed_at.is_(None), MediaFile.upload_time < cutoff),
             ),
             MediaFile.status.in_([s.value for s in eligible_statuses]),
+            retention_guard_pred(),
         )
         .all()
     )
@@ -209,6 +216,7 @@ def update_retention_configuration(
         delete_error_files=config.delete_error_files,
         run_time=config.run_time,
         timezone=config.timezone,
+        trash_retention_days=config.trash_retention_days,
     )
 
     return RetentionConfig(**updated)

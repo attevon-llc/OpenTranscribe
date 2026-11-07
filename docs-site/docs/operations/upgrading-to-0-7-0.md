@@ -280,3 +280,57 @@ it once after upgrading, from a backend container:
 `python -m app.scripts.sweep_orphan_voiceprints` for a dry run that only counts, then
 `python -m app.scripts.sweep_orphan_voiceprints --apply` to delete. If the database cannot be
 read, the sweep stops without deleting anything.
+
+## Deleting a file now moves it to the trash
+
+**Check this if...** you delete files through the API or a script, rely on a delete freeing
+storage straight away, or use `DELETE /api/files/{uuid}/force`.
+
+Before 0.7.0 a delete destroyed the file at once: the media in object storage, its search and
+chat documents, and its database row, with no way back. From 0.7.0 every delete a person makes
+moves the file to the trash instead (migration `v463_add_media_file_trash` added the columns).
+The file disappears from the gallery, search, chat, exports and every other view straight away,
+but nothing is destroyed until its time in the trash ends: 30 days by default. Change it in
+**Settings -> Data Management -> Retention** (1 to 90 days). The new length applies to files
+deleted from then on; a file already in the trash keeps the date it was given.
+
+What changes for API clients and scripts:
+
+- `DELETE /api/files/{uuid}` keeps its route and its `204` answer, but now moves the file to the
+  trash. Storage is freed when the file is destroyed, not when it is deleted. A file whose
+  processing is still running is no longer refused with `409 FILE_NOT_SAFE_TO_DELETE`: the
+  processing is cancelled and the file goes to the trash; if it is restored it comes back as
+  cancelled, and reprocessing it finishes the job.
+- `DELETE /api/files/{uuid}/force` (administrators) also moves the file to the trash; it no
+  longer destroys anything.
+- The bulk action `delete` moves each file to the trash. Its `force` field is no longer used.
+- To destroy a file now, delete it and then call `DELETE /api/files/{uuid}/purge`. It answers
+  `202`, and the file is destroyed within moments by a background job. The bulk actions
+  `restore` and `purge` and the routes below do the same for many files.
+- New: `GET /api/files/trash` (list), `POST /api/files/{uuid}/restore`,
+  `DELETE /api/files/{uuid}/purge` and `POST /api/files/trash/empty`.
+- An upload you cancel while it is still uploading is destroyed at once, as before.
+
+Who may do what: the file's owner may move it to the trash, restore it and destroy it. In an
+organization, the owner and the organization's administrators may move it to the trash and
+restore it, but only an organization administrator may destroy it, so a member's mistake stays
+recoverable. A shared file cannot be deleted, restored or destroyed by the people it is shared
+with.
+
+Legal holds and takedowns come first. A file under a legal or organization hold cannot be moved
+to the trash. A file placed under a hold while it is in the trash stays there, can still be
+restored, and is never destroyed while the hold lasts; once the hold is released it is destroyed
+on the next hourly check if its time is up. A file under takedown review is never destroyed from
+the trash either.
+
+What does not change:
+
+- Retention (**Settings -> Data Management -> Retention**) still deletes expired files
+  permanently at the end of the retention period, without passing through the trash. It skips
+  files that are already in the trash, which are destroyed when their own time ends.
+- A GDPR erasure or an account deletion destroys the person's files at once, including any in
+  the trash. It does not wait for the trash period.
+
+Trashed files keep their storage until they are destroyed. The administrator dashboard's file
+statistics now show how many files are in the trash and how much space they use
+(`trashed_files`, `trashed_bytes`).

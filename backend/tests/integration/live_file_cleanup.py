@@ -7,6 +7,10 @@ not a ``requests`` exception, so a bare call silently leaves the upload in the l
 
 The e2e suite's ``delete_media_file`` (``tests/e2e/conftest.py``) does the same job, but it
 lives in a conftest and cannot be imported from here.
+
+Since issue #1101 a ``DELETE`` (and ``/force``) only moves the file to the trash, so a removal
+is a delete followed by ``DELETE /files/{uuid}/purge``: without the second call every test
+upload would sit in the dev library's trash, holding its storage, for the trash window.
 """
 
 from __future__ import annotations
@@ -20,6 +24,21 @@ import requests
 DELETE_RETRY_BUDGET_S = 90.0
 _RETRY_PAUSE_S = 5.0
 _GONE = (200, 204, 404)
+
+
+def _purge_from_trash(base_url: str, headers: dict[str, str], file_uuid: str) -> str | None:
+    """Delete forever a file just moved to the trash; None on success, else what went wrong.
+
+    202 queues the destroy; 404 means nothing is left to destroy (a cancelled upload is
+    destroyed at once by the delete itself).
+    """
+    try:
+        resp = requests.delete(f"{base_url}/files/{file_uuid}/purge", headers=headers, timeout=30)
+    except requests.RequestException as exc:
+        return f"purge DELETE raised {exc!r}"
+    if resp.status_code in (202, 404):
+        return None
+    return f"purge DELETE -> {resp.status_code} {resp.text[:200]}"
 
 
 def delete_uploaded_file(base_url: str, headers: dict[str, str], file_uuid: str) -> bool:
@@ -43,7 +62,10 @@ def delete_uploaded_file(base_url: str, headers: dict[str, str], file_uuid: str)
         try:
             resp = requests.delete(f"{base_url}/files/{file_uuid}", headers=headers, timeout=30)
             if resp.status_code in _GONE:
-                return True
+                last = _purge_from_trash(base_url, headers, file_uuid) or ""
+                if not last:
+                    return True
+                break
             last = f"DELETE -> {resp.status_code} {resp.text[:200]}"
         except requests.RequestException as exc:
             last = f"DELETE raised {exc!r}"
@@ -54,8 +76,12 @@ def delete_uploaded_file(base_url: str, headers: dict[str, str], file_uuid: str)
     try:
         resp = requests.delete(f"{base_url}/files/{file_uuid}/force", headers=headers, timeout=30)
         if resp.status_code in _GONE:
-            return True
-        last = f"{last}; force DELETE -> {resp.status_code} {resp.text[:200]}"
+            purge_error = _purge_from_trash(base_url, headers, file_uuid)
+            if purge_error is None:
+                return True
+            last = f"{last}; {purge_error}"
+        else:
+            last = f"{last}; force DELETE -> {resp.status_code} {resp.text[:200]}"
     except requests.RequestException as exc:
         last = f"{last}; force DELETE raised {exc!r}"
     warnings.warn(

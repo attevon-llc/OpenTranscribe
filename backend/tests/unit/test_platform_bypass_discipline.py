@@ -141,10 +141,6 @@ ALLOWLIST: dict[str, str] = {
         "Q: is_unavailable runs before the public-file branch, after "
         "bypass.allows on the loaded row; only what that reaches may see a taken-down file"
     ),
-    "api/endpoints/files/crud.py::delete_media_file": (
-        "P: is_admin only fills the cancel_and_delete/force_delete capability hints in the "
-        "409 body; the delete itself is authorized by get_deletable_file(bypass=)"
-    ),
     "api/endpoints/files/bulk_actions.py::bulk_file_action": (
         "P: the per-file handlers skip the retry ceiling and allow force for admins after the "
         "chokepoint passed with ctx.bypass"

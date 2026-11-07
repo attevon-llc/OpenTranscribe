@@ -241,9 +241,13 @@ class TestFullUploadFlow:
         while time.time() < deadline:
             status = api_helper.delete(f"/api/files/{file_uuid}")
             if status in (200, 204):
-                return
+                break
             # Kept (issue #431): static helper polling the delete API on 409 (still
             # processing) — takes no page, no locator to wait on.
             time.sleep(3)
-        status = api_helper.delete(f"/api/files/{file_uuid}/force")
-        assert status in (200, 204), f"Cleanup delete failed with {status}"
+        else:
+            status = api_helper.delete(f"/api/files/{file_uuid}/force")
+            assert status in (200, 204), f"Cleanup delete failed with {status}"
+        # A delete only moves the file to the trash (#1101); destroy it so dev data is untouched.
+        purge = api_helper.delete(f"/api/files/{file_uuid}/purge")
+        assert purge in (202, 404), f"Cleanup purge failed with {purge}"

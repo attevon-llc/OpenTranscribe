@@ -7,13 +7,17 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi import Depends
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.services.llm_service import LLMService
 from app.services.llm_service import is_llm_available
+from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +36,19 @@ async def get_llm_status(
     """
     try:
         # Check if LLM is available for this user
-        is_available = await is_llm_available(user_id=current_user.id)
+        try:
+            is_available = await is_llm_available(user_id=current_user.id)
+        except SQLAlchemyError:
+            logger.error("LLM settings could not be read for status check", exc_info=True)
+            return {
+                "available": False,
+                "user_id": current_user.id,
+                "provider": None,
+                "model": None,
+                "context_window": None,
+                "status": "settings_unavailable",
+                "message": LLM_SETTINGS_UNREADABLE_MESSAGE,
+            }
 
         # context_window: the resolved service's window, so chat's token panel does not
         # depend on /api/llm-settings/status, which is unmounted without llm.user_settings.
@@ -107,7 +123,8 @@ def test_llm_connection(
         Dictionary containing connection test results
     """
     try:
-        llm_service = LLMService.create_from_settings(user_id=current_user.id)
+        with llm_settings_outage_as_503():
+            llm_service = LLMService.create_from_settings(user_id=current_user.id)
         if llm_service is None:
             return {
                 "success": False,
@@ -127,6 +144,8 @@ def test_llm_connection(
             "model": llm_service.config.model,
         }
 
+    except DomainError:
+        raise
     except Exception as e:
         logger.exception(f"Error testing LLM connection: {e}")
         return {

@@ -14,6 +14,8 @@ export interface LLMStatus {
   model?: string | null;
   /** The resolved model's context window in tokens; null when unavailable. */
   context_window?: number | null;
+  /** `settings_unavailable` when the LLM settings could not be read (not "none configured"). */
+  status?: string;
   message: string;
 }
 

@@ -921,6 +921,8 @@
   "llm.unableToReach": "Impossibile raggiungere il servizio LLM",
   "llm.featuresAvailable": "Le funzionalità IA sono disponibili ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "Le funzionalità IA non sono attualmente disponibili",
+  "llm.settingsUnavailable": "Impossibile leggere le impostazioni IA. Riprova tra poco o contatta l'amministratore.",
+  "llm.settingsUnavailableTitle": "Impostazioni IA non disponibili",
   "llm.editConfiguration": "Modifica configurazione",
   "llm.createConfiguration": "Crea configurazione LLM",
   "llm.unsavedChangesIndicator": "Hai modifiche non salvate",

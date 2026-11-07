@@ -46,6 +46,8 @@ from app.utils.task_utils import task_error_text
 logger = logging.getLogger(__name__)
 
 _EXTRACTION_FAILED = "Failed to extract topics from transcript"
+#: Stable code carried in task results and batch details; the exception text is logged only.
+_EXTRACTION_ERROR_CODE = "topic_extraction_failed"
 #: A database error is usually transient (a dropped connection, a pool timeout).
 _DB_RETRY_COUNTDOWN_S = 30
 
@@ -228,8 +230,7 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
     """
     from app.services.uuid_helpers import get_file_by_uuid
 
-    error_msg = task_error_text(e)
-    logger.error(f"Error extracting topics for file {file_uuid}: {e}")
+    logger.error(f"Error extracting topics for file {file_uuid}: {task_error_text(e)}")
 
     try:
         with session_scope() as db:
@@ -255,7 +256,7 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
 
     return {
         "status": "failed",
-        "error": error_msg,
+        "error": _EXTRACTION_ERROR_CODE,
     }
 
 
@@ -474,7 +475,7 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
             )
 
         except Exception as e:
-            logger.error(f"Error in batch processing file {file_uuid}: {e}")
+            logger.error(f"Error in batch processing file {file_uuid}: {e}", exc_info=True)
             results["failed"] = int(results["failed"]) + 1  # type: ignore[arg-type]
             details_list = results["details"]
             assert isinstance(details_list, list)
@@ -482,7 +483,7 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
                 {
                     "file_uuid": file_uuid,
                     "status": "failed",
-                    "error": str(e),
+                    "error": _EXTRACTION_ERROR_CODE,
                 }
             )
 

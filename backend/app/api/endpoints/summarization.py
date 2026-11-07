@@ -52,6 +52,7 @@ from app.schemas.summary import SummaryTaskRequest
 from app.services.content_audit import record_file_event
 from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.llm_service import is_llm_available
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.platform_bypass import PlatformBypass
 from app.services.request_context import RequestContext
 from app.services.summary_export_service import VALID_SUMMARY_EXPORT_FORMATS
@@ -149,7 +150,8 @@ async def trigger_summarization(
         )
 
     # Check LLM availability before starting the task
-    llm_available = await is_llm_available(user_id=current_user.id)
+    with llm_settings_outage_as_503():
+        llm_available = await is_llm_available(user_id=current_user.id)
     if not llm_available:
         raise HTTPException(
             status_code=503,
@@ -561,7 +563,8 @@ async def identify_speakers(
         raise HTTPException(status_code=400, detail="No speakers found in this file to identify")
 
     # Check LLM availability before starting the task
-    llm_available = await is_llm_available(user_id=current_user.id)
+    with llm_settings_outage_as_503():
+        llm_available = await is_llm_available(user_id=current_user.id)
     if not llm_available:
         raise HTTPException(
             status_code=503,

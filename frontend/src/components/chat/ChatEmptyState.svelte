@@ -25,6 +25,7 @@
 
   /** LLM availability — false shows the setup CTA instead of suggestions. */
   export let llmAvailable = true;
+  export let llmSettingsUnavailable = false;
 
   const dispatch = createEventDispatcher<{ suggestion: string }>();
 
@@ -96,6 +97,10 @@
           <line x1="12" y1="17" x2="12.01" y2="17" />
         </svg>
       </div>
+      {#if llmSettingsUnavailable}
+        <h1>{$t('llm.settingsUnavailableTitle')}</h1>
+        <p data-testid="chat-llm-settings-unavailable">{$t('llm.settingsUnavailable')}</p>
+      {:else}
       <h1>{$t('chat.setup.noLlmTitle')}</h1>
       {#if userCanConfigure}
         <p>{$t('chat.setup.noLlmMessage')}</p>
@@ -109,6 +114,7 @@
         </button>
       {:else}
         <p>{$t('chat.setup.noLlmMessageManaged')}</p>
+      {/if}
       {/if}
     </div>
   {/if}

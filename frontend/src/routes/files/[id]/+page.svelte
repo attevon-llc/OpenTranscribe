@@ -54,7 +54,7 @@
   import RedactionControls from '$components/fileDetail/RedactionControls.svelte';
   import RedactionPendingPanel from '$components/fileDetail/RedactionPendingPanel.svelte';
   import SpeakerProfileConfirmModal from '$components/fileDetail/SpeakerProfileConfirmModal.svelte';
-  import { isLLMAvailable } from '$stores/llmStatus';
+  import { isLLMAvailable, isLLMSettingsUnavailable } from '$stores/llmStatus';
   import { transcriptStore } from '$stores/transcriptStore';
   import { downloadStore } from '$stores/downloads';
   import { supportSessionGate } from '$stores/supportSession';
@@ -633,6 +633,7 @@
             {file}
             {canEdit}
             {llmAvailable}
+            llmSettingsUnavailable={$isLLMSettingsUnavailable}
             {summaryGenerating}
             {generatingSummary}
             {reprocessing}

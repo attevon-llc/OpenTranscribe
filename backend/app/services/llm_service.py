@@ -1225,13 +1225,14 @@ class LLMService(
 
 # Utility function for quick LLM availability check
 async def is_llm_available(user_id: int | None = None) -> bool:
-    """Quick check to see if any LLM provider is available.
+    """Check, in a worker thread, that a usable LLM provider exists (fail-fast health check).
 
-    Runs the blocking health check in a thread to avoid blocking the
-    async event loop. Uses a 3-second timeout to fail fast when the
-    LLM server is unreachable.
+    Raises:
+        SQLAlchemyError: settings unreadable; an outage, not "none configured".
     """
     import asyncio
+
+    from sqlalchemy.exc import SQLAlchemyError
 
     def _check() -> bool:
         try:
@@ -1241,11 +1242,10 @@ async def is_llm_available(user_id: int | None = None) -> bool:
             health_ok = llm_service.health_check()
             llm_service.close()
             return health_ok
+        except SQLAlchemyError:
+            raise
         except Exception as e:
             logger.error(f"LLM availability check failed: {e}")
             return False
 
-    try:
-        return await asyncio.to_thread(_check)
-    except Exception:
-        return False
+    return await asyncio.to_thread(_check)

@@ -1575,6 +1575,8 @@
   "llm.unableToReach": "LLM-Dienst nicht erreichbar",
   "llm.featuresAvailable": "KI-Funktionen verfügbar ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "KI-Funktionen sind derzeit nicht verfügbar",
+  "llm.settingsUnavailable": "Die KI-Einstellungen konnten nicht gelesen werden. Versuchen Sie es in Kürze erneut oder wenden Sie sich an Ihre Administration.",
+  "llm.settingsUnavailableTitle": "KI-Einstellungen nicht verfügbar",
   "settings.password.confirm": "Neues Passwort bestätigen",
   "settings.password.current": "Aktuelles Passwort",
   "settings.password.fillAll": "Bitte füllen Sie alle Passwortfelder aus",

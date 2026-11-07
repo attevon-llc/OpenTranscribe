@@ -9,15 +9,18 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
+from app.core.exceptions import ServiceUnavailableError
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.user import User
 from app.services.llm_service import is_llm_available
+from app.services.llm_settings_outage import llm_settings_outage_as_503
 from app.services.request_context import RequestContext
 from app.tasks.summary_retry import retry_summary_if_available
 
@@ -39,6 +42,8 @@ async def get_summary_status(
     Returns:
         - summary_status: 'pending', 'processing', 'completed', 'failed'
         - llm_available: whether LLM service is available
+        - llm_settings_unavailable: the settings could not be read (outage), which is not
+          the same as "no provider configured"
         - can_retry: whether a failed summary can be retried
         - summary_exists: whether a summary already exists
     """
@@ -50,9 +55,14 @@ async def get_summary_status(
     )
     file_id = media_file.id
 
+    settings_unavailable = False
     try:
         # Check LLM availability for current user
         llm_available = await is_llm_available(user_id=current_user.id)
+    except SQLAlchemyError:
+        logger.error(f"LLM settings unreadable for file {file_id}", exc_info=True)
+        llm_available = False
+        settings_unavailable = True
     except Exception as e:
         logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
         llm_available = False
@@ -84,6 +94,7 @@ async def get_summary_status(
         "summary_status": summary_status_str,
         "summary_exists": bool(media_file.summary_data or media_file.summary_opensearch_id),
         "llm_available": llm_available,
+        "llm_settings_unavailable": settings_unavailable,
         "can_retry": can_retry,
         "transcription_status": media_file.status,
         "filename": media_file.filename,
@@ -141,7 +152,10 @@ async def retry_summary(
 
     # Check LLM availability for current user
     try:
-        llm_available = await is_llm_available(user_id=current_user.id)
+        with llm_settings_outage_as_503():
+            llm_available = await is_llm_available(user_id=current_user.id)
+    except ServiceUnavailableError:
+        raise
     except Exception as e:
         logger.exception(f"Failed to check LLM availability for retry of file {file_id}: {e}")
         raise HTTPException(

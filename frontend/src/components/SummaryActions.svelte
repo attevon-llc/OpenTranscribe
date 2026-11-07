@@ -10,6 +10,7 @@
   export let summary: SummaryData | null;
   export let generating: boolean = false;
   export let llmAvailable: boolean = false;
+  export let llmSettingsUnavailable: boolean = false;
   export let canRetry: boolean = false;
   export let summaryStatus: string = 'pending';
   export let canGenerate: boolean = true;
@@ -94,6 +95,8 @@
         {$t('summary.generateSummary')}
       {/if}
     </button>
+  {:else if !summary && !llmAvailable && llmSettingsUnavailable && summaryStatus === 'pending'}
+    <span class="admin-hint" data-testid="llm-settings-unavailable">{$t('llm.settingsUnavailable')}</span>
   {:else if !summary && !llmAvailable && summaryStatus === 'pending'}
     <span class="admin-hint">{$t('llm.featuresUnavailable')}</span>
     <!-- The status probe cannot tell "none configured" from "configured but unusable"; the link fixes both. -->

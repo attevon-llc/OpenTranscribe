@@ -921,6 +921,8 @@
   "llm.unableToReach": "تعذّر الوصول إلى خدمة نموذج اللغة",
   "llm.featuresAvailable": "ميزات الذكاء الاصطناعي متاحة ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "ميزات الذكاء الاصطناعي غير متاحة حاليًا",
+  "llm.settingsUnavailable": "تعذّرت قراءة إعدادات الذكاء الاصطناعي. حاول مرة أخرى بعد قليل أو تواصل مع المسؤول.",
+  "llm.settingsUnavailableTitle": "إعدادات الذكاء الاصطناعي غير متاحة",
   "llm.editConfiguration": "تعديل التكوين",
   "llm.createConfiguration": "إنشاء تكوين نموذج اللغة",
   "llm.unsavedChangesIndicator": "لديك تغييرات غير محفوظة",

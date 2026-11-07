@@ -892,6 +892,8 @@
   "llm.unableToReach": "LLMサービスに接続できません",
   "llm.featuresAvailable": "AI機能が利用可能です ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "AI機能は現在利用できません",
+  "llm.settingsUnavailable": "AI設定を読み込めませんでした。しばらくしてからもう一度お試しいただくか、管理者にお問い合わせください。",
+  "llm.settingsUnavailableTitle": "AI設定を利用できません",
   "llm.editConfiguration": "設定を編集",
   "llm.createConfiguration": "LLM設定を作成",
   "llm.unsavedChangesIndicator": "未保存の変更があります",

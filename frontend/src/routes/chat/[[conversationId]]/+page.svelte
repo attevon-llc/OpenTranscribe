@@ -16,7 +16,7 @@
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
-  import { llmStatusStore } from '$stores/llmStatus';
+  import { llmStatusStore, isLLMSettingsUnavailable } from '$stores/llmStatus';
   import { chatStore } from '$stores/chat';
   import { estimateContext, getProject, listProjects } from '$lib/api/chatApi';
   import {
@@ -575,7 +575,7 @@
             on:disambiguate={handleDisambiguateSpeaker}
           />
         {:else}
-          <ChatEmptyState {llmAvailable} on:suggestion={handleSuggestion} />
+          <ChatEmptyState {llmAvailable} llmSettingsUnavailable={$isLLMSettingsUnavailable} on:suggestion={handleSuggestion} />
         {/if}
       </div>
 

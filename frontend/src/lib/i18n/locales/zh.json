@@ -892,6 +892,8 @@
   "llm.unableToReach": "无法连接LLM服务",
   "llm.featuresAvailable": "AI功能可用 ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "AI功能当前不可用",
+  "llm.settingsUnavailable": "无法读取 AI 设置。请稍后重试，或联系管理员。",
+  "llm.settingsUnavailableTitle": "AI 设置不可用",
   "llm.editConfiguration": "编辑配置",
   "llm.createConfiguration": "创建 LLM 配置",
   "llm.unsavedChangesIndicator": "您有未保存的更改",

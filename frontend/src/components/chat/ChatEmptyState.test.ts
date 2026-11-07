@@ -46,3 +46,15 @@ describe('ChatEmptyState without an LLM', () => {
     expect(screen.getByText('chat.setup.noLlmMessageManaged')).toBeInTheDocument();
   });
 });
+
+describe('ChatEmptyState when the LLM settings could not be read', () => {
+  it('says so, instead of telling the user to configure a provider', () => {
+    render(ChatEmptyState, { props: { llmAvailable: false, llmSettingsUnavailable: true } });
+
+    expect(screen.getByTestId('chat-llm-settings-unavailable')).toHaveTextContent(
+      'llm.settingsUnavailable'
+    );
+    expect(screen.queryByTestId('chat-open-llm-settings')).toBeNull();
+    expect(screen.queryByText('chat.setup.noLlmMessage')).toBeNull();
+  });
+});

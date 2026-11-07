@@ -139,7 +139,7 @@ backend/app/services/llm_context_window.py	1	ratchet: may only go down
 backend/app/services/llm_health.py	1	ratchet: may only go down
 backend/app/services/llm_json_extract.py	2	ratchet: may only go down
 backend/app/services/llm_reasoning.py	2	ratchet: may only go down
-backend/app/services/llm_service.py	4	ratchet: may only go down
+backend/app/services/llm_service.py	3	ratchet: may only go down
 backend/app/services/llm_summarization.py	1	ratchet: may only go down
 backend/app/services/local_models/runner.py	1	ratchet: may only go down
 backend/app/services/local_models/supervisor.py	2	ratchet: may only go down
@@ -294,7 +294,7 @@ backend/app/tasks/summary_retry.py	4	ratchet: may only go down
 backend/app/tasks/tenant_backfill_task.py	3	ratchet: may only go down
 backend/app/tasks/thumbnail.py	2	ratchet: may only go down
 backend/app/tasks/thumbnail_migration.py	4	ratchet: may only go down
-backend/app/tasks/topic_extraction.py	6	ratchet: may only go down
+backend/app/tasks/topic_extraction.py	5	ratchet: may only go down
 backend/app/tasks/transcript_document.py	3	ratchet: may only go down
 backend/app/tasks/transcription/cloud_asr.py	2	ratchet: may only go down
 backend/app/tasks/transcription/context.py	2	ratchet: may only go down

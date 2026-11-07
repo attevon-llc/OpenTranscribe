@@ -921,6 +921,8 @@
   "llm.unableToReach": "Kan geen verbinding maken met LLM-service",
   "llm.featuresAvailable": "AI-functies zijn beschikbaar ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "AI-functies zijn momenteel niet beschikbaar",
+  "llm.settingsUnavailable": "De AI-instellingen konden niet worden gelezen. Probeer het zo opnieuw of neem contact op met uw beheerder.",
+  "llm.settingsUnavailableTitle": "AI-instellingen niet beschikbaar",
   "llm.editConfiguration": "Configuratie bewerken",
   "llm.createConfiguration": "LLM-configuratie aanmaken",
   "llm.unsavedChangesIndicator": "U heeft niet-opgeslagen wijzigingen",

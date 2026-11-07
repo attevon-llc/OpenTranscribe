@@ -48,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     inj_env.bootstrap()  # before anything imports app.core.config
     from app.scripts.scale_dataset import pg_synthetic as pg
+    from app.scripts.scale_dataset.pg_governance import seed_all
 
     args = build_parser().parse_args(argv)
     require_isolated_target(args.fresh, args.throwaway_db)
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(settings.DATABASE_URL)
     started = time.monotonic()
     with engine.begin() as conn:
-        counts = pg.seed_dataset(conn, shape, args.seed, get_password_hash("loadtest-password"))
+        counts = seed_all(conn, shape, args.seed, get_password_hash("loadtest-password"))
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for table in pg.ANALYZE_TABLES:
             conn.execute(text(f'ANALYZE "{table}"'))

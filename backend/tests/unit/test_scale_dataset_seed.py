@@ -16,6 +16,7 @@ from sqlalchemy.engine import Connection
 from app.scripts.corpus_injection.env import LiveStackRefusedError
 from app.scripts.scale_dataset import __main__ as cli
 from app.scripts.scale_dataset import pg_synthetic as pg
+from app.scripts.scale_dataset.pg_governance import seed_all
 
 TINY = pg.Shape(
     users=5,
@@ -27,6 +28,18 @@ TINY = pg.Shape(
     profiles=7,
     tags=6,
     tags_per_file=3,
+    orgs=2,
+    holds=2,
+    hold_files=4,
+    collections=3,
+    collection_members=6,
+    collection_shares=2,
+    clusters=2,
+    cluster_members=6,
+    matches=10,
+    hidden=4,
+    conversations=2,
+    messages=4,
 )
 
 
@@ -100,14 +113,27 @@ def current_max_ids(conn: Connection) -> dict[str, int]:
 def _seed(db_session, seed: str = "t1337"):
     conn = db_session.connection()
     base = current_max_ids(conn)
-    counts = pg.seed_dataset(conn, TINY, seed, "x-not-a-real-hash")
+    counts = seed_all(conn, TINY, seed, "x-not-a-real-hash")
     return counts, fingerprint(conn, base)
 
 
 def test_tiny_seed_writes_the_requested_row_counts(db_session):
     counts, _ = _seed(db_session)
 
-    assert counts == {
+    core = {
+        k: counts[k]
+        for k in (
+            "user",
+            "media_file",
+            "speaker_profile",
+            "speaker",
+            "transcript_segment",
+            "task",
+            "tag",
+            "file_tag",
+        )
+    }
+    assert core == {
         "user": 5,
         "media_file": 20,
         "speaker_profile": 7,

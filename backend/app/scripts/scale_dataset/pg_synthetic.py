@@ -62,6 +62,21 @@ class Shape:
     display_name_pm: int = 300
     suggestion_pm: int = 30
     profile_linked_pm: int = 400
+    orgs: int = 5
+    holds: int = 50
+    hold_files: int = 2_000
+    released_hold_pm: int = 200
+    platform_hold_pm: int = 300
+    collections: int = 5_000
+    collection_members: int = 200_000
+    collection_shares: int = 2_000
+    org_collection_pm: int = 600
+    clusters: int = 50_000
+    cluster_members: int = 500_000
+    matches: int = 500_000
+    hidden: int = 5_000
+    conversations: int = 20_000
+    messages: int = 200_000
 
     def __post_init__(self) -> None:
         if self.users < 3:
@@ -70,6 +85,19 @@ class Shape:
             raise ValueError("tags must be >= 3")
         if self.heavy_user_files > self.files:
             raise ValueError("heavy_user_files cannot exceed files")
+        spk = self.files * self.speakers_per_file
+        limits = {
+            "hold_files": self.holds * self.files,
+            "collection_members": self.collections * self.files,
+            "cluster_members": self.clusters * spk,
+            "matches": spk - 1,
+            "hidden": self.files,
+        }
+        for name, cap in limits.items():
+            if getattr(self, name) > cap:
+                raise ValueError(f"{name} cannot exceed {cap} for this shape")
+        if min(self.orgs, self.holds, self.collections, self.clusters, self.conversations) < 1:
+            raise ValueError("orgs, holds, collections, clusters, conversations must be >= 1")
         if min(self.files, self.speakers_per_file, self.segments_per_file, self.profiles) < 1:
             raise ValueError("files, speakers_per_file, segments_per_file, profiles must be >= 1")
 
@@ -356,4 +384,17 @@ ANALYZE_TABLES: tuple[str, ...] = (
     "task",
     "tag",
     "file_tag",
+    "organization",
+    "organization_membership",
+    "content_hold",
+    "content_hold_file",
+    "collection",
+    "collection_member",
+    "collection_share",
+    "speaker_cluster",
+    "speaker_cluster_member",
+    "speaker_match",
+    "user_hidden_media",
+    "chat_conversation",
+    "chat_message",
 )

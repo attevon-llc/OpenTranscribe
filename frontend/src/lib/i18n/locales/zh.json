@@ -6506,7 +6506,7 @@
   "settings.usageReport.status.on": "已开启",
   "settings.usageReport.status.off": "已关闭",
   "settings.usageReport.status.blocked": "强制关闭",
-  "settings.usageReport.reason.doNotTrack": "此服务器设置了 DO_NOT_TRACK，因此不会发送任何内容。",
+  "settings.usageReport.reason.doNotTrack": "此服务器设置了 DO_NOT_TRACK（出厂默认值），因此不会发送任何内容。若要允许发送报告，请在 .env 中设置 DO_NOT_TRACK=0 并重启 OpenTranscribe，然后在此处开启。",
   "settings.usageReport.reason.envDisabled": "此服务器将 OPENTRANSCRIBE_TELEMETRY 设置为关闭，因此不会发送任何内容。",
   "settings.usageReport.reason.demo": "这是演示部署，无法开启使用报告。",
   "settings.usageReport.reason.noReceiver": "此服务器未配置接收方，因此无法开启使用报告。",

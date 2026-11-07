@@ -727,7 +727,8 @@ DEFAULT_LLM_BUDGET_LOCAL_UNLIMITED = False
 LLM_BUDGET_MAX_TOKENS = 1_000_000_000_000
 
 # --- Anonymous usage report (issue #1019, owner decision D14) ---------------------------
-# Opt-in only: nothing is sent until a super admin turns it on in Settings -> Privacy, and
+# Double opt-in: the images ship DO_NOT_TRACK=1, so an operator first sets DO_NOT_TRACK=0 in
+# .env; then nothing is sent until a super admin turns it on in Settings -> Privacy, and
 # ``DO_NOT_TRACK``, ``OPENTRANSCRIBE_TELEMETRY=false``, ``OPENTRANSCRIBE_DEMO_MODE`` or a
 # missing receiver key force it off regardless. Logic: ``app/services/telemetry.py``; the
 # public description of every field: ``docs-site/docs/operations/telemetry.md``.

@@ -6518,7 +6518,7 @@
   "settings.usageReport.status.on": "Aan",
   "settings.usageReport.status.off": "Uit",
   "settings.usageReport.status.blocked": "Geforceerd uit",
-  "settings.usageReport.reason.doNotTrack": "DO_NOT_TRACK is ingesteld op deze server, dus er wordt niets verzonden.",
+  "settings.usageReport.reason.doNotTrack": "DO_NOT_TRACK is ingesteld op deze server (de meegeleverde standaard), dus er wordt niets verzonden. Om het rapport toe te staan, zet u DO_NOT_TRACK=0 in .env, herstart u OpenTranscribe en schakelt u het hier in.",
   "settings.usageReport.reason.envDisabled": "OPENTRANSCRIBE_TELEMETRY staat uit op deze server, dus er wordt niets verzonden.",
   "settings.usageReport.reason.demo": "Dit is een demo-installatie. Het gebruiksrapport kan niet worden ingeschakeld.",
   "settings.usageReport.reason.noReceiver": "Er is geen ontvanger geconfigureerd op deze server, dus het gebruiksrapport kan niet worden ingeschakeld.",

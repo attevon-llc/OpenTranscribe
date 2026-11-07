@@ -6518,7 +6518,7 @@
   "settings.usageReport.status.on": "On",
   "settings.usageReport.status.off": "Off",
   "settings.usageReport.status.blocked": "Forced off",
-  "settings.usageReport.reason.doNotTrack": "DO_NOT_TRACK is set on this server, so nothing is sent.",
+  "settings.usageReport.reason.doNotTrack": "DO_NOT_TRACK is set on this server (the shipped default), so nothing is sent. To allow the report, set DO_NOT_TRACK=0 in .env and restart OpenTranscribe, then turn it on here.",
   "settings.usageReport.reason.envDisabled": "OPENTRANSCRIBE_TELEMETRY is set to off on this server, so nothing is sent.",
   "settings.usageReport.reason.demo": "This is a demo deployment. The usage report cannot be turned on.",
   "settings.usageReport.reason.noReceiver": "No receiver is configured on this server, so the usage report cannot be turned on.",

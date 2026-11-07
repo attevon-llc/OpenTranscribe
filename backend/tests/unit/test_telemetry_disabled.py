@@ -10,6 +10,10 @@ Every switch asserted here was verified against the shipped dependency, not assu
   itself, so the code-level default must run BEFORE pyannote is imported.
 * ``HF_HUB_DISABLE_TELEMETRY`` / ``DO_NOT_TRACK`` — huggingface_hub reads them into module
   constants at import (``send_telemetry`` and the User-Agent version fingerprint).
+  ``DO_NOT_TRACK=1`` also keeps OpenTranscribe's own opt-in usage report off (#1019), so an
+  operator who allows that report sets ``DO_NOT_TRACK=0``. Every installed library that reads
+  ``DO_NOT_TRACK`` must therefore have its own switch here as well, so that 0 re-enables nothing
+  third-party (``test_every_do_not_track_reader_has_its_own_switch``).
 * ``DENO_NO_UPDATE_CHECK`` — the deno binary yt-dlp spawns fetched its latest release from
   dl.deno.land (observed: ``$DENO_DIR/latest.txt`` written) unless set.
 * ``MINIO_UPDATE=off`` — MinIO resolved ``dl.min.io`` on every server start (DNS-logged)
@@ -45,6 +49,15 @@ BACKEND_TELEMETRY_OFF = {
     "HF_HUB_DISABLE_TELEMETRY": "1",
     "DO_NOT_TRACK": "1",
     "DENO_NO_UPDATE_CHECK": "1",
+}
+
+#: Installed packages that read ``DO_NOT_TRACK``, each with the switch above that turns the same
+#: call off on its own, so an operator's ``DO_NOT_TRACK=0`` (which allows the opt-in usage report)
+#: switches no library's telemetry back on.
+DO_NOT_TRACK_READERS = {
+    # huggingface_hub/constants.py: HF_HUB_DISABLE_TELEMETRY = _is_true(HF_HUB_DISABLE_TELEMETRY)
+    # or _is_true(DO_NOT_TRACK), and nothing else in the package reads DO_NOT_TRACK.
+    "huggingface_hub": "HF_HUB_DISABLE_TELEMETRY",
 }
 
 #: Values that would switch one of the above back ON if an overlay set them.
@@ -191,6 +204,36 @@ def test_no_overlay_reenables_telemetry() -> None:
                     violations.append(f"{compose_file.name}:{name}: {var}={value!r}")
     assert checked >= len(BACKEND_TELEMETRY_OFF), "no telemetry switch found in any compose file"
     assert violations == [], f"compose files re-enable telemetry: {violations}"
+
+
+def _do_not_track_readers() -> set[str]:
+    """Top-level installed packages with ``DO_NOT_TRACK`` anywhere in their Python source."""
+    import site
+
+    roots = {Path(p) for p in site.getsitepackages() if Path(p).is_dir()}
+    readers: set[str] = set()
+    for root in roots:
+        for path in root.rglob("*.py"):
+            try:
+                if b"DO_NOT_TRACK" in path.read_bytes():
+                    readers.add(path.relative_to(root).parts[0])
+            except OSError:
+                continue
+    return readers
+
+
+def test_every_do_not_track_reader_has_its_own_switch() -> None:
+    """DO_NOT_TRACK=0 (allowing the usage report) must not turn any library's telemetry on."""
+    readers = _do_not_track_readers()
+    assert "huggingface_hub" in readers, "scanner found nothing: is the environment installed?"
+    uncovered = sorted(readers - set(DO_NOT_TRACK_READERS))
+    assert uncovered == [], (
+        f"{uncovered} read DO_NOT_TRACK: give each its own off switch in BACKEND_TELEMETRY_OFF "
+        "and an entry in DO_NOT_TRACK_READERS"
+    )
+    for package, switch in DO_NOT_TRACK_READERS.items():
+        assert switch in BACKEND_TELEMETRY_OFF, f"{package}: {switch} is not enforced"
+        assert switch != "DO_NOT_TRACK", f"{package} must not rely on DO_NOT_TRACK alone"
 
 
 @pytest.mark.parametrize("service_name", sorted(THIRD_PARTY_OFF))

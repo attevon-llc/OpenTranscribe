@@ -6506,7 +6506,7 @@
   "settings.usageReport.status.on": "オン",
   "settings.usageReport.status.off": "オフ",
   "settings.usageReport.status.blocked": "強制オフ",
-  "settings.usageReport.reason.doNotTrack": "このサーバーでは DO_NOT_TRACK が設定されているため、何も送信されません。",
+  "settings.usageReport.reason.doNotTrack": "このサーバーでは DO_NOT_TRACK が設定されている（出荷時の既定値）ため、何も送信されません。レポートを許可するには、.env で DO_NOT_TRACK=0 を設定して OpenTranscribe を再起動し、ここで有効にしてください。",
   "settings.usageReport.reason.envDisabled": "このサーバーでは OPENTRANSCRIBE_TELEMETRY がオフに設定されているため、何も送信されません。",
   "settings.usageReport.reason.demo": "これはデモ環境です。利用状況レポートは有効にできません。",
   "settings.usageReport.reason.noReceiver": "このサーバーには送信先が設定されていないため、利用状況レポートは有効にできません。",

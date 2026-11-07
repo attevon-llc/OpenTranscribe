@@ -14,7 +14,9 @@ never says what the install is used for. The report has exactly the four fields
 
 Nothing is sent unless ALL of these hold: an administrator turned it on, ``DO_NOT_TRACK`` is
 not set, ``OPENTRANSCRIBE_TELEMETRY`` is not set to a "no", ``OPENTRANSCRIBE_DEMO_MODE`` is not
-set, and a receiver project key is configured. Those conditions are :func:`off_reasons`, and
+set, and a receiver project key is configured. The images and compose ship ``DO_NOT_TRACK=1``
+(``app/core/privacy_env.py``), so the report is a DOUBLE opt-in: an operator sets
+``DO_NOT_TRACK=0`` in ``.env`` and restarts, then a super admin turns it on. Those conditions are :func:`off_reasons`, and
 the same list refuses turning it on (:func:`set_enabled`).
 
 The admin preview and the real send both come from :func:`build_request`, so the preview is

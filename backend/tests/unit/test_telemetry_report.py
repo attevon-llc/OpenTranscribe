@@ -203,6 +203,37 @@ def test_turning_it_on_is_refused_without_a_receiver_key(db_session, allowed, mo
 
 
 @pytest.mark.parametrize(
+    ("value", "blocks"),
+    [
+        (None, False),  # unset
+        ("", False),  # empty reads as unset
+        ("0", False),  # the documented way to allow the report
+        ("false", False),
+        ("1", True),  # the shipped default
+        ("true", True),
+        ("please", True),  # unrecognised: fails closed
+        ("O", True),  # a typo of 0 is not a 0
+    ],
+)
+def test_do_not_track_values(allowed, monkeypatch, value, blocks):
+    if value is None:
+        monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    else:
+        monkeypatch.setenv("DO_NOT_TRACK", value)
+
+    assert ("do_not_track" in telemetry.off_reasons()) is blocks
+
+
+def test_the_shipped_default_keeps_it_off(allowed, monkeypatch):
+    """privacy_env's own default value, not a value this test picked."""
+    from app.core.privacy_env import TELEMETRY_OFF_DEFAULTS
+
+    monkeypatch.setenv("DO_NOT_TRACK", TELEMETRY_OFF_DEFAULTS["DO_NOT_TRACK"])
+
+    assert telemetry.off_reasons() == ["do_not_track"]
+
+
+@pytest.mark.parametrize(
     ("name", "value"),
     [("DO_NOT_TRACK", "0"), ("DO_NOT_TRACK", "false"), ("OPENTRANSCRIBE_TELEMETRY", "true")],
 )

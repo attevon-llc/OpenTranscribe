@@ -6566,7 +6566,7 @@
   "settings.usageReport.status.on": "مُشغّل",
   "settings.usageReport.status.off": "متوقف",
   "settings.usageReport.status.blocked": "متوقف إجباريًا",
-  "settings.usageReport.reason.doNotTrack": "المتغير DO_NOT_TRACK مضبوط على هذا الخادم، لذا لا يُرسل أي شيء.",
+  "settings.usageReport.reason.doNotTrack": "المتغير DO_NOT_TRACK مضبوط على هذا الخادم (وهو الإعداد الافتراضي المرفق)، لذا لا يُرسل أي شيء. للسماح بالتقرير، اضبط DO_NOT_TRACK=0 في ملف ‎.env وأعد تشغيل OpenTranscribe، ثم شغّله من هنا.",
   "settings.usageReport.reason.envDisabled": "المتغير OPENTRANSCRIBE_TELEMETRY مضبوط على الإيقاف في هذا الخادم، لذا لا يُرسل أي شيء.",
   "settings.usageReport.reason.demo": "هذا نشر تجريبي. لا يمكن تشغيل تقرير الاستخدام.",
   "settings.usageReport.reason.noReceiver": "لم تُضبط أي جهة استقبال على هذا الخادم، لذا لا يمكن تشغيل تقرير الاستخدام.",

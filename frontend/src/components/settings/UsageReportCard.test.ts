@@ -90,6 +90,8 @@ describe('UsageReportCard', () => {
 
     const reasons = await screen.findByTestId('usage-report-reasons');
     expect(reasons.textContent).toContain('DO_NOT_TRACK is set on this server');
+    // The shipped default: the reason must say how to allow the report, not just that it is off.
+    expect(reasons.textContent).toContain('set DO_NOT_TRACK=0 in .env and restart');
     expect(reasons.textContent).toContain('No receiver is configured on this server');
     expect(sw().disabled).toBe(true);
     expect(screen.getByTestId('usage-report-status').textContent?.trim()).toBe('Forced off');

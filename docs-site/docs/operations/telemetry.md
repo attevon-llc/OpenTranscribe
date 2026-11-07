@@ -10,8 +10,10 @@ OpenTranscribe can send a small anonymous report, about once a day, saying that 
 exists, which version it runs and whether it is in use. It exists because the project sees
 thousands of image downloads and cannot tell how many of them become real, running installs.
 
-**It is off by default.** Nothing is sent until an administrator turns it on, and an upgrade
-never turns it on. The report never says what an install is used for, who uses it or what it
+**It is off by default, and turning it on takes two deliberate steps.** The images ship with
+`DO_NOT_TRACK=1`, which keeps the report off. An operator who wants to allow it sets
+`DO_NOT_TRACK=0` in `.env` and restarts; only then can a super admin turn it on in Settings.
+An upgrade never turns it on. The report never says what an install is used for, who uses it or what it
 holds.
 
 ## Exactly what is sent
@@ -66,11 +68,23 @@ is on. It also shows when the last report was sent and anything that is forcing 
 
 ## Turning it on and off
 
-- **Turn on or off:** the switch on that card. Turning it off deletes the install ID, so
-  turning it on again later starts a new, unrelated ID.
-- **`DO_NOT_TRACK=1`** in `.env` forces the report off, whatever the switch says
-  ([Console Do Not Track](https://consoledonottrack.com/)). OpenTranscribe does not set this
-  for you; it also turns off telemetry in libraries that honor it.
+To turn it on:
+
+1. In `.env`, set `DO_NOT_TRACK=0` and restart OpenTranscribe.
+2. As a super admin, turn on the switch on the card above.
+
+To turn it off, use the same switch (or set `DO_NOT_TRACK=1` again). Turning it off deletes the
+install ID, so turning it on again later starts a new, unrelated ID.
+
+What forces it off, whatever the switch says:
+
+- **`DO_NOT_TRACK`**, the cross-tool convention
+  ([Console Do Not Track](https://consoledonottrack.com/)). The images and compose files set
+  `DO_NOT_TRACK=1` by default, because it also keeps any third-party library that honours it
+  quiet. Only `0`, `false`, `no`, `off` or an empty value allow the report; any other value,
+  including a typo, keeps it off. Setting `DO_NOT_TRACK=0` does not turn on any library's
+  telemetry: each library that reads it is also switched off on its own (for example
+  `HF_HUB_DISABLE_TELEMETRY=1`), and a test checks that for every installed library.
 - **`OPENTRANSCRIBE_TELEMETRY=false`** in `.env` forces it off the same way. It cannot force
   the report on.
 - **`OPENTRANSCRIBE_DEMO_MODE=true`** marks a public demo deployment; the report cannot be

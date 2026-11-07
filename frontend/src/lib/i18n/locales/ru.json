@@ -6535,7 +6535,7 @@
   "settings.usageReport.status.on": "Включено",
   "settings.usageReport.status.off": "Выключено",
   "settings.usageReport.status.blocked": "Выключено принудительно",
-  "settings.usageReport.reason.doNotTrack": "На этом сервере задана переменная DO_NOT_TRACK, поэтому ничего не отправляется.",
+  "settings.usageReport.reason.doNotTrack": "На этом сервере задана переменная DO_NOT_TRACK (значение по умолчанию в поставке), поэтому ничего не отправляется. Чтобы разрешить отчёт, задайте DO_NOT_TRACK=0 в файле .env, перезапустите OpenTranscribe и затем включите его здесь.",
   "settings.usageReport.reason.envDisabled": "На этом сервере OPENTRANSCRIBE_TELEMETRY выключена, поэтому ничего не отправляется.",
   "settings.usageReport.reason.demo": "Это демонстрационная установка. Отчёт об использовании нельзя включить.",
   "settings.usageReport.reason.noReceiver": "На этом сервере не настроен получатель, поэтому отчёт об использовании нельзя включить.",

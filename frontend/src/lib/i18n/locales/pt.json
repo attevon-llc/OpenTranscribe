@@ -6530,7 +6530,7 @@
   "settings.usageReport.status.on": "Ativado",
   "settings.usageReport.status.off": "Desativado",
   "settings.usageReport.status.blocked": "Desativado à força",
-  "settings.usageReport.reason.doNotTrack": "DO_NOT_TRACK está definido neste servidor, portanto nada é enviado.",
+  "settings.usageReport.reason.doNotTrack": "DO_NOT_TRACK está definido neste servidor (o padrão de fábrica), portanto nada é enviado. Para permitir o relatório, defina DO_NOT_TRACK=0 no .env, reinicie o OpenTranscribe e depois ative-o aqui.",
   "settings.usageReport.reason.envDisabled": "OPENTRANSCRIBE_TELEMETRY está desativado neste servidor, portanto nada é enviado.",
   "settings.usageReport.reason.demo": "Esta é uma instalação de demonstração. O relatório de uso não pode ser ativado.",
   "settings.usageReport.reason.noReceiver": "Nenhum destinatário está configurado neste servidor, portanto o relatório de uso não pode ser ativado.",

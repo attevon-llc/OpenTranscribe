@@ -175,10 +175,11 @@ def _build_cues(
             reveal_categories=reveal_categories,
         )
     )
+    # A caption cue needs a time, so a general comment (no timestamp) is shown at the start.
     comments = [
         Cue(
-            c["timestamp"],
-            c["timestamp"] + 2,
+            c["timestamp"] or 0.0,
+            (c["timestamp"] or 0.0) + 2,
             [CuePart(None, None, False, [f"{user_comment_label}: {c['user_name']}: {c['text']}"])],
             LATIN_RULES,
         )

@@ -108,11 +108,17 @@ def masked_segments(
 def comment_rows_from(
     comments: list[Comment] | None, include_comments: bool
 ) -> list[dict[str, Any]]:
-    """Plain ``{timestamp, text, user_name}`` rows, chronological, or ``[]`` when excluded."""
+    """Plain ``{timestamp, text, user_name}`` rows, or ``[]`` when excluded.
+
+    General comments (``timestamp`` None, about the whole file) come first and keep their None,
+    so no format can print them as if they were made at 00:00:00; timed comments follow in
+    time order. Merge them into a transcript with :func:`comment_position`.
+    """
     if not (include_comments and comments):
         return []
     rows: list[dict[str, Any]] = []
-    for c in sorted(comments, key=lambda c: c.timestamp or 0.0):
+    general_first = sorted(comments, key=lambda c: (c.timestamp is not None, c.timestamp or 0.0))
+    for c in general_first:
         user_name = "Anonymous"
         if c.user is not None:
             user_name = (
@@ -121,10 +127,15 @@ def comment_rows_from(
                 or getattr(c.user, "email", None)
                 or "Anonymous"
             )
-        rows.append(
-            {"timestamp": float(c.timestamp or 0.0), "text": c.text, "user_name": user_name}
-        )
+        timestamp = None if c.timestamp is None else float(c.timestamp)
+        rows.append({"timestamp": timestamp, "text": c.text, "user_name": user_name})
     return rows
+
+
+def comment_position(row: dict[str, Any]) -> float:
+    """Where a comment row sorts among transcript turns: a general comment leads the document."""
+    timestamp = row["timestamp"]
+    return -1.0 if timestamp is None else float(timestamp)
 
 
 def voiceprint_names_for(speakers: list[Speaker]) -> bool:

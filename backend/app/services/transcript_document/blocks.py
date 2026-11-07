@@ -15,6 +15,7 @@ from app.services.transcript_document.model import DocumentOptions
 from app.services.transcript_document.model import TurnBlock
 from app.services.transcript_document.scripts import base_direction
 from app.services.transcript_export_turns import Turn
+from app.services.transcript_export_turns import comment_position
 from app.services.transcript_export_turns import format_clock
 from app.services.transcript_export_turns import merge_by_timestamp
 
@@ -36,10 +37,8 @@ def turn_block(turn: Turn, options: DocumentOptions) -> TurnBlock:
 
 def comment_block(row: dict[str, Any], labels: DocumentLabels) -> CommentBlock:
     """``USER COMMENT: Ana [hh:mm:ss]: text``, printed inline."""
-    text = (
-        f"{labels.user_comment_label}: {row['user_name']} "
-        f"[{format_clock(row['timestamp'])}]: {row['text']}"
-    )
+    at = "" if row["timestamp"] is None else f" [{format_clock(row['timestamp'])}]"
+    text = f"{labels.user_comment_label}: {row['user_name']}{at}: {row['text']}"
     return CommentBlock(text=text, direction=base_direction(str(row["text"])))
 
 
@@ -53,5 +52,5 @@ def build_blocks(
     rows = comment_rows if options.include_comments else []
     return merge_by_timestamp(
         [(t.start, turn_block(t, options)) for t in turns],
-        [(c["timestamp"], comment_block(c, labels)) for c in rows],
+        [(comment_position(c), comment_block(c, labels)) for c in rows],
     )

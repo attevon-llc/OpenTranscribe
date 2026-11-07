@@ -10,6 +10,7 @@ from typing import Any
 
 from app.services.transcript_export_turns import SpeakerNamer
 from app.services.transcript_export_turns import Turn
+from app.services.transcript_export_turns import comment_position
 from app.services.transcript_export_turns import format_duration
 from app.services.transcript_export_turns import merge_by_timestamp
 
@@ -33,13 +34,14 @@ def build_txt(
         seg_lines.append((turn.start, f"{header}\n{turn.text}" if header else turn.text))
 
     comment_lines = [
-        (
-            c["timestamp"],
-            f"[{format_duration(c['timestamp'])}] {user_comment_label}: {c['user_name']}: {c['text']}",
-        )
+        (comment_position(c), f"{_txt_time(c)}{user_comment_label}: {c['user_name']}: {c['text']}")
         for c in comment_rows
     ]
     return "\n\n".join(merge_by_timestamp(seg_lines, comment_lines))
+
+
+def _txt_time(row: dict[str, Any]) -> str:
+    return "" if row["timestamp"] is None else f"[{format_duration(row['timestamp'])}] "
 
 
 def build_json(
@@ -92,14 +94,17 @@ def build_csv(
 
     if comment_rows:
         header = csv_header_with_comments
-        comment_csv_rows = [
-            (
-                c["timestamp"],
-                f'{c["timestamp"]},{c["timestamp"]},"{user_comment_label}: {c["user_name"]}",'
-                f'{_csv_escape(c["text"])},"{comment_type_label}"',
+        comment_csv_rows = []
+        for c in comment_rows:
+            # A general comment has no time: empty start/end cells, not a made-up 0.0.
+            at = "" if c["timestamp"] is None else c["timestamp"]
+            comment_csv_rows.append(
+                (
+                    comment_position(c),
+                    f'{at},{at},"{user_comment_label}: {c["user_name"]}",'
+                    f'{_csv_escape(c["text"])},"{comment_type_label}"',
+                )
             )
-            for c in comment_rows
-        ]
         seg_rows = [(t, row + ',""') for t, row in seg_rows]
         rows = merge_by_timestamp(seg_rows, comment_csv_rows)
     else:

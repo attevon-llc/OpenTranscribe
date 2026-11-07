@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any
 
 from app.services.transcript_export_turns import Turn
+from app.services.transcript_export_turns import comment_position
 from app.services.transcript_export_turns import format_clock
 from app.services.transcript_export_turns import merge_by_timestamp
 
@@ -100,9 +101,10 @@ def _turn_block(turn: Turn, include_timestamps: bool, include_speakers: bool) ->
 
 def _comment_block(row: dict[str, Any], label: str) -> str:
     lines = str(row["text"]).splitlines() or [""]
+    at = "" if row["timestamp"] is None else f" [{format_clock(row['timestamp'])}]"
     head = (
-        f"> **{escape_inline(label)}** — {escape_inline(str(row['user_name']))} "
-        f"[{format_clock(row['timestamp'])}]: {escape_inline(lines[0])}"
+        f"> **{escape_inline(label)}** — {escape_inline(str(row['user_name']))}"
+        f"{at}: {escape_inline(lines[0])}"
     )
     return "\n".join([head, *(f"> {escape_line(line)}" for line in lines[1:])])
 
@@ -126,7 +128,7 @@ def build_markdown(
 
     blocks = merge_by_timestamp(
         [(t.start, _turn_block(t, include_timestamps, include_speakers)) for t in turns],
-        [(c["timestamp"], _comment_block(c, user_comment_label)) for c in comment_rows],
+        [(comment_position(c), _comment_block(c, user_comment_label)) for c in comment_rows],
     )
     heading = "# " + escape_inline(" ".join(meta.title.split()))
     document = [_front_matter(meta, participants), heading, *blocks]

@@ -105,9 +105,21 @@ export interface OrgHoldCreate {
 /**
  * An organization's privacy policy (issue #1280): `GET|PATCH /org-admin/policy`. The scope is
  * always the caller's own organization; the route is 404 unless the `org.defaults` capability
- * is on. `redaction_floor` (issue #1279, a later release) is part of the contract but has no UI
- * yet, so this client neither reads nor sends it.
+ * is on. `redaction_floor` (issue #1279) is null while the `redaction.policy` capability is off
+ * for the request, which is how the panel knows whether to show the floor controls.
  */
+export type FloorCategory = 'pii' | 'toxicity' | 'profanity';
+
+/** An organization's redaction floor: it can only ADD to the instance floor. */
+export interface OrgRedactionFloor {
+  forced_categories: FloorCategory[];
+  forced_pii_entities: string[];
+  forced_custom_words: string[];
+  force_toxicity_threshold: number | null;
+  force_export_redacted: boolean;
+  force_redact_before_llm: boolean;
+}
+
 export interface OrgPolicy {
   /** The organization's own switches. */
   voiceprint_matching_enabled: boolean;
@@ -119,12 +131,14 @@ export interface OrgPolicy {
     voiceprint_matching: PrivacyDecision;
     gender_inference: PrivacyDecision;
   };
+  /** Null while the `redaction.policy` capability is off. */
+  redaction_floor: OrgRedactionFloor | null;
   updated_at: string | null;
 }
 
 export type OrgPolicyChanges = Partial<
   Pick<OrgPolicy, 'voiceprint_matching_enabled' | 'gender_inference_enabled'>
->;
+> & { redaction_floor?: Partial<OrgRedactionFloor> };
 
 export class OrgAdminApi {
   /** This organization's taken-down files, newest first. */

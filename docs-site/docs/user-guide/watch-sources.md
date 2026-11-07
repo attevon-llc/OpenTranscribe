@@ -157,8 +157,16 @@ Notifications**, then link them to a source. Click the info (ⓘ) icon for setup
 - **Microsoft 365** — for tenants where SMTP is disabled. Register an Azure AD application with
   the **Mail.Send** application permission (admin-consented), then enter its tenant ID, client
   ID, and a client secret. Mail is sent via the Microsoft Graph API.
+  Microsoft 365 delivery has not yet been verified against a live tenant by the project, so
+  treat it as unverified: use **Test connection** (below) and send a real invitation before
+  relying on it.
 - **Exchange (on-prem)** — server host, optional domain, and a mailbox username/password
   (authenticated SMTP submission).
+
+**Test connection.** Under **Settings → Authentication → Auth Email**, once a configuration is
+designated and active, **Test connection** checks its connection and credentials through the same
+check as the Test button on each email configuration. It does not send a message, and a failed
+connection is reported as a failed test rather than an error.
 
 Use **Test** on a saved email config to validate the connection.
 

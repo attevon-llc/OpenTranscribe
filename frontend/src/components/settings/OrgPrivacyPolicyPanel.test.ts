@@ -201,4 +201,52 @@ describe('OrgPrivacyPolicyPanel', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByTestId('org-voiceprints-switch')).toBeInTheDocument();
   });
+
+  describe('redaction floor (#1279)', () => {
+    const floor = (over: Record<string, unknown> = {}) => ({
+      forced_categories: ['pii'],
+      forced_pii_entities: [],
+      forced_custom_words: [],
+      force_toxicity_threshold: null,
+      force_export_redacted: false,
+      force_redact_before_llm: false,
+      ...over,
+    });
+
+    it('shows no floor controls while redaction.policy is off (server sends null)', async () => {
+      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: null });
+      render(OrgPrivacyPolicyPanel);
+      await screen.findByTestId('org-voiceprints-switch');
+      expect(screen.queryByTestId('org-redaction-floor')).toBeNull();
+    });
+
+    it('shows the stored floor when the capability is on', async () => {
+      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
+      render(OrgPrivacyPolicyPanel);
+      await screen.findByTestId('org-redaction-floor');
+      expect(screen.getByTestId('org-floor-pii')).toBeChecked();
+      expect(screen.getByTestId('org-floor-toxicity')).not.toBeChecked();
+    });
+
+    it('sends only the changed floor field, with the full category list', async () => {
+      api.getPolicy.mockResolvedValue({ ...policy(), redaction_floor: floor() });
+      api.updatePolicy.mockResolvedValue({
+        ...policy(),
+        redaction_floor: floor({ forced_categories: ['pii', 'toxicity'] }),
+      });
+      render(OrgPrivacyPolicyPanel);
+      await fireEvent.click(await screen.findByTestId('org-floor-toxicity'));
+      await waitFor(() =>
+        expect(api.updatePolicy).toHaveBeenCalledWith({
+          redaction_floor: { forced_categories: ['pii', 'toxicity'] },
+        })
+      );
+      await fireEvent.click(await screen.findByTestId('org-floor-force_export_redacted'));
+      await waitFor(() =>
+        expect(api.updatePolicy).toHaveBeenLastCalledWith({
+          redaction_floor: { force_export_redacted: true },
+        })
+      );
+    });
+  });
 });

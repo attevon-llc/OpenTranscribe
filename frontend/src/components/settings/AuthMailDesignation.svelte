@@ -17,7 +17,7 @@
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { AuthConfigApi, type AuthMailDesignation } from '$lib/api/authConfig';
-  import type { EmailConfig } from '$lib/api/watchSourcesApi';
+  import { testEmailConfig, type EmailConfig } from '$lib/api/watchSourcesApi';
   import AuthMailNotice from '$components/ui/AuthMailNotice.svelte';
 
   export let configs: EmailConfig[] = [];
@@ -29,6 +29,7 @@
   let selected = '';
   let loading = true;
   let saving = false;
+  let testing = false;
 
   /** Only an enabled config can be designated — the API rejects the rest. */
   $: selectable = configs.filter((c) => c.is_enabled);
@@ -80,6 +81,25 @@
       saving = false;
     }
   }
+
+  /**
+   * Reuses the email-config test endpoint (the Watch Sources "Test" button): it checks the
+   * connection and credentials, it does not send a message. A failed connection is a 200 with
+   * `success: false`, so the outcome is shown either way.
+   */
+  async function sendTest() {
+    if (!designation?.config_uuid) return;
+    testing = true;
+    try {
+      const res = await testEmailConfig(designation.config_uuid);
+      if (res.success) toastStore.success(`${designation.config_name ?? ''}: ${res.message}`);
+      else toastStore.error(`${designation.config_name ?? ''}: ${res.message}`, 6000);
+    } catch (err) {
+      toastStore.error(getErrorMessage(err, $t('settings.authentication.authMail.testFailed')));
+    } finally {
+      testing = false;
+    }
+  }
 </script>
 
 <div class="auth-mail">
@@ -129,6 +149,19 @@
           name: designation?.config_name ?? '',
         })}
       </p>
+      <div>
+        <button
+          class="btn btn-secondary"
+          data-testid="auth-mail-test"
+          on:click={sendTest}
+          disabled={testing || saving || dirty}
+        >
+          {testing
+            ? $t('settings.authentication.authMail.testing')
+            : $t('settings.authentication.authMail.test')}
+        </button>
+        <span class="auth-mail-test-help">{$t('settings.authentication.authMail.testHelp')}</span>
+      </div>
     {/if}
   {/if}
 </div>
@@ -176,6 +209,11 @@
     color: var(--text-color);
     font-size: 0.8rem;
     line-height: 1.45;
+  }
+  .auth-mail-test-help {
+    margin-inline-start: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
   }
   .auth-mail-active {
     margin: 0;

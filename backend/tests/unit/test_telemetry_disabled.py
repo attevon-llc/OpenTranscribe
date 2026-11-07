@@ -494,3 +494,112 @@ def test_privacy_env_respects_operator_choice() -> None:
         check=True,
     ).stdout.split()
     assert out == ["true", "1"]
+
+
+# --- OpenTranscribe's own opt-in usage report (issue #1019) ------------------------------
+#
+# The report is off unless a super admin turns it on, and DO_NOT_TRACK, a missing receiver
+# key, OPENTRANSCRIBE_TELEMETRY=false and the demo flag each force it off even then. These
+# drive the real sender (services/telemetry.send_if_due) with every httpx request recorded and
+# real sockets refused, so "nothing was sent" is observed, not inferred.
+
+_REPORT_OFF_SWITCHES = ("DO_NOT_TRACK", "OPENTRANSCRIBE_TELEMETRY", "OPENTRANSCRIBE_DEMO_MODE")
+
+
+@pytest.fixture
+def report_sends(monkeypatch):
+    """Requests the sender makes; a permissive environment with a receiver key configured."""
+    import socket
+
+    import httpx
+
+    sent: list = []
+
+    def record(self, request, **_kwargs):
+        sent.append(request)
+        return httpx.Response(200, request=request)
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("a real connection was attempted")
+
+    for name in _REPORT_OFF_SWITCHES:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY", "phc_test_key")
+    monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_ENDPOINT", "https://receiver.invalid/e/")
+    monkeypatch.setattr(httpx.Client, "send", record)
+    monkeypatch.setattr(socket, "create_connection", refuse)
+    return sent
+
+
+def _run_report_task() -> str:
+    from app.tasks.telemetry import usage_report_task
+
+    result: dict[str, str] = usage_report_task.run()
+    return result["status"]
+
+
+def _force_enabled(db) -> None:
+    """The admin's switch ON, written directly, as if it was turned on before a switch changed."""
+    from app.core import constants
+    from app.services.system_settings_service import set_setting
+
+    set_setting(db, constants.TELEMETRY_ENABLED_KEY, True)
+    set_setting(db, constants.TELEMETRY_INSTALL_ID_KEY, "11111111-1111-4111-8111-111111111111")
+
+
+@pytest.fixture
+def task_uses_test_session(db_session, monkeypatch):
+    """Point the task's session_scope at the test's savepointed session."""
+    import contextlib
+
+    from app.db import session_utils
+
+    @contextlib.contextmanager
+    def scope():
+        yield db_session
+
+    monkeypatch.setattr(session_utils, "session_scope", scope)
+    return db_session
+
+
+def test_the_usage_report_sends_nothing_by_default(task_uses_test_session, report_sends):
+    assert _run_report_task() == "disabled"
+    assert report_sends == []
+
+
+@pytest.mark.parametrize(
+    ("env", "value"),
+    [
+        ("DO_NOT_TRACK", "1"),
+        ("OPENTRANSCRIBE_TELEMETRY", "false"),
+        ("OPENTRANSCRIBE_DEMO_MODE", "true"),
+    ],
+)
+def test_the_usage_report_sends_nothing_when_an_env_switch_forbids_it(
+    task_uses_test_session, report_sends, monkeypatch, env, value
+):
+    _force_enabled(task_uses_test_session)
+    monkeypatch.setenv(env, value)
+
+    assert _run_report_task() == "blocked"
+    assert report_sends == []
+
+
+def test_the_usage_report_sends_nothing_without_a_receiver_key(
+    task_uses_test_session, report_sends, monkeypatch
+):
+    _force_enabled(task_uses_test_session)
+    monkeypatch.setenv("OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY", "")
+
+    assert _run_report_task() == "blocked"
+    assert report_sends == []
+
+
+def test_the_usage_report_control_sends_exactly_one_request_when_allowed(
+    task_uses_test_session, report_sends
+):
+    """Positive control: the recorder does see a send, so the zeros above are real zeros."""
+    _force_enabled(task_uses_test_session)
+
+    assert _run_report_task() == "sent"
+    assert len(report_sends) == 1

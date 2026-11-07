@@ -203,6 +203,8 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "privacy.voiceprint_retention_sweep": {"queue": CeleryQueues.UTILITY},
     # Finishes the centroid work of a purge a dead worker left (v461, issue #1334).
     "privacy.purge_reverify": {"queue": CeleryQueues.UTILITY},
+    # Opt-in anonymous usage report (issue #1019): one settings read, at most one 5 s POST.
+    "telemetry.usage_report": {"queue": CeleryQueues.UTILITY},
     # Benchmark-timing bookkeeping (one Redis hash -> one DB row), dispatched with a
     # countdown after postprocess. Utility, so telemetry never takes a cpu slot.
     "pipeline_timing.flush_tail": {"queue": CeleryQueues.UTILITY},

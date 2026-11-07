@@ -90,3 +90,26 @@ def test_the_object_store_is_pinned_by_digest_not_floating():
     assert _PINNED_DIGEST.search(image), f"{image} is not pinned by @sha256 digest"
     assert ":latest" not in image, f"{image} floats on :latest"
     assert "RELEASE." in image, f"{image} carries no release tag beside the digest"
+
+
+def test_documented_mirror_reference_has_the_same_digest():
+    """The commented-out mirror line must pin the SAME artifact as the live image.
+
+    A mirror with a different digest would be a different image silently swapped in at switch
+    time; the registry-level copy in the docs preserves the digest, so any difference is an error.
+    """
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    block = compose.split("  minio:\n", 1)[1].split("\n  redis:", 1)[0]
+    mirrors = re.findall(r"^\s*#\s*image:\s*(docker\.io/davidamacey/silo:\S+)", block, re.MULTILINE)
+    assert len(mirrors) == 1, f"expected exactly one documented mirror line, got {mirrors}"
+
+    def digest(ref: str) -> str:
+        match = re.search(r"@(sha256:[0-9a-f]{64})$", ref)
+        assert match, f"{ref} is not pinned by digest"
+        return match.group(1)
+
+    assert digest(mirrors[0]) == digest(_minio_service_image())
+    assert (
+        mirrors[0].split("@")[0].split(":", 1)[1]
+        == _minio_service_image().split("@")[0].split(":", 1)[1]
+    )

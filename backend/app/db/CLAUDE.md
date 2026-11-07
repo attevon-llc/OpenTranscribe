@@ -237,18 +237,22 @@ Two things keep it from coming back, and neither replaces the other:
   must-stay-clean self-test case — then verifying by MUTATION: delete the name and the
   self-test must break. Reading the code is not verification; a name that matches nothing
   looks exactly like a clean subsystem.
-- **`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`** (default 5 min, 0 disables) — the server-side backstop.
-  `base.py:build_libpq_options` puts `idle_in_transaction_session_timeout` in the shared engine's
-  `connect_args`, so Postgres terminates a backend holding an open transaction and running no
-  query. It **cannot interrupt a slow query, only an idle one**, which is exactly why it is safe
-  to ship on: legitimate long statements are untouched. The migration engines in `migrations.py`
-  are built separately and are outside it by construction, so a long `ALTER TABLE` and the
-  advisory-lock holder are never at risk.
+- **`DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`** (default 5 min, 0 disables) — the server-side backstop
+  (#1381). Two layers, both on EVERY install (single-role included): (1) startup runs
+  `roles.apply_idle_timeout_to_role` -> `ALTER ROLE <app role> SET idle_in_transaction_session_timeout`
+  (`RESET` when 0), inside a savepoint so a host that forbids it only logs a warning; (2) the shared
+  engine in `base.py` runs the same `SET` from a pool `connect` event
+  (`migration_connection.install_idle_in_transaction_timeout`, the same helper pattern as the
+  audit-maintenance switch), which is the fallback and also covers a role setting that lags. It is
+  deliberately NOT a libpq `options=-c` startup parameter: RDS Proxy and PgBouncer reject those.
+  The timeout **cannot interrupt a slow query, only an idle one**. The migration engines are
+  separate and unaffected. Do not re-add `connect_args["options"]`.
 
-`tests/unit/test_idle_in_transaction_backstop.py` proves the GUC really terminates an idle
-transaction **against a live server, with its own control** (same idle duration, no GUC → the
-connection survives) plus a second control that a `pg_sleep` inside a statement is *not* killed.
-Configuration-only assertions would have passed against a backstop that did nothing.
+`tests/integration/test_idle_in_transaction_backstop.py` proves it against a live server with
+controls (same idle duration, no GUC -> survives; `pg_sleep` inside a statement is not killed), that
+an app-engine session `SHOW`s the configured value on a default install, and that `ALTER ROLE`
+storage is set and reset. `tests/unit/test_idle_in_transaction_backstop.py` asserts no startup
+`options` and the connect listener.
 
 ## Gotchas
 

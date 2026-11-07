@@ -22,26 +22,32 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
-from app.db.base import build_libpq_options
+from app.db.base import engine as app_engine
+from app.db.migration_connection import install_idle_in_transaction_timeout
+from app.db.roles import apply_idle_timeout_to_role
 
 #: Well under any plausible scheduling delay in CI, but long enough that the
 #: transaction is genuinely idle rather than racing its own BEGIN.
 _TEST_TIMEOUT_MS = 500
 
 
-def _outcome_of_idling(options: str | None) -> str:
+def _engine(timeout_ms: int | None):
+    engine = create_engine(settings.DATABASE_URL)
+    if timeout_ms:
+        install_idle_in_transaction_timeout(engine, timeout_ms)
+    return engine
+
+
+def _outcome_of_idling(timeout_ms: int | None) -> str:
     """Idle inside a transaction past the timeout; report ``survived`` or ``killed``.
 
     Args:
-        options: libpq ``options`` string, or None to connect without one.
+        timeout_ms: Timeout installed via the connect-event SET, or None for a control.
 
     Returns:
         ``"survived"`` if a statement still works afterwards, else ``"killed"``.
     """
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"options": options} if options else {},
-    )
+    engine = _engine(timeout_ms)
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))  # open a real transaction
@@ -74,7 +80,7 @@ def test_postgres_terminates_a_transaction_left_idle() -> None:
     "server closed the connection unexpectedly" instead. Asserting the specific
     string made this test fail against a backstop that was working correctly.
     """
-    with_guc = _outcome_of_idling(build_libpq_options(_TEST_TIMEOUT_MS))
+    with_guc = _outcome_of_idling(_TEST_TIMEOUT_MS)
     without_guc = _outcome_of_idling(None)
 
     assert without_guc == "survived", (
@@ -105,10 +111,7 @@ def test_set_local_exempts_one_transaction_and_does_not_leak_to_the_next() -> No
     documented exemption into a global hole. Both halves are asserted here:
     exempt inside the transaction, back to the configured value after it.
     """
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"options": build_libpq_options(_TEST_TIMEOUT_MS)},
-    )
+    engine = _engine(_TEST_TIMEOUT_MS)
     try:
         with engine.connect() as conn:
             with conn.begin():
@@ -141,11 +144,7 @@ def test_a_slow_query_is_not_killed_by_the_backstop() -> None:
     consistent with a GUC that kills any long transaction — which would be a
     production outage, not a backstop.
     """
-    engine = create_engine(
-        settings.DATABASE_URL,
-        connect_args={"options": build_libpq_options(_TEST_TIMEOUT_MS)},
-        poolclass=None,
-    )
+    engine = _engine(_TEST_TIMEOUT_MS)
     try:
         with engine.connect() as conn:
             sleep_seconds = _TEST_TIMEOUT_MS / 1000 * 4
@@ -153,3 +152,61 @@ def test_a_slow_query_is_not_killed_by_the_backstop() -> None:
             assert conn.execute(text("SELECT 1")).scalar() == 1
     finally:
         engine.dispose()
+
+
+@pytest.mark.integration
+def test_an_app_session_really_has_the_configured_timeout() -> None:
+    """The shared runtime engine, on a default single-role install, carries the value.
+
+    The reconcile that used to be the only place this could be set runs only when the role
+    split is requested, so this asserts the setting in a real app session, not in config.
+    """
+    configured = settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
+    if configured <= 0:
+        pytest.skip("backstop disabled in this environment")
+    with app_engine.connect() as conn:
+        shown = conn.execute(text("SHOW idle_in_transaction_session_timeout")).scalar_one()
+    assert shown in {f"{configured}ms", f"{configured // 1000}s", f"{configured // 60000}min"}
+
+
+@pytest.mark.integration
+def test_alter_role_sets_the_timeout_for_new_sessions_of_the_role() -> None:
+    """``apply_idle_timeout_to_role`` makes a brand-new session (no connect event) inherit it."""
+    role = "ot_idle_probe_role"
+    owner = create_engine(settings.DATABASE_URL)
+    try:
+        with owner.connect() as conn:
+            conn.execute(text(f"DROP ROLE IF EXISTS {role}"))
+            conn.execute(text(f"CREATE ROLE {role} LOGIN"))
+            conn.commit()
+        try:
+            with owner.begin() as conn:
+                assert apply_idle_timeout_to_role(conn, role, 123_000) is True
+            with owner.connect() as conn:
+                conn.execute(text(f"SET ROLE {role}"))
+                # ALTER ROLE ... SET applies at login, so read the stored per-role setting.
+                stored = conn.execute(
+                    text(
+                        "SELECT setconfig FROM pg_db_role_setting s JOIN pg_roles r "
+                        "ON r.oid = s.setrole WHERE r.rolname = :r"
+                    ),
+                    {"r": role},
+                ).scalar_one()
+            assert stored == ["idle_in_transaction_session_timeout=123000"]
+            with owner.begin() as conn:
+                assert apply_idle_timeout_to_role(conn, role, 0) is True
+            with owner.connect() as conn:
+                gone = conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_db_role_setting s JOIN pg_roles r "
+                        "ON r.oid = s.setrole WHERE r.rolname = :r"
+                    ),
+                    {"r": role},
+                ).scalar_one()
+            assert gone == 0
+        finally:
+            with owner.connect() as conn:
+                conn.execute(text(f"DROP ROLE IF EXISTS {role}"))
+                conn.commit()
+    finally:
+        owner.dispose()

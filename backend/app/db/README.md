@@ -28,7 +28,7 @@ Provides the fundamental SQLAlchemy configuration and database connection setup.
 # Database engine with connection pooling (simplified; see base.py for the full call)
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args=connect_args,  # sslmode + idle_in_transaction_session_timeout
+    connect_args=connect_args,  # sslmode (idle timeout is a pool connect-event SET, no libpq options)
     pool_pre_ping=True,
     pool_recycle=3600,
     pool_size=settings.DB_POOL_SIZE,  # default 20

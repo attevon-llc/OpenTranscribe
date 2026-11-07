@@ -10,8 +10,7 @@ written here first and would have been collected by nothing.
 
 What stays here is pure and needs no database:
 
-* ``build_libpq_options`` produces the right string.
-* The shared app engine actually carries it — the gap where a correct helper is
+* The shared app engine sends no libpq ``options`` and carries the connect-event ``SET`` — the gap where a correct helper is
   written and never wired is the failure this audit opened with.
 * The shipped default is short enough to have caught the 48-minute leak.
 """
@@ -19,44 +18,47 @@ What stays here is pure and needs no database:
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import create_engine
 
 from app.core.config import DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
-from app.core.config import settings
-from app.db.base import build_libpq_options
 from app.db.base import connect_args as app_connect_args
+from app.db.base import engine as app_engine
+from app.db.migration_connection import SessionSet
+from app.db.migration_connection import install_idle_in_transaction_timeout
 
 
-def test_option_string_is_built_when_a_timeout_is_configured() -> None:
-    assert build_libpq_options(300_000) == "-c idle_in_transaction_session_timeout=300000"
+def test_the_app_engine_sends_no_libpq_startup_options() -> None:
+    """Proxies (RDS Proxy, PgBouncer) reject ``options=-c``; the backstop must not use it."""
+    assert "options" not in app_connect_args
+
+
+def test_the_app_engine_applies_the_timeout_in_a_connect_event() -> None:
+    """The timeout is a pool ``connect`` listener on the shared engine, not just a helper."""
+    if not app_engine.pool.dispatch.connect:
+        pytest.fail("shared engine has no pool connect listener, so no backstop is applied")
+    from app.core.config import settings
+
+    if settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS <= 0:
+        pytest.skip("backstop disabled in this environment")
+    sql = [
+        fn.statement
+        for fn in app_engine.pool.dispatch.connect
+        if isinstance(fn, SessionSet) and "idle_in_transaction_session_timeout" in fn.statement
+    ]
+    assert sql == [
+        f"SET idle_in_transaction_session_timeout = {settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS}"
+    ]
 
 
 @pytest.mark.parametrize("disabled", [0, -1])
-def test_no_option_string_when_disabled(disabled: int) -> None:
-    """0 (and any negative) must produce None, not ``-c ...=0``.
-
-    Postgres reads 0 as "no timeout", so both spellings happen to disable the
-    control — but emitting the GUC at all would make ``connect_args`` claim a
-    setting the operator turned off, and an operator reading it would conclude
-    the backstop was active.
-    """
-    assert build_libpq_options(disabled) is None
-
-
-def test_the_app_engine_actually_carries_the_option() -> None:
-    """The helper is wired into the engine every request and task uses.
-
-    Without this, `build_libpq_options` could be perfectly correct and applied
-    to nothing.
-    """
-    configured = settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
-    if configured <= 0:
-        pytest.skip("backstop disabled in this environment (DB_IDLE_IN_TRANSACTION_TIMEOUT_MS=0)")
-
-    assert "options" in app_connect_args, (
-        "The shared engine's connect_args has no libpq options, so the "
-        "idle-in-transaction backstop is not applied to any app connection."
-    )
-    assert f"idle_in_transaction_session_timeout={configured}" in app_connect_args["options"]
+def test_disabled_installs_no_listener(disabled: int) -> None:
+    url = "postgresql+psycopg2://u:p@localhost/x"
+    baseline = len(create_engine(url).pool.dispatch.connect)
+    engine = create_engine(url)
+    install_idle_in_transaction_timeout(engine, disabled)
+    assert len(engine.pool.dispatch.connect) == baseline
+    install_idle_in_transaction_timeout(engine, 1000)
+    assert len(engine.pool.dispatch.connect) == baseline + 1
 
 
 def test_the_shipped_default_is_shorter_than_the_leak_it_backstops() -> None:

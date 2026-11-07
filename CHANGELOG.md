@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OT_PORT_PROBE` lets tests replace the `--fresh` port-collision probe (#1367).
 - A licence inventory of every pinned backend requirement (including the lite and no-deps sets) and every production frontend package, kept in step with the pins by a test.
 - A notice that outside code contributions are paused for now; issues and discussions remain welcome. `NOTICE` carries a first-party copyright line.
+- Administrators can cap LLM token use per user per day and per instance per month from the admin settings. Every LLM call goes through one metering point that reserves tokens atomically before the call; the usage API returns every event type, and an AI usage panel shows use against the limits. Local models are priced as free (#790).
+- `./opentr.sh start prod --fresh <name>` runs an isolated production stack, including the HTTPS proxy and the PKI overlay, with offset ports and per-deployment image tags; the NAS overlay is never loaded (#1264).
+- Release end-to-end journeys, a WebSocket missed-frame test, lite-mode post-processing tests and a first-run wizard test (#1282, #1308, #1366).
+- `python -m app.scripts.assert_inert` reports which routes and scheduled jobs can enqueue background work, with an explicit "not measured" state, as input for the public demo (#898).
+- Super administrators can allow MediaCMS sources on private network addresses (Settings, Media Sources). The list starts empty and is not seeded from `MEDIACMS_ALLOWED_HOSTS`; a refused address gets the same message whatever it resolves to.
+- The YouTube download policy and the default voice-activity settings are admin settings; the YouTube policy is seeded once from the old environment values (#566).
+- `scripts/run-summary-eval.sh replay-merge --concurrency N` runs arms in parallel and checkpoints, so an interrupted merge resumes.
 
 ### Changed
 
@@ -43,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `./opentranscribe.sh update` lists `BACKEND_BIND_HOST=0.0.0.0`, the old template value, as stale.
 - In right-to-left locales, technical admin-form values (URLs, host names, file paths, DNs, LDAP filters, e-mail addresses, keys) stay left-to-right; a test keeps every such settings field covered. The Media Sources field is labelled "Address", and "Verify SSL certificates" is hidden for an `http://` source.
 - The admin docs no longer say hold and held-file audit events are always recorded: they do not depend on the content-auditing switch, but they are written after the change commits and can be missing if the audit write fails (#1329).
+- **Governance audit events are written in the same transaction as the change they record**, through a database outbox (migration `v459`) that a relay delivers afterwards. Hold, held-file and collection events can no longer be lost when the audit write fails (#1329).
+- Every task a user can trigger, and every download task, is classified for replay after a worker is lost: five are replayed and eleven are excluded with a written reason, and a test fails on an unclassified task (#1159).
+- The frontend uses SvelteKit 3, adapter-static 4 and TypeScript 6 (#1326).
+- Environment variables that nothing read are removed from `.env.example` and the code (including the `VAD_*`, `WHISPER_HALLUCINATION_*`, `SOURCE_LANGUAGE` and `MODELS_DIRECTORY` entries), and boolean environment values are parsed by one function. A test fails when an advertised variable is unread or always overridden by an admin setting (#566, #1206).
+- The chat context estimate uses the conversation's pinned model (#1364).
 
 ### Removed
 
@@ -84,6 +96,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `./opentr.sh rebuild-frontend` and `rebuild-backend` refuse options they do not implement; an ignored `--fresh` or `--dry-run` used to rebuild the default stack.
 - The offline compose file no longer publishes Flower on all interfaces in addition to the loopback binding.
 - `scripts/pki/issue-test-server-cert.sh` no longer misreads a matching certificate under `pipefail`.
+- On media with more than one audio track, transcription, preprocessing and speaker embedding now read the same track (the first audio stream). Previously ffmpeg's automatic choice could pick a different track for some paths. Existing speaker embeddings of such files are not recomputed (#1263).
+- `./opentr.sh start prod --build --dry-run` and `--pull --dry-run` no longer build or pull images.
+- The frontend reloads capabilities and reconnects realtime updates when an account hold is cleared.
+- The GDPR erasure receipt now covers the LLM token counters.
+- Backend tests release idle database connections between tests, so a parallel run no longer exhausts the test database's connection limit.
 
 ### Security
 
@@ -122,6 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Realtime connections close when the access token that opened them expires, when that session logs out, and on an account-wide revocation regardless of server clock differences. Revocations recorded while Redis was unavailable are applied once it recovers.
 - Revoking all of a user's sessions fails the surrounding change instead of continuing silently.
 - Authentication settings that fall back to `.env` because the database could not be read are logged as warnings and counted in `security_state_degraded_total`.
+- Every account-lifecycle check (expired, rejected, pending, held) now also applies on endpoints where sign-in is optional and on the realtime connection handshake.
+- When the LLM limit settings cannot be read, LLM calls are refused with `llm_budget_unavailable` rather than run without a limit.
 
 ## [0.6.1] - 2026-11-03
 

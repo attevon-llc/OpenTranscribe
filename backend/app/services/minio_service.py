@@ -19,6 +19,7 @@ from minio.error import S3Error
 from app.core.config import settings
 from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
+from app.core.threadpool import api_threadpool_size
 from app.services import storage_backend
 from app.services import storage_presign_identity
 from app.services.storage_backend import clamp_presigned_expiry
@@ -35,10 +36,41 @@ logger = logging.getLogger(__name__)
 # Disable urllib3 warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+
 # The storage client. STORAGE_BACKEND selects bundled MinIO (default, unchanged)
 # or native AWS S3; both are minio-py clients so every call site below is shared.
 # See app/services/storage_backend.py for the backend differences.
-minio_client = storage_backend.build_storage_client()
+def _ca_bundle_path() -> str:
+    """CA bundle for storage TLS: ``SSL_CERT_FILE`` if set, else certifi's (minio-py's rule)."""
+    return os.environ.get("SSL_CERT_FILE") or certifi.where()
+
+
+def shared_http_pool() -> urllib3.PoolManager:
+    """Transport for the long-lived shared client: minio-py's default, with a bigger pool.
+
+    Passing any ``http_client`` replaces minio-py's whole default (``Minio.__init__`` in
+    ``minio/api.py``): ``maxsize=10``, 5-minute connect/read timeouts, ``CERT_REQUIRED``
+    against ``SSL_CERT_FILE`` or certifi, ``Retry(total=5, backoff_factor=0.2,
+    status_forcelist=[500, 502, 503, 504])``. Each is restated here and only ``maxsize``
+    differs (#1378): with 10 connections per host, more than 10 concurrent threads discard
+    connections after every request ("Connection pool is full") and re-handshake. It is
+    derived from the API thread pool (:func:`app.core.threadpool.api_threadpool_size`), which
+    is at least as large as any Celery pool here. ``block`` stays False (urllib3 default) so
+    a burst above ``maxsize`` opens a throwaway connection instead of stalling a thread.
+
+    Docs: urllib3 ``PoolManager`` (maxsize, block).
+    """
+    timeout = 5 * 60
+    return urllib3.PoolManager(
+        timeout=urllib3.Timeout(connect=timeout, read=timeout),
+        maxsize=max(10, api_threadpool_size()),
+        cert_reqs="CERT_REQUIRED",
+        ca_certs=_ca_bundle_path(),
+        retries=urllib3.Retry(total=5, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504]),
+    )
+
+
+minio_client = storage_backend.build_storage_client(http_client=shared_http_pool())
 
 
 @functools.lru_cache(maxsize=1)
@@ -54,7 +86,7 @@ def get_probe_client() -> Minio:
         timeout=urllib3.Timeout(connect=bound, read=bound),
         retries=urllib3.Retry(total=0),
         cert_reqs="CERT_REQUIRED",
-        ca_certs=os.environ.get("SSL_CERT_FILE") or certifi.where(),
+        ca_certs=_ca_bundle_path(),
     )
     return storage_backend.build_storage_client(http_client=http_client)
 
@@ -74,7 +106,7 @@ def get_takedown_client() -> Minio:
         timeout=urllib3.Timeout(connect=bound, read=bound),
         retries=urllib3.Retry(total=0),
         cert_reqs="CERT_REQUIRED",
-        ca_certs=os.environ.get("SSL_CERT_FILE") or certifi.where(),
+        ca_certs=_ca_bundle_path(),
     )
     return storage_backend.build_storage_client(http_client=http_client)
 

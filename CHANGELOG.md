@@ -94,6 +94,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Watch-source notification failures are now logged (provider, config name and a masked reason) instead of being discarded, and a rejected Microsoft Graph send is logged with its status.
+- Outgoing mail now carries `Date` and `Message-ID` headers and a plain-text part alongside the HTML on every path. Watch-source notifications are sent as one message per recipient, so recipients no longer see each other; Microsoft 365 sends are submitted as MIME and the sender address is URL-encoded.
+- Email configuration recipients and sender must be valid email addresses.
+- The email configuration "Test" endpoint is now documented as it behaves: it connects and logs in, and does not send a message.
+
 - In Arabic and other right-to-left languages, the player's time readout showed total time before elapsed time and touched the volume slider; it now reads "elapsed / total" with a gap.
 - The file player's settings menu no longer lays out its closed Speed and Captions lists under the main list, where screen readers found a second "Speed" item.
 - The development server answered every server-rendered page with an error after the route-store change in this release; the page store now reads the current page only while a page renders.
@@ -151,6 +156,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transcript exports no longer show a general comment as made at 00:00:00: it is listed first without a time (null in JSON, empty time cells in CSV).
 
 ### Security
+
+- Password reset and email verification requests now take the same path whether or not the address has an account: the request looks the account up and queues a background task, and the mail is built and sent there. Invitations and account-change notices are sent from the same background tasks, with retries on temporary mail-server or network errors. An invitation is now refused up front (503) when no mail transport is configured, instead of being created and then failing.
+- Text from people (watch-source names, invitation senders, security-notice text) is now escaped wherever it is placed into an HTML email.
+- Outgoing SMTP no longer sends a username and password over an unencrypted connection, and plain unencrypted mail is only sent to a relay on the same machine. Email configurations that would do so are rejected with a clear message when saved (422), and refused at send time. Operators using a plaintext relay on another host must switch to STARTTLS or port 465.
 
 - **Production now requires a non-default Flower password and bundled-MinIO encryption.** The
   backend will not start on a production install whose `.env` leaves `FLOWER_PASSWORD` unset or at

@@ -31,6 +31,7 @@ type Props = {
   summary: unknown;
   summaryStatus: string;
   llmAvailable: boolean;
+  llmSettingsUnavailable: boolean;
   canRetry: boolean;
   canGenerate: boolean;
   summaryEnabledSystem: boolean;
@@ -41,6 +42,7 @@ function baseProps(overrides: Partial<Props> = {}): Props {
     summary: null,
     summaryStatus: 'pending',
     llmAvailable: false,
+    llmSettingsUnavailable: false,
     canRetry: false,
     canGenerate: true,
     summaryEnabledSystem: true,
@@ -166,6 +168,17 @@ describe('SummaryActions action selection', () => {
     expect(container.querySelectorAll('button')).toHaveLength(1);
     expect(container.querySelector('[data-testid="open-ai-settings"]')).not.toBeNull();
     expect(container.textContent).toContain('llm.featuresUnavailable');
+  });
+
+  it('names a settings outage instead of offering to configure a provider', () => {
+    const { container } = render(SummaryActions, {
+      props: baseProps({ llmSettingsUnavailable: true }) as never,
+    });
+
+    expect(container.querySelector('[data-testid="llm-settings-unavailable"]')).not.toBeNull();
+    expect(container.textContent).toContain('llm.settingsUnavailable');
+    expect(container.textContent).not.toContain('llm.featuresUnavailable');
+    expect(container.querySelector('[data-testid="open-ai-settings"]')).toBeNull();
   });
 
   it('shows an explanatory hint, not a blank area, when failed with no retry available', () => {

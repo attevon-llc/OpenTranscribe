@@ -921,6 +921,8 @@
   "llm.unableToReach": "Не удалось подключиться к сервису LLM",
   "llm.featuresAvailable": "Доступны функции ИИ ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "Функции ИИ сейчас недоступны",
+  "llm.settingsUnavailable": "Не удалось прочитать настройки ИИ. Повторите попытку чуть позже или обратитесь к администратору.",
+  "llm.settingsUnavailableTitle": "Настройки ИИ недоступны",
   "llm.editConfiguration": "Изменение конфигурации",
   "llm.createConfiguration": "Создание конфигурации LLM",
   "llm.unsavedChangesIndicator": "Есть несохранённые изменения",

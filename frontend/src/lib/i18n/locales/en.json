@@ -921,6 +921,8 @@
   "llm.unableToReach": "Unable to reach LLM service",
   "llm.featuresAvailable": "AI features are available ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "AI features are currently unavailable",
+  "llm.settingsUnavailable": "The AI settings could not be read. Try again shortly or contact your administrator.",
+  "llm.settingsUnavailableTitle": "AI settings unavailable",
   "llm.editConfiguration": "Edit Configuration",
   "llm.createConfiguration": "Create LLM Configuration",
   "llm.unsavedChangesIndicator": "You have unsaved changes",

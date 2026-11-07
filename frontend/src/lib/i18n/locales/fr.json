@@ -1577,6 +1577,8 @@
   "llm.unableToReach": "Impossible d'atteindre le service LLM",
   "llm.featuresAvailable": "Fonctionnalités IA disponibles ({{provider}}/{{model}})",
   "llm.featuresUnavailable": "Les fonctionnalités IA sont actuellement indisponibles",
+  "llm.settingsUnavailable": "Les paramètres IA n'ont pas pu être lus. Réessayez dans un instant ou contactez votre administrateur.",
+  "llm.settingsUnavailableTitle": "Paramètres IA indisponibles",
   "settings.password.confirm": "Confirmer le Nouveau Mot de Passe",
   "settings.password.current": "Mot de Passe Actuel",
   "settings.password.fillAll": "Veuillez remplir tous les champs de mot de passe",

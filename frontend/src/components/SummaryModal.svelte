@@ -50,6 +50,7 @@
 
   // Get LLM availability from centralized store
   $: llmAvailable = $isLLMAvailable;
+  let llmSettingsUnavailable = false;
 
   // Search within summary
   let searchQuery = '';
@@ -96,6 +97,7 @@
           const statusData = statusResponse.data;
           summaryStatus = statusData.summary_status;
           llmAvailable = statusData.llm_available;
+          llmSettingsUnavailable = statusData.llm_settings_unavailable ?? false;
           canRetry = statusData.can_retry;
           canGenerate = statusData.can_generate ?? true;
           summaryEnabledSystem = statusData.summary_enabled_system ?? true;
@@ -483,6 +485,7 @@
               {summary}
               {generating}
               {llmAvailable}
+              {llmSettingsUnavailable}
               {canRetry}
               {summaryStatus}
               {canGenerate}
@@ -498,6 +501,7 @@
             {summary}
             {generating}
             {llmAvailable}
+            {llmSettingsUnavailable}
             {canRetry}
             {summaryStatus}
             on:generateSummary={generateSummary}

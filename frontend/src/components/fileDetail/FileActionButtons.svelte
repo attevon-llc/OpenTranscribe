@@ -16,6 +16,7 @@
   // a computed value; this default only governs callers that omit the prop.
   export let canEdit = false;
   export let llmAvailable = false;
+  export let llmSettingsUnavailable = false;
   export let summaryGenerating = false;
   export let generatingSummary = false;
   export let reprocessing = false;
@@ -64,7 +65,7 @@
       class="header-action-btn generate-summary-btn"
       on:click={() => dispatch('generateSummary')}
       disabled={generatingSummary || summaryGenerating || !llmAvailable}
-      title={!llmAvailable ? $t('fileDetail.aiNotAvailable') :
+      title={!llmAvailable ? (llmSettingsUnavailable ? $t('llm.settingsUnavailable') : $t('fileDetail.aiNotAvailable')) :
              (generatingSummary || summaryGenerating) ? $t('fileDetail.aiSummaryGenerating') :
              $t('fileDetail.generateSummaryTooltip')}
     >

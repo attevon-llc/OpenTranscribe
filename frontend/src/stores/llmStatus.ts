@@ -202,6 +202,12 @@ function createLLMStatusStore() {
 export const llmStatusStore = createLLMStatusStore();
 
 // Derived stores for common use cases
+/** True when the backend could not READ the LLM settings; distinct from "none configured". */
+export const isLLMSettingsUnavailable = derived(
+  llmStatusStore,
+  ($llmStatus) => $llmStatus.status?.status === 'settings_unavailable'
+);
+
 export const isLLMAvailable = derived(llmStatusStore, ($llmStatus) => {
   return $llmStatus.available;
 });

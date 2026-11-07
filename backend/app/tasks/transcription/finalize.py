@@ -7,13 +7,13 @@ here (issue #193); see ``app/transcription/CLAUDE.md``.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import TYPE_CHECKING
 
 from app.core import stage_timing
 from app.core.config import settings
 from app.core.enums import TranscriptionStage
+from app.core.env import env_bool
 from app.db.session_utils import session_scope
 from app.services.privacy.gates import voiceprints_allowed
 from app.utils.task_utils import update_task_status
@@ -208,7 +208,7 @@ def _process_and_save_critical(
     processed_segments = process_segments_with_speakers(result["segments"], speaker_mapping)
 
     # Mark overlapping segments
-    enable_overlap = os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true"
+    enable_overlap = env_bool("ENABLE_OVERLAP_DETECTION", True)
     overlap_info = result.get("overlap_info", {})
     overlap_regions = overlap_info.get("regions", [])
     if enable_overlap and overlap_regions:

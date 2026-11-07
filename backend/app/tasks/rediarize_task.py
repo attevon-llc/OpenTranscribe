@@ -31,6 +31,7 @@ from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.enums import TranscriptionStage
+from app.core.env import env_bool
 from app.core.queues import CeleryQueues
 from app.core.queues import GPUPriority
 from app.db.session_utils import session_scope
@@ -350,7 +351,7 @@ def _save(
 
     processed = process_segments_with_speakers(segments, speaker_mapping)
     overlap_regions = detection.overlap_info.get("regions", [])
-    if os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower() == "true" and overlap_regions:
+    if env_bool("ENABLE_OVERLAP_DETECTION", True) and overlap_regions:
         processed = mark_overlapping_segments(processed, overlap_regions)
 
     with session_scope() as db:

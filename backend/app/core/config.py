@@ -20,6 +20,7 @@ from app.core.auth_settings_checks import validate_oidc_settings
 from app.core.auth_settings_checks import validate_pki_settings
 from app.core.chat_defaults import DEFAULT_CHAT_RERANKER_TORCH_THREADS
 from app.core.constants import AUDIT_RETENTION_FLOOR_DAYS
+from app.core.env import env_bool
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
@@ -125,9 +126,7 @@ class Settings(BaseSettings):
     # dedicated migrate Job owns migrations — otherwise every API replica races Alembic
     # on rollout. When false, /health/ready asserts the schema is at head and fails 503
     # if not, so a replica pointed at an un-migrated database never takes traffic.
-    RUN_MIGRATIONS_ON_STARTUP: bool = (
-        os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").lower() == "true"
-    )
+    RUN_MIGRATIONS_ON_STARTUP: bool = env_bool("RUN_MIGRATIONS_ON_STARTUP", True)
 
     # Global server-side upload ceiling, in bytes (issue #284 A0.12). Matches the 15 GB
     # the UI advertises and the yt-dlp `max_filesize`. Before this there was NO
@@ -147,7 +146,7 @@ class Settings(BaseSettings):
     # New users are immediately active and GPU-capable, so on a public deployment this
     # is the door in front of every per-user cost (issue #284 A0.11). Set false when an
     # external IdP owns identity, or when accounts should be admin-provisioned.
-    ALLOW_OPEN_REGISTRATION: bool = os.getenv("ALLOW_OPEN_REGISTRATION", "true").lower() == "true"
+    ALLOW_OPEN_REGISTRATION: bool = env_bool("ALLOW_OPEN_REGISTRATION", True)
 
     # Whether a newly provisioned account must be approved by an administrator
     # before it can use anything. Applies to self-registration AND to every
@@ -156,9 +155,7 @@ class Settings(BaseSettings):
     # Defaults FALSE so an upgrade changes nothing: with it off, accounts are
     # created 'approved' exactly as before. DB-backed override: auth_config
     # `require_account_approval` (Settings -> Authentication -> Local).
-    REQUIRE_ACCOUNT_APPROVAL: bool = (
-        os.getenv("REQUIRE_ACCOUNT_APPROVAL", "false").lower() == "true"
-    )
+    REQUIRE_ACCOUNT_APPROVAL: bool = env_bool("REQUIRE_ACCOUNT_APPROVAL", False)
 
     # Whether accounts holding a local password may sign in at all. Turn this off
     # when an external IdP (LDAP / OIDC / PKI) is the authoritative identity source
@@ -172,31 +169,25 @@ class Settings(BaseSettings):
     # the very screen needed to undo it.
     #
     # DB-backed override: auth_config `local_enabled` (Settings -> Authentication).
-    LOCAL_AUTH_ENABLED: bool = os.getenv("LOCAL_AUTH_ENABLED", "true").lower() == "true"
+    LOCAL_AUTH_ENABLED: bool = env_bool("LOCAL_AUTH_ENABLED", True)
 
     # SSRF egress policy for user-supplied endpoint URLs (issue #284 A0.1/A0.10).
     # Self-hosted Ollama/vLLM on a private LAN is a legitimate setup, so a single-tenant
     # deployment can opt back into private targets. MUST stay false on anything
     # multi-tenant or publicly registerable: with it on, any user can point a
     # "test connection" at internal services and cloud instance metadata.
-    LLM_ALLOW_PRIVATE_ENDPOINTS: bool = (
-        os.getenv("LLM_ALLOW_PRIVATE_ENDPOINTS", "false").lower() == "true"
-    )
+    LLM_ALLOW_PRIVATE_ENDPOINTS: bool = env_bool("LLM_ALLOW_PRIVATE_ENDPOINTS", False)
     # Same policy for watch-source S3 endpoints and SMB servers. A self-hosted NAS on
     # the LAN is the normal case for single-tenant installs, so this defaults ON for
     # watch sources; turn it OFF on a multi-tenant or publicly-registerable deployment.
-    WATCH_ALLOW_PRIVATE_ENDPOINTS: bool = (
-        os.getenv("WATCH_ALLOW_PRIVATE_ENDPOINTS", "true").lower() == "true"
-    )
+    WATCH_ALLOW_PRIVATE_ENDPOINTS: bool = env_bool("WATCH_ALLOW_PRIVATE_ENDPOINTS", True)
     # Same policy again for cloud ASR provider base URLs (UserASRSettings.base_url /
     # GLADIA_API_BASE_URL — issue #594). A SEPARATE flag from LLM_ALLOW_PRIVATE_ENDPOINTS
     # on purpose: an operator may want a self-hosted LLM but not a self-hosted ASR
     # endpoint, or vice versa, and coupling the two would silently loosen one policy
     # while an admin thought they were only touching the other. MUST stay false on
     # anything multi-tenant or publicly registerable, same rationale as LLM's.
-    ASR_ALLOW_PRIVATE_ENDPOINTS: bool = (
-        os.getenv("ASR_ALLOW_PRIVATE_ENDPOINTS", "false").lower() == "true"
-    )
+    ASR_ALLOW_PRIVATE_ENDPOINTS: bool = env_bool("ASR_ALLOW_PRIVATE_ENDPOINTS", False)
 
     # Cookie Secure-flag override for plain-HTTP LAN deployments (issue #284 A0.3
     # follow-up). `is_hardened` forces every auth cookie's `Secure` attribute on
@@ -211,7 +202,7 @@ class Settings(BaseSettings):
     # enforcement, rate limits, lockout thresholds, and DEBUG-off all stay exactly
     # as strict. It relaxes only the one attribute that requires TLS to function,
     # and it is off by default so nothing changes unless an operator opts in.
-    ALLOW_INSECURE_COOKIES: bool = os.getenv("ALLOW_INSECURE_COOKIES", "false").lower() == "true"
+    ALLOW_INSECURE_COOKIES: bool = env_bool("ALLOW_INSECURE_COOKIES", False)
 
     # Bootstrap admin (issue #284 A0.9). In a relaxed environment the seeder creates
     # the well-known admin@example.com / "password" super_admin that the test suite
@@ -251,7 +242,7 @@ class Settings(BaseSettings):
 
     # ===== FIPS 140-2 Password Hashing =====
     # Enable FIPS mode to use only FIPS-approved algorithms (PBKDF2-SHA256)
-    FIPS_MODE: bool = os.getenv("FIPS_MODE", "false").lower() == "true"
+    FIPS_MODE: bool = env_bool("FIPS_MODE", False)
     # PBKDF2 iterations (OWASP 2023 recommendation: 210,000 for SHA-256)
     PBKDF2_ITERATIONS: int = 210000
     # ===== FIPS 140-3 Configuration (upgraded from FIPS 140-2) =====
@@ -267,14 +258,14 @@ class Settings(BaseSettings):
     FIPS_MIGRATION_MODE: str = os.getenv(
         "FIPS_MIGRATION_MODE", "compatible"
     )  # "compatible" or "strict"
-    FIPS_VALIDATE_ENTROPY: bool = os.getenv("FIPS_VALIDATE_ENTROPY", "true").lower() == "true"
+    FIPS_VALIDATE_ENTROPY: bool = env_bool("FIPS_VALIDATE_ENTROPY", True)
     TOTP_ALGORITHM: str = os.getenv(
         "TOTP_ALGORITHM", "SHA1"
     )  # SHA1, SHA256, SHA512 (SHA1 for app compatibility)
 
     # ===== Password Policy (FedRAMP IA-5) =====
     # Enable password policy enforcement (disable for testing or non-FedRAMP environments)
-    PASSWORD_POLICY_ENABLED: bool = os.getenv("PASSWORD_POLICY_ENABLED", "true").lower() == "true"
+    PASSWORD_POLICY_ENABLED: bool = env_bool("PASSWORD_POLICY_ENABLED", True)
     # Which tier applies: "basic" (min 8, no composition, no expiry/history; light, opt-in),
     # "standard" (NIST SP 800-63B-4: min 15 / 8 with MFA, no composition rules, no periodic
     # expiry, blocklist on), "hardened" (DoD STIG style: the individual values below, forced
@@ -306,17 +297,13 @@ class Settings(BaseSettings):
     # hardened/custom only; basic/standard never enforce a minimum age.
     PASSWORD_MIN_AGE_HOURS: int = 24
     # Require at least one uppercase letter
-    PASSWORD_REQUIRE_UPPERCASE: bool = (
-        os.getenv("PASSWORD_REQUIRE_UPPERCASE", "true").lower() == "true"
-    )
+    PASSWORD_REQUIRE_UPPERCASE: bool = env_bool("PASSWORD_REQUIRE_UPPERCASE", True)
     # Require at least one lowercase letter
-    PASSWORD_REQUIRE_LOWERCASE: bool = (
-        os.getenv("PASSWORD_REQUIRE_LOWERCASE", "true").lower() == "true"
-    )
+    PASSWORD_REQUIRE_LOWERCASE: bool = env_bool("PASSWORD_REQUIRE_LOWERCASE", True)
     # Require at least one digit
-    PASSWORD_REQUIRE_DIGIT: bool = os.getenv("PASSWORD_REQUIRE_DIGIT", "true").lower() == "true"
+    PASSWORD_REQUIRE_DIGIT: bool = env_bool("PASSWORD_REQUIRE_DIGIT", True)
     # Require at least one special character
-    PASSWORD_REQUIRE_SPECIAL: bool = os.getenv("PASSWORD_REQUIRE_SPECIAL", "true").lower() == "true"
+    PASSWORD_REQUIRE_SPECIAL: bool = env_bool("PASSWORD_REQUIRE_SPECIAL", True)
     # Number of previous passwords to prevent reuse (FedRAMP requires 24)
     PASSWORD_HISTORY_COUNT: int = 24
     # Maximum password age in days before forced reset (FedRAMP requires 60)
@@ -350,7 +337,7 @@ class Settings(BaseSettings):
     # is ~20/min of steady result-page paging; 30 is 1.5x that.
     RATE_LIMIT_SEARCH_PER_MINUTE: int = 30
     # Enable rate limiting (disable for testing)
-    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    RATE_LIMIT_ENABLED: bool = env_bool("RATE_LIMIT_ENABLED", True)
     # Trusted proxy IPs for rate limiting (comma-separated)
     # Only trust X-Forwarded-For headers from these IPs
     # Example: "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
@@ -360,7 +347,7 @@ class Settings(BaseSettings):
     # Refresh token expiration in days (7 days default for refresh token flow)
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     # Enable token revocation checking via Redis blacklist
-    TOKEN_REVOCATION_ENABLED: bool = os.getenv("TOKEN_REVOCATION_ENABLED", "true").lower() == "true"
+    TOKEN_REVOCATION_ENABLED: bool = env_bool("TOKEN_REVOCATION_ENABLED", True)
 
     # ===== Account Lockout Settings (NIST AC-7 compliant) =====
     # Number of failed login attempts before lockout
@@ -368,38 +355,32 @@ class Settings(BaseSettings):
     # Initial lockout duration in minutes (progressive: 15 -> 30 -> 60 -> 1440)
     ACCOUNT_LOCKOUT_DURATION_MINUTES: int = 15
     # Enable progressive lockout (doubles duration for each subsequent lockout)
-    ACCOUNT_LOCKOUT_PROGRESSIVE: bool = (
-        os.getenv("ACCOUNT_LOCKOUT_PROGRESSIVE", "true").lower() == "true"
-    )
+    ACCOUNT_LOCKOUT_PROGRESSIVE: bool = env_bool("ACCOUNT_LOCKOUT_PROGRESSIVE", True)
     # Maximum lockout duration in minutes (24 hours)
     ACCOUNT_LOCKOUT_MAX_DURATION_MINUTES: int = 1440
     # Enable account lockout (disable for testing)
-    ACCOUNT_LOCKOUT_ENABLED: bool = os.getenv("ACCOUNT_LOCKOUT_ENABLED", "true").lower() == "true"
+    ACCOUNT_LOCKOUT_ENABLED: bool = env_bool("ACCOUNT_LOCKOUT_ENABLED", True)
 
     # ===== Audit Logging (FedRAMP AU-2/AU-3) =====
-    AUDIT_LOG_ENABLED: bool = os.getenv("AUDIT_LOG_ENABLED", "true").lower() == "true"
+    AUDIT_LOG_ENABLED: bool = env_bool("AUDIT_LOG_ENABLED", True)
     AUDIT_LOG_FORMAT: str = os.getenv("AUDIT_LOG_FORMAT", "json")  # json or cef
-    AUDIT_LOG_TO_OPENSEARCH: bool = os.getenv("AUDIT_LOG_TO_OPENSEARCH", "true").lower() == "true"
+    AUDIT_LOG_TO_OPENSEARCH: bool = env_bool("AUDIT_LOG_TO_OPENSEARCH", True)
     # 0 = keep forever (the default). Anything else is the age, in days, after which the daily
     # sweep may delete rows from the prunable audit tables; values below
     # AUDIT_RETENTION_FLOOR_DAYS are rejected at startup (see validate_auth_settings).
     AUDIT_LOG_RETENTION_DAYS: int = 0
     # Fallback to file-based logging when OpenSearch is unavailable (FedRAMP AU-9)
-    AUDIT_LOG_FALLBACK_ENABLED: bool = (
-        os.getenv("AUDIT_LOG_FALLBACK_ENABLED", "true").lower() == "true"
-    )
+    AUDIT_LOG_FALLBACK_ENABLED: bool = env_bool("AUDIT_LOG_FALLBACK_ENABLED", True)
     AUDIT_LOG_FALLBACK_PATH: str = "/var/log/opentranscribe/audit-fallback.jsonl"
 
     # ===== Login Banner (FedRAMP AC-8) =====
-    LOGIN_BANNER_ENABLED: bool = os.getenv("LOGIN_BANNER_ENABLED", "false").lower() == "true"
+    LOGIN_BANNER_ENABLED: bool = env_bool("LOGIN_BANNER_ENABLED", False)
     LOGIN_BANNER_TEXT: str = os.getenv("LOGIN_BANNER_TEXT", "")
     LOGIN_BANNER_CLASSIFICATION: str = os.getenv("LOGIN_BANNER_CLASSIFICATION", "UNCLASSIFIED")
 
     # ===== Account Expiration (FedRAMP AC-2) =====
     ACCOUNT_INACTIVE_DAYS: int = 90
-    ACCOUNT_EXPIRATION_ENABLED: bool = (
-        os.getenv("ACCOUNT_EXPIRATION_ENABLED", "false").lower() == "true"
-    )
+    ACCOUNT_EXPIRATION_ENABLED: bool = env_bool("ACCOUNT_EXPIRATION_ENABLED", False)
 
     # ===== Concurrent Session Limits (FedRAMP AC-10) =====
     MAX_CONCURRENT_SESSIONS: int = 5  # 0 = unlimited
@@ -413,7 +394,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM: str = os.getenv("SMTP_FROM", "noreply@example.com")
-    SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    SMTP_USE_TLS: bool = env_bool("SMTP_USE_TLS", True)
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
     # ===== Abuse / DMCA / safe-harbor intake =====
@@ -465,7 +446,7 @@ class Settings(BaseSettings):
     MINIO_ROOT_PASSWORD: str = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
     MINIO_HOST: str = os.getenv("MINIO_HOST", "localhost")
     MINIO_PORT: str = os.getenv("MINIO_PORT", "9000")
-    MINIO_SECURE: bool = os.getenv("MINIO_SECURE", "false").lower() == "true"
+    MINIO_SECURE: bool = env_bool("MINIO_SECURE", False)
     MEDIA_BUCKET_NAME: str = os.getenv("MEDIA_BUCKET_NAME", "opentranscribe")
     # Second bucket: the REGENERABLE cache. Subtitle-embedded videos and extracted audio
     # under derived/, bulk-export ZIPs under bulk/. It is separate from the media bucket
@@ -508,14 +489,12 @@ class Settings(BaseSettings):
     # EKS/IRSA web-identity token, ECS task role, EC2 instance metadata — so no static
     # keys are needed and rotation is automatic. Set false to sign with the static
     # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY pair instead.
-    S3_USE_IAM_ROLE: bool = os.getenv("S3_USE_IAM_ROLE", "true").lower() == "true"
+    S3_USE_IAM_ROLE: bool = env_bool("S3_USE_IAM_ROLE", True)
     # Apply a browser-PUT CORS policy to the media bucket at startup. MinIO already
     # answers any origin, so this only matters on S3, where a missing CORS config makes
     # every direct browser upload fail preflight. OFF by default: overwriting a bucket's
     # CORS configuration is destructive and the bucket may be shared.
-    S3_CONFIGURE_BUCKET_CORS: bool = (
-        os.getenv("S3_CONFIGURE_BUCKET_CORS", "false").lower() == "true"
-    )
+    S3_CONFIGURE_BUCKET_CORS: bool = env_bool("S3_CONFIGURE_BUCKET_CORS", False)
     # Origins allowed to PUT directly to the bucket. Empty = reuse CORS_ORIGINS.
     S3_CORS_ALLOWED_ORIGINS: str = os.getenv("S3_CORS_ALLOWED_ORIGINS", "")
 
@@ -571,24 +550,18 @@ class Settings(BaseSettings):
     # MinIO-only (there is no admin API on native S3); fails open to the root client
     # (today's pre-#907 behavior) if the identity cannot be provisioned. See
     # app/services/storage_presign_identity.py and docs/abuse-and-takedown.md.
-    STORAGE_PRESIGN_IDENTITY_ENABLED: bool = (
-        os.getenv("STORAGE_PRESIGN_IDENTITY_ENABLED", "true").lower() == "true"
-    )
+    STORAGE_PRESIGN_IDENTITY_ENABLED: bool = env_bool("STORAGE_PRESIGN_IDENTITY_ENABLED", True)
     # STORAGE_BACKEND=s3 only: at startup, write a throwaway object to the media and cache
     # buckets and tag/list/delete it, to find a missing takedown permission at boot instead of
     # at the first takedown (app/services/media_revocation_probe.py). Turn off for buckets
     # where a write per boot is unwanted (tight IAM, versioning, Object Lock).
-    STORAGE_TAG_PROBE_ENABLED: bool = (
-        os.getenv("STORAGE_TAG_PROBE_ENABLED", "true").lower() == "true"
-    )
+    STORAGE_TAG_PROBE_ENABLED: bool = env_bool("STORAGE_TAG_PROBE_ENABLED", True)
     # Redis settings (for Celery)
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: str = os.getenv("REDIS_PORT", "6379")
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
-    REDIS_USE_TLS: bool = os.getenv("REDIS_USE_TLS", "false").lower() == "true"
-    _REDIS_SCHEME: str = (
-        "rediss" if os.getenv("REDIS_USE_TLS", "false").lower() == "true" else "redis"
-    )
+    REDIS_USE_TLS: bool = env_bool("REDIS_USE_TLS", False)
+    _REDIS_SCHEME: str = "rediss" if env_bool("REDIS_USE_TLS", False) else "redis"
     # Plain "" default resolved in `validate_auth_settings` below -- same bug
     # class as DATABASE_URL: `.env.example` ships `REDIS_URL=` (blank, meaning
     # "assemble it from REDIS_USE_TLS/HOST/PORT/PASSWORD"), and the old
@@ -606,8 +579,8 @@ class Settings(BaseSettings):
     # succeeding on the plugin's own well-known bootstrap superuser password.
     OPENSEARCH_USER: str = os.getenv("OPENSEARCH_USER", "")
     OPENSEARCH_PASSWORD: str = os.getenv("OPENSEARCH_PASSWORD", "")
-    OPENSEARCH_USE_TLS: bool = os.getenv("OPENSEARCH_USE_TLS", "false").lower() == "true"
-    OPENSEARCH_VERIFY_CERTS: bool = os.getenv("OPENSEARCH_VERIFY_CERTS", "false").lower() == "true"
+    OPENSEARCH_USE_TLS: bool = env_bool("OPENSEARCH_USE_TLS", False)
+    OPENSEARCH_VERIFY_CERTS: bool = env_bool("OPENSEARCH_VERIFY_CERTS", False)
     # How to authenticate to OpenSearch (issue #284 A1.13). "basic" (default) sends the
     # OPENSEARCH_USER/OPENSEARCH_PASSWORD pair the bundled container expects. "sigv4"
     # signs every request with AWS SigV4 from the IAM-role chain, which is the only
@@ -793,9 +766,7 @@ class Settings(BaseSettings):
 
     # OpenSearch Neural Search settings (ML Commons-based)
     # When enabled, embeddings are generated server-side by OpenSearch instead of Python
-    OPENSEARCH_NEURAL_SEARCH_ENABLED: bool = (
-        os.getenv("OPENSEARCH_NEURAL_SEARCH_ENABLED", "true").lower() == "true"
-    )
+    OPENSEARCH_NEURAL_SEARCH_ENABLED: bool = env_bool("OPENSEARCH_NEURAL_SEARCH_ENABLED", True)
     # Default model to register/deploy (from OPENSEARCH_EMBEDDING_MODELS in constants.py)
     OPENSEARCH_NEURAL_MODEL: str = "huggingface/sentence-transformers/all-MiniLM-L6-v2"
     # Neural ingest pipeline name
@@ -1164,7 +1135,7 @@ class Settings(BaseSettings):
     # No retired spelling to honour here (this is the auth type's only name), so
     # plain os.getenv throughout — unlike OIDC_*, none of these route through
     # core/legacy_auth_env.py.
-    SAML_ENABLED: bool = os.getenv("SAML_ENABLED", "false").lower() == "true"
+    SAML_ENABLED: bool = env_bool("SAML_ENABLED", False)
     # Entity ID this SP identifies itself as. Also the default audience the IdP's
     # assertion must be addressed to.
     SAML_SP_ENTITY_ID: str = os.getenv("SAML_SP_ENTITY_ID", "")
@@ -1186,15 +1157,9 @@ class Settings(BaseSettings):
     # against this, so an unset value must refuse to start SAML, not fall open.
     SAML_IDP_X509_CERT: str = os.getenv("SAML_IDP_X509_CERT", "")
     # OWASP-recommended posture: the IdP must sign what it asserts.
-    SAML_WANT_ASSERTIONS_SIGNED: bool = (
-        os.getenv("SAML_WANT_ASSERTIONS_SIGNED", "true").lower() == "true"
-    )
-    SAML_WANT_MESSAGES_SIGNED: bool = (
-        os.getenv("SAML_WANT_MESSAGES_SIGNED", "true").lower() == "true"
-    )
-    SAML_SIGN_AUTHN_REQUESTS: bool = (
-        os.getenv("SAML_SIGN_AUTHN_REQUESTS", "false").lower() == "true"
-    )
+    SAML_WANT_ASSERTIONS_SIGNED: bool = env_bool("SAML_WANT_ASSERTIONS_SIGNED", True)
+    SAML_WANT_MESSAGES_SIGNED: bool = env_bool("SAML_WANT_MESSAGES_SIGNED", True)
+    SAML_SIGN_AUTHN_REQUESTS: bool = env_bool("SAML_SIGN_AUTHN_REQUESTS", False)
     # Attribute names to read from the assertion. No standard covers this across
     # IdPs — ADFS, Okta, and Azure AD SAML each ship different defaults — so these
     # are configurable rather than hardcoded to one vendor's claim URIs, same
@@ -1212,9 +1177,9 @@ class Settings(BaseSettings):
 
     # ===== MFA Settings (FedRAMP IA-2) =====
     # MFA is disabled by default for air-gapped deployments
-    MFA_ENABLED: bool = os.getenv("MFA_ENABLED", "false").lower() == "true"
+    MFA_ENABLED: bool = env_bool("MFA_ENABLED", False)
     # When MFA_REQUIRED is true, users must set up MFA on first login
-    MFA_REQUIRED: bool = os.getenv("MFA_REQUIRED", "false").lower() == "true"
+    MFA_REQUIRED: bool = env_bool("MFA_REQUIRED", False)
     # Require admins (role "admin") to enrol and use MFA even when MFA_REQUIRED is false.
     # Recommended true wherever MFA_ENABLED is true; defaults false so an upgrade cannot lock
     # an existing admin out before they have enrolled. Has no effect while MFA_ENABLED is false.
@@ -1254,13 +1219,11 @@ class Settings(BaseSettings):
     MFA_REQUIRE_REDIS: bool | None = None
 
     # ===== PKI/X.509 Certificate Configuration =====
-    PKI_ENABLED: bool = os.getenv("PKI_ENABLED", "false").lower() == "true"
+    PKI_ENABLED: bool = env_bool("PKI_ENABLED", False)
     PKI_CA_CERT_PATH: str = os.getenv(
         "PKI_CA_CERT_PATH", ""
     )  # Path to CA certificate for validation
-    PKI_VERIFY_REVOCATION: bool = (
-        os.getenv("PKI_VERIFY_REVOCATION", "false").lower() == "true"
-    )  # Check CRL/OCSP
+    PKI_VERIFY_REVOCATION: bool = env_bool("PKI_VERIFY_REVOCATION", False)  # Check CRL/OCSP
     PKI_CERT_HEADER: str = os.getenv(
         "PKI_CERT_HEADER", "X-Client-Cert"
     )  # Header name from reverse proxy
@@ -1293,7 +1256,7 @@ class Settings(BaseSettings):
     # here is also settable in the admin UI (category "proxy"), which wins; these are
     # the .env fallbacks and, for PROXY_ENABLED/PROXY_TRUSTED_PROXIES, what the
     # startup guard in main.py can see before a database session exists.
-    PROXY_ENABLED: bool = os.getenv("PROXY_ENABLED", "false").lower() == "true"
+    PROXY_ENABLED: bool = env_bool("PROXY_ENABLED", False)
     # Comma-separated IPs/CIDRs allowed to assert identity headers. EMPTY MEANS
     # REFUSE EVERY ASSERTION — the fail-closed state the feature is built around.
     PROXY_TRUSTED_PROXIES: str = os.getenv("PROXY_TRUSTED_PROXIES", "")
@@ -1311,7 +1274,7 @@ class Settings(BaseSettings):
     PROXY_SHARED_SECRET: str = os.getenv("PROXY_SHARED_SECRET", "")
     # Comma-separated email domain allowlist. Empty admits every domain.
     PROXY_ALLOWED_DOMAINS: str = os.getenv("PROXY_ALLOWED_DOMAINS", "")
-    PROXY_JIT_PROVISIONING: bool = os.getenv("PROXY_JIT_PROVISIONING", "true").lower() == "true"
+    PROXY_JIT_PROVISIONING: bool = env_bool("PROXY_JIT_PROVISIONING", True)
 
     # Quick access defaults for common providers
     VLLM_BASE_URL: str = os.getenv("VLLM_BASE_URL", "http://localhost:8012/v1")
@@ -1400,7 +1363,7 @@ class Settings(BaseSettings):
     DEPLOYMENT_MODE: str = os.getenv("DEPLOYMENT_MODE", "full")  # full or lite
 
     # ===== OpenSearch Toggle =====
-    OPENSEARCH_ENABLED: bool = os.getenv("OPENSEARCH_ENABLED", "true").lower() == "true"
+    OPENSEARCH_ENABLED: bool = env_bool("OPENSEARCH_ENABLED", True)
 
     # ===== YouTube Anti-Bot Detection Configuration =====
     # Cookie-Based Authentication (allows yt-dlp to use browser cookies)
@@ -1412,16 +1375,14 @@ class Settings(BaseSettings):
     )  # Path to cookies.txt file
 
     # Playlist Staggering (progressive delays when dispatching videos)
-    YOUTUBE_PLAYLIST_STAGGER_ENABLED: bool = (
-        os.getenv("YOUTUBE_PLAYLIST_STAGGER_ENABLED", "true").lower() == "true"
-    )
+    YOUTUBE_PLAYLIST_STAGGER_ENABLED: bool = env_bool("YOUTUBE_PLAYLIST_STAGGER_ENABLED", True)
     YOUTUBE_PLAYLIST_STAGGER_MIN_SECONDS: int = 5
     YOUTUBE_PLAYLIST_STAGGER_MAX_SECONDS: int = 30
     YOUTUBE_PLAYLIST_STAGGER_INCREMENT: int = 5
 
     # Pre-Download Jitter (random delay before each download starts)
-    YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED: bool = (
-        os.getenv("YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", "true").lower() == "true"
+    YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED: bool = env_bool(
+        "YOUTUBE_PRE_DOWNLOAD_JITTER_ENABLED", True
     )
     YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS: int = 2
     YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS: int = 15

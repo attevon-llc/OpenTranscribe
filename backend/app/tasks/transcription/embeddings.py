@@ -5,12 +5,12 @@ and the traditional ``SpeakerEmbeddingService`` 512-dim path.
 """
 
 import logging
-import os
 import time
 from typing import Any
 
 from app.core import stage_timing
 from app.core.embedding_models import get_speaker_index_v4
+from app.core.env import env_bool
 from app.db.session_utils import session_scope
 from app.services.file_provenance import record_inline_voiceprints
 from app.services.privacy.gates import voiceprints_allowed
@@ -417,7 +417,7 @@ def _should_use_native_embeddings(result: dict) -> bool:
     Returns:
         True if native embeddings should be used.
     """
-    use_native = os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower() == "true"
+    use_native = env_bool("USE_NATIVE_SPEAKER_EMBEDDINGS", True)
     if not use_native:
         logger.info("Native speaker embeddings disabled by USE_NATIVE_SPEAKER_EMBEDDINGS=false")
         return False

@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from app.core.env import env_bool
 from app.core.pipeline_constants import SAMPLE_RATE
 
 logger = logging.getLogger(__name__)
@@ -107,9 +108,8 @@ class SpeakerAttributeService:
             # Use GPU only on GPU workers (PRELOAD_GPU_MODELS=true).
             # On CPU workers, this model would leak a CUDA context (~5GB)
             # in the prefork child process that never gets released.
-            import os
 
-            is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+            is_gpu_worker = env_bool("PRELOAD_GPU_MODELS", False)
             if not self._force_cpu and is_gpu_worker and torch.cuda.is_available():
                 self._device = "cuda"
                 self._model = self._model.to(self._device)

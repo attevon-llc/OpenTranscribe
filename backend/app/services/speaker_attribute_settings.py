@@ -22,12 +22,12 @@ consulted here.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from dataclasses import replace
 
 from sqlalchemy.orm import Session
 
+from app.core.env import env_bool
 from app.core.env import parse_bool
 from app.services.privacy.policy import Decision
 from app.services.privacy.policy import gender_decision
@@ -81,7 +81,7 @@ def resolve_speaker_attribute_flags(
     from app.models.prompt import UserSetting
     from app.services.system_settings_service import get_settings_map
 
-    env_enabled = os.environ.get("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", "true").lower() == "true"
+    env_enabled = env_bool("SPEAKER_ATTRIBUTE_DETECTION_ENABLED", True)
     names = {
         "detection_enabled": ("speaker_attribute_detection_enabled", env_enabled),
         "gender_detection_enabled": ("speaker_attribute_gender_detection_enabled", True),

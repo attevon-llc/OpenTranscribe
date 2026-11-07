@@ -49,6 +49,7 @@ import numpy as np
 
 from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
+from app.core.env import env_bool
 from app.core.scratch_paths import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.scratch_paths import resolve_engine_shared_volume_path
 from app.transcription import diar_sidecar_status
@@ -161,7 +162,7 @@ _warn_if_timeout_risks_redelivery(
     _TIMEOUT_S, float(os.environ.get("CELERY_VISIBILITY_TIMEOUT", "21600"))
 )
 # Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
-_GENDER_ENABLED = os.environ.get("DIAR_NATIVE_GENDER", "1").lower() not in ("0", "false", "no")
+_GENDER_ENABLED = env_bool("DIAR_NATIVE_GENDER", True)
 
 
 def post_json(url: str, payload: dict, timeout: float) -> dict:

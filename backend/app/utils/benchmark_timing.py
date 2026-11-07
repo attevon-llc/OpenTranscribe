@@ -24,13 +24,14 @@ they can be diagnosed separately.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Iterable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
+
+from app.core.env import env_bool
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def _enabled() -> bool:
     Called from every marker call site; keep it cheap. Uses lru_cache so the
     environment is read once and reused.
     """
-    return os.getenv("ENABLE_BENCHMARK_TIMING", "").lower() in ("1", "true", "yes", "on")
+    return env_bool("ENABLE_BENCHMARK_TIMING", False)
 
 
 def benchmark_enabled() -> bool:

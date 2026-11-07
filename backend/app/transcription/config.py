@@ -12,6 +12,7 @@ from typing import Any
 from typing import ClassVar
 
 from app.core.config import settings
+from app.core.env import env_bool
 from app.core.env import env_int
 
 logger = logging.getLogger(__name__)
@@ -176,15 +177,13 @@ class TranscriptionConfig:
             diarization_device=diarization_device,
             device_index=whisperx_config.get("device_index", 0),
             translate_to_english=False,
-            enable_dedup=os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true",
+            enable_dedup=env_bool("ENABLE_SEGMENT_DEDUP", True),
             min_speakers=settings.MIN_SPEAKERS,
             max_speakers=settings.MAX_SPEAKERS,
             num_speakers=None,
             hf_token=get_hf_token(),
-            enable_native_embeddings=os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower()
-            == "true",
-            enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()
-            == "true",
+            enable_native_embeddings=env_bool("USE_NATIVE_SPEAKER_EMBEDDINGS", True),
+            enable_overlap_detection=env_bool("ENABLE_OVERLAP_DETECTION", True),
             overlap_min_duration=float(os.getenv("OVERLAP_MIN_DURATION", "0.25")),
             # Language, VAD and accuracy settings are per job: the task supplies them as
             # overrides (user or deployment settings), so the dataclass defaults are only

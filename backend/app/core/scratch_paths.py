@@ -6,6 +6,9 @@ The env-reading resolvers live here with the default paths they fall back to.
 import logging
 import os
 
+from app.core.env import env_bool
+from app.core.env import env_is_set
+
 # =============================================================================
 # Engine shared-volume WAV handoff (issue #661 E0, consolidated onto pipeline_scratch in E2)
 # =============================================================================
@@ -27,10 +30,10 @@ ENGINE_SHARED_VOLUME_DEFAULT = "/scratch/opentranscribe/engine"
 def pipeline_scratch_shared() -> bool:
     """Whether every worker shares the scratch mount (``PIPELINE_SCRATCH_SHARED``, default on).
 
-    Read at call time so a test can flip it. Only the literal ``false`` turns it off, so a typo
-    keeps the fast path instead of silently disabling it.
+    Read at call time so a test can flip it. A typo keeps the fast path (with a warning)
+    instead of silently disabling it.
     """
-    return os.environ.get("PIPELINE_SCRATCH_SHARED", "true").strip().lower() != "false"
+    return env_bool("PIPELINE_SCRATCH_SHARED", True)
 
 
 def engine_shared_volume_enabled() -> bool:
@@ -43,9 +46,8 @@ def engine_shared_volume_enabled() -> bool:
     storage — the right behaviour when preprocess and GPU workers run on different nodes,
     where a written WAV is never readable by the GPU worker and never cleaned up by anyone.
     """
-    explicit = os.environ.get("ENGINE_SHARED_VOLUME_ENABLED", "").strip().lower()
-    if explicit:
-        return explicit != "false"
+    if env_is_set("ENGINE_SHARED_VOLUME_ENABLED"):
+        return env_bool("ENGINE_SHARED_VOLUME_ENABLED", True)
     return pipeline_scratch_shared()
 
 

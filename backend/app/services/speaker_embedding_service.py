@@ -9,6 +9,8 @@ from typing import cast
 
 import numpy as np
 
+from app.core.env import env_bool
+
 if TYPE_CHECKING:
     import threading
 
@@ -135,7 +137,7 @@ class SpeakerEmbeddingService:
         """
         if self.mode != MODE_V4:
             return False
-        if os.getenv("USE_NATIVE_SPEAKER_EMBEDDINGS", "true").lower() != "true":
+        if not env_bool("USE_NATIVE_SPEAKER_EMBEDDINGS", True):
             logger.info("Native speaker embeddings disabled by USE_NATIVE_SPEAKER_EMBEDDINGS=false")
             return False
         if self.model_name != EmbeddingModeService.get_embedding_model_name(MODE_V4):

@@ -12,6 +12,7 @@ import logging
 import os
 import socket
 
+from app.core.env import env_bool
 from app.core.env import env_int
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,7 @@ def reconcile_gpu_concurrent_requests() -> None:
     -> one WARNING naming both; the operator's value is kept. Prefork is left alone: each
     child there loads its own models, so engine slots are per process by construction.
     """
-    if os.environ.get("PRELOAD_GPU_MODELS", "").lower() != "true" or not _pool_is_threads():
+    if not env_bool("PRELOAD_GPU_MODELS", False) or not _pool_is_threads():
         return
     threads = _pool_concurrency()
     configured = os.environ.get("GPU_CONCURRENT_REQUESTS", "").strip()
@@ -232,7 +233,7 @@ def configure_gpu_host_admission() -> None:
     Prefork is left alone: there each child is its own process running one task at a time,
     so a per-process gate has nothing to count.
     """
-    if os.environ.get("PRELOAD_GPU_MODELS", "").lower() != "true" or not _pool_is_threads():
+    if not env_bool("PRELOAD_GPU_MODELS", False) or not _pool_is_threads():
         return
     from app.transcription import host_memory_admission
 
@@ -267,7 +268,7 @@ def preload_models(**kwargs):
     # Other workers (cpu-processor, search-indexer, etc.) must NOT load models,
     # even if CUDA is available, to avoid wasting 15+ GB of GPU memory.
     # Set via docker-compose.yml environment for gpu worker containers only.
-    is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+    is_gpu_worker = env_bool("PRELOAD_GPU_MODELS", False)
 
     try:
         if is_gpu_worker:
@@ -321,7 +322,7 @@ def preload_models(**kwargs):
         logger.debug(f"GPU model preloading skipped: {e}")
 
     # CPU lightweight model preloading
-    if os.getenv("PRELOAD_CPU_WHISPER", "").lower() == "true":
+    if env_bool("PRELOAD_CPU_WHISPER", False):
         try:
             from app.transcription.config import TranscriptionConfig as CpuTranscriptionConfig
 
@@ -385,7 +386,7 @@ def preload_models(**kwargs):
     # Content-redaction model preloading — ONLY on the dedicated celery-redaction
     # worker (PRELOAD_REDACTION_MODELS=true). Loads Presidio+GLiNER (PII) and the
     # toxicity classifier once, shared across the threads pool. No GPU.
-    if os.getenv("PRELOAD_REDACTION_MODELS", "").lower() == "true":
+    if env_bool("PRELOAD_REDACTION_MODELS", False):
         try:
             # Cap PyTorch intra-op threads so a single inference can't peg every core
             # on a shared single machine (env OMP_NUM_THREADS is the primary control;

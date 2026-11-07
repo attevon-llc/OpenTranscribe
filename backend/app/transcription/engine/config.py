@@ -154,12 +154,11 @@ class EngineConfig:
             # for the split/multi-GPU stages, so it must agree with what ModelManager will
             # actually select.
             diarizer_backend=tc.diarizer_backend,
-            precompute_vad=os.getenv("ENGINE_PRECOMPUTE_VAD", "false").lower() == "true",
+            precompute_vad=env_bool("ENGINE_PRECOMPUTE_VAD", False),
             gpu_split=gpu_split_enabled(),
-            boundary_acoustic_recheck_enabled=os.getenv(
-                "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", "false"
-            ).lower()
-            == "true",
+            boundary_acoustic_recheck_enabled=env_bool(
+                "ENGINE_BOUNDARY_ACOUSTIC_RECHECK_ENABLED", False
+            ),
             boundary_acoustic_cosine_margin=cls._db_env_float(
                 None, "", "ENGINE_BOUNDARY_ACOUSTIC_COSINE_MARGIN", 0.05
             ),

@@ -10,13 +10,13 @@ No fallbacks - requires modern dependencies for optimal performance.
 """
 
 import logging
-import os
 from typing import Any
 
 import numpy as np
 import torch
 from torch.nn import functional as nn_functional
 
+from app.core.env import env_bool
 from app.utils.cosine_space import opensearch_score_from_raw_cosine
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
@@ -27,7 +27,7 @@ class SimilarityService:
     """GPU-accelerated similarity service leveraging PyTorch and OpenSearch."""
 
     # Use GPU only on GPU workers to avoid CUDA context leaks in CPU worker children.
-    _is_gpu_worker = os.environ.get("PRELOAD_GPU_MODELS", "").lower() == "true"
+    _is_gpu_worker = env_bool("PRELOAD_GPU_MODELS", False)
     device = torch.device("cuda" if _is_gpu_worker and torch.cuda.is_available() else "cpu")
 
     @staticmethod

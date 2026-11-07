@@ -17,6 +17,7 @@
   import { createEventDispatcher } from 'svelte';
   import { t, locale } from '$stores/locale';
   import Spinner from '$components/ui/Spinner.svelte';
+  import InfoTip from '$components/settings/transcription/InfoTip.svelte';
 
   export let stats: any;
   export let statsLoading = false;
@@ -54,6 +55,12 @@
 
   function openProcessingDetails(section: string) {
     dispatch('openDetails', section);
+  }
+
+  /** A click on an info icon inside a clickable card explains; it must not also open the details. */
+  function openDetailsUnlessTip(event: MouseEvent, section: string) {
+    if ((event.target as Element | null)?.closest('.tip')) return;
+    openProcessingDetails(section);
   }
 
   // Narrow screens show a status glyph (named for screen readers) instead of the word.
@@ -213,7 +220,7 @@
       <!-- AI Models -->
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="stat-card model-card stat-card-clickable" on:click={() => openProcessingDetails('models')}>
+      <div class="stat-card model-card stat-card-clickable" on:click={(event) => openDetailsUnlessTip(event, 'models')}>
         <h4>{$t('settings.statistics.aiModels')}</h4>
         {#if stats.models}
           <div class="model-info">
@@ -250,10 +257,14 @@
             {/if}
             {#if rerankerThreads}
               <div class="model-item" data-testid="reranker-threads">
-                <span class="model-label">{$t('settings.statistics.rerankerThreads')}:</span>
+                <span class="model-label">
+                  {$t('settings.statistics.rerankerThreads')}:
+                  <InfoTip inline label={$t('settings.statistics.rerankerThreads')}>
+                    {$t('settings.statistics.rerankerThreadsHelp')}
+                  </InfoTip>
+                </span>
                 <span class="model-value">{rerankerThreadsLabel}</span>
               </div>
-              <div class="stat-detail stat-detail-hint">{$t('settings.statistics.rerankerThreadsHelp')}</div>
             {/if}
           </div>
         {:else}

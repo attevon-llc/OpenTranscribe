@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', () => ({
   // Identity translator so assertions can match on the i18n key.
@@ -18,7 +18,7 @@ function renderWith(chatRerankerThreads: unknown) {
 }
 
 describe('SystemStatisticsPanel: reranker threads (issue #1270)', () => {
-  it('shows an automatic cap with the read-only help text', () => {
+  it('shows an automatic cap with the read-only help text behind an info icon', () => {
     renderWith({ threads: 8, source: 'auto', setting: 'auto' });
 
     expect(screen.getByTestId('reranker-threads')).toHaveTextContent(
@@ -27,7 +27,34 @@ describe('SystemStatisticsPanel: reranker threads (issue #1270)', () => {
     expect(screen.getByTestId('reranker-threads')).toHaveTextContent(
       'settings.statistics.rerankerThreadsAuto'
     );
-    expect(screen.getByText('settings.statistics.rerankerThreadsHelp')).toBeInTheDocument();
+    // The explanation lives behind the info icon, so the card stays compact.
+    expect(screen.queryByText('settings.statistics.rerankerThreadsHelp')).toBeNull();
+    const row = screen.getByTestId('reranker-threads');
+    row.querySelector<HTMLButtonElement>('.tip .trigger')!.click();
+    return waitFor(() =>
+      expect(screen.getByText('settings.statistics.rerankerThreadsHelp')).toBeInTheDocument()
+    );
+  });
+
+  it('opening the info icon does not open the models details', () => {
+    const opened = vi.fn();
+    render(SystemStatisticsPanel, {
+      props: {
+        stats: {
+          models: { whisper: { name: 'base' } },
+          system: { chat_reranker_threads: { threads: 8, source: 'auto', setting: 'auto' } },
+        },
+        statsLoading: false,
+      },
+      events: { openDetails: opened },
+    });
+
+    screen
+      .getByTestId('reranker-threads')
+      .querySelector<HTMLButtonElement>('.tip .trigger')!
+      .click();
+
+    expect(opened).not.toHaveBeenCalled();
   });
 
   it('distinguishes an operator-set value from an automatic one', () => {
@@ -59,6 +86,8 @@ describe('SystemStatisticsPanel: reranker threads (issue #1270)', () => {
     renderWith({ threads: 8, source: 'auto', setting: 'auto' });
 
     const row = screen.getByTestId('reranker-threads');
-    expect(row.querySelector('input, select, button')).toBeNull();
+    // The only button is the read-only info icon; nothing edits the value.
+    expect(row.querySelector('input, select')).toBeNull();
+    expect(row.querySelectorAll('button')).toHaveLength(1);
   });
 });

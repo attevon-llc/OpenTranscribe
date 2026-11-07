@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **System statistics > AI models** card: the long explanation of the reranker threads moved behind an info icon so the card stays compact.
 - **Quarantine screen wording**: the "Legal hold" column, badge and tab are now named for the takedown's own legal hold, and a help line explains that quarantine and Settings > Legal holds are separate features, with a link to Legal holds (all 12 languages). Behaviour is unchanged.
 - **Takedown notices (admin)**: the Add-notice form now has a Cancel; Export is one button with a CSV/JSON format menu instead of two buttons, and it is disabled with an explanation when there are no notices to export.
 - **Settings > Audio Extraction**: the file-size field now sits directly under the "Extract Audio from Videos" switch it depends on (label above the field), instead of between the other two choices.

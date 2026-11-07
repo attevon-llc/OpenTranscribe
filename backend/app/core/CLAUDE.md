@@ -258,6 +258,12 @@ should import `app.api` or `app.services` at module scope.
   `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` past delivery/ETA with no live holder and no
   `task_replay` heartbeat, capped by `BROKER_ORPHAN_MAX_REQUEUES`; a `task_replay`-recorded one
   is discarded, since that sweep re-sends it under the same id.
+- **Every user-triggered (`CPUPriority.USER_TRIGGERED`) and `download.*` task is classified**
+  (#1159): on `task_replay.REPLAYABLE_TASKS`, or in `_USER_TASKS_NOT_REPLAYED`
+  (`tests/unit/test_lost_task_replay.py`) with a written reason. The guard reads the Celery
+  registry, so a new task of either kind fails it until decided. Replay needs no `acks_late`
+  (it re-sends from its own heartbeat record; `acks_late` would add the broker's redelivery as a
+  second path to the same duplicate). Idempotence evidence: `test_user_task_replay_idempotence.py`.
 - `task_liveness.run_heartbeat` hands the run back as **queued** only on a normal return, a
   Celery `Retry` or `Reject(requeue=True)`. Any other exit leaves it DEAD — a cold-shutdown
   `SystemExit` is deliberately NOT handed back here. On billiard 4.3.0 the cancel ACKED a running

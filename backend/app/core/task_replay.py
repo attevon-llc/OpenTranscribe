@@ -62,7 +62,8 @@ CLAIM_KEY = "task_replay_claim:{task_id}"
 #: a file plus fixed arguments) and overwrites its own output, so a second run reaches the
 #: same end state. The cost of a duplicate is compute (or one LLM call), never data.
 #: Every task the per-file pipeline dispatches is either here or excluded with a reason in
-#: ``tests/unit/test_lost_task_replay.py`` (``_NOT_REPLAYED_ON_PURPOSE``).
+#: ``tests/unit/test_lost_task_replay.py`` (``_NOT_REPLAYED_ON_PURPOSE``); the same holds for
+#: every user-triggered and ``download.*`` task (``_USER_TASKS_NOT_REPLAYED``).
 REPLAYABLE_TASKS: frozenset[str] = frozenset(
     {
         "detect_speaker_attributes",
@@ -81,6 +82,15 @@ REPLAYABLE_TASKS: frozenset[str] = frozenset(
         "ai.generate_summary",
         "ai.extract_topics",
         "ai.identify_speakers",
+        # Search-index rewrites a user action dispatches (issue #1159). Each recomputes its
+        # target from Postgres at run time and assigns it whole (or, for a rename, replaces
+        # names that a finished run has already replaced), so a second run converges.
+        # Pinned by tests/unit/test_user_task_replay_idempotence.py.
+        "update_file_access_index",
+        "update_file_tags_index",
+        "propagate_speaker_rename",
+        "propagate_title_rename",
+        "regenerate_rename_digests",
     }
 )
 

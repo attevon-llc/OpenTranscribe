@@ -6527,5 +6527,11 @@
   "settings.youtube.saving": "Salvataggio...",
   "settings.youtube.saved": "Impostazioni YouTube salvate",
   "settings.youtube.saveFailed": "Impossibile salvare le impostazioni YouTube",
-  "settings.youtube.loadFailed": "Impossibile caricare le impostazioni YouTube"
+  "settings.youtube.loadFailed": "Impossibile caricare le impostazioni YouTube",
+  "settings.transcriptionDefaults.title": "Valori predefiniti dell'installazione per il rilevamento del parlato",
+  "settings.transcriptionDefaults.desc": "Usati per chi non ha impostato valori propri e per tutti quando gli utenti non possono modificarli. Le impostazioni personali qui sopra spiegano ogni valore.",
+  "settings.transcriptionDefaults.save": "Salva i valori predefiniti",
+  "settings.transcriptionDefaults.saved": "Valori predefiniti dell'installazione salvati",
+  "settings.transcriptionDefaults.saveFailed": "Impossibile salvare i valori predefiniti",
+  "settings.transcriptionDefaults.loadFailed": "Impossibile caricare i valori predefiniti"
 }

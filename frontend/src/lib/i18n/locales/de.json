@@ -6515,5 +6515,11 @@
   "settings.youtube.saving": "Speichern ...",
   "settings.youtube.saved": "YouTube-Einstellungen gespeichert",
   "settings.youtube.saveFailed": "YouTube-Einstellungen konnten nicht gespeichert werden",
-  "settings.youtube.loadFailed": "YouTube-Einstellungen konnten nicht geladen werden"
+  "settings.youtube.loadFailed": "YouTube-Einstellungen konnten nicht geladen werden",
+  "settings.transcriptionDefaults.title": "Standardwerte der Installation für die Spracherkennung",
+  "settings.transcriptionDefaults.desc": "Gilt für alle, die keine eigenen Werte gesetzt haben, und für alle, wenn Benutzer sie nicht ändern dürfen. Die persönlichen Einstellungen oben erklären jeden Wert.",
+  "settings.transcriptionDefaults.save": "Standardwerte speichern",
+  "settings.transcriptionDefaults.saved": "Standardwerte der Installation gespeichert",
+  "settings.transcriptionDefaults.saveFailed": "Die Standardwerte konnten nicht gespeichert werden",
+  "settings.transcriptionDefaults.loadFailed": "Die Standardwerte konnten nicht geladen werden"
 }

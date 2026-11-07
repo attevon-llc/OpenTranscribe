@@ -6515,5 +6515,11 @@
   "settings.youtube.saving": "Opslaan...",
   "settings.youtube.saved": "YouTube-instellingen opgeslagen",
   "settings.youtube.saveFailed": "YouTube-instellingen opslaan mislukt",
-  "settings.youtube.loadFailed": "YouTube-instellingen laden mislukt"
+  "settings.youtube.loadFailed": "YouTube-instellingen laden mislukt",
+  "settings.transcriptionDefaults.title": "Standaardwaarden van de installatie voor spraakdetectie",
+  "settings.transcriptionDefaults.desc": "Geldt voor iedereen die geen eigen waarden heeft ingesteld, en voor iedereen wanneer gebruikers ze niet mogen wijzigen. De persoonlijke instellingen hierboven leggen elke waarde uit.",
+  "settings.transcriptionDefaults.save": "Standaardwaarden opslaan",
+  "settings.transcriptionDefaults.saved": "Standaardwaarden van de installatie opgeslagen",
+  "settings.transcriptionDefaults.saveFailed": "Standaardwaarden opslaan mislukt",
+  "settings.transcriptionDefaults.loadFailed": "Standaardwaarden laden mislukt"
 }

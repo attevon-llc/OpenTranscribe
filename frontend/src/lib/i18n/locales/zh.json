@@ -6503,5 +6503,11 @@
   "settings.youtube.saving": "正在保存...",
   "settings.youtube.saved": "已保存 YouTube 设置",
   "settings.youtube.saveFailed": "无法保存 YouTube 设置",
-  "settings.youtube.loadFailed": "无法加载 YouTube 设置"
+  "settings.youtube.loadFailed": "无法加载 YouTube 设置",
+  "settings.transcriptionDefaults.title": "语音检测的部署默认值",
+  "settings.transcriptionDefaults.desc": "适用于未设置个人值的所有用户；当用户无权修改时，适用于所有人。每个值的说明见上方的个人设置。",
+  "settings.transcriptionDefaults.save": "保存默认值",
+  "settings.transcriptionDefaults.saved": "已保存部署默认值",
+  "settings.transcriptionDefaults.saveFailed": "无法保存默认值",
+  "settings.transcriptionDefaults.loadFailed": "无法加载默认值"
 }

@@ -6515,5 +6515,11 @@
   "settings.youtube.saving": "Saving...",
   "settings.youtube.saved": "YouTube settings saved",
   "settings.youtube.saveFailed": "Failed to save YouTube settings",
-  "settings.youtube.loadFailed": "Failed to load YouTube settings"
+  "settings.youtube.loadFailed": "Failed to load YouTube settings",
+  "settings.transcriptionDefaults.title": "Deployment defaults for speech detection",
+  "settings.transcriptionDefaults.desc": "Used for everyone who has not set their own values, and for everyone when users are not allowed to change them. The personal settings above explain each value.",
+  "settings.transcriptionDefaults.save": "Save defaults",
+  "settings.transcriptionDefaults.saved": "Deployment defaults saved",
+  "settings.transcriptionDefaults.saveFailed": "Failed to save the deployment defaults",
+  "settings.transcriptionDefaults.loadFailed": "Failed to load the deployment defaults"
 }

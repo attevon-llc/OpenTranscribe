@@ -6527,5 +6527,11 @@
   "settings.youtube.saving": "Guardando...",
   "settings.youtube.saved": "Ajustes de YouTube guardados",
   "settings.youtube.saveFailed": "No se pudieron guardar los ajustes de YouTube",
-  "settings.youtube.loadFailed": "No se pudieron cargar los ajustes de YouTube"
+  "settings.youtube.loadFailed": "No se pudieron cargar los ajustes de YouTube",
+  "settings.transcriptionDefaults.title": "Valores predeterminados de la instalación para la detección de voz",
+  "settings.transcriptionDefaults.desc": "Se usa para quienes no han definido sus propios valores y para todos cuando los usuarios no pueden cambiarlos. Los ajustes personales de arriba explican cada valor.",
+  "settings.transcriptionDefaults.save": "Guardar valores predeterminados",
+  "settings.transcriptionDefaults.saved": "Valores predeterminados de la instalación guardados",
+  "settings.transcriptionDefaults.saveFailed": "No se pudieron guardar los valores predeterminados",
+  "settings.transcriptionDefaults.loadFailed": "No se pudieron cargar los valores predeterminados"
 }

@@ -6503,5 +6503,11 @@
   "settings.youtube.saving": "저장 중...",
   "settings.youtube.saved": "YouTube 설정을 저장했습니다",
   "settings.youtube.saveFailed": "YouTube 설정을 저장하지 못했습니다",
-  "settings.youtube.loadFailed": "YouTube 설정을 불러오지 못했습니다"
+  "settings.youtube.loadFailed": "YouTube 설정을 불러오지 못했습니다",
+  "settings.transcriptionDefaults.title": "음성 감지 배포 기본값",
+  "settings.transcriptionDefaults.desc": "자신의 값을 설정하지 않은 모든 사용자에게 적용되며, 사용자가 변경할 수 없을 때는 모두에게 적용됩니다. 각 값의 설명은 위의 개인 설정을 참고하세요.",
+  "settings.transcriptionDefaults.save": "기본값 저장",
+  "settings.transcriptionDefaults.saved": "배포 기본값을 저장했습니다",
+  "settings.transcriptionDefaults.saveFailed": "기본값을 저장하지 못했습니다",
+  "settings.transcriptionDefaults.loadFailed": "기본값을 불러오지 못했습니다"
 }

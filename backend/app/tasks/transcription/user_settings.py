@@ -64,10 +64,7 @@ def _get_user_transcription_settings(db: Session, user_id: int) -> dict:
     from app import models
     from app.core.constants import DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
     from app.core.constants import DEFAULT_REPETITION_PENALTY
-    from app.core.constants import DEFAULT_VAD_MIN_SILENCE_MS
-    from app.core.constants import DEFAULT_VAD_MIN_SPEECH_MS
-    from app.core.constants import DEFAULT_VAD_SPEECH_PAD_MS
-    from app.core.constants import DEFAULT_VAD_THRESHOLD
+    from app.services.transcription_defaults import get_deployment_vad_defaults
 
     setting_keys = [
         "transcription_vad_threshold",
@@ -98,21 +95,22 @@ def _get_user_transcription_settings(db: Session, user_id: int) -> dict:
         if s.setting_key not in locked_keys and s.setting_value is not None
     }
 
+    deployment = get_deployment_vad_defaults(db)
     hal_raw = settings_map.get("transcription_hallucination_silence_threshold", "")
     hal_value = float(hal_raw) if hal_raw else DEFAULT_HALLUCINATION_SILENCE_THRESHOLD
 
     return {
         "vad_threshold": float(
-            settings_map.get("transcription_vad_threshold", str(DEFAULT_VAD_THRESHOLD))
+            settings_map.get("transcription_vad_threshold", str(deployment.vad_threshold))
         ),
         "vad_min_silence_ms": int(
-            settings_map.get("transcription_vad_min_silence_ms", str(DEFAULT_VAD_MIN_SILENCE_MS))
+            settings_map.get("transcription_vad_min_silence_ms", str(deployment.vad_min_silence_ms))
         ),
         "vad_min_speech_ms": int(
-            settings_map.get("transcription_vad_min_speech_ms", str(DEFAULT_VAD_MIN_SPEECH_MS))
+            settings_map.get("transcription_vad_min_speech_ms", str(deployment.vad_min_speech_ms))
         ),
         "vad_speech_pad_ms": int(
-            settings_map.get("transcription_vad_speech_pad_ms", str(DEFAULT_VAD_SPEECH_PAD_MS))
+            settings_map.get("transcription_vad_speech_pad_ms", str(deployment.vad_speech_pad_ms))
         ),
         "hallucination_silence_threshold": hal_value,
         "repetition_penalty": float(

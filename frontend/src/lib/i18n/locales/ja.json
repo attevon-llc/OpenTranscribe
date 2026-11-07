@@ -6503,5 +6503,11 @@
   "settings.youtube.saving": "保存中...",
   "settings.youtube.saved": "YouTube の設定を保存しました",
   "settings.youtube.saveFailed": "YouTube の設定を保存できませんでした",
-  "settings.youtube.loadFailed": "YouTube の設定を読み込めませんでした"
+  "settings.youtube.loadFailed": "YouTube の設定を読み込めませんでした",
+  "settings.transcriptionDefaults.title": "音声検出のデプロイ全体の既定値",
+  "settings.transcriptionDefaults.desc": "独自の値を設定していないすべてのユーザーに適用され、ユーザーが変更できない場合は全員に適用されます。各値の説明は上の個人設定をご覧ください。",
+  "settings.transcriptionDefaults.save": "既定値を保存",
+  "settings.transcriptionDefaults.saved": "デプロイの既定値を保存しました",
+  "settings.transcriptionDefaults.saveFailed": "既定値を保存できませんでした",
+  "settings.transcriptionDefaults.loadFailed": "既定値を読み込めませんでした"
 }

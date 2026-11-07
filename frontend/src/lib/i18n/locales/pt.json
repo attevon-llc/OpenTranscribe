@@ -6527,5 +6527,11 @@
   "settings.youtube.saving": "Salvando...",
   "settings.youtube.saved": "Configurações do YouTube salvas",
   "settings.youtube.saveFailed": "Falha ao salvar as configurações do YouTube",
-  "settings.youtube.loadFailed": "Falha ao carregar as configurações do YouTube"
+  "settings.youtube.loadFailed": "Falha ao carregar as configurações do YouTube",
+  "settings.transcriptionDefaults.title": "Padrões da instalação para detecção de fala",
+  "settings.transcriptionDefaults.desc": "Usados por quem não definiu valores próprios e por todos quando os usuários não podem alterá-los. As configurações pessoais acima explicam cada valor.",
+  "settings.transcriptionDefaults.save": "Salvar padrões",
+  "settings.transcriptionDefaults.saved": "Padrões da instalação salvos",
+  "settings.transcriptionDefaults.saveFailed": "Falha ao salvar os padrões",
+  "settings.transcriptionDefaults.loadFailed": "Falha ao carregar os padrões"
 }

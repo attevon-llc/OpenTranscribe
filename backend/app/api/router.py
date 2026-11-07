@@ -72,6 +72,7 @@ from .endpoints import takedown_notices_user
 from .endpoints import tasks
 from .endpoints import topics
 from .endpoints import transcript_segments
+from .endpoints import transcription_defaults
 from .endpoints import usage
 from .endpoints import user_files
 from .endpoints import user_settings
@@ -205,6 +206,7 @@ include_router_with_consistency(admin_audit_logs.router, prefix="/admin", tags=[
 include_router_with_consistency(admin_maintenance.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_quarantine.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(youtube_settings.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(transcription_defaults.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(
     admin_storage_integrity.router, prefix="/admin", tags=["admin-storage-integrity"]

@@ -6527,5 +6527,11 @@
   "settings.youtube.saving": "Enregistrement...",
   "settings.youtube.saved": "Paramètres YouTube enregistrés",
   "settings.youtube.saveFailed": "Échec de l'enregistrement des paramètres YouTube",
-  "settings.youtube.loadFailed": "Échec du chargement des paramètres YouTube"
+  "settings.youtube.loadFailed": "Échec du chargement des paramètres YouTube",
+  "settings.transcriptionDefaults.title": "Valeurs par défaut du déploiement pour la détection de la parole",
+  "settings.transcriptionDefaults.desc": "Utilisées pour toute personne n'ayant pas défini ses propres valeurs, et pour tous lorsque les utilisateurs ne peuvent pas les modifier. Les paramètres personnels ci-dessus expliquent chaque valeur.",
+  "settings.transcriptionDefaults.save": "Enregistrer les valeurs par défaut",
+  "settings.transcriptionDefaults.saved": "Valeurs par défaut du déploiement enregistrées",
+  "settings.transcriptionDefaults.saveFailed": "Échec de l'enregistrement des valeurs par défaut",
+  "settings.transcriptionDefaults.loadFailed": "Échec du chargement des valeurs par défaut"
 }

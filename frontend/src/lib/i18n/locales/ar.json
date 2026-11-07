@@ -6563,5 +6563,11 @@
   "settings.youtube.saving": "جارٍ الحفظ...",
   "settings.youtube.saved": "تم حفظ إعدادات يوتيوب",
   "settings.youtube.saveFailed": "تعذّر حفظ إعدادات يوتيوب",
-  "settings.youtube.loadFailed": "تعذّر تحميل إعدادات يوتيوب"
+  "settings.youtube.loadFailed": "تعذّر تحميل إعدادات يوتيوب",
+  "settings.transcriptionDefaults.title": "القيم الافتراضية للنشر لاكتشاف الكلام",
+  "settings.transcriptionDefaults.desc": "تُستخدم لكل من لم يضبط قيمه الخاصة، ولجميع المستخدمين عندما لا يُسمح لهم بتغييرها. تشرح الإعدادات الشخصية أعلاه كل قيمة.",
+  "settings.transcriptionDefaults.save": "حفظ القيم الافتراضية",
+  "settings.transcriptionDefaults.saved": "تم حفظ القيم الافتراضية للنشر",
+  "settings.transcriptionDefaults.saveFailed": "تعذّر حفظ القيم الافتراضية",
+  "settings.transcriptionDefaults.loadFailed": "تعذّر تحميل القيم الافتراضية"
 }

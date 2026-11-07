@@ -6539,5 +6539,11 @@
   "settings.youtube.saving": "Сохранение...",
   "settings.youtube.saved": "Настройки YouTube сохранены",
   "settings.youtube.saveFailed": "Не удалось сохранить настройки YouTube",
-  "settings.youtube.loadFailed": "Не удалось загрузить настройки YouTube"
+  "settings.youtube.loadFailed": "Не удалось загрузить настройки YouTube",
+  "settings.transcriptionDefaults.title": "Значения по умолчанию для обнаружения речи во всём развёртывании",
+  "settings.transcriptionDefaults.desc": "Применяются ко всем, кто не задал свои значения, и ко всем, если пользователям запрещено их менять. Каждое значение объяснено в личных настройках выше.",
+  "settings.transcriptionDefaults.save": "Сохранить значения по умолчанию",
+  "settings.transcriptionDefaults.saved": "Значения по умолчанию сохранены",
+  "settings.transcriptionDefaults.saveFailed": "Не удалось сохранить значения по умолчанию",
+  "settings.transcriptionDefaults.loadFailed": "Не удалось загрузить значения по умолчанию"
 }

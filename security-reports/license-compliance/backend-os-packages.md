@@ -18,10 +18,10 @@
 | diffutils | FSFAP AND FSFULLR AND GFDL-1.3-no-invariants-only AND GFDL-1.3-only AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3+ with texinfo exception AND GPL-3.0-only AND GPL-3.0-or-later AND GPL-3.0-with-autoconf-exception+ AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND X11 AND public-domain | BLOCKER |
 | dirmngr | BSD-3-Clause AND CC0-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT AND RFC-Reference AND TinySCHEME AND permissive | BLOCKER |
 | dpkg | GPL-2.0-only AND GPL-2.0-or-later AND public-domain-s-s-d | BLOCKER |
-| ffmpeg | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| ffmpeg | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
 | findutils | BSD-3-Clause AND FSFAP AND FSFULLR AND GFDL-1.3-no-invariants-or-later AND GFDL-1.3-only AND GPL with automake exception AND GPL-2+ with Autoconf-data exception AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3+ with Autoconf-data exception AND GPL-3+ with Bison-2.2 exception AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND X11 AND public-domain | BLOCKER |
-| fonts-dejavu-core | GPL-2.0-only AND GPL-2.0-or-later AND bitstream-vera | BLOCKER |
-| fonts-dejavu-mono | GPL-2.0-only AND GPL-2.0-or-later AND bitstream-vera | BLOCKER |
+| fonts-dejavu-core | Bitstream-Vera AND GPL-2.0-only AND GPL-2.0-or-later | BLOCKER |
+| fonts-dejavu-mono | Bitstream-Vera AND GPL-2.0-only AND GPL-2.0-or-later | BLOCKER |
 | gcc-14-base | Artistic-2.0 AND GFDL-1.2-only AND GPL-2.0-or-later AND GPL-3.0-only AND LGPL-2.0-or-later | BLOCKER |
 | gnupg | BSD-3-Clause AND CC0-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT AND RFC-Reference AND TinySCHEME AND permissive | BLOCKER |
 | gnupg-l10n | BSD-3-Clause AND CC0-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT AND RFC-Reference AND TinySCHEME AND permissive | BLOCKER |
@@ -45,11 +45,11 @@
 | libaudit-common | GPL-1.0-only AND GPL-2.0-only AND LGPL-2.1-only | BLOCKER |
 | libaudit1 | GPL-1.0-only AND GPL-2.0-only AND LGPL-2.1-only | BLOCKER |
 | libavc1394-0 | GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later | BLOCKER |
-| libavcodec61 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
-| libavdevice61 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
-| libavfilter10 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
-| libavformat61 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
-| libavutil59 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libavcodec61 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libavdevice61 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libavfilter10 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libavformat61 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libavutil59 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
 | libblas3 | BSD-3-Clause AND BSD-3-clause-intel | UNKNOWN |
 | libblkid1 | BSD-2-Clause AND BSD-3-Clause AND BSD-4-Clause AND BSLA AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
 | libbluray2 | BSD-3-Clause AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MPL-1.0 AND custom | BLOCKER |
@@ -97,12 +97,12 @@
 | libgdbm6t64 | GFDL-1.3-no-invariants-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later | BLOCKER |
 | libgdk-pixbuf-2.0-0 | CC0-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later | BLOCKER |
 | libgdk-pixbuf2.0-common | CC0-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later | BLOCKER |
-| libgl1 | Apache-2.0 AND BSD-1-clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
+| libgl1 | Apache-2.0 AND BSD-1-Clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
 | libgl1-mesa-dri | Apache-2.0 AND BSD-2-Clause AND BSD-3-google AND BSL-1.0 AND GPL-1.0-only AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND Khronos AND MIT AND MLAA AND SGI | BLOCKER |
 | libglib2.0-0t64 | AFL-2.0 AND Apache-2.0 AND Apache-2.0 with LLVM exception AND CC-BY-SA-3.0 AND CC0-1.0 AND FSFULLR AND GPL-2.0-only AND GPL-2.0-or-later AND Iconv-PD AND Janik-permissive AND Kuchling-PD AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT AND MPL-1.1 AND Mingw-PD AND Plumb-PD AND Unicode-DFS-2016 AND bzip2-1.0.6 AND cmph AND old-glib-tests | BLOCKER |
-| libglvnd0 | Apache-2.0 AND BSD-1-clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
+| libglvnd0 | Apache-2.0 AND BSD-1-Clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
 | libglx-mesa0 | Apache-2.0 AND BSD-2-Clause AND BSD-3-google AND BSL-1.0 AND GPL-1.0-only AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND Khronos AND MIT AND MLAA AND SGI | BLOCKER |
-| libglx0 | Apache-2.0 AND BSD-1-clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
+| libglx0 | Apache-2.0 AND BSD-1-Clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND public-domain | BLOCKER |
 | libgme0 | LGPL-2.1-only AND LGPL-2.1-or-later AND MIT | REVIEW |
 | libgmp10 | GPL-2.0-only AND GPL-2.0-or-later AND GPL-3+ with Bison exception AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later | BLOCKER |
 | libgnutls30t64 | Apache-2.0 AND BSD-3-Clause AND CC0-1.0 AND FSFAP AND GFDL-1.3-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT | BLOCKER |
@@ -151,7 +151,7 @@
 | libopenal1 | Apache-2.0 AND BSD-3-Clause AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.0-or-later AND MIT | BLOCKER |
 | libopenblas0 | Apache-2.0 AND BSD-2-Clause AND BSD-2-clause-texas AND BSD-3-Clause AND public-domain | UNKNOWN |
 | libopenblas0-pthread | Apache-2.0 AND BSD-2-Clause AND BSD-2-clause-texas AND BSD-3-Clause AND public-domain | UNKNOWN |
-| libopenjp2-7 | BSD-2-Clause AND BSD-3-Clause AND LIBTIFF AND LIBTIFF-GLARSON AND LIBTIFF-PIXAR AND Libpng AND MIT AND Zlib | UNKNOWN |
+| libopenjp2-7 | BSD-2-Clause AND BSD-3-Clause AND LIBTIFF-GLARSON AND LIBTIFF-PIXAR AND Libpng AND MIT AND Zlib AND libtiff | UNKNOWN |
 | libopenmpt0t64 | BSD-3-Clause AND BSL-1.0 AND GNU-All-Permissive-License AND GNU-All-Permissive-License-FSF AND GPL-2+ with LibTool exception AND GPL-2.0-only AND GPL-2.0-with-autoconf-exception+ AND GPL-3+ with Autoconf Macros exception AND GPL-3.0-only AND GPL-3.0-with-autoconf-exception+ AND X11 | BLOCKER |
 | libopus0 | BSD-2-Clause AND BSD-3-Clause | OK |
 | libp11-kit0 | Apache-2.0 AND BSD-3-Clause AND FSFAP AND FSFULLR AND GPL-2+ with Autoconf-data exception AND GPL-3+ with Autoconf-data exception AND ISC AND LGPL-2.1-only AND LGPL-2.1-or-later AND X11 AND customFSFUL AND customFSFULLRWD | BLOCKER |
@@ -169,15 +169,15 @@
 | libplacebo349 | CC0-1.0 AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Zlib | REVIEW |
 | libpng16-16t64 | Apache-2.0 AND BSD-3-Clause AND BSD-like-with-advertising-clause AND GPL-2.0-only AND GPL-2.0-or-later AND Libpng AND MIT AND libpng OR Apache-2.0 OR BSD-3-clause | OK |
 | libpocketsphinx3 | BSD-2-Clause AND BSD-3-Clause AND GPL-2.0-only AND GPL-2.0-or-later | BLOCKER |
-| libpostproc58 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
-| libpq5 | Artistic-2.0 AND BSD-2-Clause AND BSD-3-Clause AND Custom-Unicode AND Custom-pg_dump AND Custom-regex AND GPL-1.0-only AND PostgreSQL AND Tcl AND double-metaphone AND nagaysau-ishii | BLOCKER |
+| libpostproc58 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libpq5 | Artistic-2.0 AND BSD-2-Clause AND BSD-3-Clause AND Custom-Unicode AND Custom-pg_dump AND Custom-regex AND GPL-1.0-only AND PostgreSQL AND TCL AND double-metaphone AND nagaysau-ishii | BLOCKER |
 | libpsl5t64 | Chromium AND MIT AND gnulib | UNKNOWN |
 | libpulse0 | GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND other | BLOCKER |
 | librabbitmq4 | MIT | OK |
 | librav1e0.7 | BSD-2-Clause AND ISC | OK |
 | libraw1394-11 | GPL-2.0-or-later AND LGPL-2.0-or-later | BLOCKER |
 | libreadline8t64 | GFDL-1.3-no-invariants-or-later AND GFDL-1.3-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND ISC-no-attribution | BLOCKER |
-| librist4 | BSD-1-clause AND BSD-2-Clause AND ISC AND public-domain | UNKNOWN |
+| librist4 | BSD-1-Clause AND BSD-2-Clause AND ISC AND public-domain | UNKNOWN |
 | librsvg2-2 | 0BSD AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND CC-zero-waive-1.0-us AND FSFAP AND LGPL-2.0-only AND LGPL-2.0-or-later AND MIT AND MPL-2.0 AND OFL-1.1 AND Sun-permissive AND Unlicense AND Zlib | BLOCKER |
 | librtmp1 | GPL-2.0-only AND LGPL-2.1-only | BLOCKER |
 | librubberband2 | BSD-3-Clause AND GPL-2.0-only AND GPL-2.0-or-later AND MIT AND Zlib AND other-1 | BLOCKER |
@@ -211,8 +211,8 @@
 | libssh2-1t64 | BSD-3-Clause AND ISC | OK |
 | libssl3t64 | Apache-2.0 AND Artistic-2.0 AND GPL-1.0-only AND GPL-1.0-or-later | BLOCKER |
 | libsvtav1enc2 | BSD-2-Clause AND BSD-3-Clause AND BSD-3-Clause-Clear AND ISC AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT | REVIEW |
-| libswresample5 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
-| libswscale8 | BSD-1-clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libswresample5 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
+| libswscale8 | BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSL-1.0 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND IJG AND ISC AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND Sundry AND Zlib AND man-page AND public-domain | BLOCKER |
 | libsystemd0 | CC0-1.0 AND GPL-2 with Linux-syscall-note exception AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND public-domain | BLOCKER |
 | libtasn1-6 | GFDL-1.3-only AND GPL-3.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only | BLOCKER |
 | libthai-data | GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later | BLOCKER |
@@ -274,7 +274,7 @@
 | perl-modules-5.40 | Artistic-2 AND Artistic-2.0 AND Artistic-dist AND BSD-3-Clause AND BSD-3-clause-GENERIC AND BSD-3-clause-with-weird-numbering AND BSD-4-clause-POWERDOG AND BZIP AND CC0-1.0 AND DONT-CHANGE-THE-GPL AND FSFAP AND GPL-1.0-only AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-2.0-with-bison-exception+ AND LGPL-2.1-only AND MIT AND REGCOMP AND SDBM-PUBLIC-DOMAIN AND TEXT-TABS AND Unicode AND Zlib | BLOCKER |
 | pinentry-curses | GPL-2.0-only AND GPL-2.0-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND X11 | BLOCKER |
 | postgresql-client | GPL-2.0-only AND GPL-2.0-or-later | BLOCKER |
-| postgresql-client-17 | Artistic-2.0 AND BSD-2-Clause AND BSD-3-Clause AND Custom-Unicode AND Custom-pg_dump AND Custom-regex AND GPL-1.0-only AND PostgreSQL AND Tcl AND double-metaphone AND nagaysau-ishii | BLOCKER |
+| postgresql-client-17 | Artistic-2.0 AND BSD-2-Clause AND BSD-3-Clause AND Custom-Unicode AND Custom-pg_dump AND Custom-regex AND GPL-1.0-only AND PostgreSQL AND TCL AND double-metaphone AND nagaysau-ishii | BLOCKER |
 | postgresql-client-common | GPL-2.0-only AND GPL-2.0-or-later | BLOCKER |
 | readline-common | GFDL-1.3-no-invariants-or-later AND GFDL-1.3-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND ISC-no-attribution | BLOCKER |
 | sed | BSD-4-Clause-UC AND BSL-1 AND GFDL-1.3-no-invariants-or-later AND GFDL-1.3-only AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND X11 AND pcre | BLOCKER |

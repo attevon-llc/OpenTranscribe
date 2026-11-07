@@ -26,6 +26,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / 'security-reports' / 'license-compliance'
+# The scanned image tag is the release in VERSION; hardcoding it left the report naming v0.5.1.
+IMAGE_TAG = (REPO_ROOT / 'VERSION').read_text().strip()
 
 # The classification policy lives in scripts/lib/license_policy.py (loaded by path: scripts/ is not a package).
 _spec = importlib.util.spec_from_file_location(
@@ -249,7 +251,7 @@ def main() -> None:
         f'Generated: {__import__("datetime").date.today().isoformat()}',
         'Scope: OpenTranscribe backend (Python), frontend (npm/SvelteKit), and the Debian/Alpine',
         'base OS packages baked into the production Docker images actually published to Docker Hub',
-        '(`davidamacey/opentranscribe-backend:v0.5.1`, `davidamacey/opentranscribe-frontend:v0.5.1`).',
+        f'(`davidamacey/opentranscribe-backend:{IMAGE_TAG}`, `davidamacey/opentranscribe-frontend:{IMAGE_TAG}`).',
         '',
         '**Policy applied** (standard permissive-only, confirmed 2026-09-24):',
         '- **OK** — permissive license (MIT, Apache-2.0, BSD, ISC, etc.), no restriction on closed-source commercial use.',

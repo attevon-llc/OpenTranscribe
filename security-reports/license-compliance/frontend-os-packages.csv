@@ -27,6 +27,7 @@ libgd,GD,UNKNOWN,unrecognized license identifier: GD
 libice,X-11,UNKNOWN,unrecognized license identifier: X-11
 libintl,LGPL-2.1-or-later,REVIEW,"OR expression, best option is weak-copyleft: LGPL-2.1-or-later"
 libjpeg-turbo,BSD-3-Clause AND IJG AND Zlib,UNKNOWN,"AND expression, worst component governs: BSD-3-Clause AND IJG AND Zlib"
+libmaxminddb-libs,Apache-2.0,OK,permissive
 libmd,BSD-2-Clause AND BSD-3-Clause AND Beerware AND Domain AND ISC AND Public,UNKNOWN,"AND expression, worst component governs: BSD-2-Clause AND BSD-3-Clause AND Beerware AND Domain AND ISC AND Public"
 libncursesw,X-11,UNKNOWN,unrecognized license identifier: X-11
 libpng,Libpng,OK,permissive

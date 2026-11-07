@@ -1,4 +1,4 @@
-# Frontend — Alpine OS package licenses (nginx:1.31.2-alpine3.23 base image)
+# Frontend — Alpine OS package licenses (nginx:1.31.8-alpine3.24 base image)
 
 | Package | License | Status |
 |---|---|---|
@@ -30,6 +30,7 @@
 | libice | X-11 | UNKNOWN |
 | libintl | LGPL-2.1-or-later | REVIEW |
 | libjpeg-turbo | BSD-3-Clause AND IJG AND Zlib | UNKNOWN |
+| libmaxminddb-libs | Apache-2.0 | OK |
 | libmd | BSD-2-Clause AND BSD-3-Clause AND Beerware AND Domain AND ISC AND Public | UNKNOWN |
 | libncursesw | X-11 | UNKNOWN |
 | libpng | Libpng | OK |

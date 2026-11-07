@@ -136,6 +136,11 @@ ALLOWLIST: dict[str, str] = {
     "services/gdpr_erasure_service.py::erase_organization": (
         "W: Art. 17 erasure of an organization deletes its collections"
     ),
+    "services/content_hold_records.py::collection_by_uuid": (
+        "A: the target of a platform legal hold, looked up by the uuid the operator submitted; "
+        "its one caller (api/endpoints/admin_holds.py::place_admin_hold) is behind "
+        "get_current_admin_user, and a platform hold reaches every tenant by design"
+    ),
     "tasks/transcription/downstream.py::_get_collection_prompt_uuid": (
         "A: applies the default summary prompt of a collection the file is already in, for the "
         "file's own summary; no collection is named to any caller"

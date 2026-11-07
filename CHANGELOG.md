@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings, Authentication, Auth Email has a "Test connection" button that checks the designated mail configuration's connection and credentials without sending a message (#1265).
 - A test fails when a docs page is missing from the docs-site sidebar (#1310). Pre-commit now validates `.github/dependabot.yml` and the workflows (check-jsonschema) and lints workflows with actionlint.
 - `OT_PORT_PROBE` lets tests replace the `--fresh` port-collision probe (#1367).
+- A licence inventory of every pinned backend requirement (including the lite and no-deps sets) and every production frontend package, kept in step with the pins by a test.
+- A notice that outside code contributions are paused for now; issues and discussions remain welcome. `NOTICE` carries a first-party copyright line.
 
 ### Changed
 
@@ -39,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release `tag` stage fast-forwards `release/<x.y>` to a patch tag and refuses a diverged branch (#1371).
 - The development frontend container no longer runs as root: an entrypoint repairs ownership of reused `node_modules` and `.svelte-kit` volumes and runs Vite as the owner of the bind-mounted source (#1372). `scripts/frontend-check.sh` reports an unwritable build directory before `vite build` empties it.
 - `./opentranscribe.sh update` lists `BACKEND_BIND_HOST=0.0.0.0`, the old template value, as stale.
+- In right-to-left locales, technical admin-form values (URLs, host names, file paths, DNs, LDAP filters, e-mail addresses, keys) stay left-to-right; a test keeps every such settings field covered. The Media Sources field is labelled "Address", and "Verify SSL certificates" is hidden for an `http://` source.
+- The admin docs no longer say hold and held-file audit events are always recorded: they do not depend on the content-auditing switch, but they are written after the change commits and can be missing if the audit write fails (#1329).
 
 ### Removed
 
@@ -113,6 +117,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   source is entered as `http://`, with a warning in the form and an "Unencrypted (http)" badge.
   **Upgrade note:** a source saved without a scheme that is really served over http must be
   re-entered as `http://host[:port]` (see the 0.7.0 upgrade page).
+- **Bundled object-store encryption is on by default.** `MINIO_KMS_AUTO_ENCRYPTION` defaults to `on`; storing objects unencrypted needs `MINIO_KMS_AUTO_ENCRYPTION=off` and `ALLOW_UNENCRYPTED_OBJECT_STORE=true`. `start` and the production update stop with instructions when `MINIO_KMS_SECRET_KEY` is missing.
+- The production compose configuration requires `FLOWER_PASSWORD`; Docker Compose refuses to load it while the value is unset or empty.
+- Realtime connections close when the access token that opened them expires, when that session logs out, and on an account-wide revocation regardless of server clock differences. Revocations recorded while Redis was unavailable are applied once it recovers.
+- Revoking all of a user's sessions fails the surrounding change instead of continuing silently.
+- Authentication settings that fall back to `.env` because the database could not be read are logged as warnings and counted in `security_state_degraded_total`.
 
 ## [0.6.1] - 2026-11-03
 

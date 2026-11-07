@@ -562,20 +562,6 @@ LIBRARY_CONSUMED_COMPOSE_ENV: dict[str, str] = {
     "DENO_NO_UPDATE_CHECK": "deno update-check switch for yt-dlp's JS runtime",
 }
 
-#: Compose ``environment:`` names that NOTHING reads. They are mistakes in a compose file that
-#: ships in the release manifest, so the edit waits until after the release.
-COMPOSE_ENV_READ_BY_NOTHING: dict[str, str] = {
-    "MODELS_DIRECTORY": "compose edit post-release: five services set it; no code reads it",
-    "REDACTION_CONCURRENCY": (
-        "compose edit post-release: only the worker command's ${REDACTION_CONCURRENCY} "
-        "interpolation uses it, the environment line is inert"
-    ),
-    "FLOWER_USER": (
-        "compose edit post-release: only flower's --basic_auth interpolation uses it, "
-        "the environment line is inert"
-    ),
-}
-
 
 def _is_backend_image_service(name: str) -> bool:
     """Services that run the backend image (API, every celery worker, flower)."""
@@ -626,9 +612,7 @@ def test_every_compose_environment_variable_has_a_reader():
     unread = {
         var: sorted(files)
         for var, files in declared.items()
-        if var not in readers
-        and var not in LIBRARY_CONSUMED_COMPOSE_ENV
-        and var not in COMPOSE_ENV_READ_BY_NOTHING
+        if var not in readers and var not in LIBRARY_CONSUMED_COMPOSE_ENV
     }
     assert not unread, (
         f"compose sets variables on backend containers that nothing reads: {unread}. "
@@ -641,7 +625,7 @@ def test_compose_environment_allowlists_have_no_stale_entries():
     declared = _compose_environment_names()
     readers = _keys_read_by_code() | _keys_genuinely_consumed() | _startup_validation_fields()
 
-    gone = (set(LIBRARY_CONSUMED_COMPOSE_ENV) | set(COMPOSE_ENV_READ_BY_NOTHING)) - set(declared)
+    gone = set(LIBRARY_CONSUMED_COMPOSE_ENV) - set(declared)
     assert not gone, f"allowlisted but no longer in any compose environment: {sorted(gone)}"
-    now_read = (set(LIBRARY_CONSUMED_COMPOSE_ENV) | set(COMPOSE_ENV_READ_BY_NOTHING)) & readers
+    now_read = set(LIBRARY_CONSUMED_COMPOSE_ENV) & readers
     assert not now_read, f"allowlisted but code now reads them: {sorted(now_read)}"

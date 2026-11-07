@@ -305,7 +305,6 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       # Container paths (hardcoded for internal use)
-      - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
       # Version. The bare `- APP_VERSION` form passed the HOST's value, and a real
@@ -424,7 +423,6 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
-      - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
       # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
@@ -436,9 +434,6 @@ services:
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       # Per-container batch size override (default worker is typically a smaller GPU)
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
-      # Silero VAD silence gate. The engine has always read this, but no compose file passed
-      # it, so the documented knob could not actually be set on a deployment.
-      - VAD_MIN_SILENCE_MS=${VAD_MIN_SILENCE_MS:-2000}
       # Signal to celery.py preload_models() that this is a GPU worker.
       # Without this, ALL workers preload Whisper + PyAnnote onto GPU (~15GB wasted).
       - PRELOAD_GPU_MODELS=true
@@ -662,7 +657,6 @@ services:
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Only this worker preloads the redaction models (Presidio+GLiNER, toxicity).
       - PRELOAD_REDACTION_MODELS=true
-      - REDACTION_CONCURRENCY=${REDACTION_CONCURRENCY:-2}
       # Cap PyTorch/BLAS intra-op threads so one inference can't peg all cores on a
       # shared single machine. Raise on a dedicated node. (Must be set before import.)
       - OMP_NUM_THREADS=${REDACTION_TORCH_THREADS:-8}
@@ -985,7 +979,6 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
-      - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
       # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
@@ -996,9 +989,6 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
-      # Silero VAD silence gate. The engine has always read this, but no compose file passed
-      # it, so the documented knob could not actually be set on a deployment.
-      - VAD_MIN_SILENCE_MS=${VAD_MIN_SILENCE_MS:-2000}
       - PRELOAD_GPU_MODELS=true
       # docker-compose.gpu-split.yml reserves the host GPU (GPU_TRANSCRIBE_DEVICE_ID)
       # for this worker; docker maps that reserved card to index 0 in the container,
@@ -1059,7 +1049,6 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
-      - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
       # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
@@ -1070,9 +1059,6 @@ services:
       - DB_POOL_SIZE=${WORKER_DB_POOL_SIZE:-2}
       - DB_MAX_OVERFLOW=${WORKER_DB_MAX_OVERFLOW:-3}
       - BATCH_SIZE=${GPU_DEFAULT_BATCH_SIZE:-auto}
-      # Silero VAD silence gate. The engine has always read this, but no compose file passed
-      # it, so the documented knob could not actually be set on a deployment.
-      - VAD_MIN_SILENCE_MS=${VAD_MIN_SILENCE_MS:-2000}
       - PRELOAD_GPU_MODELS=true
       # docker-compose.gpu-split.yml reserves the host GPU (GPU_DIARIZE_DEVICE_ID)
       # for this worker; docker maps that reserved card to index 0 in the container,
@@ -1134,7 +1120,6 @@ services:
       - REDIS_PORT=6379
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
-      - MODELS_DIRECTORY=/app/models
       - MODEL_BASE_DIR=/app/models
       - TEMP_DIR=/app/temp
       # Small per-worker DB pool (issue #284 A1.5). The coded default is 20 + 40
@@ -1231,7 +1216,6 @@ services:
       # The "flower" default is for development only: docker-compose.prod.yml refuses
       # to render without FLOWER_PASSWORD, and production startup validation rejects
       # known defaults.
-      - FLOWER_USER=${FLOWER_USER:-admin}
       - FLOWER_PASSWORD=${FLOWER_PASSWORD:-flower}
       - TEMP_DIR=/app/temp
     depends_on:

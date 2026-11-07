@@ -56,7 +56,7 @@ backend/app/tasks/transcription/finalize.py	1	env: single reader planned
 backend/app/tasks/transcription/pipelines.py	2	env: single reader planned
 backend/app/tasks/utility.py	1	env: single reader planned
 backend/app/transcription/boundary_resolver.py	2	env: single reader planned
-backend/app/transcription/config.py	17	env: single reader planned
+backend/app/transcription/config.py	10	env: single reader planned
 backend/app/transcription/diarizer.py	5	env: single reader planned
 backend/app/transcription/diar_sidecar_status.py	4	env: single reader planned
 backend/app/transcription/diarizer_native.py	4	env: single reader planned

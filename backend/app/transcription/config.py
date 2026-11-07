@@ -48,13 +48,6 @@ DEFAULT_PER_TASK_HOST_MB = 2048
 _CPU_MODE_WARNING_EMITTED = False
 
 
-def _parse_optional_float(value: str) -> float | None:
-    """Parse a string to float, returning None for empty/whitespace."""
-    if not value or not value.strip():
-        return None
-    return float(value.strip())
-
-
 @dataclass
 class TranscriptionConfig:
     """Configuration for the transcription pipeline.
@@ -182,7 +175,6 @@ class TranscriptionConfig:
             device=transcription_device,
             diarization_device=diarization_device,
             device_index=whisperx_config.get("device_index", 0),
-            source_language=os.getenv("SOURCE_LANGUAGE", "auto"),
             translate_to_english=False,
             enable_dedup=os.getenv("ENABLE_SEGMENT_DEDUP", "true").lower() == "true",
             min_speakers=settings.MIN_SPEAKERS,
@@ -194,16 +186,9 @@ class TranscriptionConfig:
             enable_overlap_detection=os.getenv("ENABLE_OVERLAP_DETECTION", "true").lower()
             == "true",
             overlap_min_duration=float(os.getenv("OVERLAP_MIN_DURATION", "0.25")),
-            # VAD settings
-            vad_threshold=float(os.getenv("VAD_THRESHOLD", "0.5")),
-            vad_min_silence_ms=int(os.getenv("VAD_MIN_SILENCE_MS", "2000")),
-            vad_min_speech_ms=int(os.getenv("VAD_MIN_SPEECH_MS", "250")),
-            vad_speech_pad_ms=int(os.getenv("VAD_SPEECH_PAD_MS", "400")),
-            # Accuracy settings
-            hallucination_silence_threshold=_parse_optional_float(
-                os.getenv("WHISPER_HALLUCINATION_THRESHOLD", "")
-            ),
-            repetition_penalty=float(os.getenv("WHISPER_REPETITION_PENALTY", "1.0")),
+            # Language, VAD and accuracy settings are per job: the task supplies them as
+            # overrides (user or deployment settings), so the dataclass defaults are only
+            # a fallback for callers that never transcribe.
             concurrent_requests=cls._resolve_concurrent_requests(),
             diarizer_backend=cls._resolve_diarizer_backend(),
         )

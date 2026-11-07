@@ -96,8 +96,8 @@ class LLMMeteringMixin(LLMHost):
 
         Args:
             messages: Messages in OpenAI format.
-            enforce_budget: ``False`` only for the connection health probe, which is a
-                diagnostic, not a feature.
+            enforce_budget: ``False`` only for calls that are not product features: the
+                connection health probe and the offline summary benchmark.
             **kwargs: Passed to the payload builder.
 
         Raises:

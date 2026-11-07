@@ -10,6 +10,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import TranscriptSegmentList from './TranscriptSegmentList.svelte';
 
 type IOCallback = (entries: IntersectionObserverEntry[]) => void;
@@ -91,6 +93,18 @@ describe('TranscriptSegmentList', () => {
     expect(screen.getByText('Segment 0')).toBeInTheDocument();
     expect(screen.getByText('Segment 3')).toBeInTheDocument();
     expect(document.querySelectorAll('[data-segment-id]')).toHaveLength(4);
+  });
+
+  it('lets each segment take the direction of its own text (dir="auto")', () => {
+    // Inherited RTL put an English line's final period at its start (".and administration").
+    const { container } = render(TranscriptSegmentList, { props });
+    const texts = [...container.querySelectorAll('.segment-text')];
+    expect(texts.length).toBe(4);
+    for (const el of texts) expect(el.getAttribute('dir')).toBe('auto');
+    const source = readFileSync(resolve(__dirname, 'TranscriptSegmentList.svelte'), 'utf8');
+    const opened = source.match(/class="segment-text"[^>]*>/g) ?? [];
+    expect(opened.length).toBe(2);
+    for (const tag of opened) expect(tag).toContain('dir="auto"');
   });
 
   describe('speaker-match highlighting (issue #837)', () => {

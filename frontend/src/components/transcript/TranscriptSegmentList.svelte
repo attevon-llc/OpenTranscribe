@@ -403,6 +403,7 @@
                   {/if}
                   <div
                     class="segment-text"
+                    dir="auto"
                     class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
                     class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
                   >
@@ -503,6 +504,7 @@
               {/if}
               <div
                 class="segment-text"
+                dir="auto"
                 class:keyword-segment={segmentClassification[String(segment.uuid)] === 'keyword'}
                 class:semantic-segment={segmentClassification[String(segment.uuid)] === 'semantic'}
               >

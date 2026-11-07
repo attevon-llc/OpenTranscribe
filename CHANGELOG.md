@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In right-to-left languages a transcript line in a left-to-right language showed its final punctuation at the start (".and administration"); each transcript line now takes the direction of its own text.
 - In right-to-left languages the gallery's duration filter put its maximum handle outside the slider, where it could not be dragged; the slider and its labels now read left to right in every language, like the player's sliders.
 - A held file's Legal hold badge on a gallery card ran past the card edge and read "Legal ho"; the date, size and speaker count now shorten instead, and the badge and status stay whole.
 - In right-to-left languages the floating preview player on the search and speakers pages stayed in the bottom-right corner, over the filter sidebar; it now sits in the bottom-left corner, mirrored like the rest of the page.

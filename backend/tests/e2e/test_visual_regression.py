@@ -88,6 +88,7 @@ from _visual_capture import stabilize as _stabilize
 from _visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
 from _visual_diff import DIFF_TOLERANCE
 from _visual_diff import diff_fraction as _diff_fraction
+from conftest import complete_first_run_wizard
 from PIL import Image
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -198,11 +199,7 @@ def api_token(backend_url: str) -> str:
     if resp.status_code != 200:
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {resp.status_code})")
     token = str(resp.json()["access_token"])
-    requests.post(
-        f"{backend_url}/api/admin/first-run-wizard/complete",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10,
-    )
+    complete_first_run_wizard(backend_url, token)
     return token
 
 

@@ -27,6 +27,7 @@ import requests
 from a11y_lib import gated_violations
 from a11y_lib import run_axe
 from a11y_lib import set_theme
+from conftest import complete_first_run_wizard
 from playwright.sync_api import Browser
 from playwright.sync_api import Page
 from playwright.sync_api import expect
@@ -163,11 +164,7 @@ def staff_page(
     click; completing it (the pattern ``test_gallery_actions.py`` uses) is what a real
     operator's first session ends with.
     """
-    requests.post(
-        f"{backend_url}/api/admin/first-run-wizard/complete",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        timeout=10,
-    )
+    complete_first_run_wizard(backend_url, admin_token)
     context = browser.new_context(
         storage_state=shared_auth_state,
         viewport={"width": 1920, "height": 1080},

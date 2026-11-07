@@ -18,6 +18,7 @@ import pytest
 import requests
 from conftest import COMMITTED_SAMPLE_MEDIA
 from conftest import OWNED_MEDIA_PREFIX
+from conftest import complete_first_run_wizard
 from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
@@ -52,13 +53,7 @@ def completed_uuid(backend_url: str):
         pytest.skip(f"Cannot authenticate against dev stack (HTTP {tok.status_code})")
     token = str(tok.json()["access_token"])
     headers = {"Authorization": f"Bearer {token}"}
-    # Dismiss FirstRunWizard (same pattern as test_visual_regression.py's api_token
-    # fixture): it mounts unconditionally in the root layout and, on an account that
-    # has never completed it — true of a brand-new empty/`--fresh` admin — opens a
-    # BaseModal on first authenticated page load whose backdrop intercepts every
-    # click, including this module's own `.download-button` / "Select Files".
-    # Idempotent — safe even if already completed.
-    requests.post(f"{backend_url}/api/admin/first-run-wizard/complete", headers=headers, timeout=10)
+    complete_first_run_wizard(backend_url, token)
     name = f"{OWNED_MEDIA_PREFIX}{uuid.uuid4().hex[:8]}{COMMITTED_SAMPLE_MEDIA.suffix}"
     with COMMITTED_SAMPLE_MEDIA.open("rb") as fh:
         resp = requests.post(

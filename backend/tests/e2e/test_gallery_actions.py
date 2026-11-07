@@ -34,6 +34,7 @@ from conftest import E2E_STORAGE_STATE_PREFIX
 from conftest import OWNED_MEDIA_PREFIX
 from conftest import TEST_ADMIN_EMAIL
 from conftest import TEST_ADMIN_PASSWORD
+from conftest import complete_first_run_wizard
 from conftest import delete_media_file
 from conftest import wait_for_stable_completion
 from playwright.sync_api import Page
@@ -196,11 +197,7 @@ def api_token(backend_url: str) -> str:
     )
     assert resp.status_code == 200, f"API login failed: {resp.status_code}"
     token = str(resp.json()["access_token"])
-    requests.post(
-        f"{backend_url}/api/admin/first-run-wizard/complete",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=10,
-    )
+    complete_first_run_wizard(backend_url, token)
     return token
 
 

@@ -1008,6 +1008,29 @@ def admin_token(backend_url: str) -> Iterator[str]:
             warnings.warn(f"admin_token teardown: logout call failed: {exc}", stacklevel=2)
 
 
+def complete_first_run_wizard(backend_url: str, token: str) -> None:
+    """Complete the super_admin's first-run wizard, as a real operator's first session ends.
+
+    The wizard mounts in the root layout and, on a fresh stack, opens a modal whose backdrop
+    intercepts every click. Its visibility is server-derived, so the only way past it is the
+    same endpoint the wizard's own finish/skip calls. Idempotent; fails loudly if refused.
+    """
+    response = requests.post(
+        f"{backend_url}/api/admin/first-run-wizard/complete",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=10,
+    )
+    assert response.status_code in (200, 204), (
+        f"first-run wizard completion refused: HTTP {response.status_code}"
+    )
+
+
+@pytest.fixture(scope="session")
+def first_run_wizard_completed(backend_url: str, admin_token: str) -> None:
+    """Session fixture form of :func:`complete_first_run_wizard` for admin UI flows."""
+    complete_first_run_wizard(backend_url, admin_token)
+
+
 @pytest.fixture(scope="session")
 def second_user(backend_url: str, admin_token: str) -> Iterator[dict[str, str]]:
     """A real, non-admin user account distinct from TEST_ADMIN_EMAIL.

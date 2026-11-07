@@ -67,7 +67,10 @@ vi.mock('$components/AnalyticsSection.svelte', () => ({ default: noopComponent()
 vi.mock('$components/TranscriptDisplay.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/FileHeader.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/TagsSection.svelte', () => ({ default: noopComponent() }));
-vi.mock('$components/CommentSection.svelte', () => ({ default: noopComponent() }));
+// A spy rather than a no-op: the comment-availability suite below asserts the page mounts it.
+// A Svelte 5 component is a function called with (anchor, props), so the calls are the mounts.
+const commentSectionStub = vi.hoisted(() => vi.fn());
+vi.mock('$components/CommentSection.svelte', () => ({ default: commentSectionStub }));
 vi.mock('$components/CollectionsSection.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/SelectiveReprocessModal.svelte', () => ({ default: noopComponent() }));
 vi.mock('$components/ConfirmationModal.svelte', () => ({ default: noopComponent() }));
@@ -398,5 +401,36 @@ describe('files/[id]/+page — edit-permission gating', () => {
 
     expect(container.querySelector('.reprocess-button-header')).toBeNull();
     expect(container.querySelector('.generate-summary-btn')).toBeNull();
+  });
+});
+
+describe('files/[id]/+page — the comment form is always available', () => {
+  // Comments are the viewer's own annotations, not transcript text, so withholding the
+  // transcript must not withhold them. Issue #748 moved CommentSection into the transcript
+  // column's branches and left it out of the redaction-pending one: under an enforced
+  // redaction policy (an organization's floor, or the user's own setting) every file whose
+  // scan had not finished lost its comment form, and a stuck scan lost it for good.
+  function mountedFileIds(): string[] {
+    return commentSectionStub.mock.calls.map(([, props]) => (props as { fileId: string }).fileId);
+  }
+
+  it.each([
+    [
+      'the transcript is withheld while redaction runs',
+      { redaction_pending: true, transcript_segments: [] },
+    ],
+    ['the transcript is shown', {}],
+    ['there is no transcript yet', { status: 'processing', transcript_segments: null }],
+  ])('mounts CommentSection for the file when %s', async (_label, overrides) => {
+    mockAxios.get.mockImplementation((url: string) => {
+      if (url === '/files/file-1') return Promise.resolve(completeFileResponse(overrides));
+      if (url === '/speakers') return Promise.resolve({ data: [] });
+      return Promise.resolve({ data: {} });
+    });
+
+    render(Page, { props: { data: { id: 'file-1' } } });
+
+    await waitFor(() => expect(document.title).toBe('meeting-notes.mp4'));
+    await waitFor(() => expect(mountedFileIds()).toEqual(['file-1']));
   });
 });

@@ -354,3 +354,56 @@ def test_llm_service_judge_skips_the_token_limits(monkeypatch: pytest.MonkeyPatc
     judge("grade this")
 
     assert seen and seen[0].get("enforce_budget") is False
+
+
+def test_judge_cell_smoke_through_the_judge_adapter_and_a_fake_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Smoke: recall, (b), (c) and (d) parsing through the real adapter and a fake LLMService.
+
+    Product changes broke this harness twice without any test noticing; this is the cheap net.
+    """
+    from types import SimpleNamespace
+
+    from app.services import llm_service
+    from tests.eval.harness.summary_judge import llm_service_judge
+
+    routed = RoutedJudge(
+        recall='{"conveyed": [1]}',
+        claims='{"claims_incomplete": []}',
+        nothing='{"claims_nothing_decided": [1]}',
+        disclosure='{"disclosed": true, "absence_claim": false}',
+    )
+    budgets: list[Any] = []
+
+    class _FakeService:
+        def __init__(self, _config: Any) -> None:
+            pass
+
+        def chat_completion(self, messages: list[dict[str, str]], **kwargs: Any) -> Any:
+            budgets.append(kwargs.get("enforce_budget"))
+            return SimpleNamespace(content=routed(messages[0]["content"]))
+
+    monkeypatch.setattr(llm_service, "LLMService", _FakeService)
+    config = SimpleNamespace(
+        provider=SimpleNamespace(value="vllm"), model="local", base_url="http://x/v1"
+    )
+    judge, provenance = llm_service_judge(config)
+
+    out = judge_cell(
+        judge,
+        summary_text="The team agreed on a price (vs. last year). Nothing was decided.",
+        missed_items=ITEMS,
+        slice_says_truncated=False,
+        failure_input=True,
+        seed=1,
+        nothing_decided_hits=["Nothing was decided."],
+    )
+
+    assert provenance["model"] == "local"
+    assert budgets and set(budgets) == {False}
+    assert out["degraded"] == []
+    assert len(out["recall_conveyed"]) == 1
+    assert out["b_fail"] is False and len(out["b_labels"]) >= 1
+    assert out["c_fail"] is True
+    assert (out["disclosed"], out["absence_claim"]) == (True, False)

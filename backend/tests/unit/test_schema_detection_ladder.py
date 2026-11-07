@@ -466,6 +466,7 @@ _MODERN_CHAIN: list[Step] = [
         "v461_add_privacy_purge_pending",
         markers={("constraint", "ck_privacy_purge_pending_array")},
     ),
+    step("v463_add_media_file_trash", markers={("constraint", "ck_media_file_trash_state")}),
 ]
 
 
@@ -566,8 +567,8 @@ def test_every_ladder_revision_is_pinned_by_a_test_above():
     assert {s.expected for s in _LEGACY_CHAIN} <= pinned
     # 43 pre-v367 arms plus the v010 fallback, and one arm per revision from v367 on.
     assert len(_LEGACY_ARMS) == 44
-    assert len(_MODERN_CHAIN) == 62
-    assert len(pinned) == 106
+    assert len(_MODERN_CHAIN) == 63
+    assert len(pinned) == 107
 
 
 def test_on_the_full_image_the_lite_only_rows_are_ignored(monkeypatch):
@@ -654,7 +655,8 @@ def test_every_probe_runs_oldest_era_first_before_any_verdict(lite):
         "indexname = 'ix_speaker_machine_identity_media_file'",  # v458
         "conname = 'ck_audit_outbox_status'",  # v459
         "indexname = 'uq_llm_token_budget_counter'",  # v460
-        "conname = 'ck_privacy_purge_pending_array'",  # v461, the last probe
+        "conname = 'ck_privacy_purge_pending_array'",  # v461
+        "conname = 'ck_media_file_trash_state'",  # v463, the last probe
     ]
     positions = [next(i for i, sql in enumerate(head.queries) if a in sql) for a in anchors]
     assert positions == sorted(positions), f"probe eras ran out of order: {positions}"

@@ -11,6 +11,9 @@ and a privacy purge's pending centroid work (v461).
 
 ``probe()`` issues this era's queries in the order the ladder always has; ``ARMS`` is this
 era's slice of the newest-first ladder (``ladder.py``), and its first arm is the top of it.
+
+This era is closed at v461: v463 onward live in ``data_safety.py``, whose arms build on
+:func:`matches_v461`.
 """
 
 from __future__ import annotations
@@ -365,8 +368,13 @@ def _rung_probes(i: int) -> tuple[str, ...]:
     return tuple(p for _, p in _V452_ONWARD[:i] if p not in _OWN_RUNG_ONLY) + (own,)
 
 
+def matches_v461(f: SchemaFacts) -> bool:
+    """This era's top rung, bound to a name: the next era's arms build on it."""
+    return _rung(_rung_probes(len(_V452_ONWARD) - 1))(f)
+
+
 ARMS: tuple[Arm, ...] = (
-    # v461 (the top of the ladder) down to v452, newest first.
+    # v461 (the top of this era) down to v452, newest first.
     *(
         (_rung(_rung_probes(i)), revision)
         for i, (revision, _) in reversed(list(enumerate(_V452_ONWARD)))

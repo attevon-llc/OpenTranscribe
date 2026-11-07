@@ -326,3 +326,31 @@ class TestCalibration:
         assert key[items[0]["blind_id"]]["cell_id"].count("|") == 2
         again, _ = export_calibration(pool, recall_pairs=12, seed=7)
         assert again == items
+
+
+def test_llm_service_judge_skips_the_token_limits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The judge grades a benchmark from a host with no database: it must not ask the limit store."""
+    from types import SimpleNamespace
+
+    from app.services import llm_service
+    from tests.eval.harness.summary_judge import llm_service_judge
+
+    seen: list[dict[str, Any]] = []
+
+    class _FakeService:
+        def __init__(self, _config: Any) -> None:
+            pass
+
+        def chat_completion(self, _messages: list[dict[str, str]], **kwargs: Any) -> Any:
+            seen.append(kwargs)
+            return SimpleNamespace(content="{}")
+
+    monkeypatch.setattr(llm_service, "LLMService", _FakeService)
+    config = SimpleNamespace(
+        provider=SimpleNamespace(value="anthropic"), model="claude-haiku-5-5", base_url=None
+    )
+
+    judge, _provenance = llm_service_judge(config)
+    judge("grade this")
+
+    assert seen and seen[0].get("enforce_budget") is False

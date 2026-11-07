@@ -380,7 +380,11 @@ def llm_service_judge(config: Any) -> tuple[JudgeFn, dict[str, Any]]:
         kwargs: dict[str, Any] = {"max_tokens": 1024}
         if send_temperature:
             kwargs["temperature"] = JUDGE_TEMPERATURE
-        return service.chat_completion([{"role": "user", "content": prompt}], **kwargs).content
+        # A judge call grades the benchmark; it is not a product feature, so it neither counts
+        # against nor needs the deployment's token limits (the host runner has no database).
+        return service.chat_completion(
+            [{"role": "user", "content": prompt}], enforce_budget=False, **kwargs
+        ).content
 
     provenance = {
         "provider": provider,

@@ -43,3 +43,12 @@ export function sourceOrigin(configured: string): string | null {
 export function isPlainHttpSource(configured: string): boolean {
   return /^\s*http:\/\//i.test(configured);
 }
+
+/**
+ * True when a 422 from the media-source API refused the address as not publicly reachable.
+ * The server sends the stable code `media_source_private_host` inside the validation detail.
+ */
+export function isPrivateHostRefusal(error: unknown): boolean {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  return JSON.stringify(detail ?? '').includes('media_source_private_host');
+}

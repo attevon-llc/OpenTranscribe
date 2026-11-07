@@ -6569,5 +6569,14 @@
   "settings.transcriptionDefaults.save": "حفظ القيم الافتراضية",
   "settings.transcriptionDefaults.saved": "تم حفظ القيم الافتراضية للنشر",
   "settings.transcriptionDefaults.saveFailed": "تعذّر حفظ القيم الافتراضية",
-  "settings.transcriptionDefaults.loadFailed": "تعذّر تحميل القيم الافتراضية"
+  "settings.transcriptionDefaults.loadFailed": "تعذّر تحميل القيم الافتراضية",
+  "settings.mediaSources.privateHosts.title": "مضيفو الوسائط الخاصة",
+  "settings.mediaSources.privateHosts.desc": "تُرفض افتراضيًا خوادم الوسائط الموجودة على شبكة خاصة، مثل http://10.0.0.5:8080، حتى لا تُستخدم في استكشاف شبكتك. اذكر الخوادم الموثوقة، واحدًا في كل سطر. يمكن للمسؤولين الأعلى فقط تغيير ذلك.",
+  "settings.mediaSources.privateHosts.label": "المضيفون الخاصون المسموح بهم",
+  "settings.mediaSources.privateHosts.hint": "واحد في كل سطر: المضيف أو المضيف:المنفذ أو http(s)://المضيف[:المنفذ]. المضيف بلا بروتوكول يعني https.",
+  "settings.mediaSources.privateHosts.save": "حفظ",
+  "settings.mediaSources.privateHosts.saved": "تم حفظ المضيفين الخاصين",
+  "settings.mediaSources.privateHosts.saveFailed": "تعذّر حفظ المضيفين الخاصين",
+  "settings.mediaSources.privateHosts.loadFailed": "تعذّر تحميل المضيفين الخاصين",
+  "settings.mediaSources.privateHostRefused": "هذا العنوان غير قابل للوصول علنًا: فهو خاص أو عنوان حلقة راجعة أو لا يمكن حلّه. يمكن للمسؤول الأعلى السماح به ضمن الإعدادات > مصادر الوسائط > مضيفو الوسائط الخاصة."
 }

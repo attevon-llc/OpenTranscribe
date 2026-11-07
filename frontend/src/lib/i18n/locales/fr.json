@@ -6533,5 +6533,14 @@
   "settings.transcriptionDefaults.save": "Enregistrer les valeurs par défaut",
   "settings.transcriptionDefaults.saved": "Valeurs par défaut du déploiement enregistrées",
   "settings.transcriptionDefaults.saveFailed": "Échec de l'enregistrement des valeurs par défaut",
-  "settings.transcriptionDefaults.loadFailed": "Échec du chargement des valeurs par défaut"
+  "settings.transcriptionDefaults.loadFailed": "Échec du chargement des valeurs par défaut",
+  "settings.mediaSources.privateHosts.title": "Hôtes média privés",
+  "settings.mediaSources.privateHosts.desc": "Les serveurs média situés sur un réseau privé, par exemple http://10.0.0.5:8080, sont refusés par défaut pour qu'ils ne servent pas à sonder votre réseau. Listez ceux de confiance, un par ligne. Seuls les super-administrateurs peuvent modifier ceci.",
+  "settings.mediaSources.privateHosts.label": "Hôtes privés autorisés",
+  "settings.mediaSources.privateHosts.hint": "Un par ligne : hôte, hôte:port ou http(s)://hôte[:port]. Un hôte sans schéma signifie https.",
+  "settings.mediaSources.privateHosts.save": "Enregistrer",
+  "settings.mediaSources.privateHosts.saved": "Hôtes privés enregistrés",
+  "settings.mediaSources.privateHosts.saveFailed": "Échec de l'enregistrement des hôtes privés",
+  "settings.mediaSources.privateHosts.loadFailed": "Échec du chargement des hôtes privés",
+  "settings.mediaSources.privateHostRefused": "Cette adresse n'est pas accessible publiquement : elle est privée, de bouclage ou ne se résout pas. Un super-administrateur peut l'autoriser dans Paramètres > Sources média > Hôtes média privés."
 }

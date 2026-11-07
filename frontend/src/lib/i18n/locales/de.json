@@ -6521,5 +6521,14 @@
   "settings.transcriptionDefaults.save": "Standardwerte speichern",
   "settings.transcriptionDefaults.saved": "Standardwerte der Installation gespeichert",
   "settings.transcriptionDefaults.saveFailed": "Die Standardwerte konnten nicht gespeichert werden",
-  "settings.transcriptionDefaults.loadFailed": "Die Standardwerte konnten nicht geladen werden"
+  "settings.transcriptionDefaults.loadFailed": "Die Standardwerte konnten nicht geladen werden",
+  "settings.mediaSources.privateHosts.title": "Private Medienhosts",
+  "settings.mediaSources.privateHosts.desc": "Medienserver in einem privaten Netzwerk, zum Beispiel http://10.0.0.5:8080, werden standardmäßig abgelehnt, damit sie nicht zum Ausspähen des Netzwerks dienen. Tragen Sie vertrauenswürdige Server ein, einen pro Zeile. Nur Super-Administratoren können dies ändern.",
+  "settings.mediaSources.privateHosts.label": "Erlaubte private Hosts",
+  "settings.mediaSources.privateHosts.hint": "Einer pro Zeile: Host, Host:Port oder http(s)://Host[:Port]. Ein Host ohne Schema bedeutet https.",
+  "settings.mediaSources.privateHosts.save": "Speichern",
+  "settings.mediaSources.privateHosts.saved": "Private Hosts gespeichert",
+  "settings.mediaSources.privateHosts.saveFailed": "Die privaten Hosts konnten nicht gespeichert werden",
+  "settings.mediaSources.privateHosts.loadFailed": "Die privaten Hosts konnten nicht geladen werden",
+  "settings.mediaSources.privateHostRefused": "Diese Adresse ist nicht öffentlich erreichbar: Sie ist privat, ein Loopback oder nicht auflösbar. Ein Super-Administrator kann sie unter Einstellungen > Medienquellen > Private Medienhosts erlauben."
 }

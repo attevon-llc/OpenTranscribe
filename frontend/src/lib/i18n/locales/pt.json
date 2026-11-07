@@ -6533,5 +6533,14 @@
   "settings.transcriptionDefaults.save": "Salvar padrões",
   "settings.transcriptionDefaults.saved": "Padrões da instalação salvos",
   "settings.transcriptionDefaults.saveFailed": "Falha ao salvar os padrões",
-  "settings.transcriptionDefaults.loadFailed": "Falha ao carregar os padrões"
+  "settings.transcriptionDefaults.loadFailed": "Falha ao carregar os padrões",
+  "settings.mediaSources.privateHosts.title": "Hosts de mídia privados",
+  "settings.mediaSources.privateHosts.desc": "Servidores de mídia em uma rede privada, por exemplo http://10.0.0.5:8080, são recusados por padrão para não servirem para sondar sua rede. Liste os de confiança, um por linha. Somente superadministradores podem alterar isto.",
+  "settings.mediaSources.privateHosts.label": "Hosts privados permitidos",
+  "settings.mediaSources.privateHosts.hint": "Um por linha: host, host:porta ou http(s)://host[:porta]. Um host sem esquema significa https.",
+  "settings.mediaSources.privateHosts.save": "Salvar",
+  "settings.mediaSources.privateHosts.saved": "Hosts privados salvos",
+  "settings.mediaSources.privateHosts.saveFailed": "Falha ao salvar os hosts privados",
+  "settings.mediaSources.privateHosts.loadFailed": "Falha ao carregar os hosts privados",
+  "settings.mediaSources.privateHostRefused": "Este endereço não é acessível publicamente: é privado, de loopback ou não resolve. Um superadministrador pode permiti-lo em Configurações > Fontes de mídia > Hosts de mídia privados."
 }

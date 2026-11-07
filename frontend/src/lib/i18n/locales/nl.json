@@ -6521,5 +6521,14 @@
   "settings.transcriptionDefaults.save": "Standaardwaarden opslaan",
   "settings.transcriptionDefaults.saved": "Standaardwaarden van de installatie opgeslagen",
   "settings.transcriptionDefaults.saveFailed": "Standaardwaarden opslaan mislukt",
-  "settings.transcriptionDefaults.loadFailed": "Standaardwaarden laden mislukt"
+  "settings.transcriptionDefaults.loadFailed": "Standaardwaarden laden mislukt",
+  "settings.mediaSources.privateHosts.title": "Privé-mediahosts",
+  "settings.mediaSources.privateHosts.desc": "Mediaservers op een privénetwerk, bijvoorbeeld http://10.0.0.5:8080, worden standaard geweigerd zodat ze niet kunnen dienen om uw netwerk af te tasten. Vermeld de servers die u vertrouwt, één per regel. Alleen superbeheerders kunnen dit wijzigen.",
+  "settings.mediaSources.privateHosts.label": "Toegestane privéhosts",
+  "settings.mediaSources.privateHosts.hint": "Eén per regel: host, host:poort of http(s)://host[:poort]. Een host zonder schema betekent https.",
+  "settings.mediaSources.privateHosts.save": "Opslaan",
+  "settings.mediaSources.privateHosts.saved": "Privéhosts opgeslagen",
+  "settings.mediaSources.privateHosts.saveFailed": "Privéhosts opslaan mislukt",
+  "settings.mediaSources.privateHosts.loadFailed": "Privéhosts laden mislukt",
+  "settings.mediaSources.privateHostRefused": "Dit adres is niet openbaar bereikbaar: het is privé, loopback of niet te herleiden. Een superbeheerder kan het toestaan onder Instellingen > Mediabronnen > Privé-mediahosts."
 }

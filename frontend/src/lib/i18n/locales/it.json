@@ -6533,5 +6533,14 @@
   "settings.transcriptionDefaults.save": "Salva i valori predefiniti",
   "settings.transcriptionDefaults.saved": "Valori predefiniti dell'installazione salvati",
   "settings.transcriptionDefaults.saveFailed": "Impossibile salvare i valori predefiniti",
-  "settings.transcriptionDefaults.loadFailed": "Impossibile caricare i valori predefiniti"
+  "settings.transcriptionDefaults.loadFailed": "Impossibile caricare i valori predefiniti",
+  "settings.mediaSources.privateHosts.title": "Host multimediali privati",
+  "settings.mediaSources.privateHosts.desc": "I server multimediali in una rete privata, ad esempio http://10.0.0.5:8080, sono rifiutati per impostazione predefinita perché non servano a sondare la rete. Elenca quelli di cui ti fidi, uno per riga. Solo i super amministratori possono modificarlo.",
+  "settings.mediaSources.privateHosts.label": "Host privati consentiti",
+  "settings.mediaSources.privateHosts.hint": "Uno per riga: host, host:porta o http(s)://host[:porta]. Un host senza schema indica https.",
+  "settings.mediaSources.privateHosts.save": "Salva",
+  "settings.mediaSources.privateHosts.saved": "Host privati salvati",
+  "settings.mediaSources.privateHosts.saveFailed": "Impossibile salvare i host privati",
+  "settings.mediaSources.privateHosts.loadFailed": "Impossibile caricare i host privati",
+  "settings.mediaSources.privateHostRefused": "Questo indirizzo non è raggiungibile pubblicamente: è privato, di loopback o non si risolve. Un super amministratore può consentirlo in Impostazioni > Sorgenti multimediali > Host multimediali privati."
 }

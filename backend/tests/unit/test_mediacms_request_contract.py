@@ -485,11 +485,11 @@ def test_download_leg_is_pinned_again_and_refused_on_its_own(monkeypatch, tmp_pa
     real_resolve = media_origin.resolve_pinned_target
     checked: list[str] = []
 
-    def _refuse_the_download(url):
+    def _refuse_the_download(url, **kwargs):
         checked.append(url)
         if "/media/original/" in url:
             return None, "resolves to a private address"
-        return real_resolve(url)
+        return real_resolve(url, **kwargs)
 
     monkeypatch.setattr(media_origin, "resolve_pinned_target", _refuse_the_download)
 

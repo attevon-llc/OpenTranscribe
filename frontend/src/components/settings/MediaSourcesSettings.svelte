@@ -13,9 +13,12 @@
     type MediaSource,
     type MediaSourceUpdate
   } from '$lib/api/mediaSourcesApi';
-  import { isPlainHttpSource } from '$lib/utils/mediaHost';
+  import { isPlainHttpSource, isPrivateHostRefusal } from '$lib/utils/mediaHost';
+  import { user } from '$stores/auth';
+  import MediaPrivateHostsCard from './MediaPrivateHostsCard.svelte';
 
   let loading = true;
+  $: isSuperAdmin = $user?.role === 'super_admin';
   let sources: MediaSource[] = [];
   let sharedSources: MediaSource[] = [];
   let saving = false;
@@ -86,7 +89,11 @@
       resetAddForm();
       toastStore.success($t('settings.mediaSources.addSuccess'));
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.mediaSources.addFailed')));
+      toastStore.error(
+        isPrivateHostRefusal(err)
+          ? $t('settings.mediaSources.privateHostRefused')
+          : getErrorMessage(err, $t('settings.mediaSources.addFailed'))
+      );
     } finally {
       saving = false;
     }
@@ -126,7 +133,11 @@
       editingUuid = null;
       toastStore.success($t('settings.mediaSources.updateSuccess'));
     } catch (err: unknown) {
-      toastStore.error(getErrorMessage(err, $t('settings.mediaSources.updateFailed')));
+      toastStore.error(
+        isPrivateHostRefusal(err)
+          ? $t('settings.mediaSources.privateHostRefused')
+          : getErrorMessage(err, $t('settings.mediaSources.updateFailed'))
+      );
     } finally {
       saving = false;
     }
@@ -415,6 +426,10 @@
 
     <p class="section-hint">{$t('settings.mediaSources.hint')}</p>
   </div>
+{/if}
+
+{#if isSuperAdmin}
+  <MediaPrivateHostsCard />
 {/if}
 
 <style>

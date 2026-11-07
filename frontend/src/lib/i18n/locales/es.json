@@ -6533,5 +6533,14 @@
   "settings.transcriptionDefaults.save": "Guardar valores predeterminados",
   "settings.transcriptionDefaults.saved": "Valores predeterminados de la instalación guardados",
   "settings.transcriptionDefaults.saveFailed": "No se pudieron guardar los valores predeterminados",
-  "settings.transcriptionDefaults.loadFailed": "No se pudieron cargar los valores predeterminados"
+  "settings.transcriptionDefaults.loadFailed": "No se pudieron cargar los valores predeterminados",
+  "settings.mediaSources.privateHosts.title": "Hosts de medios privados",
+  "settings.mediaSources.privateHosts.desc": "Los servidores de medios en una red privada, por ejemplo http://10.0.0.5:8080, se rechazan de forma predeterminada para que no sirvan para sondear su red. Indique los de confianza, uno por línea. Solo los superadministradores pueden cambiarlo.",
+  "settings.mediaSources.privateHosts.label": "Hosts privados permitidos",
+  "settings.mediaSources.privateHosts.hint": "Uno por línea: host, host:puerto o http(s)://host[:puerto]. Un host sin esquema significa https.",
+  "settings.mediaSources.privateHosts.save": "Guardar",
+  "settings.mediaSources.privateHosts.saved": "Hosts privados guardados",
+  "settings.mediaSources.privateHosts.saveFailed": "No se pudieron guardar los hosts privados",
+  "settings.mediaSources.privateHosts.loadFailed": "No se pudieron cargar los hosts privados",
+  "settings.mediaSources.privateHostRefused": "Esta dirección no es accesible públicamente: es privada, de bucle local o no se resuelve. Un superadministrador puede permitirla en Ajustes > Fuentes de medios > Hosts de medios privados."
 }

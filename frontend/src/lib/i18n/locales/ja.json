@@ -6509,5 +6509,14 @@
   "settings.transcriptionDefaults.save": "既定値を保存",
   "settings.transcriptionDefaults.saved": "デプロイの既定値を保存しました",
   "settings.transcriptionDefaults.saveFailed": "既定値を保存できませんでした",
-  "settings.transcriptionDefaults.loadFailed": "既定値を読み込めませんでした"
+  "settings.transcriptionDefaults.loadFailed": "既定値を読み込めませんでした",
+  "settings.mediaSources.privateHosts.title": "プライベートなメディアホスト",
+  "settings.mediaSources.privateHosts.desc": "プライベートネットワーク上のメディアサーバー（例: http://10.0.0.5:8080）は、ネットワークの探索に悪用されないよう既定で拒否されます。信頼できるものを 1 行に 1 つずつ入力してください。変更できるのはスーパー管理者のみです。",
+  "settings.mediaSources.privateHosts.label": "許可するプライベートホスト",
+  "settings.mediaSources.privateHosts.hint": "1 行に 1 つ: ホスト、ホスト:ポート、または http(s)://ホスト[:ポート]。スキームのないホストは https として扱います。",
+  "settings.mediaSources.privateHosts.save": "保存",
+  "settings.mediaSources.privateHosts.saved": "プライベートホストを保存しました",
+  "settings.mediaSources.privateHosts.saveFailed": "プライベートホストを保存できませんでした",
+  "settings.mediaSources.privateHosts.loadFailed": "プライベートホストを読み込めませんでした",
+  "settings.mediaSources.privateHostRefused": "このアドレスは公開側から到達できません。プライベート、ループバック、または名前解決できないアドレスです。スーパー管理者は「設定 > メディアソース > プライベートなメディアホスト」で許可できます。"
 }

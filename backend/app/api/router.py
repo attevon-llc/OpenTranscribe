@@ -46,6 +46,7 @@ from .endpoints import llm_status
 from .endpoints import local_models
 from .endpoints import media_collections
 from .endpoints import media_mirror_settings
+from .endpoints import media_private_hosts
 from .endpoints import org_admin
 from .endpoints import org_admin_audit
 from .endpoints import org_admin_holds
@@ -206,6 +207,7 @@ include_router_with_consistency(admin_audit_logs.router, prefix="/admin", tags=[
 include_router_with_consistency(admin_maintenance.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_quarantine.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(youtube_settings.router, prefix="/admin", tags=["admin"])
+include_router_with_consistency(media_private_hosts.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(transcription_defaults.router, prefix="/admin", tags=["admin"])
 include_router_with_consistency(admin_timing.router, prefix="/admin", tags=["admin-timing"])
 include_router_with_consistency(

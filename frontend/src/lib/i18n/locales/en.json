@@ -6521,5 +6521,14 @@
   "settings.transcriptionDefaults.save": "Save defaults",
   "settings.transcriptionDefaults.saved": "Deployment defaults saved",
   "settings.transcriptionDefaults.saveFailed": "Failed to save the deployment defaults",
-  "settings.transcriptionDefaults.loadFailed": "Failed to load the deployment defaults"
+  "settings.transcriptionDefaults.loadFailed": "Failed to load the deployment defaults",
+  "settings.mediaSources.privateHosts.title": "Private media hosts",
+  "settings.mediaSources.privateHosts.desc": "Media servers on a private network, for example http://10.0.0.5:8080, are refused by default so they cannot be used to probe your network. List the ones you trust, one per line. Only super administrators can change this.",
+  "settings.mediaSources.privateHosts.label": "Allowed private hosts",
+  "settings.mediaSources.privateHosts.hint": "One per line: host, host:port or http(s)://host[:port]. A host without a scheme means https.",
+  "settings.mediaSources.privateHosts.save": "Save",
+  "settings.mediaSources.privateHosts.saved": "Private hosts saved",
+  "settings.mediaSources.privateHosts.saveFailed": "Failed to save the private hosts",
+  "settings.mediaSources.privateHosts.loadFailed": "Failed to load the private hosts",
+  "settings.mediaSources.privateHostRefused": "This address is not publicly reachable: it is private, loopback or does not resolve. A super administrator can allow it under Settings > Media Sources > Private media hosts."
 }

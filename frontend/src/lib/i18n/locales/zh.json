@@ -6509,5 +6509,14 @@
   "settings.transcriptionDefaults.save": "保存默认值",
   "settings.transcriptionDefaults.saved": "已保存部署默认值",
   "settings.transcriptionDefaults.saveFailed": "无法保存默认值",
-  "settings.transcriptionDefaults.loadFailed": "无法加载默认值"
+  "settings.transcriptionDefaults.loadFailed": "无法加载默认值",
+  "settings.mediaSources.privateHosts.title": "私有媒体主机",
+  "settings.mediaSources.privateHosts.desc": "位于私有网络中的媒体服务器（例如 http://10.0.0.5:8080）默认会被拒绝，以免被用来探测您的网络。请每行列出一个您信任的主机。只有超级管理员可以更改此项。",
+  "settings.mediaSources.privateHosts.label": "允许的私有主机",
+  "settings.mediaSources.privateHosts.hint": "每行一个：主机、主机:端口，或 http(s)://主机[:端口]。未写协议的主机视为 https。",
+  "settings.mediaSources.privateHosts.save": "保存",
+  "settings.mediaSources.privateHosts.saved": "已保存私有主机",
+  "settings.mediaSources.privateHosts.saveFailed": "无法保存私有主机",
+  "settings.mediaSources.privateHosts.loadFailed": "无法加载私有主机",
+  "settings.mediaSources.privateHostRefused": "此地址无法从公网访问：它是私有地址、回环地址，或无法解析。超级管理员可在“设置 > 媒体源 > 私有媒体主机”中允许它。"
 }

@@ -6200,8 +6200,6 @@
   "takedown.admin.notifyNoTransport": "Es ist kein E-Mail-Versand eingerichtet, daher wurde niemand benachrichtigt",
   "takedown.admin.notifyFailed": "Einige E-Mails konnten nicht gesendet werden",
   "takedown.admin.alreadyNotified": "Alle Eigentümer wurden bereits benachrichtigt",
-  "takedown.admin.exportCsv": "CSV exportieren",
-  "takedown.admin.exportJson": "JSON exportieren",
   "takedown.admin.exportFailed": "Die Mitteilungen konnten nicht exportiert werden",
   "takedown.admin.exportTruncated": "Der Export hat das Zeilenlimit erreicht und ist unvollständig.",
   "takedown.mine.navLabel": "Meine Takedown-Mitteilungen",
@@ -6761,5 +6759,7 @@
   "speakerHistory.kind.confirmed": "Bestätigt",
   "speakerHistory.kind.skipped": "Bei der Prüfung übersprungen",
   "speakerHistory.kind.merge": "Zusammengeführt",
-  "speakerHistory.kind.purge": "Stimmabdruckdaten entfernt"
+  "speakerHistory.kind.purge": "Stimmabdruckdaten entfernt",
+  "takedown.admin.export": "Exportieren",
+  "takedown.admin.exportEmpty": "Es gibt noch keine Meldungen zum Exportieren."
 }

@@ -12,7 +12,12 @@ const load = (locale: string): Record<string, string> =>
   JSON.parse(readFileSync(resolve(DIR, `${locale}.json`), 'utf8'));
 
 const en = load('en');
-const KEYS = ['settings.recording.title', 'settings.recording.description'];
+const KEYS = [
+  'settings.recording.title',
+  'settings.recording.description',
+  'takedown.admin.export',
+  'takedown.admin.exportEmpty',
+];
 const OTHERS = readdirSync(DIR)
   .filter((f) => f.endsWith('.json') && f !== 'en.json')
   .map((f) => f.replace('.json', ''));

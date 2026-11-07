@@ -6216,8 +6216,6 @@
   "takedown.admin.notifyNoTransport": "No hay correo configurado, así que no se avisó a nadie",
   "takedown.admin.notifyFailed": "No se pudieron enviar algunos correos",
   "takedown.admin.alreadyNotified": "Ya se avisó por correo a todos los propietarios",
-  "takedown.admin.exportCsv": "Exportar CSV",
-  "takedown.admin.exportJson": "Exportar JSON",
   "takedown.admin.exportFailed": "No se pudieron exportar los avisos",
   "takedown.admin.exportTruncated": "La exportación alcanzó el límite de filas y está incompleta.",
   "takedown.mine.navLabel": "Mis avisos de retirada",
@@ -6777,5 +6775,7 @@
   "speakerHistory.kind.confirmed": "Confirmado",
   "speakerHistory.kind.skipped": "Omitido en la revisión",
   "speakerHistory.kind.merge": "Fusionado",
-  "speakerHistory.kind.purge": "Datos de huella de voz eliminados"
+  "speakerHistory.kind.purge": "Datos de huella de voz eliminados",
+  "takedown.admin.export": "Exportar",
+  "takedown.admin.exportEmpty": "Aún no hay avisos que exportar."
 }

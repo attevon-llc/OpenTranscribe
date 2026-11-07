@@ -30,6 +30,7 @@ primitive in the same spirit as this folder.
   `fullscreen` fills the viewport (a document reader; header and footer stay pinned, the body
   scrolls) and the `header-actions` slot puts controls before the close button
   (`legal/LegalDocumentViewer`'s full-screen toggle).
+- `ExportFormatMenu.svelte` — one Export button that opens a menu of formats (`formats`, `label`, `on:select`); `disabled` + `disabledReason` (tooltip) when there is nothing to export. Placed by `anchoredPanel`, dismissed by click-outside/Escape. Used by the takedown notices export.
 - `Stepper.svelte` — progress-only step indicator (`steps`, `current`, `label`, `doneLabel`): dots on a
   connector, check icon (`MenuIcon` `check`) on complete steps, `aria-current="step"`, labels under the
   dots and only the current one (as a caption) in a container under 520px. Same visual language as

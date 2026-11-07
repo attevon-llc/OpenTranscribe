@@ -6216,8 +6216,6 @@
   "takedown.admin.notifyNoTransport": "Nessuna email è configurata, quindi nessuno è stato avvisato",
   "takedown.admin.notifyFailed": "Alcune email non sono state inviate",
   "takedown.admin.alreadyNotified": "Tutti i proprietari sono già stati avvisati via email",
-  "takedown.admin.exportCsv": "Esporta CSV",
-  "takedown.admin.exportJson": "Esporta JSON",
   "takedown.admin.exportFailed": "Impossibile esportare le notifiche",
   "takedown.admin.exportTruncated": "L'esportazione ha raggiunto il limite di righe ed è incompleta.",
   "takedown.mine.navLabel": "Le mie notifiche di rimozione",
@@ -6777,5 +6775,7 @@
   "speakerHistory.kind.confirmed": "Confermato",
   "speakerHistory.kind.skipped": "Saltato nella revisione",
   "speakerHistory.kind.merge": "Unito",
-  "speakerHistory.kind.purge": "Dati dell'impronta vocale rimossi"
+  "speakerHistory.kind.purge": "Dati dell'impronta vocale rimossi",
+  "takedown.admin.export": "Esporta",
+  "takedown.admin.exportEmpty": "Non ci sono ancora segnalazioni da esportare."
 }

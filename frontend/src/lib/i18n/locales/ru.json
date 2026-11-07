@@ -6225,8 +6225,6 @@
   "takedown.admin.notifyNoTransport": "Электронная почта не настроена, поэтому письма никому не отправлены",
   "takedown.admin.notifyFailed": "Некоторые письма не удалось отправить",
   "takedown.admin.alreadyNotified": "Всем владельцам письма уже отправлены",
-  "takedown.admin.exportCsv": "Экспорт в CSV",
-  "takedown.admin.exportJson": "Экспорт в JSON",
   "takedown.admin.exportFailed": "Не удалось экспортировать уведомления",
   "takedown.admin.exportTruncated": "Экспорт достиг лимита строк и неполон.",
   "takedown.mine.navLabel": "Мои запросы на удаление",
@@ -6793,5 +6791,7 @@
   "speakerHistory.kind.confirmed": "Подтверждено",
   "speakerHistory.kind.skipped": "Пропущено при проверке",
   "speakerHistory.kind.merge": "Объединён",
-  "speakerHistory.kind.purge": "Данные голосового отпечатка удалены"
+  "speakerHistory.kind.purge": "Данные голосового отпечатка удалены",
+  "takedown.admin.export": "Экспорт",
+  "takedown.admin.exportEmpty": "Пока нет уведомлений для экспорта."
 }

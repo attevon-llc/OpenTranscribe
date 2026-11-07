@@ -6200,8 +6200,6 @@
   "takedown.admin.notifyNoTransport": "No email is configured, so nobody was emailed",
   "takedown.admin.notifyFailed": "Some emails could not be sent",
   "takedown.admin.alreadyNotified": "Every owner has already been emailed",
-  "takedown.admin.exportCsv": "Export CSV",
-  "takedown.admin.exportJson": "Export JSON",
   "takedown.admin.exportFailed": "Could not export the notices",
   "takedown.admin.exportTruncated": "The export reached its row limit and is incomplete.",
   "takedown.mine.navLabel": "My takedown notices",
@@ -6761,5 +6759,7 @@
   "speakerHistory.kind.confirmed": "Confirmed",
   "speakerHistory.kind.skipped": "Skipped in review",
   "speakerHistory.kind.merge": "Merged",
-  "speakerHistory.kind.purge": "Voiceprint data removed"
+  "speakerHistory.kind.purge": "Voiceprint data removed",
+  "takedown.admin.export": "Export",
+  "takedown.admin.exportEmpty": "There are no notices to export yet."
 }

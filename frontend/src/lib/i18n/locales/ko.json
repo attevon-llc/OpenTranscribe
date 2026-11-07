@@ -6184,8 +6184,6 @@
   "takedown.admin.notifyNoTransport": "이메일이 설정되어 있지 않아 아무에게도 보내지 못했습니다",
   "takedown.admin.notifyFailed": "일부 이메일을 보내지 못했습니다",
   "takedown.admin.alreadyNotified": "모든 소유자에게 이미 이메일을 보냈습니다",
-  "takedown.admin.exportCsv": "CSV 내보내기",
-  "takedown.admin.exportJson": "JSON 내보내기",
   "takedown.admin.exportFailed": "통지를 내보내지 못했습니다",
   "takedown.admin.exportTruncated": "내보내기가 행 제한에 도달하여 불완전합니다.",
   "takedown.mine.navLabel": "내 삭제 통지",
@@ -6745,5 +6743,7 @@
   "speakerHistory.kind.confirmed": "확인됨",
   "speakerHistory.kind.skipped": "검토에서 건너뜀",
   "speakerHistory.kind.merge": "병합됨",
-  "speakerHistory.kind.purge": "성문 데이터 삭제됨"
+  "speakerHistory.kind.purge": "성문 데이터 삭제됨",
+  "takedown.admin.export": "내보내기",
+  "takedown.admin.exportEmpty": "내보낼 통지가 아직 없습니다."
 }

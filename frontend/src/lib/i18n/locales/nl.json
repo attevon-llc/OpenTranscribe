@@ -6200,8 +6200,6 @@
   "takedown.admin.notifyNoTransport": "Er is geen e-mail ingesteld, dus niemand is per e-mail geïnformeerd",
   "takedown.admin.notifyFailed": "Sommige e-mails konden niet worden verzonden",
   "takedown.admin.alreadyNotified": "Alle eigenaren zijn al per e-mail geïnformeerd",
-  "takedown.admin.exportCsv": "CSV exporteren",
-  "takedown.admin.exportJson": "JSON exporteren",
   "takedown.admin.exportFailed": "De meldingen konden niet worden geëxporteerd",
   "takedown.admin.exportTruncated": "De export heeft de rijlimiet bereikt en is onvolledig.",
   "takedown.mine.navLabel": "Mijn verwijderingsmeldingen",
@@ -6761,5 +6759,7 @@
   "speakerHistory.kind.confirmed": "Bevestigd",
   "speakerHistory.kind.skipped": "Overgeslagen bij beoordeling",
   "speakerHistory.kind.merge": "Samengevoegd",
-  "speakerHistory.kind.purge": "Stemafdrukgegevens verwijderd"
+  "speakerHistory.kind.purge": "Stemafdrukgegevens verwijderd",
+  "takedown.admin.export": "Exporteren",
+  "takedown.admin.exportEmpty": "Er zijn nog geen meldingen om te exporteren."
 }

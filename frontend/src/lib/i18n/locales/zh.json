@@ -6184,8 +6184,6 @@
   "takedown.admin.notifyNoTransport": "未配置电子邮件,因此没有发送任何邮件",
   "takedown.admin.notifyFailed": "部分邮件发送失败",
   "takedown.admin.alreadyNotified": "已向所有所有者发送过邮件",
-  "takedown.admin.exportCsv": "导出 CSV",
-  "takedown.admin.exportJson": "导出 JSON",
   "takedown.admin.exportFailed": "无法导出通知",
   "takedown.admin.exportTruncated": "导出已达到行数上限,内容不完整。",
   "takedown.mine.navLabel": "我的下架通知",
@@ -6745,5 +6743,7 @@
   "speakerHistory.kind.confirmed": "已确认",
   "speakerHistory.kind.skipped": "审核时已跳过",
   "speakerHistory.kind.merge": "已合并",
-  "speakerHistory.kind.purge": "已删除声纹数据"
+  "speakerHistory.kind.purge": "已删除声纹数据",
+  "takedown.admin.export": "导出",
+  "takedown.admin.exportEmpty": "目前没有可导出的通知。"
 }

@@ -11,6 +11,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
+  import ExportFormatMenu, { type ExportFormatOption } from '$components/ui/ExportFormatMenu.svelte';
   import {
     TakedownNoticesApi,
     type ExportFormat,
@@ -34,6 +35,20 @@
   let recording = false;
   let saving = false;
   let draft = emptyDraft();
+
+  // Technical format names, never translated.
+  const EXPORT_FORMATS: ExportFormatOption[] = [
+    { value: 'csv', label: 'CSV', icon: 'format-csv' },
+    { value: 'json', label: 'JSON', icon: 'format-json' },
+  ];
+
+  // The export covers every notice, so only an unfiltered, loaded, empty list is "nothing to export".
+  $: exportDisabled = loading ? notices.length === 0 : total === 0 && filter === '' && !loadFailed;
+
+  function cancelRecording() {
+    draft = emptyDraft();
+    recording = false;
+  }
 
   async function load(newOffset = 0) {
     loading = true;
@@ -122,20 +137,34 @@
         <option value="resolved">{$t('takedown.status.resolved')}</option>
       </select>
     </label>
-    <button class="btn btn-secondary" on:click={() => (recording = !recording)}>
-      {$t('takedown.admin.record')}
+    <button
+      class="btn btn-secondary"
+      type="button"
+      on:click={() => (recording ? cancelRecording() : (recording = true))}
+    >
+      {recording ? $t('common.cancel') : $t('takedown.admin.record')}
     </button>
-    <button class="btn btn-secondary" on:click={() => download('csv')}>{$t('takedown.admin.exportCsv')}</button>
-    <button class="btn btn-secondary" on:click={() => download('json')}>{$t('takedown.admin.exportJson')}</button>
+    <ExportFormatMenu
+      formats={EXPORT_FORMATS}
+      label={$t('takedown.admin.export')}
+      disabled={exportDisabled}
+      disabledReason={$t('takedown.admin.exportEmpty')}
+      on:select={(e) => download(e.detail.format === 'json' ? 'json' : 'csv')}
+    />
   </div>
 
   {#if recording}
     <form class="record-form" on:submit|preventDefault={saveNotice}>
       <TakedownNoticeFields bind:draft idPrefix="panel-notice" disabled={saving} />
-      <button class="btn btn-primary record-submit" type="submit" disabled={!isDraftValid(draft) || saving}>
-        {#if saving}<Spinner size="small" />{/if}
-        {$t('takedown.admin.recordSubmit')}
-      </button>
+      <div class="record-actions">
+        <button class="btn btn-secondary" type="button" disabled={saving} on:click={cancelRecording}>
+          {$t('common.cancel')}
+        </button>
+        <button class="btn btn-primary" type="submit" disabled={!isDraftValid(draft) || saving}>
+          {#if saving}<Spinner size="small" />{/if}
+          {$t('takedown.admin.recordSubmit')}
+        </button>
+      </div>
     </form>
   {/if}
 
@@ -245,8 +274,10 @@
     cursor: not-allowed;
   }
 
-  .record-submit {
-    align-self: flex-start;
+  .record-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   .record-form {

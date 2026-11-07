@@ -6264,8 +6264,6 @@
   "takedown.admin.notifyNoTransport": "لم يتم إعداد البريد الإلكتروني، لذلك لم تُرسَل أي رسالة",
   "takedown.admin.notifyFailed": "تعذّر إرسال بعض الرسائل",
   "takedown.admin.alreadyNotified": "تم إرسال بريد إلى جميع المالكين مسبقًا",
-  "takedown.admin.exportCsv": "تصدير CSV",
-  "takedown.admin.exportJson": "تصدير JSON",
   "takedown.admin.exportFailed": "تعذّر تصدير الإشعارات",
   "takedown.admin.exportTruncated": "بلغ التصدير حدّ الصفوف وهو غير كامل.",
   "takedown.mine.navLabel": "إشعارات الإزالة الخاصة بي",
@@ -6825,5 +6823,7 @@
   "speakerHistory.kind.confirmed": "تم التأكيد",
   "speakerHistory.kind.skipped": "تُخطّي في المراجعة",
   "speakerHistory.kind.merge": "دُمج",
-  "speakerHistory.kind.purge": "أُزيلت بيانات البصمة الصوتية"
+  "speakerHistory.kind.purge": "أُزيلت بيانات البصمة الصوتية",
+  "takedown.admin.export": "تصدير",
+  "takedown.admin.exportEmpty": "لا توجد إشعارات للتصدير بعد."
 }

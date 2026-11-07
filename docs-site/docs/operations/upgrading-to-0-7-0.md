@@ -127,3 +127,23 @@ it to `127.0.0.1` unless you need the access above.
 New installs ask "Expose directly on your LAN without HTTPS?" when HTTPS is not set up. The
 answer defaults to no, which keeps the web UI on the server only; answer yes, or set
 `FRONTEND_BIND_HOST=0.0.0.0` later, to use plain HTTP from other devices.
+
+## AI token limits
+
+**Check this if...** you want to limit how much your AI features can spend, or you see "token
+limit" messages after an administrator sets one.
+
+0.7.0 adds limits on the AI tokens used by every AI feature (chat, summaries, topics, speaker
+identification and AI redaction): one per user per day and one for the whole server per month,
+both in UTC. They are off after the upgrade (0 means unlimited), so nothing changes until an
+administrator sets them in **Settings -> AI usage**. Models running on your own server are
+counted too; tick "Do not limit models that run on this server" to exempt them.
+
+A request that would go over a limit is refused before it is sent. Chat shows a message, and a
+summary, topic or speaker-identification job is marked failed with the reason. Set the daily
+limit higher than one long summary, or long recordings can never be summarized.
+
+The same page shows each user their tokens today and over the last 30 days by feature, with an
+estimated cost where the model's price is known. Models on your own server show as free; a
+`vllm` or `ollama` address on another company's server now shows as "not priced" rather than
+free.

@@ -39782,7 +39782,7 @@
     },
     "/api/files/{file_uuid}/summary-status": {
       "get": {
-        "description": "Get the summary status for a file and LLM availability\n\nReturns:\n    - summary_status: 'pending', 'processing', 'completed', 'failed'\n    - llm_available: whether LLM service is available\n    - can_retry: whether a failed summary can be retried\n    - summary_exists: whether a summary already exists",
+        "description": "Get the summary status for a file and LLM availability\n\nReturns:\n    - summary_status: 'pending', 'processing', 'completed', 'failed'\n    - llm_available: whether LLM service is available\n    - llm_settings_unavailable: the settings could not be read (outage), which is not\n      the same as \"no provider configured\"\n    - can_retry: whether a failed summary can be retried\n    - summary_exists: whether a summary already exists",
         "operationId": "get_summary_status_api_files__file_uuid__summary_status_get",
         "parameters": [
           {

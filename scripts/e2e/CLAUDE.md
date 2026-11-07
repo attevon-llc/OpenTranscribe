@@ -12,3 +12,9 @@ Moved intact from `scripts/CLAUDE.md`. Fixtures, markers and `RUN_*` gates: `bac
   propagate, so a real phase-2 failure fails the run; and on the WHOLE tree 0 collected still
   FAILS, because there it means the `visual` marker itself selects nothing (a renamed marker
   would otherwise delete the entire screenshot suite from the gate in silence).
+
+- `e2e/run-e2e-release.sh` — the v0.6.0 browser journeys; `scripts/release/60-test.sh` runs it on its own
+  fresh stack and records the `release-e2e-journeys` criterion (#1282). Add a journey to its file list and to
+  `backend/tests/unit/test_release_e2e_selection.py`.
+- `e2e/run-e2e-first-run.sh` — the first-run wizard terms step (#1366, marker `first_run`). It consumes the
+  wizard's one-time state, so it runs FIRST on a throwaway `--fresh` stack and `run-e2e.sh` excludes the marker.

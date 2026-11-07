@@ -760,9 +760,11 @@ The published host ports fall into two groups. Unsetting the variables does **no
 | Binding | Services (variable, default port) | Reachable from the network? |
 |---|---|---|
 | `127.0.0.1` only | PostgreSQL (`POSTGRES_PORT` 5176), Redis (`REDIS_PORT` 5177), MinIO API and console (`MINIO_PORT` 5178, `MINIO_CONSOLE_PORT` 5179), OpenSearch (`OPENSEARCH_PORT` 5180, `OPENSEARCH_ADMIN_PORT` 5181), Flower (`FLOWER_PORT` 5175) | No |
-| All interfaces | Backend API (`BACKEND_PORT` 5174), frontend (`FRONTEND_PORT` 5173), docs (`DOCS_PORT` 5183) | **Yes**, unless you firewall them |
+| `127.0.0.1` by default (`BACKEND_BIND_HOST`, `DOCS_BIND_HOST`) | Backend API (`BACKEND_PORT` 5174), docs (`DOCS_PORT` 5183) | No, unless you set the variable to `0.0.0.0` |
+| Every interface without HTTPS, `127.0.0.1` with the NGINX overlay (`FRONTEND_BIND_HOST`) | Frontend (`FRONTEND_PORT` 5173) | Only when it is the front door |
+| All interfaces | NGINX (`NGINX_HTTP_PORT` 80, `NGINX_HTTPS_PORT` 443) | Yes, by design |
 
-With the NGINX overlay, close the second group from outside the host: set `BACKEND_BIND_HOST=127.0.0.1` in `.env` to bind the backend port to loopback, and block 5173, 5174 and 5183 in the host firewall below. The frontend and docs ports have no bind-host variable. Docker publishes ports through its own iptables rules, which bypass `ufw`'s default rules, so verify from another machine (`nc -zv <host> 5174`) rather than trusting the `ufw status` output.
+Browsers reach the API and the docs through the frontend's `/api` and `/docs/` paths, so their own ports never need to leave the host. The frontend's plain-HTTP port is the way in only when there is no HTTPS proxy; `opentranscribe.sh` and `opentr.sh` bind it to loopback whenever they load the NGINX overlay. Set any of the three variables explicitly in `.env` to override. Docker publishes ports through its own iptables rules, which bypass `ufw`'s default rules, so verify from another machine (`nc -zv <host> 5174`) rather than trusting the `ufw status` output.
 
 ### Host Firewall
 

@@ -131,8 +131,10 @@ generated yourself, and keep `nginx/ssl/server.key` private.
 ## Step 5: use it
 
 Open `https://opentranscribe.local` (or `https://<server-ip>`), sign in, and try an upload and a
-recording. Bookmark the HTTPS address and use that one: the plain app port (5173) stays published
-on the server next to 443 and does not keep a sign-in from other devices.
+recording. Bookmark the HTTPS address and use that one. With HTTPS on, the plain app port (5173)
+is only published on the server itself (`127.0.0.1`), so other devices cannot reach it by mistake.
+Set `FRONTEND_BIND_HOST=0.0.0.0` in `.env` only if you really need plain HTTP on the network as
+well: over plain HTTP, sign-in passwords cross the network unencrypted.
 
 ## Ports
 

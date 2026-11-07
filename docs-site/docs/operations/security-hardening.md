@@ -150,8 +150,9 @@ In production, expose only the minimum required ports. The compose files publish
 |------|---------|-----------------|
 | 443 | NGINX (HTTPS) | All interfaces (public) |
 | 80 | NGINX (HTTP redirect) | All interfaces (redirect to 443 only) |
-| 5174 (`BACKEND_PORT`) | Backend API | **All interfaces**; set `BACKEND_BIND_HOST=127.0.0.1` behind NGINX |
-| 5173 (`FRONTEND_PORT`), 5183 (`DOCS_PORT`) | Frontend and docs containers | **All interfaces**; block at the host firewall |
+| 5174 (`BACKEND_PORT`) | Backend API | `127.0.0.1` (`BACKEND_BIND_HOST`) |
+| 5183 (`DOCS_PORT`) | Docs container | `127.0.0.1` (`DOCS_BIND_HOST`) |
+| 5173 (`FRONTEND_PORT`) | Frontend container | All interfaces when it is the front door; `127.0.0.1` behind the NGINX overlay (`FRONTEND_BIND_HOST`) |
 | 5176 / 5177 | PostgreSQL / Redis | `127.0.0.1` only |
 | 5178 / 5179 | MinIO API / console | `127.0.0.1` only |
 | 5180 / 5181 | OpenSearch API / admin | `127.0.0.1` only |

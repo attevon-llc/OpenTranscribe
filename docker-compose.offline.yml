@@ -177,7 +177,8 @@ services:
     image: davidamacey/opentranscribe-frontend:latest
     pull_policy: never
     ports:
-      - "${FRONTEND_PORT:-5173}:8080"  # Production NGINX port
+      # Same bind rules as docker-compose.prod.yml (issue #1332).
+      - "${FRONTEND_BIND_HOST:-0.0.0.0}:${FRONTEND_PORT:-5173}:8080"  # Production NGINX port
     environment:
       - NODE_ENV=production
     healthcheck:
@@ -190,14 +191,14 @@ services:
   flower:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
-    ports:
-      - "${FLOWER_PORT:-5175}:5555"  # Flower web UI
+    # No `ports:` here: the base file already publishes Flower on loopback, and
+    # compose appends port lists, so a second entry added a wildcard binding (#343).
 
   docs:
     image: davidamacey/opentranscribe-docs:latest
     pull_policy: never  # Use pre-loaded image — no internet required
     ports:
-      - "${DOCS_PORT:-3030}:8080"
+      - "${DOCS_BIND_HOST:-127.0.0.1}:${DOCS_PORT:-3030}:8080"
 
   # GPU Scaled Worker - Offline overrides
   # NOTE: No 'scale' parameter here - base has scale: 0, gpu-scale.yml sets scale: 1

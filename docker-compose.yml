@@ -269,16 +269,16 @@ services:
       # dev bind mount never covered it.
       - audit_fallback_logs:/var/log/opentranscribe
     ports:
-      # BACKEND_BIND_HOST defaults to the wildcard address, which is the
-      # historical behaviour and what a plain deployment expects. A --with-pki
-      # stack overrides it to 127.0.0.1 (scripts/pki/generate-test-env.sh writes
-      # it into the fragment opentr.sh sources before assembling this chain):
-      # there, mTLS-terminating nginx is the only legitimate front door, and a
-      # reachable backend port turned the trusted-proxy allowlist into remote
-      # unauthenticated admin impersonation (issue #620). Set via env, never a
+      # Loopback by default (issue #1332). Every front door (the frontend's own
+      # nginx, the HTTPS overlay, Vite in dev) reaches the API over the compose
+      # network, so this published port only serves tools on this machine. A
+      # wildcard binding let LAN clients skip the proxy and its trusted-proxy
+      # allowlist; `--with-pki` already had to force loopback for that reason
+      # (issue #620, scripts/pki/generate-test-env.sh). Set BACKEND_BIND_HOST=0.0.0.0
+      # only to call the API directly from another machine. Set via env, never a
       # second `ports:` entry in an overlay — compose APPENDS port lists, so an
       # overlay would publish the wildcard binding as well (issue #343).
-      - "${BACKEND_BIND_HOST:-0.0.0.0}:${BACKEND_PORT:-5174}:8080"
+      - "${BACKEND_BIND_HOST:-127.0.0.1}:${BACKEND_PORT:-5174}:8080"
     environment:
       # Third-party telemetry / update checks OFF by default (app/core/privacy_env.py has the
       # per-switch evidence). A self-hosted install must not report to anyone on its own.

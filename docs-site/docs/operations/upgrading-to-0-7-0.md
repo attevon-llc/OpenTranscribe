@@ -86,3 +86,31 @@ form warns while you type an `http://` address, and the saved source shows an
 
 If two older sources point at the same server, the address of either can only be changed after
 one of them is deleted. Their other fields stay editable.
+
+## Which network addresses the ports listen on
+
+**Check this if...** another machine reaches OpenTranscribe through port 5174 (the API),
+5183 (the docs) or 5173 (the web UI) instead of the HTTPS address.
+
+In production, the API and docs ports now listen on the server itself (`127.0.0.1`). Browsers
+are not affected: they reach both through the web UI's `/api` and `/docs/` paths. When the
+HTTPS proxy is set up (`NGINX_SERVER_NAME`), the plain web UI port 5173 also listens on the
+server only, so the HTTPS address is the one way in. Without HTTPS, port 5173 keeps listening
+on every interface.
+
+| You need, from another machine | Set in `.env` |
+|---|---|
+| Scripts or tools calling the API port 5174 directly | `BACKEND_BIND_HOST=0.0.0.0` |
+| The docs port 5183 directly | `DOCS_BIND_HOST=0.0.0.0` |
+| Plain HTTP on port 5173 while HTTPS is also set up | `FRONTEND_BIND_HOST=0.0.0.0` |
+
+Then restart with `./opentranscribe.sh restart`. Only open what you need: these ports skip the
+HTTPS proxy, and over plain HTTP sign-in passwords cross the network unencrypted.
+
+An `.env` created from an older template carries `BACKEND_BIND_HOST=0.0.0.0`, which keeps the
+API port open on the network. `./opentranscribe.sh update` lists it as a stale value; change
+it to `127.0.0.1` unless you need the access above.
+
+New installs ask "Expose directly on your LAN without HTTPS?" when HTTPS is not set up. The
+answer defaults to no, which keeps the web UI on the server only; answer yes, or set
+`FRONTEND_BIND_HOST=0.0.0.0` later, to use plain HTTP from other devices.

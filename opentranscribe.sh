@@ -287,6 +287,7 @@ check_environment() {
 STALE_ENV_CHECKS=(
     "ENGINE_SHARED_VOLUME_PATH|remove this line from .env (or set it to /scratch/opentranscribe/engine) — the path it names was removed by issue #661 E2's pipeline_scratch consolidation"
     "GPU_SCALE_WORKERS|comment this out in .env so docker-compose.gpu-scale.yml derives it from DIAR_NATIVE_MAX_INFLIGHT instead — an explicit value here can oversubscribe the diar-native sidecar's admission gate"
+    "BACKEND_BIND_HOST|set it to 127.0.0.1 (or remove the line) unless another machine must call the API port directly — 0.0.0.0 was the old .env.example default, and the browser never needs it because the frontend proxies /api (issue #1332)"
     "BACKEND_LITE_IMAGE|comment this out in .env so docker-compose.lite.yml derives the image from OT_IMAGE_TAG instead — the old .env.example shipped this line SET to :latest, which overrides release pinning and makes 'update --version' / '--rollback' silently no-ops for every lite service (issue #895)"
 )
 
@@ -329,6 +330,9 @@ check_stale_env_values() {
                 # #895 regression. This checks the one string that IS the regression: the
                 # exact stale default, byte for byte.
                 [ "$val" = "davidamacey/opentranscribe-backend-lite:latest" ] || continue
+                ;;
+            BACKEND_BIND_HOST)
+                [ "$val" = "0.0.0.0" ] || continue  # the old template's exact value only
                 ;;
             *)
                 continue
@@ -756,9 +760,25 @@ pin_gpu_split_profile() {
     fi
 }
 
-# Single entry point for the FOUR calls every case arm below needs before it resolves
+# Whether get_compose_files() loads the HTTPS overlay: server name in .env, overlay and both
+# certificates present. Shared with show_access_info() and pin_frontend_bind_host().
+nginx_overlay_ready() {
+    [ -n "$(read_env_value NGINX_SERVER_NAME)" ] && [ -f docker-compose.nginx.yml ] \
+        && [ -f "${NGINX_CERT_FILE:-./nginx/ssl/server.crt}" ] && [ -f "${NGINX_CERT_KEY:-./nginx/ssl/server.key}" ]
+}
+
+# Behind the HTTPS overlay the frontend's plain-HTTP port is not the front door, so it binds
+# to loopback (#1332). Compose cannot narrow another file's binding (ports append, #343), so
+# the default is chosen here; FRONTEND_BIND_HOST in .env or the shell wins. Plain statement.
+pin_frontend_bind_host() {
+    if [ -z "${FRONTEND_BIND_HOST:-}" ] && [ -z "$(read_env_value FRONTEND_BIND_HOST)" ] && nginx_overlay_ready; then
+        export FRONTEND_BIND_HOST="127.0.0.1"
+    fi
+}
+
+# Single entry point for the calls every case arm below needs before it resolves
 # the compose chain and calls `docker compose` — the arm64 preflight, then the two
-# DIAR_NATIVE_IMAGE pins, then the GPU-split profile export. Issue #896's remaining
+# DIAR_NATIVE_IMAGE pins, the GPU-split and frontend-bind exports. Issue #896's remaining
 # gap: `arm64_deployment_preflight` used to be called explicitly only by the `start)`
 # arm, plus once more inside `get_compose_files()` itself. That second call does not
 # count for every OTHER arm: `get_compose_files()` is always invoked as
@@ -789,6 +809,7 @@ apply_deployment_pins() {
     pin_diar_native_image_for_blackwell
     pin_diar_native_image_for_lite
     pin_gpu_split_profile
+    pin_frontend_bind_host
 }
 
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
@@ -920,21 +941,15 @@ get_compose_files() {
     local nginx_server_name=""
     nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
-    if [ -n "$nginx_server_name" ] && [ -f docker-compose.nginx.yml ]; then
-        # Check for SSL certificates
-        local cert_file="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
-        local key_file="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
-
-        if [ -f "$cert_file" ] && [ -f "$key_file" ]; then
-            compose_files="$compose_files -f docker-compose.nginx.yml"
-            echo -e "${BLUE}🔒 HTTPS enabled (NGINX reverse proxy with SSL)${NC}" >&2
-            echo -e "${BLUE}   Server name: $nginx_server_name${NC}" >&2
-        else
-            echo -e "${YELLOW}⚠️  NGINX_SERVER_NAME is set but SSL certificates not found${NC}" >&2
-            echo -e "${YELLOW}   Expected: $cert_file and $key_file${NC}" >&2
-            echo -e "${YELLOW}   Generate with: ./opentranscribe.sh setup-ssl${NC}" >&2
-            echo -e "${YELLOW}   Continuing without HTTPS...${NC}" >&2
-        fi
+    if nginx_overlay_ready; then
+        compose_files="$compose_files -f docker-compose.nginx.yml"
+        echo -e "${BLUE}🔒 HTTPS enabled (NGINX reverse proxy with SSL)${NC}" >&2
+        echo -e "${BLUE}   Server name: $nginx_server_name${NC}" >&2
+    elif [ -n "$nginx_server_name" ] && [ -f docker-compose.nginx.yml ]; then
+        echo -e "${YELLOW}⚠️  NGINX_SERVER_NAME is set but SSL certificates not found${NC}" >&2
+        echo -e "${YELLOW}   Expected: ${NGINX_CERT_FILE:-./nginx/ssl/server.crt} and ${NGINX_CERT_KEY:-./nginx/ssl/server.key}${NC}" >&2
+        echo -e "${YELLOW}   Generate with: ./opentranscribe.sh setup-ssl${NC}" >&2
+        echo -e "${YELLOW}   Continuing without HTTPS...${NC}" >&2
     fi
 
     # Add the scheduled-backup overlay when explicitly opted into. Deliberately keyed on a
@@ -1554,11 +1569,8 @@ show_access_info() {
     local nginx_server_name=""
     nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
-    local cert_file="${NGINX_CERT_FILE:-./nginx/ssl/server.crt}"
-    local key_file="${NGINX_CERT_KEY:-./nginx/ssl/server.key}"
     local https_enabled=false
-
-    if [ -n "$nginx_server_name" ] && [ -f "$cert_file" ] && [ -f "$key_file" ] && [ -f docker-compose.nginx.yml ]; then
+    if nginx_overlay_ready; then
         https_enabled=true
     fi
 
@@ -2447,44 +2459,28 @@ case "${1:-help}" in
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 echo -e "${GREEN}✓ Keeping existing certificates${NC}"
-                echo ""
-                # Still update .env with the hostname if different
-                if [ -f .env ]; then
-                    if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-                        sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$hostname|g" .env
-                        rm -f .env.bak
-                    else
-                        echo "" >> .env
-                        echo "# HTTPS/SSL Configuration" >> .env
-                        echo "NGINX_SERVER_NAME=$hostname" >> .env
-                    fi
-                    echo -e "${GREEN}✓ Updated .env with NGINX_SERVER_NAME=$hostname${NC}"
-                fi
-                echo ""
-                echo "Run './opentranscribe.sh restart' to apply changes."
-                exit 0
+                keep_certs=true
             fi
             echo ""
         fi
 
-        # Generate SSL certificates
-        echo -e "${BLUE}Generating SSL certificates...${NC}"
-        if bash scripts/generate-ssl-cert.sh "$hostname" --auto-ip; then
-            echo ""
-            echo -e "${GREEN}✓ SSL certificates generated successfully!${NC}"
-        else
-            echo -e "${RED}❌ Failed to generate SSL certificates${NC}"
-            exit 1
+        if [ "${keep_certs:-}" != true ]; then
+            echo -e "${BLUE}Generating SSL certificates...${NC}"
+            if bash scripts/generate-ssl-cert.sh "$hostname" --auto-ip; then
+                echo ""
+                echo -e "${GREEN}✓ SSL certificates generated successfully!${NC}"
+            else
+                echo -e "${RED}❌ Failed to generate SSL certificates${NC}"
+                exit 1
+            fi
         fi
 
         # Update .env file with NGINX_SERVER_NAME
         if [ -f .env ]; then
             if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-                # Update existing entry
                 sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$hostname|g" .env
                 rm -f .env.bak
             else
-                # Add new entry
                 echo "" >> .env
                 echo "# HTTPS/SSL Configuration" >> .env
                 echo "NGINX_SERVER_NAME=$hostname" >> .env

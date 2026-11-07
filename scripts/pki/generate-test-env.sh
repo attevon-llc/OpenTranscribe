@@ -125,8 +125,8 @@ PRINT_TRUSTED_ONLY=""
 # turned a wide trusted-proxy CIDR into remote admin impersonation.
 #
 # Deliberately NOT `${BACKEND_BIND_HOST:-127.0.0.1}`. opentr.sh sources .env
-# before calling this script, and .env.example carries a live
-# BACKEND_BIND_HOST line for ordinary deployments — reading the ambient value
+# before calling this script, and an operator's .env may carry a wildcard
+# BACKEND_BIND_HOST line (older .env.example versions shipped one) — reading the ambient value
 # would let a stock .env silently switch the control back off, the same trap
 # add_pki_overlay documents for PKI_HTTP_PORT. Widening it takes the explicit
 # --backend-bind-host flag, which is then printed in the banner.
@@ -441,7 +441,7 @@ _env_kv() {
   _env_kv PKI_E2E_URL "$PKI_E2E_URL"
   _env_kv RUN_PKI_E2E "true"
   echo "# docker-compose.yml publishes the backend at"
-  echo "# \${BACKEND_BIND_HOST:-0.0.0.0}:\${BACKEND_PORT}. opentr.sh sources this"
+  echo "# \${BACKEND_BIND_HOST:-127.0.0.1}:\${BACKEND_PORT}. opentr.sh sources this"
   echo "# fragment with 'set -a' BEFORE assembling the compose chain, so this line is"
   echo "# what keeps a --with-pki backend off the LAN: mTLS-terminating nginx is the"
   echo "# only front door, and a DN header from a LAN peer can no longer reach the"

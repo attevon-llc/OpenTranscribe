@@ -430,7 +430,7 @@ OPENSEARCH_ADMIN_PORT=5181
 DOCS_PORT=5183
 ```
 
-Everything except the frontend, backend and docs ports is published on `127.0.0.1` only. `BACKEND_BIND_HOST` (default `0.0.0.0`) controls which interface the API port binds to.
+Every port except the frontend's is published on `127.0.0.1` only. `BACKEND_BIND_HOST` and `DOCS_BIND_HOST` (default `127.0.0.1`) move the API and docs ports. `FRONTEND_BIND_HOST` defaults to every interface when the frontend is the front door and to `127.0.0.1` behind the HTTPS overlay. See [Restricting Exposed Ports](../operations/production-deployment.md#restricting-exposed-ports).
 
 ### Resource Limits
 

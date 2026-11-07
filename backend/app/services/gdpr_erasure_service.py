@@ -99,6 +99,7 @@ from app.models.chat import ChatConversation
 from app.models.collection import Collection
 from app.models.custom_vocabulary import CustomVocabulary
 from app.models.erasure import ErasureLedgerEntry
+from app.models.hidden_media import UserHiddenMedia
 from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -154,6 +155,7 @@ def _new_summary(subject: str, subject_id: int) -> dict[str, Any]:
         "tags_deleted": 0,
         "comments_deleted": 0,
         "tasks_deleted": 0,
+        "hidden_media_deleted": 0,
         "chat_conversations_deleted": 0,
         # Only the org-member path fills these: the account-wide path reaches the same
         # rows through the `user` row's FK CASCADE, so they legitimately stay 0 there.
@@ -490,6 +492,15 @@ def erase_org_member_data(
         task_query = task_query.filter(Task.created_at <= created_before)
     summary["comments_deleted"] = comment_query.delete(synchronize_session=False)
     summary["tasks_deleted"] = task_query.delete(synchronize_session=False)
+    # The member's hide rows on the tenant's files (v465): which of the organization's
+    # recordings they chose not to see is data about them, and their account outlives this.
+    hidden_query = db.query(UserHiddenMedia).filter(
+        UserHiddenMedia.user_id == user_id,
+        UserHiddenMedia.media_file_id.in_(org_file_ids.select()),
+    )
+    if created_before is not None:
+        hidden_query = hidden_query.filter(UserHiddenMedia.hidden_at <= created_before)
+    summary["hidden_media_deleted"] = hidden_query.delete(synchronize_session=False)
     db.commit()
     _erase_avatar_objects(avatar_paths, summary["errors"])
 

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.auth.audit_events import AuditOutcome
 from app.models.chat import ChatConversation
 from app.models.collection import Collection
+from app.models.hidden_media import UserHiddenMedia
 from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -182,6 +183,13 @@ def _delete_owner_scoped_rows(db: Session, user_id: int, summary: dict[str, Any]
     )
     summary["tasks_deleted"] = (
         db.query(Task).filter(Task.user_id == user_id).delete(synchronize_session=False)
+    )
+    # Per-user hide rows (v465) CASCADE with the user row, but a legal hold can keep that row:
+    # which recordings the subject chose not to see is theirs and goes regardless.
+    summary["hidden_media_deleted"] = (
+        db.query(UserHiddenMedia)
+        .filter(UserHiddenMedia.user_id == user_id)
+        .delete(synchronize_session=False)
     )
 
     db.commit()

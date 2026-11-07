@@ -272,6 +272,7 @@ def _run_batch(monkeypatch, file_ids: list[int], *args: Any) -> dict[str, Any]:
                     "collection_ids": [],
                     "accessible_user_ids": [USER_ID],
                     "organization_id": None,
+                    "availability": "available",
                 },
             )
             for fid in ids

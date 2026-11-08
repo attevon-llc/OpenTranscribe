@@ -160,6 +160,36 @@ def test_viewer_cannot_retry_summary_shared_file(
     assert response.status_code == 403
 
 
+def test_viewer_cannot_identify_speakers_on_shared_file(
+    client, other_user_auth_headers, other_user, normal_user, db_session
+):
+    media_file = _make_file(db_session, normal_user, with_segment=True)
+    share_file(db_session, normal_user, other_user, media_file, permission="viewer")
+
+    response = client.post(
+        f"/api/files/{media_file.uuid}/identify-speakers",
+        headers=other_user_auth_headers,
+    )
+
+    assert response.status_code == 403
+
+
+def test_editor_identify_speakers_is_not_refused_on_permission(
+    client, other_user_auth_headers, other_user, normal_user, db_session
+):
+    media_file = _make_file(db_session, normal_user, with_segment=True)
+    share_file(db_session, normal_user, other_user, media_file, permission="editor")
+
+    response = client.post(
+        f"/api/files/{media_file.uuid}/identify-speakers",
+        headers=other_user_auth_headers,
+    )
+
+    # The file has no speakers, so an editor gets past the permission check to the 400.
+    assert response.status_code == 400, response.text
+    assert "No speakers" in response.json()["detail"]
+
+
 def test_viewer_cannot_auto_label_shared_file(
     client, other_user_auth_headers, other_user, normal_user, db_session
 ):
@@ -289,7 +319,9 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("files/management.py", "recover_file"),
     ("files/bulk_actions.py", "_process_single_file_action"),
     ("files/reprocess.py", "process_file_reprocess"),
-    ("files/summary_status.py", "retry_summary"),
+    # The async summary routes off-load their checks to a sync helper (concurrency part 2),
+    # so the call site's enclosing function is the helper, not the route.
+    ("files/summary_status.py", "_retry_preconditions"),
     ("files/waveform.py", "generate_waveform_for_file"),
     # Speaker writes: a speaker is reached through its file (``require_speaker_access``).
     ("speaker_profiles_matching.py", "assign_speaker_to_profile"),
@@ -303,8 +335,8 @@ MUTATING_ENDPOINTS: list[SiteKey] = [
     ("media_collections.py", "update_collection"),
     ("media_collections_membership.py", "add_media_to_collection"),
     ("media_collections_membership.py", "remove_media_from_collection"),
-    ("summarization.py", "trigger_summarization"),
-    ("summarization.py", "identify_speakers"),
+    ("summarization.py", "_summarize_preconditions"),
+    ("summarization.py", "_identify_speakers_preconditions"),
     ("summarization.py", "delete_summary"),
     # Distinct from files/management.py's and user_files.py's same-named endpoints —
     # the module is half the key, so the three never collapse into one row.

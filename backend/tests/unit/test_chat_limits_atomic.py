@@ -23,7 +23,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("local_model_redis")]
 @pytest.fixture
 def r(local_model_redis, monkeypatch):
     local_model_redis.flushdb()
-    monkeypatch.setattr(redis_core, "get_redis", lambda: local_model_redis)
+    monkeypatch.setattr(redis_core, "get_request_redis", lambda: local_model_redis)
     yield local_model_redis
     local_model_redis.flushdb()
 

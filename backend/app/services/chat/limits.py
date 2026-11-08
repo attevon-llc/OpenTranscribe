@@ -3,9 +3,10 @@
 Two separate concerns:
   - **Volume**: an hourly message ceiling per user. A per-IP limit alone doesn't
     bound cost, since one account behind a NAT or a script can rotate addresses.
-  - **Concurrency**: a cap on simultaneous open streams per user. Each stream
-    pins a provider connection and a threadpool slot for its whole duration, so
-    this is the control that protects the backend rather than the wallet.
+  - **Concurrency**: a cap on simultaneous open streams per user, and one across the
+    whole deployment (``CHAT_MAX_CONCURRENT_STREAMS_GLOBAL``). Each stream pins a
+    provider connection for its whole duration, so these are the controls that
+    protect the backend and the model rather than the wallet.
 
 Both **fail open** on Redis errors, matching slowapi's philosophy: a limiter
 outage must degrade to "unlimited", never to "nobody can chat".
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 _HOURLY_KEY = "rl:chat:msg:{user_id}:{hour}"
 _ACTIVE_KEY = "chat:active:{user_id}"
+#: Every API process's open streams, so the global cap holds across replicas.
+_GLOBAL_ACTIVE_KEY = "chat:active:global"
 _CANCEL_KEY = "chat:cancel:{message_uuid}"
 
 # Leak guard: a stream whose process died without releasing must not permanently
@@ -85,7 +88,7 @@ def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
     retry_after = 3600 - (now % 3600)
 
     try:
-        client = redis_core.get_redis()
+        client = redis_core.get_request_redis()
         count = client.eval(_HOURLY_SCRIPT, 1, key, 3600)
         if int(count) > limit:
             logger.info("Chat hourly limit hit for user %s (%s/%s)", user_id, count, limit)
@@ -128,7 +131,7 @@ def acquire_stream_slot(
     slot = slot_id or uuid.uuid4().hex
     now = time.time()
     try:
-        client = redis_core.get_redis()
+        client = redis_core.get_request_redis()
         # An upgraded deployment still holds the previous implementation's
         # INTEGER counter at this key. Every sorted-set command against it
         # raises WRONGTYPE, which the fail-open handler below would swallow —
@@ -169,14 +172,56 @@ def refresh_stream_slot(user_id: int, slot_id: str | None) -> None:
     """
     if not slot_id:
         return
-    key = _ACTIVE_KEY.format(user_id=user_id)
+    now = time.time()
     try:
-        redis_core.get_redis().eval(
-            _REFRESH_SCRIPT, 1, key, time.time(), slot_id, _ACTIVE_TTL_SECONDS * 2
-        )
+        client = redis_core.get_request_redis()
+        # Both sets the slot sits in: the user's and the deployment-wide one.
+        for key in (_ACTIVE_KEY.format(user_id=user_id), _GLOBAL_ACTIVE_KEY):
+            client.eval(_REFRESH_SCRIPT, 1, key, now, slot_id, _ACTIVE_TTL_SECONDS * 2)
     except RedisError as exc:
         # A missed refresh only shortens the slot's lease; the stream itself carries on.
         logger.debug(f"Could not refresh chat stream slot: {exc}")
+
+
+def acquire_global_stream_slot(slot_id: str, max_concurrent: int) -> bool:
+    """Reserve ``slot_id`` against the deployment-wide cap on open streams.
+
+    The per-user cap bounds one person; this bounds the deployment, so a burst of many
+    users cannot open more replies than the model and the API can serve at once. The
+    same slot id is used as for the user's own cap, and :func:`release_stream_slot`
+    frees both. Stale entries are pruned by age exactly like the per-user set.
+
+    Args:
+        slot_id: The id :func:`acquire_stream_slot` returned.
+        max_concurrent: ``CHAT_MAX_CONCURRENT_STREAMS_GLOBAL``; 0 or less = no cap.
+
+    Returns:
+        False when the deployment is at the cap. True otherwise, including when Redis
+        is unavailable (fail open, like every limit here).
+    """
+    if max_concurrent <= 0:
+        return True
+    now = time.time()
+    try:
+        client = redis_core.get_request_redis()
+        # The same atomic prune-count-add script as the per-user cap.
+        admitted = client.eval(
+            _ACQUIRE_SCRIPT,
+            1,
+            _GLOBAL_ACTIVE_KEY,
+            now - _ACTIVE_TTL_SECONDS,
+            max_concurrent,
+            now,
+            slot_id,
+            _ACTIVE_TTL_SECONDS * 2,
+        )
+        if not int(admitted):
+            logger.info("Global chat stream cap hit (max %s)", max_concurrent)
+            return False
+        return True
+    except RedisError as exc:
+        logger.warning(f"Global chat stream cap unavailable (allowing): {exc}")
+        return True
 
 
 def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
@@ -187,9 +232,10 @@ def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
     """
     key = _ACTIVE_KEY.format(user_id=user_id)
     try:
-        client = redis_core.get_redis()
+        client = redis_core.get_request_redis()
         if slot_id:
             client.zrem(key, slot_id)
+            client.zrem(_GLOBAL_ACTIVE_KEY, slot_id)
         else:
             # No id (older call site): prune by age only, never blanket-delete —
             # that would free slots still legitimately held.
@@ -205,7 +251,7 @@ def request_cancel(message_uuid: str) -> None:
     Stop over a fresh connection while the original request is still open.
     """
     try:
-        redis_core.get_redis().setex(
+        redis_core.get_request_redis().setex(
             _CANCEL_KEY.format(message_uuid=message_uuid), _CANCEL_TTL_SECONDS, "1"
         )
     except Exception as exc:  # noqa: BLE001
@@ -215,7 +261,9 @@ def request_cancel(message_uuid: str) -> None:
 def is_cancelled(message_uuid: str) -> bool:
     """Whether a Stop was requested for this generation."""
     try:
-        return bool(redis_core.get_redis().get(_CANCEL_KEY.format(message_uuid=message_uuid)))
+        return bool(
+            redis_core.get_request_redis().get(_CANCEL_KEY.format(message_uuid=message_uuid))
+        )
     except Exception:  # noqa: BLE001
         return False
 
@@ -223,6 +271,6 @@ def is_cancelled(message_uuid: str) -> bool:
 def clear_cancel(message_uuid: str) -> None:
     """Drop a cancel flag once the generation has finished."""
     try:
-        redis_core.get_redis().delete(_CANCEL_KEY.format(message_uuid=message_uuid))
+        redis_core.get_request_redis().delete(_CANCEL_KEY.format(message_uuid=message_uuid))
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Could not clear chat cancel flag: {exc}")

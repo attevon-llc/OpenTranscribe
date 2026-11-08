@@ -1,10 +1,10 @@
-"""Request and task concurrency limits: threads, lock leases, WebSocket admission.
+"""Concurrency limits: the idle-transaction backstop, task lock leases, WebSocket admission.
 
 Split out of ``app.core.config`` (at its size cap) as one cohesive concern, like
-``settings_deployment``. ``Settings`` inherits these fields; the env source,
-``env_ignore_empty`` and ``extra="ignore"`` come from ``Settings``' own ``model_config``,
-and this class is never instantiated on its own. Floors are applied by the validators in
-``config.py``.
+``settings_deployment``; pool and thread sizes live in ``settings_capacity``. ``Settings``
+inherits these fields; the env source, ``env_ignore_empty`` and ``extra="ignore"`` come
+from ``Settings``' own ``model_config``, and this class is never instantiated on its own.
+Floors are applied by the validators in ``config.py``.
 """
 
 from pydantic_settings import BaseSettings
@@ -16,15 +16,6 @@ DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 
 
 class ConcurrencySettings(BaseSettings):
-    # Worker threads for the API's sync handlers, sync dependencies and
-    # run_in_threadpool calls (Starlette's default is 40). 0 = size it to the DB
-    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A request
-    # holds its pooled connection from authentication until it ends, so with fewer
-    # threads than connections a burst can leave every thread blocked waiting for a
-    # connection while the requests holding them wait for a thread (#1169). See
-    # app/core/threadpool.py.
-    API_THREADPOOL_SIZE: int = 0
-
     # Server-side backstop for the "transaction held open across slow work"
     # bug class (issue #440). Postgres terminates a backend that has an OPEN
     # transaction and is running NO query for this long. It cannot interrupt a

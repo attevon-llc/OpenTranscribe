@@ -75,7 +75,7 @@ def test_a_residual_makes_the_response_and_the_audit_event_report_failure(
     monkeypatch.setattr(opensearch, "delete_by_query", skipping)
     store: dict[str, str] = {}
     monkeypatch.setattr(
-        "app.core.redis.get_redis",
+        "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
             set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
         ),
@@ -188,7 +188,7 @@ def status_record(monkeypatch):
     """The purge's Redis status record, as a dict."""
     store: dict[str, str] = {}
     monkeypatch.setattr(
-        "app.core.redis.get_redis",
+        "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
             set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
         ),

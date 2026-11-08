@@ -10,7 +10,7 @@ Declaring them lets the type checker verify each mixin against the same contract
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
@@ -121,7 +121,7 @@ class ChatLLM(ChatPrepLLM, Protocol):
         messages: list[dict[str, str]],
         cancel_event: threading.Event | None = None,
         **kwargs: Any,
-    ) -> Iterator[LLMStreamEvent]: ...
+    ) -> AsyncGenerator[LLMStreamEvent, None]: ...
 
 
 class LLMHost:

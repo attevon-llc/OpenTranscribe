@@ -58,7 +58,7 @@ def fake_redis():
 
 def _patched(fake_redis, task_mock):
     return (
-        patch("app.core.redis.get_redis", return_value=fake_redis),
+        patch("app.core.redis.get_request_redis", return_value=fake_redis),
         patch("app.tasks.search_indexing_task.index_transcript_search_task", task_mock),
     )
 
@@ -133,7 +133,7 @@ def test_a_redis_failure_degrades_to_no_dispatch_rather_than_raising():
     """A dispatch failure must never turn a successful edit into a failed request."""
     from app.services.search.reindex_dispatch import dispatch_transcript_reindex
 
-    with patch("app.core.redis.get_redis", side_effect=RuntimeError("redis is down")):
+    with patch("app.core.redis.get_request_redis", side_effect=RuntimeError("redis is down")):
         queued = dispatch_transcript_reindex(file_id=1, file_uuid="file-f", user_id=7)
 
     assert queued is False

@@ -57,9 +57,10 @@ server {
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; media-src 'self' blob:; worker-src 'self' blob:; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-    # File upload size limit (for audio/video transcription)
-    # Supports files up to 15GB, matching MAX_UPLOAD_BYTES's default (config.py)
-    client_max_body_size 15G;
+    # Request-body ceiling. Small by default: only the file-carrying locations below
+    # (the API-mediated upload and the object-storage paths) accept a large body.
+    # The backend enforces its own, smaller MAX_REQUEST_BODY_BYTES behind this.
+    client_max_body_size 10m;
     client_body_timeout 600s;
     client_body_buffer_size 256k;
 
@@ -161,13 +162,28 @@ server {
         return 404;
     }
 
+    # API-mediated media upload (POST /api/files): the one API route that carries a
+    # file body. 15G matches MAX_UPLOAD_BYTES's default; the backend enforces the
+    # configured ceiling while the body streams.
+    location = /api/files {
+        proxy_pass http://backend:8080;
+        proxy_http_version 1.1;
+
+        client_max_body_size 15G;
+        proxy_request_buffering off;
+
+        proxy_read_timeout 600s;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 600s;
+    }
+
     # Backend REST API
     location /api/ {
         proxy_pass http://backend:8080/api/;
         proxy_http_version 1.1;
 
-        # Large file upload support for audio/video (15GB, matching MAX_UPLOAD_BYTES)
-        client_max_body_size 15G;
+        # JSON/form bodies only; uploads use the location above or /s3/.
+        client_max_body_size 10m;
         proxy_request_buffering off;
 
         # Extended timeouts for long transcription operations
@@ -210,6 +226,9 @@ server {
         proxy_pass http://minio:9001/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
+
+        # The console uploads objects through this location.
+        client_max_body_size 15G;
 
         # MinIO requires these for proper console operation
         proxy_set_header X-Real-IP $remote_addr;

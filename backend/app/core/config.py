@@ -23,9 +23,11 @@ from app.core.env import env_bool
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
+from app.core.settings_capacity import CapacitySettings
 from app.core.settings_concurrency import ConcurrencySettings
 from app.core.settings_deployment import DeploymentSettings
 from app.core.settings_proxy_auth import ProxyAuthSettings
+from app.core.settings_request_limits import RequestLimitSettings
 from app.utils.cpu_budget import parse_thread_count_setting
 
 _config_logger = logging.getLogger(__name__)
@@ -98,7 +100,13 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
     return search_filter.replace("{username_attr}", username_attr)
 
 
-class Settings(ProxyAuthSettings, DeploymentSettings, ConcurrencySettings):
+class Settings(
+    ProxyAuthSettings,
+    DeploymentSettings,
+    RequestLimitSettings,
+    CapacitySettings,
+    ConcurrencySettings,
+):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
@@ -124,20 +132,6 @@ class Settings(ProxyAuthSettings, DeploymentSettings, ConcurrencySettings):
     # on rollout. When false, /health/ready asserts the schema is at head and fails 503
     # if not, so a replica pointed at an un-migrated database never takes traffic.
     RUN_MIGRATIONS_ON_STARTUP: bool = env_bool("RUN_MIGRATIONS_ON_STARTUP", True)
-
-    # Global server-side upload ceiling, in bytes (issue #284 A0.12). Matches the 15 GB
-    # the UI advertises and the yt-dlp `max_filesize`. Before this there was NO
-    # server-side ceiling in community: the only limit lived in the browser, so a client
-    # could skip the UI and PUT an arbitrarily large object to the presigned URL.
-    # Enforced at prepare (declared size) AND complete (the size MinIO observed).
-    # Set 0 to disable — only sensible on a trusted single-user install.
-    MAX_UPLOAD_BYTES: int | None = 15 * 1024 * 1024 * 1024
-
-    @field_validator("MAX_UPLOAD_BYTES", mode="after")
-    @classmethod
-    def _normalize_max_upload_bytes(cls, v: int | None) -> int | None:
-        """An explicit 0 still means "disabled" (falsy -> None)."""
-        return v or None
 
     # Whether anyone can create their own account via POST /api/auth/register.
     # New users are immediately active and GPU-capable, so on a public deployment this
@@ -692,10 +686,6 @@ class Settings(ProxyAuthSettings, DeploymentSettings, ConcurrencySettings):
     # segment-refresh per bulk batch. The interval is restored afterwards so
     # normal search latency is unaffected. Tuned for 6+ hour transcripts.
     SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = 500
-    # SQLAlchemy connection pool for the FastAPI backend. Celery workers build
-    # their own engines, so these sizes mainly control API concurrency.
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 40
 
     @field_validator(
         "DB_POOL_SIZE",

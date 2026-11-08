@@ -331,18 +331,26 @@ class TestQuarantinedHitsAreDropped:
         """
         visible = _make_file(db_session, normal_user, quarantined=False)
         released = _make_file(db_session, normal_user, quarantined=True)
+        visible_uuid, released_uuid, released_id = (
+            str(visible.uuid),
+            str(released.uuid),
+            released.id,
+        )
 
         shared_response = _response(
-            [_hit(str(visible.uuid), visible.id), _hit(str(released.uuid), released.id)]
+            [_hit(visible_uuid, visible.id), _hit(released_uuid, released_id)]
         )
         monkeypatch.setattr(HybridSearchService, "search", lambda _self, **kwargs: shared_response)
 
         first = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers).json()
         assert first["total_results"] == 1
-        assert {row["file_uuid"] for row in first["results"]} == {str(visible.uuid)}
+        assert {row["file_uuid"] for row in first["results"]} == {visible_uuid}
 
         # The file is released between requests — a fresh search would show it
-        # again immediately (well within the cache's TTL).
+        # again immediately (well within the cache's TTL). The handler releases its
+        # session before OpenSearch (concurrency audit F4), and the test client shares
+        # that session, so the row is re-read rather than edited through a detached object.
+        released = db_session.get(MediaFile, released_id)
         released.is_quarantined = False
         db_session.commit()
 
@@ -352,10 +360,7 @@ class TestQuarantinedHitsAreDropped:
             "request, so the released file never reappears until the cache "
             "entry expires"
         )
-        assert {row["file_uuid"] for row in second["results"]} == {
-            str(visible.uuid),
-            str(released.uuid),
-        }
+        assert {row["file_uuid"] for row in second["results"]} == {visible_uuid, released_uuid}
 
     def test_an_admin_still_sees_the_quarantined_file(
         self, client, admin_token_headers, admin_user, db_session, stub_search
@@ -399,16 +404,20 @@ class TestCollectionsOnHits:
         archive = _make_collection(db_session, normal_user, tagged, name="Archive")
         _make_collection(db_session, other_user, tagged, name="Someone else's")
         stub_search([_hit(str(tagged.uuid), tagged.id), _hit(str(bare.uuid), bare.id)])
+        # Read before the request: the handler releases the session the test client shares
+        # (concurrency audit F4), which detaches these objects.
+        expected = [
+            {"uuid": str(archive.uuid), "name": archive.name},
+            {"uuid": str(board.uuid), "name": board.name},
+        ]
+        tagged_uuid, bare_uuid = str(tagged.uuid), str(bare.uuid)
 
         response = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers)
 
         assert response.status_code == 200, response.text
         by_file = {row["file_uuid"]: row["collections"] for row in response.json()["results"]}
-        assert by_file[str(tagged.uuid)] == [
-            {"uuid": str(archive.uuid), "name": archive.name},
-            {"uuid": str(board.uuid), "name": board.name},
-        ]
-        assert by_file[str(bare.uuid)] == []
+        assert by_file[tagged_uuid] == expected
+        assert by_file[bare_uuid] == []
 
 
 class TestCollectionFilter:

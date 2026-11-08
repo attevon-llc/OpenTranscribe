@@ -43,7 +43,7 @@ from typing import TypeVar
 import redis
 
 from app.core.config import settings
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 from app.utils.redis_lease import LeaseHeartbeat
 from app.utils.redis_lease import make_lease_lock
 
@@ -79,17 +79,21 @@ class TaskLockManager:
     """Manages distributed locks for task execution."""
 
     def __init__(self, client_factory: Callable[[], redis.Redis] | None = None) -> None:
-        """Use *client_factory* for Redis; default is the shared ``get_redis()`` client."""
+        """Use *client_factory* for Redis; default is ``get_request_redis()``."""
         self._client_factory = client_factory
 
     def _client(self) -> redis.Redis | None:
-        """The shared client if Redis answers now, else None.
+        """The bounded request-path client if Redis answers now, else None.
+
+        Every lock command (SET NX, the Lua release/extend scripts, and a blocking
+        acquire, which redis-py implements as a client-side retry loop) is short, so the
+        bounded socket timeout fits; a heartbeat that times out just retries next beat.
 
         Checked on every call rather than latched: one failed ping at process start used to
         disable locking for the life of the worker.
         """
         try:
-            client = (self._client_factory or get_redis)()
+            client = (self._client_factory or get_request_redis)()
             client.ping()
             return client
         except redis.RedisError as exc:

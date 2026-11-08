@@ -372,7 +372,7 @@ def standin_redis():
     fixture needed two targets.)
     """
     fake = _StandInRedis()
-    with patch("app.core.redis.get_redis", return_value=fake):
+    with patch("app.core.redis.get_request_redis", return_value=fake):
         yield fake
 
 

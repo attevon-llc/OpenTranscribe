@@ -218,9 +218,13 @@ ssl_session_tickets off;
 # HSTS -- force HTTPS for one year
 add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 
-# Large file uploads (audio/video up to 15 GB, matching MAX_UPLOAD_BYTES's default)
-client_max_body_size 15G;
+# Small request bodies by default; only the upload locations accept a large one
+client_max_body_size 10m;
 client_body_timeout 600s;
+
+# Audio/video uploads (up to 15 GB, matching MAX_UPLOAD_BYTES's default) go through
+# `location = /api/files` and the object-storage paths `/s3/` and `/minio/`, each of
+# which sets `client_max_body_size 15G;` itself.
 ```
 
 ### Environment Variables

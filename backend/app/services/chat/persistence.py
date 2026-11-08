@@ -14,9 +14,8 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from starlette.concurrency import run_in_threadpool
-
 from app.core.chat_metadata_budget import cap_msg_metadata
+from app.core.threadpool import run_in_chat_thread
 from app.models.chat import ROLE_ASSISTANT
 from app.services.chat import citations as citations_mod
 from app.services.chat import limits
@@ -87,7 +86,7 @@ async def _finalize_turn(
     used_citations = citations_mod.extract_used_citations(turn.answer, turn.offered_citations)
 
     try:
-        turn.title = await run_in_threadpool(
+        turn.title = await run_in_chat_thread(
             _persist_reply,
             conversation_id,
             assistant_message_uuid,

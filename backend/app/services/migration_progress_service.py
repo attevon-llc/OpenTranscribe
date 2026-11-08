@@ -15,7 +15,7 @@ from typing import cast
 
 import redis
 
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class MigrationProgressService:
         """Return the shared Redis singleton."""
         if self._redis_client is None:
             try:
-                self._redis_client = get_redis()
+                self._redis_client = get_request_redis()
                 self._redis_client.ping()
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")

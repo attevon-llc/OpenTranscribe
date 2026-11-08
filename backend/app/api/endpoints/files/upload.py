@@ -1,14 +1,13 @@
 import contextlib
 import logging
-import tempfile
 import uuid
 from pathlib import Path
 from typing import BinaryIO
-from typing import cast
 
 from fastapi import HTTPException
 from fastapi import UploadFile
 from fastapi import status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -259,62 +258,40 @@ def _get_or_create_file_record(
     return db_file_result
 
 
-async def _read_first_chunk(file: UploadFile) -> tuple[bytearray, int]:
+async def _read_first_chunk(file: UploadFile) -> bytes:
     """Read the first chunk so magic-byte validation can run fail-fast.
 
-    Large uploads (multi-GB videos) with the wrong MIME type should be
-    rejected before we pay to read the remaining bytes. Returns the
-    first chunk's bytes and the number of bytes read.
+    Large uploads (multi-GB videos) with the wrong MIME type are rejected after one
+    chunk rather than after the whole object has been moved to storage.
     """
+    await file.seek(0)
     first_chunk = await file.read(UPLOAD_CHUNK_SIZE)
-    buf = bytearray(first_chunk) if first_chunk else bytearray()
-    return buf, len(buf)
+    await file.seek(0)
+    return first_chunk or b""
 
 
-#: Spool uploads larger than this to disk instead of RAM. Small uploads (the common
-#: case) stay in memory and pay nothing; only genuinely large ones touch the filesystem.
-UPLOAD_SPOOL_MAX_MEMORY = 32 * 1024 * 1024
-
-
-async def _continue_read_after_first_chunk(
-    file: UploadFile, buffered: bytearray
-) -> tuple[BinaryIO, int]:
-    """Spool the upload to a rolling temp file and return it positioned at 0.
-
-    Used after ``_read_first_chunk`` passes magic-byte validation.
-
-    Previously this extended a bytearray to EOF, holding the ENTIRE file in RAM
-    (issue #284 A1.20). A multi-GB legacy upload therefore OOMKilled the process — and
-    because it is the API process, that drops every other in-flight request, WebSocket,
-    and SSE stream with it. One user's large upload could take out everyone's session.
-
-    ``SpooledTemporaryFile`` keeps the first ``UPLOAD_SPOOL_MAX_MEMORY`` in memory and
-    transparently rolls over to disk beyond it, so the common small upload is unchanged
-    while a large one is bounded by disk rather than RAM.
-
-    Returns:
-        ``(spooled_file, total_bytes)`` — the file is seeked to 0, ready to read.
-    """
-    # Not a context manager on purpose: the spool is RETURNED and must outlive this
-    # function. The caller owns it and closes it in its finally (which also unlinks
-    # the on-disk backing file once it has rolled over).
-    spool = cast(
-        "BinaryIO",
-        tempfile.SpooledTemporaryFile(  # noqa: SIM115 - caller-owned lifetime
-            max_size=UPLOAD_SPOOL_MAX_MEMORY
-        ),
-    )
-    total_read = len(buffered)
-    if buffered:
-        spool.write(bytes(buffered))
-    while True:
-        chunk = await file.read(UPLOAD_CHUNK_SIZE)
-        if not chunk:
-            break
-        spool.write(chunk)
-        total_read += len(chunk)
+def _spooled_size(spool: BinaryIO) -> int:
+    """Byte count of a seekable spool, leaving it positioned at 0."""
+    spool.seek(0, 2)
+    size = spool.tell()
     spool.seek(0)
-    return spool, total_read
+    return size
+
+
+async def _uploaded_bytes(file: UploadFile) -> tuple[BinaryIO, int]:
+    """The upload's bytes and their true size, read from Starlette's own spool.
+
+    Starlette has already written the whole multipart part to ``UploadFile.file`` (a
+    ``SpooledTemporaryFile`` that rolls over to disk) before the handler runs, and the
+    ``upload_limit`` middleware has already bounded it. Copying it into a second spool,
+    as this used to, wrote every large upload to disk twice. The content-length header
+    is advisory, so the size is the spool's own.
+    """
+    if file.size is not None:
+        await file.seek(0)
+        return file.file, int(file.size)
+    size = await run_in_threadpool(_spooled_size, file.file)
+    return file.file, size
 
 
 def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename: str) -> None:
@@ -341,14 +318,90 @@ def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename
         logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
 
 
-def _commit_and_refresh(db: Session, db_file: MediaFile) -> None:
+def _open_upload_record(
+    db: Session,
+    file: UploadFile,
+    current_user: User,
+    file_size: int,
+    existing_file_uuid: str | None,
+    organization_id: int | None,
+) -> int:
+    """First short transaction: commit the row as ``pending`` and release the connection.
+
+    The bytes move to object storage after this returns, with no transaction open. Holding
+    the flushed row across that transfer kept a connection idle in a transaction for as
+    long as the object store took (minutes for a large file, past the server's idle
+    timeout), and on the existing-row path kept that row locked the whole time.
+
+    Returns:
+        The row's id, which also names its storage object.
+    """
+    db_file = _get_or_create_file_record(
+        db, file, current_user, file_size, existing_file_uuid, organization_id
+    )
+    db.commit()
+    file_id = int(db_file.id)
+    db.close()
+    return file_id
+
+
+def _finish_upload_record(
+    db: Session,
+    file_id: int,
+    *,
+    storage_path: str,
+    file_size: int,
+    client_file_hash: str | None,
+    filename: str,
+    imohash: str | None,
+    skip_summary: bool,
+) -> MediaFile:
+    """Second short transaction: record where the bytes landed.
+
+    Raises:
+        HTTPException: 404 when the row was deleted while its bytes were moving.
+    """
+    db_file = db.get(MediaFile, file_id)
+    if db_file is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+    _update_file_hash(db_file, client_file_hash, filename)
+    if imohash:
+        db_file.imohash = imohash
+    db_file.storage_path = storage_path
+    db_file.file_size = file_size
+    # Per-file skip summary: mark as disabled before the pipeline starts.
+    if skip_summary:
+        db_file.summary_status = "disabled"
     db.commit()
     db.refresh(db_file)
+    return db_file
 
 
-def _discard_file_record(db: Session, db_file: MediaFile) -> None:
-    db.delete(db_file)
-    db.commit()
+def _discard_upload(db: Session, file_id: int, storage_path: str | None) -> None:
+    """Compensate a failed upload: delete its row and any object already stored.
+
+    The row was committed before the bytes moved, so a failure can no longer simply roll
+    back. Without this a rejected or failed upload would leave a ``pending`` row with no
+    object behind it. Each step is best-effort and logged, so one failing cannot stop
+    the other, and the request still reports the original error.
+    """
+    if storage_path is not None and not env_bool("SKIP_S3"):
+        from app.core.config import settings
+        from app.services.minio_service import remove_object_reported
+
+        removal = remove_object_reported(settings.MEDIA_BUCKET_NAME, storage_path)
+        if removal.outcome == "failed":
+            logger.warning("Could not remove the object of failed upload %s", file_id)
+    try:
+        db.rollback()
+        db_file = db.get(MediaFile, file_id)
+        if db_file is not None:
+            db.delete(db_file)
+            db.commit()
+    except SQLAlchemyError:
+        logger.exception("Could not delete the record of failed upload %s", file_id)
+    finally:
+        db.close()
 
 
 async def process_file_upload(
@@ -394,6 +447,9 @@ async def process_file_upload(
     benchmark_timing.mark(task_id, "http_request_received")
 
     logger.info(f"File upload request received from user: {current_user.email}")
+    # Read now: the first transaction's commit expires ``current_user`` and its close
+    # detaches it, so it cannot be read after the bytes move.
+    user_id = int(current_user.id)
 
     # Validate file type first
     validate_file_type(file)
@@ -432,9 +488,10 @@ async def process_file_upload(
     with contextlib.suppress(ValueError, TypeError):
         file_size = int(file.headers.get("content-length", 0))
 
-    # Get or create file record
-    db_file = await run_in_threadpool(
-        _get_or_create_file_record,
+    # First short transaction: the row is committed as pending and the connection is
+    # released before any bytes move.
+    file_id = await run_in_threadpool(
+        _open_upload_record,
         db,
         file,
         current_user,
@@ -444,19 +501,15 @@ async def process_file_upload(
     )
 
     # Generate storage path with sanitized filename
-    storage_path = get_safe_storage_filename(
-        file.filename or "unknown", current_user.id, db_file.id
-    )
+    storage_path = get_safe_storage_filename(file.filename or "unknown", user_id, file_id)
 
-    spooled_upload: BinaryIO | None = None
+    stored = False
     try:
-        # Read and validate the first chunk BEFORE committing to the full read
-        # (Phase 2 PR #7, item E19). Streaming magic-byte validation lets us
-        # reject wrong-type uploads after a single chunk instead of buffering
-        # 50 GB of garbage to learn the MIME is wrong.
-        first_chunk, _first_bytes = await _read_first_chunk(file)
+        # Read and validate the first chunk before moving the rest (Phase 2 PR #7,
+        # item E19): a wrong-type upload is rejected after one chunk.
+        first_chunk = await _read_first_chunk(file)
         is_valid, validation_result = validate_uploaded_file(
-            bytes(first_chunk[:HEADER_READ_SIZE]), content_type, file.filename
+            first_chunk[:HEADER_READ_SIZE], content_type, file.filename
         )
         benchmark_timing.mark(task_id, "http_validation_end")
         if not is_valid:
@@ -466,11 +519,7 @@ async def process_file_upload(
             )
         logger.info(f"File validated: {file.filename} (detected: {validation_result})")
 
-        # Spool the remainder to a rolling temp file (RAM up to a threshold, then
-        # disk). Closed in the finally below — which also unlinks the backing file if
-        # it rolled over, so a failed upload cannot leave one behind.
-        file_content, file_size = await _continue_read_after_first_chunk(file, first_chunk)
-        spooled_upload = file_content
+        file_content, file_size = await _uploaded_bytes(file)
         benchmark_timing.mark(task_id, "http_read_complete")
 
         # Enforce the max upload size now that the true byte count is known (the
@@ -478,26 +527,21 @@ async def process_file_upload(
         # it runs off the event loop (#1169). The cleanup path below 413s out.
         await run_in_threadpool(validate_file_size_for_tenant, file_size, organization_id)
 
-        # Update file hash
-        _update_file_hash(db_file, client_file_hash, file.filename or "unknown")
-
-        # Compute imohash from the in-memory buffer (cheap: 3x 128KiB samples
-        # regardless of file size). Used for server-side dedup + artifact
-        # caching. Best-effort — failures never break uploads.
+        # imohash samples 3x128KiB regardless of size, for server-side dedup and
+        # artifact caching. Best-effort: a failure never breaks the upload.
+        imohash: str | None = None
         try:
             from app.services.imohash_service import compute_from_stream
 
             benchmark_timing.mark(task_id, "imohash_start")
-            # Stream-based: imohash samples 3x128KiB regardless of size, so this never
-            # materializes the file (which is the whole point of spooling it).
             file_content.seek(0)
-            db_file.imohash = compute_from_stream(file_content, size=file_size)
+            imohash = compute_from_stream(file_content, size=file_size)
             file_content.seek(0)
             benchmark_timing.mark(task_id, "imohash_end")
         except Exception as im_err:
             logger.debug(f"imohash compute failed (non-fatal): {im_err}")
 
-        # Upload to storage
+        # Upload to storage. No transaction is open here.
         with benchmark_timing.stage(task_id, "minio_put"):
             await run_in_threadpool(
                 upload_file_to_storage,
@@ -506,45 +550,39 @@ async def process_file_upload(
                 storage_path,
                 content_type or "application/octet-stream",
             )
+        stored = True
 
-        # Thumbnail generation was previously inline here (3-8s FFmpeg on
-        # the buffered video). Now deferred to generate_thumbnail_task,
-        # dispatched after the commit below — keeps the HTTP response
-        # fast (Phase 2 PR #5). thumbnail_path will land on the row when
-        # the task finishes and the frontend refreshes on the
-        # file_updated WebSocket event.
+        # Thumbnail generation is deferred to generate_thumbnail_task, dispatched
+        # after the commit below (Phase 2 PR #5); thumbnail_path lands on the row
+        # when that task finishes.
 
-        # Update storage path, file size, and thumbnail path in database
-        db_file.storage_path = storage_path
-        db_file.file_size = file_size
-
-        # Per-file skip summary: mark as disabled before pipeline starts
-        if skip_summary:
-            db_file.summary_status = "disabled"
-
+        # Second short transaction: record where the bytes are.
         with benchmark_timing.stage(task_id, "db_commit"):
-            await run_in_threadpool(_commit_and_refresh, db, db_file)
+            db_file = await run_in_threadpool(
+                _finish_upload_record,
+                db,
+                file_id,
+                storage_path=storage_path,
+                file_size=file_size,
+                client_file_hash=client_file_hash,
+                filename=file.filename or "unknown",
+                imohash=imohash,
+                skip_summary=skip_summary,
+            )
 
     except (HTTPException, DomainError):
         # Re-raise HTTP exceptions after cleanup. Everything below this try/except
         # only runs once the row has committed with its storage_path, i.e. the
         # bytes are already in object storage — nothing past this point may
         # re-enter this delete-the-row handling (issue #905).
-        await run_in_threadpool(_discard_file_record, db, db_file)
+        await run_in_threadpool(_discard_upload, db, file_id, storage_path if stored else None)
         raise
     except Exception as e:
         # Clean up on failure. Container paths and storage errors are logged,
         # never returned to the caller (#859).
-        await run_in_threadpool(_discard_file_record, db, db_file)
+        await run_in_threadpool(_discard_upload, db, file_id, storage_path if stored else None)
         logger.exception("Upload failed")
         raise ErrorHandler.internal_error("The file upload could not be completed.") from e
-    finally:
-        # Close the spool on every path. Once it has rolled over to disk this also
-        # unlinks the backing file, so a failed multi-GB upload cannot leave one
-        # behind (issue #284 A1.20).
-        if spooled_upload is not None:
-            with contextlib.suppress(Exception):
-                spooled_upload.close()
 
     # Capture file context for later reporting (persists until flushed
     # into file_pipeline_timing by finalize_transcription).
@@ -567,7 +605,7 @@ async def process_file_upload(
         dispatch_upload_pipeline_or_mark_error,
         db,
         db_file,
-        user_id=current_user.id,
+        user_id=user_id,
         whisper_model=whisper_model,
         min_speakers=min_speakers,
         max_speakers=max_speakers,

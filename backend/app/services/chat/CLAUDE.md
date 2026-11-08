@@ -336,6 +336,10 @@ Lua script (as separate commands, simultaneous requests overshot the cap), and a
 stream re-stamps its slot (`refresh_stream_slot`, from the streaming response) so the
 age prune never frees a reply that runs past `_ACTIVE_TTL_SECONDS`.
 
+A second, deployment-wide cap (`CHAT_MAX_CONCURRENT_STREAMS_GLOBAL`, env, default 64) is held
+in one Redis sorted set (`chat:active:global`) under the SAME slot id, acquired right after the
+per-user slot; `release_stream_slot` frees both, so the release rules below cover it too.
+
 **Release from `stream_reply`'s shielded `finally`, via the `on_teardown` hook —
 not from the wrapping generator.** Starlette tears the wrapper down on client
 disconnect (Stop, a closed tab) and its `finally` does not reliably run, so a
@@ -344,9 +348,14 @@ finalisation can raise, and a release after it would never run.
 
 ## Streaming and threads
 
-Everything except the SSE frames is synchronous (OpenSearch, SQLAlchemy,
-`requests`), so `service.py` runs blocking stages via `run_in_threadpool` and
-bridges the provider's sync generator with `iterate_in_threadpool`.
+The provider's token stream is **asynchronous** (`httpx.AsyncClient.stream` + `aiter_lines`
+in `LLMService._chat_completion_stream_untracked`), so a reply waiting on the model holds no
+thread (audit H1). The blocking stages (OpenSearch, SQLAlchemy, masking, persistence, the
+Stop-flag read, Bedrock's boto3 stream) run through `core.threadpool.run_in_chat_thread` /
+`iterate_in_chat_thread`, on chat's own `anyio.CapacityLimiter` (`CHAT_THREADPOOL_SIZE`),
+never the default limiter the rest of the API shares. A new blocking call in this package
+goes through those helpers, not `run_in_threadpool`. The provider stream is consumed under
+`contextlib.aclosing`: a `break` out of `async for` does not close an async generator.
 
 The generator opens **its own** DB session via `session_scope()` rather than
 borrowing the request's: it outlives the handler's dependency scope, and a stream

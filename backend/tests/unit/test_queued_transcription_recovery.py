@@ -158,7 +158,7 @@ def test_an_unreadable_broker_never_marks_a_transcription_stuck(
 ):
     """Redis is the broker: when it cannot be read, whether the message still exists is
     unknown, and recovering on that guess is the duplicate-run defect itself."""
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: BrokenRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: BrokenRedis())
     media_file = _file(db_session, normal_user)
     task = _transcription(
         db_session, normal_user, media_file, age=timedelta(hours=2), quiet_for=timedelta(hours=1)

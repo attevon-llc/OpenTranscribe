@@ -460,7 +460,7 @@ def test_semantic_cache_reuses_a_rephrased_question():
     with (
         patch.object(retrieval_cache, "_embed_query", return_value=[0.99, 0.01, 0.0]),
         patch.object(retrieval_cache, "corpus_version", return_value="5"),
-        patch("app.core.redis.get_redis", return_value=redis),
+        patch("app.core.redis.get_request_redis", return_value=redis),
         patch.object(retrieval_cache, "get_cached", return_value=hits),
     ):
         result = retrieval_cache.find_semantic_match(
@@ -487,7 +487,7 @@ def test_semantic_cache_misses_below_threshold():
     with (
         patch.object(retrieval_cache, "_embed_query", return_value=[0.0, 1.0]),
         patch.object(retrieval_cache, "corpus_version", return_value="1"),
-        patch("app.core.redis.get_redis", return_value=redis),
+        patch("app.core.redis.get_request_redis", return_value=redis),
     ):
         assert (
             retrieval_cache.find_semantic_match(
@@ -516,7 +516,7 @@ def test_semantic_cache_never_crosses_scope_or_settings():
     with (
         patch.object(retrieval_cache, "_embed_query", return_value=[1.0, 0.0]),
         patch.object(retrieval_cache, "corpus_version", return_value="1"),
-        patch("app.core.redis.get_redis", return_value=redis),
+        patch("app.core.redis.get_request_redis", return_value=redis),
     ):
         assert (
             retrieval_cache.find_semantic_match(
@@ -594,7 +594,7 @@ def test_semantic_cache_history_is_bounded():
         json.dumps(existing)
     )
 
-    with patch("app.core.redis.get_redis", return_value=fake):
+    with patch("app.core.redis.get_request_redis", return_value=fake):
         retrieval_cache.remember_semantic(
             user_id=1,
             organization_id=None,
@@ -626,7 +626,7 @@ def test_semantic_cache_write_is_atomic_via_a_single_eval_call():
 
     redis = MagicMock()
     redis.get.return_value = None
-    with patch("app.core.redis.get_redis", return_value=redis):
+    with patch("app.core.redis.get_request_redis", return_value=redis):
         retrieval_cache.remember_semantic(
             user_id=1,
             organization_id=None,
@@ -660,7 +660,7 @@ def test_semantic_cache_leg_kind_namespaces_the_redis_key():
     from app.services.chat import retrieval_cache
 
     main_redis = MagicMock()
-    with patch("app.core.redis.get_redis", return_value=main_redis):
+    with patch("app.core.redis.get_request_redis", return_value=main_redis):
         retrieval_cache.remember_semantic(
             user_id=1,
             organization_id=None,
@@ -675,7 +675,7 @@ def test_semantic_cache_leg_kind_namespaces_the_redis_key():
     main_key = main_redis.eval.call_args[0][2]
 
     subq_redis = MagicMock()
-    with patch("app.core.redis.get_redis", return_value=subq_redis):
+    with patch("app.core.redis.get_request_redis", return_value=subq_redis):
         retrieval_cache.remember_semantic(
             user_id=1,
             organization_id=None,
@@ -696,7 +696,7 @@ def test_semantic_cache_write_is_skipped_when_caching_disabled():
     from app.services.chat import retrieval_cache
 
     redis = MagicMock()
-    with patch("app.core.redis.get_redis", return_value=redis):
+    with patch("app.core.redis.get_request_redis", return_value=redis):
         retrieval_cache.remember_semantic(
             user_id=1,
             organization_id=None,
@@ -802,7 +802,9 @@ def test_corpus_bump_failure_never_breaks_indexing():
     """A Redis outage must not fail transcription indexing."""
     from app.services.chat import retrieval_cache
 
-    with patch("app.core.redis.get_redis", side_effect=RuntimeError("redis down")) as get_redis:
+    with patch(
+        "app.core.redis.get_request_redis", side_effect=RuntimeError("redis down")
+    ) as get_redis:
         with does_not_raise("a Redis outage must not fail transcription indexing"):
             retrieval_cache.bump_corpus_version()
 
@@ -812,7 +814,7 @@ def test_corpus_bump_failure_never_breaks_indexing():
 def test_corpus_version_degrades_to_zero_without_redis():
     from app.services.chat import retrieval_cache
 
-    with patch("app.core.redis.get_redis", side_effect=RuntimeError("no redis")):
+    with patch("app.core.redis.get_request_redis", side_effect=RuntimeError("no redis")):
         assert retrieval_cache.corpus_version() == "0"
 
 
@@ -833,7 +835,7 @@ def test_semantic_cache_ignores_entries_from_an_older_corpus():
     with (
         patch.object(retrieval_cache, "_embed_query", return_value=[1.0, 0.0]),
         patch.object(retrieval_cache, "corpus_version", return_value="2"),
-        patch("app.core.redis.get_redis", return_value=redis),
+        patch("app.core.redis.get_request_redis", return_value=redis),
     ):
         assert (
             retrieval_cache.find_semantic_match(

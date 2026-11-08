@@ -100,8 +100,10 @@ class DocumentExportHarness:
             "publish_bulk_event",
             lambda job_id, **kw: harness.events.append({"job_id": job_id, **kw}),
         )
+        # The export task (a worker) uses get_redis(); the routes use get_request_redis().
         monkeypatch.setattr("app.core.redis.get_redis", lambda: harness.redis)
-        monkeypatch.setattr("app.services.download_events.get_redis", lambda: harness.redis)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: harness.redis)
+        monkeypatch.setattr("app.services.download_events.get_request_redis", lambda: harness.redis)
         monkeypatch.setattr(
             task_module.prepare_transcript_document_task,
             "delay",

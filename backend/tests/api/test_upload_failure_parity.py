@@ -54,7 +54,7 @@ def _raise_generic_failure(*_args, **_kwargs):
     raise RuntimeError("broker unreachable")
 
 
-def _seed_pending_file_with_storage_path(db_session, owner, filename: str) -> MediaFile:
+def _seed_pending_file_with_storage_path(db_session, owner_id: int, filename: str) -> MediaFile:
     """A PENDING row with a real (but not-necessarily-uploaded) storage_path.
 
     ``content_type=""`` deliberately skips /complete's magic-byte re-validation
@@ -72,7 +72,7 @@ def _seed_pending_file_with_storage_path(db_session, owner, filename: str) -> Me
         file_size=4096,
         status="pending",
         is_public=False,
-        user_id=owner.id,
+        user_id=owner_id,
     )
     db_session.add(media_file)
     db_session.commit()
@@ -96,6 +96,8 @@ def _post_legacy_upload(client, headers, sample_wav_bytes, filename: str):
 def test_legacy_upload_keeps_the_row_at_error_when_asr_is_refused(
     client, user_token_headers, normal_user, sample_wav_bytes, db_session, monkeypatch
 ):
+    # The upload closes the shared session, detaching fixture rows; read the id first.
+    owner_id = normal_user.id
     from app.api.endpoints.files import upload as upload_mod
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
@@ -111,7 +113,7 @@ def test_legacy_upload_keeps_the_row_at_error_when_asr_is_refused(
     db_session.expire_all()
     row = (
         db_session.query(MediaFile)
-        .filter(MediaFile.filename == filename, MediaFile.user_id == normal_user.id)
+        .filter(MediaFile.filename == filename, MediaFile.user_id == owner_id)
         .first()
     )
     assert row is not None, "a post-storage dispatch failure must NOT delete the row"
@@ -125,7 +127,7 @@ def test_presigned_complete_keeps_the_row_at_error_when_asr_is_refused(
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     seeded = _seed_pending_file_with_storage_path(
-        db_session, normal_user, f"complete-asr-refused-{uuid.uuid4().hex[:8]}.wav"
+        db_session, normal_user.id, f"complete-asr-refused-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
     monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_asr_configuration_error)
@@ -161,6 +163,8 @@ def test_legacy_upload_keeps_the_row_at_error_on_a_generic_dispatch_failure(
     db_session,
     monkeypatch,
 ):
+    # The upload closes the shared session, detaching fixture rows; read the id first.
+    owner_id = normal_user.id
     from app.api.endpoints.files import upload as upload_mod
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
@@ -181,7 +185,7 @@ def test_legacy_upload_keeps_the_row_at_error_on_a_generic_dispatch_failure(
     db_session.expire_all()
     row = (
         db_session.query(MediaFile)
-        .filter(MediaFile.filename == filename, MediaFile.user_id == normal_user.id)
+        .filter(MediaFile.filename == filename, MediaFile.user_id == owner_id)
         .first()
     )
     assert row is not None, "a post-storage dispatch failure must NOT delete the row"
@@ -196,7 +200,7 @@ def test_presigned_complete_keeps_the_row_at_error_on_a_generic_dispatch_failure
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
     seeded = _seed_pending_file_with_storage_path(
-        db_session, normal_user, f"complete-generic-failure-{uuid.uuid4().hex[:8]}.wav"
+        db_session, normal_user.id, f"complete-generic-failure-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
     monkeypatch.setattr(dispatch_mod, "dispatch_upload_pipeline", _raise_generic_failure)
@@ -224,6 +228,8 @@ def test_presigned_complete_keeps_the_row_at_error_on_a_generic_dispatch_failure
 def test_both_upload_paths_report_the_same_outcome_for_one_refusal(
     client, user_token_headers, normal_user, sample_wav_bytes, db_session, monkeypatch
 ):
+    # The upload closes the shared session, detaching fixture rows; read the id first.
+    owner_id = normal_user.id
     from app.api.endpoints.files import upload as upload_mod
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
@@ -234,7 +240,7 @@ def test_both_upload_paths_report_the_same_outcome_for_one_refusal(
     legacy = _post_legacy_upload(client, user_token_headers, sample_wav_bytes, legacy_filename)
 
     seeded = _seed_pending_file_with_storage_path(
-        db_session, normal_user, f"parity-presigned-{uuid.uuid4().hex[:8]}.wav"
+        db_session, owner_id, f"parity-presigned-{uuid.uuid4().hex[:8]}.wav"
     )
     monkeypatch.setattr("app.services.minio_service.object_exists_and_size", lambda *a, **k: 4096)
     presigned = client.post(
@@ -248,7 +254,7 @@ def test_both_upload_paths_report_the_same_outcome_for_one_refusal(
     db_session.expire_all()
     legacy_row = (
         db_session.query(MediaFile)
-        .filter(MediaFile.filename == legacy_filename, MediaFile.user_id == normal_user.id)
+        .filter(MediaFile.filename == legacy_filename, MediaFile.user_id == owner_id)
         .first()
     )
     presigned_row = db_session.query(MediaFile).filter(MediaFile.uuid == seeded.uuid).first()
@@ -266,6 +272,8 @@ def test_both_upload_paths_report_the_same_outcome_for_one_refusal(
 def test_legacy_upload_still_drops_the_row_when_the_bytes_are_rejected(
     client, user_token_headers, normal_user, db_session
 ):
+    # The upload closes the shared session, detaching fixture rows; read the id first.
+    owner_id = normal_user.id
     filename = f"legacy-rejected-{uuid.uuid4().hex[:8]}.wav"
     garbage = b"NOTRIFFDATA" + b"\x01\x02\x03\x04" * 8  # not a valid RIFF/WAV header
     response = _post_legacy_upload(client, user_token_headers, garbage, filename)
@@ -275,7 +283,7 @@ def test_legacy_upload_still_drops_the_row_when_the_bytes_are_rejected(
     db_session.expire_all()
     row = (
         db_session.query(MediaFile)
-        .filter(MediaFile.filename == filename, MediaFile.user_id == normal_user.id)
+        .filter(MediaFile.filename == filename, MediaFile.user_id == owner_id)
         .first()
     )
     assert row is None, "a pre-storage rejection must still drop the row"
@@ -287,7 +295,7 @@ def test_presigned_complete_still_drops_the_row_when_the_object_is_oversized(
     from app.core.config import settings as app_settings
 
     seeded = _seed_pending_file_with_storage_path(
-        db_session, normal_user, f"complete-oversized-{uuid.uuid4().hex[:8]}.wav"
+        db_session, normal_user.id, f"complete-oversized-{uuid.uuid4().hex[:8]}.wav"
     )
     assert app_settings.MAX_UPLOAD_BYTES is not None, "the ceiling must be enabled for this test"
     oversized = app_settings.MAX_UPLOAD_BYTES + 1
@@ -328,6 +336,8 @@ def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
     and deliberately no longer carries ``last_error_message`` — that field was the
     only path by which raw error text ever reached the gallery.
     """
+    # The upload closes the shared session, detaching fixture rows; read the id first.
+    owner_id = normal_user.id
     from app.api.endpoints.files import upload as upload_mod
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
@@ -344,11 +354,11 @@ def test_dispatch_failure_pushes_a_live_ws_update_and_invalidates_cache(
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
-    cache_mock.invalidate_user_files.assert_called_once_with(normal_user.id)
+    cache_mock.invalidate_user_files.assert_called_once_with(owner_id)
 
     ws_mock.assert_called_once()
     ws_user_id, ws_type, ws_data = ws_mock.call_args[0]
-    assert ws_user_id == normal_user.id
+    assert ws_user_id == owner_id
     assert ws_type == "file_updated"
     assert ws_data["status"] == FileStatus.ERROR.value
     assert ASR_REFUSAL_MESSAGE in ws_data["message"]
@@ -373,6 +383,8 @@ def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
     """The WS push is best-effort: a failure in it must not block the cache
     invalidation or mask the real dispatch failure being re-raised (#911).
     """
+    # The upload closes the shared session, detaching fixture rows; read the id first.
+    owner_id = normal_user.id
     from app.api.endpoints.files import upload as upload_mod
     from app.api.endpoints.files import upload_dispatch as dispatch_mod
 
@@ -394,12 +406,12 @@ def test_dispatch_failure_still_invalidates_cache_when_the_ws_push_fails(
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     assert ASR_REFUSAL_MESSAGE in response.json()["detail"]
 
-    cache_mock.invalidate_user_files.assert_called_once_with(normal_user.id)
+    cache_mock.invalidate_user_files.assert_called_once_with(owner_id)
 
     db_session.expire_all()
     row = (
         db_session.query(MediaFile)
-        .filter(MediaFile.filename == filename, MediaFile.user_id == normal_user.id)
+        .filter(MediaFile.filename == filename, MediaFile.user_id == owner_id)
         .first()
     )
     assert row is not None, "a WS-push failure must not prevent the ERROR row from persisting"

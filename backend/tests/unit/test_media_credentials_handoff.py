@@ -56,7 +56,7 @@ class FakeRedis:
 @pytest.fixture
 def fake_redis(monkeypatch):
     r = FakeRedis()
-    monkeypatch.setattr(handoff, "get_redis", lambda: r)
+    monkeypatch.setattr(handoff, "get_request_redis", lambda: r)
     return r
 
 

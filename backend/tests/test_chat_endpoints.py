@@ -51,8 +51,9 @@ class _FakeLLM:
             LLMStreamEvent(type="done", finish_reason="stop"),
         ]
 
-    def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
-        yield from self._events
+    async def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
+        for _event in self._events:
+            yield _event
 
     def estimate_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
@@ -788,6 +789,30 @@ def test_concurrent_stream_cap_returns_429(client, auth_headers, stub_llm):
     assert response.status_code == 429
 
 
+def test_the_global_stream_cap_returns_429_and_releases_the_user_slot(
+    client, auth_headers, stub_llm
+):
+    """Audit H1: past the deployment-wide cap a send is refused before anything streams,
+    and the user's own slot, already taken, is handed back."""
+    conversation = _create(client, auth_headers)
+    with (
+        patch("app.services.chat.limits.acquire_stream_slot", return_value="slot-global"),
+        patch("app.services.chat.limits.acquire_global_stream_slot", return_value=False),
+        patch("app.services.chat.limits.release_stream_slot") as release,
+    ):
+        response = client.post(
+            f"/api/chat/conversations/{conversation['uuid']}/messages",
+            json={"content": "hi"},
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 429
+    assert response.headers.get("retry-after") == "5"
+    assert "as many questions as it can" in response.json()["detail"]
+    assert release.call_count == 1
+    assert release.call_args.args[1] == "slot-global"
+
+
 def test_a_refused_send_releases_the_stream_slot(client, auth_headers):
     """Otherwise one failed send would permanently consume a concurrency slot."""
     conversation = _create(client, auth_headers)
@@ -1038,9 +1063,10 @@ def test_send_releases_the_request_transaction_before_the_reply_streams(
     app.dependency_overrides[get_db] = _tracked_db
     original_stream = stub_llm.chat_completion_stream
 
-    def _observed_stream(messages, cancel_event=None, **kwargs):
+    async def _observed_stream(messages, cancel_event=None, **kwargs):
         tracker.observe("provider_stream")
-        yield from original_stream(messages, cancel_event=cancel_event, **kwargs)
+        async for event in original_stream(messages, cancel_event=cancel_event, **kwargs):
+            yield event
 
     stub_llm.chat_completion_stream = _observed_stream
     try:

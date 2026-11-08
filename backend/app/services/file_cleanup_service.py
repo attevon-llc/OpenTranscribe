@@ -359,10 +359,10 @@ def _clear_reindex_coordination_keys(file_uuid: str) -> None:
     Redis must not turn a finished delete into a failure.
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
         from app.services.search.reindex_dispatch import reindex_coordination_keys
 
-        get_redis().delete(*reindex_coordination_keys(file_uuid))
+        get_request_redis().delete(*reindex_coordination_keys(file_uuid))
     except (RedisError, OSError) as err:
         logger.debug(f"purge {file_uuid}: reindex coordination keys not cleared: {err}")
 

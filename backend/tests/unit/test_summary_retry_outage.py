@@ -40,10 +40,16 @@ def test_summary_retry_skips_an_outage_without_touching_the_file(monkeypatch):
         summary_retry, "reset_summary_for_retry", lambda *a: touched.append("reset")
     )
 
+    # The retry releases its read transaction before the provider check, so the stand-in
+    # session needs the one method that release calls.
+    closed: list[bool] = []
+    db = _ns(close=lambda: closed.append(True))
+
     with pytest.raises(ServiceUnavailableError):
-        asyncio.run(summary_retry.retry_summary_if_available(_ns(), "u"))
+        asyncio.run(summary_retry.retry_summary_if_available(db, "u"))
 
     assert touched == []
+    assert closed == [True]
 
 
 def test_check_llm_availability_does_not_swallow_an_outage(monkeypatch):

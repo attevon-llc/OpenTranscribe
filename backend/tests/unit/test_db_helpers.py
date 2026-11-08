@@ -138,45 +138,6 @@ def test_get_user_files_query_for_context_uses_context_org_scope(
 
 
 # ---------------------------------------------------------------------------
-# get_or_create
-# ---------------------------------------------------------------------------
-
-
-def test_get_or_create_creates_when_missing(db_session, normal_user):
-    name = f"tag-{_suffix()}"
-
-    tag, created = db_helpers.get_or_create(
-        db_session, Tag, defaults={"source": "manual"}, name=name, user_id=normal_user.id
-    )
-
-    assert created is True
-    assert tag.id is not None
-    assert tag.source == "manual"
-
-    count = db_session.query(Tag).filter(Tag.name == name, Tag.user_id == normal_user.id).count()
-    assert count == 1
-
-
-def test_get_or_create_returns_existing_without_duplicating(db_session, normal_user):
-    name = f"tag-{_suffix()}"
-    first, created_first = db_helpers.get_or_create(
-        db_session, Tag, defaults={"source": "manual"}, name=name, user_id=normal_user.id
-    )
-    second, created_second = db_helpers.get_or_create(
-        db_session, Tag, defaults={"source": "auto_ai"}, name=name, user_id=normal_user.id
-    )
-
-    assert created_first is True
-    assert created_second is False
-    assert second.id == first.id
-    # defaults are only applied on creation — the second call must not overwrite it.
-    assert second.source == "manual"
-
-    count = db_session.query(Tag).filter(Tag.name == name, Tag.user_id == normal_user.id).count()
-    assert count == 1
-
-
-# ---------------------------------------------------------------------------
 # safe_get_by_id
 # ---------------------------------------------------------------------------
 
@@ -227,7 +188,7 @@ def test_safe_get_by_id_swallows_query_error_and_returns_none(db_session):
 
 def test_safe_get_by_id_leaves_session_usable_after_query_error(db_session, normal_user):
     """``safe_get_by_id``'s ``except SQLAlchemyError`` must call ``db.rollback()``,
-    matching ``get_or_create``/``bulk_update`` in this same module — otherwise
+    matching ``bulk_update`` in this same module — otherwise
     Postgres leaves the transaction aborted after the failed statement, and every
     later query on this session keeps failing with "current transaction is
     aborted" until something rolls it back.

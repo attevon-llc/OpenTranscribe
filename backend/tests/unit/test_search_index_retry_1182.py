@@ -390,8 +390,11 @@ def sweep_env(monkeypatch):
     monkeypatch.setattr(settings, "SEARCH_INDEX_SWEEP_BATCH_SIZE", 50)
     redis = _FakeRedis()
     task_mock = MagicMock()
+    # The sweep task (a worker) and the dispatch it calls (request-path) use different
+    # clients; both see the same fake.
     with (
         patch("app.core.redis.get_redis", return_value=redis),
+        patch("app.core.redis.get_request_redis", return_value=redis),
         patch("app.tasks.search_indexing_task.index_transcript_search_task", task_mock),
     ):
         yield redis, task_mock
@@ -520,7 +523,7 @@ class TestDispatchPriority:
 
         task_mock = MagicMock()
         with (
-            patch("app.core.redis.get_redis", return_value=_FakeRedis()),
+            patch("app.core.redis.get_request_redis", return_value=_FakeRedis()),
             patch("app.tasks.search_indexing_task.index_transcript_search_task", task_mock),
         ):
             assert dispatch_transcript_reindex(
@@ -533,7 +536,7 @@ class TestDispatchPriority:
 
         task_mock = MagicMock()
         with (
-            patch("app.core.redis.get_redis", return_value=_FakeRedis()),
+            patch("app.core.redis.get_request_redis", return_value=_FakeRedis()),
             patch("app.tasks.search_indexing_task.index_transcript_search_task", task_mock),
         ):
             queued = dispatch_transcript_reindex(file_id=1, file_uuid="u2", user_id=2)

@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIASGIMiddleware
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.responses import Response
@@ -322,6 +323,14 @@ app = FastAPI(
 # it runs INSIDE it (see the ordering note at ObservabilityMiddleware): its early 413
 # still carries the CORS headers a browser needs to read the error.
 app.add_middleware(UploadBodyLimitMiddleware)
+
+# App-wide request-body ceiling. FastAPI reads a JSON/form body before any dependency
+# (authentication included) runs, so this is what stops an anonymous caller making the
+# process buffer an arbitrarily large body. FastAPI's own build_middleware_stack does not
+# honour Starlette's `max_body_size` constructor argument, hence the explicit middleware.
+# Added AFTER the upload limit so it runs OUTSIDE it: the upload middleware's nested
+# limit then raises this one for the two file-carrying routes.
+app.add_middleware(RequestBodyLimitMiddleware, max_body_size=settings.MAX_REQUEST_BODY_BYTES)
 
 # Public read-only demo (issue #628): a pass-through unless DEMO_MODE is on, then every write
 # and every WebSocket is refused before routing. Added AFTER the upload limit so it runs

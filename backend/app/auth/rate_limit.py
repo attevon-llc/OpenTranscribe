@@ -16,6 +16,7 @@ Configuration is managed via settings:
 - RATE_LIMIT_TRUSTED_PROXIES: Comma-separated list of trusted proxy IPs/CIDRs
 """
 
+import hashlib
 import logging
 import time
 from collections.abc import Callable
@@ -117,6 +118,42 @@ def user_or_ip_key(request: Request) -> str:
     return resolve_client_ip(request)
 
 
+def login_rate_key(request: Request) -> str:
+    """Rate-limit key for password sign-in: the client IP AND the submitted username.
+
+    Keyed per IP alone, every user behind one NAT or office proxy shared one bucket, so
+    a handful of colleagues signing in at once locked each other out. Keyed per
+    ``(ip, username)``, guessing one account's password from one address is limited
+    exactly as before, and the per-account lockout (``auth/lockout.py``) still caps it
+    across addresses; spraying many usernames from one address is bounded by the looser
+    per-IP backstop :func:`get_login_ip_rate_limit` stacked on the same route.
+
+    The username is set on ``request.state.login_username`` (already normalized with
+    ``lockout.canonical_identifier``) by the login route's form dependency, which FastAPI
+    resolves before the limited endpoint runs, and is hashed here so no address reaches
+    the limiter's storage keys.
+    """
+    client_ip = _client_ip_key(request)
+    username = getattr(request.state, "login_username", None)
+    if not username:
+        return client_ip
+    digest = hashlib.sha256(username.encode("utf-8")).hexdigest()[:32]
+    return f"login:{client_ip}:{digest}"
+
+
+def refresh_rate_key(request: Request) -> str:
+    """Rate-limit key for token refresh: the presented token's subject, else the client IP.
+
+    ``request.state.refresh_subject`` is set by the refresh route's body dependency only
+    when the presented refresh token's signature verifies, so a forged token cannot
+    pick (or exhaust) another user's bucket; anything unverifiable stays on the IP.
+    """
+    subject = getattr(request.state, "refresh_subject", None)
+    if subject:
+        return f"refresh:{subject}"
+    return _client_ip_key(request)
+
+
 def demo_default_limits() -> list[str]:
     """Every-route per-client-IP ceiling on the public demo (#628); none elsewhere.
 
@@ -154,7 +191,7 @@ def _create_limiter() -> Limiter:
     _redis_reachable()
 
     kwargs = {
-        "key_func": _get_key_func(),
+        "key_func": _client_ip_key,
         "enabled": settings.RATE_LIMIT_ENABLED,
         # None outside the public demo: limits are per-endpoint (see demo_default_limits).
         "default_limits": demo_default_limits(),
@@ -170,7 +207,17 @@ def _create_limiter() -> Limiter:
         # Building the storage does NOT connect (limits is lazy), so an unreachable
         # Redis lands here happily and degrades at first use. This only catches a
         # genuinely unusable URI or a missing redis client library.
-        limiter = Limiter(storage_uri=settings.REDIS_URL, **kwargs)  # type: ignore[arg-type]
+        # storage_options reach redis.from_url: slowapi checks limits synchronously, on the
+        # event loop for an async route, so an unbounded read on a hung Redis would stall
+        # every request in the process. A timeout raises, and the in-memory fallback takes over.
+        redis_kwargs = {
+            **kwargs,
+            "storage_options": {
+                "socket_timeout": settings.REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS,
+                "socket_connect_timeout": settings.REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS,
+            },
+        }
+        limiter = Limiter(storage_uri=settings.REDIS_URL, **redis_kwargs)  # type: ignore[arg-type]
     except Exception as e:
         logger.error(
             "Cannot build a Redis-backed rate limiter (%s); falling back to per-process "
@@ -186,6 +233,9 @@ def _create_limiter() -> Limiter:
     return limiter
 
 
+# The plain per-client-IP key, with the degraded-storage metric; the default key func.
+_client_ip_key = _get_key_func()
+
 # Global limiter instance
 limiter = _create_limiter()
 
@@ -198,6 +248,20 @@ def get_auth_rate_limit() -> str:
         Rate limit string in slowapi format (e.g., "10/minute").
     """
     return f"{settings.RATE_LIMIT_AUTH_PER_MINUTE}/minute"
+
+
+def get_login_ip_rate_limit() -> str:
+    """Per-client-IP backstop on password sign-in, above the per-(IP, username) limit.
+
+    ``LOGIN_IP_BACKSTOP_MULTIPLIER`` x ``RATE_LIMIT_AUTH_PER_MINUTE``: room for many people
+    behind one address, while one address still cannot try unlimited usernames.
+
+    Returns:
+        Rate limit string in slowapi format (e.g., "100/minute").
+    """
+    from app.core.constants import LOGIN_IP_BACKSTOP_MULTIPLIER
+
+    return f"{settings.RATE_LIMIT_AUTH_PER_MINUTE * LOGIN_IP_BACKSTOP_MULTIPLIER}/minute"
 
 
 def get_auth_methods_rate_limit() -> str:

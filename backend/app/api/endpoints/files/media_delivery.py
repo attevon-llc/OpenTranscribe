@@ -200,7 +200,7 @@ def _ensure_prepare_enqueued(
     masked under someone else's policy. It is ``""`` for audio and for unmasked
     policies, so those guard keys are unchanged.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
     from app.services.download_events import download_prep_guard_key
     from app.tasks.media_download import prepare_media_download_task
 
@@ -208,7 +208,7 @@ def _ensure_prepare_enqueued(
     # below is only a backstop. See release_download_prep_guard().
     guard_key = download_prep_guard_key(db_file.id, mode, variant)
     try:
-        first = get_redis().set(guard_key, "1", nx=True, ex=900)
+        first = get_request_redis().set(guard_key, "1", nx=True, ex=900)
     except Exception:
         # The Redis key is only a duplicate-dispatch guard; losing it costs one
         # redundant prepare task, whereas failing here would block the download.
@@ -314,9 +314,7 @@ def download_stream(
     import contextlib
     import json as _json
 
-    import redis.asyncio as aioredis
-
-    from app.core.config import settings
+    from app.core.redis import get_async_redis
     from app.services.download_events import download_events_channel
 
     if mode not in _DOWNLOAD_MODES:
@@ -339,6 +337,13 @@ def download_stream(
         dedup=False,
         bypass=ctx.bypass,
     )
+    # FastAPI closes the request's session only after the response is SENT, which for
+    # this stream is when the download finishes. Load the row (the audit write above may
+    # have committed and expired it), detach it so the generator's reads never reopen a
+    # transaction, and give the pooled connection back now.
+    db.refresh(db_file)
+    db.expunge(db_file)
+    db.close()
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
@@ -370,10 +375,7 @@ def download_stream(
         from redis.exceptions import RedisError
         from redis.exceptions import TimeoutError as RedisTimeoutError
 
-        client = aioredis.from_url(
-            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
-        )
-        pubsub = client.pubsub()
+        pubsub = get_async_redis().pubsub()
         await pubsub.subscribe(download_events_channel(file_uuid))
         try:
             # 2. RE-CHECK after subscribing (issue #284 A1.22).
@@ -427,10 +429,10 @@ def download_stream(
         except asyncio.CancelledError:
             raise
         finally:
+            # Returns the pub/sub connection to the shared pool; the client stays open.
             with contextlib.suppress(Exception):
                 await pubsub.unsubscribe(download_events_channel(file_uuid))
                 await pubsub.close()
-                await client.close()
 
     return StreamingResponse(
         event_stream(),

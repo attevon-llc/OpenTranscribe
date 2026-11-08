@@ -68,7 +68,7 @@ def seams(monkeypatch):
     stub_public_dns(monkeypatch)
     set_youtube_policy(monkeypatch, user_rate_limit_enabled=False)
     redis = _FakeRedis()
-    monkeypatch.setattr(handoff, "get_redis", lambda: redis)
+    monkeypatch.setattr(handoff, "get_request_redis", lambda: redis)
     extracted: list[tuple[str, dict]] = []
     tasks: list[dict] = []
     playlists: list[dict] = []

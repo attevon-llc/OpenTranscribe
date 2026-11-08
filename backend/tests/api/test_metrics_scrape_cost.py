@@ -119,7 +119,7 @@ def test_queue_endpoint_is_one_redis_round_trip_and_no_db(client, monkeypatch, s
         llen_map={"gpu": 4, f"gpu{Channel.sep}5": 3},
         unacked=[json.dumps([{}, "gpu", "gpu"]), json.dumps([{}, "cpu", "cpu"])],
     )
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
     statements: list[str] = []
 

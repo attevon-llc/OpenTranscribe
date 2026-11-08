@@ -117,7 +117,7 @@ def test_an_eager_run_is_not_recorded(fake_redis):
 
 
 def test_a_worker_side_redis_outage_does_not_fail_the_task(monkeypatch):
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: BrokenRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: BrokenRedis())
     monkeypatch.setattr(tr, "_running", set())
 
     tr.on_task_start(_task("detect_speaker_attributes"), "t-5", [], {})
@@ -206,7 +206,7 @@ def test_a_poison_task_stops_after_the_attempt_limit(fake_redis, monkeypatch):
 
 
 def test_an_unreadable_redis_replays_nothing(monkeypatch):
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: BrokenRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: BrokenRedis())
     sent = _Sent()
     summary = tr.reclaim_lost_tasks(send_task=sent)
     assert sent.calls == [] and summary.get("error") == 1

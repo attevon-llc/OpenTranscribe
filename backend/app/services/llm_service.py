@@ -10,7 +10,6 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import StrEnum
@@ -28,14 +27,11 @@ from app.services.bedrock_settings import connection_from_encrypted
 from app.services.bedrock_settings import resolve_region
 from app.services.llm_chunking import LLMChunkingMixin
 from app.services.llm_health import LLMHealthMixin
+from app.services.llm_http_stream import LLMHttpStreamMixin
 from app.services.llm_json_extract import LLMJsonExtractMixin
 from app.services.llm_metering import LLMMeteringMixin
 from app.services.llm_payloads import LLMPayloadMixin
 from app.services.llm_speaker_id import LLMSpeakerIdMixin
-from app.services.llm_stream import TRANSIENT_HTTP_STATUSES
-from app.services.llm_stream import LLMStreamEvent
-from app.services.llm_stream import apply_stream_payload
-from app.services.llm_stream import get_stream_parser
 from app.services.llm_summarization import LLMSummarizationMixin
 from app.services.llm_types import SDK_PROVIDERS
 from app.services.llm_types import LLMConfig
@@ -117,6 +113,7 @@ class LLMEndpointBlockedError(Exception):
 
 class LLMService(
     LLMMeteringMixin,
+    LLMHttpStreamMixin,
     LLMPayloadMixin,
     LLMSummarizationMixin,
     LLMChunkingMixin,
@@ -563,137 +560,6 @@ class LLMService(
             model=self.config.model,
             provider=self.config.provider.value,
         )
-
-    def _iter_stream_lines(
-        self, response: requests.Response, cancel_event: threading.Event | None
-    ) -> Iterator[str]:
-        """Yield decoded response lines, stopping early when cancellation is requested."""
-        for line in response.iter_lines(decode_unicode=True):
-            if cancel_event is not None and cancel_event.is_set():
-                return
-            if line is None:
-                continue
-            yield str(line)
-
-    def _chat_completion_stream_untracked(
-        self,
-        messages: list[dict[str, str]],
-        cancel_event: threading.Event | None = None,
-        **kwargs: Any,
-    ) -> Iterator[LLMStreamEvent]:
-        """Stream a chat completion token-by-token from the configured provider.
-
-        The interactive counterpart to :meth:`chat_completion`. Payload construction is
-        shared with the non-streaming path (``_prepare_payload``), so model, temperature
-        and token settings can never drift between the two.
-
-        Failures are yielded as a single ``error`` event rather than raised: a streaming
-        HTTP response has already committed its status line by the time most provider
-        problems surface, so the caller relays the error in-band as an SSE frame.
-
-        Args:
-            messages: Chat messages in OpenAI format.
-            cancel_event: Set by the caller (client disconnect / stop button) to abort
-                the stream; the generator closes the connection and reports
-                ``finish_reason="cancelled"``.
-            **kwargs: Overrides forwarded to the payload builder (max_tokens,
-                temperature, ...).
-
-        Yields:
-            :class:`LLMStreamEvent` values, always terminated by exactly one ``done``
-            or ``error`` event.
-        """
-        # Bedrock is an SDK call, not an HTTP endpoint we POST to, so it branches out
-        # ahead of the URL lookup below (its entry in `endpoints` is None by design).
-        # The generator it returns is synchronous and honours the same cancel_event,
-        # so the caller's iterate_in_threadpool driver is unchanged.
-        if self.config.provider == LLMProvider.BEDROCK:
-            from app.services.bedrock_settings import resolve_region
-            from app.services.llm_bedrock import stream_converse
-
-            yield from stream_converse(
-                model=self.config.model,
-                region=resolve_region(self.config.bedrock),
-                connection=self.config.bedrock,
-                messages=messages,
-                max_tokens=kwargs.get("max_tokens", self.config.response_tokens),
-                temperature=kwargs.get("temperature"),
-                top_p=kwargs.get("top_p"),
-                cancel_event=cancel_event,
-                attribution=kwargs.get("attribution"),
-            )
-            return
-
-        url = self.endpoints[self.config.provider]
-        if url is None:
-            yield LLMStreamEvent(
-                type="error", message=f"No endpoint configured for provider {self.config.provider}"
-            )
-            return
-
-        provider = self.config.provider.value
-        headers = self._get_headers()
-        payload = apply_stream_payload(self._prepare_payload(messages, **kwargs), provider)
-        parser = get_stream_parser(provider)
-
-        logger.info(
-            f"Starting LLM stream: {provider}/{self.config.model}, "
-            f"{len(messages)} messages, "
-            f"{sum(len(m.get('content', '')) for m in messages)} chars"
-        )
-
-        # Same guard, same construction point as the non-streaming path — see
-        # `_endpoint_session`. Pinning is transparent to streaming: it changes which
-        # address the socket is opened to and which name TLS is verified against, and
-        # nothing about the response body, so chunked transfer and `iter_lines` are
-        # untouched. The only added latency is one DNS resolution on the FIRST call per
-        # service instance, which the caller's first-token watchdog does not notice.
-        try:
-            session, target = self._endpoint_session(url)
-        except LLMEndpointBlockedError as e:
-            # In-band, like every other failure here: the SSE status line is already sent.
-            yield LLMStreamEvent(type="error", message=str(e))
-            return
-
-        try:
-            # (connect, read) — a 120s idle gap means the provider stopped producing.
-            # `allow_redirects=False` for the reason given in `_send_llm_request`.
-            response = session.post(
-                target.url,
-                json=payload,
-                headers={**headers, **target.headers},
-                timeout=(10, 120),
-                stream=True,
-                allow_redirects=False,
-            )
-        except requests.exceptions.RequestException as e:
-            logger.error(f"LLM stream connection failed for {provider}: {type(e).__name__}")
-            yield LLMStreamEvent(type="error", message=f"Connection error: {e}")
-            return
-
-        try:
-            if response.status_code != 200:
-                detail = response.text[:500]
-                logger.error(f"LLM stream error ({response.status_code}): {detail}")
-                yield LLMStreamEvent(
-                    type="error",
-                    message=f"LLM API error ({response.status_code}): {detail}",
-                    transient=response.status_code in TRANSIENT_HTTP_STATUSES,
-                )
-                return
-
-            for event in parser(self._iter_stream_lines(response, cancel_event)):
-                if event.type == "done" and cancel_event is not None and cancel_event.is_set():
-                    yield LLMStreamEvent(type="done", finish_reason="cancelled")
-                    return
-                yield event
-                if event.type in ("done", "error"):
-                    return
-        except requests.exceptions.RequestException as e:
-            logger.error(f"LLM stream interrupted for {provider}: {type(e).__name__}: {e}")
-            yield LLMStreamEvent(type="error", message=f"Stream interrupted: {e}")
-        finally:
-            response.close()
 
     def close(self) -> None:
         """

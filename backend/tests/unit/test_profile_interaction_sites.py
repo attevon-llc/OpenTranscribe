@@ -67,14 +67,39 @@ def _assigns_profile_id(fn: ast.AST) -> bool:
     return False
 
 
-def _touches(fn: ast.AST) -> bool:
+def _referenced_callables(fn: ast.AST) -> set[str]:
+    """Names *fn* calls, plus bare names it hands to a call as an argument.
+
+    The second shape is an off-loaded call: ``await run_in_threadpool(_helper, db, ...)``
+    runs ``_helper`` without a ``Call`` node naming it.
+    """
+    out: set[str] = set()
     for node in _own_nodes(fn):
         if isinstance(node, ast.Call):
             f = node.func
             name = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
-            if name in _STAMPING_HELPERS:
-                return True
-    return False
+            if name:
+                out.add(name)
+            out.update(a.id for a in node.args if isinstance(a, ast.Name))
+    return out
+
+
+def _local_stampers(tree: ast.AST) -> frozenset[str]:
+    """Stamping helpers plus every function of this module that reaches one (transitively)."""
+    refs = {fn.name: _referenced_callables(fn) for fn in _functions(tree)}
+    stampers = set(_STAMPING_HELPERS)
+    changed = True
+    while changed:
+        changed = False
+        for name, called in refs.items():
+            if name not in stampers and called & stampers:
+                stampers.add(name)
+                changed = True
+    return frozenset(stampers)
+
+
+def _touches(fn: ast.AST, stampers: frozenset[str] = _STAMPING_HELPERS) -> bool:
+    return bool(_referenced_callables(fn) & stampers)
 
 
 def _is_profile_edit_route(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -94,10 +119,12 @@ def _is_profile_edit_route(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def find_violations(source: str, rel: str, *, routes: bool) -> list[str]:
     """``rel::function`` for every scanned site that neither stamps nor is exempt."""
     out = []
-    for fn in _functions(ast.parse(source)):
+    tree = ast.parse(source)
+    stampers = _local_stampers(tree)
+    for fn in _functions(tree):
         key = f"{rel}::{fn.name}"
         needs = _assigns_profile_id(fn) or (routes and _is_profile_edit_route(fn))
-        if needs and not _touches(fn) and key not in EXEMPT:
+        if needs and not _touches(fn, stampers) and key not in EXEMPT:
             out.append(key)
     return out
 
@@ -175,6 +202,27 @@ def test_selftest_must_fire():
 
 def test_selftest_must_stay_clean():
     assert find_violations(_MUST_STAY_CLEAN, "x.py", routes=True) == []
+
+
+_OFFLOADED = """
+@router.post("/profiles/{profile_uuid}/avatar")
+async def upload(db, profile):
+    previous = await run_in_threadpool(_swap_or_rollback, db, profile.id, "key")
+
+def _swap_or_rollback(db, profile_id, key):
+    return swap_avatar_path(db, profile_id, key)
+
+@router.put("/profiles/{profile_uuid}")
+async def rename(db, profile):
+    await run_in_threadpool(_rename, db, profile)
+
+def _rename(db, profile):
+    profile.name = "x"
+"""
+
+
+def test_selftest_a_stamp_through_an_offloaded_helper_counts_and_a_missing_one_fires():
+    assert find_violations(_OFFLOADED, "x.py", routes=True) == ["x.py::rename"]
 
 
 def test_selftest_a_nested_touch_does_not_cover_its_parent():

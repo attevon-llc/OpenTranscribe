@@ -39,7 +39,7 @@ def fresh_manager(monkeypatch):
 
 @pytest.fixture
 def lock_redis(local_model_redis, monkeypatch):
-    monkeypatch.setattr(task_lock, "get_redis", lambda: local_model_redis)
+    monkeypatch.setattr(task_lock, "get_request_redis", lambda: local_model_redis)
     if "TASK_LOCK_LEASE_SECONDS" in type(settings).model_fields:
         monkeypatch.setattr(settings, "TASK_LOCK_LEASE_SECONDS", 1)
     return local_model_redis
@@ -67,7 +67,7 @@ def test_one_failed_ping_does_not_disable_locking_for_later_calls(lock_redis, ke
         calls["n"] += 1
         return _Down() if calls["n"] == 1 else lock_redis
 
-    monkeypatch.setattr(task_lock, "get_redis", flaky)
+    monkeypatch.setattr(task_lock, "get_request_redis", flaky)
     with task_lock.task_lock_manager.acquire_lock(key, timeout=30):
         pass
     with task_lock.task_lock_manager.acquire_lock(key, timeout=30) as acquired:
@@ -76,7 +76,7 @@ def test_one_failed_ping_does_not_disable_locking_for_later_calls(lock_redis, ke
 
 
 def test_redis_down_refuses_a_destructive_task(lock_redis, key, monkeypatch):
-    monkeypatch.setattr(task_lock, "get_redis", lambda: _Down())
+    monkeypatch.setattr(task_lock, "get_request_redis", lambda: _Down())
     with task_lock.task_lock_manager.acquire_lock(
         "search_index_maintenance", timeout=30
     ) as acquired:
@@ -84,7 +84,7 @@ def test_redis_down_refuses_a_destructive_task(lock_redis, key, monkeypatch):
 
 
 def test_redis_down_still_runs_a_task_classified_fail_open(lock_redis, monkeypatch):
-    monkeypatch.setattr(task_lock, "get_redis", lambda: _Down())
+    monkeypatch.setattr(task_lock, "get_request_redis", lambda: _Down())
     with task_lock.task_lock_manager.acquire_lock(
         "watch_source:fs_dispatch:7", timeout=30
     ) as acquired:
@@ -92,7 +92,7 @@ def test_redis_down_still_runs_a_task_classified_fail_open(lock_redis, monkeypat
 
 
 def test_with_task_lock_skips_the_body_when_redis_is_down(monkeypatch):
-    monkeypatch.setattr(task_lock, "get_redis", lambda: _Down())
+    monkeypatch.setattr(task_lock, "get_request_redis", lambda: _Down())
     ran = []
 
     @task_lock.with_task_lock("backup_run", timeout=30)
@@ -148,7 +148,7 @@ def test_a_dead_holders_lease_expires_within_one_ttl(lock_redis, key):
         if "TASK_LOCK_LEASE_SECONDS" in type(settings).model_fields:
             settings.TASK_LOCK_LEASE_SECONDS = 1
         client = redis.Redis(host="127.0.0.1", port={port})
-        task_lock.get_redis = lambda: client
+        task_lock.get_request_redis = lambda: client
         with task_lock.task_lock_manager.acquire_lock({key!r}, timeout=3600) as ok:
             assert ok
             print("HELD", flush=True)

@@ -3,6 +3,7 @@
 import logging
 from datetime import UTC
 from typing import Any
+from typing import NoReturn
 
 from fastapi import APIRouter
 from fastapi import Depends
@@ -11,6 +12,7 @@ from fastapi import Request
 from fastapi import Response
 from fastapi import status
 from pydantic import BaseModel as PydanticBaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
@@ -48,6 +50,13 @@ class PasswordResetRequestBody(PydanticBaseModel):
 class PasswordResetConfirmBody(PydanticBaseModel):
     token: str = ""
     new_password: str = ""
+
+
+def _refuse_registered_email() -> NoReturn:
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Email already registered",
+    )
 
 
 @router.post("/register", response_model=UserSchema)
@@ -104,14 +113,13 @@ def register(
             detail="Self-registration creates local password accounts only.",
         )
 
-    # Check if email already exists
+    # Check if email already exists. Not the guarantee: a concurrent registration of
+    # the same address can pass this check too, and the unique index on user.email
+    # refuses its insert below, which is answered exactly like this.
     user_exists = db.query(User).filter(User.email == user_in.email).first()
 
     if user_exists:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
+        _refuse_registered_email()
 
     # Note: Password validation is performed by UserCreate schema's model_validator
     # which calls validate_password() from password_policy module
@@ -140,7 +148,12 @@ def register(
     )
 
     db.add(db_user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # get_db closes the session after the response, which rolls the failed
+        # transaction back; nothing else runs on it here.
+        _refuse_registered_email()
     db.refresh(db_user)
 
     # Product metric: local self-registration (API process). External/JIT

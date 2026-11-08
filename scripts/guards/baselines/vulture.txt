@@ -136,7 +136,6 @@ backend/app/transcription/host_memory_admission.py::function::reset_for_tests	1	
 backend/app/transcription/vram_budget.py::function::reset_for_tests	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/db_helpers.py::function::bulk_update	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/db_helpers.py::function::get_file_with_transcript_count	1	residual after the dead-code pass; delete or whitelist when touched
-backend/app/utils/db_helpers.py::function::get_or_create	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/db_helpers.py::function::get_unique_speakers_for_file	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/services/request_context.py::function::get_user_files_query_for_context	1	residual after the dead-code pass; delete or whitelist when touched
 backend/app/utils/db_helpers.py::function::get_user_speakers	1	residual after the dead-code pass; delete or whitelist when touched

@@ -122,7 +122,7 @@ class _NoRedis:
 
 @pytest.fixture
 def no_redis(monkeypatch):
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: _NoRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: _NoRedis())
 
 
 def _states(sent: list[tuple[int, str, dict]], task: PostProcessingTask) -> list[str]:
@@ -318,7 +318,7 @@ class TestFrames:
 class TestStoredState:
     @pytest.fixture
     def redis_client(self, local_model_redis, monkeypatch):
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: local_model_redis)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: local_model_redis)
         return local_model_redis
 
     @pytest.fixture
@@ -729,7 +729,9 @@ def test_retroactive_auto_label_reports_each_file_and_keeps_one_batch_row(
         )
     bridged.commit()
 
+    # The auto-label task (a worker) and the status plane (request-path) share the fake.
     monkeypatch.setattr("app.core.redis.get_redis", lambda: local_model_redis)
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: local_model_redis)
     monkeypatch.setattr(auto_labeling, "session_scope", lambda: _yield_session(bridged))
     # The coordinator dispatches batch workers; run each one inline, in order.
     monkeypatch.setattr(

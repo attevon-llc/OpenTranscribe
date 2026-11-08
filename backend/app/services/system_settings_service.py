@@ -10,6 +10,7 @@ import json
 import logging
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -145,20 +146,20 @@ def set_setting(
     Returns:
         Updated or created SystemSettings object
     """
-    setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
-
     str_value = str(value).lower() if isinstance(value, bool) else str(value)
 
-    if setting is None:
-        setting = SystemSettings(key=key, value=str_value, description=description)
-        db.add(setting)
-    else:
-        setting.value = str_value
-        if description is not None:
-            setting.description = description
-
+    # One upsert (PostgreSQL docs, INSERT, "ON CONFLICT Clause"): a concurrent first
+    # write of the same key waits for the other and then updates, where a read-then-insert
+    # failed the second writer on the unique index. Last writer wins, as for an update.
+    insert_stmt = pg_insert(SystemSettings).values(
+        key=key, value=str_value, description=description, updated_at=func.now()
+    )
+    changes: dict[str, Any] = {"value": insert_stmt.excluded.value, "updated_at": func.now()}
+    if description is not None:
+        changes["description"] = insert_stmt.excluded.description
+    db.execute(insert_stmt.on_conflict_do_update(index_elements=[SystemSettings.key], set_=changes))
     db.commit()
-    db.refresh(setting)
+    setting = db.execute(select(SystemSettings).where(SystemSettings.key == key)).scalar_one()
 
     # Bust the in-process cache so this writer (and every other reader in the
     # process) sees the new value immediately.

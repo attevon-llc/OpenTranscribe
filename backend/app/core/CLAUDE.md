@@ -118,7 +118,12 @@ should import `app.api` or `app.services` at module scope.
   `app/tasks/CLAUDE.md`. Stdlib-plus-lazy-Redis, so it stays importable on a CPU-only worker.
 - `redis.py` — `get_redis()`, the process-wide **sync Redis (db 0) singleton**. Don't call
   `redis.from_url` directly; the documented exceptions (auth rate-limit/lockout, cache db 1,
-  async clients) are listed in its docstring.
+  async clients) are listed in its docstring. Code that runs while serving a request uses
+  `get_request_redis()` instead: same db, but with `REDIS_REQUEST_*_TIMEOUT_SECONDS` socket
+  bounds, so a hung Redis fails the call open in seconds rather than holding a thread forever.
+  `tests/unit/test_request_path_redis_is_bounded.py` fails on any `get_redis` under `app/api`,
+  `app/auth`, `app/services` or the request-reached core/utils modules it lists; a justified
+  exception (a blocking read) goes in its `ALLOWED` table with the reason.
 - `capabilities.py` — server-driven feature gating; `require_capability()` dependency,
   `set_capability_resolver()` for the cloud edition, plus the audience taxonomy.
   ⚠️ A registered resolver's result **fails closed** (#868, `CLOUD_SEAM_VERSION` 6): only an

@@ -218,7 +218,7 @@ def test_a_reindex_that_could_not_be_queued_is_a_residual(
     task = MagicMock()
     task.apply_async.side_effect = RuntimeError("broker unreachable")
     monkeypatch.setattr(
-        "app.core.redis.get_redis", lambda: _ClaimStore(claimed=state == "already-pending")
+        "app.core.redis.get_request_redis", lambda: _ClaimStore(claimed=state == "already-pending")
     )
     monkeypatch.setattr("app.tasks.search_indexing_task.index_transcript_search_task", task)
 

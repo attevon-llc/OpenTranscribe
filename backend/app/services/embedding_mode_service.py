@@ -68,9 +68,9 @@ class EmbeddingModeService:
     def _get_cached_mode(cls) -> EmbeddingMode | None:
         """Read the shared mode cache, preferring Redis over the local fallback."""
         try:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            value = get_redis().get(_REDIS_MODE_CACHE_KEY)
+            value = get_request_redis().get(_REDIS_MODE_CACHE_KEY)
         except Exception as e:
             logger.debug(f"Redis unavailable for embedding-mode cache read: {e}")
         else:
@@ -90,9 +90,9 @@ class EmbeddingModeService:
         """Write the shared mode cache to Redis and the local fallback."""
         cls._local_cache = (mode, time.monotonic())
         try:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            get_redis().setex(_REDIS_MODE_CACHE_KEY, _REDIS_MODE_CACHE_TTL_SECONDS, mode)
+            get_request_redis().setex(_REDIS_MODE_CACHE_KEY, _REDIS_MODE_CACHE_TTL_SECONDS, mode)
         except Exception as e:
             logger.warning(
                 f"Could not write embedding-mode cache to Redis (other processes "
@@ -352,9 +352,9 @@ class EmbeddingModeService:
         """
         cls._local_cache = None
         try:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            get_redis().delete(_REDIS_MODE_CACHE_KEY)
+            get_request_redis().delete(_REDIS_MODE_CACHE_KEY)
         except Exception as e:
             logger.warning(
                 f"Could not clear shared embedding-mode cache in Redis (other "

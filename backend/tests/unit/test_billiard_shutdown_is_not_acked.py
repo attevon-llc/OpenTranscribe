@@ -18,6 +18,8 @@ import subprocess  # nosec B404 - runs this interpreter on a fixed script
 import sys
 import textwrap
 
+import pytest
+
 _SCRIPT = textwrap.dedent(
     """
     import os, signal, time
@@ -50,6 +52,12 @@ _SCRIPT = textwrap.dedent(
 # 240 s fixed budget). A regression still fails fast: the pool returns RESULT, not a hang.
 _POOL_WAIT_S = 150
 _PROCESS_HEADROOM_S = 90
+# The suite-wide pytest-timeout (300 s, pyproject addopts) used to sit BELOW the scaled budget
+# once the load factor passed 1.25, so on a loaded sweep pytest-timeout killed the test first
+# and the probe's own verdict (with the child's stdout) was never reported. The test carries its
+# own ceiling, and the scaled budget is clamped under it.
+_TEST_TIMEOUT_S = 900
+_CLAMP_MARGIN_S = 30
 
 
 def _load_factor() -> float:
@@ -57,15 +65,30 @@ def _load_factor() -> float:
     return max(1.0, os.getloadavg()[0] / (os.cpu_count() or 1))
 
 
+def _budget(factor: float) -> tuple[int, int]:
+    """``(pool wait, process timeout)`` scaled by *factor*, kept under the test's own timeout."""
+    ceiling = _TEST_TIMEOUT_S - _CLAMP_MARGIN_S
+    process_timeout = min(ceiling, int((_POOL_WAIT_S + _PROCESS_HEADROOM_S) * factor))
+    pool_wait = min(int(_POOL_WAIT_S * factor), process_timeout - _PROCESS_HEADROOM_S)
+    return pool_wait, process_timeout
+
+
+def test_the_budget_always_ends_before_pytest_timeout_kills_the_test():
+    for factor in (1.0, 1.25, 2.0, 10.0):
+        pool_wait, process_timeout = _budget(factor)
+        assert 0 < pool_wait < process_timeout < _TEST_TIMEOUT_S
+
+
+@pytest.mark.timeout(_TEST_TIMEOUT_S)
 def test_the_shutdown_systemexit_is_reported_as_a_lost_worker_not_a_result():
     factor = _load_factor()
-    pool_wait = int(_POOL_WAIT_S * factor)
+    pool_wait, process_timeout = _budget(factor)
     try:
         proc = subprocess.run(  # nosec B603 - fixed argv, no shell
             [sys.executable, "-I", "-c", _SCRIPT.replace("__POOL_WAIT_S__", str(pool_wait))],
             capture_output=True,
             text=True,
-            timeout=pool_wait + int(_PROCESS_HEADROOM_S * factor),
+            timeout=process_timeout,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:

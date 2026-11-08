@@ -43,7 +43,7 @@ class _FakeLLM:
         self.user_context_window = 8192
         self.response_tokens = 1000
 
-    def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
+    async def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
         yield LLMStreamEvent(type="delta", text="An answer.")
         yield LLMStreamEvent(type="done", finish_reason="stop")
 

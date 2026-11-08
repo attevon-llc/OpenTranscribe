@@ -102,40 +102,6 @@ def get_user_files_query(
     )
 
 
-def get_or_create[T](
-    db: Session, model: type[T], defaults: dict | None = None, **kwargs: Any
-) -> tuple[T, bool]:
-    """
-    Get an object or create it if it doesn't exist.
-
-    Args:
-        db: Database session
-        model: SQLAlchemy model class
-        defaults: Default values for creation
-        **kwargs: Filter criteria
-
-    Returns:
-        Tuple of (object, created_flag)
-    """
-    try:
-        instance = db.query(model).filter_by(**kwargs).first()
-        if instance:
-            return instance, False
-        else:
-            params = dict((k, v) for k, v in kwargs.items())
-            if defaults:
-                params.update(defaults)
-            instance = model(**params)
-            db.add(instance)
-            db.commit()
-            db.refresh(instance)
-            return instance, True
-    except SQLAlchemyError as e:
-        logger.error(f"Error in get_or_create for {model.__name__}: {e}")
-        db.rollback()
-        raise
-
-
 def safe_get_by_id[T](
     db: Session, model: type[T], obj_id: int, user_id: int | None = None
 ) -> T | None:

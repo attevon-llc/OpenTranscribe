@@ -10,10 +10,13 @@ dispatch itself lives in ``LLMService._chat_completion_untracked`` /
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 from typing import Any
 
+import anyio
+
+from app.core.threadpool import run_in_chat_thread
 from app.services import llm_call_events
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_types import LLMHost
@@ -44,7 +47,7 @@ class LLMMeteringMixin(LLMHost):
             messages: list[dict[str, str]],
             cancel_event: threading.Event | None = None,
             **kwargs: Any,
-        ) -> Iterator[LLMStreamEvent]: ...
+        ) -> AsyncGenerator[LLMStreamEvent, None]: ...
 
     def is_local(self) -> bool:
         """Whether this service reaches a model on this deployment (``is_local_provider``).
@@ -162,23 +165,24 @@ class LLMMeteringMixin(LLMHost):
         prompt, completion, _ = llm_usage.call_tokens(messages, call)
         llm_budget.settle(reservation, prompt + completion)
 
-    def chat_completion_stream(
+    async def chat_completion_stream(
         self,
         messages: list[dict[str, str]],
         cancel_event: threading.Event | None = None,
         **kwargs: Any,
-    ) -> Iterator[LLMStreamEvent]:
+    ) -> AsyncGenerator[LLMStreamEvent, None]:
         """Stream a completion, checked against the token limits first.
 
         A refusal is yielded as an ``error`` event carrying the limit's ``code`` (the stream
         reports every failure in-band), and nothing is sent to the provider. The reservation
         is settled to the reported usage (or the chars / 4 estimate of what streamed) when
-        the stream ends, including when the consumer stops early.
+        the stream ends, including when the consumer stops early. Reserving and settling are
+        database work, so both run in a chat worker thread, never on the event loop.
         """
         from app.services import llm_budget
 
         try:
-            reservation = self._reserve_budget(messages, kwargs)
+            reservation = await run_in_chat_thread(self._reserve_budget, messages, kwargs)
         except llm_budget.LLMBudgetExceededError as refused:
             yield LLMStreamEvent(type="error", message=str(refused), code=refused.code)
             return
@@ -186,7 +190,9 @@ class LLMMeteringMixin(LLMHost):
         reported: int | None = None
         streamed_chars = 0
         try:
-            for event in self._chat_completion_stream_untracked(messages, cancel_event, **kwargs):
+            async for event in self._chat_completion_stream_untracked(
+                messages, cancel_event, **kwargs
+            ):
                 if event.type in ("delta", "reasoning"):
                     streamed_chars += len(event.text)
                 elif event.type == "usage" and (
@@ -198,4 +204,7 @@ class LLMMeteringMixin(LLMHost):
             if reported is None:
                 prompt_chars = sum(len(str(m.get("content", ""))) for m in messages)
                 reported = (prompt_chars + streamed_chars) // 4
-            llm_budget.settle(reservation, reported)
+            # Shielded: a consumer that stops early (a client disconnect) cancels this
+            # generator, and the settle must still run or the reservation leaks.
+            with anyio.CancelScope(shield=True):
+                await run_in_chat_thread(llm_budget.settle, reservation, reported)

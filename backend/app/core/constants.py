@@ -410,6 +410,10 @@ ACCOUNT_INACTIVITY_MAX_DISABLES_PER_RUN = 500
 # below — a login only ever has to clear its own small overshoot, while the sweep may
 # be catching up an entire deployment's backlog in one pass.
 SESSION_CAP_EVICTION_BATCH_LIMIT = 50
+
+#: Password sign-in is limited per (client IP, username) at RATE_LIMIT_AUTH_PER_MINUTE;
+#: one client IP across all usernames gets this many times that (auth/rate_limit.py).
+LOGIN_IP_BACKSTOP_MULTIPLIER = 10
 SESSION_CAP_SWEEP_MAX_PER_USER = 500
 
 # Silero VAD defaults — used by faster-whisper BatchedInferencePipeline

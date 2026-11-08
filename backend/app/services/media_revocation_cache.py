@@ -194,9 +194,9 @@ def drop_bulk_result(export_key: str) -> None:
     quarantine itself (:func:`hidden_from_requester`), so a Redis failure is logged only.
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        get_redis().delete(BULK_RESULT_KEY.format(job=bulk_job_of(export_key)))
+        get_request_redis().delete(BULK_RESULT_KEY.format(job=bulk_job_of(export_key)))
     except Exception as e:  # noqa: BLE001 — the replay re-check is the guarantee
         logger.warning(f"Could not drop the cached result of {export_key}: {type(e).__name__}")
 

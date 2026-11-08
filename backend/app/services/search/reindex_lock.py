@@ -32,9 +32,9 @@ def running_reindex_run_id(user_id: int) -> str | None:
             an outage must not read as "no reindex running".
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        value = get_redis().get(REINDEX_LOCK_KEY.format(user_id=user_id))
+        value = get_request_redis().get(REINDEX_LOCK_KEY.format(user_id=user_id))
     except Exception as e:
         logger.warning(f"Could not check reindex lock: {type(e).__name__}")
         raise ReindexLockUnavailableError(str(user_id)) from e

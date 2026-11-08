@@ -719,7 +719,7 @@ def write_record(
     ``reason`` is a neutral code for a purge that ended without running (``files_protected``).
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
         record: dict[str, Any] = {"user_id": user_id, "counts": counts}
         if targets is not None:
@@ -730,7 +730,7 @@ def write_record(
             record["residual_unverified"] = list(residual_unverified or [])
         if reason is not None:
             record["reason"] = reason
-        get_redis().set(
+        get_request_redis().set(
             _RECORD_KEY.format(task_id=task_id), json.dumps(record), ex=_RECORD_TTL_SECONDS
         )
     except Exception:
@@ -740,9 +740,9 @@ def write_record(
 def read_record(task_id: str) -> dict[str, Any] | None:
     """The record written by :func:`write_record`, or ``None`` (unknown, expired or no Redis)."""
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        raw = get_redis().get(_RECORD_KEY.format(task_id=task_id))
+        raw = get_request_redis().get(_RECORD_KEY.format(task_id=task_id))
         record = json.loads(raw) if raw else None
     except Exception:
         logger.warning("privacy purge: could not read the status record for %s", task_id)

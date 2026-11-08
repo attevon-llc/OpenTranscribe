@@ -195,7 +195,9 @@ def test_progress_returns_only_the_callers_running_states(
             {"task_type": "reindex", "user_id": other_user.id, "total": 99, "status": "running"}
         ),
     }
-    with patch("app.services.progress_tracker.get_redis", return_value=_StandInRedis(store)):
+    with patch(
+        "app.services.progress_tracker.get_request_redis", return_value=_StandInRedis(store)
+    ):
         response = client.get(PROGRESS, headers=user_token_headers)
 
     assert response.status_code == status.HTTP_200_OK
@@ -207,7 +209,7 @@ def test_progress_returns_only_the_callers_running_states(
 
 def test_progress_is_an_empty_list_with_nothing_tracked(client, user_token_headers):
     """The SPA maps over the result on every poll; ``null`` would break the bars."""
-    with patch("app.services.progress_tracker.get_redis", return_value=_StandInRedis()):
+    with patch("app.services.progress_tracker.get_request_redis", return_value=_StandInRedis()):
         response = client.get(PROGRESS, headers=user_token_headers)
 
     assert response.status_code == status.HTTP_200_OK

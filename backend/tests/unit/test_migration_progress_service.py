@@ -375,7 +375,7 @@ def unreachable_svc(monkeypatch):
     def _boom():
         raise redis.exceptions.ConnectionError("no redis for this test")
 
-    monkeypatch.setattr("app.services.migration_progress_service.get_redis", _boom)
+    monkeypatch.setattr("app.services.migration_progress_service.get_request_redis", _boom)
     return MigrationProgressService(key_prefix=f"test_mps_unreachable_{uuid.uuid4().hex[:8]}")
 
 

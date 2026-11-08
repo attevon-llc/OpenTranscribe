@@ -48,7 +48,7 @@ class _FakeRedis:
 @pytest.fixture
 def fake_redis(monkeypatch) -> _FakeRedis:
     client = _FakeRedis()
-    monkeypatch.setattr(download_events, "get_redis", lambda: client)
+    monkeypatch.setattr(download_events, "get_request_redis", lambda: client)
     return client
 
 
@@ -98,7 +98,7 @@ def test_a_redis_failure_during_release_is_swallowed(monkeypatch):
         def delete(self, key):
             raise ConnectionError("redis gone")
 
-    monkeypatch.setattr(download_events, "get_redis", lambda: _Broken())
+    monkeypatch.setattr(download_events, "get_request_redis", lambda: _Broken())
 
     # does_not_raise, not a bare call: "it did not raise" is only an assertion when
     # written as one, and the reason is mandatory there so it cannot decay into a

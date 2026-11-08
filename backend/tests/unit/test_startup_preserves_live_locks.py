@@ -28,7 +28,7 @@ LEASE = 2
 def r(local_model_redis, monkeypatch):
     local_model_redis.flushdb()
     monkeypatch.setattr(core_redis, "get_redis", lambda: local_model_redis)
-    monkeypatch.setattr(task_lock, "get_redis", lambda: local_model_redis)
+    monkeypatch.setattr(task_lock, "get_request_redis", lambda: local_model_redis)
     monkeypatch.setattr(task_lock, "task_lock_manager", task_lock.TaskLockManager())
     if "TASK_LOCK_LEASE_SECONDS" in type(settings).model_fields:
         monkeypatch.setattr(settings, "TASK_LOCK_LEASE_SECONDS", LEASE)

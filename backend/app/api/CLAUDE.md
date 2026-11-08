@@ -176,6 +176,13 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   the row + leaked the MinIO object; the presigned route had no handling around dispatch at all,
   so a non-`ASRConfigurationError` failure left the row at PENDING forever — invisible to
   `orphan_upload_sweeper`, which deliberately skips a PENDING row whose object exists.
+- **`POST /files` holds no transaction while the bytes move** (audit H5). The row is committed
+  as `pending` and the session CLOSED (`_open_upload_record`), the object is uploaded, and a
+  second short transaction records `storage_path` (`_finish_upload_record`). Because the row is
+  already committed, a pre-storage failure cannot roll back: `_discard_upload` deletes the row,
+  and the object too when it had already landed. Read every id you need (`current_user.id`)
+  before the first commit; the close detaches the request's objects. The bytes are read from
+  Starlette's own spool (`UploadFile.file`), never copied into a second one.
 - **A size check inside an `UploadFile` handler is too late to protect the disk** (issue #999).
   FastAPI spools the whole multipart body to a temp file before the handler runs. The byte
   ceiling for `POST /files` and the speaker-profile avatar upload is enforced while the body

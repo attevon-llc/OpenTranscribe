@@ -97,7 +97,7 @@ repos:
           - pydantic==2.14.1
           - pydantic-settings==2.16.2
           - pyotp==2.10.0
-          - pytest==9.2.0
+          - pytest==9.1.1  # held below 9.2: xdist_group broken (pytest-dev/pytest#15303)
           - python-dotenv==1.2.4
           - python-json-logger==4.2.0
           - redis==8.1.0

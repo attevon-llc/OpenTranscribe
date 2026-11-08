@@ -12,7 +12,10 @@
 # Install (image): pip install --user -r requirements-test.txt  — see Dockerfile.test.
 # Install (venv):  covered by requirements-dev.txt.
 
-pytest==9.2.0
+# pytest 9.2.0 moved node ids to Node._id; pytest-xdist 3.8.0 still sets item._nodeid, so every
+# xdist_group is silently ignored under --dist loadgroup (pytest-dev/pytest#15303,
+# pytest-dev/pytest-xdist#1407). Held at 9.1.1 until an xdist release carries the fix (#1388).
+pytest==9.1.1
 # Reads the text back out of generated PDFs (BSD-3-Clause) for the document-export suites.
 pypdf==6.21.4
 pytest-asyncio==1.4.1  # For testing async code

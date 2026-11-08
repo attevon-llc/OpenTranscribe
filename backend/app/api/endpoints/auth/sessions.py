@@ -34,6 +34,8 @@ from app.auth.oidc import OIDCConfig
 from app.auth.oidc import call_federated_logout
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import refresh_rate_key
+from app.auth.refresh_tokens import RefreshTokenReplayError
 from app.auth.revocation_error import RevocationError
 from app.auth.token_service import token_service
 from app.core.auth_types import AUTH_TYPE_OIDC
@@ -50,16 +52,35 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _refresh_body(request: Request, body: TokenRefreshRequest) -> TokenRefreshRequest:
+    """The refresh request, with the verified token subject recorded for the rate-limit key.
+
+    Only a token whose signature verifies sets ``request.state.refresh_subject``; the
+    endpoint re-verifies it in full (revocation, session lifetime) either way.
+    """
+    from app.auth.cookies import get_refresh_token_from_cookie
+
+    token = body.refresh_token or get_refresh_token_from_cookie(request)
+    if token:
+        try:
+            claims = token_service.verify_token_with_fallback(token)
+        except JoseError:
+            claims = {}
+        if claims.get("type") == "refresh" and claims.get("sub"):
+            request.state.refresh_subject = str(claims["sub"])
+    return body
+
+
 @router.post(
     "/token/refresh",
     response_model=Token,
     responses={503: {"description": "The rotation could not be recorded; retry."}},
 )
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_rate_limit(), key_func=refresh_rate_key)
 def refresh_access_token(
     request: Request,
     response: Response,
-    body: TokenRefreshRequest,
+    body: TokenRefreshRequest = Depends(_refresh_body),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -98,6 +119,7 @@ def refresh_access_token(
 
     if not payload or not refresh_token_record:
         logger.warning("Token refresh failed: invalid or revoked refresh token")
+        _revoke_family_on_reuse(db, refresh_token_value)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
@@ -151,6 +173,15 @@ def refresh_access_token(
             user_agent=user_agent,
             ip_address=client_ip,
         )
+    except RefreshTokenReplayError as exc:
+        # Another request spent this token between verification and the claim.
+        logger.warning("Token refresh refused: the refresh token was already rotated")
+        _revoke_family_on_reuse(db, refresh_token_value)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     except RevocationError as exc:
         # The client still holds its previous refresh token and can retry.
         logger.error("Token refresh not completed: rotation could not be recorded")
@@ -183,6 +214,20 @@ def refresh_access_token(
 
     set_auth_cookies(response, access_token, new_refresh_token, request)
     return response
+
+
+def _revoke_family_on_reuse(db: Session, token: str) -> None:
+    """Reuse detection for a refused refresh token (RFC 9700 §4.14.2).
+
+    The request is answered 401 either way; a failure to record the family revocation
+    is logged, not surfaced, because the refusal itself already stands.
+    """
+    if not token:
+        return
+    try:
+        token_service.revoke_reused_token_family(db, token)
+    except RevocationError:
+        logger.error("Refresh token reuse detected but the session could not be revoked")
 
 
 def _verified_claims(token: str | None) -> dict | None:
@@ -385,7 +430,9 @@ async def logout(
         failed.append("session")
 
     if user_id is not None or failed:
-        audit_logger.log(
+        # Off the event loop: the audit write indexes into OpenSearch synchronously.
+        await run_in_threadpool(
+            audit_logger.log,
             event_type=AuditEventType.AUTH_LOGOUT,
             outcome=AuditOutcome.FAILURE
             if (failed or federated_ok is False)
@@ -458,7 +505,8 @@ async def logout_all_sessions(
         pending = await run_in_threadpool(_revoke_all_and_commit, db, user_id)
     except Exception as exc:
         logger.error("Logout from all sessions not completed for user %s", user_id)
-        audit_logger.log(
+        await run_in_threadpool(
+            audit_logger.log,
             event_type=AuditEventType.AUTH_LOGOUT_ALL,
             outcome=AuditOutcome.FAILURE,
             user_id=user_id,
@@ -474,10 +522,12 @@ async def logout_all_sessions(
         ) from exc
 
     count = pending.count
-    pending.record_audit()
+    # The audit writes index into OpenSearch synchronously, so they run off the event loop.
+    await run_in_threadpool(pending.record_audit)
     await _end_federated_session(db, user_id)
 
-    audit_logger.log_logout(
+    await run_in_threadpool(
+        audit_logger.log_logout,
         user_id=user_id,
         username=username,
         source_ip=client_ip,

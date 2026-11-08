@@ -156,6 +156,30 @@ _ENV_READ_WRAPPER_NAMES = {
 
 
 @lru_cache(maxsize=1)
+def _settings_mixin_files() -> tuple[Path, ...]:
+    """Modules defining the bases of ``class Settings`` (fields split out of config.py).
+
+    ``Settings`` inherits fields from mixins in ``app.core`` (``DeploymentSettings``,
+    ``RequestLimitSettings``, ...); a field declared there is as real as one declared
+    in config.py, so every scan that looks for Settings fields must read those files too.
+    Resolved from config.py's own ``from app.core.X import Base`` lines, never listed by hand.
+    """
+    tree = ast.parse(CONFIG_PY.read_text(encoding="utf-8"))
+    bases: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Settings":
+            bases = {b.id for b in node.bases if isinstance(b, ast.Name)}
+    files: list[Path] = []
+    for node in tree.body:
+        if not isinstance(node, ast.ImportFrom) or node.module is None:
+            continue
+        if node.module.startswith("app.core.") and any(a.name in bases for a in node.names):
+            files.append(APP_DIR.parent / (node.module.replace(".", "/") + ".py"))
+    assert files, "class Settings has no app.core mixin bases (scan would miss their fields)"
+    return tuple(files)
+
+
+@lru_cache(maxsize=1)
 def _keys_read_by_code() -> frozenset[str]:
     """Every env var name the backend reads.
 
@@ -173,11 +197,12 @@ def _keys_read_by_code() -> frozenset[str]:
     """
     names: set[str] = set()
 
-    tree = ast.parse(CONFIG_PY.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        # Settings field declarations: `FOO: str = os.getenv(...)`
-        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
+    for settings_file in (CONFIG_PY, *_settings_mixin_files()):
+        tree = ast.parse(settings_file.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            # Settings field declarations: `FOO: str = os.getenv(...)`
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
 
     for path in APP_DIR.rglob("*.py"):
         try:
@@ -474,16 +499,20 @@ def test_every_env_read_wrapper_is_registered():
 
 
 def _settings_field_names() -> frozenset[str]:
-    """Annotated fields of the ``Settings`` class in ``core/config.py``."""
-    tree = ast.parse(CONFIG_PY.read_text(encoding="utf-8"))
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef) and node.name == "Settings":
-            return frozenset(
-                stmt.target.id
-                for stmt in node.body
-                if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)
-            )
-    raise AssertionError("class Settings not found in core/config.py")  # pragma: no cover
+    """Annotated fields of ``Settings`` in ``core/config.py`` and of its mixin bases."""
+    names: set[str] = set()
+    for settings_file in (CONFIG_PY, *_settings_mixin_files()):
+        tree = ast.parse(settings_file.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                names.update(
+                    stmt.target.id
+                    for stmt in node.body
+                    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)
+                )
+    if not names:
+        raise AssertionError("no Settings fields found")  # pragma: no cover
+    return frozenset(names)
 
 
 #: Modules that may read the process environment for a Settings field name, with the reason.

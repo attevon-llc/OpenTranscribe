@@ -21,7 +21,7 @@ def _user() -> User:
 
 def test_engine_metrics_answers_503_when_redis_is_down():
     with (
-        patch("app.core.redis.get_redis", side_effect=RedisConnectionError("refused")),
+        patch("app.core.redis.get_request_redis", side_effect=RedisConnectionError("refused")),
         pytest.raises(HTTPException) as exc_info,
     ):
         get_engine_metrics(current_user=_user())
@@ -31,7 +31,7 @@ def test_engine_metrics_answers_503_when_redis_is_down():
 def test_engine_metrics_still_returns_empty_dict_when_no_worker_reported():
     redis = MagicMock()
     redis.keys.return_value = []
-    with patch("app.core.redis.get_redis", return_value=redis):
+    with patch("app.core.redis.get_request_redis", return_value=redis):
         assert get_engine_metrics(current_user=_user()) == {}
 
 

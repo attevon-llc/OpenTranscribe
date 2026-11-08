@@ -16,8 +16,7 @@ import time
 from typing import TYPE_CHECKING
 from typing import Any
 
-from starlette.concurrency import run_in_threadpool
-
+from app.core.threadpool import run_in_chat_thread
 from app.services.chat.output_redactor import OutputRedactor
 from app.services.chat.turn import ChatTurn
 
@@ -66,10 +65,10 @@ async def _redact_delta(redactor: OutputRedactor, text: str) -> str:
     span = redactor.buffer(text)
     if not span:
         return ""
-    # Annotated: run_in_threadpool is typed as returning Any, and returning it
+    # Annotated: run_in_chat_thread is typed as returning Any, and returning it
     # straight out of a str-declared function trips no-any-return.
     # OutputRedactor.mask genuinely returns str.
-    masked: str = await run_in_threadpool(redactor.mask, span)
+    masked: str = await run_in_chat_thread(redactor.mask, span)
     return masked
 
 
@@ -109,7 +108,7 @@ async def _flush_redactor(redactor: OutputRedactor | None) -> str:
         return ""
     if not redactor.active:
         return tail
-    masked_tail: str = await run_in_threadpool(redactor.mask, tail)
+    masked_tail: str = await run_in_chat_thread(redactor.mask, tail)
     return masked_tail
 
 

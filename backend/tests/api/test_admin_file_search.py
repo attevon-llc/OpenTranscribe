@@ -167,3 +167,24 @@ def test_pages_are_capped_and_a_blank_query_returns_nothing(client, gov, operato
     assert len(page.json()["files"]) == 2
     assert page.json()["total"] == 3
     assert blank.json() == {"files": [], "total": 0}
+
+
+def test_both_search_routes_answer_200_with_the_real_limiter_on(
+    client, gov, holds_on, word, operator, rate_limiting_enabled
+):
+    """``tests/conftest.py`` disables the limiter, which hid a 500 on both routes.
+
+    With it on, slowapi (``headers_enabled=True``) needs ``response: Response`` on the handler or
+    it raises for any non-``Response`` return. The routes are reached through the real app here,
+    not through ``_unwrap()``.
+    """
+    gov.file(gov.alice, title=f"{word} alice")
+
+    with gov.acting_as(gov.admin):
+        org = client.get(ORG_SEARCH, params={"q": word})
+    with gov.acting_as(operator):
+        platform = client.get(PLATFORM_SEARCH, params={"q": word})
+
+    assert org.status_code == status.HTTP_200_OK, org.text[:300]
+    assert platform.status_code == status.HTTP_200_OK, platform.text[:300]
+    assert "x-ratelimit-limit" in {k.lower() for k in platform.headers}

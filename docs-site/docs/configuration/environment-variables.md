@@ -1048,6 +1048,7 @@ where noted.
 | `REQUIRE_ACCOUNT_APPROVAL` | `false` | `true` makes new and just-in-time provisioned accounts wait for administrator approval before they can sign in. |
 | `ALLOW_INSECURE_COOKIES` | `false` | Hardened deployments mark auth cookies Secure, which a browser drops over plain HTTP (sign-in appears to succeed, then no session). Set `true` only for a single-tenant install on a trusted LAN with no TLS in front; prefer [HTTPS](./nginx-setup.md). It relaxes nothing else. |
 | `MAX_UPLOAD_BYTES` | `16106127360` (15 GB) | Server-side ceiling on an uploaded file, checked when the upload is prepared and again when it completes. `0` disables the limit. |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Ceiling on every other request body (JSON and form requests), refused with `413` before the request is processed. The media upload and speaker-avatar routes keep their own limits. The bundled nginx configs cap `/api/` at `10m`, so raising this above 10 MiB also needs their `client_max_body_size` raised. |
 | `ENABLE_API_DOCS` | unset | A hardened deployment hides Swagger UI, ReDoc and the OpenAPI schema (`/api/docs`, `/api/redoc`, `/api/openapi.json`). `true` publishes them. |
 | `RUN_MIGRATIONS_ON_STARTUP` | `true` | Run Alembic migrations when the backend starts. Set `false` where a separate migration job owns the schema; `/health/ready` then fails until the schema is at head. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access-token lifetime. |

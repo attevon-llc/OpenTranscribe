@@ -240,6 +240,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Request bodies are now size-limited everywhere. The API refuses a JSON or form body larger than `MAX_REQUEST_BODY_BYTES` (default 1 MiB) with `413` before the request is processed; the media upload and speaker-avatar routes keep their own limits. The bundled nginx configurations allow 10m on the API and keep 15G only for the upload locations (`/api/files`, `/s3/`, `/minio/`).
 - Password reset and email verification requests now take the same path whether or not the address has an account: the request looks the account up and queues a background task, and the mail is built and sent there. Invitations and account-change notices are sent from the same background tasks, with retries on temporary mail-server or network errors. An invitation is now refused up front (503) when no mail transport is configured, instead of being created and then failing.
 - Text from people (watch-source names, invitation senders, security-notice text) is now escaped wherever it is placed into an HTML email.
 - Outgoing SMTP no longer sends a username and password over an unencrypted connection, and plain unencrypted mail is only sent to a relay on the same machine. Email configurations that would do so are rejected with a clear message when saved (422), and refused at send time. Operators using a plaintext relay on another host must switch to STARTTLS or port 465.

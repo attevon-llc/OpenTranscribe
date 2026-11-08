@@ -7,6 +7,11 @@
 # Every package is pinned exactly, transitive ones included (backend/CLAUDE.md, "Every spec is
 # PINNED"), resolved with pip on Python 3.12 on 2026-11-07. To move a version, change it here
 # and re-resolve the whole file in a clean venv; versions only move forward.
+#
+# The scenario also imports two of Locust's own dependencies directly: gevent (the socket
+# listener's receive loop) and websocket-client (the /api/ws socket; Locust has no plain
+# WebSocket user, and locust.contrib.socketio speaks socket.io, which /api/ws does not).
+# sampler.py and summarize.py use only the standard library.
 locust==2.47.0
 bidict==0.24.1
 blinker==1.9.0

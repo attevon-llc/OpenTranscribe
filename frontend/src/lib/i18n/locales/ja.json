@@ -2650,6 +2650,7 @@
   "collectionsPanel.newCollection": "新しいコレクション",
   "collectionsPanel.loading": "コレクションを読み込み中...",
   "collectionsPanel.noCollectionsYet": "コレクションがありません",
+  "collectionsPanel.yourCollections": "自分のコレクション",
   "collectionsPanel.createFirstHint": "メディアファイルを整理するために最初のコレクションを作成してください",
   "collectionsPanel.files": "ファイル",
   "collectionsPanel.file": "ファイル",

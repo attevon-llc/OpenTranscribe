@@ -2814,6 +2814,7 @@
   "collectionsPanel.newCollection": "Новая коллекция",
   "collectionsPanel.loading": "Идёт загрузка коллекций...",
   "collectionsPanel.noCollectionsYet": "Пока ни одной коллекции",
+  "collectionsPanel.yourCollections": "Ваши коллекции",
   "collectionsPanel.createFirstHint": "Создайте первую коллекцию, чтобы упорядочить свои медиафайлы",
   "collectionsPanel.files": "файлов",
   "collectionsPanel.file": "файл",

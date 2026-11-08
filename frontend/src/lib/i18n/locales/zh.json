@@ -2650,6 +2650,7 @@
   "collectionsPanel.newCollection": "新建合集",
   "collectionsPanel.loading": "加载中...",
   "collectionsPanel.noCollectionsYet": "还没有合集",
+  "collectionsPanel.yourCollections": "我的合集",
   "collectionsPanel.createFirstHint": "创建您的第一个合集来组织媒体文件",
   "collectionsPanel.files": "个文件",
   "collectionsPanel.file": "个文件",

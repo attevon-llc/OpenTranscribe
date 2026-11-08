@@ -2769,6 +2769,7 @@
   "collectionsPanel.newCollection": "Nuova raccolta",
   "collectionsPanel.loading": "Caricamento delle raccolte in corso...",
   "collectionsPanel.noCollectionsYet": "Nessuna raccolta ancora presente",
+  "collectionsPanel.yourCollections": "Le tue raccolte",
   "collectionsPanel.createFirstHint": "Crea la tua prima raccolta per organizzare i tuoi file multimediali",
   "collectionsPanel.files": "file",
   "collectionsPanel.file": "file",

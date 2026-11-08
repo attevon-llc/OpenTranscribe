@@ -311,6 +311,7 @@
   "collectionsPanel.namePlaceholder": "Entrez le nom de la collection",
   "collectionsPanel.newCollection": "Nouvelle Collection",
   "collectionsPanel.noCollectionsYet": "Aucune collection pour le moment",
+  "collectionsPanel.yourCollections": "Vos collections",
   "collectionsPanel.public": "Publique",
   "collectionsPanel.title": "Collections",
   "collectionsPanel.updateCollection": "Mettre à Jour la Collection",

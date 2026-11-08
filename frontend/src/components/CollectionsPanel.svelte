@@ -517,6 +517,13 @@
       {$t('collectionsPanel.loading')}
     </div>
   {:else if collections.length === 0 && sharedCollections.length === 0}
+    {#if onHeldSelect && viewMode === 'manage'}
+      <!-- Under the computed "Legal hold" entry, "No collections yet" would read as if that entry
+           were not there; the subheading says it is about the person's own collections. -->
+      <h4 class="own-collections-heading" data-testid="own-collections-heading">
+        {$t('collectionsPanel.yourCollections')}
+      </h4>
+    {/if}
     <EmptyState title={$t('collectionsPanel.noCollectionsYet')} description={$t('collectionsPanel.createFirstHint')} padding="40px 20px" />
   {:else}
     <div class="collections-list">
@@ -768,6 +775,13 @@
 
   .no-results p {
     margin: 0;
+  }
+
+  .own-collections-heading {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
   }
 
   .loading {

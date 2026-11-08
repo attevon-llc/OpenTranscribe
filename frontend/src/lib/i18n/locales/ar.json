@@ -2904,6 +2904,7 @@
   "collectionsPanel.newCollection": "مجموعة جديدة",
   "collectionsPanel.loading": "جارٍ تحميل المجموعات...",
   "collectionsPanel.noCollectionsYet": "لا توجد مجموعات بعد",
+  "collectionsPanel.yourCollections": "مجموعاتك",
   "collectionsPanel.createFirstHint": "أنشئ مجموعتك الأولى لتنظيم ملفات الوسائط الخاصة بك",
   "collectionsPanel.files": "ملفات",
   "collectionsPanel.file": "ملف",

@@ -2679,6 +2679,7 @@
   "collectionsPanel.newCollection": "새 컬렉션",
   "collectionsPanel.loading": "컬렉션을 불러오는 중...",
   "collectionsPanel.noCollectionsYet": "아직 컬렉션이 없습니다",
+  "collectionsPanel.yourCollections": "내 컬렉션",
   "collectionsPanel.createFirstHint": "첫 컬렉션을 만들어 미디어 파일을 정리해 보세요",
   "collectionsPanel.files": "파일",
   "collectionsPanel.file": "파일",

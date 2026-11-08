@@ -2740,6 +2740,7 @@
   "collectionsPanel.newCollection": "Nova Coleção",
   "collectionsPanel.loading": "Carregando coleções...",
   "collectionsPanel.noCollectionsYet": "Ainda não há coleções",
+  "collectionsPanel.yourCollections": "Suas coleções",
   "collectionsPanel.createFirstHint": "Crie sua primeira coleção para organizar seus arquivos de mídia",
   "collectionsPanel.files": "arquivos",
   "collectionsPanel.file": "arquivo",

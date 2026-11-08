@@ -25,6 +25,7 @@ from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.scripts.scale_dataset.pg_synthetic import ClaimLedger
 from app.scripts.scale_dataset.pg_synthetic import Shape
 from app.scripts.scale_dataset.pg_synthetic import _claim_ids
 from app.scripts.scale_dataset.pg_synthetic import _file_user_id
@@ -43,7 +44,12 @@ def _lit(sql: str) -> ColumnClause[Any]:
 
 
 def seed_activity(
-    conn: Connection, shape: Shape, seed: str, base_user: int, base_file: int
+    conn: Connection,
+    shape: Shape,
+    seed: str,
+    base_user: int,
+    base_file: int,
+    ledger: ClaimLedger | None = None,
 ) -> dict[str, int]:
     """Insert comments and per-user tags, and cache a waveform on a share of the files.
 
@@ -53,6 +59,7 @@ def seed_activity(
         seed: Seed id (already validated by ``seed_dataset``).
         base_user: Largest ``user.id`` before this seed ran.
         base_file: Largest ``media_file.id`` before this seed ran.
+        ledger: Collects the id ranges claimed here when given.
     """
     counts: dict[str, int] = {}
     g = "g"
@@ -63,7 +70,7 @@ def seed_activity(
     # A comment sits on file ((g - 1) % files) + 1, written by that file's owner, so every
     # person who opens their own file sees a thread of a few comments.
     cf = f"((g - 1) % {shape.files} + 1)"
-    base_comment = _claim_ids(conn, _table(Comment), shape.comments)
+    base_comment = _claim_ids(conn, _table(Comment), shape.comments, ledger)
     counts["comment"] = _fill(
         conn,
         _table(Comment),
@@ -83,7 +90,7 @@ def seed_activity(
     # an ordinary person's GET /api/tags lists tags of their own and the tag filter finds files.
     rest = shape.files - shape.heavy_user_files
     tf = f"({shape.heavy_user_files} + 1 + (g - 1) % {max(rest, 1)})"
-    base_tag = _claim_ids(conn, _table(Tag), shape.user_tags)
+    base_tag = _claim_ids(conn, _table(Tag), shape.user_tags, ledger)
     counts["user_tag"] = _fill(
         conn,
         _table(Tag),
@@ -97,7 +104,7 @@ def seed_activity(
             "source": _lit("'manual'"),
         },
     )
-    base_ft = _claim_ids(conn, _table(FileTag), shape.user_tags)
+    base_ft = _claim_ids(conn, _table(FileTag), shape.user_tags, ledger)
     counts["user_file_tag"] = _fill(
         conn,
         _table(FileTag),

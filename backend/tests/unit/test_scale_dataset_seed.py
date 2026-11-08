@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from sqlalchemy import Table
 from sqlalchemy import Text
 from sqlalchemy import cast
+from sqlalchemy import false
 from sqlalchemy import func
 from sqlalchemy import literal
+from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -102,8 +106,16 @@ _REFERENCES = {
 }
 
 
-def fingerprint(conn: Connection, base_ids: dict[str, int] | None = None) -> dict[str, str]:
-    """md5 of the generated columns per table (rows with id > ``base_ids[table]``).
+def _in_ranges(column, ranges: list[tuple[int, int]]):
+    return or_(*(column.between(lo, hi) for lo, hi in ranges)) if ranges else false()
+
+
+def fingerprint(conn: Connection, ledger: pg.ClaimLedger) -> dict[str, str]:
+    """md5 of the generated columns of exactly the rows the seed wrote.
+
+    Rows are selected by the id ranges the seed claimed (``ledger``), never by "id above the
+    maximum read before seeding": on the shared database other workers commit rows between that
+    read and the claim, and those foreign rows would enter the fingerprint.
 
     Ids, and columns holding another table's id, are replaced by the row's ordinal among that
     table's seeded rows. The seed claims each id range from the table's sequence, so absolute ids
@@ -116,7 +128,7 @@ def fingerprint(conn: Connection, base_ids: dict[str, int] | None = None) -> dic
         name: select(
             table.c.id.label("id"), func.row_number().over(order_by=table.c.id).label("rn")
         )
-        .where(table.c.id > (base_ids or {}).get(name, 0))
+        .where(_in_ranges(table.c.id, ledger.ranges.get(name, [])))
         .subquery()
         for name, table in tables.items()
         if name != "task"
@@ -139,25 +151,18 @@ def fingerprint(conn: Connection, base_ids: dict[str, int] | None = None) -> dic
         if name == "task":  # varchar ids, so select the seeded rows by their prefix
             stmt = stmt.where(table.c.id.like("loadtest-%"))
         else:
-            stmt = stmt.where(table.c.id > (base_ids or {}).get(name, 0))
+            stmt = stmt.where(_in_ranges(table.c.id, ledger.ranges.get(name, [])))
         out[name] = conn.execute(stmt).scalar_one()
     return out
 
 
-def current_max_ids(conn: Connection) -> dict[str, int]:
-    """Max id per fingerprinted table, taken before seeding so a fingerprint covers only new rows."""
-    return {
-        name: int(conn.execute(select(func.coalesce(func.max(table.c.id), 0))).scalar_one())
-        for name, table in _fingerprint_tables().items()
-        if name != "task"
-    }
-
-
-def _seed(db_session, seed: str = "t1337"):
+def _seed(db_session, seed: str = "t1337", before_seed=None):
     conn = db_session.connection()
-    base = current_max_ids(conn)
-    counts = seed_all(conn, TINY, seed, "x-not-a-real-hash")
-    return counts, fingerprint(conn, base)
+    if before_seed is not None:
+        before_seed()
+    ledger = pg.ClaimLedger()
+    counts = seed_all(conn, TINY, seed, "x-not-a-real-hash", ledger)
+    return counts, fingerprint(conn, ledger)
 
 
 def test_tiny_seed_writes_the_requested_row_counts(db_session):
@@ -217,6 +222,46 @@ def test_two_seeds_generate_identical_rows(db_session):
     assert first_counts == second_counts
     assert first == second
     assert all(len(v) == 32 for v in first.values())
+
+
+def test_a_row_committed_by_another_writer_before_the_seed_is_not_fingerprinted(db_session):
+    """Foreign rows that land between the caller's last read and the seed's claim stay out.
+
+    This is the full-suite race: another xdist worker commits a user on the shared database
+    after the fingerprint's baseline was read. The fingerprint is keyed on the claimed ranges,
+    so the foreign row, which sits below them, cannot change it.
+    """
+    from sqlalchemy.orm import Session
+
+    from app.db.base import engine
+    from app.models.user import User
+
+    _, clean = _seed(db_session)
+    db_session.rollback()
+
+    foreign_ids: list[int] = []
+
+    def commit_foreign_user():
+        with Session(engine) as other:
+            user = User(
+                email=f"foreign-{uuid.uuid4().hex}@example.com",
+                hashed_password="x-not-a-real-hash",
+                full_name="Foreign Writer",
+                role="user",
+            )
+            other.add(user)
+            other.commit()
+            foreign_ids.append(user.id)
+
+    try:
+        _, raced = _seed(db_session, before_seed=commit_foreign_user)
+    finally:
+        with Session(engine) as other:
+            other.query(User).filter(User.id.in_(foreign_ids)).delete()
+            other.commit()
+
+    assert foreign_ids, "the foreign writer must have committed"
+    assert raced == clean
 
 
 def test_claimed_id_ranges_are_past_the_sequence_before_any_row_is_written(db_session):

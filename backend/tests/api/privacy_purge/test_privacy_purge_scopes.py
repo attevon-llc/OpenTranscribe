@@ -261,7 +261,7 @@ def test_the_policy_is_fail_closed_when_it_cannot_be_read(gov, monkeypatch):
     def broken(*args, **kwargs):
         raise RuntimeError("database hiccup")
 
-    monkeypatch.setattr("app.services.privacy.policy._stored_layers", broken)
+    monkeypatch.setattr("app.services.privacy.policy._stored_layers_many", broken)
     assert purge.targets_still_enabled(gov.db, scope, ["voiceprints"]) == ["voiceprints"]
 
 

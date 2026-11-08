@@ -49,15 +49,15 @@ def test_a_platform_resolver_failure_is_a_denial_that_is_not_cached(
 
 
 def test_a_storage_read_failure_is_a_denial_that_is_not_cached(backstop, normal_user, monkeypatch):
-    real = policy._stored_layers
+    real = policy._stored_layers_many
 
-    def broken(db, user_id, organization_id):
+    def broken(db, scopes):
         raise RuntimeError("database hiccup")
 
-    monkeypatch.setattr(policy, "_stored_layers", broken)
+    monkeypatch.setattr(policy, "_stored_layers_many", broken)
     assert backstop(normal_user.id) is False
 
-    monkeypatch.setattr(policy, "_stored_layers", real)
+    monkeypatch.setattr(policy, "_stored_layers_many", real)
 
     assert backstop(normal_user.id) is True
 

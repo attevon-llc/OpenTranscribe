@@ -259,8 +259,8 @@ def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set
     takes it again it is in neither ``unacked`` nor held by a lease, so it must be read from
     the lists themselves. Only the queues a transcription stage can sit on are read.
 
-    The lists are measured before a single message is fetched: ``LLEN`` (what kombu's own
-    ``Channel._size`` uses for queue depth) and ``MEMORY USAGE`` (Redis's sampled estimate
+    The lists are measured before a single message is fetched: the shared priority-sharded queue depth
+    (``celery_metrics.queue_snapshot``) and ``MEMORY USAGE`` (Redis's sampled estimate
     of a key's size, O(samples): https://redis.io/docs/latest/commands/memory-usage/), both
     pipelined. Over ``QUEUE_SCAN_MAX_ENTRIES`` or ``QUEUE_SCAN_MAX_BYTES`` the read returns
     ``None`` -- the same "cannot tell" every caller already handles for an unreadable broker
@@ -271,20 +271,23 @@ def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set
     """
     from kombu.transport.redis import Channel
 
+    from app.core.celery_metrics import queue_snapshot
+
     priority_steps = range(10)  # mirrors broker_transport_options["priority_steps"]
+    names = list(transcription_stage_queues() if queues is None else queues)
     keys = [
         queue if priority == 0 else f"{queue}{Channel.sep}{priority}"
-        for queue in (transcription_stage_queues() if queues is None else queues)
+        for queue in names
         for priority in priority_steps
     ]
+    # Entry counts come from the one priority-sharded depth implementation.
+    depths = queue_snapshot(client, names)
+    entries = sum(depths.get(queue, {}).get("pending", 0) for queue in names)
     sizes = client.pipeline(transaction=False)
     for key in keys:
-        sizes.llen(key)
         sizes.memory_usage(key)
-    measured = sizes.execute()
-    # A missing key has length 0 and no memory usage (nil).
-    entries = sum(int(n or 0) for n in measured[0::2])
-    footprint = sum(int(n or 0) for n in measured[1::2])
+    # A missing key has no memory usage (nil).
+    footprint = sum(int(n or 0) for n in sizes.execute())
     if entries > QUEUE_SCAN_MAX_ENTRIES or footprint > QUEUE_SCAN_MAX_BYTES:
         logger.warning(
             "Not reading the stage queues: %d messages, ~%d MB (limits %d, %d MB); "

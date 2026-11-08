@@ -62,6 +62,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Iterable
 from typing import Any
 
 from app.core.metrics import celery_queue_depth
@@ -96,7 +97,9 @@ def _empty_counts() -> dict[str, int]:
     }
 
 
-def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
+def queue_snapshot(
+    client: Any = None, queues: Iterable[str] | None = None
+) -> dict[str, dict[str, int]]:
     """Per-queue counts for every declared queue, in ONE round trip to the broker.
 
     Args:
@@ -105,6 +108,7 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
             backend, which coincides with the broker only because both default
             to ``REDIS_URL``; a deployment pointing ``CELERY_RESULT_BACKEND``
             elsewhere would silently report 0 forever).
+        queues: Queue names to measure instead of :data:`CeleryQueues.ALL`.
 
     Returns:
         ``pending`` is the sum of the queue's 10 priority sub-lists.
@@ -120,7 +124,8 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
         The run leases are read in a second, separate round trip, and only when an
         ``unacked`` entry is a transcription stage.
     """
-    result: dict[str, dict[str, int]] = {name: _empty_counts() for name in CeleryQueues.ALL}
+    names = list(CeleryQueues.ALL if queues is None else queues)
+    result: dict[str, dict[str, int]] = {name: _empty_counts() for name in names}
     try:
         from kombu.transport.redis import Channel
 
@@ -133,7 +138,7 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
 
         keys = [
             name if priority == 0 else f"{name}{sep}{priority}"
-            for name in CeleryQueues.ALL
+            for name in names
             for priority in _PRIORITY_STEPS
         ]
         pipe = redis_client.pipeline(transaction=False)
@@ -148,7 +153,7 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
 
         now = time.time()
         i = 0
-        for name in CeleryQueues.ALL:
+        for name in names:
             pending = 0
             oldest = 0
             for _ in _PRIORITY_STEPS:
@@ -190,7 +195,7 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
         return result
     except Exception as exc:  # noqa: BLE001 — scrape must never fail on broker issues
         logger.debug("Queue snapshot skipped: %s", exc)
-        return {name: _empty_counts() for name in CeleryQueues.ALL}
+        return {name: _empty_counts() for name in names}
 
 
 def _waiting_age(raw: Any, now: float) -> int:

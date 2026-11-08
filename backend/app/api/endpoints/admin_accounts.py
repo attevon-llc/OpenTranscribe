@@ -60,7 +60,9 @@ router = APIRouter()
 
 
 @router.post("/users/{user_uuid}/reset-password")
-@limiter.limit(get_auth_rate_limit(), key_func=user_or_ip_key)
+@limiter.shared_limit(
+    get_auth_rate_limit(), scope="admin-reset-user-password", key_func=user_or_ip_key
+)
 def admin_reset_user_password(
     request: Request,
     response: Response,

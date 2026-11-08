@@ -136,7 +136,7 @@ def test_asr_connection(
 
 
 @router.post("/test-config/{config_uuid}")
-@limiter.limit(get_api_rate_limit(), key_func=user_or_ip_key)
+@limiter.shared_limit(get_api_rate_limit(), scope="asr-test-config", key_func=user_or_ip_key)
 def test_saved_asr_config(
     request: Request,
     config_uuid: UUID,

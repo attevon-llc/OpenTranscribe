@@ -146,3 +146,87 @@ def test_the_scan_tells_authenticated_routes_from_pre_auth_ones(
     """The guard is only as good as its classification: pin one of each kind."""
     by_name = {name: auth for _, name, _, auth in _limited_routes()}
     assert by_name[handler] is expected_authenticated
+
+
+# --------------------------------------------------------------------------- #
+# A path parameter must not buy a fresh bucket.
+#
+# The limiter's default key_style is "url": a plain @limiter.limit keeps one bucket per
+# request PATH, so on /test-config/{config_uuid} every id is its own allowance and a
+# caller can walk ids to multiply the limit. shared_limit's `scope` replaces the path in
+# the bucket key (slowapi, Limiter.shared_limit), so a route with a path parameter must
+# use it.
+# --------------------------------------------------------------------------- #
+_LIMIT_CALLS = ("limiter.limit", "limiter.shared_limit")
+
+
+def _route_paths(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    paths = []
+    for dec in node.decorator_list:
+        if not isinstance(dec, ast.Call) or not ast.unparse(dec.func).startswith("router."):
+            continue
+        candidates = [*dec.args[:1], *(k.value for k in dec.keywords if k.arg == "path")]
+        paths += [
+            c.value for c in candidates if isinstance(c, ast.Constant) and isinstance(c.value, str)
+        ]
+    return paths
+
+
+def unscoped_path_limits(source: str) -> list[str]:
+    """Handlers with a path parameter that are limited by ``@limiter.limit`` (per URL)."""
+    offenders = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        limits = [
+            d
+            for d in node.decorator_list
+            if isinstance(d, ast.Call) and ast.unparse(d.func) in _LIMIT_CALLS
+        ]
+        if not limits or not any("{" in p for p in _route_paths(node)):
+            continue
+        scoped = all(
+            ast.unparse(d.func) == "limiter.shared_limit"
+            and any(k.arg == "scope" for k in d.keywords)
+            for d in limits
+        )
+        if not scoped:
+            offenders.append(f"{node.name}:{node.lineno}")
+    return offenders
+
+
+def test_no_rate_limited_route_with_a_path_parameter_is_keyed_per_url() -> None:
+    offenders = {
+        str(path.relative_to(_APP)): found
+        for path in sorted(_APP.rglob("*.py"))
+        if (found := unscoped_path_limits(path.read_text()))
+    }
+    assert not offenders, (
+        "these routes limit per request path, so each id in the path is a fresh bucket; use "
+        f"limiter.shared_limit(..., scope=..., key_func=...): {offenders}"
+    )
+
+
+def test_the_path_scope_check_fires_on_a_per_url_limit() -> None:
+    source = (
+        "@router.post('/test-config/{config_uuid}')\n"
+        "@limiter.limit('10/minute', key_func=user_or_ip_key)\n"
+        "def h(request, config_uuid): ...\n"
+    )
+    assert unscoped_path_limits(source) == ["h:3"]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Scoped: the id no longer changes the bucket.
+        "@router.post('/test-config/{config_uuid}')\n"
+        "@limiter.shared_limit('10/minute', scope='asr-test-config', key_func=user_or_ip_key)\n"
+        "def h(request, config_uuid): ...\n",
+        # No path parameter: one URL, one bucket already.
+        "@router.post('/test')\n@limiter.limit('10/minute', key_func=user_or_ip_key)\n"
+        "def h(request): ...\n",
+    ],
+)
+def test_the_path_scope_check_stays_clean_on_the_cure(source: str) -> None:
+    assert unscoped_path_limits(source) == []

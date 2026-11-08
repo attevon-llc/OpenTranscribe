@@ -34,7 +34,7 @@ export const DEV_WARMUP_CLIENT_FILES = [
   './src/routes/+layout.svelte',
   './src/routes/+page.svelte',
   './src/routes/login/+page.svelte',
-  './src/routes/files/[id]/+page.svelte',
+  './src/routes/files/*/+page.svelte',
   './src/lib/axios.ts',
 ] as const;
 
@@ -83,7 +83,9 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       // Transform the entry, login and file-detail graphs as soon as the server starts so the
       // first browser request is served from cache instead of stalling on a cold module
-      // graph (A16: `#email` never visible in 30 s). Vite server.warmup docs.
+      // graph (A16: `#email` never visible in 30 s). Entries are tinyglobby patterns relative to root,
+      // so the `[id]` route dir is a `*` (a literal `[id]` is a character class).
+      // https://vite.dev/config/server-options#server-warmup
       warmup: {
         clientFiles: [...DEV_WARMUP_CLIENT_FILES],
       },
@@ -202,8 +204,8 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       // Pre-bundle the player up front. Discovered late (only when the file-detail route
-      // loads), Vite re-optimizes and force-reloads the page mid-test. Vite dependency
-      // pre-bundling docs: list deps the crawler would find late.
+      // loads), Vite re-bundles and may reload the page mid-test; `include` avoids that pass
+      // (https://vite.dev/guide/dep-pre-bundling).
       include: [...DEV_OPTIMIZE_DEPS_INCLUDE],
       exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
     },

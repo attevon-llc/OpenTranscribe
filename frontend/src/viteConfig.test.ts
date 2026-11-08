@@ -20,14 +20,15 @@ const cfg = (await (configFn as (e: { mode: string; command: string }) => unknow
 describe('vite dev config', () => {
   it('warms the entry, login and file-detail route graphs', () => {
     const files = cfg.server.warmup.clientFiles;
-    for (const needle of ['+layout.svelte', 'login/+page.svelte', 'files/[id]/+page.svelte']) {
+    for (const needle of ['+layout.svelte', 'login/+page.svelte', 'files/*/+page.svelte']) {
       expect(files.some((f) => f.endsWith(needle))).toBe(true);
     }
   });
 
-  it('warms only files that exist', () => {
+  it('warms only files that exist (globs resolve to a real directory)', () => {
     for (const f of cfg.server.warmup.clientFiles) {
-      expect(existsSync(path.join(root, f)), f).toBe(true);
+      const target = f.includes('*') ? path.dirname(f.replace(/\*.*$/, 'x')) : f;
+      expect(existsSync(path.join(root, target)), f).toBe(true);
     }
   });
 

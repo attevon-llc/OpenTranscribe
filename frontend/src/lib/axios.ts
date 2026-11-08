@@ -8,7 +8,7 @@ import {
 } from '$lib/supportAccess/errors';
 import { SUPPORT_GRANT_HEADER, getSupportAccessHeaders } from '$lib/supportAccess/headers';
 
-/** Methods safe to replay after a 503 (RFC 9110 9.2.2 idempotent + safe; never POST/PATCH/DELETE). */
+/** Methods safe to replay after a 503 (safe methods; never POST/PATCH/DELETE). */
 const BUSY_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** Longest Retry-After honoured; a larger value is clamped, jitter is added on top. */
 const BUSY_RETRY_MAX_WAIT_S = 10;
@@ -258,11 +258,14 @@ axiosInstance.interceptors.response.use(
     }
 
     // Server busy (scale lane A2): a 503 carrying Retry-After means "overloaded, come back
-    // shortly" (MDN Retry-After; RFC 9110 10.2.3), NOT "your session is gone". It therefore
-    // never reaches the 401 refresh / sign-out paths below. Idempotent methods are replayed
-    // ONCE through the instance (axios interceptor docs: re-dispatching from the error handler
-    // is the supported retry shape); everything else rejects with `retryAfterSeconds` set and
-    // `getErrorMessage` renders the translated "server is busy" sentence.
+    // shortly", NOT "your session is gone" (Retry-After forms, delay-seconds or HTTP-date:
+    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Retry-After).
+    // It therefore never reaches the 401 refresh / sign-out paths below. Read methods are
+    // replayed ONCE by re-sending error.config through the instance, tracked by a flag on the
+    // config (the pattern on https://axios.rest/pages/advanced/retry). Method safety and the
+    // jitter are our own design: that page does not check methods and MDN gives no client
+    // guidance. Writes reject with `retryAfterSeconds` set and `getErrorMessage` renders the
+    // translated "server is busy" sentence.
     if (error.response?.status === 503) {
       const busyWait = retryAfterFromHeaders(error.response.headers);
       if (busyWait !== null) {

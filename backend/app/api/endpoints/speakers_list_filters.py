@@ -8,12 +8,11 @@ from sqlalchemy.orm import Session
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
-from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
-from app.services.file_availability import unavailable_pred
+from app.services.file_availability import file_is_available
 from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
@@ -210,8 +209,7 @@ def _get_unique_speakers_for_filter(
     base_filter = [] if include_unnamed else [has_human_name]
     base_filter.append(Speaker.media_file_id.in_(scope_files))
 
-    unavailable_ids = select(MediaFile.id).where(unavailable_pred())
-    base_filter.append(~Speaker.media_file_id.in_(unavailable_ids))
+    base_filter.append(file_is_available(Speaker.media_file_id))
 
     if q and q.strip():
         # Search the offered label, not display_name alone — otherwise typing

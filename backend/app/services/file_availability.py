@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 from sqlalchemy import and_
+from sqlalchemy import exists
 from sqlalchemy import or_
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
@@ -86,6 +87,22 @@ def unavailable_pred(*, include_quarantined: bool = False) -> ColumnElement[bool
     if include_quarantined:
         return trashed
     return or_(trashed, MediaFile.is_quarantined.is_(True))
+
+
+def file_is_available(file_id_column: Any) -> ColumnElement[bool]:
+    """``NOT EXISTS`` form of "the file ``file_id_column`` points at is not unavailable".
+
+    Replaces ``file_id NOT IN (SELECT id FROM media_file WHERE <unavailable>)``: Postgres cannot
+    turn ``NOT IN (subquery)`` into an anti-join (it is NULL-sensitive) and falls back to a
+    non-hashed SubPlan. Every caller already restricts ``file_id_column`` to a positive set, so
+    the one case where the two forms differ (a NULL ``file_id``: ``NOT IN`` drops the row,
+    ``NOT EXISTS`` keeps it) never reaches this predicate.
+    ``correlate_except(MediaFile)`` keeps ``media_file`` inside the subquery even when the outer
+    query also joins it.
+    """
+    return ~exists().where(MediaFile.id == file_id_column, unavailable_pred()).correlate_except(
+        MediaFile
+    )
 
 
 # Generic so a column-projecting RowReturningQuery keeps its row type through the filter.

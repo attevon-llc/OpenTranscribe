@@ -26,11 +26,10 @@ from app.api.endpoints.speakers_list_filters import _resolve_profile_filter_id
 from app.api.endpoints.speakers_list_filters import _sort_speakers
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.speaker import split_attribute_confidence
-from app.services.file_availability import unavailable_pred
+from app.services.file_availability import file_is_available
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows
@@ -387,14 +386,11 @@ def list_speakers(
         elif file_id is not None:
             pass  # Viewing specific file — permission already checked
         else:
-            from sqlalchemy import select
-
             query = query.filter(
                 Speaker.user_id == current_user.id,
                 Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
             )
-            unavailable_ids = select(MediaFile.id).where(unavailable_pred())
-            query = query.filter(~Speaker.media_file_id.in_(unavailable_ids))
+            query = query.filter(file_is_available(Speaker.media_file_id))
         query = _filter_speakers_query(query, verified_only, file_id)
         speakers = query.all()
         speakers = _sort_speakers(speakers)

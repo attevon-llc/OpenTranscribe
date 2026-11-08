@@ -31,6 +31,7 @@ the same fix ``test_ssrf_connection_pinning.py`` documents.
 
 from __future__ import annotations
 
+import asyncio
 import http.server
 import json
 import socket
@@ -40,6 +41,8 @@ from typing import Any
 from typing import cast
 
 import pytest
+
+from tests.llm_stream_helpers import drain
 
 FIRST_ANSWER = "127.0.0.1"
 SECOND_ANSWER = "127.0.0.2"
@@ -249,7 +252,7 @@ class TestChatCompletionIsPinned:
             f"http://{REBIND_HOST}:{port}/v1", allow_private=True, monkeypatch=monkeypatch
         )
         try:
-            events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+            events = drain(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
         finally:
             service.close()
 
@@ -271,7 +274,7 @@ class TestChatCompletionIsPinned:
         try:
             service.chat_completion([{"role": "user", "content": "one"}])
             service.chat_completion([{"role": "user", "content": "two"}])
-            list(service.chat_completion_stream([{"role": "user", "content": "three"}]))
+            drain(service.chat_completion_stream([{"role": "user", "content": "three"}]))
         finally:
             service.close()
 
@@ -336,7 +339,7 @@ class TestRedirectsAreNotFollowed:
             monkeypatch=monkeypatch,
         )
         try:
-            events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+            events = drain(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
         finally:
             service.close()
 
@@ -399,14 +402,19 @@ class TestStreamingStillStreams:
         )
         texts: list[str] = []
         held_when_first_token_arrived = None
-        try:
-            for event in service.chat_completion_stream([{"role": "user", "content": "hi"}]):
+
+        async def _consume() -> None:
+            nonlocal held_when_first_token_arrived
+            async for event in service.chat_completion_stream([{"role": "user", "content": "hi"}]):
                 if event.type != "delta":
                     continue
                 if not texts:
                     held_when_first_token_arrived = not first.release.is_set()
                     first.release.set()  # let the server finish
                 texts.append(event.text)
+
+        try:
+            asyncio.run(_consume())
         finally:
             first.release.set()
             service.close()
@@ -425,13 +433,17 @@ class TestStreamingStillStreams:
         )
         cancel = threading.Event()
         events = []
-        try:
-            for event in service.chat_completion_stream(
+
+        async def _consume() -> None:
+            async for event in service.chat_completion_stream(
                 [{"role": "user", "content": "hi"}], cancel_event=cancel
             ):
                 events.append(event)
                 if event.type == "delta":
                     cancel.set()  # user hits Stop after the first token
+
+        try:
+            asyncio.run(_consume())
         finally:
             service.close()
 
@@ -470,7 +482,7 @@ class TestPrivateEndpointPolicy:
             f"http://{REBIND_HOST}:{port}/v1", allow_private=False, monkeypatch=monkeypatch
         )
         try:
-            events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+            events = drain(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
         finally:
             service.close()
 

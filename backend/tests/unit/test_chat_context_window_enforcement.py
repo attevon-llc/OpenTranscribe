@@ -417,7 +417,7 @@ class _FakeTurnLLM:
     def chat_completion(self, messages, **_kwargs):
         raise NotImplementedError("the turn under test makes no non-streaming call")
 
-    def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
+    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         yield LLMStreamEvent(type="delta", text="An answer.")
         yield LLMStreamEvent(type="done", finish_reason="stop")
 

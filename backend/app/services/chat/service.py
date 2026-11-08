@@ -21,9 +21,11 @@ empty library — issue #438's open half, now closed: see
 code means teaching ``frontend/src/lib/types/chat.ts``'s ``ChatWarningCode`` about
 it too.
 
-Threading model: everything except the SSE plumbing is synchronous (OpenSearch,
-SQLAlchemy, ``requests``), so the blocking stages run via Starlette's threadpool
-and the provider's token stream is bridged with ``iterate_in_threadpool``.
+Threading model: the provider's token stream is asynchronous (``httpx``), so a
+reply waiting on the model holds no thread. The blocking stages (OpenSearch,
+SQLAlchemy, masking) run in worker threads under chat's own limiter
+(``core.threadpool.run_in_chat_thread``), so open chats can never take every thread
+the rest of the API needs.
 
 The generator owns its own DB session rather than borrowing the request's: it
 outlives the handler's dependency scope, and a stream that is still writing when
@@ -51,6 +53,7 @@ siblings:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 import time
@@ -61,10 +64,9 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 import anyio
-from starlette.concurrency import iterate_in_threadpool
-from starlette.concurrency import run_in_threadpool
 
 from app.core import chat_defaults
+from app.core.threadpool import run_in_chat_thread
 from app.services.chat import limits
 from app.services.chat.context_prep import _prepare_context
 from app.services.chat.frames import GENERATION_FAILED_MESSAGE
@@ -100,6 +102,7 @@ from app.services.chat.turn import _TurnCancelled
 from app.services.llm_call_events import chat_call_scope
 
 if TYPE_CHECKING:
+    from app.services.llm_stream import LLMStreamEvent
     from app.services.llm_types import ChatLLM
 
 # Tests patch `_finalize_turn`, `_resolve_output_policy`, `_prepare_context`,
@@ -169,7 +172,7 @@ async def _keepalive_until_done(
     went to within noise of the untraced arm. Do not reintroduce a poll here.
 
     Args:
-        awaitable: The work to await — typically a ``run_in_threadpool`` call.
+        awaitable: The work to await — typically a ``run_in_chat_thread`` call.
         holder: Receives the awaited result on completion.
         trace_q: GH #514's event queue, or ``None`` when the flag is off. ``None``
             keeps the original keepalive-only shape exactly.
@@ -252,13 +255,55 @@ async def _answer_frames(
     conversation_uuid: str,
 ) -> AsyncGenerator[str, None]:
     """Stream the provider's answer as frames, then flush what redaction still holds."""
+    # The provider stream is asynchronous (httpx), so waiting for a token holds no
+    # thread. `aclosing` because a `break` out of `async for` leaves an async generator
+    # suspended rather than closing it, which would hold the provider connection open.
+    async with contextlib.aclosing(
+        llm.chat_completion_stream(messages, cancel_event=cancel_event, **kwargs)
+    ) as stream:
+        async for frame in _stream_events(
+            stream,
+            turn=turn,
+            cancel_event=cancel_event,
+            answer_redactor=answer_redactor,
+            reasoning_redactor=reasoning_redactor,
+            started=started,
+            assistant_message_uuid=assistant_message_uuid,
+            conversation_uuid=conversation_uuid,
+        ):
+            yield frame
+
+    # The last sentence usually has no trailing whitespace to prove it
+    # ended, so it is still in the buffer. Flushing here (rather than
+    # only in the shielded teardown) is what puts it on the wire; the
+    # teardown flush is idempotent and only covers a torn-down turn.
+    tail = await _flush_redactor(answer_redactor)
+    if tail:
+        turn.answer_parts.append(tail)
+        yield sse("delta", {"text": tail})
+    reasoning_tail = await _flush_redactor(reasoning_redactor)
+    if reasoning_tail:
+        turn.reasoning_parts.append(reasoning_tail)
+        yield sse("reasoning", {"text": reasoning_tail})
+
+
+async def _stream_events(
+    stream: AsyncGenerator[LLMStreamEvent, None],
+    *,
+    turn: ChatTurn,
+    cancel_event: threading.Event,
+    answer_redactor: OutputRedactor,
+    reasoning_redactor: OutputRedactor,
+    started: float,
+    assistant_message_uuid: str,
+    conversation_uuid: str,
+) -> AsyncGenerator[str, None]:
+    """Turn provider events into frames, with the keepalive, Stop and first-token checks."""
     first_token_deadline = time.monotonic() + chat_defaults.DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S
     got_first_token = False
-
-    stream = llm.chat_completion_stream(messages, cancel_event=cancel_event, **kwargs)
     last_beat = time.monotonic()
     next_cancel_check = 0.0
-    async for event in iterate_in_threadpool(stream):
+    async for event in stream:
         # Long gaps between tokens (or before the first) must not look
         # like a dead connection to an intermediary.
         if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
@@ -268,7 +313,7 @@ async def _answer_frames(
         # it is checked at most every CHAT_CANCEL_POLL_INTERVAL_S and off the event loop.
         if not cancel_event.is_set() and time.monotonic() >= next_cancel_check:
             next_cancel_check = time.monotonic() + chat_defaults.CHAT_CANCEL_POLL_INTERVAL_S
-            if await run_in_threadpool(limits.is_cancelled, assistant_message_uuid):
+            if await run_in_chat_thread(limits.is_cancelled, assistant_message_uuid):
                 cancel_event.set()
 
         if event.type in ("delta", "reasoning"):
@@ -301,19 +346,6 @@ async def _answer_frames(
             turn.metadata["error_code"] = turn.error_code
             yield sse("error", {"code": "timeout", "message": turn.error})
             break
-
-    # The last sentence usually has no trailing whitespace to prove it
-    # ended, so it is still in the buffer. Flushing here (rather than
-    # only in the shielded teardown) is what puts it on the wire; the
-    # teardown flush is idempotent and only covers a torn-down turn.
-    tail = await _flush_redactor(answer_redactor)
-    if tail:
-        turn.answer_parts.append(tail)
-        yield sse("delta", {"text": tail})
-    reasoning_tail = await _flush_redactor(reasoning_redactor)
-    if reasoning_tail:
-        turn.reasoning_parts.append(reasoning_tail)
-        yield sse("reasoning", {"text": reasoning_tail})
 
 
 async def _teardown_turn(
@@ -526,7 +558,7 @@ class ChatService:
 
                 prepared = _Awaited()
                 async for frame in _keepalive_until_done(
-                    run_in_threadpool(_prep), prepared, trace_q=trace_q
+                    run_in_chat_thread(_prep), prepared, trace_q=trace_q
                 ):
                     yield frame
                 (
@@ -589,7 +621,7 @@ class ChatService:
             # because a `use_context=False` turn never runs that stage and its
             # answer is just as visible — which is also why it sits OUTSIDE the
             # use_context block above, unlike the language warning.
-            output_policy = await run_in_threadpool(
+            output_policy = await run_in_chat_thread(
                 _resolve_output_policy, user_id, organization_id
             )
             answer_redactor = OutputRedactor(output_policy)

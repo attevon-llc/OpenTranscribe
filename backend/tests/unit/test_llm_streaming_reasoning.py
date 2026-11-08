@@ -10,9 +10,9 @@ byte streams, no HTTP, no mocks.
 
 from app.services.llm_stream import InlineThinkExtractor
 from app.services.llm_stream import LLMStreamEvent
-from app.services.llm_stream import parse_anthropic_sse
-from app.services.llm_stream import parse_ollama_ndjson
-from app.services.llm_stream import parse_openai_sse
+from tests.llm_stream_helpers import parse_anthropic_sse
+from tests.llm_stream_helpers import parse_ollama_ndjson
+from tests.llm_stream_helpers import parse_openai_sse
 
 
 def _texts(events: list[LLMStreamEvent], type_: str) -> str:

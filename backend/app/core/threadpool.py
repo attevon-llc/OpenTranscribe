@@ -32,13 +32,22 @@ add API processes; to serve more concurrent database work, raise the pool (and
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import logging
+import weakref
+from collections.abc import AsyncIterator
+from collections.abc import Callable
+from collections.abc import Iterator
+from typing import cast
 
+import anyio
 import anyio.to_thread
 
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
 
 #: Starlette/anyio's own default; the API never runs with fewer threads than this.
 STARLETTE_DEFAULT_THREADS = 40
@@ -90,3 +99,60 @@ def configure_api_threadpool() -> int:
     else:
         logger.info("API threadpool: %d threads (DB pool capacity %d)", size, pool_capacity)
     return size
+
+
+#: Floor for the chat limiter, so a tiny pool still lets a few turns prepare at once.
+CHAT_MIN_THREADS = 4
+
+_chat_limiters: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, anyio.CapacityLimiter] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def chat_threadpool_size() -> int:
+    """Threads chat may use at once: ``CHAT_THREADPOOL_SIZE``, or a quarter of the DB pool."""
+    if settings.CHAT_THREADPOOL_SIZE > 0:
+        return settings.CHAT_THREADPOOL_SIZE
+    return max(CHAT_MIN_THREADS, (settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW) // 4)
+
+
+def chat_thread_limiter() -> anyio.CapacityLimiter:
+    """The running loop's chat limiter (anyio limiters belong to one event loop).
+
+    Chat's blocking steps run under this instead of the default limiter, so however many
+    chats are open they hold at most :func:`chat_threadpool_size` threads, and never one
+    of the threads the rest of the API needs (audit H1).
+    """
+    loop = asyncio.get_running_loop()
+    limiter = _chat_limiters.get(loop)
+    if limiter is None:
+        limiter = anyio.CapacityLimiter(chat_threadpool_size())
+        _chat_limiters[loop] = limiter
+    return limiter
+
+
+async def run_in_chat_thread[T](func: Callable[..., T], *args: object, **kwargs: object) -> T:
+    """``run_in_threadpool`` for chat: the same contextvar-copying hop, on the chat limiter."""
+    return await anyio.to_thread.run_sync(
+        functools.partial(func, *args, **kwargs), limiter=chat_thread_limiter()
+    )
+
+
+_EXHAUSTED = object()
+
+
+def _next_or_exhausted[T](iterator: Iterator[T]) -> object:
+    return next(iterator, _EXHAUSTED)
+
+
+async def iterate_in_chat_thread[T](iterator: Iterator[T]) -> AsyncIterator[T]:
+    """Drive a blocking iterator one item per chat-thread hop (``iterate_in_threadpool``'s twin).
+
+    Only for an SDK that offers no async API (Bedrock's boto3 stream). Between items no
+    thread is held.
+    """
+    while True:
+        item = await run_in_chat_thread(_next_or_exhausted, iterator)
+        if item is _EXHAUSTED:
+            return
+        yield cast(T, item)

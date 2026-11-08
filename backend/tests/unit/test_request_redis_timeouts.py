@@ -91,7 +91,7 @@ TOKENS = 200
 class _FastLLM:
     """Emits every token at once, like a fast local model."""
 
-    def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
+    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         for _ in range(TOKENS):
             yield LLMStreamEvent(type="delta", text="x")
         yield LLMStreamEvent(type="done", finish_reason="stop")

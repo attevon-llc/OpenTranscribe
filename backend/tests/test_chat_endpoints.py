@@ -51,8 +51,9 @@ class _FakeLLM:
             LLMStreamEvent(type="done", finish_reason="stop"),
         ]
 
-    def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
-        yield from self._events
+    async def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
+        for _event in self._events:
+            yield _event
 
     def estimate_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
@@ -1038,9 +1039,10 @@ def test_send_releases_the_request_transaction_before_the_reply_streams(
     app.dependency_overrides[get_db] = _tracked_db
     original_stream = stub_llm.chat_completion_stream
 
-    def _observed_stream(messages, cancel_event=None, **kwargs):
+    async def _observed_stream(messages, cancel_event=None, **kwargs):
         tracker.observe("provider_stream")
-        yield from original_stream(messages, cancel_event=cancel_event, **kwargs)
+        async for event in original_stream(messages, cancel_event=cancel_event, **kwargs):
+            yield event
 
     stub_llm.chat_completion_stream = _observed_stream
     try:

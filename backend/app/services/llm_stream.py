@@ -4,8 +4,8 @@
 Celery tasks (summaries, speaker identification) but wrong for interactive chat —
 the RAG chat surface streams tokens to the browser as they arrive.
 
-Everything here is a **pure function over decoded lines**, deliberately kept out of
-``llm_service.py``: the wire formats differ per provider and are the part most worth
+Everything here is **pure parsing over decoded lines** (an incremental parser per
+format, fed one line at a time), deliberately kept out of ``llm_service.py``: the wire formats differ per provider and are the part most worth
 unit-testing against canned byte streams (no HTTP, no mocking gymnastics).
 
 Three wire formats:
@@ -44,8 +44,8 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
-from collections.abc import Iterable
+from collections.abc import AsyncIterable
+from collections.abc import AsyncIterator
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -203,8 +203,55 @@ def _think_events(pairs: list[tuple[str, str]]) -> Iterator[LLMStreamEvent]:
         yield LLMStreamEvent(type="reasoning" if kind == "reasoning" else "delta", text=text)
 
 
-def parse_openai_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
-    """Parse an OpenAI-compatible ``chat/completions`` SSE stream.
+class StreamParser:
+    """Incremental parser for one provider's streaming wire format.
+
+    Lines are pushed in one at a time with :meth:`feed`, so the same parser serves an
+    ``async for`` over ``httpx.Response.aiter_lines()`` without a thread to hold a
+    blocking iterator. :func:`parse_stream` is the driver.
+
+    Attributes:
+        ended: The provider signalled the end of its stream; stop feeding and call
+            :meth:`finish` for the closing events.
+        failed: The provider reported an error; the ``error`` event has been returned
+            and nothing follows it (no ``done``).
+    """
+
+    def __init__(self) -> None:
+        self.ended = False
+        self.failed = False
+
+    def feed(self, line: str) -> list[LLMStreamEvent]:
+        """Parse one decoded line; return the events it produced."""
+        raise NotImplementedError
+
+    def finish(self) -> list[LLMStreamEvent]:
+        """The closing events, ending with exactly one ``done``."""
+        raise NotImplementedError
+
+
+async def parse_stream(
+    parser: StreamParser, lines: AsyncIterable[str]
+) -> AsyncIterator[LLMStreamEvent]:
+    """Drive ``parser`` over ``lines``.
+
+    Yields:
+        Normalized stream events: exactly one ``done`` at the end, or a final
+        ``error`` with nothing after it.
+    """
+    async for line in lines:
+        for event in parser.feed(line):
+            yield event
+        if parser.failed:
+            return
+        if parser.ended:
+            break
+    for event in parser.finish():
+        yield event
+
+
+class OpenAISSEParser(StreamParser):
+    """An OpenAI-compatible ``chat/completions`` SSE stream.
 
     Frames are ``data: {json}`` with a ``data: [DONE]`` sentinel. Content arrives on
     ``choices[0].delta.content``; usage arrives either on a final usage-only chunk
@@ -215,62 +262,70 @@ def parse_openai_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
     ``delta.reasoning`` (OpenRouter), OR inline ``<think>...</think>`` markers inside
     ``delta.content`` itself for providers with no dedicated field — see
     :class:`InlineThinkExtractor`.
-
-    Args:
-        lines: Decoded lines from the HTTP response.
-
-    Yields:
-        Normalized stream events, ending with exactly one ``done``.
     """
-    finish_reason: str | None = None
-    extractor = InlineThinkExtractor()
-    for line in lines:
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.finish_reason: str | None = None
+        self.extractor = InlineThinkExtractor()
+
+    def feed(self, line: str) -> list[LLMStreamEvent]:
         if not line or not line.startswith("data:"):
-            continue
+            return []
         payload = line[len("data:") :].strip()
         if not payload:
-            continue
+            return []
         if payload == "[DONE]":
-            break
+            self.ended = True
+            return []
 
         chunk = _loads_stream_payload(payload)
         if chunk is None:
-            continue
+            return []
 
         # Some gateways surface mid-stream failures as an error object.
         if isinstance(chunk.get("error"), dict):
-            yield LLMStreamEvent(
-                type="error", message=str(chunk["error"].get("message", "provider error"))
-            )
-            return
+            self.failed = True
+            return [
+                LLMStreamEvent(
+                    type="error", message=str(chunk["error"].get("message", "provider error"))
+                )
+            ]
 
+        events: list[LLMStreamEvent] = []
         choices = chunk.get("choices") or []
         if choices and isinstance(choices[0], dict):
             choice = choices[0]
             delta = choice.get("delta") or {}
             reasoning = delta.get("reasoning_content") or delta.get("reasoning")
             if reasoning:
-                yield LLMStreamEvent(type="reasoning", text=str(reasoning))
+                events.append(LLMStreamEvent(type="reasoning", text=str(reasoning)))
             content = delta.get("content")
             if content:
-                yield from _think_events(extractor.feed(str(content)))
+                events.extend(_think_events(self.extractor.feed(str(content))))
             if choice.get("finish_reason"):
-                finish_reason = str(choice["finish_reason"])
+                self.finish_reason = str(choice["finish_reason"])
 
         usage = chunk.get("usage")
         if isinstance(usage, dict):
-            yield LLMStreamEvent(
-                type="usage",
-                prompt_tokens=_int_or_none(usage.get("prompt_tokens")),
-                completion_tokens=_int_or_none(usage.get("completion_tokens")),
+            events.append(
+                LLMStreamEvent(
+                    type="usage",
+                    prompt_tokens=_int_or_none(usage.get("prompt_tokens")),
+                    completion_tokens=_int_or_none(usage.get("completion_tokens")),
+                )
             )
+        return events
 
-    yield from _think_events(extractor.flush())
-    yield LLMStreamEvent(type="done", finish_reason=finish_reason)
+    def finish(self) -> list[LLMStreamEvent]:
+        return [
+            *_think_events(self.extractor.flush()),
+            LLMStreamEvent(type="done", finish_reason=self.finish_reason),
+        ]
 
 
-def parse_anthropic_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
-    """Parse an Anthropic Messages API SSE stream.
+class AnthropicSSEParser(StreamParser):
+    """An Anthropic Messages API SSE stream.
 
     Anthropic sends ``event:``/``data:`` pairs. The payload's own ``type`` field is
     authoritative (the ``event:`` line merely repeats it), so this parser reads the
@@ -283,71 +338,78 @@ def parse_anthropic_sse(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
     for the final answer — never a replacement for it. A ``redacted_thinking`` block
     (encrypted reasoning Anthropic chose not to show) carries no readable text and is
     silently skipped, same as any other content-block type this parser doesn't render.
-
-    Args:
-        lines: Decoded lines from the HTTP response.
-
-    Yields:
-        Normalized stream events, ending with exactly one ``done``.
     """
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    finish_reason: str | None = None
 
-    for line in lines:
+    def __init__(self) -> None:
+        super().__init__()
+        self.prompt_tokens: int | None = None
+        self.completion_tokens: int | None = None
+        self.finish_reason: str | None = None
+
+    def feed(self, line: str) -> list[LLMStreamEvent]:
         if not line or not line.startswith("data:"):
-            continue  # "event:" lines and blank separators carry no extra information
+            return []  # "event:" lines and blank separators carry no extra information
         payload = line[len("data:") :].strip()
         if not payload:
-            continue
+            return []
 
         chunk = _loads_stream_payload(payload)
         if chunk is None:
-            continue
+            return []
 
         chunk_type = chunk.get("type")
         if chunk_type == "error":
             detail = chunk.get("error") or {}
-            yield LLMStreamEvent(
-                type="error",
-                message=str(detail.get("message", "provider error")),
-                transient=detail.get("type") in _ANTHROPIC_TRANSIENT_ERROR_TYPES,
-            )
-            return
+            self.failed = True
+            return [
+                LLMStreamEvent(
+                    type="error",
+                    message=str(detail.get("message", "provider error")),
+                    transient=detail.get("type") in _ANTHROPIC_TRANSIENT_ERROR_TYPES,
+                )
+            ]
         if chunk_type == "message_start":
             usage = (chunk.get("message") or {}).get("usage") or {}
-            prompt_tokens = _int_or_none(usage.get("input_tokens"))
-            completion_tokens = _int_or_none(usage.get("output_tokens"))
+            self.prompt_tokens = _int_or_none(usage.get("input_tokens"))
+            self.completion_tokens = _int_or_none(usage.get("output_tokens"))
         elif chunk_type == "content_block_delta":
             delta = chunk.get("delta") or {}
             if delta.get("type") == "thinking_delta":
                 thinking = delta.get("thinking")
                 if thinking:
-                    yield LLMStreamEvent(type="reasoning", text=str(thinking))
+                    return [LLMStreamEvent(type="reasoning", text=str(thinking))]
             else:
                 text = delta.get("text")
                 if text:
-                    yield LLMStreamEvent(type="delta", text=str(text))
+                    return [LLMStreamEvent(type="delta", text=str(text))]
         elif chunk_type == "message_delta":
             stop_reason = (chunk.get("delta") or {}).get("stop_reason")
             if stop_reason:
-                finish_reason = str(stop_reason)
+                self.finish_reason = str(stop_reason)
             usage = chunk.get("usage") or {}
             if usage.get("output_tokens") is not None:
-                completion_tokens = _int_or_none(usage.get("output_tokens"))
+                self.completion_tokens = _int_or_none(usage.get("output_tokens"))
         elif chunk_type == "message_stop":
-            break
+            self.ended = True
         # "ping" and content_block_start/stop carry nothing we need.
+        return []
 
-    if prompt_tokens is not None or completion_tokens is not None:
-        yield LLMStreamEvent(
-            type="usage", prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
-        )
-    yield LLMStreamEvent(type="done", finish_reason=finish_reason)
+    def finish(self) -> list[LLMStreamEvent]:
+        events: list[LLMStreamEvent] = []
+        if self.prompt_tokens is not None or self.completion_tokens is not None:
+            events.append(
+                LLMStreamEvent(
+                    type="usage",
+                    prompt_tokens=self.prompt_tokens,
+                    completion_tokens=self.completion_tokens,
+                )
+            )
+        events.append(LLMStreamEvent(type="done", finish_reason=self.finish_reason))
+        return events
 
 
-def parse_ollama_ndjson(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
-    """Parse an Ollama ``/api/chat`` newline-delimited JSON stream.
+class OllamaNDJSONParser(StreamParser):
+    """An Ollama ``/api/chat`` newline-delimited JSON stream.
 
     One JSON object per line; content on ``message.content``. The terminal line
     (``done: true``) carries ``prompt_eval_count`` / ``eval_count``, which Ollama
@@ -358,65 +420,70 @@ def parse_ollama_ndjson(lines: Iterable[str]) -> Iterator[LLMStreamEvent]:
     or may not be present depending on model/server version. Whether or not it is,
     ``message.content`` also runs through :class:`InlineThinkExtractor` as a fallback
     for models/servers that embed ``<think>`` tags in plain content instead.
-
-    Args:
-        lines: Decoded lines from the HTTP response.
-
-    Yields:
-        Normalized stream events, ending with exactly one ``done``.
     """
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    finish_reason: str | None = None
-    extractor = InlineThinkExtractor()
 
-    for line in lines:
+    def __init__(self) -> None:
+        super().__init__()
+        self.prompt_tokens: int | None = None
+        self.completion_tokens: int | None = None
+        self.finish_reason: str | None = None
+        self.extractor = InlineThinkExtractor()
+
+    def feed(self, line: str) -> list[LLMStreamEvent]:
         if not line or not line.strip():
-            continue
+            return []
         chunk = _loads_stream_payload(line.strip())
         if chunk is None:
-            continue
+            return []
 
         if chunk.get("error"):
-            yield LLMStreamEvent(type="error", message=str(chunk["error"]))
-            return
+            self.failed = True
+            return [LLMStreamEvent(type="error", message=str(chunk["error"]))]
 
+        events: list[LLMStreamEvent] = []
         message = chunk.get("message") or {}
         thinking = message.get("thinking")
         if thinking:
-            yield LLMStreamEvent(type="reasoning", text=str(thinking))
+            events.append(LLMStreamEvent(type="reasoning", text=str(thinking)))
         content = message.get("content")
         if content:
-            yield from _think_events(extractor.feed(str(content)))
+            events.extend(_think_events(self.extractor.feed(str(content))))
 
         if chunk.get("done"):
-            prompt_tokens = _int_or_none(chunk.get("prompt_eval_count"))
-            completion_tokens = _int_or_none(chunk.get("eval_count"))
-            finish_reason = str(chunk.get("done_reason") or "stop")
-            break
+            self.prompt_tokens = _int_or_none(chunk.get("prompt_eval_count"))
+            self.completion_tokens = _int_or_none(chunk.get("eval_count"))
+            self.finish_reason = str(chunk.get("done_reason") or "stop")
+            self.ended = True
+        return events
 
-    yield from _think_events(extractor.flush())
-    if prompt_tokens is not None or completion_tokens is not None:
-        yield LLMStreamEvent(
-            type="usage", prompt_tokens=prompt_tokens, completion_tokens=completion_tokens
-        )
-    yield LLMStreamEvent(type="done", finish_reason=finish_reason)
+    def finish(self) -> list[LLMStreamEvent]:
+        events = list(_think_events(self.extractor.flush()))
+        if self.prompt_tokens is not None or self.completion_tokens is not None:
+            events.append(
+                LLMStreamEvent(
+                    type="usage",
+                    prompt_tokens=self.prompt_tokens,
+                    completion_tokens=self.completion_tokens,
+                )
+            )
+        events.append(LLMStreamEvent(type="done", finish_reason=self.finish_reason))
+        return events
 
 
-def get_stream_parser(provider: str) -> Callable[[Iterable[str]], Iterator[LLMStreamEvent]]:
-    """Return the line parser for ``provider``.
+def get_stream_parser(provider: str) -> type[StreamParser]:
+    """Return the parser class for ``provider``.
 
     Args:
         provider: Provider value from :class:`app.services.llm_types.LLMProvider`.
 
     Returns:
-        A callable taking decoded lines and yielding :class:`LLMStreamEvent`.
+        A :class:`StreamParser` subclass; build one per stream.
     """
     if provider in ("anthropic", "claude"):
-        return parse_anthropic_sse
+        return AnthropicSSEParser
     if provider == "ollama":
-        return parse_ollama_ndjson
-    return parse_openai_sse
+        return OllamaNDJSONParser
+    return OpenAISSEParser
 
 
 def apply_stream_payload(payload: dict, provider: str) -> dict:

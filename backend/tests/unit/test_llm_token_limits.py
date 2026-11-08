@@ -32,6 +32,7 @@ from app.services.llm_budget import LLMBudgetExceededError
 from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
+from tests.llm_stream_helpers import drain
 
 TASK_ID = "celery-task-limit-0001"
 EXCEEDED = "llm_budget_exceeded"
@@ -263,7 +264,7 @@ def _redaction(mf: MediaFile, svc: LLMService, db_session) -> str | None:
 
 def _chat(mf: MediaFile, svc: LLMService) -> str | None:
     svc.budget_user_id = mf.user_id
-    events = list(svc.chat_completion_stream([{"role": "user", "content": "hello"}]))
+    events = drain(svc.chat_completion_stream([{"role": "user", "content": "hello"}]))
     assert len(events) == 1 and events[0].type == "error"
     return getattr(events[0], "code", None)
 

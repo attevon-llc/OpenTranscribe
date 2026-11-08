@@ -21,6 +21,7 @@ from app.services.llm_service import LLMService
 from app.services.llm_stream import LLMStreamEvent
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
+from tests.llm_stream_helpers import drain
 
 CONTROL_TOKENS = ("<channel|>", "<|channel>", "<|think|>", "<turn|>", "<|turn>")
 
@@ -59,7 +60,7 @@ def _stream(url: str, model: str, **kwargs) -> list[LLMStreamEvent]:
             api_key="mock-key-not-secret",
         )
     )
-    return list(service.chat_completion_stream([{"role": "user", "content": QUESTION}], **kwargs))
+    return drain(service.chat_completion_stream([{"role": "user", "content": QUESTION}], **kwargs))
 
 
 def _joined(events: list[LLMStreamEvent], type_: str) -> str:

@@ -953,7 +953,13 @@ DB_MAX_OVERFLOW=40       # extra connections above the pool under load
 API_THREADPOOL_SIZE=0    # 0 = derived, see below
 DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
 UVICORN_LIMIT_CONCURRENCY=512    # open connections per API process before 503 (0 = none)
+CHAT_THREADPOOL_SIZE=0           # chat's own worker threads; 0 = a quarter of the DB pool, min 4
 ```
+
+A chat reply streams from the model with no thread held (the provider stream is asynchronous).
+Chat's blocking steps (retrieval, masking, saving the answer, a Bedrock stream) run on their own
+`CHAT_THREADPOOL_SIZE` threads, so however many chats are open they never take the threads the
+rest of the API runs on.
 
 The API runs synchronous handlers, synchronous dependencies and `run_in_threadpool` calls on
 one thread pool. A request holds its pooled database connection from authentication until the

@@ -40,3 +40,9 @@ class CapacitySettings(BaseSettings):
     # slowapi's check on an async route, indefinitely. See app/core/redis.py.
     REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS: float = 2.0
     REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS: float = 2.0
+
+    # Worker threads chat may use for its blocking steps (retrieval, masking, persistence,
+    # a Bedrock stream). A separate limiter from API_THREADPOOL_SIZE, so open chats can
+    # never take every thread the rest of the API needs. 0 = a quarter of the DB pool
+    # capacity, at least 4 (app/core/threadpool.py).
+    CHAT_THREADPOOL_SIZE: int = 0

@@ -5,31 +5,69 @@ exercised against canned streams — no HTTP, no mocks. Regressions here would s
 up as silently truncated chat answers or missing token counts.
 """
 
+import json
 import threading
-from unittest.mock import MagicMock
+from collections.abc import AsyncIterator
+from collections.abc import Iterable
 
+import httpx
 import pytest
 
+from app.services import llm_budget
 from app.services.llm_stream import USAGE_OPTION_PROVIDERS
+from app.services.llm_stream import AnthropicSSEParser
 from app.services.llm_stream import LLMStreamEvent
+from app.services.llm_stream import OllamaNDJSONParser
+from app.services.llm_stream import OpenAISSEParser
 from app.services.llm_stream import apply_stream_payload
 from app.services.llm_stream import get_stream_parser
-from app.services.llm_stream import parse_anthropic_sse
-from app.services.llm_stream import parse_ollama_ndjson
-from app.services.llm_stream import parse_openai_sse
+from tests.llm_stream_helpers import drain
+from tests.llm_stream_helpers import parse_anthropic_sse
+from tests.llm_stream_helpers import parse_ollama_ndjson
+from tests.llm_stream_helpers import parse_openai_sse
 
 
-def _transport(service):
-    """Inject the outbound transport at the seam that now OWNS it.
+class _Transport:
+    """What the stream sent, and the canned answer it gets back."""
 
-    ``chat_completion_stream`` no longer posts through a bare ``service.session``:
-    ``_endpoint_session`` validates and PINS the endpoint first (issue #444), so a mock
-    hung on ``service.session`` is never reached and ``llm.test`` is refused as
-    unresolvable — the test would then pass or fail for a reason unrelated to streaming.
+    def __init__(self) -> None:
+        self.requests: list[httpx.Request] = []
+        self.status = 200
+        self.lines: Iterable[str] = []
+        self.error: Exception | None = None
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.error is not None:
+            raise self.error
+        if self.status != 200:
+            return httpx.Response(self.status, text="error body")
+        lines = self.lines
+
+        async def body() -> AsyncIterator[bytes]:
+            # Lazy, one line per chunk, so a test can act between chunks.
+            for line in lines:
+                yield f"{line}\n".encode()
+
+        return httpx.Response(200, content=body())
+
+    @property
+    def payload(self) -> dict:
+        body: dict = json.loads(self.requests[-1].content)
+        return body
+
+
+def _transport(service) -> _Transport:
+    """Inject the outbound transport at the seams that now OWN it.
+
+    ``chat_completion_stream`` validates and PINS the endpoint first (issue #444) via
+    ``_endpoint_session``, so ``llm.test`` would otherwise be refused as unresolvable and
+    the test would pass or fail for a reason unrelated to streaming. The stream itself goes
+    through ``_stream_client``, an ``httpx.AsyncClient``; ``httpx.MockTransport`` answers it.
     """
     from app.utils.url_validation import PinnedTarget
 
-    session = MagicMock()
+    transport = _Transport()
     target = PinnedTarget(
         original_url="http://llm.test/v1/chat/completions",
         url="http://203.0.113.9/v1/chat/completions",
@@ -39,8 +77,13 @@ def _transport(service):
         scheme="http",
         pinned=True,
     )
-    service._endpoint_session = lambda url: (session, target)
-    return session
+    service._endpoint_session = lambda url: (None, target)
+    service._stream_client = lambda: httpx.AsyncClient(
+        transport=httpx.MockTransport(transport.handle)
+    )
+    # The token limits are database work; these tests are about the HTTP layer.
+    service._reserve_budget = lambda messages, kwargs: llm_budget.NO_RESERVATION
+    return transport
 
 
 def _texts(events: list[LLMStreamEvent]) -> str:
@@ -242,20 +285,20 @@ def test_ollama_stream_skips_blank_lines():
 @pytest.mark.parametrize(
     ("provider", "expected"),
     [
-        ("openai", parse_openai_sse),
-        ("vllm", parse_openai_sse),
-        ("openrouter", parse_openai_sse),
-        ("custom", parse_openai_sse),
-        ("anthropic", parse_anthropic_sse),
-        ("claude", parse_anthropic_sse),
-        ("ollama", parse_ollama_ndjson),
+        ("openai", OpenAISSEParser),
+        ("vllm", OpenAISSEParser),
+        ("openrouter", OpenAISSEParser),
+        ("custom", OpenAISSEParser),
+        ("anthropic", AnthropicSSEParser),
+        ("claude", AnthropicSSEParser),
+        ("ollama", OllamaNDJSONParser),
         # Correct but INERT: Bedrock never reaches `get_stream_parser` at all.
         # `LLMService.chat_completion_stream` branches to
         # `llm_bedrock.stream_converse` ahead of the parser lookup (see the branch
         # order test below), so this fallback is never exercised for "bedrock" in
         # production — it is pinned here only so a future provider added without a
         # parser entry doesn't silently fall through to the OpenAI dialect.
-        ("bedrock", parse_openai_sse),
+        ("bedrock", OpenAISSEParser),
     ],
 )
 def test_get_stream_parser_maps_every_provider(provider, expected):
@@ -281,11 +324,11 @@ def test_get_stream_parser_parametrize_covers_every_llmprovider_member():
     assert {p.value for p in LLMProvider} == covered
 
 
-def test_bedrock_stream_never_reaches_get_stream_parser_or_session_post():
+def test_bedrock_stream_never_reaches_get_stream_parser_or_the_http_client():
     """Bedrock branches to `llm_bedrock.stream_converse` BEFORE the URL lookup and
-    parser selection (`llm_service.py`'s `chat_completion_stream`), so a
-    Bedrock-configured service must never call `get_stream_parser` or POST through the
-    HTTP session at all.
+    parser selection (`llm_service.py`'s `_chat_completion_stream_untracked`), so a
+    Bedrock-configured service must never call `get_stream_parser` or send through the
+    HTTP client at all.
     """
     from unittest.mock import patch
 
@@ -294,18 +337,18 @@ def test_bedrock_stream_never_reaches_get_stream_parser_or_session_post():
     from app.services.llm_types import LLMProvider
 
     service = LLMService(LLMConfig(provider=LLMProvider.BEDROCK, model="test-model"))
-    session = _transport(service)
+    transport = _transport(service)
 
     with patch(
         "app.services.llm_bedrock.stream_converse",
         return_value=iter([LLMStreamEvent(type="done", finish_reason="stop")]),
     ) as mock_stream_converse:
-        with patch("app.services.llm_service.get_stream_parser") as mock_get_parser:
-            events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+        with patch("app.services.llm_http_stream.get_stream_parser") as mock_get_parser:
+            events = drain(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
 
     mock_stream_converse.assert_called_once()
     mock_get_parser.assert_not_called()
-    session.post.assert_not_called()
+    assert transport.requests == []
     assert events[-1].type == "done"
 
 
@@ -342,36 +385,37 @@ def _service(provider: str = "openai"):
     )
 
 
-def _mock_response(lines: list[str], status: int = 200) -> MagicMock:
-    response = MagicMock()
-    response.status_code = status
-    response.text = "error body"
-    response.iter_lines.return_value = iter(lines)
-    return response
+def _stream(service, cancel_event=None) -> list[LLMStreamEvent]:
+    return drain(
+        service.chat_completion_stream(
+            [{"role": "user", "content": "hi"}], cancel_event=cancel_event
+        )
+    )
 
 
 def test_chat_completion_stream_relays_parsed_events():
     service = _service()
-    session = _transport(service)
-    session.post.return_value = _mock_response(OPENAI_STREAM)
+    transport = _transport(service)
+    transport.lines = OPENAI_STREAM
 
-    events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+    events = _stream(service)
 
     assert _texts(events) == "Hello, world"
     assert events[-1].type == "done"
     # Streaming must be requested on the wire, not just assumed.
-    payload = session.post.call_args.kwargs["json"]
-    assert payload["stream"] is True
-    assert session.post.call_args.kwargs["stream"] is True
+    assert transport.payload["stream"] is True
+    # Sent to the pinned address, under the name it was asked for.
+    assert transport.requests[0].url.host == "203.0.113.9"
+    assert transport.requests[0].headers["host"] == "llm.test"
 
 
 def test_chat_completion_stream_reports_http_error_in_band():
     """A non-200 must arrive as an error EVENT — the SSE status line is already sent."""
     service = _service()
-    session = _transport(service)
-    session.post.return_value = _mock_response([], status=429)
+    transport = _transport(service)
+    transport.status = 429
 
-    events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+    events = _stream(service)
 
     assert len(events) == 1
     assert events[0].type == "error"
@@ -384,23 +428,21 @@ def test_chat_completion_stream_reports_http_error_in_band():
 )
 def test_chat_completion_stream_flags_capacity_statuses_as_transient(status, transient):
     service = _service()
-    session = _transport(service)
-    session.post.return_value = _mock_response([], status=status)
+    transport = _transport(service)
+    transport.status = status
 
-    events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+    events = _stream(service)
 
     assert [e.type for e in events] == ["error"]
     assert events[0].transient is transient
 
 
 def test_chat_completion_stream_reports_connection_error_in_band():
-    import requests
-
     service = _service()
-    session = _transport(service)
-    session.post.side_effect = requests.exceptions.ConnectionError("refused")
+    transport = _transport(service)
+    transport.error = httpx.ConnectError("refused")
 
-    events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+    events = _stream(service)
 
     assert events[0].type == "error"
     assert "refused" in events[0].message
@@ -410,21 +452,16 @@ def test_chat_completion_stream_honors_cancel_event():
     """Stop-generation truncates output and reports finish_reason='cancelled'."""
     cancel = threading.Event()
     service = _service()
-    session = _transport(service)
+    transport = _transport(service)
 
     def lines():
         yield 'data: {"choices":[{"delta":{"content":"before"}}]}'
         cancel.set()  # user hits Stop between chunks
         yield 'data: {"choices":[{"delta":{"content":"after"}}]}'
 
-    response = MagicMock()
-    response.status_code = 200
-    response.iter_lines.return_value = lines()
-    session.post.return_value = response
+    transport.lines = lines()
 
-    events = list(
-        service.chat_completion_stream([{"role": "user", "content": "hi"}], cancel_event=cancel)
-    )
+    events = _stream(service, cancel_event=cancel)
 
     assert _texts(events) == "before"
     assert events[-1].type == "done"
@@ -434,12 +471,13 @@ def test_chat_completion_stream_honors_cancel_event():
 def test_chat_completion_stream_estimates_tokens_when_provider_omits_usage():
     """Providers without usage reporting still let the caller bill/display something."""
     service = _service("custom")
-    session = _transport(service)
-    session.post.return_value = _mock_response(
-        ['data: {"choices":[{"delta":{"content":"some answer text"}}]}', "data: [DONE]"]
-    )
+    transport = _transport(service)
+    transport.lines = [
+        'data: {"choices":[{"delta":{"content":"some answer text"}}]}',
+        "data: [DONE]",
+    ]
 
-    events = list(service.chat_completion_stream([{"role": "user", "content": "hi"}]))
+    events = _stream(service)
 
     assert _first(events, "usage") is None  # nothing reported by the provider
     assert service.estimate_tokens("some answer text") > 0

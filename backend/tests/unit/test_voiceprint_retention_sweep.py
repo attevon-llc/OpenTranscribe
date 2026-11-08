@@ -67,8 +67,8 @@ def _speaker(db, user, f, profile=None) -> Speaker:
     return s
 
 
-def _always(_db, _fid):
-    return True
+def _always(_db, file_ids):
+    return set(file_ids)
 
 
 def _set_months(db, value: str) -> None:
@@ -78,7 +78,7 @@ def _set_months(db, value: str) -> None:
 
 
 def _due(db, cutoff) -> set[int]:
-    return set(vr.due_file_ids(db, cutoff, limit=10_000, has_voiceprints=_always))
+    return set(vr.due_file_ids(db, cutoff, limit=10_000, files_with_voiceprints=_always))
 
 
 def test_off_by_default_and_at_zero(db_session):
@@ -142,10 +142,10 @@ def test_an_unmeasurable_or_already_purged_file_is_skipped(db_session, normal_us
     answers: tuple[bool | None, ...] = (False, None)
     for answer in answers:
 
-        def measured(_d: object, _i: int, a: bool | None = answer) -> bool | None:
-            return a
+        def measured(_d: object, ids: list[int], a: bool | None = answer) -> set[int] | None:
+            return None if a is None else (set(ids) if a else set())
 
-        got = vr.due_file_ids(db_session, cutoff, limit=10_000, has_voiceprints=measured)
+        got = vr.due_file_ids(db_session, cutoff, limit=10_000, files_with_voiceprints=measured)
         assert f.id not in got
 
 
@@ -164,7 +164,7 @@ def test_stale_profiles_left_empty_are_listed_not_deleted(db_session, normal_use
         db_session,
         now=_NOW,
         dispatch=dispatch,
-        has_voiceprints=lambda _d, i: i == f.id,
+        files_with_voiceprints=lambda _d, ids: {i for i in ids if i == f.id},
         scope_supported=lambda: True,
     )
     assert out["status"] == "ok" and calls == [[f.id]]
@@ -179,7 +179,9 @@ def test_the_batch_is_bounded(db_session, normal_user):
     for f in files:
         _speaker(db_session, normal_user, f)
     ids = {f.id for f in files}
-    got = vr.due_file_ids(db_session, cutoff, limit=2, has_voiceprints=lambda _d, i: i in ids)
+    got = vr.due_file_ids(
+        db_session, cutoff, limit=2, files_with_voiceprints=lambda _d, page: set(page) & ids
+    )
     assert len(got) == 2 and set(got) <= ids
 
 
@@ -208,12 +210,38 @@ def test_purged_files_do_not_starve_newer_due_files(db_session, normal_user):
     for _tick in range(4):  # each tick purges what it selects, like the real sweep
         snapshot = frozenset(remaining)
 
-        def indexed(_db, file_id: int, live: frozenset[int] = snapshot) -> bool:
-            return file_id in live
+        def indexed(_db, page: list[int], live: frozenset[int] = snapshot) -> set[int]:
+            return set(page) & live
 
-        got = vr.due_file_ids(db_session, cutoff, limit=2, has_voiceprints=indexed)
+        got = vr.due_file_ids(db_session, cutoff, limit=2, files_with_voiceprints=indexed)
         assert set(got) <= still_indexed and not set(got) & purged_ids
         if not got:
             break
         remaining -= set(got)
     assert remaining == set()  # converged: every indexed file was eventually selected
+
+
+def test_presence_is_one_request_per_page_not_one_per_file(db_session, normal_user, monkeypatch):
+    """Nothing is due: the OpenSearch request count must not grow with the candidate files."""
+    from app.services import gdpr_voiceprint_erasure as gve
+
+    cutoff = vr.cutoff_for(24, _NOW)
+    requests: list[int] = []
+
+    def fake_existing(doc_ids, *, errors=None):
+        requests.append(len(list(doc_ids)))
+        return set()  # every voiceprint already purged
+
+    monkeypatch.setattr(gve, "existing_speaker_doc_ids", fake_existing)
+
+    def run(n: int) -> int:
+        for _ in range(n):
+            _speaker(db_session, normal_user, _file(db_session, normal_user))
+        requests.clear()
+        got = vr.due_file_ids(db_session, cutoff, limit=10_000)
+        assert got == []
+        return len(requests)
+
+    small = run(2)
+    large = run(12)  # the 2 files from the first run are candidates too
+    assert small >= 1 and large == small, (small, large)

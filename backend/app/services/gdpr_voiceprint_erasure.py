@@ -12,6 +12,8 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 logger = logging.getLogger(__name__)
 
 
@@ -198,6 +200,45 @@ def delete_speaker_docs_by_ids(
     if also is not None:
         deleted += delete_speaker_docs_by_query({"query": also}, errors=errors, label=label)
     return deleted
+
+
+def existing_speaker_doc_ids(
+    doc_ids: Iterable[str], *, errors: list[dict[str, Any]] | None = None
+) -> set[str] | None:
+    """Which of these ids exist as speaker-index documents: one request per ``_DOC_ID_BATCH``.
+
+    The batched sibling of :func:`count_speaker_docs_by_ids` for callers that need the
+    answer per id (a sweep asking about a page of files at once, not one count per file).
+    ``None`` means it could not be measured, recorded in ``errors``: an unmeasurable store
+    must never read as an empty one.
+    """
+    ids = list(dict.fromkeys(str(i) for i in doc_ids))
+    if not ids:
+        return set()
+    try:
+        from app.services.opensearch_service import opensearch_client
+
+        if opensearch_client is None:
+            raise RuntimeError("OpenSearch client unavailable")
+        indices = _speaker_index_names(opensearch_client)
+        if not indices:
+            return set()
+        target = ",".join(indices)
+        opensearch_client.indices.refresh(index=target)
+        found: set[str] = set()
+        for start in range(0, len(ids), _DOC_ID_BATCH):
+            batch = ids[start : start + _DOC_ID_BATCH]
+            resp = opensearch_client.search(
+                index=target,
+                body={"size": len(batch), "_source": False, "query": {"ids": {"values": batch}}},
+            )
+            found.update(str(hit["_id"]) for hit in resp.get("hits", {}).get("hits", []))
+        return found
+    except (RuntimeError, OpenSearchException) as exc:
+        logger.warning(f"Voiceprint presence check failed: {exc}")
+        if errors is not None:
+            errors.append({"stage": "presence_check", "error": str(exc)})
+        return None
 
 
 def count_speaker_docs_by_ids(

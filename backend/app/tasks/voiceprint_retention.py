@@ -130,17 +130,27 @@ def candidate_page(
     return [(int(r[0]), r[1]) for r in rows]
 
 
-def _has_voiceprints(db: Session, file_id: int) -> bool | None:
-    """True / False, or None when the store could not be measured."""
-    from app.models.speaker import Speaker
-    from app.services.gdpr_voiceprint_erasure import count_speaker_docs_by_ids
+def _files_with_voiceprints(db: Session, file_ids: list[int]) -> set[int] | None:
+    """The subset of ``file_ids`` that still has voiceprint documents; ``None`` if unmeasurable.
 
-    uuids = [
-        str(u)
-        for u in db.execute(select(Speaker.uuid).where(Speaker.media_file_id == file_id)).scalars()
-    ]
-    count = count_speaker_docs_by_ids(uuids, errors=[])
-    return None if count is None else count > 0
+    One speaker SELECT and one OpenSearch request per thousand speakers for the WHOLE page,
+    not one of each per candidate file.
+    """
+    from app.models.speaker import Speaker
+    from app.services.gdpr_voiceprint_erasure import existing_speaker_doc_ids
+
+    if not file_ids:
+        return set()
+    file_by_speaker = {
+        str(u): int(f)
+        for u, f in db.execute(
+            select(Speaker.uuid, Speaker.media_file_id).where(Speaker.media_file_id.in_(file_ids))
+        )
+    }
+    present = existing_speaker_doc_ids(file_by_speaker, errors=[])
+    if present is None:
+        return None
+    return {file_by_speaker[u] for u in present if u in file_by_speaker}
 
 
 def due_file_ids(
@@ -148,7 +158,9 @@ def due_file_ids(
     cutoff: datetime,
     *,
     limit: int = MAX_FILES_PER_RUN,
-    has_voiceprints: Callable[[Session, int], bool | None] = _has_voiceprints,
+    files_with_voiceprints: Callable[
+        [Session, list[int]], set[int] | None
+    ] = _files_with_voiceprints,
 ) -> list[int]:
     """At most ``limit`` due files. An unmeasurable file is skipped this tick, not purged."""
     due: list[int] = []
@@ -162,8 +174,9 @@ def due_file_ids(
         page = candidate_page(db, cutoff, page_size, after=cursor)
         if not page:
             break
+        indexed = files_with_voiceprints(db, [file_id for file_id, _uploaded in page])
         for file_id, _uploaded in page:
-            if has_voiceprints(db, file_id):
+            if indexed and file_id in indexed:
                 due.append(file_id)
                 if len(due) >= limit:
                     break
@@ -251,7 +264,9 @@ def run_sweep(
     *,
     now: datetime | None = None,
     dispatch: Callable[[list[int]], str] = dispatch_files_purge,
-    has_voiceprints: Callable[[Session, int], bool | None] = _has_voiceprints,
+    files_with_voiceprints: Callable[
+        [Session, list[int]], set[int] | None
+    ] = _files_with_voiceprints,
     scope_supported: Callable[[], bool] = files_scope_supported,
 ) -> dict[str, Any]:
     """One tick. Pure orchestration over the selection and the dispatch seam."""
@@ -266,7 +281,7 @@ def run_sweep(
         )
         return {"status": "unavailable", "retention_months": months}
     cutoff = cutoff_for(months, now)
-    file_ids = due_file_ids(db, cutoff, has_voiceprints=has_voiceprints)
+    file_ids = due_file_ids(db, cutoff, files_with_voiceprints=files_with_voiceprints)
     if not file_ids:
         return {"status": "ok", "retention_months": months, "files": 0}
     left_empty = stale_profiles_left_empty(db, cutoff, file_ids)

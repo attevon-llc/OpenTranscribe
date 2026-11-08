@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The audio player's speed and settings menu opens below its control bar instead of upward over the top navigation and logo, in right-to-left and left-to-right languages alike.
 - The mini player (search and speaker previews) keeps its control bar in the same order as the file page player in right-to-left languages instead of mirroring it.
 - The Search details panel names a result's language in the interface language ("Englisch" in German) instead of the browser's, and so does the chat warning about unsupported languages.
 - Technical tokens inside Arabic copy (".env", environment variable names, compose file names) now read left-to-right, so ".env" no longer renders as "env." in the usage report and other settings text.

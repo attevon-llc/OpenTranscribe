@@ -150,7 +150,7 @@
               on:click={() => selectResult(i)}
             >
               <span class="result-label">
-                <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by sanitizeHighlightHtml -->
                 {@html sanitizeHighlightHtml(highlightText(result.item.label, trimmed))}
               </span>
               <span class="result-section">{result.item.sectionLabel}</span>

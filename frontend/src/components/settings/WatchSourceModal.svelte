@@ -70,7 +70,43 @@
   let colOptions: ColOption[] = [];
   let availableCollections: Array<{ uuid: string; name: string }> = [];
 
-  function blankForm(): Record<string, unknown> {
+  interface WatchSourceForm {
+    name: string;
+    source_type: SourceType;
+    is_enabled: boolean;
+    local_path: string;
+    delete_after_import: boolean;
+    s3_endpoint_url: string;
+    s3_bucket_name: string;
+    s3_prefix: string;
+    s3_region: string;
+    s3_access_key_id: string;
+    s3_secret_key: string;
+    s3_use_ssl: boolean;
+    smb_server: string;
+    smb_share: string;
+    smb_path: string;
+    smb_username: string;
+    smb_password: string;
+    smb_domain: string;
+    smb_port: number;
+    polling_interval_minutes: number;
+    use_fs_events: boolean;
+    file_extensions: string;
+    // An emptied number input binds as null or ''.
+    skip_files_older_than_days: number | null | '';
+    recursive: boolean;
+    auto_transcribe: boolean;
+    min_speakers: number | null;
+    max_speakers: number | null;
+    multipart_enabled: boolean;
+    multipart_regex: string;
+    multipart_time_window_hours: number;
+    multipart_wait_scans: number;
+    upload_stitched_to_source: boolean;
+  }
+
+  function blankForm(): WatchSourceForm {
     return {
       name: '',
       source_type: (capabilities.local_enabled ? 'local' : 's3') as SourceType,
@@ -108,8 +144,7 @@
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let form: any = blankForm();
+  let form: WatchSourceForm = blankForm();
 
   onMount(() => {
     (async () => {

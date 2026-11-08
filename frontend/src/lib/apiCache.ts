@@ -205,10 +205,10 @@ export const cacheKey = {
 
 // Expose stats to dev console
 if (typeof window !== 'undefined' && import.meta.env?.DEV) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (window as any).__cacheStats = () => {
-    const s = apiCache.stats();
-    console.log(`Cache: ${s.size} entries, ${s.hits} hits, ${s.misses} misses (${s.hitRate})`);
-    return s;
-  };
+  (window as Window & { __cacheStats?: () => ReturnType<typeof apiCache.stats> }).__cacheStats =
+    () => {
+      const s = apiCache.stats();
+      console.log(`Cache: ${s.size} entries, ${s.hits} hits, ${s.misses} misses (${s.hitRate})`);
+      return s;
+    };
 }

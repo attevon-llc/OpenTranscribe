@@ -145,6 +145,29 @@ SELFTEST_CASES: tuple[tuple[str, str], ...] = (
         '    again = db.query(M).first()\n'
         '    opensearch_client.search(index="i", body={})\n',
     ),
+    (
+        # Concurrency audit F4, the shape `/api/search` had: the slow call is a method on
+        # the search SERVICE, named `search`, so neither a name nor a path matched it.
+        'session-param-slow-work',
+        'def search_transcripts(db: Session, q):\n'
+        '    hidden = hidden_uuids(db, 1)\n'
+        '    search_service = HybridSearchService()\n'
+        '    return search_service.search(query=q, exclude_file_uuids=hidden)\n',
+    ),
+    (
+        # ...and the unbound form, called straight off the constructor.
+        'session-search-engine',
+        'def task():\n'
+        '    with session_scope() as db:\n'
+        '        HybridSearchService().search(query="q")\n',
+    ),
+    (
+        # A named read-side call, which needs no receiver to be recognised.
+        'session-param-slow-work',
+        'def search_match_count(q, db: Session):\n'
+        '    get_file_by_uuid_with_permission(db, "u", 1)\n'
+        '    return service.count_matches(q, user_id=1)\n',
+    ),
 )
 
 #: Sources that MUST stay silent. These are the real three-phase fix shapes — if the
@@ -219,6 +242,18 @@ SELFTEST_CLEAN: tuple[str, ...] = (
     '        bluf = opensearch_result.get("bluf")\n'
     '        llm_service.close()\n'
     '        return bluf\n',
+    # F4's fix: read, release, THEN query the search service.
+    'def search_transcripts(db: Session, q):\n'
+    '    hidden = hidden_uuids(db, 1)\n'
+    '    db.close()\n'
+    '    search_service = HybridSearchService()\n'
+    '    return search_service.search(query=q, exclude_file_uuids=hidden)\n',
+    # `search` on anything that is not a slow client is not slow (`re.search`), and a
+    # PRIVATE helper borrowed off the service builds a query without sending it.
+    'def helper(db: Session, text):\n'
+    '    match = re.search("x", text)\n'
+    '    fields = HybridSearchService()._get_search_fields(False, use_exact=True)\n'
+    '    return match, fields\n',
 )
 
 #: ``(category, source)`` pairs that must fire EXACTLY once — a rule that double-counts one

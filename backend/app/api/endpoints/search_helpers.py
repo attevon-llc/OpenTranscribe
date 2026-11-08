@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.redaction_config import EffectiveRedactionConfig
 from app.schemas.search import RESULT_TYPE_TO_SOURCES
 from app.schemas.search import SEARCH_RESULT_TYPES
 from app.schemas.search import SEARCH_SOURCES
@@ -129,12 +130,14 @@ def _require_iso_date_bounds(**bounds: str | None) -> None:
 
 
 def _source_counts(
-    db: Session,
     ctx: RequestContext,
     q: str,
     **filter_kwargs: Any,
 ) -> dict[str, int | None]:
     """Corpus-wide per-source match counts for the toggle pills (issue #760).
+
+    OpenSearch only, and so it takes no session: the handler calls it after releasing
+    the request transaction (concurrency audit F4).
 
     Always computes all four, independent of which sources are selected — a
     disabled pill still shows what it would return. A failed count is
@@ -244,7 +247,7 @@ def _drop_quarantined_search_hits(
 
 
 def _summary_search_payload(
-    db: Session,
+    redaction_cfg: EffectiveRedactionConfig,
     ctx: RequestContext,
     q: str,
     page: int,
@@ -266,6 +269,10 @@ def _summary_search_payload(
     exclude_file_uuids: list[str] | None = None,
 ) -> dict[str, Any]:
     r"""Build the ``summary_results``/``summary_total`` pair for issue #462, #963.
+
+    ``redaction_cfg`` is the caller's policy, resolved by the handler BEFORE it releases
+    the request transaction; this function makes only the OpenSearch round trip and the
+    per-leaf masking, so it takes no session (concurrency audit F4).
 
     Since #963 this queries the OpenSearch summary plane
     (``services/search/summary_search.search_summaries`` ->
@@ -346,20 +353,17 @@ def _summary_search_payload(
     counting files the page had just removed, which is the #818 shape
     exactly.
     """
-    from app.services.redaction.config import resolve_effective_config
     from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
     from app.services.search.summary_search import search_summaries
 
-    cfg = resolve_effective_config(db, ctx.user.id, organization_id=ctx.org_id)
     try:
         result = search_summaries(
-            db,
             q,
             ctx.user.id,
             organization_id=ctx.org_id,
             page=page,
             page_size=page_size,
-            redaction_cfg=cfg,
+            redaction_cfg=redaction_cfg,
             include_quarantined=unavailable_list_exempt(ctx.bypass),
             speakers=speakers,
             tags=tags,

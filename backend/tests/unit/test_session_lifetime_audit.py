@@ -122,6 +122,34 @@ def test_interprocedural_rule_survives_rule_mutation(auditor):
         auditor.scan.takes_session = original
 
 
+def test_slow_client_receiver_rule_survives_mutation(auditor):
+    """``SLOW_CLIENTS`` is what sees ``search_service.search(...)``; prove it alone does.
+
+    The per-rule mutation above empties names and paths, which leaves the receiver table
+    untouched, so the F4 case (``/api/search`` holding the request transaction across
+    OpenSearch) needs its own: with the table emptied the finding must disappear.
+    """
+    source = (
+        "def search_transcripts(db: Session, q):\n"
+        "    hidden = hidden_uuids(db, 1)\n"
+        "    search_service = HybridSearchService()\n"
+        "    return search_service.search(query=q, exclude_file_uuids=hidden)\n"
+    )
+    assert [f.category for f in auditor.scan.scan_source(source, "x.py")] == [
+        "session-param-slow-work"
+    ]
+
+    original = dict(auditor.scan.SLOW_CLIENTS)
+    try:
+        auditor.scan.SLOW_CLIENTS.clear()
+        assert auditor.scan.scan_source(source, "x.py") == [], (
+            "the search-service finding survived emptying SLOW_CLIENTS — it is coming from "
+            "elsewhere"
+        )
+    finally:
+        auditor.scan.SLOW_CLIENTS.update(original)
+
+
 def test_allowlist_is_count_aware(auditor):
     """One line buys ONE finding, so a partial fix cannot hide behind an old entry."""
     findings = [

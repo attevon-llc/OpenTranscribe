@@ -173,15 +173,20 @@ def _first_off(*layers: tuple[Layer, bool]) -> Decision:
     return Decision(True)
 
 
-def _stored_layers(
-    db: Session, user_id: int | None, organization_id: int | None
-) -> dict[str, bool]:
-    """Instance, organization and user switches, read fresh from the database."""
+Scope = tuple[int | None, int | None]
+
+
+def _stored_layers_many(db: Session, scopes: Iterable[Scope]) -> dict[Scope, dict[str, bool]]:
+    """Instance, organization and user switches for many (user, organization) scopes.
+
+    One statement per layer however many scopes are asked about (the instance row, the
+    organization rows, the user rows), read fresh from the database.
+    """
     from app.models.organization_policy import OrganizationPolicy
     from app.models.prompt import UserSetting
     from app.models.system_settings import SystemSettings
 
-    out: dict[str, bool] = {}
+    wanted = list(dict.fromkeys(scopes))
     keys = (constants.PRIVACY_VOICEPRINT_MATCHING_KEY, constants.PRIVACY_GENDER_INFERENCE_KEY)
     rows = {
         str(r.key): r.value
@@ -196,49 +201,97 @@ def _stored_layers(
             return default
         return rows[key] is not None and _parse(rows[key])
 
-    out["instance_voiceprints"] = instance_flag(
+    instance_voiceprints = instance_flag(
         keys[0], constants.DEFAULT_PRIVACY_VOICEPRINT_MATCHING_ENABLED
     )
-    out["instance_gender"] = instance_flag(
-        keys[1], constants.DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED
-    )
+    instance_gender = instance_flag(keys[1], constants.DEFAULT_PRIVACY_GENDER_INFERENCE_ENABLED)
 
-    out["org_voiceprints"] = True
-    out["org_gender"] = True
-    if organization_id is not None:
-        org = (
-            db.query(
+    org_ids = {o for _, o in wanted if o is not None}
+    orgs: dict[int, tuple[bool, bool]] = {}
+    if org_ids:
+        orgs = {
+            int(r[0]): (bool(r[1]), bool(r[2]))
+            for r in db.query(
+                OrganizationPolicy.organization_id,
                 OrganizationPolicy.voiceprint_matching_enabled,
                 OrganizationPolicy.gender_inference_enabled,
             )
-            .filter(OrganizationPolicy.organization_id == organization_id)
-            .first()
-        )
-        if org is not None:
-            out["org_voiceprints"] = bool(org[0])
-            out["org_gender"] = bool(org[1])
-
-    out["user_voiceprints"] = True
-    out["user_gender"] = True
-    if user_id is not None:
-        user_keys = (
-            constants.PRIVACY_USER_VOICEPRINT_MATCHING_KEY,
-            constants.PRIVACY_USER_GENDER_DETECTION_KEY,
-        )
-        user_rows = {
-            str(r.setting_key): r.setting_value
-            for r in db.query(UserSetting.setting_key, UserSetting.setting_value)
-            .filter(UserSetting.user_id == user_id, UserSetting.setting_key.in_(user_keys))
+            .filter(OrganizationPolicy.organization_id.in_(org_ids))
             .all()
         }
-        if user_keys[0] in user_rows:
-            out["user_voiceprints"] = user_rows[user_keys[0]] is not None and _parse(
-                user_rows[user_keys[0]]
+
+    user_keys = (
+        constants.PRIVACY_USER_VOICEPRINT_MATCHING_KEY,
+        constants.PRIVACY_USER_GENDER_DETECTION_KEY,
+    )
+    user_ids = {u for u, _ in wanted if u is not None}
+    user_rows: dict[int, dict[str, object]] = {}
+    if user_ids:
+        for r in (
+            db.query(UserSetting.user_id, UserSetting.setting_key, UserSetting.setting_value)
+            .filter(UserSetting.user_id.in_(user_ids), UserSetting.setting_key.in_(user_keys))
+            .all()
+        ):
+            user_rows.setdefault(int(r.user_id), {})[str(r.setting_key)] = r.setting_value
+
+    def user_flag(user_id: int | None, key: str) -> bool:
+        mine = user_rows.get(user_id, {}) if user_id is not None else {}
+        return key not in mine or (mine[key] is not None and _parse(mine[key]))
+
+    out: dict[Scope, dict[str, bool]] = {}
+    for user_id, organization_id in wanted:
+        org = orgs.get(organization_id) if organization_id is not None else None
+        out[(user_id, organization_id)] = {
+            "instance_voiceprints": instance_voiceprints,
+            "instance_gender": instance_gender,
+            "org_voiceprints": org[0] if org else True,
+            "org_gender": org[1] if org else True,
+            "user_voiceprints": user_flag(user_id, user_keys[0]),
+            "user_gender": user_flag(user_id, user_keys[1]),
+        }
+    return out
+
+
+def _resolve_many(db: Session, scopes: Iterable[Scope]) -> dict[Scope, tuple[PrivacyPolicy, bool]]:
+    """The policy of each scope and whether every layer was read cleanly (False = an error denial)."""
+    wanted = list(dict.fromkeys(scopes))
+    platform = {org: _platform_layer(db, org) for org in {o for _, o in wanted}}
+    try:
+        stored_by_scope = _isolated(db, lambda: _stored_layers_many(db, wanted))
+    except Exception:
+        logger.exception("privacy policy read failed; denying voiceprints and gender")
+        stored_by_scope = None
+
+    out: dict[Scope, tuple[PrivacyPolicy, bool]] = {}
+    for scope in wanted:
+        platform_vp, platform_gender, platform_ok = platform[scope[1]]
+        if stored_by_scope is None:
+            out[scope] = (
+                PrivacyPolicy(
+                    voiceprints=platform_vp if not platform_vp.enabled else _DENY_INSTANCE,
+                    gender=platform_gender if not platform_gender.enabled else _DENY_INSTANCE,
+                ),
+                False,
             )
-        if user_keys[1] in user_rows:
-            out["user_gender"] = user_rows[user_keys[1]] is not None and _parse(
-                user_rows[user_keys[1]]
-            )
+            continue
+        stored = stored_by_scope[scope]
+        out[scope] = (
+            PrivacyPolicy(
+                voiceprints=_first_off(
+                    ("platform", platform_vp.enabled),
+                    ("instance", stored["instance_voiceprints"]),
+                    ("organization", stored["org_voiceprints"]),
+                    ("user", stored["user_voiceprints"]),
+                ),
+                gender=_first_off(
+                    ("platform", platform_gender.enabled),
+                    ("instance", stored["instance_gender"]),
+                    ("organization", stored["org_gender"]),
+                    ("user", stored["user_gender"]),
+                ),
+            ),
+            platform_ok,
+        )
     return out
 
 
@@ -246,35 +299,12 @@ def _resolve(
     db: Session, user_id: int | None, organization_id: int | None
 ) -> tuple[PrivacyPolicy, bool]:
     """The policy and whether every layer was read cleanly (False = a denial from an error)."""
-    platform_vp, platform_gender, platform_ok = _platform_layer(db, organization_id)
-    try:
-        stored = _isolated(db, lambda: _stored_layers(db, user_id, organization_id))
-    except Exception:
-        logger.exception("privacy policy read failed; denying voiceprints and gender")
-        return (
-            PrivacyPolicy(
-                voiceprints=platform_vp if not platform_vp.enabled else _DENY_INSTANCE,
-                gender=platform_gender if not platform_gender.enabled else _DENY_INSTANCE,
-            ),
-            False,
-        )
-    return (
-        PrivacyPolicy(
-            voiceprints=_first_off(
-                ("platform", platform_vp.enabled),
-                ("instance", stored["instance_voiceprints"]),
-                ("organization", stored["org_voiceprints"]),
-                ("user", stored["user_voiceprints"]),
-            ),
-            gender=_first_off(
-                ("platform", platform_gender.enabled),
-                ("instance", stored["instance_gender"]),
-                ("organization", stored["org_gender"]),
-                ("user", stored["user_gender"]),
-            ),
-        ),
-        platform_ok,
-    )
+    return _resolve_many(db, [(user_id, organization_id)])[(user_id, organization_id)]
+
+
+def gender_decisions(db: Session, scopes: Iterable[Scope]) -> dict[Scope, Decision]:
+    """:func:`gender_decision` for many scopes in a fixed number of statements."""
+    return {scope: layers[0].gender for scope, layers in _resolve_many(db, scopes).items()}
 
 
 def resolve_privacy_policy(

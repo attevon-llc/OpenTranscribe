@@ -395,9 +395,12 @@ class TestReleaseEmbeddingCacheOnly:
                 "was never loaded -- it must use sys.modules.get(), never `import`"
             )
 
-        monkeypatch.setattr(builtins, "__import__", _raise_on_import)
-
-        ws.release_embedding_cache_only()  # must not raise
+        # Only around the call: every `import` statement anywhere in the process goes through
+        # builtins.__import__, and fixture teardowns that run before the function-scoped
+        # monkeypatch is undone (pytest 9 orders _release_burst_connections after it) import.
+        with monkeypatch.context() as patch:
+            patch.setattr(builtins, "__import__", _raise_on_import)
+            ws.release_embedding_cache_only()  # must not raise
 
         assert import_attempts == [], (
             "release_embedding_cache_only() attempted a real import despite the module "

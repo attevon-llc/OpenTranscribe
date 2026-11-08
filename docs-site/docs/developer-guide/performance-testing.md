@@ -137,3 +137,60 @@ compile the statement and assert plan node types (`Anti Join` present, no `SubPl
 3. Measure, fix, measure again as above.
 4. Add a `count_statements` or plan-shape test beside the endpoint's other tests, and prove it red on
    a `git archive HEAD` tree before relying on it.
+
+## Concurrent users
+
+The steps above measure what one request costs at data scale. A concurrent-user run measures what
+many requests at once do to each other: the database pool, the API's worker threads, the event
+loop, Redis and WebSocket fan-out. The scenario is `scripts/perf/load/locustfile.py`
+([Locust](https://docs.locust.io/en/stable/)); the full runbook, with every command and the
+sampling loops, is `scripts/perf/load/README.md`, and the audit it checks is
+`docs/design/concurrency_foundations_plan.md`.
+
+It uses the same isolated stack and seed as above, and refuses anything else: `--fresh NAME` is
+required, the port comes from `.fresh/NAME.offset`, and the dev stack's ports are refused.
+Locust lives in its own venv (it patches the standard library with gevent when imported):
+
+```bash
+python3 -m venv ~/ot-cleanup-work/concurrency/locust-venv
+~/ot-cleanup-work/concurrency/locust-venv/bin/pip install -r scripts/perf/load/requirements.txt
+LOCUST=~/ot-cleanup-work/concurrency/locust-venv/bin/locust
+$LOCUST -f scripts/perf/load/locustfile.py --list
+```
+
+Start the stack with the per-IP development limits raised (hundreds of simulated users share one
+client IP), restore the snapshot and `ANALYZE`, then run each size on a quiet host:
+
+```bash
+export DEV_RATE_LIMIT_AUTH_PER_MINUTE=100000 DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE=100000 \
+       DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE=100000 DEV_RATE_LIMIT_SEARCH_PER_MINUTE=100000
+./opentr.sh start dev --fresh perf1337 --port-offset 300
+$LOCUST -f scripts/perf/load/locustfile.py --fresh perf1337 --headless --users 100 \
+    --spawn-rate 2 --run-time 15m --csv "$RUN/locust" --csv-full-history --html "$RUN/report.html"
+# then --users 500 (20m) and --users 1000 (25m)
+```
+
+Simulated people log in as the seeded `perf-N` identities and browse the gallery and its filters,
+open files, search, open the speakers and tasks pages, and occasionally comment or start an upload
+(each write cleans up after itself; an upload is never completed, so nothing reaches the GPU
+workers). Exclude writes with `--exclude-tags write`.
+
+Record, per run:
+
+| What | Where |
+|---|---|
+| p50 / p95 / p99 and count per endpoint | `locust_stats.csv` |
+| Error rate by cause (`rate limited (429)`, `session lost (401)`, `HTTP 5xx`, `no response`) | `locust_failures.csv` |
+| Latency over time | `locust_stats_history.csv` |
+| Postgres connections in use, idle in transaction | `pg_stat_activity`, sampled every 5 s |
+| API pool use and waits | `db_pool_checked_out` against `db_pool_capacity` from the backend's `/metrics`; `QueuePool limit` lines in the backend log |
+| In-flight requests | `http_requests_in_flight` from `/metrics` |
+| CPU and memory per container | `docker stats`, filtered by the stack's compose project label |
+
+Compare runs only on the same snapshot, settings and host load. A p95 that climbs while Postgres is
+idle and `db_pool_checked_out` sits at capacity is pool or thread saturation, not slow SQL; a p95
+that climbs with the backend container at one full core is the single API process.
+
+`backend/tests/unit/test_load_scenario_routes.py` runs every task of the scenario against a
+recording client and checks each request against `backend/openapi.json`, so a renamed route fails
+the test suite instead of turning into a run of 404s.

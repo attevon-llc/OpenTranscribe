@@ -454,7 +454,12 @@ async def send_message(
     kwargs = await run_in_threadpool(
         _prepare_turn, request, db, ctx, conversation, body.content, body.search_mode
     )
-    return _streaming_response(kwargs, ctx.user.id)
+    # FastAPI closes this session only after the response is SENT, i.e. when the model
+    # finishes. _prepare_turn reopened its transaction after committing, so release the
+    # pooled connection now: otherwise every in-flight chat holds one for the whole reply.
+    user_id = ctx.user.id
+    await run_in_threadpool(db.close)
+    return _streaming_response(kwargs, user_id)
 
 
 @router.post("/conversations/{conversation_uuid}/regenerate")

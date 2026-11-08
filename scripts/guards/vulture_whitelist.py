@@ -55,4 +55,11 @@ WHITELIST = (
     # Called by the v456 migration (backend/alembic/versions/v456_unique_object_keys.py), which
     # this guard does not scan; the runner never imports it by name.
     _.clear_regenerable_duplicates,
+    # Locust user classes in scripts/perf/load/locustfile.py: Locust discovers every HttpUser
+    # subclass in the locustfile and instantiates it by class, then calls its on_start hook;
+    # nothing calls them by name.
+    _.OrdinaryUser,
+    _.HeavyOwner,
+    _.Administrator,
+    _.on_start,
 )

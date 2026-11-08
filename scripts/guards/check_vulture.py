@@ -3,7 +3,8 @@
 
 Runs vulture over ``backend/app scripts``. Tests are not scanned, so code used only by tests
 is reported: production code with no production caller is dead. Routes, celery tasks,
-validators, signal handlers and event listeners are registered by decorator and are ignored.
+validators, signal handlers, event listeners and Locust tasks/hooks are registered by decorator
+and are ignored.
 
 Only the kinds ``function``, ``method``, ``class`` and ``import`` are ratcheted. Variables,
 attributes and properties are out of scope: at this confidence vulture cannot tell an ORM
@@ -36,7 +37,9 @@ PINNED_VULTURE = '2.16'
 MIN_CONFIDENCE = '60'
 IGNORE_DECORATORS = (
     '@*router.*,@app.*,@celery_app.task,@*.connect,@field_validator,@model_validator,'
-    '@computed_field,@event.listens_for'
+    '@computed_field,@event.listens_for,'
+    # Locust (scripts/perf/load/locustfile.py) registers tasks and event hooks by decorator.
+    '@task,@tag,@events.*'
 )
 KINDS = frozenset({'function', 'method', 'class', 'import'})
 _FINDING = re.compile(r"^(?P<path>.+?):(?P<line>\d+): unused (?P<kind>[\w ]+?) '(?P<name>.+)' \(")

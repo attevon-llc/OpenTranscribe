@@ -26,6 +26,11 @@ def _ns(**kw: Any) -> Any:
     return SimpleNamespace(**kw)
 
 
+def _db() -> Any:
+    """A request-session stand-in: the handlers release it before the provider check."""
+    return _ns(close=lambda: None)
+
+
 LEAK_MARKER = "SELECT secret_column FROM user_llm_settings"
 
 
@@ -54,7 +59,7 @@ def test_is_llm_available_is_false_when_nothing_is_configured(not_configured):
 def test_llm_status_reports_settings_unavailable(unreadable_settings):
     from app.api.endpoints.llm_status import get_llm_status
 
-    result = asyncio.run(get_llm_status(current_user=_ns(id=1), db=_ns()))
+    result = asyncio.run(get_llm_status(current_user=_ns(id=1), db=_db()))
 
     assert result["available"] is False
     assert result["status"] == "settings_unavailable"
@@ -66,7 +71,7 @@ def test_llm_status_reports_settings_unavailable(unreadable_settings):
 def test_llm_status_not_configured_keeps_the_configure_message(not_configured):
     from app.api.endpoints.llm_status import get_llm_status
 
-    result = asyncio.run(get_llm_status(current_user=_ns(id=1), db=_ns()))
+    result = asyncio.run(get_llm_status(current_user=_ns(id=1), db=_db()))
 
     assert "status" not in result
     assert "configure" in result["message"].lower()
@@ -93,7 +98,7 @@ def test_summary_status_flags_the_outage_instead_of_no_provider(unreadable_setti
     )
     ctx = _ns(bypass=_ns(user_is_admin=False), org_id=None)
 
-    result = asyncio.run(mod.get_summary_status("u", db=_ns(), current_user=_ns(id=1), ctx=ctx))
+    result = asyncio.run(mod.get_summary_status("u", db=_db(), current_user=_ns(id=1), ctx=ctx))
 
     assert result["llm_available"] is False
     assert result["llm_settings_unavailable"] is True
@@ -116,7 +121,7 @@ def test_retry_summary_returns_503_with_the_settings_sentence(unreadable_setting
     ctx = _ns(bypass=_ns(user_is_admin=False), org_id=None)
 
     with pytest.raises(ServiceUnavailableError) as exc:
-        asyncio.run(mod.retry_summary("u", db=_ns(), current_user=_ns(id=1), ctx=ctx))
+        asyncio.run(mod.retry_summary("u", db=_db(), current_user=_ns(id=1), ctx=ctx))
 
     assert exc.value.status_code == 503
     assert LLM_SETTINGS_UNREADABLE_MESSAGE in str(exc.value)
@@ -139,7 +144,7 @@ def test_speaker_id_trigger_returns_503_on_an_outage(unreadable_settings, monkey
     ctx = _ns(bypass=_ns(user_is_admin=False), org_id=None)
 
     with pytest.raises(ServiceUnavailableError) as exc:
-        asyncio.run(mod.identify_speakers("u", current_user=_ns(id=1), ctx=ctx, db=_ns()))
+        asyncio.run(mod.identify_speakers("u", current_user=_ns(id=1), ctx=ctx, db=_db()))
 
     assert LLM_SETTINGS_UNREADABLE_MESSAGE in str(exc.value)
     assert started == []

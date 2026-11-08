@@ -339,3 +339,67 @@ class TestMainProcessPreloadIsBounded:
         )
 
         assert start_period == lifecycle_module._CPU_WHISPER_PRELOAD_TIMEOUT_S
+
+
+class TestForkedChildLeavesParentConnectionsAlone:
+    """A prefork child must drop the inherited pool WITHOUT closing the parent's sockets.
+
+    The worker's MainProcess uses the engine before it forks (``verify_database_role`` on
+    ``worker_init``), so every child inherits a pool holding a live connection whose socket
+    it shares with the parent. SQLAlchemy's documented recipe ("Using Connection Pools with
+    Multiprocessing or os.fork()") is ``engine.dispose(close=False)`` in the child: a plain
+    ``dispose()`` CLOSES those connections, and closing a psycopg2 connection sends the
+    server a Terminate message over the shared socket, which ends the parent's session.
+    Every respawn (``--max-tasks-per-child``) then kills the parent's connection again.
+    """
+
+    def test_parent_connection_survives_a_child_running_the_fork_initializer(self, monkeypatch):
+        import os
+
+        from sqlalchemy import create_engine
+        from sqlalchemy import text
+        from sqlalchemy.pool import QueuePool
+
+        from app.db import base as db_base
+
+        # pre_ping off so a dead connection surfaces as an error instead of being replaced.
+        parent_engine = create_engine(
+            db_base.engine.url,
+            poolclass=QueuePool,
+            pool_size=1,
+            max_overflow=0,
+            pool_pre_ping=False,
+        )
+        pool = parent_engine.pool
+        assert isinstance(pool, QueuePool)
+        try:
+            with parent_engine.connect() as conn:
+                backend_pid = conn.execute(text("SELECT pg_backend_pid()")).scalar()
+            assert pool.checkedin() == 1, "the parent must hold a pooled connection"
+
+            monkeypatch.setattr(db_base, "engine", parent_engine)
+            monkeypatch.setattr(lifecycle_module, "publish_hf_token_to_environment", lambda: False)
+            monkeypatch.setattr(lifecycle_module, "_cap_torch_threads_to_cpu_quota", lambda: None)
+
+            child = os.fork()
+            if child == 0:  # pragma: no cover - runs in the forked child
+                code = 0
+                try:
+                    init_worker_process()
+                    # The child must not keep the parent's connection for its own use.
+                    child_pool = db_base.engine.pool
+                    if not isinstance(child_pool, QueuePool) or child_pool.checkedin() != 0:
+                        code = 2
+                except BaseException:
+                    code = 1
+                os._exit(code)
+            _, status = os.waitpid(child, 0)
+            exit_code = os.waitstatus_to_exitcode(status)
+            assert exit_code != 2, "the child kept the inherited connection in its pool"
+            assert exit_code == 0, "the fork initializer failed"
+
+            with parent_engine.connect() as conn:
+                still = conn.execute(text("SELECT pg_backend_pid()")).scalar()
+            assert still == backend_pid, "the parent was handed a different connection"
+        finally:
+            parent_engine.dispose()

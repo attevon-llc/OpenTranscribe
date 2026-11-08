@@ -149,7 +149,7 @@
         <h4>{$t('settings.statistics.mediaFiles')}</h4>
         <div class="stat-value">{stats.files?.total || 0}</div>
         <div class="stat-detail">{$t('settings.statistics.new')}: {stats.files?.new || 0}</div>
-        <div class="stat-detail">{$t('settings.statistics.segments')}: {stats.files?.segments || 0}</div>
+        <div class="stat-detail">{$t('settings.statistics.segments')}: {stats.transcripts?.total_segments_is_estimate ? '≈' : ''}{stats.files?.segments || 0}</div>
       </div>
 
       <!-- Task Stats -->
@@ -171,7 +171,7 @@
         <div class="stat-detail">{$t('settings.statistics.fileTimingAvg')}: {formatElapsed(stats.file_timing?.avg_secs || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.fileTimingMin')}: {formatElapsed(stats.file_timing?.min_secs || 0)}</div>
         <div class="stat-detail">{$t('settings.statistics.fileTimingMax')}: {formatElapsed(stats.file_timing?.max_secs || 0)}</div>
-        <div class="stat-detail">{$t('settings.statistics.speakers')}: {stats.speakers?.total || 0}</div>
+        <div class="stat-detail">{$t('settings.statistics.speakers')}: {stats.speakers?.total_is_estimate ? '≈' : ''}{stats.speakers?.total || 0}</div>
         <div class="stat-detail stat-detail-hint">{$t('settings.statistics.viewDetails')}</div>
       </div>
 

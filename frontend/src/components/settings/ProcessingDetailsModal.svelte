@@ -65,7 +65,7 @@
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.speakers')}</span>
-                <span class="detail-value">{stats.speakers?.total || 0} ({$t('settings.statistics.avgProcessTime')}: {$t('settings.statistics.perFile', { value: stats.speakers?.avg_per_file || 0 })})</span>
+                <span class="detail-value">{stats.speakers?.total_is_estimate ? '≈' : ''}{stats.speakers?.total || 0} ({$t('settings.statistics.avgProcessTime')}: {$t('settings.statistics.perFile', { value: stats.speakers?.avg_per_file || 0 })})</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.successRate')}</span>

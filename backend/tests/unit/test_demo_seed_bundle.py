@@ -15,6 +15,7 @@ import pytest
 
 from app.scripts.demo_seed.__main__ import main
 from app.scripts.demo_seed.bundle import ALLOWED_LICENSES
+from app.scripts.demo_seed.bundle import COLLECTIONS
 from app.scripts.demo_seed.bundle import BundleError
 from app.scripts.demo_seed.bundle import load_bundle
 
@@ -29,6 +30,7 @@ def _item(**overrides):
         "id": "nasa-briefing",
         "title": "A mission briefing",
         "language": "en",
+        "collection": "science-briefings",
         "media": "media/nasa-briefing.mp3",
         "media_sha256": hashlib.sha256(MEDIA).hexdigest(),
         "transcript": "transcripts/nasa-briefing.json",
@@ -92,6 +94,8 @@ def test_a_valid_bundle_loads(tmp_path):
         ({"media_sha256": "0" * 64}, "SHA-256 does not match"),
         ({"media": "../../etc/passwd"}, "outside the bundle"),
         ({"transcript": "transcripts/missing.json"}, "transcript missing"),
+        ({"collection": "weather-memes"}, "unknown collection 'weather-memes'"),
+        ({"collection": None}, "missing collection"),
         ({"synthetic_pii": "yes"}, "synthetic_pii must be true or false"),
     ],
 )
@@ -156,3 +160,13 @@ def test_every_catalogue_source_uses_an_allowed_licence():
         assert source["license"] in ALLOWED_LICENSES, source["name"]
         assert source["license_url"].startswith("https://"), source["name"]
         assert source["contains_private_individuals"] is False, source["name"]
+
+
+def test_every_catalogue_source_names_a_known_collection_with_its_reasons():
+    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
+
+    assert {c["id"]: c["name"] for c in catalog["collections"]} == COLLECTIONS
+    assert {s["collection"] for s in catalog["sources"]} == set(COLLECTIONS)
+    for source in catalog["sources"]:
+        assert source["why_allowed"].strip(), source["name"]
+        assert source["exclusions"], source["name"]

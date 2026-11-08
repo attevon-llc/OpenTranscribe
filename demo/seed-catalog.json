@@ -1,53 +1,307 @@
 {
-  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Every item built from these must still pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on when the bundle is built (docs-site/docs/operations/public-demo.md, 'Building the seed bundle'). Only the speech of people speaking in an official or professional public capacity is used; no private individual.",
+  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; `license_verified: false` marks a licence page that could not be fetched on 2026-11-08. The owner approves the final item list.",
+  "collections": [
+    {
+      "id": "news",
+      "name": "News"
+    },
+    {
+      "id": "government-meetings",
+      "name": "Government meetings"
+    },
+    {
+      "id": "business-finance",
+      "name": "Business & finance"
+    },
+    {
+      "id": "training-education",
+      "name": "Training & education"
+    },
+    {
+      "id": "science-briefings",
+      "name": "Science & briefings"
+    },
+    {
+      "id": "privacy-demo",
+      "name": "Privacy demo"
+    }
+  ],
   "sources": [
     {
-      "name": "NASA mission audio, briefings and NASA TV programmes",
-      "url": "https://images.nasa.gov/",
+      "name": "Voice of America news reports in several languages",
+      "collection": "news",
+      "url": "https://www.voanews.com/",
       "license": "US-GOV-PD",
-      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
-      "attribution": "Courtesy NASA",
-      "shows": ["multi-speaker diarization", "speaker names", "science vocabulary search"],
+      "license_url": "https://www.voanews.com/p/5338.html",
+      "attribution": "Voice of America",
+      "why_allowed": "VOA's copyright page: \"All text, audio and video material produced exclusively by the Voice of America is in the public domain.\" Page checked 2026-11-08.",
+      "exclusions": [
+        "Exclude any segment not produced exclusively by VOA: the page says some material is licensed for VOA programming only and is not public domain, and AFP, AP and Reuters material may not be redistributed.",
+        "Exclude street interviews and vox pops with private individuals; keep only VOA staff, officials and named experts speaking in a professional capacity."
+      ],
+      "shows": [
+        "multi-language transcripts",
+        "summaries",
+        "keyword and semantic search"
+      ],
       "contains_private_individuals": false,
       "license_checked_on": null
     },
     {
-      "name": "Voice of America news reports in several languages",
-      "url": "https://www.voanews.com/",
+      "name": "FCC open commission meetings",
+      "collection": "government-meetings",
+      "url": "https://www.fcc.gov/news-events/events",
       "license": "US-GOV-PD",
-      "license_url": "https://www.insidevoa.com/p/5831.html",
-      "attribution": "Voice of America",
-      "shows": ["multi-language transcripts", "summaries", "keyword and semantic search"],
+      "license_url": "https://www.usa.gov/government-copyright",
+      "attribution": "Federal Communications Commission",
+      "why_allowed": "Work of a US federal agency, so not subject to copyright (17 U.S.C. 105). The FCC's own website-policies page returned 403 to the automated fetch on 2026-11-08, so its wording is NOT yet confirmed; re-read https://www.fcc.gov/about/website-policies by hand at bundle build and replace license_url with it.",
+      "exclusions": [
+        "Exclude the public-comment portion and any speaker who is a private citizen; keep commissioners and FCC staff.",
+        "Exclude any segment containing licensed third-party video or audio clips."
+      ],
+      "shows": [
+        "multi-speaker diarization",
+        "agenda-style summaries",
+        "cross-meeting questions"
+      ],
       "contains_private_individuals": false,
       "license_checked_on": null,
-      "notes": "VOA marks some segments as third-party material; use only reports produced by VOA staff, and no street interviews."
+      "license_verified": false
     },
     {
-      "name": "NOAA and National Weather Service public briefings",
+      "name": "NTSB board meetings",
+      "collection": "government-meetings",
+      "url": "https://www.ntsb.gov/news/Pages/Board-Meetings.aspx",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.ntsb.gov/about/Pages/Website-Policies.aspx",
+      "attribution": "National Transportation Safety Board",
+      "why_allowed": "NTSB website policies: content \"prepared by federal employees\" is \"not protected by copyright\" and \"may be freely copied\"; copyrighted third-party items are identified as such. Checked 2026-11-08.",
+      "exclusions": [
+        "Exclude any third-party text, image, audio or video the NTSB marks as copyrighted.",
+        "Exclude family-member or private-citizen statements; keep Board members and NTSB investigators in their official roles."
+      ],
+      "shows": [
+        "technical vocabulary",
+        "long recordings",
+        "who-said-what questions"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "FDA advisory committee meetings",
+      "collection": "government-meetings",
+      "url": "https://www.fda.gov/advisory-committees/advisory-committee-calendar",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.fda.gov/about-fda/about-website/website-policies",
+      "attribution": "US Food and Drug Administration",
+      "why_allowed": "FDA website policies: \"Unless otherwise noted\" the contents of fda.gov \"are in the public domain and may be republished, reprinted and otherwise used freely\". Checked 2026-11-08.",
+      "exclusions": [
+        "Exclude the open public hearing segment (private citizens, patients, and industry or advocacy speakers).",
+        "Exclude sponsor (company) presentations and slides; keep FDA staff and the committee's members. Committee members include non-federal academics: confirm each is speaking in the official committee role, and drop meetings where the recording notes a copyright."
+      ],
+      "shows": [
+        "many speakers",
+        "medical vocabulary",
+        "voting and decision summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "Federal Reserve FOMC press conferences",
+      "collection": "business-finance",
+      "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.federalreserve.gov/disclaimer.htm",
+      "attribution": "Board of Governors of the Federal Reserve System",
+      "why_allowed": "Board website: its information \"is in the public domain and may be copied and distributed without permission\"; credit the Board. Checked 2026-11-08.",
+      "exclusions": [
+        "Exclude any photo, graphic or material the Board marks as from a non-Board source.",
+        "Press-conference questions come from journalists (private persons working for outlets): use the Chair's opening statement and answers, with the questions dropped, or the transcript's reporter turns anonymised; do not name reporters."
+      ],
+      "shows": [
+        "numbers and dates",
+        "Q&A structure",
+        "summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "SEC open meetings",
+      "collection": "business-finance",
+      "url": "https://www.sec.gov/news/upcoming-events",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.sec.gov/about/privacy-information",
+      "attribution": "US Securities and Exchange Commission",
+      "why_allowed": "SEC website dissemination policy: content \"may be copied or further distributed by users of the web site without the SEC's permission\"; cite the SEC. Checked 2026-11-08. The page names no third-party exception, so Commission-produced recordings only.",
+      "exclusions": [
+        "Exclude any segment from a non-SEC source and the SEC seal, logos and EDGAR marks as artwork.",
+        "Exclude public-comment speakers; keep Commissioners and staff."
+      ],
+      "shows": [
+        "finance vocabulary",
+        "votes and rulemaking summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "NASA education videos and podcasts",
+      "collection": "training-education",
+      "url": "https://www.nasa.gov/learning-resources/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "attribution": "Courtesy NASA",
+      "why_allowed": "NASA media guidelines: NASA content \"generally [is] not subject to copyright in the United States\" and factual, non-endorsing use needs no permission. Checked 2026-11-08. This is not a blanket public-domain grant, hence the exclusions.",
+      "exclusions": [
+        "Exclude items labelled with a third-party copyright holder's name (NASA's permission does not extend to others).",
+        "Exclude children, students or other private individuals on camera or on the audio; keep NASA staff and astronauts in their official role.",
+        "Never use NASA's insignia, or a NASA employee's name or likeness, to imply endorsement."
+      ],
+      "shows": [
+        "plain-language explanations",
+        "summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "FEMA training and preparedness videos",
+      "collection": "training-education",
+      "url": "https://training.fema.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.fema.gov/about/website-information",
+      "attribution": "Federal Emergency Management Agency",
+      "why_allowed": "FEMA website information page: most FEMA.gov material is free of copyright and may be copied without permission; FEMA sometimes uses licensed or restricted images, shown by a copyright notice or credit. Source found by search 2026-11-08; the page itself was not fetched, so re-read at bundle build.",
+      "exclusions": [
+        "Exclude anything with a copyright notice or photo credit (licensed or restricted).",
+        "Exclude survivor and community interviews (private individuals); keep FEMA staff and instructors.",
+        "FEMA and DHS names and logos are not reused as branding."
+      ],
+      "shows": [
+        "procedural vocabulary",
+        "step-by-step summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null,
+      "license_verified": false
+    },
+    {
+      "name": "OSHA training and safety videos",
+      "collection": "training-education",
+      "url": "https://www.osha.gov/video",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.usa.gov/government-copyright",
+      "attribution": "Occupational Safety and Health Administration",
+      "why_allowed": "Work of a US federal agency, so not subject to copyright (17 U.S.C. 105). OSHA's own copyright page was not reachable (osha.gov/copyright and /privacy-policy returned 404 on 2026-11-08), so the exact wording is NOT confirmed; locate OSHA's disclaimer page at bundle build and replace license_url.",
+      "exclusions": [
+        "Exclude videos produced by a contractor, partner or employer (workers, companies, trade bodies) and any with a copyright notice.",
+        "Exclude workers or victims' families on camera (private individuals); keep OSHA staff."
+      ],
+      "shows": [
+        "safety instruction",
+        "summaries"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null,
+      "license_verified": false
+    },
+    {
+      "name": "LibriVox public-domain audiobook readings",
+      "collection": "training-education",
+      "url": "https://librivox.org/",
+      "license": "PDM-1.0",
+      "license_url": "https://librivox.org/pages/public-domain/",
+      "attribution": "LibriVox volunteer readers; recordings dedicated to the public domain",
+      "why_allowed": "LibriVox: \"all our recordings are public domain\" and volunteers' recordings \"will be donated to the public domain\" (public domain in the USA; other countries may differ). The underlying books are US public domain. Checked 2026-11-08.",
+      "exclusions": [
+        "Use only short chapters whose catalogue page shows the recording dedicated to the public domain and a pre-1930 text.",
+        "Keep to English-language chapters read by one volunteer, with the reader credited as listed on LibriVox."
+      ],
+      "shows": [
+        "single-speaker long form",
+        "literary vocabulary",
+        "search over prose"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null,
+      "notes": "Decision on contains_private_individuals: the policy page says nothing about reader identity or consent, and a volunteer is a private individual who uses a (possibly real) name. Every other source here is an official speaking in a public role, which is the standard the validator's flag encodes. We therefore do NOT mark LibriVox items false on the strength of the public-domain dedication, which settles copyright, not the person's privacy. Ship LibriVox only if the owner accepts a licensed-by-dedication volunteer voice, or choose readers who publish under a clear public credit; until then the items stay out of the bundle (open_owner_decision). If approved, the curator sets the flag deliberately for each item.",
+      "open_owner_decision": true
+    },
+    {
+      "name": "NASA mission briefings and NASA TV programmes",
+      "collection": "science-briefings",
+      "url": "https://images.nasa.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "attribution": "Courtesy NASA",
+      "why_allowed": "NASA media guidelines: content \"generally [is] not subject to copyright in the United States\". Checked 2026-11-08.",
+      "exclusions": [
+        "Exclude items labelled with a third-party copyright holder's name and any commercial-partner presentation.",
+        "Exclude reporters' questions from private individuals' voices where the speaker is not a named media professional; keep NASA officials, scientists and astronauts in their official roles."
+      ],
+      "shows": [
+        "multi-speaker diarization",
+        "science vocabulary search"
+      ],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "NOAA and National Weather Service briefings",
+      "collection": "science-briefings",
       "url": "https://www.weather.gov/",
       "license": "US-GOV-PD",
       "license_url": "https://www.weather.gov/disclaimer",
       "attribution": "NOAA / National Weather Service",
-      "shows": ["long recordings", "topic extraction"],
+      "why_allowed": "NWS disclaimer: its information \"is in the public domain, unless specifically noted otherwise\"; do not imply endorsement or alter it as official. Checked 2026-11-08.",
+      "exclusions": [
+        "Exclude third-party information and imagery, which the page says is used under the provider's licence.",
+        "Exclude the NWS name and logo as branding (trademark); and media-partner or broadcaster segments."
+      ],
+      "shows": [
+        "long recordings",
+        "topic extraction"
+      ],
       "contains_private_individuals": false,
       "license_checked_on": null
     },
     {
       "name": "Redaction showcase: a scripted clip voiced by the project team with invented names, numbers and addresses",
+      "collection": "privacy-demo",
       "url": "https://github.com/attevon-llc/OpenTranscribe",
       "license": "CC0-1.0",
       "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
       "attribution": "OpenTranscribe project",
-      "shows": ["PII redaction"],
+      "why_allowed": "Written and voiced by the project team and dedicated to CC0. Every personal detail is invented and the item is marked synthetic_pii: true.",
+      "exclusions": [
+        "No real person's details; invented names, numbers and addresses only."
+      ],
+      "shows": [
+        "PII redaction"
+      ],
       "contains_private_individuals": false,
-      "license_checked_on": null,
-      "notes": "Every personal detail is invented and the item is marked synthetic_pii: true."
+      "license_checked_on": null
     }
   ],
   "excluded": [
     {
       "name": "AMI Meeting Corpus",
       "reason": "CC BY 4.0, but the speakers are private individuals; the demo carries no private individual's voice."
+    },
+    {
+      "name": "Company earnings calls",
+      "reason": "Company-owned content, not a government work or openly licensed."
+    },
+    {
+      "name": "Any Creative Commons NC or ND licence",
+      "reason": "Not in the allowed licence list; NC forbids the demo's promotional use and ND forbids the transcript and summary derivatives."
+    },
+    {
+      "name": "Public-comment and open-hearing segments (FCC, FDA, SEC, NTSB)",
+      "reason": "Private citizens speak; cut them from every meeting."
     }
   ]
 }

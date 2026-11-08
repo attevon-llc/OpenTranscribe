@@ -196,15 +196,20 @@ class ConnectionManager:
             )
 
     async def send_personal_message(self, user_id: int, message: dict[str, Any]) -> None:
+        # Iterate a copy: each send yields to the loop, and a tab that connects or closes
+        # meanwhile mutates the live list (removing one skipped the next tab).
         if user_id in self.active_connections:
-            for connection in self.active_connections[user_id]:
+            for connection in list(self.active_connections[user_id]):
                 try:
                     await connection.send_text(json.dumps(message))
                 except Exception as e:
                     logger.error(f"Error sending message to user {user_id}: {str(e)}")
 
     async def broadcast(self, message: dict[str, Any]) -> None:
-        for user_id in self.active_connections:
+        # A snapshot, for the same reason: a connect or disconnect during the fan-out
+        # raised "dictionary changed size during iteration", which the subscriber took
+        # for a lost connection, dropping every notification published while it resubscribed.
+        for user_id in list(self.active_connections):
             await self.send_personal_message(user_id, message)
 
     async def broadcast_to_admins(self, message: dict[str, Any]) -> None:

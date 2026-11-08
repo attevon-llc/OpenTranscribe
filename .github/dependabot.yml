@@ -84,6 +84,11 @@ updates:
       # variants (#257). Managed by hand alongside the CUDA base image.
       - dependency-name: "torch"
       - dependency-name: "torchaudio"
+      # pytest 9.2.0 breaks pytest-xdist 3.8.0 xdist_group (pytest-dev/pytest#15303,
+      # pytest-dev/pytest-xdist#1407): grouped tests run concurrently. Lift once an xdist
+      # release carries pytest-xdist#1388.
+      - dependency-name: "pytest"
+        versions: [">=9.2.0"]
       # fastapi 0.137+ stops flattening include_router prefixes into
       # scope["route"].path -- breaks route-templated metrics labels AND route
       # mounting/introspection broadly (confirmed via a real full-gate run,

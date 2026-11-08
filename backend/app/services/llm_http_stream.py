@@ -10,10 +10,15 @@ which has no async API. Metering wraps this in ``LLMMeteringMixin.chat_completio
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 import threading
 from collections.abc import AsyncGenerator
 from collections.abc import AsyncIterator
+from datetime import UTC
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -38,8 +43,17 @@ logger = logging.getLogger(__name__)
 
 #: Connect within 10 s; a 120 s gap between chunks means the provider stopped producing.
 _STREAM_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
-#: httpx transport retries apply to failed connection attempts only.
-_STREAM_CONNECT_RETRIES = 3
+#: Attempts, in all, before a streamed request gives up (urllib3's Retry(total=3) on the
+#: non-streaming path). Only before the first byte; see ``_open_stream``.
+STREAM_MAX_ATTEMPTS = 3
+#: Statuses that mean "at capacity, try again" (urllib3's status_forcelist minus 500).
+RETRYABLE_STREAM_STATUSES = frozenset({429, 502, 503, 504})
+STREAM_BACKOFF_BASE_S = 0.5
+STREAM_RETRY_AFTER_CAP_S = 10.0
+#: Jitter is not security-sensitive; SystemRandom just avoids a shared seeded generator.
+_jitter = random.SystemRandom()
+#: Indirection so tests can record the waits instead of sleeping.
+_sleep = asyncio.sleep
 
 
 class LLMHttpStreamMixin(LLMHost):
@@ -67,13 +81,12 @@ class LLMHttpStreamMixin(LLMHost):
         A fresh client per stream: an ``httpx.AsyncClient``'s pool belongs to the event
         loop it was first used on, and a service instance outlives no more than one turn.
         ``follow_redirects`` stays off for the reason given in :meth:`_send_llm_request`.
-        Transport ``retries`` cover connection failures only; a capacity status (429/5xx)
-        is reported in-band as ``transient`` for the chat layer to explain.
+        Retries (connection failures and 429/502/503/504, before the first byte only)
+        are ``_open_stream``'s; what is still failing after them is reported in-band.
         """
         return httpx.AsyncClient(
             timeout=_STREAM_TIMEOUT,
             follow_redirects=False,
-            transport=httpx.AsyncHTTPTransport(retries=_STREAM_CONNECT_RETRIES),
         )
 
     async def _chat_completion_stream_untracked(
@@ -162,19 +175,21 @@ class LLMHttpStreamMixin(LLMHost):
             yield LLMStreamEvent(type="error", message=str(e))
             return
 
-        connected = False
-        try:
-            async with (
-                self._stream_client() as client,
-                client.stream(
-                    "POST",
-                    target.url,
-                    json=payload,
-                    headers={**headers, **target.headers},
-                    extensions=target.httpx_extensions,
-                ) as response,
-            ):
-                connected = True
+        async with self._stream_client() as client:
+            request = client.build_request(
+                "POST",
+                target.url,
+                json=payload,
+                headers={**headers, **target.headers},
+                extensions=target.httpx_extensions,
+            )
+            opened = await _open_stream(client, request, cancel_event)
+            if isinstance(opened, LLMStreamEvent):
+                logger.error(f"LLM stream connection failed for {provider}: {opened.message}")
+                yield opened
+                return
+            response = opened
+            try:
                 if response.status_code != 200:
                     detail = (await response.aread()).decode("utf-8", errors="replace")[:500]
                     logger.error(f"LLM stream error ({response.status_code}): {detail}")
@@ -185,6 +200,8 @@ class LLMHttpStreamMixin(LLMHost):
                     )
                     return
 
+                # Streaming has started: from here a failure is reported, never retried,
+                # since the tokens already sent cannot be taken back.
                 async for event in parse_stream(parser, self._stream_lines(response, cancel_event)):
                     if event.type == "done" and cancel_event is not None and cancel_event.is_set():
                         yield LLMStreamEvent(type="done", finish_reason="cancelled")
@@ -192,10 +209,85 @@ class LLMHttpStreamMixin(LLMHost):
                     yield event
                     if event.type in ("done", "error"):
                         return
-        except httpx.HTTPError as e:
-            if not connected:
-                logger.error(f"LLM stream connection failed for {provider}: {type(e).__name__}")
-                yield LLMStreamEvent(type="error", message=f"Connection error: {e}")
-            else:
+            except httpx.HTTPError as e:
                 logger.error(f"LLM stream interrupted for {provider}: {type(e).__name__}: {e}")
                 yield LLMStreamEvent(type="error", message=f"Stream interrupted: {e}")
+            finally:
+                await response.aclose()
+
+
+async def _open_stream(
+    client: httpx.AsyncClient, request: httpx.Request, cancel_event: threading.Event | None
+) -> httpx.Response | LLMStreamEvent:
+    """Send ``request`` and return the response once its headers arrive, retrying first.
+
+    Before the first byte of the body nothing has reached the user, so a refused
+    connection or a capacity status (429/502/503/504) is retried: up to
+    ``STREAM_MAX_ATTEMPTS`` attempts with exponential backoff and full jitter, or the
+    provider's ``Retry-After`` capped at ``STREAM_RETRY_AFTER_CAP_S`` (the same policy the
+    non-streaming path gets from urllib3's ``Retry``). No retry library is a dependency
+    here, which is why this is a helper rather than ``tenacity``.
+
+    Returns:
+        The open response (any status; the caller reports a non-200), or an ``error``
+        event when every attempt failed to connect.
+    """
+    for attempt in range(1, STREAM_MAX_ATTEMPTS + 1):
+        last = attempt == STREAM_MAX_ATTEMPTS
+        try:
+            response = await client.send(request, stream=True)
+        except httpx.TransportError as e:
+            if last or _cancelled(cancel_event):
+                return LLMStreamEvent(type="error", message=f"Connection error: {e}")
+            await _sleep(retry_delay(attempt, None))
+            continue
+        if (
+            response.status_code not in RETRYABLE_STREAM_STATUSES
+            or last
+            or _cancelled(cancel_event)
+        ):
+            return response
+        retry_after = response.headers.get("Retry-After")
+        await response.aclose()
+        logger.warning(
+            "LLM stream got %s, retrying (attempt %d of %d)",
+            response.status_code,
+            attempt + 1,
+            STREAM_MAX_ATTEMPTS,
+        )
+        await _sleep(retry_delay(attempt, retry_after))
+    raise AssertionError("unreachable: the last attempt always returns")
+
+
+def _cancelled(cancel_event: threading.Event | None) -> bool:
+    return cancel_event is not None and cancel_event.is_set()
+
+
+def retry_delay(attempt: int, retry_after: str | None) -> float:
+    """Seconds to wait before attempt ``attempt + 1``.
+
+    ``Retry-After`` (delta-seconds or an HTTP-date, RFC 9110 section 10.2.3) wins when
+    the provider sent one, capped at ``STREAM_RETRY_AFTER_CAP_S`` so a long value cannot
+    hold the reply open. Otherwise exponential backoff with full jitter (a uniform draw
+    up to ``STREAM_BACKOFF_BASE_S * 2 ** (attempt - 1)``), so many replies refused at the
+    same moment do not all retry at the same moment.
+    """
+    if retry_after:
+        seconds = _parse_retry_after(retry_after)
+        if seconds is not None:
+            return min(max(seconds, 0.0), STREAM_RETRY_AFTER_CAP_S)
+    ceiling = min(STREAM_BACKOFF_BASE_S * 2 ** (attempt - 1), STREAM_RETRY_AFTER_CAP_S)
+    return _jitter.uniform(0.0, ceiling)
+
+
+def _parse_retry_after(value: str) -> float | None:
+    value = value.strip()
+    if value.isdigit():
+        return float(value)
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return (when - datetime.now(UTC)).total_seconds()

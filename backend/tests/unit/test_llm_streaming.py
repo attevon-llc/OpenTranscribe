@@ -35,19 +35,33 @@ class _Transport:
         self.status = 200
         self.lines: Iterable[str] = []
         self.error: Exception | None = None
+        #: Answers for the first attempts, in order: an exception to raise, or a
+        #: ``(status, headers)`` pair. Once empty, ``status``/``lines`` answer.
+        self.first_answers: list[Exception | tuple[int, dict[str, str]]] = []
+        #: Raised after the first body line, i.e. once streaming has started.
+        self.break_mid_stream: Exception | None = None
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        if self.first_answers:
+            answer = self.first_answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            status, headers = answer
+            return httpx.Response(status, headers=headers, text="busy")
         if self.error is not None:
             raise self.error
         if self.status != 200:
             return httpx.Response(self.status, text="error body")
         lines = self.lines
+        broken = self.break_mid_stream
 
         async def body() -> AsyncIterator[bytes]:
             # Lazy, one line per chunk, so a test can act between chunks.
-            for line in lines:
+            for index, line in enumerate(lines):
                 yield f"{line}\n".encode()
+                if broken is not None and index == 0:
+                    raise broken
 
         return httpx.Response(200, content=body())
 
@@ -55,6 +69,20 @@ class _Transport:
     def payload(self) -> dict:
         body: dict = json.loads(self.requests[-1].content)
         return body
+
+
+@pytest.fixture(autouse=True)
+def sleeps(monkeypatch) -> list[float]:
+    """The retry waits, recorded instead of slept."""
+    from app.services import llm_http_stream
+
+    waited: list[float] = []
+
+    async def _record(seconds: float) -> None:
+        waited.append(seconds)
+
+    monkeypatch.setattr(llm_http_stream, "_sleep", _record)
+    return waited
 
 
 def _transport(service) -> _Transport:
@@ -481,3 +509,86 @@ def test_chat_completion_stream_estimates_tokens_when_provider_omits_usage():
 
     assert _first(events, "usage") is None  # nothing reported by the provider
     assert service.estimate_tokens("some answer text") > 0
+
+
+# ---------------------------------------------------------------------------
+# Retries: before the first byte only (the policy urllib3 gave the old stream)
+# ---------------------------------------------------------------------------
+
+
+def test_a_capacity_status_is_retried_then_streams(sleeps):
+    service = _service()
+    transport = _transport(service)
+    transport.first_answers = [(503, {})]
+    transport.lines = OPENAI_STREAM
+
+    events = _stream(service)
+
+    assert _texts(events) == "Hello, world"
+    assert len(transport.requests) == 2
+    assert len(sleeps) == 1 and 0.0 <= sleeps[0] <= 0.5
+
+
+def test_a_refused_connection_is_retried_then_streams(sleeps):
+    service = _service()
+    transport = _transport(service)
+    transport.first_answers = [httpx.ConnectError("refused")]
+    transport.lines = OPENAI_STREAM
+
+    events = _stream(service)
+
+    assert _texts(events) == "Hello, world"
+    assert len(transport.requests) == 2
+
+
+def test_it_gives_up_after_three_attempts(sleeps):
+    service = _service()
+    transport = _transport(service)
+    transport.first_answers = [(503, {}), (503, {}), (503, {})]
+
+    events = _stream(service)
+
+    assert [e.type for e in events] == ["error"]
+    assert "503" in events[0].message and events[0].transient is True
+    assert len(transport.requests) == 3
+    assert len(sleeps) == 2
+    # Exponential backoff with full jitter: the second wait's ceiling is twice the first's.
+    assert 0.0 <= sleeps[0] <= 0.5 and 0.0 <= sleeps[1] <= 1.0
+
+
+def test_retry_after_is_honoured_and_capped(sleeps):
+    service = _service()
+    transport = _transport(service)
+    transport.first_answers = [(429, {"Retry-After": "4"}), (429, {"Retry-After": "60"})]
+    transport.lines = OPENAI_STREAM
+
+    events = _stream(service)
+
+    assert _texts(events) == "Hello, world"
+    assert sleeps == [4.0, 10.0]
+
+
+def test_a_client_error_is_not_retried(sleeps):
+    service = _service()
+    transport = _transport(service)
+    transport.first_answers = [(400, {})]
+
+    events = _stream(service)
+
+    assert [e.type for e in events] == ["error"]
+    assert len(transport.requests) == 1
+    assert sleeps == []
+
+
+def test_a_stream_that_breaks_after_it_started_is_never_retried(sleeps):
+    service = _service()
+    transport = _transport(service)
+    transport.lines = OPENAI_STREAM[2:]
+    transport.break_mid_stream = httpx.ReadError("connection reset")
+
+    events = _stream(service)
+
+    assert _texts(events) == "Hello"
+    assert events[-1].type == "error" and "interrupted" in events[-1].message
+    assert len(transport.requests) == 1
+    assert sleeps == []

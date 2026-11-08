@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import threading
 import time
 import uuid as uuid_pkg
 from collections.abc import Iterator
@@ -42,11 +43,23 @@ def isolated_revocation(monkeypatch: Any) -> TokenService:
 
 @contextlib.contextmanager
 def ws_test_client(db_session: Session, monkeypatch: Any) -> Iterator[TestClient]:
-    """A TestClient for the real endpoint, using the test's own DB session."""
+    """A TestClient for the real endpoint, using the test's own DB session.
+
+    Production gives each handshake its own ``session_scope()``; here every scope is the
+    ONE savepointed test session, and a SQLAlchemy ``Session`` is not thread-safe. The
+    handshake authenticates in the threadpool after ``accept()``, so a test that opens two
+    sockets back to back ran both authentications on that session from two threads at
+    once: under ``-n 4`` about one run in four failed the second handshake
+    (``ClosedResourceError``, "Instance <User> is not present in this Session"). The lock
+    hands the shared session to one scope at a time, which is what separate sessions give
+    production. Re-entrant, so a scope opened inside another on the same thread still works.
+    """
+    session_lock = threading.RLock()
 
     @contextlib.contextmanager
     def _test_session_scope():
-        yield db_session
+        with session_lock:
+            yield db_session
 
     monkeypatch.setattr(ws_module, "session_scope", _test_session_scope)
     monkeypatch.setattr(ws_module, "setup_redis", lambda: None)

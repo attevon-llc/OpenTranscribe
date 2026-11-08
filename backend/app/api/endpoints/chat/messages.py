@@ -37,6 +37,7 @@ from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
+from app.core.config import settings
 from app.core.constants import LLM_CONTEXT_WINDOW_MAX
 from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.tenant_limits import resolve_allowed_models
@@ -232,6 +233,15 @@ def _prepare_turn(
         raise HTTPException(
             status_code=429,
             detail="Too many chats streaming at once. Wait for one to finish.",
+            headers={"Retry-After": "5"},
+        )
+    # The deployment-wide cap, across every API process: the per-user one alone lets
+    # enough users together open more replies than the model can serve.
+    if not limits.acquire_global_stream_slot(slot_id, settings.CHAT_MAX_CONCURRENT_STREAMS_GLOBAL):
+        limits.release_stream_slot(ctx.user.id, slot_id)
+        raise HTTPException(
+            status_code=429,
+            detail="Chat is answering as many questions as it can right now. Try again shortly.",
             headers={"Retry-After": "5"},
         )
 

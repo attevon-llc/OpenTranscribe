@@ -333,6 +333,10 @@ every sorted-set command against it raises WRONGTYPE — swallowed by the
 fail-open handler, silently disabling the cap — so `_drop_legacy_counter`
 retires it on first contact.
 
+A second, deployment-wide cap (`CHAT_MAX_CONCURRENT_STREAMS_GLOBAL`, env, default 64) is held
+in one Redis sorted set (`chat:active:global`) under the SAME slot id, acquired right after the
+per-user slot; `release_stream_slot` frees both, so the release rules below cover it too.
+
 **Release from `stream_reply`'s shielded `finally`, via the `on_teardown` hook —
 not from the wrapping generator.** Starlette tears the wrapper down on client
 disconnect (Stop, a closed tab) and its `finally` does not reliably run, so a

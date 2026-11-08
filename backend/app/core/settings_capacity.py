@@ -46,3 +46,7 @@ class CapacitySettings(BaseSettings):
     # never take every thread the rest of the API needs. 0 = a quarter of the DB pool
     # capacity, at least 4 (app/core/threadpool.py).
     CHAT_THREADPOOL_SIZE: int = 0
+    # Chat replies streaming at once across ALL API processes (Redis-backed), on top of
+    # the per-user cap in Settings -> Chat. A new message past it is refused with 429
+    # and a Retry-After. 0 = no global cap.
+    CHAT_MAX_CONCURRENT_STREAMS_GLOBAL: int = 64

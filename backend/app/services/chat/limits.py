@@ -3,9 +3,10 @@
 Two separate concerns:
   - **Volume**: an hourly message ceiling per user. A per-IP limit alone doesn't
     bound cost, since one account behind a NAT or a script can rotate addresses.
-  - **Concurrency**: a cap on simultaneous open streams per user. Each stream
-    pins a provider connection and a threadpool slot for its whole duration, so
-    this is the control that protects the backend rather than the wallet.
+  - **Concurrency**: a cap on simultaneous open streams per user, and one across the
+    whole deployment (``CHAT_MAX_CONCURRENT_STREAMS_GLOBAL``). Each stream pins a
+    provider connection for its whole duration, so these are the controls that
+    protect the backend and the model rather than the wallet.
 
 Both **fail open** on Redis errors, matching slowapi's philosophy: a limiter
 outage must degrade to "unlimited", never to "nobody can chat".
@@ -18,6 +19,7 @@ import time
 import uuid
 
 from redis import Redis
+from redis.exceptions import RedisError
 
 from app.core import redis as redis_core
 
@@ -25,6 +27,8 @@ logger = logging.getLogger(__name__)
 
 _HOURLY_KEY = "rl:chat:msg:{user_id}:{hour}"
 _ACTIVE_KEY = "chat:active:{user_id}"
+#: Every API process's open streams, so the global cap holds across replicas.
+_GLOBAL_ACTIVE_KEY = "chat:active:global"
 _CANCEL_KEY = "chat:cancel:{message_uuid}"
 
 # Leak guard: a stream whose process died without releasing must not permanently
@@ -131,6 +135,39 @@ def acquire_stream_slot(
         return slot
 
 
+def acquire_global_stream_slot(slot_id: str, max_concurrent: int) -> bool:
+    """Reserve ``slot_id`` against the deployment-wide cap on open streams.
+
+    The per-user cap bounds one person; this bounds the deployment, so a burst of many
+    users cannot open more replies than the model and the API can serve at once. The
+    same slot id is used as for the user's own cap, and :func:`release_stream_slot`
+    frees both. Stale entries are pruned by age exactly like the per-user set.
+
+    Args:
+        slot_id: The id :func:`acquire_stream_slot` returned.
+        max_concurrent: ``CHAT_MAX_CONCURRENT_STREAMS_GLOBAL``; 0 or less = no cap.
+
+    Returns:
+        False when the deployment is at the cap. True otherwise, including when Redis
+        is unavailable (fail open, like every limit here).
+    """
+    if max_concurrent <= 0:
+        return True
+    now = time.time()
+    try:
+        client = redis_core.get_request_redis()
+        client.zremrangebyscore(_GLOBAL_ACTIVE_KEY, "-inf", now - _ACTIVE_TTL_SECONDS)
+        if int(client.zcard(_GLOBAL_ACTIVE_KEY)) >= max_concurrent:
+            logger.info("Global chat stream cap hit (max %s)", max_concurrent)
+            return False
+        client.zadd(_GLOBAL_ACTIVE_KEY, {slot_id: now})
+        client.expire(_GLOBAL_ACTIVE_KEY, _ACTIVE_TTL_SECONDS * 2)
+        return True
+    except RedisError as exc:
+        logger.warning(f"Global chat stream cap unavailable (allowing): {exc}")
+        return True
+
+
 def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
     """Release a slot taken by :func:`acquire_stream_slot` (safe to over-call).
 
@@ -142,6 +179,7 @@ def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:
         client = redis_core.get_request_redis()
         if slot_id:
             client.zrem(key, slot_id)
+            client.zrem(_GLOBAL_ACTIVE_KEY, slot_id)
         else:
             # No id (older call site): prune by age only, never blanket-delete —
             # that would free slots still legitimately held.

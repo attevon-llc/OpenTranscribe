@@ -149,8 +149,8 @@ def test_release_removes_only_its_own_slot():
     client = _redis()
     with patch("app.core.redis.get_request_redis", return_value=client):
         limits.release_stream_slot(user_id=1, slot_id="slot-abc")
-    client.zrem.assert_called_once()
-    assert client.zrem.call_args[0][1] == "slot-abc"
+    # Once from the user's set and once from the deployment-wide one, both by this id.
+    assert [call.args[1] for call in client.zrem.call_args_list] == ["slot-abc", "slot-abc"]
     client.delete.assert_not_called()
 
 

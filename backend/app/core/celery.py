@@ -86,7 +86,6 @@ if not _SKIP_CELERY:
     # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 
 # Imports must come after torch.load patch to prevent caching issues
-from celery import Celery  # noqa: E402
 from celery.signals import before_task_publish  # noqa: E402
 from celery.signals import setup_logging  # noqa: E402
 from celery.signals import task_postrun  # noqa: E402
@@ -101,6 +100,7 @@ from app.core.celery_routing import CELERY_QUEUES  # noqa: E402
 from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS  # noqa: E402
 from app.core.celery_routing import TASK_ROUTES  # noqa: E402
 from app.core.config import settings  # noqa: E402
+from app.core.demo_publish import DemoAwareCelery  # noqa: E402  # after the torch.load patch
 from app.core.env import env_float  # noqa: E402 - after ensure_nltk_data_private()
 from app.core.env import env_int  # noqa: E402 - after ensure_nltk_data_private()
 
@@ -164,7 +164,8 @@ _REDIS_KEEPALIVE_OPTIONS = {
     if (opt := getattr(socket, name, None)) is not None
 }
 
-celery_app = Celery(
+# DemoAwareCelery refuses every publish while DEMO_MODE is on (issue #628).
+celery_app = DemoAwareCelery(
     "transcribe_app",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,

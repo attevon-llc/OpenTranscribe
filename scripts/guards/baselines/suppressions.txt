@@ -21,7 +21,7 @@ noqa::backend/app/auth/proxy/config.py	1	suppression: reason to be added
 noqa::backend/app/auth/saml/provisioning.py	1	suppression: reason to be added
 noqa::backend/app/auth/token_service.py	2	suppression: reason to be added
 noqa::backend/app/core/broker_orphans.py	2	suppression: reason to be added
-noqa::backend/app/core/celery.py	14	v0.6.1 merge: release noqa without a rule code; reason to be added
+noqa::backend/app/core/celery.py	13	v0.6.1 merge: release noqa without a rule code; reason to be added
 noqa::backend/app/core/config.py	2	suppression: reason to be added
 noqa::backend/app/core/constants.py	1	suppression: reason to be added
 noqa::backend/app/core/enums.py	1	suppression: reason to be added

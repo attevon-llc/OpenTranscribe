@@ -4193,6 +4193,7 @@
   "orgErasures.cancelFailed": "삭제를 취소하지 못했습니다.",
   "orgErasures.loadError": "예약된 삭제를 불러오지 못했습니다.",
   "orgAudit.event.ownerChange": "조직의 소유자를 변경했음",
+  "orgAudit.event.contentTransfer": "구성원의 조직 콘텐츠를 관리자에게 이전했음",
   "holds.navLabel": "법적 보존",
   "holds.title": "법적 보존",
   "holds.description": "법적 보존이 유효한 동안에는 파일을 삭제하거나, 보존 기간에 따라 제거하거나, 계정과 함께 지우거나, 재처리로 다시 생성할 수 없습니다. 특정 파일이나 컬렉션 전체(이후 추가되는 파일 포함)를 보존할 수 있습니다. 사유는 조직 관리자에게만 표시됩니다. 보존이 유효한 동안 파일 내용은 그대로 고정됩니다. 읽기, 검색, 재생, 내보내기, 다운로드, 댓글 추가는 가능하지만 편집할 수는 없습니다.",

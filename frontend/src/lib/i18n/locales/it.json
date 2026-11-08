@@ -4313,6 +4313,7 @@
   "orgErasures.cancelFailed": "Non è stato possibile annullare la cancellazione.",
   "orgErasures.loadError": "Non è stato possibile caricare le cancellazioni pianificate.",
   "orgAudit.event.ownerChange": "Ha cambiato il proprietario dell'organizzazione",
+  "orgAudit.event.contentTransfer": "Ha trasferito i contenuti dell'organizzazione di un membro a un amministratore",
   "holds.navLabel": "Blocchi legali",
   "holds.title": "Blocchi legali",
   "holds.description": "Un blocco legale impedisce, finché è in vigore, che i file vengano eliminati, rimossi dalla conservazione, cancellati con un account o rigenerati da una rielaborazione. Puoi bloccare file specifici o un'intera raccolta, compresi i file aggiunti in seguito. Il motivo è visibile solo agli amministratori della tua organizzazione. Finché è in vigore, il contenuto del file resta com'era: si può ancora leggere, cercare, riprodurre, esportare, scaricare e commentare, ma non modificare.",

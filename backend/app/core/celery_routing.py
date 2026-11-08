@@ -145,6 +145,7 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "index_transcript_search": {"queue": CeleryQueues.EMBEDDING},
     # Partial OpenSearch field writes: no GPU or embedding model needed, so utility pool.
     "update_file_access_index": {"queue": CeleryQueues.UTILITY},
+    "org_content_transfer.restamp": {"queue": CeleryQueues.UTILITY},
     "update_file_tags_index": {"queue": CeleryQueues.UTILITY},
     # Opt-in speaker_id/profile_id backfill maintenance pass (search_indexing_task.py) —
     # lightweight OpenSearch writes, same shape as its two siblings above.

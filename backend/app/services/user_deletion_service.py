@@ -426,6 +426,41 @@ def _delete_user_media_files(db: Session, user_id: int) -> None:
         logger.info(f"Deleted {media_count} media files for user {user_id}")
 
 
+def _hand_over_org_content(db: Session, user_id: int) -> None:
+    """Re-own the account's organization content before the destroy passes (issue #1104).
+
+    For every organization the account is a member of and owns content in, an administrator
+    takes it over (:mod:`app.services.org_content_transfer`); personal rows are untouched and go
+    with the account. A no-op in the community edition, where nobody has a membership. Runs
+    after the held-file refusal, so a refusal never follows a partial hand-over.
+
+    Raises:
+        ConflictError: 409 ``no_transfer_target`` when an organization holds the account's
+            content and has no other active administrator to take it.
+    """
+    from app.models.organization import OrganizationMembership
+    from app.services import org_content_transfer
+
+    org_ids = [
+        int(r[0])
+        for r in db.query(OrganizationMembership.organization_id).filter(
+            OrganizationMembership.user_id == user_id
+        )
+    ]
+    for org_id in org_ids:
+        if not org_content_transfer.has_org_content(db, org_id, user_id):
+            continue
+        try:
+            org_content_transfer.transfer_org_content(
+                db,
+                organization_id=org_id,
+                from_user_id=user_id,
+                reason="account_deleted",
+            )
+        except org_content_transfer.TransferError as error:
+            raise ConflictError({"code": error.code, "message": error.message}) from error
+
+
 def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
     """Delete an account and everything it owns, then destroy its external copies.
 
@@ -459,6 +494,7 @@ def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:
     user_uuid = str(user.uuid)
 
     _assert_no_held_files(db, user_id)
+    _hand_over_org_content(db, user_id)
 
     purge_plan = account_purge.load_account_purge_plans(db, user_id)
 

@@ -75,6 +75,36 @@ recorded and runs after a delay, so a mistaken or hostile request can be stopped
   owner changes, then the erasure's own
   `admin.user.delete` records. The super_admin routes still erase at once.
 
+## When a member leaves: organization content stays
+
+Organization content belongs to the organization. When a member's account is deleted, or an
+organization administrator hands it over, the organization-stamped rows the person owns are
+re-owned by an administrator first, so deleting the account no longer destroys them. Personal
+content (no organization) is not touched and goes with the account.
+
+What moves (trashed files included): files, speakers, speaker profiles, speaker collections and
+clusters, collections, tags, summary prompts, custom vocabulary, watch sources and the groups the
+person owns. What does not: chats, personal settings and comments (they stay with their author).
+Shares and collection or tag memberships refer to rows by id, so they survive unchanged, and the
+search index is re-pointed at the new owner, so search and chat keep finding the content.
+
+- **Account deletion** (`DELETE /api/users/{uuid}` and the admin route) does it automatically for
+  every organization the person is a member of. The receiving administrator is the organization's
+  owner, else its longest-standing active admin. If the person is the only admin and still owns
+  organization content, the deletion is refused with `409 no_transfer_target` until another admin
+  exists. In the community edition nobody has an organization membership, so nothing changes.
+- **Member removal** (managed edition): the platform calls the same transfer before it removes the
+  membership; core has no member-removal path of its own.
+- **Legal holds.** A file under a hold is never re-owned: it is counted in `skipped_held`, and
+  account deletion is still refused while the person owns a held file. Quarantine is left as it is.
+- **Name conflicts.** A row whose name the recipient already uses (for example a speaker profile
+  with the same name) stays with its owner and is counted in `skipped_conflict`; it is never renamed.
+- **Search follows.** After the commit a background task (`org_content_transfer.restamp`, utility
+  queue) re-points the search documents at the new owner. It retries with exponential backoff
+  (up to 8 times, 15 minutes at most between tries) on OpenSearch errors and survives a lost
+  worker, and a re-run changes nothing already moved.
+- **Audit.** The organization's audit log shows `org.content.transfer` with the counts, never a title.
+
 ## The receipt
 
 `summary.receipt` carries `uuid`, `outcome`, `residual_total`, `unverified_keys` and `digest`.

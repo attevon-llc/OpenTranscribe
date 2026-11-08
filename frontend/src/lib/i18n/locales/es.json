@@ -4275,6 +4275,7 @@
   "orgErasures.cancelFailed": "No se pudo cancelar el borrado.",
   "orgErasures.loadError": "No se pudieron cargar los borrados programados.",
   "orgAudit.event.ownerChange": "Cambió el propietario de la organización",
+  "orgAudit.event.contentTransfer": "Transfirió el contenido de la organización de un miembro a un administrador",
   "holds.navLabel": "Retenciones legales",
   "holds.title": "Retenciones legales",
   "holds.description": "Una retención legal impide, mientras esté en vigor, que los archivos se eliminen, los borre la retención, se supriman junto con una cuenta o se regeneren al reprocesarlos. Puede retener archivos concretos o una colección entera, incluidos los archivos que se añadan después. El motivo solo lo ven los administradores de su organización. Mientras esté en vigor, el contenido del archivo se conserva tal como estaba: se puede seguir leyendo, buscando, reproduciendo, exportando, descargando y comentando, pero no editando.",

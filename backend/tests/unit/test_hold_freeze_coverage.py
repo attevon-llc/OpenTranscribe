@@ -1008,6 +1008,7 @@ TASK_EXEMPT: dict[str, str] = {
             "tasks/rename_propagation_task.py::propagate_speaker_rename",
             "tasks/rename_propagation_task.py::propagate_title_rename",
             "tasks/search_availability_task.py::availability_reconcile",
+            "tasks/org_content_transfer_task.py::restamp",
             "tasks/search_file_field_tasks.py::update_file_access_index",
             "tasks/search_file_field_tasks.py::update_file_tags_index",
             "tasks/search_file_field_tasks.py::index_file_summary",

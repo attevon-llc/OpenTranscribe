@@ -45,11 +45,20 @@ concurrency:
 permissions: {}
 
 jobs:
-  pre-commit:
-    name: Run Pre-commit Hooks
+  # The two hook tiers run in PARALLEL legs of one matrix (issue #1099): measured on master PR
+  # runs, the commit tier took ~8-9 min and the push tier ~7-8 min back to back in one job, so
+  # the job was ~17 min of which neither half needs the other. Every hook still runs in exactly
+  # the leg of its stage; `Run Pre-commit Hooks` below is the required check and fails unless
+  # BOTH legs succeed (backend/tests/unit/test_ci_sharding.py pins that).
+  pre-commit-stage:
+    name: Pre-commit hooks (${{ matrix.stage }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        stage: [pre-commit, pre-push]
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -75,15 +84,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install pre-commit
 
+      # Hook environments (ruff, mypy, node, ...) are rebuilt from scratch on a miss; keyed on
+      # the config hash, per the actions/cache docs. The key carries the stage so the two
+      # legs, which build different environments, never race to save one entry.
       - name: Cache pre-commit environments
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: pre-commit-${{ matrix.stage }}-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
           restore-keys: |
-            pre-commit-
+            pre-commit-${{ matrix.stage }}-${{ runner.os }}-
 
       - name: Run pre-commit (pre-commit stage)
+        if: matrix.stage == 'pre-commit'
         run: pre-commit run --all-files --show-diff-on-failure
 
       # ⚠️ BOTH stages, always (issue #688). `pre-commit run` with no --hook-stage runs
@@ -102,6 +115,7 @@ jobs:
       # backend/tests/unit/test_precommit_stage_ci_parity.py fails the build if any stage a
       # hook is assigned to has no CI invocation.
       - name: Run pre-commit (pre-push stage)
+        if: matrix.stage == 'pre-push'
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
         env:
           # Needs the backend venv's torch; the backend-tests job runs the same
@@ -114,29 +128,41 @@ jobs:
       # mistyped code in a throwaway repo and fails the build unless every line is rejected.
       # backend/tests/unit/test_precommit_mypy_env_parity.py checks the config statically.
       - name: Prove the mypy hook still rejects mistyped code
+        if: matrix.stage == 'pre-commit'
         run: scripts/mypy-hook-negative-control.sh
 
       # Alerting rules (issue #791): `promtool check config|rules`, `promtool test rules`
       # and `amtool check-config`, run from the same digest-pinned images the monitoring
       # overlay deploys. Always-run, like the mypy negative control above.
       - name: Check Prometheus alerting rules and Alertmanager config
+        if: matrix.stage == 'pre-commit'
         run: scripts/check-prometheus-rules.sh
 
       - name: Generate pre-commit summary
         if: always()
         run: |
           {
-            echo "## Pre-commit Check Results"
+            echo "## Pre-commit Check Results (${{ matrix.stage }} stage)"
             echo ""
-            echo "Pre-commit hooks executed on all files (pre-commit AND pre-push stages)."
-            echo ""
-            echo "### Hooks Executed:"
-            echo "- Code formatting (Ruff, Prettier)"
-            echo "- Linting (Ruff, mypy, ESLint)"
-            echo "- Security checks (Gitleaks, Bandit)"
-            echo "- Shell script validation (shellcheck)"
-            echo "- Dockerfile linting (Hadolint)"
+            echo "Pre-commit hooks executed on all files for the ${{ matrix.stage }} stage."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # The REQUIRED check keeps its name. A matrix renames its jobs ("Pre-commit hooks
+  # (pre-push)"), and a required check that never reports leaves a PR unmergeable; this job
+  # reports under the old name and is green only when every leg is.
+  pre-commit:
+    name: Run Pre-commit Hooks
+    needs: pre-commit-stage
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Every pre-commit stage must have succeeded
+        env:
+          RESULT: ${{ needs.pre-commit-stage.result }}
+        run: |
+          echo "pre-commit-stage result: $RESULT"
+          test "$RESULT" = "success"
 
   # Detects which parts of the tree a PR touches, so the expensive suites can skip
   # work that cannot possibly be affected. Job-level (not workflow-level `paths:`)
@@ -226,13 +252,21 @@ jobs:
           python -m pip install --upgrade pip
           python scripts/check-requirements-resolve.py
 
-  backend-tests:
+  backend-test-shard:
     # Best-effort safety net: runs the unit/API suite (the FIPS_MODE re-run is the sibling backend-fips-tests job)
     # against a fresh Postgres with CPU-only deps (requirements-ci.txt — no
     # Docker app images, no GPU wheels). The COMPLETE suite (S3/OpenSearch/
     # integration/E2E) runs locally via scripts/run-integration-tests.sh,
     # which remains the pre-merge source of truth.
-    name: Backend Tests (pytest)
+    #
+    # SHARDED (issue #1099): the suite is split by recorded durations into 8 contiguous groups
+    # with pytest-split (https://jerry-git.github.io/pytest-split/usage/), one matrix leg each,
+    # so the wall clock is one group's share rather than the whole suite. Each leg still runs
+    # pytest-xdist inside it (`-n auto` from pyproject). backend-shard-proof shows the groups
+    # are disjoint and together equal the full collection, and backend-tests (the REQUIRED
+    # check) merges the per-leg coverage and applies the pyproject fail_under floor.
+    # backend/.test_durations only balances the groups; a stale file never drops a test.
+    name: Backend test shard ${{ matrix.group }}/8
     needs: changes
     permissions:
       contents: read
@@ -244,6 +278,11 @@ jobs:
     # outage once hung `apt-get update` until the 360-minute ACCOUNT default, burning
     # six hours of runner time without executing a single test (issue #493).
     timeout-minutes: 45
+    strategy:
+      # One failing group must not hide the other groups' results.
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3, 4, 5, 6, 7, 8]
     services:
       postgres:
         image: postgres:17.5-alpine # same tag as docker-compose.yml; test_workflows_pinned.py enforces it
@@ -270,6 +309,10 @@ jobs:
       DATA_DIR: /tmp/ci-data
       MODELS_DIR: /tmp/ci-models
       TEMP_DIR: /tmp/ci-temp
+      # Per-leg coverage data and the list of selected tests. Non-hidden file names, so
+      # upload-artifact ships them without include-hidden-files.
+      COVERAGE_FILE: ${{ github.workspace }}/backend/cov-shard-${{ matrix.group }}.dat
+      OT_SHARD_MANIFEST: ${{ github.workspace }}/backend/shard-${{ matrix.group }}.manifest
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -316,6 +359,8 @@ jobs:
       # frontend/docs-only PR cannot change the OpenAPI schema, so skipping this step for one
       # is correct, not a gap.
       - name: OpenAPI snapshot is current
+        # Once per run, not once per shard: it does not depend on which tests ran.
+        if: matrix.group == 1
         run: python3 scripts/generate-openapi.py --check
         env:
           TESTING: 'True'
@@ -325,6 +370,8 @@ jobs:
       # docker-build-push.sh, ASR_PROVIDER_CATALOG and resolve_pipeline_plan (issue #1230).
       # Same contract as the OpenAPI step: --check only, never regenerate here.
       - name: Pipeline docs tables are current
+        # Once per run, not once per shard: it does not depend on which tests ran.
+        if: matrix.group == 1
         run: python3 scripts/generate-pipeline-docs.py --check
         env:
           TESTING: 'True'
@@ -333,20 +380,38 @@ jobs:
         working-directory: backend
         run: python -m alembic upgrade head
 
-      - name: "Run unit/API test suite (coverage ENFORCED via pyproject fail_under)"
+      - name: "Run this shard of the unit/API test suite"
         working-directory: backend
         run: |
           # pipefail is REQUIRED: GitHub's default shell is `bash -e {0}` WITHOUT
           # pipefail, so `pytest | tee` exits with tee's status (0) and pytest
           # failures silently pass the job. This masked real failures for months.
           set -o pipefail
-          pytest tests/ --cov=app --cov-report=term | tee pytest-output.txt
+          # `python -m pytest` puts backend/ on sys.path, which `-p tests.shard_manifest` needs.
+          # Coverage is NOT enforced here: one group executes a fraction of app/, so the
+          # pyproject floor would fail every leg. --cov-fail-under=0 defers the floor to the
+          # merged report in backend-tests.
+          python -m pytest tests/ -p tests.shard_manifest \
+            --splits 8 --group ${{ matrix.group }} \
+            --splitting-algorithm duration_based_chunks --durations-path .test_durations \
+            --cov=app --cov-report= --cov-fail-under=0 | tee pytest-output.txt
           {
-            echo "## Backend Test Coverage (enforced floor: pyproject fail_under)"
+            echo "## Backend test shard ${{ matrix.group }}/8"
             echo '```'
             tail -40 pytest-output.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload coverage data and shard manifest
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: backend-shard-${{ matrix.group }}
+          path: |
+            backend/cov-shard-${{ matrix.group }}.dat
+            backend/shard-${{ matrix.group }}.manifest
+          retention-days: 7
+          if-no-files-found: error
 
       # Mirrors the frontend-tests job below: self-test the auditor, THEN run it.
       # Duplicated with the pre-commit hooks on purpose — this is where the verdict
@@ -356,6 +421,8 @@ jobs:
       # A detector that stops matching reports zero findings, which reads exactly like
       # a clean suite. Never reorder these two steps.
       - name: Self-test the test auditor
+        # Once per run, not once per shard: it does not depend on which tests ran.
+        if: matrix.group == 1
         run: python3 scripts/audit-tests.py --selftest
 
       # Fails on any un-allowlisted test that passes whether the code works or not.
@@ -363,7 +430,138 @@ jobs:
       # backend/tests/audit-allowlist.txt, so a green gate is never mistaken for a
       # clean tree, and fails on a stale allowlist entry so the list can only shrink.
       - name: Audit backend test quality
+        # Once per run, not once per shard: it does not depend on which tests ran.
+        if: matrix.group == 1
         run: python3 scripts/audit-tests.py backend/tests
+
+  # The proof that sharding is lossless (issue #1099): collects the WHOLE suite once, unsplit,
+  # in parallel with the shards, and backend-tests compares its list with the union of the
+  # shards' lists via scripts/guards/check_shard_coverage.py. A test can then be neither run
+  # twice nor dropped by the split, whatever happens to the durations file.
+  backend-shard-proof:
+    name: Backend full collection (shard proof)
+    needs: changes
+    permissions:
+      contents: read
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.5-alpine # same tag as docker-compose.yml; test_workflows_pinned.py enforces it
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: transcribe_app
+        ports:
+          - 5176:5432 # the port backend/tests/conftest.py expects
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5176'
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: transcribe_app
+      # No MinIO/OpenSearch services here — keep those suites skipped
+      SKIP_S3: 'True'
+      SKIP_OPENSEARCH: 'True'
+      DATA_DIR: /tmp/ci-data
+      MODELS_DIR: /tmp/ci-models
+      TEMP_DIR: /tmp/ci-temp
+      # The unsplit selection every shard is checked against.
+      OT_SHARD_MANIFEST: ${{ github.workspace }}/backend/full.manifest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: ./.github/actions/setup-backend-python
+        with:
+          cache: 'pip'
+          cache-dependency-path: backend/requirements-ci.txt
+
+      - name: Install Python dependencies (CPU wheels)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements-ci.txt
+
+      - name: Collect the whole suite, unsplit
+        working-directory: backend
+        run: python -m pytest tests/ -p tests.shard_manifest --collect-only -q -n0
+
+      - name: Upload the full manifest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: backend-shard-full
+          path: backend/full.manifest
+          retention-days: 7
+          if-no-files-found: error
+
+  # THE REQUIRED CHECK, under its original name. A matrix renames its jobs, and a required
+  # check that never reports leaves a PR unmergeable (and a skipped one counts as satisfied),
+  # so this job keeps the name `Backend Tests (pytest)`, is skipped exactly when the shards are
+  # (no backend change), and otherwise is green only when every shard passed, the shards are a
+  # perfect partition of the suite, and the MERGED coverage clears the pyproject fail_under.
+  backend-tests:
+    name: Backend Tests (pytest)
+    needs: [changes, backend-test-shard, backend-shard-proof]
+    if: always() && needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Every shard and the proof must have succeeded
+        env:
+          SHARDS: ${{ needs.backend-test-shard.result }}
+          PROOF: ${{ needs.backend-shard-proof.result }}
+        run: |
+          echo "shards: $SHARDS, proof: $PROOF"
+          test "$SHARDS" = "success" && test "$PROOF" = "success"
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: ./.github/actions/setup-backend-python
+
+      - name: Download shard coverage and manifests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          pattern: backend-shard-*
+          path: shard-artifacts
+          merge-multiple: true
+
+      - name: The shards run every test exactly once
+        run: >-
+          python3 scripts/guards/check_shard_coverage.py
+          --full shard-artifacts/full.manifest
+          shard-artifacts/shard-1.manifest shard-artifacts/shard-2.manifest shard-artifacts/shard-3.manifest shard-artifacts/shard-4.manifest shard-artifacts/shard-5.manifest shard-artifacts/shard-6.manifest shard-artifacts/shard-7.manifest shard-artifacts/shard-8.manifest
+
+      # Coverage ENFORCED, as before: `coverage report` applies [tool.coverage.report]
+      # fail_under from backend/pyproject.toml to the combined data of all shards.
+      - name: Merge coverage and enforce the floor
+        working-directory: backend
+        run: |
+          pip install "coverage==7.16.1"
+          cp ../shard-artifacts/cov-shard-*.dat .
+          coverage combine --keep cov-shard-*.dat
+          set -o pipefail
+          coverage report | tee coverage-report.txt
+          {
+            echo "## Backend Test Coverage (merged over 8 shards, floor: pyproject fail_under)"
+            echo '```'
+            tail -40 coverage-report.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   backend-fips-tests:
     # Split out of backend-tests (issue #1377) so the FIPS re-run has its own time budget and

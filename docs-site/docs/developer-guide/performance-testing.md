@@ -60,7 +60,11 @@ the segments are 80% of that, so `--segments-per-file` is the lever for a quick 
 deterministically, so two seeds are identical. Identities: `perf-1@loadtest.invalid` (admin),
 `perf-2@...` (heavy owner, 20,000 files), `perf-3@...` (ordinary user), password `loadtest-password`.
 
-Snapshot straight after seeding so every comparison starts from identical data:
+Snapshot straight after seeding so every comparison starts from identical data
+(`scripts/perf/load/tools/build_snapshot.sh FRESH OUT.dump` does the seed, `ANALYZE`, dump and
+sha256 in one go; `--from-snapshot OLD.dump` upgrades an older snapshot by adding only the
+activity rows with `--activity-only`, realigning every id sequence and making `perf-1` a super
+admin):
 
 ```bash
 docker exec "$PG" pg_dump -U postgres -Fc -d opentranscribe > ~/ot-cleanup-work/1337/perf/seed-perf1337.dump
@@ -189,7 +193,7 @@ memory and utilisation), and `summary.md`, a report with a pass/fail verdict aga
 `scripts/perf/load/thresholds.toml` (for example p95 under 1 s for reads, error rate under 0.5%).
 
 Compare runs only on the same snapshot, settings and host load. A p95 that climbs while Postgres is
-idle and `db_pool_checked_out` sits at capacity is pool or thread saturation, not slow SQL; a p95
+idle and the API's `pg_stat_activity` connections sit at the pool capacity is pool or thread saturation, not slow SQL; a p95
 that climbs with the backend container at one full core is the single API process.
 
 `backend/tests/unit/test_load_scenario_routes.py` runs every persona against a recording client:
@@ -198,3 +202,12 @@ group must be covered by a persona or excluded with a reason, and every write mu
 `test_load_profiles.py` steps through the profiles, `test_load_seed_needs.py` checks the seed
 gives each persona the data it uses, and `test_load_sampler_summary.py` covers the sampler and
 the verdict.
+
+The sampler judges pool saturation from `pg_stat_activity` (the API container's connections, asked
+of Postgres directly), because the API's own `/metrics` goes missing exactly when the pool is
+saturated. `summarize.py` also fails a run when fewer than `min_sample_coverage` (0.8) of the
+sampler's sweeps produced those rows, so a run that sampled almost nothing cannot pass. The side
+tools that make a recorded run repeatable are in `scripts/perf/load/tools/` (`chain.sh`,
+`run_profile.sh`, `pg_probe.sh`, `report_table.py`, `ramp_stages.py`, `access_stats.py`,
+`build_snapshot.sh`). To turn results into a sizing decision, see
+[Scaling and Sizing](../operations/scaling-and-sizing.md).

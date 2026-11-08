@@ -6,7 +6,7 @@ description: Optimize transcription speed, GPU utilization, and system performan
 
 # Performance Tuning
 
-This guide covers tuning OpenTranscribe for maximum throughput on your hardware. The transcription pipeline, GPU utilization, database, search, and task queue settings all contribute to overall performance.
+This guide covers tuning OpenTranscribe for maximum throughput on your hardware. The transcription pipeline, GPU utilization, database, search, and task queue settings all contribute to overall performance. To size a deployment for a number of concurrent people (database connections, API workers, memory), see [Scaling and Sizing](scaling-and-sizing.md).
 
 ## Transcription Performance
 

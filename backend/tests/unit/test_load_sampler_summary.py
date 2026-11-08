@@ -138,7 +138,32 @@ def _write(path: Path, header: list[str], rows: list[list[object]]) -> None:
         writer.writerows(rows)
 
 
-def _run_dir(tmp_path: Path, *, read_p95: int, failures: int, idle_txn: int = 0) -> Path:
+def _run_dir(
+    tmp_path: Path,
+    *,
+    read_p95: int,
+    failures: int,
+    idle_txn: int = 0,
+    sweeps: int = 2,
+    pool_sweeps: int | None = None,
+    api_connections: int = 5,
+) -> Path:
+    """``sweeps`` sampler sweeps; only the first ``pool_sweeps`` got an API answer (default all)."""
+    pool_sweeps = sweeps if pool_sweeps is None else pool_sweeps
+    samples: list[list[object]] = []
+    for i in range(sweeps):
+        ts = 1.0 + 5 * i
+        samples += [
+            [ts, "pg", "idle_in_transaction_over_1s", idle_txn if i == 1 else 0],
+            [ts, "pgapi", "connections", api_connections],
+            [ts, "pgapi", "capacity", 60],
+            [ts, "container", "mem_bytes:backend", 1000 + 100 * (i == sweeps - 1)],
+        ]
+        if i < pool_sweeps:
+            samples += [
+                [ts, "pool", "db_pool_capacity", 30],
+                [ts, "pool", "db_pool_checked_out", 5],
+            ]
     _write(
         tmp_path / "locust_stats.csv",
         _STATS_HEADER,
@@ -156,18 +181,7 @@ def _run_dir(tmp_path: Path, *, read_p95: int, failures: int, idle_txn: int = 0)
         ["Method", "Name", "Error", "Occurrences"],
         [["GET", "files.list", "HTTP 500", failures]] if failures else [],
     )
-    _write(
-        tmp_path / "samples.csv",
-        ["ts", "source", "name", "value"],
-        [
-            [1.0, "pg", "idle_in_transaction_over_1s", 0],
-            [6.0, "pg", "idle_in_transaction_over_1s", idle_txn],
-            [1.0, "pool", "db_pool_capacity", 30],
-            [1.0, "pool", "db_pool_checked_out", 5],
-            [1.0, "container", "mem_bytes:backend", 1000],
-            [6.0, "container", "mem_bytes:backend", 1100],
-        ],
-    )
+    _write(tmp_path / "samples.csv", ["ts", "source", "name", "value"], samples)
     return tmp_path
 
 
@@ -207,3 +221,58 @@ def test_the_command_writes_the_report_and_exits_1_on_a_failed_run(summarize, tm
 
 def test_a_run_without_locust_output_is_unusable(summarize, tmp_path):
     assert summarize.main([str(tmp_path)]) == 2
+
+
+# --- T7: a run that sampled almost nothing, or whose pool was full, cannot pass --------------
+
+
+def test_a_saturated_pool_fails_the_run_even_when_the_api_stopped_answering_metrics(
+    summarize, tmp_path
+):
+    # M2 run 05: 2 of 111 /metrics samples arrived, both unsaturated, and the report said
+    # "0.0% saturated". Postgres is asked directly, so every sweep has the API's connections.
+    run_dir = _run_dir(
+        tmp_path, read_p95=400, failures=0, sweeps=111, pool_sweeps=2, api_connections=60
+    )
+
+    report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert "**Verdict: FAIL**" in report
+    assert any("held its whole DB pool" in f for f in verdict.failures), verdict.failures
+
+
+def test_a_run_whose_pg_stat_activity_samples_are_mostly_missing_fails(summarize, tmp_path):
+    run_dir = _run_dir(tmp_path, read_p95=400, failures=0, sweeps=10)
+    rows: list[list[object]] = [list(r) for r in csv.reader((run_dir / "samples.csv").open())]
+    kept = [r for r in rows[1:] if r[1] != "pgapi" or r[0] in ("1.0", "6.0")]
+    _write(run_dir / "samples.csv", [str(h) for h in rows[0]], kept)
+
+    _report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert any("coverage for 'pgapi' is 20%" in f for f in verdict.failures), verdict.failures
+
+
+def test_a_full_set_of_unsaturated_samples_passes_the_coverage_rule(summarize, tmp_path):
+    run_dir = _run_dir(tmp_path, read_p95=400, failures=0, sweeps=20, pool_sweeps=4)
+
+    _report, verdict = summarize.summarize(run_dir, _limits())
+
+    assert verdict.failures == []
+
+
+def test_the_api_connection_query_names_the_container_and_the_app_name(sampler):
+    sql = sampler.API_CONN_SQL.format(app=sampler.API_APP_NAME, ips="172.18.0.5")
+
+    assert "application_name = 'opentranscribe-api'" in sql
+    assert "'172.18.0.5'" in sql
+    assert sampler.parse_api_connections("37\n", 60) == [
+        ("pgapi", "connections", 37.0),
+        ("pgapi", "capacity", 60.0),
+    ]
+    assert sampler.parse_ips("172.18.0.5 \n") == ["172.18.0.5"]
+    assert sampler.parse_ips("x'; DROP") == []  # nothing but an address reaches the SQL
+
+
+@pytest.mark.parametrize(("env", "want"), [("20 40", 60.0), ("5 0", 5.0), (" ", 60.0)])
+def test_the_pool_capacity_comes_from_the_containers_env(sampler, env, want):
+    assert sampler.parse_pool_capacity(env) == want

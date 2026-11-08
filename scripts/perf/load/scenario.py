@@ -24,7 +24,7 @@ LIVE_DEV_PORTS = frozenset({5174, 5175, 5176, 5177, 5178, 5179, 5180})
 
 PASSWORD = 'loadtest-password'
 EMAIL_DOMAIN = 'loadtest.invalid'
-ADMIN_INDEX = 1  # perf-1: the seed's one admin
+ADMIN_INDEX = 1  # perf-1: the seed's one (super) admin
 HEAVY_INDEX = 2  # perf-2: owns 20,000 files in the default shape
 ORG_ADMIN_INDEX = 3  # perf-3: the admin of the seed's first organization
 FIRST_POOL_INDEX = 4

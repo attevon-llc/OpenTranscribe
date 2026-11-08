@@ -8,6 +8,9 @@ sent SIGTERM or SIGINT (``run.sh`` does that when Locust exits), or ``--duration
 
 - ``pg``: ``pg_stat_activity`` connections by state, connections idle in a transaction for
   more than a second, and the oldest open transaction's age;
+- ``pgapi``: how many ``pg_stat_activity`` connections the API holds (by the backend container's
+  IP, or ``application_name='opentranscribe-api'``) and the pool capacity they are judged
+  against. Asked of Postgres, so it still answers when the API is saturated;
 - ``pool``: the API's ``db_pool_*`` gauges and ``http_requests_in_flight`` from ``/metrics``;
 - ``queue``: each Celery queue's depth in Redis (all priority levels summed);
 - ``container``: CPU percent and memory bytes of every container of this stack only, found by
@@ -61,6 +64,13 @@ PG_SQL = (
     'coalesce(max(extract(epoch FROM now() - xact_start)), 0) '
     'FROM pg_stat_activity WHERE datname = current_database() GROUP BY 1'
 )
+API_APP_NAME = 'opentranscribe-api'
+API_CONN_SQL = (
+    'SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() '
+    "AND (application_name = '{app}' OR client_addr = ANY (string_to_array('{ips}', ',')::inet[]))"
+)
+DEFAULT_POOL_CAPACITY = 20 + 40  # DB_POOL_SIZE + DB_MAX_OVERFLOW (core/settings_capacity.py)
+_IP_RE = re.compile(r'^[0-9a-fA-F:.]+$')
 PG_SHELL = 'psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-opentranscribe}" -AtF, -c "$0"'
 # kombu's Redis transport keeps a priority queue as NAME plus NAME\x06\x16<1..9>.
 QUEUE_LUA = (
@@ -98,6 +108,28 @@ def parse_pg(text: str) -> list[Row]:
         oldest = max(oldest, float(age))
     rows += [('pg', 'idle_in_transaction_over_1s', long_idle), ('pg', 'oldest_xact_s', oldest)]
     return rows
+
+
+def parse_api_connections(text: str, capacity: float) -> list[Row]:
+    """``count(*)`` of the API's connections, paired with the capacity they are judged against."""
+    return [
+        ('pgapi', 'connections', float(text.strip())),
+        ('pgapi', 'capacity', float(capacity)),
+    ]
+
+
+def parse_ips(text: str) -> list[str]:
+    """Container IPs from ``docker inspect --format '{{range ...}}{{.IPAddress}} {{end}}'``."""
+    return [ip for ip in text.split() if _IP_RE.match(ip)]
+
+
+def parse_pool_capacity(text: str) -> float:
+    """``DB_POOL_SIZE DB_MAX_OVERFLOW`` as printed by the container; unset values use the default."""
+    size, overflow = (text.split() + ['', ''])[:2]
+    try:
+        return float(int(size) + int(overflow))
+    except ValueError:
+        return float(DEFAULT_POOL_CAPACITY)
 
 
 def parse_metrics(text: str) -> list[Row]:
@@ -190,6 +222,29 @@ class Sampler:
         by_service = {service: cid for cid, service in containers.items()}
         self.pg = by_service.get('postgres')
         self.redis = by_service.get('redis')
+        self.backend = by_service.get('backend')
+        self._api_ips: str | None = None
+        self._capacity: float | None = None
+
+    def _api_identity(self) -> tuple[str, float]:
+        """The backend's IPs and pool capacity, read once (the stack does not change mid-run)."""
+        if self._api_ips is None or self._capacity is None:
+            backend = self.backend or ''
+            ips = _run(
+                [
+                    'docker',
+                    'inspect',
+                    '--format',
+                    '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}',
+                    backend,
+                ]
+            )
+            env = _run(
+                ['docker', 'exec', backend, 'sh', '-c', 'echo "$DB_POOL_SIZE $DB_MAX_OVERFLOW"']
+            )
+            self._api_ips = ','.join(parse_ips(ips))
+            self._capacity = parse_pool_capacity(env)
+        return self._api_ips, self._capacity
 
     def sources(self) -> dict[str, Callable[[], list[Row]]]:
         out: dict[str, Callable[[], list[Row]]] = {
@@ -216,12 +271,20 @@ class Sampler:
         if self.pg:
             pg = self.pg
             out['pg'] = lambda: parse_pg(_run(['docker', 'exec', pg, 'sh', '-c', PG_SHELL, PG_SQL]))
+        if self.pg and self.backend:
+            out['pgapi'] = self._api_connections
         if self.redis:
             redis = self.redis
             out['queue'] = lambda: parse_queues(
                 _run(['docker', 'exec', redis, 'sh', '-c', REDIS_SHELL, QUEUE_LUA, *QUEUES])
             )
         return out
+
+    def _api_connections(self) -> list[Row]:
+        ips, capacity = self._api_identity()
+        sql = API_CONN_SQL.format(app=API_APP_NAME, ips=ips)
+        out = _run(['docker', 'exec', str(self.pg), 'sh', '-c', PG_SHELL, sql])
+        return parse_api_connections(out, capacity)
 
     def _metrics(self) -> str:
         with urllib.request.urlopen(f'{self.base_url}/metrics', timeout=COMMAND_TIMEOUT_S) as resp:

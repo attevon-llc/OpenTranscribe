@@ -277,8 +277,10 @@ def seed_dataset(
             "full_name": literal_column("'Perf User ' || g::text"),
             "hashed_password": literal_column("'" + password_hash.replace("'", "''") + "'"),
             "is_active": literal_column("true"),
-            "is_superuser": literal_column("false"),
-            "role": literal_column("CASE WHEN g = 1 THEN 'admin' ELSE 'user' END"),
+            "is_superuser": literal_column("g = 1"),
+            # perf-1 is a super admin: /api/admin/audit-logs is super-admin only (T5), and a
+            # super admin passes every admin check the Administrator persona makes.
+            "role": literal_column("CASE WHEN g = 1 THEN 'super_admin' ELSE 'user' END"),
             "platform_super_admin_link_authorized": literal_column("false"),
             "auth_type": literal_column("'local'"),
             "allow_local_fallback": literal_column("false"),
@@ -467,6 +469,38 @@ def seed_dataset(
     ):
         _bump_sequence(conn, table)
     return counts
+
+
+#: Every table the seed writes with explicit ids; their sequences must end at or past max(id)
+#: or the first ordinary INSERT after a restore collides (M2 tool bug T3: 11 were behind).
+SEEDED_TABLES: tuple[str, ...] = (
+    "user",
+    "media_file",
+    "speaker_profile",
+    "speaker",
+    "transcript_segment",
+    "tag",
+    "file_tag",
+    "organization",
+    "organization_membership",
+    "content_hold",
+    "collection",
+    "collection_member",
+    "collection_share",
+    "speaker_cluster",
+    "speaker_cluster_member",
+    "speaker_match",
+    "chat_conversation",
+    "chat_message",
+    "comment",
+)
+
+
+def realign_sequences(conn: Connection, tables: tuple[str, ...]) -> None:
+    """``_bump_sequence`` over ``tables`` by name (never moves a sequence backwards)."""
+    meta = User.metadata
+    for name in tables:
+        _bump_sequence(conn, meta.tables[name])
 
 
 ANALYZE_TABLES: tuple[str, ...] = (

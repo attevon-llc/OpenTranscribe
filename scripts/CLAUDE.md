@@ -213,7 +213,7 @@ PG=<fresh postgres container> scripts/perf/query-review/explain.sh <run-id> [id 
 - Concurrent users: `scripts/perf/load/run.sh --fresh NAME --profile smoke|steady|ramp|spike|soak|pipeline
   [--mix mixed|read-only|mixed-gpu]` (Locust from its own venv, `LOCUST=...`; sampler + summary with a
   pass/fail verdict from `thresholds.toml`), same seed plus `--waveform-pm 1000`, same `--fresh`-only guard,
-  stack started `--with-mock-llm`; runbook in `scripts/perf/load/README.md`. `backend/tests/unit/test_load_*.py`
+  stack started `--with-mock-llm`; runbook in `scripts/perf/load/README.md`; side tools in `scripts/perf/load/tools/` (chain/run_profile/pg_probe/report_table/build_snapshot). `backend/tests/unit/test_load_*.py`
   check every request against `backend/openapi.json`, API-group coverage, cleanup, profiles and seed needs.
 - Regression checks use `backend/tests/query_budget.py` (`count_statements`): assert the statement count is
   EQUAL at two row counts (for example 2 and 12) with a control that the response held both, never a ceiling.

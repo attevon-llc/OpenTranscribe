@@ -112,7 +112,8 @@ class Viewer(SeededUser):
         self._call('files.analytics', fill=fill)
         self._call('files.summary_status', fill=fill)
         self._call('files.post_processing', fill=fill)
-        self._call('topics.suggestions', fill=fill)
+        # 204: nothing to suggest, a normal answer.
+        self._call('topics.suggestions', fill=fill, expect=(200, 204))
         # No summary on a seeded file is a valid answer (404), not a failure.
         self._call('summary.get', fill=fill, expect=(200, 404))
         self._call('files.stream_url', fill=fill, params={'media_type': 'audio'})
@@ -146,6 +147,8 @@ class Viewer(SeededUser):
     @task(2)
     def speakers_page(self) -> None:
         self._call('speakers.list', params={'for_filter': 'true', 'q': ''}, label='for_filter')
+        # The unfiltered, paged listing (the speakers management page); M2 #14 never drove it.
+        self._call('speakers.list', params={'skip': 0, 'limit': 100}, label='paged unfiltered')
         self._call('profiles.list')
         self._call('clusters.list')
         self._call('clusters.stats')

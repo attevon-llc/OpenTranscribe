@@ -41,9 +41,11 @@ class WebSocketListener(SeededUser):
         super().on_start()
         self.ws: Any = None
         self.pending: dict[str, float] = {}
+        self._stopping = False
         self._connect()
 
     def on_stop(self) -> None:
+        self._stopping = True
         self._close()
 
     def _connect(self) -> None:
@@ -88,7 +90,8 @@ class WebSocketListener(SeededUser):
         except websocket.WebSocketTimeoutException:
             return  # quiet socket; keep listening
         except (websocket.WebSocketException, OSError, ValueError) as exc:
-            self._fire('WS', 'dropped', started, error=exc)
+            if not self._stopping:  # Locust closing its own socket at run end is not a drop
+                self._fire('WS', 'dropped', started, error=exc)
             self._close()
             return
         kind = str(frame.get('type', 'unknown'))

@@ -177,8 +177,8 @@ class Editor(_Uploads):
     def speakers(self) -> None:
         """Create a speaker, give it a segment, rename it, hand the segment back, merge it away.
 
-        The segment returns to its original speaker before the merge, and the merge removes
-        the temporary speaker, so the file ends as it started.
+        The merge returns the segment to its original speaker and removes the temporary
+        speaker, so the file ends as it started.
         """
         file_uuid = self._a_file()
         if file_uuid is None:
@@ -209,7 +209,9 @@ class Editor(_Uploads):
         self._call(
             'speakers.update', fill={'speaker_uuid': temp}, json={'display_name': 'Load Test'}
         )
-        self._call('segments.speaker', fill=moved, json={'speaker_uuid': original}, label='restore')
+        # Restore by merging the temp speaker into the original: the merge moves its segment
+        # back and removes it. Moving the segment back first deletes the now-empty temp speaker
+        # (transcript_segments.py), so the merge then 404s.
         self._call('speakers.merge', fill={'speaker_uuid': temp, 'target_speaker_uuid': original})
 
     @tag('write')

@@ -44,6 +44,15 @@ _REDIS_PROGRESS_KEY = "embedding_consistency_progress"
 _REDIS_BATCH_IDS_KEY = "embedding_consistency:batch_task_ids"
 _LOCK_TTL = 7200  # 2 hours — must outlast the longest possible repair run
 
+#: Speaker rows read per keyset page by the detection scans. Each page runs in its own
+#: short session, so memory is bounded by the page (plus the result set the comparison
+#: needs) and no transaction is held across pages (issue #1337, V10).
+_SPEAKER_PAGE_SIZE = 20_000
+#: Speakers whose segments are loaded together by the unrepairable filter. This bounds the
+#: IN list and the segment rows in memory; it used to be every missing speaker at once
+#: (an 8.9 MB IN list returning ~10M rows on a large library).
+_UNREPAIRABLE_CHUNK_SIZE = 500
+
 
 # ---------------------------------------------------------------------------
 # Detection helpers
@@ -51,19 +60,35 @@ _LOCK_TTL = 7200  # 2 hours — must outlast the longest possible repair run
 
 
 def _get_pg_speaker_uuids_with_segments() -> dict[str, int]:
-    """Return {speaker_uuid: media_file_id} for speakers that have segments."""
+    """Return {speaker_uuid: media_file_id} for speakers that have segments.
+
+    Keyset-paginated on ``speaker.id`` with one short session per page.
+    """
     from sqlalchemy import exists
     from sqlalchemy import select
 
     from app.models.media import TranscriptSegment
     from app.models.speaker import Speaker
 
-    with session_scope() as db:
-        has_segments = exists(
-            select(TranscriptSegment.id).where(TranscriptSegment.speaker_id == Speaker.id)
-        )
-        rows = db.query(Speaker.uuid, Speaker.media_file_id).filter(has_segments).all()
-        return {str(uuid): int(fid) for uuid, fid in rows}
+    found: dict[str, int] = {}
+    last_id = 0
+    while True:
+        with session_scope() as db:
+            has_segments = exists(
+                select(TranscriptSegment.id).where(TranscriptSegment.speaker_id == Speaker.id)
+            )
+            rows = (
+                db.query(Speaker.id, Speaker.uuid, Speaker.media_file_id)
+                .filter(Speaker.id > last_id, has_segments)
+                .order_by(Speaker.id)
+                .limit(_SPEAKER_PAGE_SIZE)
+                .all()
+            )
+        if not rows:
+            return found
+        for _id, uuid, fid in rows:
+            found[str(uuid)] = int(fid)
+        last_id = int(rows[-1][0])
 
 
 def _get_opensearch_speaker_uuids(index_name: str) -> set[str] | None:
@@ -122,31 +147,29 @@ def _filter_unrepairable_speakers(missing_uuids: set[str]) -> set[str]:
     from app.models.speaker import Speaker
 
     unrepairable: set[str] = set()
+    ordered = sorted(missing_uuids)
 
-    with session_scope() as db:
-        # Look up speaker IDs for missing UUIDs
-        rows = db.query(Speaker.id, Speaker.uuid).filter(Speaker.uuid.in_(missing_uuids)).all()
-        uuid_by_id = {r[0]: str(r[1]) for r in rows}
-        speaker_ids = list(uuid_by_id.keys())
+    for start in range(0, len(ordered), _UNREPAIRABLE_CHUNK_SIZE):
+        chunk = ordered[start : start + _UNREPAIRABLE_CHUNK_SIZE]
+        with session_scope() as db:
+            rows = db.query(Speaker.id, Speaker.uuid).filter(Speaker.uuid.in_(chunk)).all()
+            uuid_by_id = {r[0]: str(r[1]) for r in rows}
+            if not uuid_by_id:
+                continue
 
-        if not speaker_ids:
-            return set()
-
-        # Batch-fetch all segments for all missing speakers in one query
-        seg_rows = (
-            db.query(
-                TranscriptSegment.speaker_id,
-                TranscriptSegment.start_time,
-                TranscriptSegment.end_time,
+            seg_rows = (
+                db.query(
+                    TranscriptSegment.speaker_id,
+                    TranscriptSegment.start_time,
+                    TranscriptSegment.end_time,
+                )
+                .filter(TranscriptSegment.speaker_id.in_(list(uuid_by_id)))
+                .all()
             )
-            .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
-            .all()
-        )
 
-        # Group segments by speaker_id
         segs_by_speaker: dict[int, list[dict]] = defaultdict(list)
-        for speaker_id, start, end in seg_rows:
-            segs_by_speaker[speaker_id].append({"start": float(start), "end": float(end)})
+        for speaker_id, seg_start, seg_end in seg_rows:
+            segs_by_speaker[speaker_id].append({"start": float(seg_start), "end": float(seg_end)})
 
         for speaker_id, speaker_uuid in uuid_by_id.items():
             segs = segs_by_speaker.get(speaker_id)
@@ -235,12 +258,27 @@ def get_embedding_consistency_status() -> dict[str, Any]:
 
 
 def _get_all_pg_speaker_uuids() -> set[str]:
-    """Return all Speaker UUIDs in PostgreSQL (with or without segments)."""
+    """Return all Speaker UUIDs in PostgreSQL (with or without segments).
+
+    Keyset-paginated on ``speaker.id`` with one short session per page.
+    """
     from app.models.speaker import Speaker
 
-    with session_scope() as db:
-        rows = db.query(Speaker.uuid).all()
-        return {str(row[0]) for row in rows}
+    found: set[str] = set()
+    last_id = 0
+    while True:
+        with session_scope() as db:
+            rows = (
+                db.query(Speaker.id, Speaker.uuid)
+                .filter(Speaker.id > last_id)
+                .order_by(Speaker.id)
+                .limit(_SPEAKER_PAGE_SIZE)
+                .all()
+            )
+        if not rows:
+            return found
+        found.update(str(uuid) for _id, uuid in rows)
+        last_id = int(rows[-1][0])
 
 
 def get_embedding_consistency_counts() -> dict[str, Any]:

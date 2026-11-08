@@ -22,6 +22,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.file_cleanup_service import purge_media_file
+from app.services.file_cleanup_service import scrub_chat_citations
 from app.utils.stuck_file_recovery import check_for_stuck_files
 from app.utils.stuck_file_recovery import recover_stuck_file
 
@@ -245,32 +246,39 @@ class FileCleanupService:
         if not dry_run:
             from app.utils.task_cancel import cancel_active_task
 
-            for file in eligible_files:
-                try:
-                    # These files are orphaned/errored, but an abandoned task row can
-                    # still be attached; the interactive force-delete cancels it too.
-                    if file.active_task_id:
-                        with contextlib.suppress(Exception):
-                            cancel_active_task(db, int(file.id))
+            destroyed: list[str] = []
+            try:
+                for file in eligible_files:
+                    try:
+                        # These files are orphaned/errored, but an abandoned task row can
+                        # still be attached; the interactive force-delete cancels it too.
+                        if file.active_task_id:
+                            with contextlib.suppress(Exception):
+                                cancel_active_task(db, int(file.id))
 
-                    result = purge_media_file(db, file)
-                    if not result["deleted"]:
-                        raise RuntimeError(result.get("error") or "purge_media_file failed")
-                    results["successfully_deleted"] += 1
-                    results["files_processed"].append(
-                        {"id": int(file.id), "filename": file.filename, "status": "deleted"}
-                    )
-                except Exception as e:
-                    error_msg = f"Failed to delete file {file.id}: {str(e)}"
-                    results["deletion_errors"].append(error_msg)
-                    results["files_processed"].append(
-                        {
-                            "id": int(file.id),
-                            "filename": file.filename,
-                            "status": "error",
-                            "error": str(e),
-                        }
-                    )
+                        result = purge_media_file(db, file, defer_citation_scrub=destroyed)
+                        if not result["deleted"]:
+                            raise RuntimeError(result.get("error") or "purge_media_file failed")
+                        results["successfully_deleted"] += 1
+                        results["files_processed"].append(
+                            {"id": int(file.id), "filename": file.filename, "status": "deleted"}
+                        )
+                    except Exception as e:
+                        error_msg = f"Failed to delete file {file.id}: {str(e)}"
+                        results["deletion_errors"].append(error_msg)
+                        results["files_processed"].append(
+                            {
+                                "id": int(file.id),
+                                "filename": file.filename,
+                                "status": "error",
+                                "error": str(e),
+                            }
+                        )
+            finally:
+                # One chat_message scan for the whole pass, not per file (issue #1337).
+                if destroyed:
+                    scrub_chat_citations(db, destroyed)
+                    db.commit()
         else:
             # Dry run - just record what would be deleted
             for file in eligible_files:

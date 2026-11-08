@@ -75,6 +75,7 @@ from sqlalchemy import literal
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy import update
+from sqlalchemy.orm import selectinload
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
@@ -377,15 +378,31 @@ def refresh_cleared_speakers(
     file_ids: set[int] = set()
     for start in range(0, len(speaker_ids), _SPEAKER_BATCH):
         batch = speaker_ids[start : start + _SPEAKER_BATCH]
-        for speaker in db.query(Speaker).filter(Speaker.id.in_(batch)).all():
+        # selectinload: the status reads speaker.profile, a lazy load per row otherwise.
+        speakers = (
+            db.query(Speaker)
+            .options(selectinload(Speaker.profile))
+            .filter(Speaker.id.in_(batch))
+            .all()
+        )
+        updates: list[dict[str, Any]] = []
+        for speaker in speakers:
             # Persisted status describes the data; hiding is decided per read (#1280 D5).
             status = SpeakerStatusService.compute_speaker_status(speaker, voiceprint_names=True)
-            speaker.computed_status = status["computed_status"]  # type: ignore[assignment]
-            speaker.status_text = status["status_text"]  # type: ignore[assignment]
-            speaker.status_color = status["status_color"]  # type: ignore[assignment]
-            speaker.resolved_display_name = status["resolved_display_name"]  # type: ignore[assignment]
+            updates.append(
+                {
+                    "id": speaker.id,
+                    "computed_status": status["computed_status"],
+                    "status_text": status["status_text"],
+                    "status_color": status["status_color"],
+                    "resolved_display_name": status["resolved_display_name"],
+                }
+            )
             file_ids.add(int(speaker.media_file_id))
             refreshed += 1
+        # One executemany by primary key per batch, not a flush of dirty ORM rows.
+        if updates:
+            db.execute(update(Speaker), updates)
         db.commit()
 
     files = [

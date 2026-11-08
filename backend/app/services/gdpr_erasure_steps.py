@@ -22,6 +22,7 @@ from app.models.speaker import SpeakerProfile
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.file_cleanup_service import purge_media_file
+from app.services.file_cleanup_service import scrub_chat_citations
 from app.services.gdpr_voiceprint_erasure import _erase_profile_embedding
 from app.services.hold_guard import held_pred
 from app.services.hold_guard import unheld_file_ids
@@ -92,6 +93,23 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
     from app.services.hold_guard import hold_states
 
     held = hold_states(db, [int(f.id) for f in files])
+    destroyed: list[str] = []
+    try:
+        _purge_files_loop(db, files, held, summary, destroyed)
+    finally:
+        # One chat_message scan for the whole batch, not one per file (issue #1337).
+        if destroyed:
+            scrub_chat_citations(db, destroyed)
+            db.commit()
+
+
+def _purge_files_loop(
+    db: Session,
+    files: Any,
+    held: Any,
+    summary: dict[str, Any],
+    destroyed: list[str],
+) -> None:
     for media_file in files:
         if int(media_file.id) in held:
             summary["legal_holds_skipped"] += 1
@@ -102,7 +120,7 @@ def _purge_files(db: Session, files: list[MediaFile], summary: dict[str, Any]) -
                 }
             )
             continue
-        result = purge_media_file(db, media_file)
+        result = purge_media_file(db, media_file, defer_citation_scrub=destroyed)
         summary["errors"].extend(result.get("residual_errors") or [])
         if result.get("deleted"):
             summary["media_files_deleted"] += 1

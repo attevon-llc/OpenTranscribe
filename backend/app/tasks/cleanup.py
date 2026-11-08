@@ -526,8 +526,22 @@ def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
     previous shape held a single transaction across the whole pass, i.e. across
     every one of those round trips for every expired file at once.
     """
-    from app.models.media import MediaFile
     from app.services.file_cleanup_service import auto_delete_media_file
+    from app.services.file_cleanup_service import scrub_deferred_citations
+
+    destroyed: list[str] = []
+    try:
+        deleted, failed = _purge_expired_loop(expired, auto_delete_media_file, destroyed)
+    finally:
+        # One chat_message scan for the whole pass, not per file (issue #1337).
+        scrub_deferred_citations(destroyed)
+    return deleted, failed
+
+
+def _purge_expired_loop(
+    expired: list[tuple[int, str]], auto_delete_media_file: Any, destroyed: list[str]
+) -> tuple[int, int]:
+    from app.models.media import MediaFile
 
     deleted = 0
     failed = 0
@@ -546,7 +560,7 @@ def _purge_expired_files(expired: list[tuple[int, str]]) -> tuple[int, int]:
                 )
                 if media_file is None:
                     continue
-                result = auto_delete_media_file(db, media_file)
+                result = auto_delete_media_file(db, media_file, defer_citation_scrub=destroyed)
         except Exception as e:  # noqa: BLE001 - one bad file must not abort the pass
             failed += 1
             logger.error(

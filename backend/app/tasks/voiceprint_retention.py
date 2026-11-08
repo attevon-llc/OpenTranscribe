@@ -91,40 +91,66 @@ def _fresh_linked_profile(cutoff: datetime) -> Exists:
     )
 
 
-def candidate_file_ids(db: Session, cutoff: datetime, limit: int) -> list[int]:
-    """Files meeting the Postgres half of the rule, oldest first."""
+def candidate_page(
+    db: Session,
+    cutoff: datetime,
+    limit: int,
+    after: tuple[datetime, int] | None = None,
+) -> list[tuple[int, datetime]]:
+    """``(id, upload_time)`` of files meeting the Postgres half of the rule, oldest first.
+
+    ``after`` is a keyset cursor ``(upload_time, id)``: only files strictly later in the
+    ``(upload_time, id)`` order are returned, so a caller can walk the whole candidate set.
+    """
     from app.models.media import MediaFile
     from app.models.speaker import Speaker
     from app.services.hold_guard import not_held_pred
 
-    rows = db.execute(
-        select(MediaFile.id)
-        .where(
-            and_(
-                MediaFile.upload_time.is_not(None),
-                MediaFile.upload_time < cutoff,
-                not_held_pred(),
-                exists(select(Speaker.id).where(Speaker.media_file_id == MediaFile.id)),
-                ~_fresh_linked_profile(cutoff),
+    conditions = [
+        MediaFile.upload_time.is_not(None),
+        MediaFile.upload_time < cutoff,
+        not_held_pred(),
+        exists(select(Speaker.id).where(Speaker.media_file_id == MediaFile.id)),
+        ~_fresh_linked_profile(cutoff),
+    ]
+    if after is not None:
+        after_time, after_id = after
+        conditions.append(
+            or_(
+                MediaFile.upload_time > after_time,
+                and_(MediaFile.upload_time == after_time, MediaFile.id > after_id),
             )
         )
+    rows = db.execute(
+        select(MediaFile.id, MediaFile.upload_time)
+        .where(and_(*conditions))
         .order_by(MediaFile.upload_time, MediaFile.id)
         .limit(limit)
     ).all()
-    return [int(r[0]) for r in rows]
+    return [(int(r[0]), r[1]) for r in rows]
 
 
-def _has_voiceprints(db: Session, file_id: int) -> bool | None:
-    """True / False, or None when the store could not be measured."""
+def _files_with_voiceprints(db: Session, file_ids: list[int]) -> set[int] | None:
+    """The subset of ``file_ids`` that still has voiceprint documents; ``None`` if unmeasurable.
+
+    One speaker SELECT and one OpenSearch request per thousand speakers for the WHOLE page,
+    not one of each per candidate file.
+    """
     from app.models.speaker import Speaker
-    from app.services.gdpr_voiceprint_erasure import count_speaker_docs_by_ids
+    from app.services.gdpr_voiceprint_erasure import existing_speaker_doc_ids
 
-    uuids = [
-        str(u)
-        for u in db.execute(select(Speaker.uuid).where(Speaker.media_file_id == file_id)).scalars()
-    ]
-    count = count_speaker_docs_by_ids(uuids, errors=[])
-    return None if count is None else count > 0
+    if not file_ids:
+        return set()
+    file_by_speaker = {
+        str(u): int(f)
+        for u, f in db.execute(
+            select(Speaker.uuid, Speaker.media_file_id).where(Speaker.media_file_id.in_(file_ids))
+        )
+    }
+    present = existing_speaker_doc_ids(file_by_speaker, errors=[])
+    if present is None:
+        return None
+    return {file_by_speaker[u] for u in present if u in file_by_speaker}
 
 
 def due_file_ids(
@@ -132,15 +158,30 @@ def due_file_ids(
     cutoff: datetime,
     *,
     limit: int = MAX_FILES_PER_RUN,
-    has_voiceprints: Callable[[Session, int], bool | None] = _has_voiceprints,
+    files_with_voiceprints: Callable[
+        [Session, list[int]], set[int] | None
+    ] = _files_with_voiceprints,
 ) -> list[int]:
     """At most ``limit`` due files. An unmeasurable file is skipped this tick, not purged."""
     due: list[int] = []
-    for file_id in candidate_file_ids(db, cutoff, limit * _CANDIDATE_FACTOR):
-        if has_voiceprints(db, file_id):
-            due.append(file_id)
-            if len(due) >= limit:
-                break
+    cursor: tuple[datetime, int] | None = None
+    page_size = limit * _CANDIDATE_FACTOR
+    # Walk the candidate set page by page until ``limit`` are due or it is exhausted. A
+    # purge deletes a file's voiceprint DOCUMENTS but keeps its speaker rows, so a purged
+    # file stays a Postgres candidate forever; reading only the oldest page starved every
+    # newer due file once a page's worth of files had been purged (issue #1337, V14).
+    while len(due) < limit:
+        page = candidate_page(db, cutoff, page_size, after=cursor)
+        if not page:
+            break
+        indexed = files_with_voiceprints(db, [file_id for file_id, _uploaded in page])
+        for file_id, _uploaded in page:
+            if indexed and file_id in indexed:
+                due.append(file_id)
+                if len(due) >= limit:
+                    break
+        last_id, last_uploaded = page[-1]
+        cursor = (last_uploaded, last_id)
     return due
 
 
@@ -223,7 +264,9 @@ def run_sweep(
     *,
     now: datetime | None = None,
     dispatch: Callable[[list[int]], str] = dispatch_files_purge,
-    has_voiceprints: Callable[[Session, int], bool | None] = _has_voiceprints,
+    files_with_voiceprints: Callable[
+        [Session, list[int]], set[int] | None
+    ] = _files_with_voiceprints,
     scope_supported: Callable[[], bool] = files_scope_supported,
 ) -> dict[str, Any]:
     """One tick. Pure orchestration over the selection and the dispatch seam."""
@@ -238,7 +281,7 @@ def run_sweep(
         )
         return {"status": "unavailable", "retention_months": months}
     cutoff = cutoff_for(months, now)
-    file_ids = due_file_ids(db, cutoff, has_voiceprints=has_voiceprints)
+    file_ids = due_file_ids(db, cutoff, files_with_voiceprints=files_with_voiceprints)
     if not file_ids:
         return {"status": "ok", "retention_months": months, "files": 0}
     left_empty = stale_profiles_left_empty(db, cutoff, file_ids)

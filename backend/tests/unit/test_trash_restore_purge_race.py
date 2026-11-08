@@ -204,10 +204,10 @@ def test_a_restore_after_the_purge_took_the_row_is_refused(world, monkeypatch):
     locked, release = threading.Event(), threading.Event()
     real_purge = file_cleanup_service.purge_media_file
 
-    def held_purge(db, media_file):
+    def held_purge(db, media_file, **kw):
         locked.set()
         assert release.wait(15), "the test never released the purge"
-        return real_purge(db, media_file)
+        return real_purge(db, media_file, **kw)
 
     monkeypatch.setattr(file_cleanup_service, "purge_media_file", held_purge)
     purge: dict = {}
@@ -249,10 +249,10 @@ def test_a_restore_whose_transaction_began_before_the_row_was_due_is_still_refus
     locked, release = threading.Event(), threading.Event()
     real_purge = file_cleanup_service.purge_media_file
 
-    def held_purge(db, media_file):
+    def held_purge(db, media_file, **kw):
         locked.set()
         assert release.wait(15), "the test never released the purge"
-        return real_purge(db, media_file)
+        return real_purge(db, media_file, **kw)
 
     monkeypatch.setattr(file_cleanup_service, "purge_media_file", held_purge)
     purge: dict = {}

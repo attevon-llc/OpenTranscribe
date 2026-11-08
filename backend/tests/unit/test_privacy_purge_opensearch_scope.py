@@ -574,3 +574,41 @@ def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
     assert len(bodies) == 5
     for body in bodies:
         assert '"media_file_id": [901, 902]' in _filters_of(body), body
+
+
+def _explain(gov, stmt) -> str:
+    from sqlalchemy import text
+
+    compiled = stmt.compile(
+        dialect=gov.db.get_bind().dialect, compile_kwargs={"literal_binds": True}
+    )
+    return "\n".join(r[0] for r in gov.db.execute(text(f"EXPLAIN {compiled}")))
+
+
+def test_cross_scope_match_delete_plans_without_a_subplan(gov, index, speaker_os_seams):
+    """The either-side speaker_match delete is a UNION of two semi-joins, not an OR of subqueries.
+
+    The control is the OLD shape written inline: it must plan WITH a SubPlan, otherwise the
+    assertion on the new shape could not tell the two apart.
+    """
+    from sqlalchemy import delete
+    from sqlalchemy import or_
+
+    from app.models.speaker import SpeakerMatch
+    from app.services.privacy.purge_voiceprints import _scope_speaker_ids
+    from app.services.privacy.purge_voiceprints import matches_touching
+
+    _world(gov, index, speaker_os_seams)
+    scope = purge.PurgeScope("organization", organization_id=gov.org.id)
+    in_scope = _scope_speaker_ids(scope)
+
+    old_shape = delete(SpeakerMatch).where(
+        or_(SpeakerMatch.speaker1_id.in_(in_scope), SpeakerMatch.speaker2_id.in_(in_scope))
+    )
+    assert "SubPlan" in _explain(gov, old_shape), "control: the OR shape must plan a SubPlan"
+
+    plan = _explain(
+        gov, delete(SpeakerMatch).where(SpeakerMatch.id.in_(matches_touching(in_scope)))
+    )
+    assert "SubPlan" not in plan, plan
+    assert "Semi Join" in plan or "Hash Join" in plan, plan

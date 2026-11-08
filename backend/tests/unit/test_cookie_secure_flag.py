@@ -75,9 +75,17 @@ def _reload_cookies_with(monkeypatch: pytest.MonkeyPatch, *, hardened: bool, all
 
 
 @pytest.fixture(autouse=True)
-def _restore_real_cookies_module():
-    """Leave the module reflecting real settings for every other test in the suite."""
+def _restore_real_cookies_module(monkeypatch: pytest.MonkeyPatch):
+    """Leave the module reflecting real settings for every other test in the suite.
+
+    The settings patches are undone BEFORE the reload. A conftest autouse fixture also
+    uses ``monkeypatch``, so the shared instance is set up before this fixture and torn
+    down after it: reloading at this fixture's teardown alone recomputed the module
+    constants under the test's patched settings, and the next test in the worker got a
+    hardened, ``ALLOW_INSECURE_COOKIES`` cookie module.
+    """
     yield
+    monkeypatch.undo()
     import app.auth.cookies as cookies
 
     importlib.reload(cookies)

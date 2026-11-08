@@ -60,6 +60,10 @@ case " ${FILES[*]} " in
     *) echo "the demo overlay is not in the compose chain (is DEMO_MODE=true in .env?)" >&2; exit 2 ;;
 esac
 
+# The API reports the upgrade time from this file (docker-compose.demo.yml mounts it); it must
+# exist before the first start or Docker creates a directory in its place.
+[ "$DRY_RUN" = 1 ] || [ -e "$INSTALL_DIR/demo-status.json" ] || printf '{}' >"$INSTALL_DIR/demo-status.json"
+
 run docker compose "${FILES[@]}" stop nginx
 run docker compose "${FILES[@]}" down -v --remove-orphans
 

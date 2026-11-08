@@ -12,6 +12,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
+  import { demoMode } from '$stores/demo';
 
   export let file: MediaFileDetail | null = null;
   // Default-deny: the real page (routes/files/[id]/+page.svelte) always passes
@@ -70,9 +71,9 @@
     <button
       class="header-action-btn generate-summary-btn"
       on:click={() => dispatch('generateSummary')}
-      disabled={generatingSummary || summaryGenerating || !llmAvailable || $frozen}
+      disabled={generatingSummary || summaryGenerating || !llmAvailable || $frozen || $demoMode}
       aria-describedby={$frozen ? frozenNoteId : undefined}
-      title={$frozen ? $t('holds.frozenControl') : !llmAvailable ? (llmSettingsUnavailable ? $t('llm.settingsUnavailable') : $t('fileDetail.aiNotAvailable')) :
+      title={$demoMode ? $t('demo.readOnlyTooltip') : $frozen ? $t('holds.frozenControl') : !llmAvailable ? (llmSettingsUnavailable ? $t('llm.settingsUnavailable') : $t('fileDetail.aiNotAvailable')) :
              (generatingSummary || summaryGenerating) ? $t('fileDetail.aiSummaryGenerating') :
              $t('fileDetail.generateSummaryTooltip')}
     >
@@ -94,10 +95,10 @@
     <button
       class="header-action-btn icon-only reprocess-button-header"
       on:click={() => dispatch('openReprocess')}
-      disabled={reprocessing || $frozen}
+      disabled={reprocessing || $frozen || $demoMode}
       aria-label={$t('fileDetail.reprocessTooltip')}
       aria-describedby={$frozen ? frozenNoteId : undefined}
-      title={$frozen ? $t('holds.frozenControl') : reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
+      title={$demoMode ? $t('demo.readOnlyTooltip') : $frozen ? $t('holds.frozenControl') : reprocessing ? $t('fileDetail.reprocessingTooltip') : $t('fileDetail.reprocessTooltip')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M23 4v6h-6"></path>

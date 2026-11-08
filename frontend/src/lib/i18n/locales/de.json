@@ -6867,5 +6867,16 @@
   "takedown.admin.export": "Exportieren",
   "takedown.admin.exportEmpty": "Es gibt noch keine Meldungen zum Exportieren.",
   "settings.quarantine.holdHelp": "Quarantäne und rechtliche Sperre sind getrennte Funktionen. Eine Entfernung kann eine eigene rechtliche Sperre tragen, die die Datei bewahrt, solange sie entfernt ist. Eine in den Einstellungen gesetzte rechtliche Sperre bewahrt eine Datei, ohne sie zu entfernen.",
-  "settings.quarantine.holdHelpLink": "Rechtliche Sperren öffnen"
+  "settings.quarantine.holdHelpLink": "Rechtliche Sperren öffnen",
+  "demo.tryDemo": "Demo ausprobieren",
+  "demo.tryDemoHint": "Kein Konto und kein Passwort nötig. Alles in der Demo ist schreibgeschützt.",
+  "demo.signInFailed": "Die Demo ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.",
+  "demo.bannerMessage": "Dies ist eine schreibgeschützte Demo. Änderungen sind deaktiviert, und die Daten werden am {{time}} zurückgesetzt.",
+  "demo.bannerMessageNoTime": "Dies ist eine schreibgeschützte Demo. Änderungen sind deaktiviert, und die Daten werden jede Nacht zurückgesetzt.",
+  "demo.readOnlyTooltip": "In der schreibgeschützten Demo deaktiviert",
+  "demo.buildInfo": "Version {{version}}, aktualisiert am {{time}}",
+  "demo.buildInfoNoTime": "Version {{version}}",
+  "demo.attribution": "Quelle: {{credit}}. Lizenziert unter {{license}}.",
+  "demo.attributionSource": "Originalquelle",
+  "demo.readOnlyToast": "Dies ist eine schreibgeschützte Demo. Änderungen sind deaktiviert."
 }

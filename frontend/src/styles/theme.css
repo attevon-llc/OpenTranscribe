@@ -38,6 +38,8 @@
                                     clear the browser's native fullscreen
                                     chrome, not just the app's own layers)
      ───────────────────────────────────────────────────────────────────── */
+  --support-banner-height: 0px; /* published by SupportAccessBanner when shown */
+  --demo-banner-height: 0px; /* published by DemoBanner when it is shown */
   --z-base: 1;
   --z-sticky: 10;
   --z-dropdown: 1000;

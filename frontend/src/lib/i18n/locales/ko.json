@@ -6772,5 +6772,16 @@
   "takedown.admin.export": "내보내기",
   "takedown.admin.exportEmpty": "내보낼 통지가 아직 없습니다.",
   "settings.quarantine.holdHelp": "격리와 법적 보존은 서로 다른 기능입니다. 삭제 조치에는 자체 법적 보존이 붙을 수 있으며, 삭제된 동안 파일을 보존합니다. 설정에서 지정한 법적 보존은 파일을 삭제하지 않고 보존합니다.",
-  "settings.quarantine.holdHelpLink": "법적 보존 열기"
+  "settings.quarantine.holdHelpLink": "법적 보존 열기",
+  "demo.tryDemo": "데모 체험하기",
+  "demo.tryDemoHint": "계정이나 비밀번호가 필요 없습니다. 데모의 모든 기능은 읽기 전용입니다.",
+  "demo.signInFailed": "지금은 데모를 사용할 수 없습니다. 나중에 다시 시도해 주세요.",
+  "demo.bannerMessage": "읽기 전용 데모입니다. 변경은 비활성화되어 있으며 데이터는 {{time}}에 초기화됩니다.",
+  "demo.bannerMessageNoTime": "읽기 전용 데모입니다. 변경은 비활성화되어 있으며 데이터는 매일 밤 초기화됩니다.",
+  "demo.readOnlyTooltip": "읽기 전용 데모에서는 사용할 수 없습니다",
+  "demo.buildInfo": "버전 {{version}}, {{time}}에 업그레이드됨",
+  "demo.buildInfoNoTime": "버전 {{version}}",
+  "demo.attribution": "출처 표기: {{credit}}. 라이선스: {{license}}.",
+  "demo.attributionSource": "원본 출처",
+  "demo.readOnlyToast": "읽기 전용 데모입니다. 변경은 비활성화되어 있습니다."
 }

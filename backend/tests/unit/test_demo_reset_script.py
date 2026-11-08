@@ -118,3 +118,25 @@ def test_dry_run_runs_nothing(stub):
     assert proc.returncode == 0
     assert calls == []
     assert "+ docker compose" in proc.stdout
+
+
+def test_the_upgrade_record_exists_before_the_stack_starts_and_is_never_overwritten(stub):
+    install, _, _ = stub
+    status = install / "demo-status.json"
+
+    proc, _ = run(stub)
+    assert proc.returncode == 0, proc.stderr
+    assert status.read_text() == "{}"
+
+    status.write_text('{"result": "upgraded"}')
+    proc, _ = run(stub)
+    assert proc.returncode == 0, proc.stderr
+    assert status.read_text() == '{"result": "upgraded"}'
+
+
+def test_a_dry_run_does_not_create_the_upgrade_record(stub):
+    install, _, _ = stub
+
+    run(stub, "--dry-run")
+
+    assert not (install / "demo-status.json").exists()

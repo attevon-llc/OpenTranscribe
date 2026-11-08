@@ -6962,5 +6962,16 @@
   "takedown.admin.export": "Exporter",
   "takedown.admin.exportEmpty": "Il n'y a pas encore d'avis à exporter.",
   "settings.quarantine.holdHelp": "La quarantaine et la conservation légale sont deux fonctions distinctes. Un retrait peut porter sa propre conservation légale, qui préserve le fichier pendant qu'il est retiré. Une conservation légale définie dans les paramètres conserve un fichier sans le retirer.",
-  "settings.quarantine.holdHelpLink": "Ouvrir Conservations légales"
+  "settings.quarantine.holdHelpLink": "Ouvrir Conservations légales",
+  "demo.tryDemo": "Essayer la démo",
+  "demo.tryDemoHint": "Aucun compte ni mot de passe requis. Tout est en lecture seule dans la démo.",
+  "demo.signInFailed": "La démo n'est pas disponible pour le moment. Veuillez réessayer plus tard.",
+  "demo.bannerMessage": "Ceci est une démo en lecture seule. Les modifications sont désactivées et les données sont réinitialisées le {{time}}.",
+  "demo.bannerMessageNoTime": "Ceci est une démo en lecture seule. Les modifications sont désactivées et les données sont réinitialisées chaque nuit.",
+  "demo.readOnlyTooltip": "Désactivé dans la démo en lecture seule",
+  "demo.buildInfo": "Version {{version}}, mise à jour le {{time}}",
+  "demo.buildInfoNoTime": "Version {{version}}",
+  "demo.attribution": "Crédit : {{credit}}. Sous licence {{license}}.",
+  "demo.attributionSource": "Source d'origine",
+  "demo.readOnlyToast": "Ceci est une démo en lecture seule. Les modifications sont désactivées."
 }

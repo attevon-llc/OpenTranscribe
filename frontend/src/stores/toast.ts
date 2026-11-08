@@ -30,6 +30,11 @@ export interface ToastOptions {
 
 let toastCounter = 0;
 
+/** How long after a read-only-demo refusal other error toasts are held back (see `readOnlyRefusal`). */
+const READ_ONLY_WINDOW_MS = 2000;
+let errorsHeldUntil = 0;
+let refusalMessage = '';
+
 function createToastStore() {
   const { subscribe, update, set } = writable<ToastMessage[]>([]);
 
@@ -42,6 +47,9 @@ function createToastStore() {
       duration = 3000,
       options?: ToastOptions
     ) {
+      // The refusal toast already said it; the failing call site's own generic error that
+      // follows within the window is the same event, not a second one.
+      if (type === 'error' && Date.now() < errorsHeldUntil && message !== refusalMessage) return;
       const id = `${Date.now()}-${++toastCounter}`;
       const toast: ToastMessage = { id, message, type, duration, ...options };
 
@@ -62,6 +70,17 @@ function createToastStore() {
           this.dismiss(id);
         }, duration);
       }
+    },
+
+    /**
+     * A write was refused because this is a read-only demo (HTTP 403 `demo_read_only`). Shows
+     * the refusal once and holds back other error toasts for a moment, so a call site that
+     * reports its own failure does not stack a second message on the same click.
+     */
+    readOnlyRefusal(message: string) {
+      refusalMessage = message;
+      errorsHeldUntil = Date.now() + READ_ONLY_WINDOW_MS;
+      this.show(message, 'error', 4000);
     },
 
     dismiss(id: string) {

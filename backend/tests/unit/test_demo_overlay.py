@@ -129,3 +129,13 @@ def test_opentr_adds_lite_whenever_the_demo_is_requested(lite, demo, expected):
     ).stdout
 
     assert _files(out) == expected
+
+
+def test_the_api_can_read_the_upgrade_record_the_host_script_writes():
+    backend = _compose(DEMO)["services"]["backend"]
+
+    assert backend["environment"]["DEMO_STATUS_FILE"] == "/run/demo/demo-status.json"
+    assert "./demo-status.json:/run/demo/demo-status.json:ro" in backend["volumes"]
+    # The host side must be the file demo-upgrade.sh writes by default.
+    upgrade = (REPO_ROOT / "scripts/demo/demo-upgrade.sh").read_text()
+    assert 'STATUS_FILE="${DEMO_STATUS_FILE:-$INSTALL_DIR/demo-status.json}"' in upgrade

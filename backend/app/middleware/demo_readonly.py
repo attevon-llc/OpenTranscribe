@@ -49,6 +49,10 @@ DEMO_WRITE_ALLOWLIST: dict[str, str] = {
         "visitors sign in with the published demo credentials; the session row it creates "
         "is destroyed by the nightly reset"
     ),
+    "POST /api/auth/demo/session": (
+        "passwordless sign-in as the shared demo user (exempt from password lockout, limited "
+        "per IP); creates a session row that the nightly reset destroys"
+    ),
     "POST /api/auth/token": (
         "OAuth2 password form used by the API docs and API clients; same effect as login"
     ),

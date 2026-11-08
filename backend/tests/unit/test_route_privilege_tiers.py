@@ -98,6 +98,11 @@ KNOWN_PUBLIC = {
     "/api/auth/methods",
     "/api/auth/banner",
     "/api/auth/password-policy",
+    # Public read-only demo (#628): the login page reads the reset time before a session
+    # exists, and the passwordless sign-in IS how a visitor gets one. Both answer 404 or
+    # enabled=false outside DEMO_MODE; the sign-in is rate limited per IP and audited.
+    "/api/auth/demo",
+    "/api/auth/demo/session",
     # The SPA's session probe: 200 for anonymous by design, never 401.
     "/api/auth/session",
     # Ends a session; must succeed even with an expired or absent token.

@@ -6772,5 +6772,16 @@
   "takedown.admin.export": "导出",
   "takedown.admin.exportEmpty": "目前没有可导出的通知。",
   "settings.quarantine.holdHelp": "隔离与法律保全是两项独立的功能。下架可以带有自己的法律保全，在文件被下架期间保留该文件。在设置中设定的法律保全则保留文件而不下架。",
-  "settings.quarantine.holdHelpLink": "打开法律保全"
+  "settings.quarantine.holdHelpLink": "打开法律保全",
+  "demo.tryDemo": "试用演示",
+  "demo.tryDemoHint": "无需账户或密码。演示中的所有内容均为只读。",
+  "demo.signInFailed": "演示暂时不可用，请稍后再试。",
+  "demo.bannerMessage": "这是只读演示。更改已被禁用，数据将在{{time}}重置。",
+  "demo.bannerMessageNoTime": "这是只读演示。更改已被禁用，数据每晚重置。",
+  "demo.readOnlyTooltip": "只读演示中已禁用",
+  "demo.buildInfo": "版本 {{version}}，升级于 {{time}}",
+  "demo.buildInfoNoTime": "版本 {{version}}",
+  "demo.attribution": "署名：{{credit}}。许可协议：{{license}}。",
+  "demo.attributionSource": "原始来源",
+  "demo.readOnlyToast": "这是只读演示。更改已被禁用。"
 }

@@ -2,6 +2,7 @@
   import { galleryStore, galleryState } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { supportSessionGate } from '$stores/supportSession';
+  import { demoMode } from '$stores/demo';
 
   // Normal-mode-only trio (issue #747): row 1 right of the two-row toolbar.
   // "Select items" is NOT here — it lives in `GallerySelectionActions`, beside
@@ -40,7 +41,9 @@
     <button
       class="action-btn upload-btn"
       on:click={handleUploadClick}
-      title={$t('gallery.bulk.addMediaTooltip')}
+      disabled={$demoMode}
+      aria-disabled={$demoMode}
+      title={$demoMode ? $t('demo.readOnlyTooltip') : $t('gallery.bulk.addMediaTooltip')}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -78,6 +81,11 @@
 
   .action-btn:hover:not(:disabled) {
     transform: scale(1.02);
+  }
+
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .action-btn:active:not(:disabled) {

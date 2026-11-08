@@ -190,6 +190,27 @@ async function handleSupportGrantError(error: {
   }
 }
 
+/** The 403 body `DemoReadOnlyMiddleware` answers every refused write with. */
+function isDemoReadOnlyRefusal(error: {
+  response?: { status?: number; data?: { detail?: { code?: string } } };
+}): boolean {
+  return error.response?.status === 403 && error.response.data?.detail?.code === 'demo_read_only';
+}
+
+async function reportDemoReadOnlyRefusal(error: Parameters<typeof isDemoReadOnlyRefusal>[0]) {
+  if (!isDemoReadOnlyRefusal(error)) return;
+  try {
+    const [{ toastStore }, { t }, { get }] = await Promise.all([
+      import('../stores/toast'),
+      import('../stores/locale'),
+      import('svelte/store'),
+    ]);
+    toastStore.readOnlyRefusal(get(t)('demo.readOnlyToast'));
+  } catch {
+    // Reporting must never mask the original API error.
+  }
+}
+
 // Token refresh state — shared across concurrent 401s so only one refresh fires
 let isRefreshing = false;
 let refreshQueue: Array<{
@@ -213,6 +234,7 @@ axiosInstance.interceptors.response.use(
     }
 
     await handleSupportGrantError(error);
+    await reportDemoReadOnlyRefusal(error);
 
     // Rate limited (issue #788): parse Retry-After ONCE, here, and attach it to
     // the error rather than popping UI ourselves. Axios lower-cases header

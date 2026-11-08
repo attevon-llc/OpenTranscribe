@@ -176,9 +176,14 @@ def test_migration_startup_gate_exists():
 
 def test_readiness_asserts_schema_when_migrations_are_gated_off():
     """A replica that didn't migrate must prove the DB is at head before taking traffic."""
-    from app.main import readiness_check
+    from app.api import health
+    from app.db import probe_engine
 
-    source = inspect.getsource(readiness_check)
+    source = (
+        inspect.getsource(health._probe_dependencies)
+        + inspect.getsource(health._probe_postgres_and_schema)
+        + inspect.getsource(probe_engine._check_schema)
+    )
     assert "RUN_MIGRATIONS_ON_STARTUP" in source
     assert "get_alembic_head" in source
     assert 'checks.get("schema"' in source

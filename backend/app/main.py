@@ -9,7 +9,6 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextlib import suppress
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -25,6 +24,7 @@ from starlette.responses import JSONResponse
 from starlette.responses import Response
 
 from app.api.endpoints.alertmanager_webhook import router as alertmanager_webhook_router
+from app.api.health import router as health_router
 from app.api.hold_refusal import hold_refused_handler
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
@@ -416,6 +416,9 @@ from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
 
+# Liveness / readiness probes, also at ROOT.
+app.include_router(health_router)
+
 # Alertmanager webhook, also at ROOT: bearer-authenticated, nginx denies /internal/.
 app.include_router(alertmanager_webhook_router)
 
@@ -429,122 +432,6 @@ from app.api.endpoints.scim.errors import scim_error_handler  # noqa: E402
 
 app.include_router(scim_router)
 app.add_exception_handler(SCIMError, scim_error_handler)
-
-
-# Health check endpoint
-@app.get("/health")
-def health_check() -> dict[str, str]:
-    """Health check endpoint"""
-    return {"status": "healthy", "version": APP_VERSION}
-
-
-@app.get("/health/ready", response_model=None)
-def readiness_check() -> JSONResponse | dict[str, Any]:
-    """Readiness probe for load balancers / orchestrators.
-
-    Probes the critical dependencies (PostgreSQL, Redis) and the degraded-but-
-    serviceable ones (OpenSearch, MinIO). A failed CRITICAL dependency returns
-    503; OpenSearch/MinIO failures are reported but do not fail readiness, since
-    queued transcription survives a brief search/storage outage. Plain ``def``
-    so Starlette threadpools the short, synchronous probes.
-
-    Probed several times a minute, so it must stay cheap and bounded (issue #1000):
-    Redis, OpenSearch and object storage each get ``DEPENDENCY_PROBE_TIMEOUT_SECONDS``
-    via probe-only clients, and the Alembic head is parsed once per process.
-    """
-    from sqlalchemy import text
-
-    from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
-
-    checks: dict[str, str] = {}
-
-    # PostgreSQL (critical) — short-lived session, SELECT 1.
-    try:
-        from app.db.base import SessionLocal
-
-        db = SessionLocal()
-        try:
-            db.execute(text("SELECT 1"))
-            checks["postgres"] = "ok"
-        finally:
-            db.close()
-    except Exception as exc:  # noqa: BLE001
-        checks["postgres"] = f"error: {type(exc).__name__}"
-
-    # Redis (critical) — db 0 through the time-bounded probe client.
-    try:
-        from app.core.redis import get_probe_redis
-
-        get_probe_redis().ping()
-        checks["redis"] = "ok"
-    except Exception as exc:  # noqa: BLE001
-        checks["redis"] = f"error: {type(exc).__name__}"
-
-    # OpenSearch (degraded-but-ready) — reuse the existing client singleton.
-    try:
-        from app.services.opensearch_service import get_opensearch_client
-
-        client = get_opensearch_client()
-        if client is not None and client.ping(request_timeout=DEPENDENCY_PROBE_TIMEOUT_SECONDS):
-            checks["opensearch"] = "ok"
-        else:
-            checks["opensearch"] = "unavailable"
-    except Exception as exc:  # noqa: BLE001
-        checks["opensearch"] = f"error: {type(exc).__name__}"
-
-    # MinIO (degraded-but-ready) — same backend, time-bounded single-attempt transport.
-    try:
-        from app.services.minio_service import get_probe_client
-
-        get_probe_client().bucket_exists(settings.MEDIA_BUCKET_NAME)
-        checks["minio"] = "ok"
-    except Exception as exc:  # noqa: BLE001
-        checks["minio"] = f"error: {type(exc).__name__}"
-
-    # Schema freshness. ALWAYS reported, conditionally critical.
-    #
-    # Reported unconditionally so the schema state of any deployment is
-    # observable over HTTP, so a caller can assert an upgrade actually migrated
-    # without shelling `docker exec opentranscribe-postgres psql`. No release
-    # script reads it today.
-    #
-    # Critical ONLY when a migrate job owns migrations (issue #284 A1.4): a
-    # replica that did not run Alembic itself must prove the DB is at head before
-    # taking traffic, or a rollout outpacing the migrate job serves requests
-    # against an old schema. When this replica DOES run migrations on startup,
-    # a stale schema cannot happen without startup having already failed, and
-    # 503-ing on it would change self-host readiness semantics.
-    schema_detail: dict[str, str] = {}
-    try:
-        from alembic.migration import MigrationContext
-
-        from app.db.base import engine
-        from app.db.migrations import get_alembic_head
-
-        head = get_alembic_head()
-        with engine.connect() as conn:
-            current = MigrationContext.configure(conn).get_current_revision()
-        checks["schema"] = "ok" if current == head else f"stale: {current} != head {head}"
-        schema_detail = {"current": current or "none", "head": head or "none"}
-    except Exception as exc:  # noqa: BLE001
-        checks["schema"] = f"error: {type(exc).__name__}"
-
-    if schema_detail:
-        checks["schema_revision"] = schema_detail["current"]
-        checks["schema_head"] = schema_detail["head"]
-
-    schema_is_critical = not settings.RUN_MIGRATIONS_ON_STARTUP
-    critical_ok = (
-        checks["postgres"] == "ok"
-        and checks["redis"] == "ok"
-        and (not schema_is_critical or checks.get("schema", "ok") == "ok")
-    )
-    if not critical_ok:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "not_ready", "checks": checks},
-        )
-    return {"status": "ready", "checks": checks}
 
 
 # Static files are served by nginx in production, not by FastAPI

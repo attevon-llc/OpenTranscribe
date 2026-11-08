@@ -20,6 +20,8 @@ from app.core.config import settings
 from app.db import migrations
 from app.db.base import engine
 
+pytestmark = pytest.mark.asyncio
+
 
 class _Pong:
     def ping(self) -> bool:
@@ -37,14 +39,15 @@ def current_revision() -> str:
 @pytest.fixture
 def ready(monkeypatch):
     import app.core.redis as redis_module
-    from app.main import readiness_check
+    from app.api import health
 
     monkeypatch.setattr(redis_module, "get_probe_redis", lambda: _Pong())
 
-    def call(*, migrate_on_startup: bool, head: str) -> tuple[int, dict]:
+    async def call(*, migrate_on_startup: bool, head: str) -> tuple[int, dict]:
+        health.reset_readiness_state()
         monkeypatch.setattr(settings, "RUN_MIGRATIONS_ON_STARTUP", migrate_on_startup)
         monkeypatch.setattr(migrations, "get_alembic_head", lambda: head)
-        result = readiness_check()
+        result = await health.readiness_check()
         if isinstance(result, dict):
             return 200, result
         return result.status_code, json.loads(bytes(result.body))
@@ -52,21 +55,25 @@ def ready(monkeypatch):
     return call
 
 
-def test_a_replica_that_does_not_migrate_is_not_ready_on_a_stale_schema(ready, current_revision):
-    status, body = ready(migrate_on_startup=False, head="v999_not_applied_yet")
+async def test_a_replica_that_does_not_migrate_is_not_ready_on_a_stale_schema(
+    ready, current_revision
+):
+    status, body = await ready(migrate_on_startup=False, head="v999_not_applied_yet")
     assert status == 503
     assert body["status"] == "not_ready"
     assert body["checks"]["schema"].startswith("stale:")
     assert body["checks"]["schema_revision"] == current_revision
 
 
-def test_the_same_replica_is_ready_once_the_schema_is_at_head(ready, current_revision):
-    status, body = ready(migrate_on_startup=False, head=current_revision)
+async def test_the_same_replica_is_ready_once_the_schema_is_at_head(ready, current_revision):
+    status, body = await ready(migrate_on_startup=False, head=current_revision)
     assert status == 200, body
     assert body["checks"]["schema"] == "ok"
 
 
-def test_a_self_migrating_process_reports_but_does_not_gate_on_the_schema(ready, current_revision):
-    status, body = ready(migrate_on_startup=True, head="v999_not_applied_yet")
+async def test_a_self_migrating_process_reports_but_does_not_gate_on_the_schema(
+    ready, current_revision
+):
+    status, body = await ready(migrate_on_startup=True, head="v999_not_applied_yet")
     assert status == 200, body
     assert body["checks"]["schema"].startswith("stale:")

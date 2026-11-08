@@ -148,7 +148,7 @@ def resolve_loadable_model_name(model_name: str) -> str:
 
         if model_name in _FW_MODELS:
             return model_name
-    except Exception:  # noqa: S110  # nosec B110
+    except Exception:  # noqa: S110 - optional dependency probe; falls through to the static map  # nosec B110
         # faster_whisper not importable (e.g. API server context) — fall through to map.
         pass
 

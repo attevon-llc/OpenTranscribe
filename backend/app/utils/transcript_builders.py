@@ -78,7 +78,7 @@ def mask_segment_text(
             text, segment.redactions or [], segment.words, redaction_cfg, set()
         )
         return masked
-    except Exception:  # noqa: BLE001
+    except Exception:
         # FAIL CLOSED. This previously returned the raw text, which is the exact
         # outcome the function exists to prevent: redaction is enabled, so this
         # string is about to be put in a prompt for an EXTERNAL LLM provider, and

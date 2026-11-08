@@ -446,7 +446,7 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
                     next_refresh = time.monotonic() + limits.SLOT_REFRESH_INTERVAL_SECONDS
                     await run_in_threadpool(limits.refresh_stream_slot, user_id, slot_id)
                 yield frame
-        except Exception:  # noqa: BLE001 — the stream is already open
+        except Exception:  # the stream is already open
             logger.exception("Chat stream generator failed")
             yield sse("error", {"code": "provider_error", "message": "Generation failed."})
         finally:

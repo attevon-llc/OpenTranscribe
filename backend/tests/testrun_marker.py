@@ -46,7 +46,7 @@ def default_testruns_dir(repo_root: Path) -> Path:
         return repo_root / ".testruns"
     argv = [git, "-C", str(repo_root), "rev-parse", "--path-format=absolute", "--git-common-dir"]
     try:
-        result = subprocess.run(  # noqa: S603 - fixed argv from a resolved binary, no shell
+        result = subprocess.run(  # fixed argv from a resolved binary, no shell
             argv,
             capture_output=True,
             text=True,

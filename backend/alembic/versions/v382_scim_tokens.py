@@ -99,7 +99,7 @@ _SOURCE_CHECKS_TEMPLATE = """
         CHECK (source IN ({membership_sources}));
 """
 
-WIDEN_SOURCE_CHECKS_SQL = _SOURCE_CHECKS_TEMPLATE.format(  # nosec B608
+WIDEN_SOURCE_CHECKS_SQL = _SOURCE_CHECKS_TEMPLATE.format(
     mapping_sources=MAPPING_SOURCES_SQL,
     membership_sources=MEMBERSHIP_SOURCES_SQL,
 )
@@ -110,7 +110,7 @@ WIDEN_SOURCE_CHECKS_SQL = _SOURCE_CHECKS_TEMPLATE.format(  # nosec B608
 NARROW_SOURCE_CHECKS_SQL = f"""
     DELETE FROM group_mapping WHERE source NOT IN ({OLD_MAPPING_SOURCES_SQL});
     DELETE FROM user_group_member WHERE source NOT IN ({OLD_MEMBERSHIP_SOURCES_SQL});
-""" + _SOURCE_CHECKS_TEMPLATE.format(  # nosec B608
+""" + _SOURCE_CHECKS_TEMPLATE.format(
     mapping_sources=OLD_MAPPING_SOURCES_SQL,
     membership_sources=OLD_MEMBERSHIP_SOURCES_SQL,
 )

@@ -71,7 +71,7 @@ def acquire_ddl_lock_shared(connection: Connection) -> None:
     )
 
 
-def acquire_ddl_lock_exclusive_raw(cursor) -> None:  # noqa: ANN001 - psycopg2 cursor
+def acquire_ddl_lock_exclusive_raw(cursor) -> None:  # psycopg2 cursor
     """Same lock, for a test holding a raw DBAPI cursor instead of a SQLAlchemy connection.
 
     ``tests/unit/test_uuid7_migration_guard.py`` needs this: it exercises the v368 migration

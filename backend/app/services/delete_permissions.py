@@ -92,7 +92,7 @@ def _audit_denied(user: User, file: MediaFile, reason: str) -> None:
             ),
             target_user_id=int(file.user_id),
         )
-    except Exception:  # noqa: BLE001 - auditing must never turn a 403 into a 500
+    except Exception:  # auditing must never turn a 403 into a 500
         logger.exception("Could not audit denied delete of file %s", file.uuid)
 
 

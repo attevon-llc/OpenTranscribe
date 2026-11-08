@@ -56,7 +56,7 @@ class _Result:
 class _WorkingAnalyzer:
     """Finds the one phone number and nothing else."""
 
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         start = text.find(PHONE)
         if start < 0:
             return []

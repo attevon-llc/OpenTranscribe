@@ -303,7 +303,7 @@ def run_sweep(
 
 
 @celery_app.task(bind=True, name=TASK_NAME, priority=UtilityPriority.BACKGROUND)
-def voiceprint_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
+def voiceprint_retention_sweep(self: Any) -> dict:  # bind=True signature
     """Daily: destroy the voiceprints of files nobody has used for the configured months."""
     from app.db.session_utils import session_scope
 

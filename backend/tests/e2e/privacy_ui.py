@@ -73,7 +73,7 @@ def open_purge_dialog(page: Page) -> None:
     expect(page.locator(PURGE_DIALOG)).to_be_visible(timeout=10000)
 
 
-def purge_modal(page: Page):  # type: ignore[no-untyped-def]
+def purge_modal(page: Page):
     """The modal element holding the purge dialog (footer buttons live outside the body).
 
     ``.last``: the Settings modal that opened it also contains the dialog, and is earlier in
@@ -106,7 +106,7 @@ def token_for(backend_url: str, email: str, password: str) -> str:
 PRIVACY_SURFACES = frozenset({"privacy_settings", "purge_dialog", "about"})
 
 
-def open_privacy_surface(page: Page, base_url: str, surface: str):  # type: ignore[no-untyped-def]
+def open_privacy_surface(page: Page, base_url: str, surface: str):
     """Put *surface* on screen and return the locator that is its capture/scan root.
 
     Mutates nothing: the purge dialog needs voiceprints OFF to be reachable, so the single
@@ -117,7 +117,7 @@ def open_privacy_surface(page: Page, base_url: str, surface: str):  # type: igno
     return root
 
 
-def _open_privacy_surface(page: Page, base_url: str, surface: str):  # type: ignore[no-untyped-def]
+def _open_privacy_surface(page: Page, base_url: str, surface: str):
     page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=PAGE_READY_MS)
     if surface == "about":

@@ -208,6 +208,6 @@ def run_question(session: Any, base_url: str, question: Question) -> Result:
             if citation.get('file_uuid') or citation.get('fileUuid')
         }
         result.files_consulted_uuids = sorted(files)
-    except Exception as exc:  # noqa: BLE001 - probe script, capture everything and continue
+    except Exception as exc:  # probe script, capture everything and continue
         result.error = f'{type(exc).__name__}: {exc}'
     return result

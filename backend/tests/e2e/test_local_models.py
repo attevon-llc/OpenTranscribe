@@ -203,7 +203,7 @@ def _install(context: BrowserContext, script: ScriptedBackend) -> None:
 
 
 @pytest.fixture
-def library_page(browser, shared_auth_state: str, base_url: str):  # type: ignore[no-untyped-def]
+def library_page(browser, shared_auth_state: str, base_url: str):
     """A logged-in page with the library routes scripted; yields (page, script)."""
     context = browser.new_context(
         storage_state=shared_auth_state,
@@ -229,7 +229,7 @@ def _open_library(page: Page) -> None:
     expect(page.get_by_test_id("local-model-large-v3")).to_be_visible(timeout=10000)
 
 
-def test_download_then_activate_a_model(library_page) -> None:  # type: ignore[no-untyped-def]
+def test_download_then_activate_a_model(library_page) -> None:
     """Download shows progress and completes; activating warns, sets, restarts, then confirms."""
     page, script = library_page
     _open_library(page)
@@ -272,7 +272,7 @@ def test_download_then_activate_a_model(library_page) -> None:  # type: ignore[n
     assert script.calls.index("POST set") < script.calls.index("POST restart")
 
 
-def test_cancel_a_running_download(library_page) -> None:  # type: ignore[no-untyped-def]
+def test_cancel_a_running_download(library_page) -> None:
     """Cancel is sent once and the row goes back to Download when the cancelled state arrives."""
     page, script = library_page
     _open_library(page)

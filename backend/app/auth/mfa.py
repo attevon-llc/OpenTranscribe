@@ -344,7 +344,7 @@ class MFAService:
             from app.core.redis import get_request_redis
 
             claimed = get_request_redis().set(key, "1", nx=True, ex=ttl)
-        except Exception as exc:  # noqa: BLE001 - Redis availability is a deployment concern
+        except Exception as exc:  # Redis availability is a deployment concern
             if settings.MFA_REQUIRE_REDIS:
                 logger.error("TOTP replay protection unavailable (%s); refusing code", exc)
                 return False

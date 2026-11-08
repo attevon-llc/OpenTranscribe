@@ -49,7 +49,7 @@ class _Result:
 class _WorkingAnalyzer:
     """Finds the one phone number in ``TEXT`` and nothing anywhere else."""
 
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         start = text.find("555-867-5309")
         if start < 0:
             return []
@@ -59,7 +59,7 @@ class _WorkingAnalyzer:
 class _BrokenAnalyzer:
     """Built successfully, then throws — a transient fault, not a missing install."""
 
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         raise RuntimeError("nlp engine exploded")
 
 
@@ -117,7 +117,7 @@ def test_a_later_chunk_failing_does_not_return_the_earlier_chunks_findings(monke
     calls: list[int] = []
 
     class _FailsOnTheSecondChunk:
-        def analyze(self, text: str, language: str):  # noqa: ARG002
+        def analyze(self, text: str, language: str):
             calls.append(1)
             if len(calls) > 1:
                 raise RuntimeError("nlp engine exploded on chunk 2")

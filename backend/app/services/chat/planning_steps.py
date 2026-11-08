@@ -124,7 +124,7 @@ def _validate_plan_speakers(
                 organization_id=organization_id,
                 file_uuids=file_uuids,
             )
-    except Exception as exc:  # noqa: BLE001 — an enhancement, never a dependency
+    except Exception as exc:  # an enhancement, never a dependency
         logger.info(f"Chat plan speaker validation could not build a roster: {exc}")
         return []
     if roster.declined:

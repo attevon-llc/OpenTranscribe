@@ -100,7 +100,7 @@ def main() -> None:
                 f"{model:<26} {gpu_s:>6.1f} {off['n_words']:>6} {flag:>6} "
                 f"{off['wser']:>9.4f} {on['wser']:>8.4f} {off['islands']:>7} {on['islands']:>6}"
             )
-        except Exception as e:  # noqa: BLE001 - report per-model failure, keep going
+        except Exception as e:  # report per-model failure, keep going
             print(f"{model:<26} FAILED: {str(e)[:60]}")
 
 

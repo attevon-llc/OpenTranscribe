@@ -220,10 +220,10 @@ class _FilteringFakeAuditOS:
         self.docs: list[dict] = []
         self.indices = self._Indices()
 
-    def index(self, index, body):  # noqa: A002 - matches opensearch-py's kwarg name
+    def index(self, index, body):  # matches opensearch-py's kwarg name
         self.docs.append(dict(body))
 
-    def search(self, index, body):  # noqa: A002
+    def search(self, index, body):
         query = body["query"]
         if query == {"match_all": {}}:
             hits = list(self.docs)

@@ -73,7 +73,7 @@ class AzureASRProvider(ASRProvider):
         """Verify credentials by constructing a SpeechConfig (no network call beyond auth check)."""
         start = time.time()
         try:
-            import azure.cognitiveservices.speech as sdk  # noqa: F401
+            import azure.cognitiveservices.speech as sdk
         except ImportError:
             return (
                 False,
@@ -92,7 +92,7 @@ class AzureASRProvider(ASRProvider):
     # Public transcribe entrypoint
     # ------------------------------------------------------------------
 
-    def transcribe(  # noqa: C901
+    def transcribe(
         self,
         audio_path: str,
         config: ASRConfig,

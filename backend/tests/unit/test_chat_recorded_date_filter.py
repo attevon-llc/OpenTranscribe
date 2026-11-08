@@ -49,7 +49,7 @@ class _RecordingClient:
         self.sessions_live_at_search: list[int] = []
         self._ledger = ledger
 
-    def search(self, index: str, body: dict[str, Any], **kwargs) -> dict[str, Any]:  # noqa: ARG002
+    def search(self, index: str, body: dict[str, Any], **kwargs) -> dict[str, Any]:
         self.bodies.append(body)
         if self._ledger is not None:
             self.sessions_live_at_search.append(self._ledger[0])

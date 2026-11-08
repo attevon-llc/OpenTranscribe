@@ -428,7 +428,7 @@ class SpeakerDiarizer:
             out = embedder(wf)
             arr = out.detach().cpu().numpy() if hasattr(out, "detach") else np.asarray(out)
             return arr.reshape(-1)
-        except Exception as exc:  # noqa: BLE001 — never break diarization on a re-check embed
+        except Exception as exc:  # never break diarization on a re-check embed
             logger.debug("embed_window failed (%s); skipping acoustic re-check for window", exc)
             return None
 

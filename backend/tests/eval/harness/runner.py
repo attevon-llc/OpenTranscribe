@@ -113,7 +113,7 @@ class RetrievalConfig:
             from app.services.search.fusion import RRF
             from app.services.search.fusion import resolve_fusion
             from app.services.search.fusion import search_pipeline_id
-        except Exception as exc:  # noqa: BLE001 - recorded, never fatal
+        except Exception as exc:  # recorded, never fatal
             return {"resolved": "UNRESOLVED", "reason": str(exc)}
 
         cfg = resolve_fusion(self.fusion)

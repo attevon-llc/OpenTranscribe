@@ -442,7 +442,7 @@ def retrieve_chunks(
         response = client.search(
             index=settings.OPENSEARCH_CHUNKS_INDEX, body=body, params=params or None
         )
-    except Exception as exc:  # noqa: BLE001 — retrieval failure must not break chat
+    except Exception as exc:  # retrieval failure must not break chat
         logger.warning(f"Chat chunk retrieval failed: {exc}")
         if diagnostics is not None:
             diagnostics["retrieval_failed"] = True
@@ -602,7 +602,7 @@ def retrieve_digests(
         response = client.search(
             index=settings.OPENSEARCH_CHUNKS_INDEX, body=body, params=params or None
         )
-    except Exception as exc:  # noqa: BLE001 — a failed digest leg must not break chat
+    except Exception as exc:  # a failed digest leg must not break chat
         logger.warning(f"Chat digest retrieval failed: {exc}")
         if diagnostics is not None:
             diagnostics["digest_retrieval_failed"] = True

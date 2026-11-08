@@ -118,7 +118,7 @@ cleanup_data = _load_cleanup_data_module()
 
 
 def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)  # noqa: S603
+    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 
 def _postgres_image_tag() -> str:
@@ -222,7 +222,7 @@ class _StubApiHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         path = urlsplit(self.path).path
         if path == "/api/auth/token":
             self.send_response(200)
@@ -239,14 +239,14 @@ class _StubApiHandler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {"detail": "not found"})
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         path = urlsplit(self.path).path
         if path.startswith("/api/files/"):
             self._send_json(200, {"active_task_id": None})
             return
         self._send_json(404, {"detail": "not found"})
 
-    def do_DELETE(self) -> None:  # noqa: N802
+    def do_DELETE(self) -> None:
         split = urlsplit(self.path)
         path = split.path
         query = parse_qs(split.query)
@@ -349,7 +349,7 @@ def live_run_marker(tmp_path: Path) -> Iterator[Path]:
         echo "$TESTRUN_MARKER"
         sleep 300
     """
-    proc = subprocess.Popen(  # noqa: S603
+    proc = subprocess.Popen(
         ["bash", "-c", script],
         env={**os.environ, "TESTRUN_REGISTRY_DIR": str(testruns_dir)},
         stdout=subprocess.PIPE,
@@ -498,7 +498,7 @@ def _run_script(
         # see cleanup-test-data.py's identical override, honoured for exactly this.
         "TESTRUN_REGISTRY_DIR": str(testruns_dir),
     }
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(
         # `--planes records`: this proves the ROW sweep against a throwaway Postgres. The store
         # planes would otherwise reach whatever OpenSearch/MinIO//tmp this host has, which is
         # not this test's to touch (they are proved in test_test_artifact_sweep_live.py).
@@ -669,7 +669,7 @@ def test_unreachable_api_degrades_to_db_only_and_reports_nonzero(
         "E2E_BACKEND_URL": f"http://127.0.0.1:{unreachable_port}",
         "TESTRUN_REGISTRY_DIR": str(tmp_path / ".testruns"),
     }
-    result = subprocess.run(  # noqa: S603
+    result = subprocess.run(
         [sys.executable, str(_SCRIPT), "--planes", "records", "--execute-unambiguous"],
         env=env,
         capture_output=True,

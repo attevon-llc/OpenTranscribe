@@ -156,8 +156,8 @@ def _apply_high_confidence_match(
         The speaker's search document.
     """
     previous_display_name = speaker.display_name
-    speaker.display_name = trigger["display_name"]  # type: ignore[assignment]
-    speaker.verified = True  # type: ignore[assignment]
+    speaker.display_name = trigger["display_name"]
+    speaker.verified = True
     # A voiceprint wrote this identity, not a person (issue #1280). Set before the tracker
     # computes the "after" label below, which depends on it while voiceprints are off.
     record_machine_identity(
@@ -168,7 +168,7 @@ def _apply_high_confidence_match(
 
     if trigger["profile_id"]:
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
-        speaker.profile_id = trigger["profile_id"]  # type: ignore[assignment]
+        speaker.profile_id = trigger["profile_id"]
         touch_profile_interaction(db, [int(trigger["profile_id"]), old_profile_id], "auto_link")
         _update_profile_embedding(db, speaker.id, old_profile_id, int(trigger["profile_id"]))
 
@@ -609,7 +609,7 @@ def store_speaker_match(speaker1_id: int, speaker2_id: int, confidence: float, d
     if existing_match:
         # Update confidence if higher
         if confidence > existing_match.confidence:
-            existing_match.confidence = confidence  # type: ignore[assignment]
+            existing_match.confidence = confidence
     else:
         # Create new match
         speaker_match = SpeakerMatch(

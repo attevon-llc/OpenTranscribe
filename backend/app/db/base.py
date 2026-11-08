@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from app.core.db_metrics import register_listeners
 from app.core.db_metrics import register_pool_collector
 from app.db.migration_connection import install_idle_in_transaction_timeout
 from app.db.migration_connection import install_statement_timeout
@@ -34,8 +35,6 @@ engine = create_engine(
 # Observability: attach per-statement timing + per-request query-count listeners
 # (see app.core.db_metrics). Registered here, on the shared engine, so the same
 # instrumentation applies to API requests, Celery tasks, and scripts.
-from app.core.db_metrics import register_listeners  # noqa: E402
-
 register_listeners(engine)
 register_pool_collector(engine, settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW)
 

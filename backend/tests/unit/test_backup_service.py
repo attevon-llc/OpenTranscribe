@@ -16,7 +16,7 @@ from unittest import mock
 
 import pytest
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.services import backup_config
 from app.services import backup_cron
 from app.services import backup_retention
@@ -48,14 +48,14 @@ def test_get_settings_returns_coded_defaults(db_session):
     )
 
     cfg = backup_config.get_settings(db_session)
-    assert cfg["enabled"] is C.DEFAULT_BACKUP_ENABLED
-    assert cfg["schedule"] == C.DEFAULT_BACKUP_SCHEDULE
-    assert cfg["destination"] == C.DEFAULT_BACKUP_DESTINATION
-    assert cfg["retention_daily"] == C.DEFAULT_BACKUP_RETENTION_DAILY
-    assert cfg["retention_weekly"] == C.DEFAULT_BACKUP_RETENTION_WEEKLY
-    assert cfg["retention_monthly"] == C.DEFAULT_BACKUP_RETENTION_MONTHLY
-    assert cfg["encrypt"] is C.DEFAULT_BACKUP_ENCRYPT
-    assert cfg["include_opensearch"] is C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH
+    assert cfg["enabled"] is constants.DEFAULT_BACKUP_ENABLED
+    assert cfg["schedule"] == constants.DEFAULT_BACKUP_SCHEDULE
+    assert cfg["destination"] == constants.DEFAULT_BACKUP_DESTINATION
+    assert cfg["retention_daily"] == constants.DEFAULT_BACKUP_RETENTION_DAILY
+    assert cfg["retention_weekly"] == constants.DEFAULT_BACKUP_RETENTION_WEEKLY
+    assert cfg["retention_monthly"] == constants.DEFAULT_BACKUP_RETENTION_MONTHLY
+    assert cfg["encrypt"] is constants.DEFAULT_BACKUP_ENCRYPT
+    assert cfg["include_opensearch"] is constants.DEFAULT_BACKUP_INCLUDE_OPENSEARCH
     assert cfg["last_run_at"] is None
     assert cfg["last_result"] is None
 
@@ -359,9 +359,9 @@ def test_last_result_json_roundtrips(db_session):
 # =============================================================================
 def test_s3_settings_defaults(db_session):
     cfg = backup_config.get_settings(db_session)
-    assert cfg["destination_type"] == C.DEFAULT_BACKUP_DESTINATION_TYPE == "local"
+    assert cfg["destination_type"] == constants.DEFAULT_BACKUP_DESTINATION_TYPE == "local"
     assert cfg["s3_bucket"] == ""
-    assert cfg["s3_prefix"] == C.DEFAULT_BACKUP_S3_PREFIX == "opentranscribe/"
+    assert cfg["s3_prefix"] == constants.DEFAULT_BACKUP_S3_PREFIX == "opentranscribe/"
     assert cfg["s3_secret_key_set"] is False
 
 

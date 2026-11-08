@@ -155,7 +155,7 @@ def _restore_in_thread(
             )
             result["restored"] = [int(f.id) for f in restored]
             result["refused"] = [int(f.id) for f in refused]
-        except Exception as exc:  # noqa: BLE001 - surfaced by the assertions
+        except Exception as exc:  # surfaced by the assertions
             result["error"] = exc
             s.rollback()
         finally:

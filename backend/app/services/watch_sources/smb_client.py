@@ -74,7 +74,7 @@ class SMBWatchClient(BaseWatchSourceClient):
             # Listing the root path validates auth + path existence.
             smbclient.listdir(self._base_unc)
             return True, f"OK — \\\\{self._server}\\{self._share} reachable"
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # Returned directly as the response body of
             # POST /watch-sources/{uuid}/test -- the OUTER handler in
             # api/endpoints/watch_sources.py only sanitizes an exception that
@@ -104,7 +104,7 @@ class SMBWatchClient(BaseWatchSourceClient):
                 full = dirpath.rstrip("\\") + "\\" + fname
                 try:
                     st = smbclient.stat(full)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     logger.debug("smb stat failed for %s: %s", full, e)
                     continue
                 modified = datetime.fromtimestamp(st.st_mtime, tz=UTC)
@@ -137,7 +137,7 @@ class SMBWatchClient(BaseWatchSourceClient):
         # exists for servers where stat() is unavailable (issue #293).
         try:
             expected = int(smbclient.stat(remote_path).st_size)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning(
                 "smb size verification skipped for %s (stat failed: %s) — "
                 "a truncated download cannot be detected for this file",
@@ -168,7 +168,7 @@ class SMBWatchClient(BaseWatchSourceClient):
             import smbclient
 
             smbclient.delete_session(self._server, port=self._port)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.debug("smb delete_session failed: %s", e)
         finally:
             self._registered = False

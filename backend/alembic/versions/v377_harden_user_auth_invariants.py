@@ -209,7 +209,7 @@ PASSWORD_CHANGED_AT_BACKFILL_SQL = """
        SET password_changed_at = now()
      WHERE password_changed_at IS NULL
        AND auth_type = 'local';
-"""  # noqa: S105 # nosec B105
+"""  # noqa: S105 - DDL, not a credential (see comment above)  # nosec B105
 
 
 #: Session ownership moves to ``refresh_token``. Nullable and NOT backfilled —

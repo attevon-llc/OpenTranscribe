@@ -82,7 +82,7 @@ UPDATE alembic_version SET version_num = 'v0400_later';
 def _run(
     cmd: list[str], *, stdin_text: str | None = None, cwd: str | None = None
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(  # fixed argv, no shell
         cmd, capture_output=True, text=True, input=stdin_text, cwd=cwd
     )
 
@@ -153,7 +153,7 @@ def _dump(container: str, dbname: str, dest: Path) -> None:
 
 def _dump_custom(container: str, dbname: str, dest: Path) -> None:
     """Custom-format (``-Fc``) dump — binary, so captured/written as bytes, not text."""
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    result = subprocess.run(  # fixed argv, no shell
         ["docker", "exec", container, "pg_dump", "-U", _DB_USER, "-Fc", dbname],
         capture_output=True,
     )
@@ -216,7 +216,7 @@ def test_restoring_into_a_populated_database_reproduces_the_shipped_silent_failu
 
     # The OLD shipped shape: no ON_ERROR_STOP, no --single-transaction, no drop-first.
     with dump_path.open("rb") as dump_fh:
-        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        result = subprocess.run(  # fixed argv, no shell
             ["docker", "exec", "-i", container, "psql", "-U", _DB_USER, dbname],
             stdin=dump_fh,
             capture_output=True,
@@ -404,7 +404,7 @@ def test_drop_database_with_force_terminates_an_open_connection(pg_container: st
     dbname = "otrestore_force"
     _create_db(container, dbname)
 
-    holder = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+    holder = subprocess.Popen(  # fixed argv, no shell
         [
             "docker",
             "exec",

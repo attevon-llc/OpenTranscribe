@@ -126,7 +126,7 @@ def queue_transcript_reindex(
         )
         _report_queued(file_id)
         return ReindexDispatch.QUEUED
-    except Exception:  # noqa: BLE001 — a dispatch failure must not break the mutation
+    except Exception:  # a dispatch failure must not break the mutation
         logger.exception(f"Could not queue transcript re-index for file {file_uuid}")
         if claimed:
             _release_claim(key, file_uuid)
@@ -150,7 +150,7 @@ def _release_claim(key: str, file_uuid: str) -> None:
         from app.core.redis import get_request_redis
 
         get_request_redis().delete(key)
-    except Exception:  # noqa: BLE001 — the claim expires on its own TTL
+    except Exception:  # the claim expires on its own TTL
         logger.exception(f"Could not release the reindex debounce claim for file {file_uuid}")
 
 

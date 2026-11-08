@@ -408,14 +408,14 @@ def get_audit_log(
 
     return [
         AuthConfigAuditResponse(
-            id=audit.id,  # type: ignore[arg-type]
+            id=audit.id,
             uuid=str(audit.uuid),
-            config_key=audit.config_key,  # type: ignore[arg-type]
-            old_value=audit.old_value,  # type: ignore[arg-type]
-            new_value=audit.new_value,  # type: ignore[arg-type]
-            change_type=audit.change_type,  # type: ignore[arg-type]
+            config_key=audit.config_key,
+            old_value=audit.old_value,
+            new_value=audit.new_value,
+            change_type=audit.change_type,
             changed_by_email=actor_emails.get(audit.changed_by),  # type: ignore[arg-type]
-            ip_address=audit.ip_address,  # type: ignore[arg-type]
+            ip_address=audit.ip_address,
             created_at=audit.created_at,  # type: ignore[arg-type]
         )
         for audit in audits

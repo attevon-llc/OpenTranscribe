@@ -4,6 +4,7 @@ import uuid as uuid_pkg
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
@@ -130,7 +131,7 @@ class TestSpeakerConstraintModels:
             cannot_link_speaker_id=speakers[3].id,
         )
         db_session.add(link2)
-        with pytest.raises(Exception):  # noqa: B017
+        with pytest.raises(IntegrityError):
             db_session.commit()
         db_session.rollback()
 

@@ -211,7 +211,7 @@ def cleanup(world: World) -> None:
         ):
             db.execute(text(stmt), {"ids": ids})
         db.commit()
-    except Exception:  # noqa: BLE001 - cleanup must not mask the test's own failure
+    except Exception:  # cleanup must not mask the test's own failure
         db.rollback()
     finally:
         db.close()

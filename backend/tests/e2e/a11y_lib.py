@@ -237,7 +237,7 @@ def form_login_with_retry(page: Page, base_url: str, attempts: int = 4) -> None:
             page.click("button[type=submit]")
             page.wait_for_selector(".user-button", timeout=20000)
             return
-        except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
+        except Exception as exc:  # retry on any login-flow failure
             last_error = exc
             # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
             # something a locator could poll for (issue #431).

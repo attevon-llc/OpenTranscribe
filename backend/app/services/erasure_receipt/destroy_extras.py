@@ -32,7 +32,7 @@ def erase_lockout(captured: Captured, errors: list[dict[str, Any]]) -> None:
         from app.auth.lockout_admin import erase_identifier
 
         erase_identifier(captured.email)
-    except Exception as e:  # noqa: BLE001 - recorded, never raised
+    except Exception as e:  # recorded, never raised
         _fail(errors, "lockout", e)
 
 
@@ -56,7 +56,7 @@ def erase_object_prefixes(
     for prefix in prefixes:
         try:
             remove_completely(minio_client, settings.MEDIA_BUCKET_NAME, prefix=prefix)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _fail(errors, "object_prefix", e)
 
 
@@ -81,7 +81,7 @@ def erase_derived_cache(captured: Captured, errors: list[dict[str, Any]]) -> Non
                 settings.CACHE_BUCKET_NAME,
                 prefix=f"{VideoProcessingService.DERIVED_CACHE_PREFIX}{file_id}_",
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _fail(errors, "derived_cache", e)
 
 
@@ -98,7 +98,7 @@ def erase_temp_objects(captured: Captured, errors: list[dict[str, Any]]) -> None
                 settings.MEDIA_BUCKET_NAME,
                 prefix=f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/",
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _fail(errors, "temp_objects", e)
 
 
@@ -115,7 +115,7 @@ def abort_multipart(scope: ErasureScope, captured: Captured, errors: list[dict[s
             for upload in listing.uploads or []:
                 if not abort_upload(str(upload.object_name), str(upload.upload_id)):
                     raise RuntimeError("abort refused")
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             _fail(errors, "multipart", e)
 
 
@@ -124,7 +124,7 @@ def erase_mirror(scope: ErasureScope, captured: Captured, errors: list[dict[str,
         from app.services.media_mirror_erasure import erase_mirrored
 
         erase_mirrored(object_prefixes(scope, captured))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         _fail(errors, "mirror", e)
 
 

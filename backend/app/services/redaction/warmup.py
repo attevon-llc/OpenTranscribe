@@ -73,7 +73,7 @@ def warm_pii_analyzer() -> bool:
 
     try:
         pii_presidio.detect_pii(_WARM_SAMPLE, None, detection_config_for_all())
-    except Exception:  # noqa: BLE001 — a warm-up must never be load-bearing
+    except Exception:  # a warm-up must never be load-bearing
         logger.warning("PII analyzer built, but the warm-up probe failed", exc_info=True)
 
     logger.info("PII analyzer warmed in %.2f s", time.perf_counter() - started)
@@ -101,7 +101,7 @@ def warm_edit_path_detectors() -> bool:
     started = time.perf_counter()
     try:
         wordlist.find_profanity_spans(_WARM_SAMPLE, None)
-    except Exception:  # noqa: BLE001 — a warm-up must never be load-bearing
+    except Exception:  # a warm-up must never be load-bearing
         logger.warning("Profanity warm-up probe failed", exc_info=True)
 
     if not toxicity.preload():
@@ -114,7 +114,7 @@ def warm_edit_path_detectors() -> bool:
     try:
         # The first inference also pays a device placement; take it off the request too.
         toxicity.score_text(_WARM_SAMPLE, None)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("Toxicity model loaded, but the warm-up probe failed", exc_info=True)
 
     logger.info("Edit-path detectors warmed in %.2f s", time.perf_counter() - started)
@@ -129,7 +129,7 @@ def _warm_if_in_use() -> None:
     try:
         with session_scope() as db:
             in_use = redaction_is_in_use(db)
-    except Exception:  # noqa: BLE001 — never let a warm-up decision surface
+    except Exception:  # never let a warm-up decision surface
         logger.warning("Could not decide whether to warm the PII analyzer", exc_info=True)
         return
 
@@ -147,7 +147,7 @@ def _warm_if_in_use() -> None:
     for warm in (warm_pii_analyzer, warm_edit_path_detectors):
         try:
             warm()
-        except Exception:  # noqa: BLE001 — an optimisation must not raise into startup
+        except Exception:  # an optimisation must not raise into startup
             logger.warning("%s failed", warm.__name__, exc_info=True)
 
 

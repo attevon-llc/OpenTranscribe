@@ -74,8 +74,8 @@ def query_gpu_stats(device_id: int, *, timeout: float | None = 5) -> dict | None
         Dict of GPU stats, or None if the query fails.
     """
     try:
-        result = subprocess.run(  # noqa: S603 # nosec B603 B607
-            [  # noqa: S607
+        result = subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603 B607
+            [  # noqa: S607 - tool resolved from PATH inside the image
                 "nvidia-smi",
                 "--query-gpu=name,memory.used,memory.total,memory.free,"
                 "utilization.gpu,temperature.gpu",

@@ -47,7 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 E2E_DIR = REPO_ROOT / 'backend' / 'tests' / 'e2e'
 sys.path.insert(0, str(E2E_DIR))
 
-from a11y_lib import (  # noqa: E402
+from a11y_lib import (  # noqa: E402 - importable only after the sys.path insert above
     BACKLOG_PREFIX,
     KNOWN_THEMES,
     evaluate_surface,
@@ -55,8 +55,8 @@ from a11y_lib import (  # noqa: E402
     run_axe,
     set_theme,
 )
-from playwright.sync_api import sync_playwright  # noqa: E402
-from privacy_ui import (  # noqa: E402
+from playwright.sync_api import sync_playwright  # noqa: E402 - importable only after the sys.path insert above
+from privacy_ui import (  # noqa: E402 - importable only after the sys.path insert above
     PRIVACY_SURFACES,
     SURFACE_SCAN_SCOPE,
     open_privacy_surface,
@@ -243,7 +243,7 @@ def main() -> int:
             try:
                 page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=15000)
                 _print_surface('chat', theme, page)
-            except Exception:  # noqa: BLE001 - report and move on, this tool must not crash
+            except Exception:  # report and move on, this tool must not crash
                 print(
                     f'# chat::{theme}: skipped — composer never rendered '
                     '(no LLM provider configured?)'

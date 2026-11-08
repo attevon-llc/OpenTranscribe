@@ -44,7 +44,7 @@ def is_cuda_fault(exc: BaseException) -> bool:
 
 def mark_cuda_faulted(exc: BaseException) -> None:
     """Pin this process to CPU after a sticky CUDA fault (logged once)."""
-    global _cuda_faulted  # noqa: PLW0603
+    global _cuda_faulted
     if not _cuda_faulted:
         logger.error(
             "Redaction: CUDA fault (%s) — this worker now runs redaction on CPU until restarted",
@@ -58,7 +58,7 @@ def _cuda_available() -> bool:
         import torch
 
         return bool(torch.cuda.is_available())
-    except Exception:  # noqa: BLE001
+    except Exception:
         return False
 
 
@@ -79,7 +79,7 @@ def _best_gpu() -> tuple[int, float] | None:
             return None
         best = max(range(n), key=lambda i: _free_gb(i))
         return best, _free_gb(best)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("GPU probe failed: %s", exc)
         return None
 
@@ -122,7 +122,7 @@ def resolve_device() -> str:
                 need,
             )
         return "cpu"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Redaction device probe failed (%s) — using CPU", exc)
         return "cpu"
 

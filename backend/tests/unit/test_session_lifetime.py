@@ -351,11 +351,11 @@ class TestSessionManagerIsGone:
     def test_the_class_cannot_be_imported(self):
         """Two owners would enforce against different session sets — see the plan."""
         with pytest.raises(ImportError):
-            from app.auth.session import SessionManager  # noqa: F401
+            from app.auth.session import SessionManager  # noqa: F401 - the import itself is what is under test
 
     def test_the_singleton_cannot_be_imported(self):
         with pytest.raises(ImportError):
-            from app.auth.session import session_manager  # noqa: F401
+            from app.auth.session import session_manager  # noqa: F401 - the import itself is what is under test
 
     def test_the_module_exports_neither_name(self):
         from app.auth import session

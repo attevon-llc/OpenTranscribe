@@ -30,7 +30,7 @@ import contextlib
 import hashlib
 import logging
 import os
-import subprocess  # noqa: S404 - gpg invoked with a fixed argv list, no shell
+import subprocess  # gpg invoked with a fixed argv list, no shell
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path
@@ -146,7 +146,7 @@ def write_companion(dest_dir: Path, passphrase: str) -> dict[str, Any]:
             str(out_path),
             str(tmp_path),
         ]
-        subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell
+        subprocess.run(  # noqa: S603 - fixed argv, no shell  # nosec B603
             cmd,
             input=passphrase.encode("utf-8"),
             stderr=subprocess.PIPE,

@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 #: Prefix on the plaintext, so a leaked string is identifiable at a glance and so a
 #: future credential type can be told apart without trying it.
-TOKEN_PREFIX = "ot_scim_"  # noqa: S105 # nosec B105
+TOKEN_PREFIX = "ot_scim_"  # noqa: S105 - a Redis key prefix, not a credential  # nosec B105
 
 #: Bytes of entropy behind the random half. 32 bytes = 256 bits.
 TOKEN_ENTROPY_BYTES = 32

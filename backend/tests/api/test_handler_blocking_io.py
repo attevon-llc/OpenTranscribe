@@ -171,22 +171,22 @@ class _AwaitFinder(ast.NodeVisitor):
     def __init__(self) -> None:
         self.found: list[str] = []
 
-    def visit_Await(self, node: ast.Await) -> None:  # noqa: N802 - ast API
+    def visit_Await(self, node: ast.Await) -> None:  # ast API
         self.found.append(f"await@{node.lineno}")
         self.generic_visit(node)
 
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802 - ast API
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # ast API
         self.found.append(f"async for@{node.lineno}")
         self.generic_visit(node)
 
-    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802 - ast API
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # ast API
         self.found.append(f"async with@{node.lineno}")
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802 - ast API
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # ast API
         return  # nested function: its awaits belong to it, not the handler
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802 - ast API
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # ast API
         return
 
 

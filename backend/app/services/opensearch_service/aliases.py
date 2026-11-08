@@ -124,7 +124,7 @@ def _migrate_to_alias_based_indices() -> dict[str, Any]:
     from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V4
     from app.core.embedding_models import get_speaker_index_v3_backup
 
-    assert _client.opensearch_client is not None  # noqa: S101 - checked by caller
+    assert _client.opensearch_client is not None  # checked by caller
 
     alias_name = get_speaker_index()  # "speakers"
     v3_index = get_speaker_index_v3()  # "speakers_v3"

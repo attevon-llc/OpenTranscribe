@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import shutil
-import subprocess  # noqa: S404 - pg_dump/gpg invoked with a fixed argv list, no shell
+import subprocess  # pg_dump/gpg invoked with a fixed argv list, no shell
 import tempfile
 import time
 from datetime import UTC
@@ -92,7 +92,7 @@ def run_pg_dump(
     env = dict(os.environ)
     cmd = ["pg_dump", f"--format={PG_DUMP_FORMAT}", "--no-owner", "--no-acl", "--dbname", url]
     logger.info("Running pg_dump → %s", dest_path)
-    subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; url carries credentials, not user input
+    subprocess.run(  # noqa: S603 - fixed argv, no shell; url carries credentials, not user input  # nosec B603
         cmd,
         stdout=dest_path.open("wb"),
         stderr=subprocess.PIPE,
@@ -118,7 +118,7 @@ def run_pg_dump(
         str(gpg_path),
         str(dest_path),
     ]
-    subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell
+    subprocess.run(  # noqa: S603 - fixed argv, no shell  # nosec B603
         gpg_cmd,
         input=passphrase.encode("utf-8"),
         stderr=subprocess.PIPE,
@@ -164,7 +164,7 @@ def _prune_local_safe(destination: str, cfg: dict[str, Any]) -> tuple[list[str],
     """Prune with failure isolation: a prune error warns but never fails the run (#244)."""
     try:
         return prune_backups(destination, cfg), None
-    except Exception as exc:  # noqa: BLE001 - the dump already succeeded; record + continue
+    except Exception as exc:  # the dump already succeeded; record + continue
         # prune_error is rendered on GET /admin/backup and /admin/backup/status --
         # never interpolate the raw exception text, only its class name (#914).
         logger.exception("Backup retention pruning failed (dump itself succeeded)")
@@ -175,7 +175,7 @@ def _prune_s3_safe(cfg: dict[str, Any], client: Any) -> tuple[list[str], str | N
     """S3 twin of ``_prune_local_safe`` — prune errors never fail a completed upload."""
     try:
         return prune_backups_s3(cfg, client=client), None
-    except Exception as exc:  # noqa: BLE001 - the upload already succeeded; record + continue
+    except Exception as exc:  # the upload already succeeded; record + continue
         logger.exception("S3 backup retention pruning failed (dump itself succeeded)")
         return [], f"Pruning failed ({type(exc).__name__})"
 
@@ -219,7 +219,7 @@ def _write_recovery_s3(
     try:
         client.upload_file(str(local), bucket, key)
         result["path"] = f"s3://{bucket}/{key}"
-    except Exception as exc:  # noqa: BLE001 - companion upload never fails the backup
+    except Exception as exc:  # companion upload never fails the backup
         # This overwrites `result` entirely and is assigned OUTSIDE the handler's
         # own scope, then returned below (scanner-invisible under the raise/return
         # walker) -- rendered on GET /admin/backup and /admin/backup/status.
@@ -410,7 +410,7 @@ def _perform_backup_s3(cfg: dict[str, Any], db: Session | None) -> dict[str, Any
         logger.exception(
             "S3 backup failed: %s failed (exit %s): %s", exc.cmd[0], exc.returncode, stderr
         )
-    except Exception as exc:  # noqa: BLE001 - boto3/network/value errors → recorded, never raised
+    except Exception as exc:  # boto3/network/value errors → recorded, never raised
         # A boto3 ClientError can quote the endpoint_url/bucket/region -- only
         # the class of failure is returned.
         duration = round(time.monotonic() - started, 2)

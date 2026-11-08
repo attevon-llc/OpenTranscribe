@@ -362,7 +362,7 @@ def quarantine_file(
             from app.services.minio_service import set_object_legal_hold
 
             set_object_legal_hold(media.storage_path, True)
-        except Exception as e:  # noqa: BLE001 — advisory; never break the takedown
+        except Exception as e:  # advisory; never break the takedown
             logger.warning(f"Storage legal-hold enable failed for file {file.id}: {e}")
 
     # Presigned-URL revocation (issue #907): every object a URL can be minted for (the
@@ -518,7 +518,7 @@ def release_file(
             from app.services.minio_service import set_object_legal_hold
 
             set_object_legal_hold(media.storage_path, False)
-        except Exception as e:  # noqa: BLE001 — advisory; never break the release
+        except Exception as e:  # advisory; never break the release
             logger.warning(f"Storage legal-hold disable failed for file {file.id}: {e}")
 
     # Presigned-URL untag (issue #907), retried — see this function's docstring for why a

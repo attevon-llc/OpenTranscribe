@@ -459,7 +459,7 @@ def _make_raw_transcript_result(**overrides) -> RawTranscriptResult:
             {"start": 0.0, "end": 3.1, "text": "Hello world"},
             {"start": 3.5, "end": 7.2, "text": "How are you"},
         ],
-        "local_wav_path": "/tmp/task-abc-123.wav",  # noqa: S108
+        "local_wav_path": "/tmp/task-abc-123.wav",  # noqa: S108 - a stand-in path string; nothing is created there
         "config_snapshot": dict(_MINIMAL_CONFIG),
         "stage_timings": {"transcribe_only": 8.4},
     }
@@ -512,7 +512,7 @@ class TestRawTranscriptResult:
 
     def test_local_wav_path_preserved(self):
         """local_wav_path must survive serialization — Stage 2b reloads audio from it."""
-        path = "/tmp/transcription/abc-123-def-456.wav"  # noqa: S108
+        path = "/tmp/transcription/abc-123-def-456.wav"  # noqa: S108 - a stand-in path string; nothing is created there
         original = _make_raw_transcript_result(local_wav_path=path)
         restored = RawTranscriptResult.deserialize(original.serialize())
 
@@ -546,7 +546,7 @@ class TestRawTranscriptResult:
             "audio_duration_s": 60.0,
             "language": "fr",
             "raw_segments": [],
-            "local_wav_path": "/tmp/x.wav",  # noqa: S108
+            "local_wav_path": "/tmp/x.wav",  # noqa: S108 - a stand-in path string; nothing is created there
         }
         restored = RawTranscriptResult.deserialize(minimal)
 

@@ -51,7 +51,7 @@ from app.models.user_mfa import UserMFA
 logger = logging.getLogger(__name__)
 
 
-MFA_TOKEN_BLACKLIST_PREFIX = "mfa:jti:"  # noqa: S105 # nosec B105
+MFA_TOKEN_BLACKLIST_PREFIX = "mfa:jti:"  # noqa: S105 - a Redis key prefix, not a credential  # nosec B105
 
 #: Values of the ``mfa_scope`` claim. See the module docstring for why they differ.
 MFA_SCOPE_VERIFY = "verify"

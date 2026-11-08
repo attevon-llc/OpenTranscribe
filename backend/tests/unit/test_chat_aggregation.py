@@ -48,14 +48,14 @@ class _RecordingClient:
         self.bodies: list[dict[str, Any]] = []
         self.kwargs: list[dict[str, Any]] = []
 
-    def search(self, index: str, body: dict[str, Any], **kwargs) -> dict[str, Any]:  # noqa: ARG002
+    def search(self, index: str, body: dict[str, Any], **kwargs) -> dict[str, Any]:
         self.bodies.append(body)
         self.kwargs.append(kwargs)
         return self.response
 
 
 class _ExplodingClient:
-    def search(self, index: str, body: dict[str, Any], **kwargs):  # noqa: ARG002
+    def search(self, index: str, body: dict[str, Any], **kwargs):
         raise RuntimeError("opensearch is down")
 
 

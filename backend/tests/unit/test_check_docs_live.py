@@ -77,7 +77,7 @@ def serve():
 
     def start(pages, last_modified=None) -> str:
         class H(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802 - http.server API
+            def do_GET(self):  # http.server API
                 status, body = pages.get(self.path, (404, "nope"))
                 self.send_response(status)
                 if last_modified:

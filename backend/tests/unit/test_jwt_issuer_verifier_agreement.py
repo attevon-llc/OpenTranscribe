@@ -243,7 +243,7 @@ class TestEveryIssuerAgreesWithEveryVerifier:
                     continue
                 try:
                     verify(token, token_type)
-                except (JoseError, Exception) as exc:  # noqa: B014 - HTTPException too
+                except (JoseError, Exception) as exc:  # HTTPException too
                     pytest.fail(
                         f"{verifier_name} refused a {token_type} token from "
                         f"{issuer_name} (alg={algorithm}) under FIPS_MODE="

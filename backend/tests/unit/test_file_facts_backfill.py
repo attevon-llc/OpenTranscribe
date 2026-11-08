@@ -43,7 +43,7 @@ def _make_user(db_session) -> User:
     user = User(
         email=f"facts-backfill-fixture-{uid}@example.com",
         full_name="Facts Backfill Fixture",
-        hashed_password=get_password_hash("password123"),  # noqa: S106 — throwaway fixture row
+        hashed_password=get_password_hash("password123"),  # throwaway fixture row
         is_active=True,
         role="user",
     )

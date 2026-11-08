@@ -88,7 +88,7 @@ def warm_reranker() -> bool:
 
     try:
         reranker_threads.score_pairs(model, [_PROBE_PAIR])
-    except Exception:  # noqa: BLE001 — a warm-up must never be load-bearing
+    except Exception:  # a warm-up must never be load-bearing
         logger.warning("Chat reranker loaded, but the warm-up probe failed", exc_info=True)
 
     logger.info("Chat reranker warmed in %.2f s", time.perf_counter() - started)
@@ -120,7 +120,7 @@ def warmup_wanted(session_factory: _SessionFactory | None = None) -> bool:
                 db, WARMUP_SETTING_KEY, chat_defaults.DEFAULT_CHAT_RAG_RERANK_WARMUP_ENABLED
             )
             rerank_enabled = get_chat_settings(db).rerank_enabled
-    except Exception:  # noqa: BLE001 — a warm-up decision must never surface
+    except Exception:  # a warm-up decision must never surface
         logger.warning("Could not decide whether to warm the chat reranker", exc_info=True)
         return False
 
@@ -138,7 +138,7 @@ def _warm_if_wanted(session_factory: _SessionFactory | None = None) -> None:
     try:
         if warmup_wanted(session_factory):
             warm_reranker()
-    except Exception:  # noqa: BLE001 — an optimisation must not raise anywhere
+    except Exception:  # an optimisation must not raise anywhere
         logger.warning("Chat reranker warm-up failed", exc_info=True)
 
 

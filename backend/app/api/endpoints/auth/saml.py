@@ -400,7 +400,7 @@ def _complete_saml_sls(
 
     try:
         redirect_url = auth.process_slo(delete_session_cb=_revoke_current_session)
-    except Exception as e:  # noqa: BLE001 - python3-saml raises broad OneLogin_Saml2_ValidationError
+    except Exception as e:  # python3-saml raises broad OneLogin_Saml2_ValidationError
         logger.warning("SAML SLO processing failed: %s", e)
         redirect_url = None
         processing_failed = True

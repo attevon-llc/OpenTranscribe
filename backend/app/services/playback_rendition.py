@@ -260,7 +260,7 @@ def probe_media(source: str) -> MediaProbe:
         source,
     ]
     try:
-        result = subprocess.run(  # noqa: S603  # nosec B603 — fixed argv, no shell
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell  # nosec B603
             cmd, capture_output=True, timeout=PROBE_TIMEOUT_SECONDS, check=False
         )
     except subprocess.TimeoutExpired as e:
@@ -340,7 +340,7 @@ def encode_audio_rendition(
     timeout = ENCODE_TIMEOUT_FLOOR_SECONDS + int((probe.duration or 0) * 0.25)
     cmd = build_encode_command(source, output_path, probe, audio_stream_index)
     try:
-        result = subprocess.run(  # noqa: S603  # nosec B603 — fixed argv, no shell
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell  # nosec B603
             cmd, capture_output=True, timeout=timeout, check=False
         )
     except subprocess.TimeoutExpired as e:

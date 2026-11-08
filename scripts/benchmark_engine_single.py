@@ -56,7 +56,7 @@ _COLUMNS = [
 def _probe_duration_ffprobe(audio_path: Path) -> float:
     """Return audio duration in seconds via ffprobe; returns 0.0 on failure."""
     try:
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             [
                 'ffprobe',
                 '-v',

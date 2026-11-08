@@ -108,7 +108,7 @@ def _run_probe(checks: dict[str, str], name: str, probe: Callable[[], str]) -> N
     """Record one probe's result; a failure is its exception type, never a raised error."""
     try:
         checks[name] = probe()
-    except Exception as exc:  # noqa: BLE001 - a probe reports its failure in the response, never raises
+    except Exception as exc:  # a probe reports its failure in the response, never raises
         checks[name] = f"error: {type(exc).__name__}"
 
 

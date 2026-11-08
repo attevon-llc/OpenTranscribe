@@ -116,12 +116,12 @@ def main(argv: list[str] | None = None) -> int:
 
     payload = summary.as_dict()
     # Summary to stdout (machine-readable) in addition to the per-file logs above.
-    print(json.dumps(payload, indent=2))  # noqa: T201 - intentional CLI output
+    print(json.dumps(payload, indent=2))  # intentional CLI output
     logger.info("Done: %s", payload)
     return 0
 
 
-def _reingest_with_throttle(db, minio_client, user, args):  # type: ignore[no-untyped-def]
+def _reingest_with_throttle(db, minio_client, user, args):
     """Register+dispatch one file at a time, sleeping ``--throttle`` between dispatches.
 
     Reuses the service's per-file primitives so dispatch pacing lives in the CLI

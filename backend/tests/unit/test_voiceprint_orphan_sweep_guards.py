@@ -27,24 +27,24 @@ class _Redis:
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
 
-    def set(self, key, value, nx=False, ex=None):  # noqa: ANN001 — redis-py shape
+    def set(self, key, value, nx=False, ex=None):  # redis-py shape
         if nx and key in self.store:
             return False
         self.store[key] = value
         return True
 
-    def delete(self, *keys):  # noqa: ANN001
+    def delete(self, *keys):
         for key in keys:
             self.store.pop(key, None)
 
-    def scan_iter(self, match=None):  # noqa: ANN001
+    def scan_iter(self, match=None):
         return iter(())
 
 
 class _Lease:
     """The run lease as the task uses it (redis-py ``Lock``); the sweep, not Redis, is under test."""
 
-    def acquire(self, blocking=False, token=None):  # noqa: ANN001 — redis-py shape
+    def acquire(self, blocking=False, token=None):  # redis-py shape
         return True
 
     def reacquire(self) -> bool:

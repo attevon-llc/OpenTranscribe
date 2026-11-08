@@ -81,7 +81,7 @@ class OpenAIASRProvider(ASRProvider):
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 
-    def transcribe(  # noqa: C901
+    def transcribe(
         self,
         audio_path: str,
         config: ASRConfig,

@@ -208,6 +208,6 @@ def answer_aggregation(
             file_titles=tuple(title for _uuid, title in matched),
             coverage=coverage,
         )
-    except Exception:  # noqa: BLE001 — a failed count must not break the turn
+    except Exception:  # a failed count must not break the turn
         logger.exception("Aggregation shape %s failed; falling back to ranked excerpts", shape)
         return None

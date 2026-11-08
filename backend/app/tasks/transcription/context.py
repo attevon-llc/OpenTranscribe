@@ -209,7 +209,7 @@ def _poisoned_requeue_allowed(task_id: str) -> bool:
         client = redis_core.get_redis()
         count = int(client.incr(key))
         client.expire(key, _POISONED_REQUEUE_TTL_S)
-    except Exception as exc:  # noqa: BLE001 - see docstring
+    except Exception as exc:  # see docstring
         logger.warning("Could not count poisoned-context requeues for %s: %s", task_id, exc)
         return True
     return count <= cap

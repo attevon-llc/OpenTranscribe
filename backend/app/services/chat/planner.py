@@ -328,7 +328,7 @@ def build_plan(
     ]
     try:
         response = llm.chat_completion(messages, max_tokens=max_tokens, temperature=0)
-    except Exception as exc:  # noqa: BLE001 — an enhancement, never a dependency
+    except Exception as exc:  # an enhancement, never a dependency
         logger.info(f"Chat planner call failed, routing by rules: {exc}")
         return FAILED_PLAN, 1
 

@@ -214,7 +214,7 @@ class TestOnlyTheCancelledRunStandsDown:
                     for _ in range(5):
                         stand_down_if_requested("B-checkpoint")
                     results["B"] = "completed"
-                except BaseException as exc:  # noqa: BLE001 - the failure IS what we report
+                except BaseException as exc:  # the failure IS what we report
                     results["B"] = f"{type(exc).__name__}: {exc}"
                 sibling_observed.set()
 

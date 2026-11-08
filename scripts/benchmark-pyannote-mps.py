@@ -73,7 +73,7 @@ def run_benchmark(audio_path: Path, token: str, device: str = 'mps'):
     stage_timing = {}
 
     # ARG001: the caller dictates this callback signature.
-    def timing_hook(step_name, step_artefact, **kwargs):  # noqa: ARG001
+    def timing_hook(step_name, step_artefact, **kwargs):  # noqa: ARG001 - pyannote hook signature
         now = time.perf_counter()
         if step_name not in stage_timing:
             stage_timing[step_name] = {'start': now, 'last': now}

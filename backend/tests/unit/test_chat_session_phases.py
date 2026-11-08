@@ -84,7 +84,7 @@ class _CountingClient:
         self._ledger = ledger
         self.searches = 0
 
-    def search(self, index: str, body: dict) -> dict:  # noqa: ARG002
+    def search(self, index: str, body: dict) -> dict:
         self._ledger.note("aggregation-search")
         self.searches += 1
         return {"aggregations": {"files": {"sum_other_doc_count": 0, "buckets": []}}}
@@ -108,7 +108,7 @@ class _FakeLLM:
     def chat_completion(self, messages, **_kwargs):
         raise NotImplementedError("the turn under test makes no non-streaming call")
 
-    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):  # noqa: ARG002
+    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         yield LLMStreamEvent(type="delta", text="An answer.")
         yield LLMStreamEvent(type="done", finish_reason="stop")
 
@@ -342,7 +342,7 @@ class _FakeLLMWithPlan:
             '"time": {}, "wants": []}'
         )
 
-    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):  # noqa: ARG002
+    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         yield LLMStreamEvent(type="delta", text="An answer.")
         yield LLMStreamEvent(type="done", finish_reason="stop")
 

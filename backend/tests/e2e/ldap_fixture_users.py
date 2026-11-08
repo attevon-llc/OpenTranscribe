@@ -33,7 +33,7 @@ LLDAP_BASE_DN = "dc=example,dc=com"
 # LLDAP's own bootstrap administrator, set by LLDAP_LDAP_USER_PASS in
 # docker-compose.ldap-test.yml. Everything below is created/modified by binding as this.
 LLDAP_ADMIN_USER = "admin"
-LLDAP_ADMIN_PASSWORD = "admin_password"  # noqa: S105 — fixture IdP bootstrap, see module docstring
+LLDAP_ADMIN_PASSWORD = "admin_password"  # fixture IdP bootstrap, see module docstring
 LLDAP_BIND_DN = f"uid={LLDAP_ADMIN_USER},ou=people,{LLDAP_BASE_DN}"
 
 
@@ -51,14 +51,14 @@ LDAP_ADMIN = FixtureUser(
     uid="ldap-admin",
     email="ldap-admin@example.com",
     display_name="LDAP Admin",
-    password="LdapAdmin123",  # noqa: S106 — fixture IdP account, see module docstring
+    password="LdapAdmin123",  # fixture IdP account, see module docstring
     groups=("Admins", "Users"),
 )
 LDAP_REGULAR = FixtureUser(
     uid="ldap-user",
     email="ldap-user@example.com",
     display_name="LDAP Regular User",
-    password="LdapUser123",  # noqa: S106 — fixture IdP account, see module docstring
+    password="LdapUser123",  # fixture IdP account, see module docstring
     groups=("Users",),
 )
 # A real LLDAP account that is NEVER logged in successfully, reserved for the wrong-password
@@ -75,7 +75,7 @@ LDAP_NEGATIVE = FixtureUser(
     uid="ldap-negative",
     email="ldap-negative@example.com",
     display_name="LDAP Negative Fixture",
-    password="never-used-for-a-successful-bind",  # noqa: S106 — see the comment above
+    password="never-used-for-a-successful-bind",  # see the comment above
     groups=(),
 )
 

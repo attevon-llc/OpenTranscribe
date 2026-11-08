@@ -54,7 +54,7 @@ pytestmark = pytest.mark.transcription
 # when the run was aimed at an isolated stack (issue #431). Everything below takes
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 # Transcript export formats that are always offered (guards formatter/export refactor).
 EXPORT_FORMATS = ("txt", "json", "csv", "srt", "vtt", "md")
@@ -157,7 +157,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
             page.click("button[type=submit]")
             page.wait_for_selector(".user-button", timeout=20000)
             return
-        except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
+        except Exception as exc:  # retry on any login-flow failure
             last_error = exc
             # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
             # something a locator could poll for (issue #431).
@@ -166,7 +166,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):
     """Login once and persist browser storage state for reuse across tests."""
     fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
     try:
@@ -188,7 +188,7 @@ def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):  # type: ignore[no-untyped-def]
+def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):
     """A pre-authenticated page on a real file-detail view with a transcript.
 
     Exposes captured console errors on ``page._console_errors``.
@@ -201,7 +201,7 @@ def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, An
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors  # type: ignore[attr-defined]
+    page._console_errors = errors
 
     uuid = transcribed_file["uuid"]
     page.goto(f"{base_url}/files/{uuid}")
@@ -419,7 +419,7 @@ class TestSpeakerRenameRepaint:
 
         new_name = "E2E Repaint Check"
 
-        def _stub_put(route):  # type: ignore[no-untyped-def]
+        def _stub_put(route):
             if route.request.method != "PUT":
                 return route.continue_()
             return route.fulfill(
@@ -507,7 +507,7 @@ class TestTranscriptPagination:
 
     def test_scrolling_loads_and_renders_every_segment(
         self, browser, auth_storage_state: str, paginated_file: dict[str, Any], base_url: str
-    ) -> None:  # type: ignore[no-untyped-def]
+    ) -> None:
         context = browser.new_context(
             storage_state=auth_storage_state,
             viewport={"width": 1920, "height": 1080},
@@ -584,7 +584,7 @@ def _pick_search_word(page: Page) -> str:
     return "the"
 
 
-def _open_transcript_search(page: Page):  # type: ignore[no-untyped-def]
+def _open_transcript_search(page: Page):
     """Open the in-transcript find bar and return its input locator."""
     trigger = page.locator(".search-trigger-button")
     expect(trigger).to_be_visible(timeout=10000)
@@ -662,7 +662,7 @@ def _accept_and_record(page: Page) -> list[str]:
     """
     messages: list[str] = []
 
-    def _handler(dialog) -> None:  # type: ignore[no-untyped-def]
+    def _handler(dialog) -> None:
         messages.append(dialog.message)
         dialog.accept()
 
@@ -702,7 +702,7 @@ class TestUnsavedChangesGuard:
         """The whole point: cancelling must leave the user where they were, edits intact."""
         messages: list[str] = []
 
-        def _decline(dialog) -> None:  # type: ignore[no-untyped-def]
+        def _decline(dialog) -> None:
             messages.append(dialog.message)
             dialog.dismiss()
 

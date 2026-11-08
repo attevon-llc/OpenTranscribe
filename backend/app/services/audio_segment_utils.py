@@ -137,7 +137,7 @@ def extract_audio_segment_np(
         "-",
     ]
     try:
-        proc = subprocess.run(  # noqa: S603  # nosec B603
+        proc = subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
             cmd,
             capture_output=True,
             timeout=30,
@@ -191,7 +191,7 @@ def load_full_audio_np(
         "quiet",
         "pipe:1",
     ]
-    result = subprocess.run(cmd, capture_output=True, check=True, timeout=300)  # noqa: S603  # nosec B603
+    result = subprocess.run(cmd, capture_output=True, check=True, timeout=300)  # noqa: S603 - argv list, no shell  # nosec B603
     return np.frombuffer(result.stdout, dtype=np.float32).copy()
 
 

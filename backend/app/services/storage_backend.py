@@ -369,6 +369,6 @@ def ensure_bucket_cors(bucket_name: str) -> bool:
         )
         logger.info(f"Configured CORS on bucket {bucket_name} for origins: {origins}")
         return True
-    except Exception as e:  # noqa: BLE001 — CORS setup must never block startup
+    except Exception as e:  # CORS setup must never block startup
         logger.warning(f"Could not configure CORS on bucket {bucket_name}: {e}")
         return False

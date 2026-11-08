@@ -221,7 +221,7 @@ def expand_one(db: Session, chunk: ChunkHit) -> ChunkHit:
             )
             .all()
         )
-    except Exception:  # noqa: BLE001 — an enhancement, never a dependency
+    except Exception:  # an enhancement, never a dependency
         logger.exception(
             "Context expansion segment read failed for file %s; using the retrieved chunk as-is",
             chunk.file_id,

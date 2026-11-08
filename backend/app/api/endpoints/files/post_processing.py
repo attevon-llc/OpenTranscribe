@@ -39,7 +39,7 @@ def get_post_processing_status(
     )
     try:
         stored = read_status(int(media_file.id))
-    except Exception as exc:  # noqa: BLE001 — "unknown" is the honest answer
+    except Exception as exc:  # "unknown" is the honest answer
         logger.warning("post-processing status unreadable for file %s: %s", media_file.id, exc)
         stored = {"run_at": None, "tasks": {}}
     return PostProcessingStatusResponse(

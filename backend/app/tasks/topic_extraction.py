@@ -221,7 +221,7 @@ def _mark_task_status(
                 completed=status in ("completed", "failed"),
             )
             return duration_seconds
-    except Exception as status_err:  # noqa: BLE001
+    except Exception as status_err:
         logger.debug(f"Could not record topic-extraction task status: {status_err}")
         return None
 

@@ -260,4 +260,4 @@ def transient_retry_delay(error_category: ErrorCategory, retry_count: int) -> in
     base, ceiling = _BACKOFF_SECONDS.get(error_category, _DEFAULT_BACKOFF_SECONDS)
     delay = min(base * (2 ** max(0, retry_count)), ceiling)
     half = delay / 2
-    return int(half + random.uniform(0, half))  # noqa: S311  # nosec B311 - jitter, not crypto
+    return int(half + random.uniform(0, half))  # noqa: S311 - jitter, not crypto  # nosec B311

@@ -323,7 +323,7 @@ def _mask_inline(text: str, cfg: EffectiveRedactionConfig) -> str:
             text, spans, None, _egress_style(cfg), set()
         )
         return masked
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Inline chunk masking failed; dropping chunk content")
         # Failing closed: an unmaskable chunk must not reach the provider.
         return ""
@@ -362,7 +362,7 @@ def _apply_chunk_plan(plan: _ChunkPlan, chunk: ChunkHit) -> tuple[str, bool, boo
         return _mask_inline(chunk.content, plan.cfg), True, True
     try:
         text = _mask_from_spans(plan.segments, plan.cfg)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Cached-span masking failed for chunk; withholding content")
         # Fail CLOSED — an unmaskable chunk contributes nothing.
         return "", True, False
@@ -444,7 +444,7 @@ def mask_chunks(
         try:
             with session_factory() as db:
                 chunks = context_expansion.expand_chunks(db, chunks)
-        except Exception:  # noqa: BLE001 — an enhancement, never a dependency
+        except Exception:  # an enhancement, never a dependency
             logger.exception("Context expansion failed; masking the un-expanded chunks instead")
 
     try:
@@ -455,7 +455,7 @@ def mask_chunks(
             chunks=chunks,
             unmask_for_local=unmask_for_local,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Could not resolve redaction config; masking all chunk content")
         # Fail CLOSED: if we cannot tell whether masking is required, don't send text.
         return [MaskedChunk(source=c, content="", was_masked=True) for c in chunks]
@@ -541,7 +541,7 @@ def mask_digests(
             digests=digests,
             unmask_for_local=unmask_for_local,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Could not resolve redaction config; withholding all digest content")
         return [MaskedChunk(source=d, content="", was_masked=True) for d in digests]
 
@@ -581,7 +581,7 @@ def mask_digests(
                 continue
             try:
                 text = _mask_from_spans(segments, plan.cfg)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("Digest sentence masking failed; dropping that sentence")
                 text = ""
             if text:

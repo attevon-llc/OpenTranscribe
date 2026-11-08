@@ -311,11 +311,11 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 # --- end CUDA device guard --------------------------------------------------
 
 # Import app modules after setting environment variables (they check env during import)
-from app.core.config import settings  # noqa: E402
-from app.core.security import get_password_hash  # noqa: E402
-from app.db.base import get_db  # noqa: E402
-from app.main import app  # noqa: E402
-from app.models.user import User  # noqa: E402
+from app.core.config import settings
+from app.core.security import get_password_hash
+from app.db.base import get_db
+from app.main import app
+from app.models.user import User
 
 # Use PostgreSQL test database (same as main database but with test schema isolation)
 # Models use PostgreSQL-specific types (JSONB) that SQLite doesn't support
@@ -593,8 +593,8 @@ def _clear_sidecar_readiness_cache():
 #: The DDL isolation lock is defined in `tests/db_locks.py` so that this fixture and the
 #: tests that open their own DB connection share ONE definition of the key. A second copy
 #: of the literal would stop protecting anything the moment either copy changed.
-from tests.db_locks import acquire_ddl_lock_exclusive  # noqa: E402
-from tests.db_locks import acquire_ddl_lock_shared  # noqa: E402
+from tests.db_locks import acquire_ddl_lock_exclusive
+from tests.db_locks import acquire_ddl_lock_shared
 
 
 @pytest.fixture

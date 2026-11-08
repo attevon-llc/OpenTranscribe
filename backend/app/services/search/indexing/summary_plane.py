@@ -109,7 +109,7 @@ class SummaryPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"{len(documents)} leaves landed"
                 )
             return written
-        except Exception as exc:  # noqa: BLE001 — chunks are indexed; do not fail the caller
+        except Exception as exc:  # chunks are indexed; do not fail the caller
             logger.error(f"Could not index summary plane for file {file_uuid}: {exc}")
             return 0
 
@@ -154,6 +154,6 @@ class SummaryPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"orphan id(s) but the summary-plane predicate deleted {deleted}"
                 )
             return deleted
-        except Exception as e:  # noqa: BLE001 — logged; the new documents are already indexed
+        except Exception as e:  # logged; the new documents are already indexed
             logger.error(f"Could not prune stale summary leaves for file {file_uuid}: {e}")
             return 0

@@ -33,7 +33,7 @@ def _env_without_override() -> dict[str, str]:
 
 
 def _bash_dir() -> Path:
-    out = subprocess.run(  # noqa: S603 - fixed argv: bash sourcing the repo's own registry
+    out = subprocess.run(  # fixed argv: bash sourcing the repo's own registry
         [
             _BASH,
             "-c",
@@ -49,7 +49,7 @@ def _bash_dir() -> Path:
 
 
 def _sweep_dir() -> Path:
-    out = subprocess.run(  # noqa: S603 - fixed argv: this interpreter importing the sweep
+    out = subprocess.run(  # fixed argv: this interpreter importing the sweep
         [
             sys.executable,
             "-c",
@@ -68,7 +68,7 @@ def _sweep_dir() -> Path:
 
 
 def _main_checkout() -> Path:
-    common = subprocess.run(  # noqa: S603 - fixed argv
+    common = subprocess.run(  # fixed argv
         [_GIT, "-C", str(_REPO_ROOT), "rev-parse", "--path-format=absolute", "--git-common-dir"],
         capture_output=True,
         text=True,
@@ -166,7 +166,7 @@ def test_importing_the_conftest_leaves_no_tmp_tree_behind(tmp_path: Path) -> Non
         "TMPDIR": str(scratch),
         "TESTRUN_REGISTRY_DIR": str(tmp_path / "r"),
     }
-    subprocess.run(  # noqa: S603 - fixed argv: this interpreter executing the conftest
+    subprocess.run(  # fixed argv: this interpreter executing the conftest
         [
             sys.executable,
             "-c",

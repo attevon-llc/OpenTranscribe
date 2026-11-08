@@ -79,7 +79,6 @@
   }
 
   function handleFlower() {
-    // Dynamically construct Flower URL from current location
     const url = getFlowerUrl();
 
     // Open Flower in a new tab with the correct URL. 'noopener' — unlike

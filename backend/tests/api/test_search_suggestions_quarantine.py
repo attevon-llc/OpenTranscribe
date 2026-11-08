@@ -38,7 +38,7 @@ SUGGESTIONS = "/api/search/suggestions"
 
 
 class _FakeIndices:
-    def exists(self, index: str) -> bool:  # noqa: ARG002 - stub signature parity
+    def exists(self, index: str) -> bool:  # stub signature parity
         return True
 
 

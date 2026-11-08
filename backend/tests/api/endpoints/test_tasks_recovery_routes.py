@@ -69,7 +69,7 @@ class _StandInRedis:
     def __init__(self, store: dict[str, str] | None = None) -> None:
         self.store = store or {}
 
-    def scan_iter(self, match: str, count: int = 100):  # noqa: ARG002 - signature parity
+    def scan_iter(self, match: str, count: int = 100):  # signature parity
         prefix, _, suffix = match.partition("*")
         for key in self.store:
             if key.startswith(prefix) and key.endswith(suffix):

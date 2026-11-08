@@ -75,7 +75,7 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 # the outer handler would report the whole digest index as failed.
                 try:
                     resolve_recorded_date_for_file(db, file_id)
-                except Exception as date_exc:  # noqa: BLE001 — enrichment, never fatal
+                except Exception as date_exc:  # enrichment, never fatal
                     logger.warning(
                         "Could not resolve recorded_date for file %s: %s", file_id, date_exc
                     )
@@ -124,7 +124,7 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"{len(documents)} sections landed"
                 )
             return written
-        except Exception as exc:  # noqa: BLE001 — chunks are indexed; do not fail the caller
+        except Exception as exc:  # chunks are indexed; do not fail the caller
             logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
             return 0
 
@@ -170,6 +170,6 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"orphan id(s) but the digest-plane predicate deleted {deleted}"
                 )
             return deleted
-        except Exception as e:  # noqa: BLE001 — logged; the new documents are already indexed
+        except Exception as e:  # logged; the new documents are already indexed
             logger.error(f"Could not prune stale digest sections for file {file_uuid}: {e}")
             return 0

@@ -98,7 +98,7 @@ def mock_asr_url() -> Iterator[str]:
         return
 
     port = _free_port()
-    proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+    proc = subprocess.Popen(  # fixed argv, no shell
         [sys.executable, str(SERVER), "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

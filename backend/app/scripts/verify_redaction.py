@@ -25,7 +25,7 @@ _SEGMENTS = [
 ]
 
 
-def main() -> int:  # noqa: C901
+def main() -> int:
     from app.core.enums import FileStatus
     from app.db.session_utils import session_scope
     from app.models.media import MediaFile

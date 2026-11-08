@@ -18,7 +18,7 @@ import pytest
 import requests
 
 BASE = f"http://localhost:{os.environ.get('BACKEND_PORT', '5174')}/api"
-SEARCH_CORPUS_PASSWORD = "search-quality-fixture-pw-1"  # noqa: S105 — throwaway test user only
+SEARCH_CORPUS_PASSWORD = "search-quality-fixture-pw-1"  # throwaway test user only
 
 
 @pytest.fixture(scope="session")

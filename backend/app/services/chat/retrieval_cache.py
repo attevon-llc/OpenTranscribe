@@ -67,7 +67,7 @@ def corpus_version() -> str:
 
         raw = get_request_redis().get(_CORPUS_VERSION_KEY)
         return raw.decode() if isinstance(raw, bytes) else str(raw or "0")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Chat corpus version read failed: {exc}")
         return "0"
 
@@ -95,7 +95,7 @@ def bump_corpus_version() -> None:
         from app.core.redis import get_request_redis
 
         get_request_redis().incr(_CORPUS_VERSION_KEY)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Chat corpus version bump failed: {exc}")
 
 
@@ -155,7 +155,7 @@ def get_cached(key: str) -> list[ChunkHit] | None:
         from app.core.redis import get_request_redis
 
         raw = get_request_redis().get(key)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Chat retrieval cache read failed: {exc}")
         return None
 
@@ -164,7 +164,7 @@ def get_cached(key: str) -> list[ChunkHit] | None:
     try:
         payload = json.loads(raw)
         return [ChunkHit.from_cache_dict(item) for item in payload]
-    except Exception as exc:  # noqa: BLE001 — a corrupt entry is just a miss
+    except Exception as exc:  # a corrupt entry is just a miss
         logger.debug(f"Discarding unreadable chat retrieval cache entry: {exc}")
         return None
 
@@ -178,7 +178,7 @@ def set_cached(key: str, hits: list[ChunkHit], ttl_seconds: int) -> None:
 
         payload = json.dumps([hit.to_cache_dict() for hit in hits])
         get_request_redis().setex(key, ttl_seconds, payload)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Chat retrieval cache write failed: {exc}")
 
 
@@ -239,7 +239,7 @@ def _embed_query(text: str) -> list[float] | None:
             data = item.get("data")
             if isinstance(data, list) and data:
                 return [float(x) for x in data]
-    except Exception as exc:  # noqa: BLE001 — an enhancement, never a dependency
+    except Exception as exc:  # an enhancement, never a dependency
         logger.debug(f"Chat semantic cache embedding failed: {exc}")
     return None
 
@@ -293,7 +293,7 @@ def find_semantic_match(
         )
         raw = get_request_redis().get(redis_key)
         entries = json.loads(raw) if raw else []
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Chat semantic cache read failed: {exc}")
         return None
 
@@ -395,5 +395,5 @@ def remember_semantic(
         get_request_redis().eval(
             _REMEMBER_SCRIPT, 1, redis_key, ttl_seconds, entry, _SEMANTIC_HISTORY
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(f"Chat semantic cache write failed: {exc}")

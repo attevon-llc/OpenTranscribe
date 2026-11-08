@@ -335,7 +335,7 @@ def update_segment_speaker(
     )
 
     # Update the segment's speaker
-    segment.speaker_id = new_speaker_id  # type: ignore[assignment]
+    segment.speaker_id = new_speaker_id
 
     db.commit()
     db.refresh(segment)
@@ -372,8 +372,8 @@ def update_segment_speaker(
 
     # Format the response with speaker details
     response_data = TranscriptSegmentSchema(
-        uuid=segment.uuid,  # type: ignore[arg-type]
-        media_file_id=media_file.uuid,  # type: ignore[arg-type]
+        uuid=segment.uuid,
+        media_file_id=media_file.uuid,
         start_time=float(segment.start_time),
         end_time=float(segment.end_time),
         text=str(segment.text),

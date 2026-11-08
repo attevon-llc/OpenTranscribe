@@ -83,8 +83,8 @@ RIVAL_SERVICE = "celery-worker-gpu-diarize"
 
 
 def _docker(*args: str) -> str:
-    result = subprocess.run(  # noqa: S603  # nosec B603 -- fixed argv, no shell
-        ["docker", *args],  # noqa: S607
+    result = subprocess.run(  # nosec B603 -- fixed argv, no shell
+        ["docker", *args],
         capture_output=True,
         text=True,
         timeout=30,
@@ -121,8 +121,8 @@ def _main_pid(container: str, cmd_substring: str | None = None) -> int | None:
 def _gpu_index_for_pid(pid: int) -> int | None:
     """Which nvidia-smi GPU index actually holds this pid's CUDA context, if any."""
     uuid_to_index: dict[str, str] = {}
-    smi = subprocess.run(  # noqa: S603
-        ["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader"],  # noqa: S607
+    smi = subprocess.run(
+        ["nvidia-smi", "--query-gpu=index,uuid", "--format=csv,noheader"],
         capture_output=True,
         text=True,
         timeout=15,
@@ -134,12 +134,12 @@ def _gpu_index_for_pid(pid: int) -> int | None:
         index, uuid = row[0].strip(), row[1].strip()
         uuid_to_index[uuid] = index
 
-    apps = subprocess.run(  # noqa: S603
+    apps = subprocess.run(
         [
             "nvidia-smi",
             "--query-compute-apps=pid,gpu_uuid",
             "--format=csv,noheader",
-        ],  # noqa: S607
+        ],
         capture_output=True,
         text=True,
         timeout=15,
@@ -284,8 +284,8 @@ def test_diarization_still_reaches_native_sidecar_across_cards(admin_token: str)
             "PyAnnote (issue #655/#711)"
         )
 
-        completed = subprocess.run(  # noqa: S603  # nosec B603 -- fixed argv, no shell
-            ["docker", "logs", worker_container, "--since", start_time],  # noqa: S607
+        completed = subprocess.run(  # nosec B603 -- fixed argv, no shell
+            ["docker", "logs", worker_container, "--since", start_time],
             capture_output=True,
             text=True,
             timeout=30,

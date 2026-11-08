@@ -282,7 +282,7 @@ def server_credential_status() -> dict[str, object]:
         from botocore.session import get_session
 
         creds = get_session().get_credentials()
-    except Exception as exc:  # noqa: BLE001 -- a broken profile file must read as "not found", not a 500
+    except Exception as exc:  # a broken profile file must read as "not found", not a 500
         logger.warning("AWS credential lookup failed: %s", type(exc).__name__)
         return {"found": False, "source": None}
     if creds is None:

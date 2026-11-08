@@ -35,7 +35,7 @@ from __future__ import annotations
 import pytest
 from fastapi import status
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.models.system_settings import SystemSettings
 from app.services import backup_config
 from app.services import media_mirror_service as mm
@@ -113,12 +113,12 @@ def test_get_returns_coded_defaults_and_never_the_secret(
     body = response.json()
     assert "s3_secret_key" not in body
     assert body["s3_secret_key_set"] is False
-    assert body["enabled"] is C.DEFAULT_BACKUP_MIRROR_ENABLED
-    assert body["schedule"] == C.DEFAULT_BACKUP_MIRROR_SCHEDULE
-    assert body["destination_type"] == C.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE
-    assert body["destination"] == C.DEFAULT_BACKUP_MIRROR_DESTINATION
-    assert body["s3_prefix"] == C.DEFAULT_BACKUP_MIRROR_S3_PREFIX
-    assert body["destination_status"]["destination"] == C.DEFAULT_BACKUP_MIRROR_DESTINATION
+    assert body["enabled"] is constants.DEFAULT_BACKUP_MIRROR_ENABLED
+    assert body["schedule"] == constants.DEFAULT_BACKUP_MIRROR_SCHEDULE
+    assert body["destination_type"] == constants.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE
+    assert body["destination"] == constants.DEFAULT_BACKUP_MIRROR_DESTINATION
+    assert body["s3_prefix"] == constants.DEFAULT_BACKUP_MIRROR_S3_PREFIX
+    assert body["destination_status"]["destination"] == constants.DEFAULT_BACKUP_MIRROR_DESTINATION
     assert body["s3_status"] is None
 
 
@@ -160,7 +160,7 @@ def test_put_persists_provided_fields_and_get_agrees(
     assert body["destination"] == str(tmp_path)
     assert body["destination_status"]["exists"] is True
     assert body["destination_status"]["writable"] is True
-    assert body["throttle_ms"] == C.DEFAULT_BACKUP_MIRROR_THROTTLE_MS
+    assert body["throttle_ms"] == constants.DEFAULT_BACKUP_MIRROR_THROTTLE_MS
 
     reread = client.get(BASE, headers=super_admin_token_headers)
     assert reread.status_code == status.HTTP_200_OK
@@ -176,7 +176,7 @@ def test_put_stores_the_s3_secret_encrypted_and_never_returns_it(
     response log) and storing it unencrypted, which would put an S3 secret into
     every ``pg_dump`` of this database in cleartext.
     """
-    secret = "mirror-secret-value-do-not-log"  # noqa: S105 - test literal, not a credential
+    secret = "mirror-secret-value-do-not-log"  # test literal, not a credential
     response = client.put(
         BASE,
         headers=super_admin_token_headers,

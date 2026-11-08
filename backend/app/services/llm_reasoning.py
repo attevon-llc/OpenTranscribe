@@ -247,7 +247,7 @@ def probe(config: LLMConfig) -> ReasoningProbeResult:
         on = _probe_arm(service, True)
         off = _probe_arm(service, False)
         omitted = _probe_arm(service, None)
-    except Exception as exc:  # noqa: BLE001 — any failure must degrade, never raise
+    except Exception as exc:  # any failure must degrade, never raise
         logger.warning("Reasoning probe failed for %s/%s: %s", config.provider, config.model, exc)
         return ReasoningProbeResult(
             off_switch=ReasoningOffSwitch.UNKNOWN,
@@ -325,7 +325,7 @@ def read_record(db: Session, provider: str, base_url: str | None, model: str) ->
     key = capability_key(provider, base_url, model)
     try:
         raw = get_setting(db, key)
-    except Exception as exc:  # noqa: BLE001 — a capability read must not break chat
+    except Exception as exc:  # a capability read must not break chat
         logger.warning("Reasoning capability read failed for %s: %s", key, exc)
         return {}
     if not raw:

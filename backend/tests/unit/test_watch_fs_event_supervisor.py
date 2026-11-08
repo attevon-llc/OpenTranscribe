@@ -36,7 +36,7 @@ class FakeObserver:
         self.started = False
         self.stopped = False
 
-    def schedule(self, handler, path, recursive=False):  # noqa: ARG002
+    def schedule(self, handler, path, recursive=False):
         self.scheduled.append((path, recursive))
 
     def start(self):
@@ -47,7 +47,7 @@ class FakeObserver:
     def stop(self):
         self.stopped = True
 
-    def join(self, timeout=None):  # noqa: ARG002
+    def join(self, timeout=None):
         return None
 
 
@@ -63,7 +63,7 @@ def env(monkeypatch):
         made["native"].append(obs)
         return obs
 
-    def polling(timeout):  # noqa: ARG001
+    def polling(timeout):
         obs = FakeObserver("polling", fail_on_start=fail["polling"])
         made["polling"].append(obs)
         return obs

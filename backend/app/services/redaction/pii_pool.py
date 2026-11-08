@@ -95,7 +95,7 @@ def _init_worker() -> None:
     try:
         from app.services.redaction.detectors import pii_presidio
 
-        _analyzer = pii_presidio._get_analyzer(False)  # noqa: SLF001 — same package
+        _analyzer = pii_presidio._get_analyzer(False)  # same package
     except Exception:
         logger.exception("PII worker failed to build an analyzer")
         _analyzer = None

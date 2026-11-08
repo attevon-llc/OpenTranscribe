@@ -98,7 +98,7 @@ def _serving_http(port: int, timeout: float = 1.0) -> bool:
     import urllib.request
 
     try:
-        with urllib.request.urlopen(  # noqa: S310 - fixed loopback URL
+        with urllib.request.urlopen(  # fixed loopback URL
             f"http://127.0.0.1:{port}/v1/models", timeout=timeout
         ) as resp:
             if resp.status != 200:
@@ -164,7 +164,7 @@ def mock_llm_url() -> Iterator[str]:
         return
 
     port = _free_port()
-    proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+    proc = subprocess.Popen(  # fixed argv, no shell
         [sys.executable, str(SERVER), "--port", str(port)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

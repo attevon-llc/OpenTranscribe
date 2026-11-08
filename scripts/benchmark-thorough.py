@@ -21,9 +21,9 @@ os.environ['PYANNOTE_METRICS_ENABLED'] = 'false'
 
 # E402 on the block below: warnings.filterwarnings() and PYANNOTE_METRICS_ENABLED
 # must be in place BEFORE torch / pyannote import, or the setting is read too late.
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-import torchaudio  # noqa: E402
+import numpy as np  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
+import torch  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
+import torchaudio  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 
 
 def get_process_rss_mb():
@@ -74,7 +74,7 @@ def run_single(pipeline, waveform, sample_rate, duration, device_type, run_idx):
     timing = {}
 
     # ARG001: the caller dictates this callback signature.
-    def hook(name, artefact, **kw):  # noqa: ARG001
+    def hook(name, artefact, **kw):  # noqa: ARG001 - pyannote hook signature
         now = time.perf_counter()
         if name not in timing:
             timing[name] = {'start': now}

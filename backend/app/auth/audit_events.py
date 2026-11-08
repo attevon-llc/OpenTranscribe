@@ -29,10 +29,10 @@ class AuditEventType(StrEnum):
     AUTH_MFA_BACKUP_USED = "auth.mfa.backup_used"
 
     # Password events (event type names, not passwords)
-    AUTH_PASSWORD_CHANGE = "auth.password.change"  # noqa: S105 # nosec B105
-    AUTH_PASSWORD_RESET_REQUEST = "auth.password.reset_request"  # noqa: S105 # nosec B105
-    AUTH_PASSWORD_RESET_COMPLETE = "auth.password.reset_complete"  # noqa: S105 # nosec B105
-    AUTH_PASSWORD_EXPIRED = "auth.password.expired"  # noqa: S105 # nosec B105
+    AUTH_PASSWORD_CHANGE = "auth.password.change"  # noqa: S105 - audit event name, not a credential  # nosec B105
+    AUTH_PASSWORD_RESET_REQUEST = "auth.password.reset_request"  # noqa: S105 - audit event name, not a credential  # nosec B105
+    AUTH_PASSWORD_RESET_COMPLETE = "auth.password.reset_complete"  # noqa: S105 - audit event name, not a credential  # nosec B105
+    AUTH_PASSWORD_EXPIRED = "auth.password.expired"  # noqa: S105 - audit event name, not a credential  # nosec B105
 
     # Account events
     AUTH_ACCOUNT_LOCKOUT = "auth.account.lockout"
@@ -40,7 +40,7 @@ class AuditEventType(StrEnum):
     #: Admin clearing the progressive lockout counter (issue #570) — distinct from
     #: AUTH_ACCOUNT_UNLOCK, which also reactivates a disabled account. See
     #: `api/endpoints/admin_accounts.py::admin_reset_lockout_counter`.
-    AUTH_LOCKOUT_COUNTER_RESET = "auth.lockout.counter_reset"  # noqa: S105 # nosec B105
+    AUTH_LOCKOUT_COUNTER_RESET = "auth.lockout.counter_reset"
     AUTH_ACCOUNT_DISABLED = "auth.account.disabled"
     AUTH_ACCOUNT_EXPIRED = "auth.account.expired"
     # Distinct from AUTH_ACCOUNT_EXPIRED: the AC-2 inactivity sweep declined to
@@ -50,9 +50,9 @@ class AuditEventType(StrEnum):
     AUTH_ACCOUNT_EXPIRATION_SKIPPED = "auth.account.expiration_skipped"
 
     # Token events (event type names, not passwords)
-    AUTH_TOKEN_REFRESH = "auth.token.refresh"  # noqa: S105 # nosec B105
-    AUTH_TOKEN_REVOKE = "auth.token.revoke"  # noqa: S105 # nosec B105
-    AUTH_TOKEN_VERIFY = "auth.token.verify"  # noqa: S105 # nosec B105
+    AUTH_TOKEN_REFRESH = "auth.token.refresh"  # noqa: S105 - audit event name, not a credential  # nosec B105
+    AUTH_TOKEN_REVOKE = "auth.token.revoke"  # noqa: S105 - audit event name, not a credential  # nosec B105
+    AUTH_TOKEN_VERIFY = "auth.token.verify"  # noqa: S105 - audit event name, not a credential  # nosec B105
     #: A refresh token that was already rotated came back; its session was revoked
     #: (RFC 9700 section 4.14.2 reuse detection).
     AUTH_TOKEN_REUSE = "auth.token.reuse"  # noqa: S105 - audit event name, not a credential  # nosec B105

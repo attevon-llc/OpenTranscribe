@@ -66,7 +66,7 @@ def _get_pbkdf2_iterations() -> int:
 #: ``JWT_ALGORITHM`` and ``JWT_ALGORITHM_V3`` now name the SAME algorithm, so the
 #: "compatible" set collapses to one entry and every token in flight is refused on
 #: restart — a migration window that closes itself at the exact moment it is needed.
-HISTORICAL_ALGORITHM = "HS256"  # noqa: S105 - a JWS alg name, not a password  # nosec B105
+HISTORICAL_ALGORITHM = "HS256"  # a JWS alg name, not a password
 
 
 def signing_algorithm(token_type: str = TOKEN_TYPE_ACCESS) -> str:

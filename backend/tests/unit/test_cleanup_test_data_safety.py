@@ -85,7 +85,7 @@ def _find_ungated_delete_dispatch(source: str) -> list[str]:
         def __init__(self) -> None:
             self.guard_depth = 0
 
-        def visit_If(self, node: ast.If) -> None:  # noqa: N802
+        def visit_If(self, node: ast.If) -> None:
             if _is_execute_guard(node.test):
                 self.guard_depth += 1
                 for stmt in node.body:
@@ -96,7 +96,7 @@ def _find_ungated_delete_dispatch(source: str) -> list[str]:
             else:
                 self.generic_visit(node)
 
-        def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        def visit_Call(self, node: ast.Call) -> None:
             name = (
                 node.func.id
                 if isinstance(node.func, ast.Name)
@@ -391,7 +391,7 @@ def _find_ungated_artifact_deletes(source: str) -> list[str]:
     class _Visitor(ast.NodeVisitor):
         depth = 0
 
-        def visit_If(self, node: ast.If) -> None:  # noqa: N802
+        def visit_If(self, node: ast.If) -> None:
             guarded = any(
                 isinstance(n, ast.Name) and n.id == "effective_execute" for n in ast.walk(node.test)
             )
@@ -402,7 +402,7 @@ def _find_ungated_artifact_deletes(source: str) -> list[str]:
             for stmt in node.orelse:
                 self.visit(stmt)
 
-        def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+        def visit_Call(self, node: ast.Call) -> None:
             name = getattr(node.func, "id", getattr(node.func, "attr", ""))
             if name == "_delete_artifacts" and self.depth == 0:
                 violations.append(f"line {node.lineno}: ungated _delete_artifacts(...)")
@@ -485,7 +485,7 @@ def test_store_planes_refuse_a_mixed_stack_before_touching_anything(tmp_path: Pa
             "TESTRUN_REGISTRY_DIR": str(tmp_path / ".testruns"),
         }
     )
-    result = subprocess.run(  # noqa: S603 - fixed argv: this interpreter and the script
+    result = subprocess.run(  # fixed argv: this interpreter and the script
         [sys.executable, str(_SCRIPT), "--planes", "indexes"],
         env=env,
         capture_output=True,

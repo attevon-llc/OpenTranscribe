@@ -156,7 +156,7 @@ def batch_extract_topics(
             db.flush()
 
             for mf in batch_files:
-                mf.upload_batch_id = batch.id  # type: ignore[assignment]
+                mf.upload_batch_id = batch.id
 
             db.commit()
             batch_uuid_str = str(batch.uuid)
@@ -367,11 +367,8 @@ def get_topic_suggestions(
         suggestion.suggested_collections if suggestion.suggested_collections is not None else []
     )
 
-    suggested_tags = [SuggestedTag(**tag) for tag in suggested_tags_data]  # type: ignore[arg-type,attr-defined]
-    suggested_collections = [
-        SuggestedCollection(**coll)
-        for coll in suggested_collections_data  # type: ignore[arg-type,attr-defined]
-    ]
+    suggested_tags = [SuggestedTag(**tag) for tag in suggested_tags_data]
+    suggested_collections = [SuggestedCollection(**coll) for coll in suggested_collections_data]
 
     # Build response
     from datetime import datetime
@@ -590,8 +587,8 @@ def dismiss_topic_suggestions(
         )
 
     # Update status
-    suggestion.status = "rejected"  # type: ignore[assignment]
-    suggestion.user_decisions = {"rejected": True}  # type: ignore[assignment]
+    suggestion.status = "rejected"
+    suggestion.user_decisions = {"rejected": True}
     db.commit()
 
     logger.info(f"Dismissed AI suggestions for file {file_uuid}")

@@ -59,7 +59,7 @@ class _RecordingHandler(http.server.BaseHTTPRequestHandler):
 
     server_version = "PinTest/1.0"
 
-    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+    def do_GET(self) -> None:  # BaseHTTPRequestHandler API
         which: str = self.server.which  # type: ignore[attr-defined]
         host = self.headers.get("Host", "")
         if self.path.startswith("/redirect-to-metadata"):

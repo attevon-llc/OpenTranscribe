@@ -351,12 +351,12 @@ class TestAgainstTheRealCorpus:
 
 
 def _count_ami_segments(meeting_id: str) -> int:
-    import xml.etree.ElementTree as ET  # noqa: S405  # nosec B405 — local corpus fixture
+    import xml.etree.ElementTree as ET  # nosec B405 — local corpus fixture
 
     base = NAS_ROOT / "ami" / "ami_public_manual_1.6.2" / "segments"
     total = 0
     for path in sorted(base.glob(f"{meeting_id}.*.segments.xml")):
-        root = ET.parse(path).getroot()  # noqa: S314  # nosec B314 — local corpus fixture
+        root = ET.parse(path).getroot()  # noqa: S314 - local corpus fixture  # nosec B314
         total += sum(1 for el in root if el.tag.endswith("segment"))
     return total
 

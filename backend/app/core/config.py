@@ -264,7 +264,7 @@ class Settings(
     # "nist" and "stig" are accepted as aliases of "standard" and "hardened". Code default is
     # "hardened" so an install that never set it keeps its behaviour on upgrade; .env.example
     # ships "standard" for fresh installs. See docs-site/docs/configuration/password-policy.md.
-    PASSWORD_POLICY_PROFILE: str = "hardened"  # noqa: S105 # nosec B105
+    PASSWORD_POLICY_PROFILE: str = "hardened"  # noqa: S105 - a policy profile name, not a credential
     # Upper length cap. 0 = profile default (basic/standard: 128, never below 64; others: none).
     PASSWORD_MAX_LENGTH: int = 0
     # Breached/common-password blocklist. Empty = profile default (basic/standard on, hardened/custom off);
@@ -280,7 +280,7 @@ class Settings(
     # Optional online k-anonymity range lookup (HIBP-style). OFF by default: air-gapped
     # installs must never make an outbound call. Fails OPEN (logged) on timeout/error.
     PASSWORD_HIBP_ENABLED: bool = False
-    PASSWORD_HIBP_URL: str = "https://api.pwnedpasswords.com/range"  # noqa: S105 # nosec B105
+    PASSWORD_HIBP_URL: str = "https://api.pwnedpasswords.com/range"  # noqa: S105 - a public API URL, not a credential
     PASSWORD_HIBP_TIMEOUT_SECONDS: float = 3.0
     # Minimum password length (NIST SP 800-63B recommends 8+, FedRAMP typically requires 12+)
     PASSWORD_MIN_LENGTH: int = 12

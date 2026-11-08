@@ -32,7 +32,7 @@ MAX_DELETIONS_PER_RUN = 500
     name="chat.retention_sweep",
     priority=UtilityPriority.BACKGROUND,
 )
-def chat_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
+def chat_retention_sweep(self: Any) -> dict:  # bind=True signature
     """Delete conversations older than the configured retention window.
 
     Returns:

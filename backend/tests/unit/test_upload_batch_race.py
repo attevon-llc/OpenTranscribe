@@ -59,7 +59,7 @@ def test_concurrent_create_same_uuid_yields_single_batch(two_users):
             increment_upload_batch_file_count(s, b.id)
             s.commit()
             result["id"] = b.id
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             result["error"] = e
             s.rollback()
         finally:

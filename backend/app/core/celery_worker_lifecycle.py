@@ -40,7 +40,7 @@ def start_watch_source_fs_events(**kwargs):
         from app.services.watch_sources.fs_events import start_supervisor
 
         start_supervisor()
-    except Exception as e:  # noqa: BLE001 - beat must start regardless
+    except Exception as e:  # beat must start regardless
         logger.error(f"Watch-source FS-event supervisor could not be started: {e}")
 
 
@@ -104,7 +104,7 @@ def _cap_torch_threads_to_cpu_quota() -> None:
     threads = max(1, effective_cpu_count() // _pool_concurrency())
     try:
         torch_mod.set_num_threads(threads)
-    except Exception as exc:  # noqa: BLE001 - never block fork init
+    except Exception as exc:  # never block fork init
         logger.debug("Could not cap torch threads: %s", exc)
         return
     logger.info("torch intra-op threads set to %d (CPU quota / pool concurrency)", threads)

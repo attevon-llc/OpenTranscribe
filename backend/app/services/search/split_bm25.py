@@ -159,7 +159,7 @@ def _hydrate_page_highlights(
                 "highlight": highlight,
             },
         )
-    except Exception as e:  # noqa: BLE001 — display-only enrichment, see docstring
+    except Exception as e:  # display-only enrichment, see docstring
         logger.warning(f"Page highlight request failed for query='{query}': {e}")
         return
     by_id = {h["_id"]: h.get("highlight", {}) for h in resp.get("hits", {}).get("hits", [])}

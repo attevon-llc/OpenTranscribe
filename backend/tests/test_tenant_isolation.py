@@ -17,6 +17,7 @@ import uuid as uuid_pkg
 
 import pytest
 
+from app.core.exceptions import AccessDeniedError
 from app.core.tenancy import UNSCOPED
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
@@ -139,14 +140,14 @@ class TestSqlFileAccess:
     def test_org_a_cannot_reach_org_b_file_by_uuid(self, two_orgs):
         """org-A user (org_a scope) is denied org-B's file UUID (default-deny)."""
         w = two_orgs
-        with pytest.raises(Exception) as exc:  # HTTPException 403
+        with pytest.raises(AccessDeniedError) as exc:
             get_file_by_uuid_with_permission(
                 w.db,
                 str(w.file_b.uuid),
                 w.user_a.id,
                 organization_id=w.org_a.id,
             )
-        assert getattr(exc.value, "status_code", None) == 403
+        assert exc.value.status_code == 403
 
     def test_org_a_can_reach_own_org_file(self, two_orgs):
         """Same-org access still works under org context."""
@@ -159,11 +160,11 @@ class TestSqlFileAccess:
     def test_personal_scope_excludes_org_file(self, two_orgs):
         """A personal request (org_id=None) cannot reach the user's OWN org file."""
         w = two_orgs
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(AccessDeniedError) as exc:
             get_file_by_uuid_with_permission(
                 w.db, str(w.file_a.uuid), w.user_a.id, organization_id=None
             )
-        assert getattr(exc.value, "status_code", None) == 403
+        assert exc.value.status_code == 403
 
     def test_unscoped_legacy_path_unchanged(self, two_orgs):
         """UNSCOPED (community/legacy) lets the owner reach their org-stamped file
@@ -218,11 +219,11 @@ class TestCrossOrgSharing:
         assert perm is None
 
         # And the high-level helper 403s too.
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(AccessDeniedError) as exc:
             get_file_by_uuid_with_permission(
                 w.db, str(w.file_b.uuid), w.user_a.id, organization_id=w.org_a.id
             )
-        assert getattr(exc.value, "status_code", None) == 403
+        assert exc.value.status_code == 403
 
     def test_cross_org_shared_file_excluded_from_accessible_subquery(self, two_orgs):
         """The list/gallery subquery must not surface a cross-org shared file."""

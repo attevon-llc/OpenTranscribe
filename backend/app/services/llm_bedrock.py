@@ -462,7 +462,7 @@ def stream_converse(
 
     try:
         response = client.converse_stream(**request)
-    except Exception as exc:  # noqa: BLE001 — surfaced in-band like every other provider
+    except Exception as exc:  # surfaced in-band like every other provider
         text = bedrock_settings.scrub(str(exc), connection)
         logger.error("Bedrock ConverseStream failed for %s: %s", model_id, text)
         yield LLMStreamEvent(
@@ -488,7 +488,7 @@ def stream_converse(
             yield event
             if event.type == "error":
                 return
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         text = bedrock_settings.scrub(str(exc), connection)
         logger.error("Bedrock stream interrupted for %s: %s", model_id, text)
         yield LLMStreamEvent(
@@ -535,7 +535,7 @@ def check_connection(
                 return False, bedrock_settings.FAILURE_MESSAGES[key]
     except BedrockNotConfiguredError:
         return False, bedrock_settings.FAILURE_MESSAGES["no_region"]
-    except Exception as exc:  # noqa: BLE001 -- mapped to a fixed sentence, never echoed
+    except Exception as exc:  # mapped to a fixed sentence, never echoed
         logger.warning("Bedrock connection test failed: %s", type(exc).__name__)
         return False, bedrock_settings.describe_failure(exc)
     if not answer.strip():

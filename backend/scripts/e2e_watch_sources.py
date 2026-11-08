@@ -60,7 +60,7 @@ def _admin_id(db) -> int:
 
 def _gen_speech(dest: Path, text: str = FOX, seconds: int = 5) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(  # noqa: S603 # nosec B603
+    subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
         [
             "/usr/bin/ffmpeg",
             "-y",
@@ -83,7 +83,7 @@ def _gen_speech(dest: Path, text: str = FOX, seconds: int = 5) -> None:
 
 def _gen_tone(dest: Path, freq: int = 440, seconds: int = 3) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(  # noqa: S603 # nosec B603
+    subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
         [
             "/usr/bin/ffmpeg",
             "-y",
@@ -169,11 +169,11 @@ def test_beat_due_logic() -> None:
         # Capture which sources scan_all dispatches without running real scans.
         dispatched: list[int] = []
         orig = scan_single.delay
-        scan_single.delay = lambda sid: dispatched.append(sid)  # type: ignore[assignment]
+        scan_single.delay = lambda sid: dispatched.append(sid)
         try:
             scan_all.run()
         finally:
-            scan_single.delay = orig  # type: ignore[assignment]
+            scan_single.delay = orig
 
         ok = due_id in dispatched and not_due_id not in dispatched
         record(
@@ -181,7 +181,7 @@ def test_beat_due_logic() -> None:
             ok,
             f"(due dispatched={due_id in dispatched}, not-due skipped={not_due_id not in dispatched})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("beat due-logic", False, f"error: {e}")
     finally:
         for sid in (due_id, not_due_id):
@@ -265,7 +265,7 @@ def test_import_and_transcribe(timeout: int = 360) -> None:
             len(hits) >= 2,
             f"({len(segs)} segments, matched {hits})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("import+transcribe", False, f"error: {e}")
     finally:
         if source_id:
@@ -315,7 +315,7 @@ def test_dedup() -> None:
             imported == 1 and dup == 1,
             f"(imported={imported}, dup={dup})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("dedup", False, f"error: {e}")
     finally:
         if source_id:
@@ -374,7 +374,7 @@ def test_multipart(timeout: int = 180) -> None:
             stitched >= 1 and parts == 3,
             f"(stitched={stitched}, parts={parts})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("multipart", False, f"error: {e}")
     finally:
         if source_id:
@@ -433,7 +433,7 @@ def test_s3_import() -> None:
             source_id = src.id
         res = scan_single.run(source_id)
         record("s3 import (boto3 → MinIO)", res.get("imported", 0) == 1, f"({res})")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("s3 import", False, f"error: {e}")
     finally:
         if source_id:

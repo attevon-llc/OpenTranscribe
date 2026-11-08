@@ -26,7 +26,7 @@ def _build_audit_opensearch_client() -> OpenSearch | None:
         from app.core.opensearch_auth import opensearch_connection_kwargs
 
         return OpenSearch(**opensearch_connection_kwargs())
-    except Exception as e:  # noqa: BLE001 — OpenSearch optional
+    except Exception as e:  # OpenSearch optional
         logging.getLogger("audit").warning(f"Failed to build audit OpenSearch client: {e}")
         return None
 
@@ -186,7 +186,7 @@ def query_audit_logs(
         logs = [hit["_source"] for hit in response["hits"]["hits"]]
         total = response["hits"]["total"]["value"]
         return {"logs": logs, "total": total, "offset": offset, "limit": limit}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logging.getLogger("audit").error(f"Error querying audit logs: {e}")
         return {
             "error": "An internal error occurred while querying audit logs.",

@@ -92,7 +92,7 @@ def send_email(
         if config.provider == "m365":
             return _send_m365(config, recipients, subject, html_body, text_body)
         return False, f"Unknown email provider: {config.provider}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Email send failed (%s): %s", config.provider, e)
         return False, str(e)
 
@@ -105,7 +105,7 @@ def test_connection(config: EmailNotificationConfig) -> tuple[bool, str]:
         if config.provider == "m365":
             return _test_m365(config)
         return False, f"Unknown email provider: {config.provider}"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # Returned as EmailTestResponse.message AND persisted to
         # cfg.test_message (watch_sources_email_configs.py) -- an smtplib/msal exception can
         # quote the server/credential, so only the class of failure survives.

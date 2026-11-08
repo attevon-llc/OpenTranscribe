@@ -185,7 +185,7 @@ def test_read_does_not_wait_on_a_speaker_row_held_by_another_transaction(committ
             user = db.get(User, user_id)
             assert user is not None
             outcome["detail"] = get_media_file_detail(db, file_uuid, user)
-        except Exception as e:  # noqa: BLE001 - the failure IS the observation
+        except Exception as e:  # the failure IS the observation
             outcome["error"] = e
         finally:
             db.close()

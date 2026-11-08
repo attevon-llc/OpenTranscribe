@@ -64,7 +64,7 @@ def _legs() -> list[tuple[str, str, str, str, str]]:
             continue
         parts = raw.strip('"').split("|")
         parts += [""] * (5 - len(parts))
-        legs.append(tuple(parts[:5]))  # type: ignore[arg-type]
+        legs.append(tuple(parts[:5]))
     return legs
 
 

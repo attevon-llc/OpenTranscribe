@@ -145,7 +145,7 @@ class AuditLogger:
         }
 
         outcome = event.get("outcome")
-        severity = severity_map.get(outcome, 5) if outcome in severity_map else 5  # type: ignore[comparison-overlap]
+        severity = severity_map.get(outcome, 5) if outcome in severity_map else 5
 
         # Build extension fields
         extensions = []

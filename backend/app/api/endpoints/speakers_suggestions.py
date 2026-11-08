@@ -359,7 +359,7 @@ def _reject_speaker_suggestion(
 
             file_uuid = _get_media_file_uuid(speaker, db)
             dispatch_speaker_rename([(file_uuid, before)], after, speaker_id=speaker_id)
-        except Exception as exc:  # noqa: BLE001 — a rejection must not fail on dispatch
+        except Exception as exc:  # a rejection must not fail on dispatch
             logger.warning(
                 f"Could not queue chunk-plane label sync for rejected speaker {speaker_id}: {exc}"
             )

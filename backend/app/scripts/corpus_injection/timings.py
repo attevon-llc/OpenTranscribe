@@ -170,7 +170,7 @@ def resolve_timings(doc: MeetingDoc, min_alignment_rate: float = 0.8) -> None:
     )
 
 
-def assert_real_timings(records: Iterable, context: str = "timing metric") -> None:  # noqa: ANN001
+def assert_real_timings(records: Iterable, context: str = "timing metric") -> None:
     """Raise unless every manifest record carries real, measured timings.
 
     Call this at the top of anything that computes a number from a segment

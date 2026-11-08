@@ -57,7 +57,7 @@ _authenticate = external_token_module._authenticate_external_token
 #: vendor-neutral, but ``user.auth_type`` is CHECK-constrained to the built-in set
 #: — the managed edition widens that CHECK in its own migration.
 PROVIDER = "oidc"
-TOKEN = "an-external-token"  # noqa: S105 # nosec B105 — an opaque test string
+TOKEN = "an-external-token"  # nosec B105 — an opaque test string
 
 
 @pytest.fixture(autouse=True)

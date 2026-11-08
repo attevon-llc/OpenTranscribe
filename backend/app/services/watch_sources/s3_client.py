@@ -71,7 +71,7 @@ class S3WatchClient(BaseWatchSourceClient):
         try:
             self._client().head_bucket(Bucket=self._bucket)
             return True, f"OK — bucket '{self._bucket}' reachable"
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             # Returned directly as the response body of
             # POST /watch-sources/{uuid}/test -- the OUTER handler in
             # api/endpoints/watch_sources.py only sanitizes an exception that
@@ -124,7 +124,7 @@ class S3WatchClient(BaseWatchSourceClient):
         try:
             head = client.head_object(Bucket=self._bucket, Key=remote_path)
             expected = int(head.get("ContentLength", 0))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.debug("head_object failed for %s: %s", remote_path, e)
         if expected and os.path.exists(local_path) and os.path.getsize(local_path) == expected:
             return expected

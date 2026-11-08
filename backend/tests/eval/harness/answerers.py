@@ -190,7 +190,7 @@ class NullAnswerer:
             "llm_required": False,
         }
 
-    def answer(self, query) -> Answer | None:  # noqa: ARG002 - deliberately ignores it
+    def answer(self, query) -> Answer | None:  # deliberately ignores it
         return None
 
 

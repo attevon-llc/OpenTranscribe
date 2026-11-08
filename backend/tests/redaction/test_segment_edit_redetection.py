@@ -48,7 +48,7 @@ class _Result:
 class _WorkingAnalyzer:
     """Finds the one phone number and nothing else."""
 
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         start = text.find(PHONE)
         if start < 0:
             return []
@@ -58,7 +58,7 @@ class _WorkingAnalyzer:
 class _BrokenAnalyzer:
     """Built successfully, then throws — a transient fault, not a missing install."""
 
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         raise RuntimeError("nlp engine exploded")
 
 

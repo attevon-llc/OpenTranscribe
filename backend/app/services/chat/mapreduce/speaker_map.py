@@ -223,7 +223,7 @@ def scope_speaker_digest_hits(
             .filter(available_pred())
             .all()
         )
-    except Exception:  # noqa: BLE001 — a missing map degrades the answer, never breaks it
+    except Exception:  # a missing map degrades the answer, never breaks it
         logger.exception("Could not read file_facts for the speaker scope map")
         return DigestScopeHits([], dict(empty_coverage))
 

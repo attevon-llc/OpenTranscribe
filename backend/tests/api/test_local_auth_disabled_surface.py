@@ -37,7 +37,7 @@ from app.models.invitation import UserInvitation
 from app.models.password_reset import PasswordResetToken
 from app.services.auth_config_service import AuthConfigService
 
-STRONG_PASSWORD = "Correct-Horse-9Battery!"  # noqa: S105 - test fixture, not a credential
+STRONG_PASSWORD = "Correct-Horse-9Battery!"  # test fixture, not a credential
 
 RESET_REQUEST_PATH = "/api/auth/password-reset/request"
 RESET_CONFIRM_PATH = "/api/auth/password-reset/confirm"

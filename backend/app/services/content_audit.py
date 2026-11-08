@@ -153,7 +153,7 @@ def _already_recorded(
             ex=CONTENT_AUDIT_DEDUP_SECONDS,
         )
         return not claimed
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("content-audit de-dup unavailable, writing the event: %s", exc)
         return False
 
@@ -203,7 +203,7 @@ def record_content_event(
                 return False
         audit_logger.log(**_event_kwargs(request, event, actor, resource, body, bypass))
         return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("content-audit write failed (request unaffected)", exc_info=True)
         return False
 
@@ -307,6 +307,6 @@ def record_file_event(
             dedup=dedup,
             bypass=bypass,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.warning("content-audit write failed (request unaffected)", exc_info=True)
         return False

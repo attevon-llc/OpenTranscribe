@@ -47,13 +47,13 @@ def tray_page(browser: Any, shared_auth_state: str, base_url: str) -> Any:
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page._held_routes = []  # type: ignore[attr-defined]
+    page._held_routes = []
     page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     yield page
     # A parked request must be released before anything tears routes down:
     # `unroute_all` waits on a route handler that never finished, and never returns.
-    for route in page._held_routes:  # type: ignore[attr-defined]
+    for route in page._held_routes:
         with contextlib.suppress(PlaywrightError):
             route.abort()
     page.close()
@@ -173,7 +173,7 @@ def card_page(browser: Any, shared_auth_state: str, base_url: str) -> Any:
         f"localStorage.setItem('notifications', {json.dumps(json.dumps(records))});"
     )
     page = context.new_page()
-    page._card_names = names  # type: ignore[attr-defined]
+    page._card_names = names
     page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     yield page

@@ -25,7 +25,7 @@ pytestmark = pytest.mark.settings
 
 
 @pytest.fixture
-def home_page(browser, shared_auth_state: str, base_url: str):  # type: ignore[no-untyped-def]
+def home_page(browser, shared_auth_state: str, base_url: str):
     """A pre-authenticated page on the app home (one login per run, via the shared state)."""
     context = browser.new_context(
         storage_state=shared_auth_state,

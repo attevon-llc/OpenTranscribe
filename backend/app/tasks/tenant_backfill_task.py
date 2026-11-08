@@ -245,7 +245,7 @@ def _backfill_file_uuid_docs(
                 },
             )
             updated += int(resp.get("updated", 0))
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.error(f"{index_name} backfill failed for org {org_id}: {e}")
     return updated
 
@@ -279,7 +279,7 @@ def _speaker_indices(client: Any) -> list[str]:
         try:
             if client.indices.exists(index=index_name):
                 indices.append(index_name)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.debug(f"Skipping index {index_name} (existence check failed): {e}")
     return indices
 
@@ -291,7 +291,7 @@ def _update_by_query(client: Any, index_name: str, query: dict, script: dict, la
     try:
         resp = update_by_query(client, index_name, query, script)
         return int(resp.get("updated", 0))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error(f"Speaker backfill ({label}) failed in {index_name}: {e}")
         return 0
 
@@ -532,4 +532,4 @@ def backfill_organization_id_task() -> dict[str, int]:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    print(run_tenant_backfill())  # noqa: T201
+    print(run_tenant_backfill())

@@ -42,7 +42,7 @@ class _FakeOpenSearch:
     def __init__(self) -> None:
         self.bodies: list[dict[str, Any]] = []
 
-    def search(self, index=None, body=None, params=None):  # noqa: ARG002
+    def search(self, index=None, body=None, params=None):
         body = body or {}
         self.bodies.append(body)
         if "collapse" in body:

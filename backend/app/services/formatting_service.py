@@ -362,7 +362,7 @@ class FormattingService:
                 segment_dict["toxicity"] = segment.toxicity
             else:
                 segment_dict["toxicity"] = None
-        except Exception:  # noqa: BLE001 — never break transcript rendering
+        except Exception:  # never break transcript rendering
             # FAIL CLOSED. `segment_dict["text"]` still holds the raw DB text at
             # this point (it is only overwritten once mask_segment returns), so
             # the old handler shipped the unredacted segment — including

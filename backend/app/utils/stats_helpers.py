@@ -460,7 +460,7 @@ def get_models_info() -> dict[str, dict[str, Any]]:
         from app.transcription.diar_sidecar_status import describe_diarizer_status
 
         diarizer_status = describe_diarizer_status()
-    except Exception:  # noqa: BLE001 — a stats panel never fails over a display value
+    except Exception:  # a stats panel never fails over a display value
         diarizer_status = {
             "configured": "unknown",
             "configured_description": "unknown diarization engine",

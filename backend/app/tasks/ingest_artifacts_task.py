@@ -108,6 +108,6 @@ def dispatch_file_facts(file_id: int, pipeline_task_id: str | None = None) -> bo
         generate_file_facts_task.delay(file_id=file_id, pipeline_task_id=pipeline_task_id)
         logger.info("Dispatched file_facts generation for file %s", file_id)
         return True
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Failed to dispatch file_facts generation for file %s: %s", file_id, exc)
         return False

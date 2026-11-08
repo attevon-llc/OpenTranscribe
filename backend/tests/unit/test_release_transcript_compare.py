@@ -31,7 +31,7 @@ def _run(tmp_path: Path, mode: str, pre: Any, post: Any) -> subprocess.Completed
     for path, body in ((pre_path, pre), (post_path, post)):
         if body is not None:
             path.write_text(body if isinstance(body, str) else json.dumps(body))
-    return subprocess.run(  # noqa: S603 - fixed argv: this interpreter running the repo script
+    return subprocess.run(  # fixed argv: this interpreter running the repo script
         [sys.executable, str(SCRIPT), mode, str(pre_path), str(post_path)],
         capture_output=True,
         text=True,

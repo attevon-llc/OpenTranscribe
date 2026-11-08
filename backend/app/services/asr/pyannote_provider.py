@@ -104,7 +104,7 @@ class PyAnnoteProvider(ASRProvider):
         if isinstance(exc, httpx.HTTPStatusError):
             try:
                 body = exc.response.text.strip()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 body = ""
             if body:
                 detail = f"{detail} — {body[:500]}"

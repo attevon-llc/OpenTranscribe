@@ -47,7 +47,7 @@ def _guardrails(tmp_path: Path, test_root: Path, body: str, repo: Path):
         "GR_STOCK_PROJECT": "otpytestroot",
         "GR_OWNED_STAMP": str(tmp_path / "owned-stamp"),
     }
-    return subprocess.run(  # noqa: S603 - fixed argv: bash sourcing the repo's guardrails
+    return subprocess.run(  # fixed argv: bash sourcing the repo's guardrails
         [_BASH, "-c", f'source "{_GUARDRAILS}"; trap - EXIT; {body}'],
         env=env,
         capture_output=True,
@@ -75,7 +75,7 @@ def _repo_with_worktree_under(tmp_path: Path, root: Path) -> Path:
         ],
         ["-C", str(repo), "worktree", "add", "-q", "--detach", str(root / "worktree-v0.0.1")],
     ):
-        subprocess.run([_GIT, *argv], check=True, capture_output=True, timeout=60)  # noqa: S603
+        subprocess.run([_GIT, *argv], check=True, capture_output=True, timeout=60)
     return repo
 
 
@@ -93,7 +93,7 @@ def test_a_defaulted_cleanup_removes_the_last_runs_root_and_its_worktree(tmp_pat
     fresh_default = runs / f"{_PROJECT}-20260202-000000"  # what a bare --cleanup computes
     cleaned = _guardrails(tmp_path, fresh_default, "gr_cleanup 1", repo)
     assert not last.exists(), f"the last run's TEST_ROOT survived: {cleaned.stdout}{cleaned.stderr}"
-    listing = subprocess.run(  # noqa: S603 - fixed argv
+    listing = subprocess.run(  # fixed argv
         [_GIT, "-C", str(repo), "worktree", "list", "--porcelain"],
         capture_output=True,
         text=True,
@@ -112,7 +112,7 @@ def test_an_explicit_root_is_never_swapped_for_the_last_one(tmp_path: Path) -> N
     last.mkdir(parents=True)
     explicit.mkdir()
     repo = tmp_path / "repo"
-    subprocess.run([_GIT, "init", "-q", str(repo)], check=True, timeout=60)  # noqa: S603
+    subprocess.run([_GIT, "init", "-q", str(repo)], check=True, timeout=60)
     assert _guardrails(tmp_path, last, "gr_check_test_root", repo).returncode == 0
 
     _guardrails(tmp_path, explicit, "gr_cleanup 0", repo)

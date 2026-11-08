@@ -298,7 +298,7 @@ def read_record(db: Session, provider: str, base_url: str | None, model: str) ->
     key = discovery_key(provider, base_url, model)
     try:
         raw = get_setting(db, key)
-    except Exception as exc:  # noqa: BLE001 — a capability read must not break settings
+    except Exception as exc:  # a capability read must not break settings
         logger.warning("Context-window record read failed for %s: %s", key, exc)
         return {}
     if not raw:

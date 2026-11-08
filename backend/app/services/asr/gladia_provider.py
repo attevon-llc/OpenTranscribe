@@ -117,7 +117,7 @@ class GladiaProvider(ASRProvider):
         if resp is not None:
             try:
                 body = resp.text.strip()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 body = ""
             if body:
                 detail = f"{detail} — {body[:500]}"

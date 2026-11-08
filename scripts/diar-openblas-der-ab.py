@@ -56,7 +56,7 @@ BASE_ENV = {
     'SPEAKRS_LAZY_SESSIONS': '1',
     'RUST_LOG': 'info',
     'DIAR_LOG_FORMAT': 'text',
-    'HOME': '/tmp',  # noqa: S108 — the upstream image already sets HOME=/tmp for uid 10001
+    'HOME': '/tmp',  # the upstream image already sets HOME=/tmp for uid 10001
 }
 
 #: ``scripts/diar-native-der-parity.py``'s own gate. "Parity" between two arms is meaningless
@@ -65,7 +65,7 @@ DEFAULT_MAX_DER = 0.15
 
 
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, check=False, **kw)  # noqa: S603
+    return subprocess.run(cmd, capture_output=True, text=True, check=False, **kw)
 
 
 def audio_seconds(path: Path) -> float:

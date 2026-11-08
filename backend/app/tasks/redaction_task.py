@@ -57,7 +57,7 @@ def _mark_redaction_task(
                 error_message=error_message,
                 completed=status in ("completed", "failed", "skipped"),
             )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Could not update redaction task record %s to %s: %s", task_id, status, exc)
 
 
@@ -166,7 +166,7 @@ def redaction_detect_task(
         )
         return {"file_id": file_id, **result}
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         benchmark_timing.mark(pipeline_task_id, "redaction_end")
         logger.error("Redaction detection failed for file %s: %s", file_id, exc)
         if self.request.retries < self.max_retries:
@@ -237,5 +237,5 @@ def _notify(user_id: int, file_id: int, result: dict) -> None:
                 "skipped_detectors": result.get("skipped_detectors", []),
             },
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("Failed to send redaction notification: %s", exc)

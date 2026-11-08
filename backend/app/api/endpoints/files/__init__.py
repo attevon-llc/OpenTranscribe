@@ -288,7 +288,7 @@ def reprocess_media_file(
         current_user,
         min_speakers,
         max_speakers,
-        num_speakers,  # type: ignore[arg-type]
+        num_speakers,
         stages=stages,
         whisper_model=whisper_model,
         disable_diarization=disable_diarization,

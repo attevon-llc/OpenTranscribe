@@ -167,7 +167,7 @@ _422_then_ok_hits = {"count": 0}
 class _Counting422ThenOKHandler(http.server.BaseHTTPRequestHandler):
     """First /diarize POST answers 422 ("could not open the path"); every later one 200s."""
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_POST(self) -> None:  # stdlib handler method name
         _422_then_ok_hits["count"] += 1
         if _422_then_ok_hits["count"] == 1:
             self.send_response(422)
@@ -180,7 +180,7 @@ class _Counting422ThenOKHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 
@@ -355,14 +355,14 @@ _429_hits = {"count": 0}
 class _429Handler(http.server.BaseHTTPRequestHandler):
     """Every /diarize POST answers 429 with a Retry-After header — a live backpressure signal."""
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_POST(self) -> None:  # stdlib handler method name
         _429_hits["count"] += 1
         self.send_response(429)
         self.send_header("Retry-After", "30")
         self.end_headers()
         self.wfile.write(b"{}")
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 
@@ -642,7 +642,7 @@ def _free_port() -> int:
 
 def _make_counting_readyz_handler(state: dict):
     class _Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        def do_GET(self) -> None:  # stdlib handler method name
             if self.path == "/readyz":
                 state["hits"] += 1
                 self.send_response(state["code"])
@@ -651,7 +651,7 @@ def _make_counting_readyz_handler(state: dict):
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
             pass
 
     return _Handler
@@ -867,7 +867,7 @@ class TestSidecarDiagnostics:
 
 
 class _HealthzAndReadyzHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_GET(self) -> None:  # stdlib handler method name
         if self.path in ("/healthz", "/readyz"):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -879,5 +879,5 @@ class _HealthzAndReadyzHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass

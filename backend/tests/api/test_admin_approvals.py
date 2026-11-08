@@ -152,7 +152,7 @@ class TestApprovalUnblocksTheAccount:
         )
 
         email = f"e2e-{uuid_pkg.uuid4().hex[:8]}@example.com"
-        password = "Str0ng!Passphrase99"  # noqa: S105 # nosec B105
+        password = "Str0ng!Passphrase99"  # nosec B105
         assert (
             client.post(
                 "/api/auth/register",

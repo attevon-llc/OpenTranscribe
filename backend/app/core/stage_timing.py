@@ -169,13 +169,13 @@ def record(
             task_id or bound_task or "-",
             file_id or bound_file or "-",
         )
-    except Exception as exc:  # noqa: BLE001 - timing must never break a stage
+    except Exception as exc:  # timing must never break a stage
         logger.debug("Could not log stage timing for %s: %s", label, exc)
     try:
         collectors = _get_collectors()
         collectors.duration.labels(label).observe(max(0.0, seconds))
         collectors.total.labels(label, outcome).inc()
-    except Exception as exc:  # noqa: BLE001 - timing must never break a stage
+    except Exception as exc:  # timing must never break a stage
         logger.debug("Could not observe stage timing for %s: %s", label, exc)
 
 

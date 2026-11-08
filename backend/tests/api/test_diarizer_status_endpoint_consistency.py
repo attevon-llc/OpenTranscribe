@@ -94,11 +94,11 @@ def test_admin_and_system_stats_agree_when_native_is_configured_and_reachable(
 
     def _make_handler():
         class _Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+            def do_GET(self) -> None:  # stdlib handler method name
                 self.send_response(200)
                 self.end_headers()
 
-            def log_message(self, fmt: str, *args: object) -> None:  # noqa: A002
+            def log_message(self, fmt: str, *args: object) -> None:
                 pass
 
         return _Handler

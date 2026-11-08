@@ -36,7 +36,7 @@ from timeouts import APP_SHELL_READY_MS
 pytestmark = [pytest.mark.e2e]
 
 SUPPORT_SUBJECT_PREFIX = "support-e2e-"
-SUBJECT_PASSWORD = "Xk9!pLm2@Wq7Rn"  # noqa: S105 - throwaway account, deleted in teardown
+SUBJECT_PASSWORD = "Xk9!pLm2@Wq7Rn"  # throwaway account, deleted in teardown
 GRANT_HEADER = "x-support-access-grant"
 REASON = "Investigating a stuck transcript for the e2e run"
 

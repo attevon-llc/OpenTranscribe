@@ -328,7 +328,7 @@ def set_object_legal_hold(object_name: str, hold: bool) -> bool:
                 bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name
             )
         return True
-    except Exception as e:  # noqa: BLE001 — legal-hold is advisory; never break takedown
+    except Exception as e:  # legal-hold is advisory; never break takedown
         logger.warning(
             f"Object legal-hold {'enable' if hold else 'disable'} unavailable for "
             f"{object_name} (bucket object-lock may be disabled): {e}"
@@ -427,7 +427,7 @@ def write_object_quarantine_tag(
             return QuarantineTagWrite("absent")
         logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
         return QuarantineTagWrite("failed", error_code=e.code, failed_action=step)
-    except Exception as e:  # noqa: BLE001 — reported to the caller, never raised into a takedown
+    except Exception as e:  # reported to the caller, never raised into a takedown
         logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
         return QuarantineTagWrite("failed", error_code=type(e).__name__, failed_action=step)
 
@@ -479,7 +479,7 @@ def remove_object_reported(
             return QuarantineTagWrite("absent")
         logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}")
         return QuarantineTagWrite("failed", error_code=e.code, failed_action=DELETE_ACTION)
-    except Exception as e:  # noqa: BLE001 — reported to the caller, never raised into a takedown
+    except Exception as e:  # reported to the caller, never raised into a takedown
         logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}")
         return QuarantineTagWrite(
             "failed", error_code=type(e).__name__, failed_action=DELETE_ACTION

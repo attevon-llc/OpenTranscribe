@@ -36,7 +36,7 @@ pytestmark = [
 ]
 
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 STEPS = ["transcription", "diarization", "speaker_id", "llm"]
 
@@ -87,7 +87,7 @@ def pipeline_available(backend_url: str) -> None:
 
 
 @pytest.fixture
-def page_factory(browser, base_url: str):  # type: ignore[no-untyped-def]
+def page_factory(browser, base_url: str):
     contexts = []
 
     def make(theme: str = "light", locale: str = "en") -> Page:
@@ -115,7 +115,7 @@ def test_pipeline_view_renders_four_steps(
     pipeline_available: None,
     page_factory,
     theme: str,
-    locale: str,  # type: ignore[no-untyped-def]
+    locale: str,
 ) -> None:
     """Four step cards in processing order, each with where it runs; ar is right-to-left."""
     page = page_factory(theme, locale)
@@ -129,12 +129,12 @@ def test_pipeline_view_renders_four_steps(
 
     if locale == "ar":
         assert page.evaluate("document.documentElement.dir") == "rtl"
-    assert not [e for e in page._console_errors if "pipeline" in e.lower()]  # type: ignore[attr-defined]
+    assert not [e for e in page._console_errors if "pipeline" in e.lower()]
 
 
 def test_change_link_opens_the_tab_that_edits_the_step(
     pipeline_available: None,
-    page_factory,  # type: ignore[no-untyped-def]
+    page_factory,
 ) -> None:
     """Every step links to the one place that edits it; following one leaves the page."""
     page = page_factory()

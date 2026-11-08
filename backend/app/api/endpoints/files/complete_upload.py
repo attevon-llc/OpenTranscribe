@@ -372,11 +372,11 @@ def complete_upload(
     # round-trip per presigned upload.
     _update_file_hash(db_file, request.file_hash, filename)
     if fingerprint:
-        db_file.imohash = fingerprint  # type: ignore[assignment]
-    db_file.file_size = minio_size  # type: ignore[assignment]
+        db_file.imohash = fingerprint
+    db_file.file_size = minio_size
     if request.skip_summary:
-        db_file.summary_status = "disabled"  # type: ignore[assignment]
-    db_file.status = FileStatus.PENDING  # type: ignore[assignment]
+        db_file.summary_status = "disabled"
+    db_file.status = FileStatus.PENDING
     # Snapshot the per-file model BEFORE commit so resolving it doesn't trigger
     # an expire-on-commit refetch (we deliberately skip db.refresh() here).
     db.commit()

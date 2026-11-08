@@ -104,7 +104,7 @@ class FakeSpeakerDiarizer(SpeakerDiarizer):
 class _HealthzOnlyHandler(http.server.BaseHTTPRequestHandler):
     """A real, minimal HTTP server: 200 on GET /healthz, 404 on anything else."""
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_GET(self) -> None:  # stdlib handler method name
         if self.path == "/healthz":
             self.send_response(200)
             self.end_headers()
@@ -528,19 +528,19 @@ class TestRealFailover:
 class _MidJobFailureHandler(http.server.BaseHTTPRequestHandler):
     """A real server: reachable and ready, but /diarize always answers 500."""
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_GET(self) -> None:  # stdlib handler method name
         if self.path in ("/healthz", "/readyz"):
             self.send_response(200)
         else:
             self.send_response(404)
         self.end_headers()
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_POST(self) -> None:  # stdlib handler method name
         self.send_response(500)
         self.end_headers()
         self.wfile.write(b"{}")
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 
@@ -699,14 +699,14 @@ class _SaturatedSidecarHandler(http.server.BaseHTTPRequestHandler):
 
     post_count = {"count": 0}
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_GET(self) -> None:  # stdlib handler method name
         if self.path in ("/healthz", "/readyz"):
             self.send_response(200)
         else:
             self.send_response(404)
         self.end_headers()
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+    def do_POST(self) -> None:  # stdlib handler method name
         _SaturatedSidecarHandler.post_count["count"] += 1
         import time as _time
 
@@ -715,7 +715,7 @@ class _SaturatedSidecarHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"exclusive_segments": [], "segments": []}')
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 

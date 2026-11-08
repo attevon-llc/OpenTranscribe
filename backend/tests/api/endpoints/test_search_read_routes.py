@@ -49,7 +49,7 @@ class _StandInEngine:
         self.hits = hits or []
         self.bodies: list[dict] = []
 
-    def search(self, *, index: str, body: dict) -> dict:  # noqa: ARG002 - index unused
+    def search(self, *, index: str, body: dict) -> dict:  # index unused
         self.bodies.append(body)
         return {"hits": {"total": {"value": self.total}, "hits": self.hits}}
 

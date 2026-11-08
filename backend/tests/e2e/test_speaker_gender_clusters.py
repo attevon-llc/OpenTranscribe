@@ -38,11 +38,11 @@ from timeouts import DATA_AFTER_RELOAD_MS
 
 # Credentials imported from conftest to avoid secret detection false positives
 try:
-    from conftest import TEST_ADMIN_EMAIL  # type: ignore[import-not-found]
-    from conftest import TEST_ADMIN_PASSWORD  # type: ignore[import-not-found]
+    from conftest import TEST_ADMIN_EMAIL
+    from conftest import TEST_ADMIN_PASSWORD
 except ImportError:
     TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-    TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "admin")  # noqa: S105
+    TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "admin")
 
 
 @pytest.fixture(scope="session")

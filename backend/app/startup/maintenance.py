@@ -114,7 +114,7 @@ def _setup_minio() -> None:
         # rows stay uncovered until the next restart.
         try:
             _backfill_quarantine_tags()
-        except Exception as e:  # noqa: BLE001 — best-effort, must never block startup
+        except Exception as e:  # best-effort, must never block startup
             logger.warning(f"Quarantine-tag backfill failed (non-fatal): {e}")
 
         if native_s3:

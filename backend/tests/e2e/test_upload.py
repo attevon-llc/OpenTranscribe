@@ -222,7 +222,7 @@ class TestFullUploadFlow:
         """Locate an upload by filename, tolerating a still-settling backend."""
         try:
             listing = api_helper.get("/api/files?page=1&page_size=50&sort_by=upload_time")
-        except Exception:  # noqa: BLE001 - a lookup failure must not mask the test result
+        except Exception:  # a lookup failure must not mask the test result
             return None
         for item in listing.get("items", []):
             if item.get("filename") == filename:

@@ -105,7 +105,7 @@ def test_readiness_costs_one_cluster_call_for_the_whole_list(
     # first positional argument. Without it the call raises TypeError, the
     # endpoint's except swallows it, and BOTH tests below pass for the wrong
     # reason — 0 calls and every model reported not-ready.
-    def _one_call(self, deployed_only: bool = False) -> list[dict]:  # noqa: ANN001
+    def _one_call(self, deployed_only: bool = False) -> list[dict]:
         calls.append(deployed_only)
         return []
 
@@ -131,7 +131,7 @@ def test_an_unreachable_cluster_reports_nothing_as_ready(client, auth_headers, m
     produce a button that 409s — and the failure it hides is the destructive one.
     """
 
-    def _boom(self, deployed_only: bool = False) -> list[dict]:  # noqa: ANN001
+    def _boom(self, deployed_only: bool = False) -> list[dict]:
         raise RuntimeError("cluster unreachable")
 
     monkeypatch.setattr(

@@ -290,7 +290,7 @@ def test_offered_citation_refs_skips_malformed_entries() -> None:
             {"id": 1, "file_uuid": "a"},
             {"id": 2},  # no file_uuid
             {"file_uuid": "b"},  # no id
-            "not-a-dict",  # type: ignore[list-item]
+            "not-a-dict",
         ]
     )
     assert refs == [{"id": 1, "file_uuid": "a"}]
@@ -364,7 +364,7 @@ class _FakeChatSettingsSession:
         self._stored = dict(initial)
         self._stuck_at = stuck_at or {}
 
-    def put(self, url: str, json: dict, timeout: int) -> _FakeResponse:  # noqa: A002
+    def put(self, url: str, json: dict, timeout: int) -> _FakeResponse:
         for key, value in json.items():
             if key in self._stuck_at:
                 continue  # simulates a write that silently did not apply
@@ -389,10 +389,10 @@ def test_ensure_chat_flags_empty_updates_is_a_noop() -> None:
     when --chat-flag was never passed."""
 
     class _ExplodingSession:
-        def put(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
+        def put(self, *a, **k):
             raise AssertionError("must not PUT when there are no updates")
 
-        def get(self, *a, **k):  # noqa: ANN001, ANN002, ANN003
+        def get(self, *a, **k):
             raise AssertionError("must not GET when there are no updates")
 
     assert probe.stack_state.ensure_chat_flags(_ExplodingSession(), "http://x/api", {}) == {}

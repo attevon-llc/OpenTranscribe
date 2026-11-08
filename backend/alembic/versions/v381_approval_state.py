@@ -90,7 +90,7 @@ _CONSTRAINT_TEMPLATE = """
     CREATE INDEX IF NOT EXISTS ix_user_approval_status ON "user" (approval_status);
 """
 
-CONSTRAINT_SQL = _CONSTRAINT_TEMPLATE.format(statuses=VALID_APPROVAL_STATUSES_SQL)  # nosec B608
+CONSTRAINT_SQL = _CONSTRAINT_TEMPLATE.format(statuses=VALID_APPROVAL_STATUSES_SQL)
 
 #: Mirror image. Dropping the columns takes the CHECK and the FK with them, but the
 #: index is named separately and is dropped explicitly for symmetry.

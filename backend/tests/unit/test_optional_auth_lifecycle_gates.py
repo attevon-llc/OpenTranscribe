@@ -84,7 +84,7 @@ def _account(db, **attrs) -> User:
 
 def _resolve(db, user: User) -> User | None:
     token = create_access_token({"sub": str(user.uuid), "role": str(user.role)})
-    return get_optional_current_user(_request(token), db)  # type: ignore[no-any-return]
+    return get_optional_current_user(_request(token), db)
 
 
 def _require_approval(db, actor, enabled: bool) -> None:

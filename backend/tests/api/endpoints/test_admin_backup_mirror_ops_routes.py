@@ -122,7 +122,7 @@ def test_test_s3_does_not_persist_the_submitted_secret(
             "s3_bucket": "bucket-that-does-not-exist-ot-test",
             "s3_endpoint_url": "http://127.0.0.1:1",
             "s3_access_key_id": "AKIAPROBE",
-            "s3_secret_key": "probe-secret",  # noqa: S106 - test literal
+            "s3_secret_key": "probe-secret",  # test literal
         },
     )
     assert response.status_code == status.HTTP_200_OK

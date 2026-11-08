@@ -105,7 +105,7 @@ def _run_completed(task_id: str) -> bool:
         with session_scope() as db:
             row = db.query(Task.status).filter(Task.id == task_id).first()
             return row is not None and row[0] == "completed"
-    except Exception as e:  # noqa: BLE001 - only decides whether to drop two Redis keys early
+    except Exception as e:  # only decides whether to drop two Redis keys early
         logger.debug("Could not read the status of run %s: %s", task_id, e)
         return False
 

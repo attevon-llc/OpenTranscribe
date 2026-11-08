@@ -49,7 +49,7 @@ _ROUTES = (
 def csrf_client() -> TestClient:
     """A minimal app wrapped in CSRFMiddleware — no DB, no auth, no routers."""
 
-    async def ok(request):  # noqa: ANN001, ANN202 - trivial test endpoint
+    async def ok(request):  # trivial test endpoint
         return PlainTextResponse("ok")
 
     app = Starlette(routes=[Route(path, ok, methods=["POST"]) for path in _ROUTES])

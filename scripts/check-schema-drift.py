@@ -171,7 +171,7 @@ def main() -> int:
 
     try:
         diffs = collect_diffs()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f'ERROR: could not compare schema: {type(exc).__name__}: {exc}', file=sys.stderr)
         print('Is the dev stack up? `./opentr.sh start dev`', file=sys.stderr)
         return 3

@@ -279,7 +279,7 @@ def ensure_presign_identity() -> bool:
 
         _ensure_result = True
         return True
-    except Exception as e:  # noqa: BLE001 — must never break presigning
+    except Exception as e:  # must never break presigning
         # The credentials are derived, so every process agrees on the identity. If another
         # process provisioned it, this one can sign with it even though its own admin call
         # failed; otherwise this process would sign with root while another process reported
@@ -315,7 +315,7 @@ def _derived_identity_works() -> bool:
         client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
         client.presigned_get_object(settings.MEDIA_BUCKET_NAME, "_opentranscribe/probes/identity")
         return True
-    except Exception:  # noqa: BLE001 — "does not answer" is the answer
+    except Exception:  # "does not answer" is the answer
         return False
 
 
@@ -502,7 +502,7 @@ def read_native_s3_revocation_policy(
     bucket = settings.MEDIA_BUCKET_NAME
     try:
         policy_json: str | None = client.get_bucket_policy(bucket)
-    except Exception as e:  # noqa: BLE001 — no policy, or no permission to read it
+    except Exception as e:  # no policy, or no permission to read it
         code = getattr(e, "code", None) or type(e).__name__
         if code != "NoSuchBucketPolicy":
             return "unreadable", str(code)

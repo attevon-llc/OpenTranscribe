@@ -52,7 +52,7 @@ REFUSAL_DETAIL = "Invalid or missing proxy authentication headers"
 #: Audit ``error_code`` values. Separable in the audit index precisely because the
 #: HTTP response is not.
 REFUSED_UNTRUSTED_PEER = "PROXY_UNTRUSTED_PEER"
-REFUSED_BAD_SECRET = "PROXY_SHARED_SECRET_MISMATCH"  # noqa: S105 # nosec B105
+REFUSED_BAD_SECRET = "PROXY_SHARED_SECRET_MISMATCH"  # noqa: S105 - a refusal reason code, not a credential  # nosec B105
 REFUSED_NO_EMAIL = "PROXY_NO_EMAIL_HEADER"
 REFUSED_DOMAIN = "PROXY_DOMAIN_NOT_ALLOWED"
 

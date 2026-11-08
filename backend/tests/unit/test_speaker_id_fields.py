@@ -188,7 +188,7 @@ def _make_user(db_session):
     user = User(
         email=f"speaker-id-fixture-{uid}@example.com",
         full_name="Speaker Id Fixture",
-        hashed_password=get_password_hash("password123"),  # noqa: S106 — throwaway fixture row
+        hashed_password=get_password_hash("password123"),  # throwaway fixture row
         is_active=True,
         role="user",
     )

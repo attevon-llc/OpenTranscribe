@@ -68,7 +68,7 @@ class _RealRow:
         user = User(
             email=f"recover-dispatch-fail-{uuid.uuid4()}@example.com",
             full_name="Recover Dispatch Failure Test User",
-            hashed_password="not-a-real-hash",  # noqa: S106 — throwaway fixture row
+            hashed_password="not-a-real-hash",  # throwaway fixture row
             is_active=True,
             is_superuser=False,
             role="user",

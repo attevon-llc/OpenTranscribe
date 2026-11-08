@@ -181,7 +181,7 @@ class TestPurgeDialog:
         page = off_page
         started: list[dict[str, object]] = []
 
-        def start(route):  # type: ignore[no-untyped-def]
+        def start(route):
             started.append(route.request.post_data_json)
             route.fulfill(status=202, json={"task_id": "stub-task"})
 

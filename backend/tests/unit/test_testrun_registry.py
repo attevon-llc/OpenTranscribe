@@ -59,7 +59,7 @@ def _spawn_holder(testruns_dir: Path) -> subprocess.Popen:
     # puts the whole tree in its own process group so the kill below can take out
     # both, which is the only way this test can observe a real "crashed run" rather
     # than a merely-orphaned sleep still holding the lock.
-    return subprocess.Popen(  # noqa: S603
+    return subprocess.Popen(
         ["bash", "-c", script],
         cwd=str(testruns_dir.parent),
         env={**os.environ, "TESTRUN_REGISTRY_DIR": str(testruns_dir)},

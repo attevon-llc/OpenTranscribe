@@ -41,7 +41,7 @@ pytestmark = pytest.mark.settings
 # whatever was on the default port — even when the run was aimed at an isolated stack
 # (issue #431). Everything below takes conftest's ``base_url`` fixture instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 # Stable, per-user sections that render a `.section-title` quickly without
 # waiting on heavy admin data loads. Each entry: (sidebar nav label, expected
@@ -105,7 +105,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
             page.click("button[type=submit]")
             page.wait_for_selector(".user-button", timeout=20000)
             return
-        except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
+        except Exception as exc:  # retry on any login-flow failure
             last_error = exc
             # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
             # something a locator could poll for (issue #431).
@@ -114,7 +114,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):
     """Login once and persist browser storage state for reuse across tests."""
     fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
     try:
@@ -149,7 +149,7 @@ def api_token(backend_url: str) -> str:
 
 
 @pytest.fixture
-def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
+def app_page(browser, auth_storage_state: str, base_url: str):
     """A pre-authenticated page on the app home, with console-error capture."""
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -159,7 +159,7 @@ def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[n
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors  # type: ignore[attr-defined]
+    page._console_errors = errors
     page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
@@ -418,7 +418,7 @@ RESULT_ITEMS = '[id^="settings-search-desktop-result-"]'
 NAV_GROUPS = ".settings-sidebar .sidebar-section"
 
 
-def _open_settings_search(page: Page):  # type: ignore[no-untyped-def]
+def _open_settings_search(page: Page):
     """Open the modal and return the sidebar search input locator."""
     _open_settings_modal(page)
     search_input = page.locator(SEARCH_INPUT)

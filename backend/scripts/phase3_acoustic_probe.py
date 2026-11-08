@@ -48,7 +48,7 @@ def main() -> None:
         return
     print("speakers:", labels, "centroid dim:", np.asarray(centroids[labels[0]]).shape)
 
-    emb = diar._pipeline._embedding  # type: ignore[attr-defined]
+    emb = diar._pipeline._embedding
     sr = int(getattr(emb, "sample_rate", 16000))
     dev = getattr(emb, "device", torch.device("cpu"))
     print("embedding sample_rate:", sr, "device:", dev)
@@ -67,7 +67,7 @@ def main() -> None:
                 v = arr.reshape(-1)
                 if v.size:
                     return v, desc
-            except Exception as ex:  # noqa: BLE001
+            except Exception as ex:
                 last = f"{desc}: {type(ex).__name__}: {str(ex)[:70]}"
         print("  embed failed:", last)
         return None, None

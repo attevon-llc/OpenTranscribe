@@ -95,7 +95,7 @@ def _resolve_uncached() -> tuple[str | None, bool]:
         if db.get_bind().dialect.name == "postgresql":
             db.execute(text(f"SET LOCAL statement_timeout = {_DB_STATEMENT_TIMEOUT_MS}"))
         stored = _read_stored(db)
-    except Exception:  # noqa: BLE001 - degrade to the environment value, never raise to a model load
+    except Exception:  # degrade to the environment value, never raise to a model load
         logger.warning("Could not read the saved Hugging Face token; using the environment value")
         return env_token(), False
     finally:
@@ -206,7 +206,7 @@ def check_token(token: str) -> str:
             headers={"Authorization": f"Bearer {token}"},
             timeout=_TEST_TIMEOUT_S,
         )
-    except Exception:  # noqa: BLE001 - the exception text can carry the URL/headers; never surface it
+    except Exception:  # the exception text can carry the URL/headers; never surface it
         return TEST_UNREACHABLE
     if response.status_code == 200:
         return TEST_VALID

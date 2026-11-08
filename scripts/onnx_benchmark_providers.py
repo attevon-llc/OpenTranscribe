@@ -30,7 +30,7 @@ import numpy as np
 # libcudart.so.12, ...) to the dynamic loader's search path. ONNX Runtime's
 # CUDAExecutionProvider + TensorrtExecutionProvider both dlopen those same
 # libraries. Without torch-first, ORT silently falls back to CPU EP.
-import torch  # noqa: E402,F401
+import torch
 
 
 def _run(sess, feeds, iters: int = 10) -> float:

@@ -20,7 +20,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.services import backup_config
 from app.services import backup_cron
 from app.services import backup_s3
@@ -48,7 +48,7 @@ KEY_S3_REGION = "backup.mirror_s3_region"
 KEY_S3_BUCKET = "backup.mirror_s3_bucket"
 KEY_S3_PREFIX = "backup.mirror_s3_prefix"
 KEY_S3_ACCESS_KEY_ID = "backup.mirror_s3_access_key_id"
-KEY_S3_SECRET_KEY = "backup.mirror_s3_secret_key"  # noqa: S105  # nosec B105 - settings key name, not a secret
+KEY_S3_SECRET_KEY = "backup.mirror_s3_secret_key"  # noqa: S105 - settings key name, not a secret  # nosec B105
 KEY_LAST_RUN_AT = "backup.mirror_last_run_at"
 KEY_LAST_RESULT = "backup.mirror_last_result"
 # Cumulative run counts + last-success timestamp back the scrape-time Prometheus
@@ -92,19 +92,21 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
 
         last_result = json_value(vals, KEY_LAST_RESULT)
         return {
-            "enabled": bool_value(vals, KEY_ENABLED, C.DEFAULT_BACKUP_MIRROR_ENABLED),
-            "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_BACKUP_MIRROR_SCHEDULE,
+            "enabled": bool_value(vals, KEY_ENABLED, constants.DEFAULT_BACKUP_MIRROR_ENABLED),
+            "schedule": vals.get(KEY_SCHEDULE) or constants.DEFAULT_BACKUP_MIRROR_SCHEDULE,
             "destination_type": vals.get(KEY_DESTINATION_TYPE)
-            or C.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE,
-            "destination": vals.get(KEY_DESTINATION) or C.DEFAULT_BACKUP_MIRROR_DESTINATION,
-            "throttle_ms": int_value(vals, KEY_THROTTLE_MS, C.DEFAULT_BACKUP_MIRROR_THROTTLE_MS),
+            or constants.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE,
+            "destination": vals.get(KEY_DESTINATION) or constants.DEFAULT_BACKUP_MIRROR_DESTINATION,
+            "throttle_ms": int_value(
+                vals, KEY_THROTTLE_MS, constants.DEFAULT_BACKUP_MIRROR_THROTTLE_MS
+            ),
             "s3_endpoint_url": vals.get(KEY_S3_ENDPOINT_URL)
-            or C.DEFAULT_BACKUP_MIRROR_S3_ENDPOINT_URL,
-            "s3_region": vals.get(KEY_S3_REGION) or C.DEFAULT_BACKUP_MIRROR_S3_REGION,
-            "s3_bucket": vals.get(KEY_S3_BUCKET) or C.DEFAULT_BACKUP_MIRROR_S3_BUCKET,
-            "s3_prefix": vals.get(KEY_S3_PREFIX) or C.DEFAULT_BACKUP_MIRROR_S3_PREFIX,
+            or constants.DEFAULT_BACKUP_MIRROR_S3_ENDPOINT_URL,
+            "s3_region": vals.get(KEY_S3_REGION) or constants.DEFAULT_BACKUP_MIRROR_S3_REGION,
+            "s3_bucket": vals.get(KEY_S3_BUCKET) or constants.DEFAULT_BACKUP_MIRROR_S3_BUCKET,
+            "s3_prefix": vals.get(KEY_S3_PREFIX) or constants.DEFAULT_BACKUP_MIRROR_S3_PREFIX,
             "s3_access_key_id": vals.get(KEY_S3_ACCESS_KEY_ID)
-            or C.DEFAULT_BACKUP_MIRROR_S3_ACCESS_KEY_ID,
+            or constants.DEFAULT_BACKUP_MIRROR_S3_ACCESS_KEY_ID,
             # NEVER expose the secret — only whether one is configured.
             "s3_secret_key_set": bool(vals.get(KEY_S3_SECRET_KEY)),
             "last_run_at": vals.get(KEY_LAST_RUN_AT),
@@ -226,7 +228,7 @@ def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str
         client = build_s3_client(cfg, db)
         client.head_bucket(Bucket=bucket)
         result["reachable"] = True
-    except Exception as exc:  # noqa: BLE001 - report any failure, never raise to the caller
+    except Exception as exc:  # report any failure, never raise to the caller
         result["error"] = str(exc)
     return result
 
@@ -245,7 +247,7 @@ def test_s3_connection(
             Bucket=bucket, Prefix=(cfg.get("s3_prefix") or "").lstrip("/"), MaxKeys=1
         )
         return {"ok": True, "error": None, "bucket": bucket}
-    except Exception as exc:  # noqa: BLE001 - surface the failure as data, never raise
+    except Exception as exc:  # surface the failure as data, never raise
         return {"ok": False, "error": str(exc), "bucket": bucket}
 
 

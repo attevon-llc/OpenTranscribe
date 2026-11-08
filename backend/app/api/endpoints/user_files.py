@@ -131,10 +131,10 @@ def get_user_file_status(
         problem_query = (
             db.query(MediaFile)
             .options(
-                defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
-                defer(MediaFile.waveform_data),  # type: ignore[arg-type]
-                defer(MediaFile.metadata_important),  # type: ignore[arg-type]
-                defer(MediaFile.summary_data),  # type: ignore[arg-type]
+                defer(MediaFile.metadata_raw),
+                defer(MediaFile.waveform_data),
+                defer(MediaFile.metadata_important),
+                defer(MediaFile.summary_data),
             )
             .filter(
                 own_in_tenant,
@@ -192,10 +192,10 @@ def get_user_file_status(
         recent_query = (
             db.query(MediaFile)
             .options(
-                defer(MediaFile.metadata_raw),  # type: ignore[arg-type]
-                defer(MediaFile.waveform_data),  # type: ignore[arg-type]
-                defer(MediaFile.metadata_important),  # type: ignore[arg-type]
-                defer(MediaFile.summary_data),  # type: ignore[arg-type]
+                defer(MediaFile.metadata_raw),
+                defer(MediaFile.waveform_data),
+                defer(MediaFile.metadata_important),
+                defer(MediaFile.summary_data),
             )
             .filter(
                 own_in_tenant,
@@ -501,9 +501,9 @@ def retry_file_processing(
             )
 
             for task in old_tasks:
-                task.status = "failed"  # type: ignore[assignment]
-                task.error_message = "Task marked as failed for user retry"  # type: ignore[assignment]
-                task.completed_at = datetime.now(UTC)  # type: ignore[assignment]
+                task.status = "failed"
+                task.error_message = "Task marked as failed for user retry"
+                task.completed_at = datetime.now(UTC)
 
             db.commit()
 

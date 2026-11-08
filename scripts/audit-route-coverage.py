@@ -106,7 +106,7 @@ def _load_app():
         TEMP_DIR=str(scratch / 'temp'),
     )
     sys.path.insert(0, str(_BACKEND))
-    from app.main import app  # noqa: PLC0415  (import must follow the env setup)
+    from app.main import app  # import must follow the env setup
 
     return app
 

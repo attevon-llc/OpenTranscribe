@@ -246,13 +246,13 @@ def restore_state(
     for conversation_uuid in conversations:
         try:
             session.delete(f'{base_url}/chat/conversations/{conversation_uuid}', timeout=30)
-        except Exception as exc:  # noqa: BLE001 - keep restoring the rest
+        except Exception as exc:  # keep restoring the rest
             logger.warning('could not delete probe conversation %s: %s', conversation_uuid, exc)
     if chat_flags:
         try:
             session.put(f'{base_url}/admin/chat-settings', json=chat_flags, timeout=30)
             logger.info('restored chat flags: %s', chat_flags)
-        except Exception as exc:  # noqa: BLE001 - report, do not mask the run's own result
+        except Exception as exc:  # report, do not mask the run's own result
             logger.warning('could not restore chat flags %s: %s', chat_flags, exc)
     if prior_llm and prior_llm != current_llm:
         try:
@@ -262,5 +262,5 @@ def restore_state(
                 timeout=30,
             )
             logger.info('restored active LLM config %s', prior_llm)
-        except Exception as exc:  # noqa: BLE001 - report, do not mask the run's own result
+        except Exception as exc:  # report, do not mask the run's own result
             logger.warning('could not restore active LLM config %s: %s', prior_llm, exc)

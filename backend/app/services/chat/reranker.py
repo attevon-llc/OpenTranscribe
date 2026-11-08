@@ -155,7 +155,7 @@ def get_reranker(
             )
             _rerankers[model_name] = model
             logger.info(f"Chat reranker loaded on CPU: {model_name}")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             if start_cooldown_on_failure:
                 _retry_after[model_name] = time.monotonic() + RETRY_COOLDOWN_S
                 retry_note = f"Retrying in {int(RETRY_COOLDOWN_S)}s. "
@@ -236,7 +236,7 @@ def rerank(
     try:
         pairs = [(query, hit.content) for hit in head]
         scores = reranker_threads.score_pairs(model, pairs)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Chat reranking failed, keeping retrieval order: {exc}")
         return hits
 

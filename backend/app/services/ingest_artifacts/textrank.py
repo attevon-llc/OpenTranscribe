@@ -347,7 +347,7 @@ def _stemmer(language: str) -> Any:
             from nltk.stem.snowball import SnowballStemmer
 
             stemmer = SnowballStemmer(snowball_name)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.debug("Snowball stemmer unavailable for %r (%s)", language, exc)
     _stemmer_cache[language] = stemmer
     return stemmer

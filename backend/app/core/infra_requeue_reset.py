@@ -63,7 +63,7 @@ def _collect(session: Session, _flush_context: UOWTransaction) -> None:
         try:
             if _terminal_status_written(obj) and obj.uuid is not None:
                 session.info.setdefault(_PENDING_KEY, set()).add(str(obj.uuid))
-        except Exception as e:  # noqa: BLE001 - bookkeeping must never fail a status write
+        except Exception as e:  # bookkeeping must never fail a status write
             logger.debug("Could not inspect a file status write: %s", e)
 
 

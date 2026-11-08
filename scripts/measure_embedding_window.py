@@ -91,7 +91,7 @@ def _post(url: str, payload: dict) -> dict:
     request = urllib.request.Request(
         url, data=json.dumps(payload).encode(), headers={'Content-Type': 'application/json'}
     )
-    with urllib.request.urlopen(request, timeout=120) as response:  # noqa: S310 - operator-supplied host
+    with urllib.request.urlopen(request, timeout=120) as response:  # operator-supplied host
         result: dict = json.load(response)
     return result
 
@@ -163,7 +163,7 @@ def main() -> int:
 
     try:
         corpus = real_corpus_words(args.opensearch, args.index)
-    except Exception as exc:  # noqa: BLE001 - the index may be empty on a fresh stack
+    except Exception as exc:  # the index may be empty on a fresh stack
         print(f'real corpus probe skipped ({exc})')
         corpus = []
     if len(corpus) > single:

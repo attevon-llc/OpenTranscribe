@@ -117,7 +117,7 @@ def _assert_zip_of(download: Any, extension: str) -> None:
 # Session-scoped auth: login ONCE, reuse cookies for all tests
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str, api_token: str):
     """Login once and save browser storage state for reuse across all tests.
 
     Depends on ``api_token`` (not for the token itself, but to reuse the login it
@@ -158,7 +158,7 @@ def auth_storage_state(browser, base_url: str, api_token: str):  # type: ignore[
 
 
 @pytest.fixture
-def gallery_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
+def gallery_page(browser, auth_storage_state: str, base_url: str):
     """Create a new page with pre-authenticated cookies and navigate to gallery."""
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -352,7 +352,7 @@ class TestSelectionModeButtons:
     """Tests for selection mode toolbar buttons."""
 
     @pytest.fixture(autouse=True)
-    def enter_selection_mode(self, gallery_page: Page):  # type: ignore[no-untyped-def]
+    def enter_selection_mode(self, gallery_page: Page):
         """Enter selection mode before each test."""
         gallery_page.click(".select-btn")
         gallery_page.wait_for_selector(".select-all-btn", timeout=5000)
@@ -594,7 +594,7 @@ class TestBulkActions:
     """Tests for bulk actions with actual file selection and backend interaction."""
 
     @pytest.fixture(autouse=True)
-    def setup_selection(self, gallery_page: Page, api_token: str):  # type: ignore[no-untyped-def]
+    def setup_selection(self, gallery_page: Page, api_token: str):
         """Enter selection mode and prepare for bulk action tests."""
         self.page = gallery_page
         self.token = api_token
@@ -1395,7 +1395,7 @@ class TestFileSelectionUI:
     """Tests for individual file selection and interaction in the gallery."""
 
     @pytest.fixture(autouse=True)
-    def setup(self, gallery_page: Page):  # type: ignore[no-untyped-def]
+    def setup(self, gallery_page: Page):
         """Store page reference."""
         self.page = gallery_page
         yield

@@ -111,7 +111,7 @@
   // and the smallest index among them is the top one.
   // Plain Set on purpose: nothing in the markup reads it, so making it reactive
   // would only add invalidation churn on every intersection callback.
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not read by the markup, see above
   const visibleSegmentIndices = new Set<number>();
   let progressObserver: IntersectionObserver | null = null;
 

@@ -104,15 +104,15 @@ MULTILINGUAL = {
 
 def _request(url: str, method: str = 'GET', body: dict | None = None, timeout: int = 60):
     data = json.dumps(body).encode() if body is not None else None
-    req = urllib.request.Request(  # noqa: S310 - localhost throwaway cluster
+    req = urllib.request.Request(  # localhost throwaway cluster
         url, data=data, method=method, headers={'Content-Type': 'application/json'}
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         return {'__http_error__': exc.code, 'body': exc.read().decode()[:400]}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {'__error__': str(exc)}
 
 
@@ -260,13 +260,13 @@ def check_availability(short_name: str, version: str = '1.0.1') -> dict:
         ('zip', f'{prefix}/sentence-transformers_{short_name}-{version}-torch_script.zip'),
         ('config', f'{prefix}/config.json'),
     ):
-        req = urllib.request.Request(url, method='HEAD')  # noqa: S310
+        req = urllib.request.Request(url, method='HEAD')
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 outcome[label] = resp.status
         except urllib.error.HTTPError as exc:
             outcome[label] = exc.code
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             outcome[label] = str(exc)
     outcome['available'] = outcome.get('zip') == 200 and outcome.get('config') == 200
     return outcome

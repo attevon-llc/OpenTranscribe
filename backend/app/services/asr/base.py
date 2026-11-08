@@ -12,7 +12,7 @@ from .types import ASRConfig
 from .types import ASRResult
 
 
-def normalize_speaker_label(label: str | int | None) -> str | None:  # noqa: C901
+def normalize_speaker_label(label: str | int | None) -> str | None:
     """Normalize any speaker label format to 0-indexed SPEAKER_XX.
 
     Module-level so both the ASR and diarization provider hierarchies can share

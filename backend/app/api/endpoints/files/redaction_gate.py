@@ -123,7 +123,7 @@ def _withdraw_redaction_claim(db: Session, db_file: MediaFile, previous_status: 
             .update({MediaFile.redaction_status: previous_status}, synchronize_session=False)
         )
         db.commit()
-    except Exception:  # noqa: BLE001
+    except Exception:
         db.rollback()
         logger.exception(
             "File %s is stranded at 'pending' with no scan queued; its transcript will "
@@ -190,7 +190,7 @@ def claim_and_dispatch_redaction_scan(
     try:
         db_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         db.rollback()
         logger.warning(
             "Could not mark file %s pending for redaction (%s): %s", db_file.id, surface, e
@@ -201,7 +201,7 @@ def claim_and_dispatch_redaction_scan(
         from app.tasks.redaction_task import redaction_detect_task
 
         task = redaction_detect_task.delay(file_id=int(db_file.id), user_id=int(db_file.user_id))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("Redaction dispatch failed for file %s (%s): %s", db_file.id, surface, e)
         _withdraw_redaction_claim(db, db_file, previous_status)
         return RedactionScanDispatch(queued=False, task_id=None)

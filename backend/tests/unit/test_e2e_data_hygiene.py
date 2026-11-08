@@ -781,7 +781,7 @@ def _fixed_object_names(
 
 def _fixed_payload_names(
     payload: ast.Dict,
-    render,  # noqa: ANN001 - a local closure over the enclosing literals/bindings
+    render,  # a local closure over the enclosing literals/bindings
     bindings: dict[str, ast.expr],
     uniquifying_helpers: set[str],
 ) -> list[str]:

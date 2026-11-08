@@ -36,7 +36,7 @@ class _FakeMinio:
     def __init__(self, objects: list[_FakeObj]) -> None:
         self._objects = objects
 
-    def list_objects(self, bucket, prefix=None, recursive=False):  # noqa: ARG002
+    def list_objects(self, bucket, prefix=None, recursive=False):
         for obj in self._objects:
             if prefix is None or obj.object_name.startswith(prefix):
                 yield obj

@@ -27,7 +27,7 @@ from datetime import timedelta
 import pytest
 from fastapi import status
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.models.system_settings import SystemSettings
 from app.services import directory_sync_service as dss
 from app.services import system_settings_service as sss
@@ -90,12 +90,12 @@ def test_get_returns_the_coded_defaults(
     response = client.get(BASE, headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
-    assert body["enabled"] == C.DEFAULT_DIRECTORY_SYNC_ENABLED
+    assert body["enabled"] == constants.DEFAULT_DIRECTORY_SYNC_ENABLED
     assert body["enabled"] is False
-    assert body["dry_run"] == C.DEFAULT_DIRECTORY_SYNC_DRY_RUN
+    assert body["dry_run"] == constants.DEFAULT_DIRECTORY_SYNC_DRY_RUN
     assert body["dry_run"] is True
-    assert body["schedule"] == C.DEFAULT_DIRECTORY_SYNC_SCHEDULE
-    assert body["max_disables_per_run"] == C.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
+    assert body["schedule"] == constants.DEFAULT_DIRECTORY_SYNC_SCHEDULE
+    assert body["max_disables_per_run"] == constants.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
     assert body["last_run_at"] is None
     assert body["last_result"] is None
 
@@ -112,8 +112,8 @@ def test_put_persists_only_the_provided_fields(
     assert response.status_code == status.HTTP_200_OK
     body = response.json()
     assert body["enabled"] is True
-    assert body["dry_run"] == C.DEFAULT_DIRECTORY_SYNC_DRY_RUN
-    assert body["schedule"] == C.DEFAULT_DIRECTORY_SYNC_SCHEDULE
+    assert body["dry_run"] == constants.DEFAULT_DIRECTORY_SYNC_DRY_RUN
+    assert body["schedule"] == constants.DEFAULT_DIRECTORY_SYNC_SCHEDULE
 
     stored = sss.get_setting(db_session, dss.KEY_ENABLED)
     assert stored is not None

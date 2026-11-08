@@ -202,7 +202,7 @@ def _store_metadata_hints_as_suggestions(db: Session, file_id: int, media_file) 
         for speaker in speakers:
             existing: dict[str, Any] = dict(speaker.attribute_confidence or {})
             existing["metadata_hints"] = hints_data
-            speaker.attribute_confidence = existing  # type: ignore[assignment]
+            speaker.attribute_confidence = existing
             flag_modified(speaker, "attribute_confidence")
 
         db.flush()
@@ -249,7 +249,7 @@ def _store_alignment_results(db: Session, file_id: int, cross_refs: list[dict]) 
             existing_conf: dict[str, Any] = dict(spk.attribute_confidence or {})
             existing_conf["alignment"] = ref["alignment"]
             existing_conf["alignment_hint"] = ref["hint_name"]
-            spk.attribute_confidence = existing_conf  # type: ignore[assignment]
+            spk.attribute_confidence = existing_conf
             flag_modified(spk, "attribute_confidence")
 
         db.flush()
@@ -522,9 +522,7 @@ def _load_identification_inputs(file_uuid: str, task_id: str) -> dict[str, Any]:
         if not transcript_segments:
             raise ValueError(f"No transcript segments found for file {file_id}")
 
-        speaker_count = (
-            db.query(Speaker.id).filter(Speaker.media_file_id == file_id).count()  # noqa: N806
-        )
+        speaker_count = db.query(Speaker.id).filter(Speaker.media_file_id == file_id).count()
         if not speaker_count:
             logger.info(f"No speakers found for file {file_id}, skipping LLM identification")
             update_task_status(db, task_id, "completed", progress=1.0, completed=True)
@@ -591,7 +589,7 @@ def _mark_identification_failed(task_id: str, error_msg: str) -> None:
     try:
         with session_scope() as db:
             update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
-    except Exception as cleanup_err:  # noqa: BLE001
+    except Exception as cleanup_err:
         logger.error(f"Could not record speaker-identification failure: {cleanup_err}")
 
 

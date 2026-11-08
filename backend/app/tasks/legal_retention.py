@@ -51,7 +51,7 @@ def delete_due_acceptances(db: Session, limit: int = MAX_DELETIONS_PER_RUN) -> i
 
 
 @celery_app.task(bind=True, name=TASK_NAME, priority=UtilityPriority.BACKGROUND)
-def legal_acceptance_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
+def legal_acceptance_retention_sweep(self: Any) -> dict:  # bind=True signature
     """Delete pseudonymised acceptance records whose retention period has ended.
 
     Returns:

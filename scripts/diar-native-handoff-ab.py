@@ -71,7 +71,7 @@ def _load_audio(path: str):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--audio', default='/tmp/karpathy_10m.wav')  # noqa: S108
+    ap.add_argument('--audio', default='/tmp/karpathy_10m.wav')
     ap.add_argument('--reps', type=int, default=5, help='timed reps PER ARM')
     ap.add_argument('--json-out', default='')
     args = ap.parse_args()

@@ -200,7 +200,7 @@ def measure_provenance() -> dict[str, Any]:
     for name in MEASURES:
         try:
             parsed[name] = str(ir_measures.parse_measure(name))
-        except Exception:  # noqa: BLE001 - provenance must not break a measurement
+        except Exception:  # provenance must not break a measurement
             parsed[name] = "unparsed"
 
     return {

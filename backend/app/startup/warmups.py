@@ -100,7 +100,7 @@ def _register_chat_usage_hook() -> None:
         from app.services.chat.usage import register as register_chat_usage
 
         register_chat_usage()
-    except Exception as e:  # noqa: BLE001 — accounting never blocks startup
+    except Exception as e:  # accounting never blocks startup
         logger.warning(f"Chat usage hook registration failed (non-fatal): {e}")
 
 
@@ -120,7 +120,7 @@ def _start_pii_warmup() -> None:
         from app.services.redaction.warmup import start_pii_warmup
 
         start_pii_warmup()
-    except Exception as e:  # noqa: BLE001 — an optimisation never blocks startup
+    except Exception as e:  # an optimisation never blocks startup
         logger.warning(f"PII analyzer warm-up could not start (non-fatal): {e}")
 
 
@@ -135,7 +135,7 @@ def _start_reranker_warmup() -> None:
         from app.services.chat.reranker_warmup import start_reranker_warmup
 
         start_reranker_warmup()
-    except Exception as e:  # noqa: BLE001 — an optimisation never blocks startup
+    except Exception as e:  # an optimisation never blocks startup
         logger.warning(f"Chat reranker warm-up could not start (non-fatal): {e}")
 
 
@@ -150,7 +150,7 @@ def _provision_native_diarizer() -> None:
         from app.transcription.native_provision import ensure_native_models
 
         ensure_native_models()
-    except Exception as e:  # noqa: BLE001 — a degraded diarizer never blocks startup
+    except Exception as e:  # a degraded diarizer never blocks startup
         logger.warning(f"diar-native provisioning could not run (non-fatal): {e}")
 
 

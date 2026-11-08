@@ -142,7 +142,7 @@ def _worker_pool_concurrency_and_freshness(
         # `data` is untyped JSON (dict[Any, Any]); the `in (None, "")` check above already
         # rules out both non-int-convertible cases at runtime, so int() here is safe --
         # mypy just can't narrow a dict[Any, Any].get() result through a tuple-membership test.
-        return int(concurrency), fresh  # type: ignore[arg-type]
+        return int(concurrency), fresh
     return None, None
 
 

@@ -48,8 +48,7 @@ TARGET_CHECK_SQL = (
     "(target_user_id IS NULL AND target_group_id IS NOT NULL)"
 )
 
-#: Split into a template so the ``# nosec`` can sit on a code line (an f-string's
-#: opening line has no room for a comment) — the shape v381/v382 already use.
+#: A template filled once below, the shape v381/v382 already use.
 _UPGRADE_TEMPLATE = """
     CREATE TABLE IF NOT EXISTS tag_share (
         id              SERIAL PRIMARY KEY,
@@ -91,7 +90,7 @@ _UPGRADE_TEMPLATE = """
 
 #: Module-level so the consistency test can replay it and prove the re-run is a no-op,
 #: rather than assert on this file's source text.
-UPGRADE_SQL = _UPGRADE_TEMPLATE.format(target_check=TARGET_CHECK_SQL)  # nosec B608
+UPGRADE_SQL = _UPGRADE_TEMPLATE.format(target_check=TARGET_CHECK_SQL)
 
 #: Mirror image. ``DROP TABLE`` would take the indexes with it; they are dropped
 #: explicitly so a database that somehow carries the indexes without the table

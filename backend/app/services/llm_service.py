@@ -1048,7 +1048,7 @@ class LLMService(
                 )
             finally:
                 db.close()
-        except Exception as exc:  # noqa: BLE001 -- a capability read must not break the fallback service
+        except Exception as exc:  # a capability read must not break the fallback service
             logger.warning("Context-window measurement unavailable for the system LLM: %s", exc)
 
         try:

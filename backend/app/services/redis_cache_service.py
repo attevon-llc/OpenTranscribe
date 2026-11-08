@@ -32,7 +32,7 @@ def _record(result: str) -> None:
         from app.core.metrics import cache_operations_total
 
         cache_operations_total.labels(cache="redis", result=result).inc()
-    except Exception:  # noqa: S110  # nosec B110 - metrics must never break caching
+    except Exception:  # noqa: S110 - metrics must never break caching  # nosec B110
         pass  # pragma: no cover
 
 

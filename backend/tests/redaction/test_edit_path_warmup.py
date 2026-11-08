@@ -29,7 +29,7 @@ class _FakePipe:
 
 
 class _FakeAnalyzer:
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         return []
 
 

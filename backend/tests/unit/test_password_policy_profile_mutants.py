@@ -47,7 +47,9 @@ def _standard_profile_with_a_list(tmp_path, monkeypatch):
         password_hibp_enabled=None,
     )
     path = tmp_path / "pwned-passwords-top100k-sha1.txt"
-    digest = hashlib.sha1(LISTED.encode(), usedforsecurity=False)  # noqa: S324 - fixed known-list digest for a test fixture, not a security use
+    digest = hashlib.sha1(
+        LISTED.encode(), usedforsecurity=False
+    )  # fixed known-list digest for a test fixture, not a security use
     path.write_text(digest.hexdigest().upper() + "\n")
     monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: path)
     monkeypatch.setattr(settings, "PASSWORD_BLOCKLIST_PATH", "")

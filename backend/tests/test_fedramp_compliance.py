@@ -234,7 +234,7 @@ class TestTokenService:
         from app.auth.token_service import TokenService
 
         service = TokenService()
-        token = "test_token_value"  # noqa: S105 - test fixture
+        token = "test_token_value"  # test fixture
         hashed = service._hash_token(token)
 
         # Hash should be SHA-512 (128 hex chars) per FIPS 140-3
@@ -261,7 +261,7 @@ class TestFIPSPasswordHashing:
         """PBKDF2-SHA256 should be available for FIPS mode."""
         from passlib.hash import pbkdf2_sha256
 
-        password = "TestPassword123!"  # noqa: S105 - test fixture
+        password = "TestPassword123!"  # test fixture
         hashed = pbkdf2_sha256.hash(password)
 
         assert pbkdf2_sha256.verify(password, hashed)
@@ -272,7 +272,7 @@ class TestFIPSPasswordHashing:
         from app.core.security import get_password_hash
         from app.core.security import verify_password
 
-        password = "TestPassword123!"  # noqa: S105 - test fixture
+        password = "TestPassword123!"  # test fixture
         hashed = get_password_hash(password)
 
         # Should verify correctly
@@ -313,7 +313,7 @@ class TestAuditLogging:
         logger = AuditLogger()
 
         # Mock the actual logging
-        with patch.object(logger, "_logger") as mock_log:  # type: ignore[arg-type]
+        with patch.object(logger, "_logger") as mock_log:
             logger.log_login_success(
                 user_id=123,
                 username="test@example.com",

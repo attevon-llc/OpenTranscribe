@@ -353,9 +353,9 @@ def _persist_summary(
         if media_file is None:
             raise ValueError(f"Media file {file_id} disappeared during summarization")
 
-        media_file.summary_data = summary_data  # type: ignore[assignment]
-        media_file.summary_schema_version = 1  # type: ignore[assignment]
-        media_file.summary_status = "completed"  # type: ignore[assignment]
+        media_file.summary_data = summary_data
+        media_file.summary_schema_version = 1
+        media_file.summary_status = "completed"
         if provenance:
             record_stage(db, file_id, "summary", **provenance)
 
@@ -369,7 +369,7 @@ def _persist_summary(
             used_prompt = resolve_active_prompt_record(user_id or None, db, prompt_uuid)
             if used_prompt is not None:
                 increment_prompt_usage(db, int(used_prompt.id))
-        except Exception as usage_err:  # noqa: BLE001
+        except Exception as usage_err:
             logger.warning(f"Could not increment prompt usage_count: {usage_err}")
 
         _task, duration_seconds = update_task_status_with_duration(
@@ -408,7 +408,7 @@ def _handle_task_error(
                         if refusal is not None
                         else _create_user_friendly_error(error_msg),
                     )
-                    media_file.summary_status = "failed"  # type: ignore[assignment]
+                    media_file.summary_status = "failed"
             update_task_status(db, task_id, "failed", error_message=error_msg, completed=True)
     except Exception as cleanup_e:
         logger.error(

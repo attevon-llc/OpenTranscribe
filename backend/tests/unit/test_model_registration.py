@@ -99,6 +99,6 @@ def test_all_model_modules_are_importable():
     for module in pkgutil.iter_modules(app.models.__path__):
         try:
             importlib.import_module(f"app.models.{module.name}")
-        except Exception as exc:  # noqa: BLE001 - report, don't mask
+        except Exception as exc:  # report, don't mask
             failures[module.name] = f"{type(exc).__name__}: {exc}"
     assert not failures, f"model modules failed to import: {failures}"

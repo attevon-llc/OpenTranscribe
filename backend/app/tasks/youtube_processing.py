@@ -133,7 +133,7 @@ def _apply_pre_download_jitter() -> None:
     import random
     import time
 
-    jitter_seconds = random.uniform(  # noqa: S311  # nosec B311
+    jitter_seconds = random.uniform(  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
         settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
         settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS,
     )
@@ -326,7 +326,7 @@ def process_youtube_url_task(
                 }
 
             # Update database status to DOWNLOADING (was QUEUED for playlist placeholders)
-            media_file.status = FileStatus.DOWNLOADING  # type: ignore[assignment]
+            media_file.status = FileStatus.DOWNLOADING
             db.commit()
 
             media_service = MediaDownloadService()
@@ -359,7 +359,7 @@ def process_youtube_url_task(
                 )
 
                 # Update status to pending for transcription
-                updated_media_file.status = FileStatus.PENDING  # type: ignore[assignment]
+                updated_media_file.status = FileStatus.PENDING
                 with benchmark_timing.stage(task_id, "db_commit"):
                     db.commit()
 
@@ -387,7 +387,7 @@ def process_youtube_url_task(
                             if updated_media_file_refreshed.status
                             else "pending",
                             "display_status": FormattingService.format_status(
-                                updated_media_file_refreshed.status  # type: ignore[arg-type]
+                                updated_media_file_refreshed.status
                             )
                             if updated_media_file_refreshed.status
                             else "Pending",
@@ -421,7 +421,7 @@ def process_youtube_url_task(
                                 if updated_media_file_refreshed.status
                                 else "pending",
                                 "display_status": FormattingService.format_status(
-                                    updated_media_file_refreshed.status  # type: ignore[arg-type]
+                                    updated_media_file_refreshed.status
                                 )
                                 if updated_media_file_refreshed.status
                                 else "Pending",
@@ -493,7 +493,7 @@ def process_youtube_url_task(
                     )
 
                     # Update status to show retry is pending
-                    media_file.last_error_message = (  # type: ignore[assignment]
+                    media_file.last_error_message = (
                         f"Retry {self.request.retries + 1}/{self.max_retries}: {error_msg}"
                     )
                     db.flush()
@@ -515,8 +515,8 @@ def process_youtube_url_task(
                     f"for {url}: {error_msg}"
                 )
 
-                media_file.last_error_message = error_msg  # type: ignore[assignment]
-                media_file.error_category = error_category.value  # type: ignore[assignment]
+                media_file.last_error_message = error_msg
+                media_file.error_category = error_category.value
                 db.flush()
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
 

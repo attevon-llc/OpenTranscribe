@@ -86,7 +86,7 @@ def record_chat_usage(ctx: ChatCompletionContext) -> None:
                     "success": ctx.success,
                 },
             )
-    except Exception:  # noqa: BLE001 — accounting never breaks chat
+    except Exception:  # accounting never breaks chat
         logger.exception("Failed to record chat usage for message %s", ctx.message_uuid)
 
 

@@ -132,7 +132,7 @@ class OrphanProbeMixin:
                     "aggs": {"ceiling": {"max": {"field": counter_field}}},
                 },
             )
-        except Exception as exc:  # noqa: BLE001 — the walk degrades, it must not fail
+        except Exception as exc:  # the walk degrades, it must not fail
             logger.debug(f"Could not read the orphan ceiling: {exc}")
             return None
 

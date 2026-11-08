@@ -34,7 +34,7 @@ class _FrozenDatetime(datetime):
     """``datetime`` whose ``now()`` is :data:`_FIXED_NOW`, in any timezone."""
 
     @classmethod
-    def now(cls, tz=None):  # noqa: D102 - inherited contract
+    def now(cls, tz=None):  # inherited contract
         return _FIXED_NOW.astimezone(tz) if tz is not None else _FIXED_NOW
 
 

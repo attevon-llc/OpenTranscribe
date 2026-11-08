@@ -301,7 +301,7 @@ def _run_ffprobe_json(url: str, timeout: int) -> dict[str, Any] | None:
         # Security: ffprobe_path resolved via shutil.which; the source is a
         # MinIO-internal presigned URL we generated or a worker temp path, not
         # user-supplied.
-        proc = subprocess.run(  # noqa: S603 # nosec B603
+        proc = subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
             [
                 ffprobe_path,
                 "-v",
@@ -491,7 +491,7 @@ def extract_media_metadata(file_path: str) -> dict[str, Any] | None:
             # not direct user input. The file has been uploaded to our controlled storage
             # system and the path is generated internally by the application.
             exif_process = subprocess.run(  # noqa: S603 - validated MinIO path, not user input
-                ["exiftool", "-json", "-n", file_path],  # noqa: S607 # nosec B603 B607
+                ["exiftool", "-json", "-n", file_path],  # noqa: S607 - tool resolved from PATH inside the image  # nosec B603 B607
                 capture_output=True,
                 text=True,
                 check=True,

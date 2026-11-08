@@ -21,7 +21,7 @@ PURGE_TRASH_NOW_TASK = "files.purge_trash_now"
 
 
 @celery_app.task(bind=True, name=PURGE_TRASH_TASK, priority=UtilityPriority.BACKGROUND)
-def purge_trash(self: Any) -> dict[str, Any]:  # noqa: ARG001 - bind=True signature
+def purge_trash(self: Any) -> dict[str, Any]:  # bind=True signature
     """Purge every due trashed file (bounded per tick)."""
     from app.services.trash_purge import purge_due
 
@@ -29,7 +29,7 @@ def purge_trash(self: Any) -> dict[str, Any]:  # noqa: ARG001 - bind=True signat
 
 
 @celery_app.task(bind=True, name=PURGE_TRASH_NOW_TASK, priority=UtilityPriority.ROUTINE)
-def purge_trash_now(self: Any, file_ids: list[int]) -> dict[str, Any]:  # noqa: ARG001 - bind=True
+def purge_trash_now(self: Any, file_ids: list[int]) -> dict[str, Any]:  # bind=True
     """Purge ``file_ids`` now, if they are still due (a restore or a hold may have intervened)."""
     from app.services.trash_purge import purge_due
 

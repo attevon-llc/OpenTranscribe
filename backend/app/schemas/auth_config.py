@@ -343,7 +343,7 @@ class PasswordPolicyConfig(_CategoryConfig):
     #: style) or ``custom`` (the individual values below). ``hardened`` is the coded default
     #: so an upgrade changes nothing. ``nist`` / ``stig`` are accepted and stored as
     #: ``standard`` / ``hardened``.
-    password_policy_profile: Literal["basic", "standard", "hardened", "custom"] = "hardened"  # noqa: S105 # nosec B105
+    password_policy_profile: Literal["basic", "standard", "hardened", "custom"] = "hardened"  # noqa: S105 - a policy profile name, not a credential
     #: 0 = profile default (basic/standard: 128, never below 64; others: no cap).
     password_max_length: int = Field(default=0, ge=0, le=1024)
     password_min_length: int = Field(default=12, ge=8, le=128)

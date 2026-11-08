@@ -82,7 +82,7 @@ def _load_token_user(
         # never a Prometheus label.
         request.state.user_id = user.id
         request.state.org_id = getattr(user, "external_org_id", None)
-        return user  # type: ignore[no-any-return]
+        return user
     except (HTTPException, DomainError):
         # FAIL CLOSED. `credentials_exception` (401, unknown user) and the 400
         # "Inactive user" raised above are *authorization decisions*, not
@@ -115,7 +115,7 @@ def _load_token_user(
                 is_active=True,
                 is_superuser=False,
             )
-            return user  # type: ignore[no-any-return]
+            return user
         # Re-raise the exception in production
         raise
 
@@ -366,7 +366,7 @@ def get_optional_current_user(
             return None
 
         end_read_transaction(db, user)
-        return user  # type: ignore[no-any-return]
+        return user
 
     except JoseError:
         return None

@@ -157,12 +157,12 @@ class FsEventSupervisor:
             if time.monotonic() >= next_reconcile:
                 try:
                     self.reconcile()
-                except Exception as e:  # noqa: BLE001 - the loop must survive anything
+                except Exception as e:  # the loop must survive anything
                     logger.error("FS-event reconcile failed: %s", e, exc_info=True)
                 next_reconcile = time.monotonic() + self._reconcile_interval
             try:
                 self.tick()
-            except Exception as e:  # noqa: BLE001 - the loop must survive anything
+            except Exception as e:  # the loop must survive anything
                 logger.error("FS-event dispatch tick failed: %s", e, exc_info=True)
             self._stop_flag.wait(self._tick_interval)
         logger.info("Watch-source FS-event supervisor stopped")
@@ -258,7 +258,7 @@ class FsEventSupervisor:
         detection.sweep_stale_probes(plan.path)
         try:
             observer, mode, detail, fs_type = self._select_observer(plan, handler)
-        except Exception as e:  # noqa: BLE001 - fall back to Celery polling
+        except Exception as e:  # fall back to Celery polling
             logger.debug("Observer selection failed for source %s", plan.source_id, exc_info=True)
             self._report_failure(
                 plan.source_id, status.MODE_ERROR, f"{type(e).__name__}: {e}", plan
@@ -308,7 +308,7 @@ class FsEventSupervisor:
             observer = observers.native_observer()
             observer.schedule(handler, plan.path, recursive=plan.recursive)
             observer.start()
-        except Exception as e:  # noqa: BLE001 - any native failure means polling
+        except Exception as e:  # any native failure means polling
             logger.warning(
                 "Native observer unavailable for source %s (%s) — using the polling observer",
                 plan.source_id,
@@ -447,7 +447,7 @@ def start_supervisor(**kwargs: Any) -> FsEventSupervisor | None:
                 atexit.register(stop_supervisor)
             _supervisor.start()
         return _supervisor
-    except Exception as e:  # noqa: BLE001 - must never take down the host process
+    except Exception as e:  # must never take down the host process
         logger.error("Watch-source FS-event supervisor failed to start: %s", e, exc_info=True)
         return None
 
@@ -460,7 +460,7 @@ def stop_supervisor(timeout: float = 10.0) -> None:
     if current is not None:
         try:
             current.stop(timeout)
-        except Exception as e:  # noqa: BLE001 - shutdown is best-effort
+        except Exception as e:  # shutdown is best-effort
             logger.debug("Error stopping the FS-event supervisor: %s", e)
 
 

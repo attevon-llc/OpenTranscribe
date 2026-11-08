@@ -15,7 +15,7 @@ from datetime import datetime
 import pytest
 from prometheus_client import REGISTRY
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.core.backup_metrics import update_media_mirror_metrics
 from app.services import media_mirror_service as mm
 from app.services import system_settings_service as sss
@@ -44,11 +44,11 @@ def _sample(name: str, labels: dict | None = None) -> float:
 def test_get_settings_returns_coded_defaults(db_session):
     _clear_mirror_keys(db_session)
     cfg = mm.get_settings(db_session)
-    assert cfg["enabled"] is C.DEFAULT_BACKUP_MIRROR_ENABLED is False  # default-OFF feature
-    assert cfg["schedule"] == C.DEFAULT_BACKUP_MIRROR_SCHEDULE
-    assert cfg["destination_type"] == C.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE == "local"
-    assert cfg["destination"] == C.DEFAULT_BACKUP_MIRROR_DESTINATION == "/media-mirror"
-    assert cfg["throttle_ms"] == C.DEFAULT_BACKUP_MIRROR_THROTTLE_MS
+    assert cfg["enabled"] is constants.DEFAULT_BACKUP_MIRROR_ENABLED is False  # default-OFF feature
+    assert cfg["schedule"] == constants.DEFAULT_BACKUP_MIRROR_SCHEDULE
+    assert cfg["destination_type"] == constants.DEFAULT_BACKUP_MIRROR_DESTINATION_TYPE == "local"
+    assert cfg["destination"] == constants.DEFAULT_BACKUP_MIRROR_DESTINATION == "/media-mirror"
+    assert cfg["throttle_ms"] == constants.DEFAULT_BACKUP_MIRROR_THROTTLE_MS
     assert cfg["s3_bucket"] == ""
     assert cfg["s3_secret_key_set"] is False
     assert cfg["last_run_at"] is None

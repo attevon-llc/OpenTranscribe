@@ -129,7 +129,7 @@ def _import_app_module(module_name: str):
     """
     try:
         return importlib.import_module(module_name)
-    except Exception:  # noqa: BLE001 — fail closed; any import error means "can't tell"
+    except Exception:  # fail closed; any import error means "can't tell"
         return None
 
 

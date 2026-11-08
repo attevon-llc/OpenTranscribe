@@ -383,7 +383,7 @@ class EmailService:
         try:
             db = factory()
             return load_auth_mail_config(db)
-        except Exception as exc:  # noqa: BLE001 - degrade to env SMTP, never fail the caller
+        except Exception as exc:  # degrade to env SMTP, never fail the caller
             logger.warning("Could not resolve the designated auth mail config: %s", exc)
             return None
         finally:

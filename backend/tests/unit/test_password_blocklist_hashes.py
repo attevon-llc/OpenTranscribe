@@ -21,7 +21,7 @@ COMMON = ["password", "123456", "qwerty", "letmein"]
 
 
 def _sha1(value: str) -> str:
-    return hashlib.sha1(value.encode("utf-8"), usedforsecurity=False).hexdigest().upper()  # noqa: S324
+    return hashlib.sha1(value.encode("utf-8"), usedforsecurity=False).hexdigest().upper()
 
 
 @pytest.fixture

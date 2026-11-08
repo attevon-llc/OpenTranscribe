@@ -561,7 +561,7 @@ def _purge_expired_loop(
                 if media_file is None:
                     continue
                 result = auto_delete_media_file(db, media_file, defer_citation_scrub=destroyed)
-        except Exception as e:  # noqa: BLE001 - one bad file must not abort the pass
+        except Exception as e:  # one bad file must not abort the pass
             failed += 1
             logger.error(
                 f"cleanup_expired_files: failed to delete file id={file_id} uuid={file_uuid}: {e}"

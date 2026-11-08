@@ -50,7 +50,7 @@ def sized_page(request, browser, shared_auth_state):
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page._viewport_name = request.param  # type: ignore[attr-defined]
+    page._viewport_name = request.param
     yield page
     page.close()
     context.close()
@@ -64,7 +64,7 @@ def anon_page(request, browser):
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page._viewport_name = request.param  # type: ignore[attr-defined]
+    page._viewport_name = request.param
     yield page
     page.close()
     context.close()
@@ -98,7 +98,7 @@ class TestGalleryResponsive:
         sized_page.goto(base_url)
         sized_page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
         toggle = sized_page.locator(".mobile-toggle")
-        name = sized_page._viewport_name  # type: ignore[attr-defined]
+        name = sized_page._viewport_name
         if name == "mobile":
             # Mobile must offer the hamburger menu
             expect(toggle).to_be_visible(timeout=5000)
@@ -116,9 +116,7 @@ class TestGalleryResponsive:
         overflow = sized_page.evaluate(
             "document.documentElement.scrollWidth - document.documentElement.clientWidth"
         )
-        assert overflow <= 1, (
-            f"Horizontal overflow of {overflow}px at {sized_page._viewport_name}"  # type: ignore[attr-defined]
-        )
+        assert overflow <= 1, f"Horizontal overflow of {overflow}px at {sized_page._viewport_name}"
 
 
 class TestNavbarFits:

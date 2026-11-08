@@ -102,7 +102,7 @@ def _run(
     body = b"opentranscribe takedown probe"
     try:
         client.put_object(bucket, key, io.BytesIO(body), len(body))
-    except Exception as e:  # noqa: BLE001 — a probe failure is reported, never raised at boot
+    except Exception as e:  # a probe failure is reported, never raised at boot
         return [], f"probe object write to '{bucket}' failed ({_code(e)})", None
     missing: list[str] = []
     error: str | None = None
@@ -116,13 +116,13 @@ def _run(
                     missing.append(label)
             elif error is None:
                 error = f"{action} on {bucket} failed ({e.code})"
-        except Exception as e:  # noqa: BLE001 — reported, never raised at boot
+        except Exception as e:  # reported, never raised at boot
             if error is None:
                 error = f"{action} on {bucket} failed ({_code(e)})"
     leftover: str | None = None
     try:
         client.remove_object(bucket, key)
-    except Exception as e:  # noqa: BLE001 — a leftover probe object is harmless; say so
+    except Exception as e:  # a leftover probe object is harmless; say so
         if delete_is_needed and _code(e) == "AccessDenied":
             label = f"s3:DeleteObject on {bucket}"
             if label not in missing:

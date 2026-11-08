@@ -179,7 +179,7 @@ def post_json(url: str, payload: dict, timeout: float) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 — internal service
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - internal service  # nosec B310
         return cast(dict, json.loads(resp.read()))
 
 
@@ -382,7 +382,7 @@ class NativeSpeakerDiarizer:
             if classified is exc:
                 raise
             raise classified from exc
-        except Exception as exc:  # noqa: BLE001 — timeout/connection loss: don't retry, re-raise
+        except Exception as exc:  # timeout/connection loss: don't retry, re-raise
             classified = diar_sidecar_status._classify_sidecar_failure(exc)
             logger.warning(
                 "diar-native /diarize timed out or the connection was lost (%s); NOT "
@@ -584,7 +584,7 @@ class NativeSpeakerDiarizer:
             if reused:
                 try:
                     out = self._try_reused_wav(str(wav_path), timeout, want_gender)
-                except Exception as exc:  # noqa: BLE001 — timeout/connection loss, see above
+                except Exception as exc:  # timeout/connection loss, see above
                     return _refuse_or_fallback(exc)
 
             if out is None:
@@ -596,7 +596,7 @@ class NativeSpeakerDiarizer:
                 # of diarize() uncaught and hard-failed the whole transcription.
                 try:
                     out, own_wav = self._post_own_copy(audio, timeout, want_gender)
-                except Exception as exc:  # noqa: BLE001 — a sidecar loss must not fail the job
+                except Exception as exc:  # a sidecar loss must not fail the job
                     logger.warning(
                         "diar-native /diarize failed mid-job (%s); falling back to PyAnnote",
                         exc,

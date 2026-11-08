@@ -53,7 +53,7 @@ class _FakeCountEngine:
         self.docs: list[dict[str, Any]] | None = None
         self.bodies: list[dict[str, Any]] = []
 
-    def search(self, index: str, body: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+    def search(self, index: str, body: dict[str, Any]) -> dict[str, Any]:
         self.bodies.append(body)
         if self.error is not None:
             raise self.error

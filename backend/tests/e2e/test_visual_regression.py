@@ -85,7 +85,6 @@ import requests
 from _visual_capture import login
 from _visual_capture import make_context as _make_context
 from _visual_capture import stabilize as _stabilize
-from _visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
 from _visual_diff import DIFF_TOLERANCE
 from _visual_diff import diff_fraction as _diff_fraction
 from conftest import complete_first_run_wizard
@@ -104,7 +103,7 @@ pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet 
 # when the run was aimed at an isolated stack (issue #431). Everything below takes
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 SCREENSHOT_DIR = Path(__file__).parent / "__screenshots__"
 

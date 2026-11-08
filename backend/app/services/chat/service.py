@@ -380,7 +380,7 @@ async def _teardown_turn(
         reasoning_tail = await _flush_redactor(reasoning_redactor)
         if reasoning_tail:
             turn.reasoning_parts.append(reasoning_tail)
-    except Exception:  # noqa: BLE001 — never mask the real outcome
+    except Exception:  # never mask the real outcome
         logger.exception("Chat output redaction teardown flush failed")
     _record_output_redaction(turn, answer_redactor, reasoning_redactor)
 
@@ -408,7 +408,7 @@ async def _teardown_turn(
         if on_teardown is not None:
             try:
                 on_teardown()
-            except Exception:  # noqa: BLE001 — never mask the real outcome
+            except Exception:  # never mask the real outcome
                 logger.exception("Chat stream teardown hook failed")
 
 
@@ -657,7 +657,7 @@ class ChatService:
             # exactly like a client disconnect: `finish_reason = "cancelled"`,
             # no extra LLM call was ever made.
             logger.info("Chat turn %s cancelled during context preparation", assistant_message_uuid)
-        except Exception:  # noqa: BLE001 — surface as a frame, never a 500
+        except Exception:  # surface as a frame, never a 500
             logger.exception("Chat stream failed for conversation %s", conversation_uuid)
             turn.error = GENERATION_FAILED_MESSAGE
             turn.error_code = "provider_error"

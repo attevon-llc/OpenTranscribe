@@ -327,7 +327,7 @@ class TranscriptionConfig:
                 )
                 if setting and setting.value:
                     raw = str(setting.value)
-        except Exception:  # noqa: S110  # nosec B110
+        except Exception:
             # DB not available (e.g., during testing, worker startup race) — fall back to env
             logger.debug("Could not read asr.local_model from DB, using env var")
 
@@ -363,7 +363,7 @@ class TranscriptionConfig:
                 )
                 if setting and setting.value:
                     raw = str(setting.value)
-        except Exception:  # noqa: S110  # nosec B110
+        except Exception:
             # DB not available (e.g., during testing, worker startup race) — fall back to env
             logger.debug("Could not read engine.diarizer_backend from DB, using env var")
 

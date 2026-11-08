@@ -107,7 +107,7 @@ def _reject_empty_input(input_path: str) -> None:
         raise ValueError("This file is empty and contains no content to process.")
 
 
-def extract_audio_from_video(  # noqa: C901
+def extract_audio_from_video(
     video_path: str,
     output_path: str,
     progress_callback: ProgressCallback = None,
@@ -200,7 +200,7 @@ def extract_audio_from_video(  # noqa: C901
         ) from e
 
 
-def convert_audio_format(  # noqa: C901
+def convert_audio_format(
     input_path: str,
     output_path: str,
     progress_callback: ProgressCallback = None,

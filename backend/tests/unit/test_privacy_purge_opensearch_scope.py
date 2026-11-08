@@ -220,7 +220,9 @@ def test_the_residual_of_an_organization_purge_sees_a_stamped_document_nothing_n
     from app.services.privacy.purge_voiceprints import VoiceprintTargets
 
     _orphans(index, gov)
-    keep_open = lambda: cast("Session", _KeepOpen(gov.db))  # noqa: E731
+
+    def keep_open():
+        return cast("Session", _KeepOpen(gov.db))
 
     def measured(scope):
         return measure_voiceprint_residual(

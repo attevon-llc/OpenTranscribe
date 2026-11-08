@@ -92,7 +92,7 @@ def _sidecar_url() -> str | None:
     container = compose_service_container("diar-native")
     if container is not None:
         try:
-            addr = subprocess.run(  # noqa: S603  # nosec B603 — fixed argv, no shell
+            addr = subprocess.run(  # nosec B603 — fixed argv, no shell
                 [
                     "docker",
                     "inspect",

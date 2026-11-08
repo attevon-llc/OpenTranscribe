@@ -283,7 +283,7 @@ def _resolve_redaction_config(
     try:
         with session_scope() as db:
             return resolve_effective_config(db, user_id, organization_id=organization_id)
-    except Exception:  # noqa: BLE001 — a config read must not break search
+    except Exception:  # a config read must not break search
         logger.exception("Redaction config unavailable for search snippet masking")
         return None
 
@@ -361,7 +361,7 @@ def _redact_snippets(
 
     try:
         masked = mask_snippets([occ.snippet for occ in occurrences], cfg)
-    except Exception:  # noqa: BLE001 — never break search on redaction failure
+    except Exception:  # never break search on redaction failure
         logger.exception("Snippet masking failed; withholding snippet text")
         _withhold_snippets(occurrences)
         return

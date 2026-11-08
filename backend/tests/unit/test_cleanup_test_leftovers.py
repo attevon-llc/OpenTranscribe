@@ -94,7 +94,7 @@ def harness(tmp_path: Path) -> dict:
 
 
 def _run(harness: dict, *args: str, extra: dict | None = None, timeout: int = 60):
-    return subprocess.run(  # noqa: S603 - fixed argv: the script under test
+    return subprocess.run(  # fixed argv: the script under test
         [_BASH, str(_SCRIPT), *args],
         env={**harness["env"], **(extra or {})},
         capture_output=True,
@@ -183,7 +183,7 @@ def test_a_held_lock_stops_an_overlapping_pass(harness: dict) -> None:
 def test_stop_refuses_to_signal_a_pid_that_is_not_its_own_loop(harness: dict) -> None:
     state = harness["tmp"] / "state"
     state.mkdir()
-    stranger = subprocess.Popen([_SLEEP, "300"])  # noqa: S603 - a harmless bystander
+    stranger = subprocess.Popen([_SLEEP, "300"])  # a harmless bystander
     try:
         (state / f"{_PROJECT}.pid").write_text(f"{stranger.pid}\n", encoding="utf-8")
         result = _run(harness, "--project", _PROJECT, "--stop")
@@ -242,7 +242,7 @@ def test_the_summary_parser_reads_the_sweeps_report() -> None:
     source = _SCRIPT.read_text(encoding="utf-8")
     body = source.split("summarize() {", 1)[1].split("\n}\n", 1)[0]
     code = body.split("-c '", 1)[1].rsplit("'", 1)[0]
-    result = subprocess.run(  # noqa: S603 - the script's own embedded summary program
+    result = subprocess.run(  # the script's own embedded summary program
         [sys.executable, "-c", code],
         input=text,
         capture_output=True,

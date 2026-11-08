@@ -41,7 +41,7 @@ class _SessionSpy:
 def _fake_db_get(spy: _SessionSpy):
     """Return a ``_db_get_setting`` replacement bound to the spy."""
 
-    def _inner(db, key, default=None):  # noqa: ANN001
+    def _inner(db, key, default=None):
         spy.calls += 1
         return spy.value if spy.value is not None else default
 

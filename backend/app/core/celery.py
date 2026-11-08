@@ -86,20 +86,20 @@ if not _SKIP_CELERY:
     # Note: WhisperX 3.8.1 has native PyAnnote v4 support — no patches needed
 
 # Imports must come after torch.load patch to prevent caching issues
-from celery.signals import before_task_publish  # noqa: E402
-from celery.signals import setup_logging  # noqa: E402
-from celery.signals import task_postrun  # noqa: E402
-from celery.signals import task_prerun  # noqa: E402
-from celery.signals import worker_process_shutdown  # noqa: E402
-from celery.signals import worker_ready  # noqa: E402
-from celery.signals import worker_shutdown  # noqa: E402
-from celery.signals import worker_shutting_down  # noqa: E402
+from celery.signals import before_task_publish  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import setup_logging  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import task_postrun  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import task_prerun  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import worker_process_shutdown  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import worker_ready  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import worker_shutdown  # noqa: E402 - after the torch.load patch finder above
+from celery.signals import worker_shutting_down  # noqa: E402 - after the torch.load patch finder above
 
-from app.core.celery_beat import BEAT_SCHEDULE  # noqa: E402
-from app.core.celery_routing import CELERY_QUEUES  # noqa: E402
-from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS  # noqa: E402
-from app.core.celery_routing import TASK_ROUTES  # noqa: E402
-from app.core.config import settings  # noqa: E402
+from app.core.celery_beat import BEAT_SCHEDULE  # noqa: E402 - after the torch.load patch finder above
+from app.core.celery_routing import CELERY_QUEUES  # noqa: E402 - after the torch.load patch finder above
+from app.core.celery_routing import INTENTIONALLY_UNROUTED_TASKS  # noqa: E402 - after the torch.load patch finder above
+from app.core.celery_routing import TASK_ROUTES  # noqa: E402 - after the torch.load patch finder above
+from app.core.config import settings  # noqa: E402 - after the torch.load patch finder above
 from app.core.demo_publish import DemoAwareCelery  # noqa: E402  # after the torch.load patch
 from app.core.env import env_float  # noqa: E402 - after ensure_nltk_data_private()
 from app.core.env import env_int  # noqa: E402 - after ensure_nltk_data_private()

@@ -56,7 +56,7 @@ class GoogleASRProvider(ASRProvider):
         """Verify credentials by instantiating a SpeechClient (no network call)."""
         start = time.time()
         try:
-            from google.cloud import speech  # noqa: F401
+            from google.cloud import speech
         except ImportError:
             return (
                 False,
@@ -74,7 +74,7 @@ class GoogleASRProvider(ASRProvider):
             sanitized = self._sanitize_error(str(e), self._api_key)
             return False, sanitized, ms
 
-    def transcribe(  # noqa: C901
+    def transcribe(
         self,
         audio_path: str,
         config: ASRConfig,

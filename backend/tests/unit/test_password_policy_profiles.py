@@ -288,7 +288,7 @@ def _bundled_entry(min_len: int = 10) -> str:
 def _installed_list(tmp_path, monkeypatch):
     """Install a small hash list at the default location, as the downloader would."""
     path = tmp_path / "pwned-passwords-top100k-sha1.txt"
-    digest = hashlib.sha1(LISTED_CANDIDATE.encode(), usedforsecurity=False)  # noqa: S324
+    digest = hashlib.sha1(LISTED_CANDIDATE.encode(), usedforsecurity=False)
     path.write_text(digest.hexdigest().upper() + "\n")
     monkeypatch.setattr(password_blocklist, "default_blocklist_path", lambda: path)
     monkeypatch.setattr(settings, "PASSWORD_BLOCKLIST_PATH", "")

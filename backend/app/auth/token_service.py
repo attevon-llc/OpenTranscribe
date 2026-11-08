@@ -59,7 +59,7 @@ from app.utils.websocket_notify import publish_session_revocation
 logger = logging.getLogger(__name__)
 
 # Redis key prefix for revoked tokens (not a password)
-REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
+REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 - a Redis key prefix, not a credential  # nosec B105
 
 #: Per-user revocation epoch. Access tokens are stateless — nothing durable
 #: records their JTIs — so revoking "all of a user's tokens" could only ever
@@ -68,7 +68,7 @@ REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
 #: ``/auth/logout``, which does blacklist the access JTI. Stamping a timestamp
 #: per user and rejecting any access token issued before it closes the gap for
 #: every revocation path at once.
-USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # noqa: S105 # nosec B105
+USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"
 
 
 class TokenService(RefreshTokenOps):

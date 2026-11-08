@@ -49,7 +49,7 @@ class _FakeRedisNX:
     def __init__(self):
         self._store: dict[str, str] = {}
 
-    def set(self, key, value, nx=False, ex=None):  # noqa: ARG002 - ex unused, matches redis-py sig
+    def set(self, key, value, nx=False, ex=None):  # ex unused, matches redis-py sig
         if nx and key in self._store:
             return False
         self._store[key] = value

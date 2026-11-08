@@ -75,7 +75,7 @@ def _is_crisperwhisper_model(model_name: str) -> bool:
         from app.services.asr.model_discovery import resolve_loadable_model_name
 
         resolved = resolve_loadable_model_name(model_name)
-    except Exception:  # noqa: S110  # nosec B110 — fall back to raw name substring match
+    except Exception:  # fall back to raw name substring match
         resolved = model_name
     return "crisper" in resolved.lower() or "crisper" in model_name.lower()
 

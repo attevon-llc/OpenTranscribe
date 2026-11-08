@@ -224,7 +224,7 @@ def execute_mirror(
                 bytes_copied += obj.size
             else:
                 skipped += 1
-        except Exception as exc:  # noqa: BLE001 - one failed object never aborts the run
+        except Exception as exc:  # one failed object never aborts the run
             failed += 1
             if len(errors) < MAX_RECORDED_ERRORS:
                 # `errors` is returned in this function's counters, folded into the run
@@ -327,7 +327,7 @@ def perform_mirror(db: Session | None = None, max_objects: int | None = None) ->
             counters["objects_failed"],
             result["duration_s"],
         )
-    except Exception as exc:  # noqa: BLE001 - listing/network errors → recorded, never raised
+    except Exception as exc:  # listing/network errors → recorded, never raised
         # A boto3 ClientError can quote the endpoint_url/bucket/region -- same
         # rendering path as above, only the class of failure is returned.
         result = {

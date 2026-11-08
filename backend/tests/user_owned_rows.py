@@ -61,7 +61,7 @@ def make_user(db: Session, label: str, *, role: str = "user") -> User:
     user = User(
         email=f"{label}-{uuid_pkg.uuid4().hex[:10]}@example.com",
         full_name=f"Deletion Fixture {label}",
-        hashed_password=get_password_hash("password123"),  # noqa: S106 — throwaway fixture row
+        hashed_password=get_password_hash("password123"),  # throwaway fixture row
         is_active=True,
         is_superuser=role == "super_admin",
         role=role,

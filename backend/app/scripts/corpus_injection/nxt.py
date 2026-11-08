@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import difflib
 import re
-import xml.etree.ElementTree as ET  # noqa: S405  # nosec B405 — see module note on XML trust
+import xml.etree.ElementTree as ET  # nosec B405 — see module note on XML trust
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,7 +83,7 @@ def parse_nxt(path: Path) -> ET.Element:
     The only place in the corpus tooling that touches the stdlib XML parser, so the
     trust note in the module docstring covers every reader (gold summaries included).
     """
-    return ET.parse(path).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+    return ET.parse(path).getroot()  # noqa: S314 - see module note on XML trust  # nosec B314
 
 
 def read_meeting_channels(meetings_xml: Path) -> dict[str, dict[str, dict[str, str]]]:

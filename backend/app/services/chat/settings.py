@@ -209,7 +209,7 @@ def get_chat_settings(db: Session) -> ChatSettings:
 
     try:
         stored = get_settings_map(db, list(SETTING_KEYS.values()))
-    except Exception as exc:  # noqa: BLE001 — never fail a chat on a settings read
+    except Exception as exc:  # never fail a chat on a settings read
         logger.warning(f"Falling back to default chat settings: {exc}")
         return ChatSettings()
 

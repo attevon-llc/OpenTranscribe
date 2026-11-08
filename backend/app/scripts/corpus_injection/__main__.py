@@ -97,7 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_user(db: Session, email: str) -> int:  # noqa: ANN001 — Session, imported lazily
+def _resolve_user(db: Session, email: str) -> int:  # Session, imported lazily
     from sqlalchemy import select
 
     from app.models.user import User
@@ -141,7 +141,7 @@ def _run_purge(args: argparse.Namespace) -> int:
     return 0 if report.clean else 1
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read top to bottom
+def main(argv: list[str] | None = None) -> int:  # a CLI, read top to bottom
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s %(message)s"

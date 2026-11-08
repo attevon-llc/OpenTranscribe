@@ -74,10 +74,10 @@ class _FakeIndices:
         self._store = store
         self.refreshes = 0
 
-    def exists(self, index: str) -> bool:  # noqa: ARG002 - one index in this harness
+    def exists(self, index: str) -> bool:  # one index in this harness
         return self._store.index_present
 
-    def refresh(self, index: str) -> None:  # noqa: ARG002
+    def refresh(self, index: str) -> None:
         self.refreshes += 1
 
 
@@ -111,13 +111,13 @@ class _FakeOpenSearch:
         """Stands in for ``bump_corpus_version``, which would want Redis."""
         self.cache_bumps += 1
 
-    def delete_by_query(self, index: str, body: dict[str, Any], **_: Any) -> dict[str, int]:  # noqa: ARG002
+    def delete_by_query(self, index: str, body: dict[str, Any], **_: Any) -> dict[str, int]:
         scope = self._delete_scope(FILE_UUID) if self._delete_scope else body["query"]
         doomed = [doc for doc in self.docs if _matches(doc, scope)]
         self.docs = [doc for doc in self.docs if doc not in doomed]
         return {"deleted": len(doomed)}
 
-    def count(self, index: str, body: dict[str, Any]) -> dict[str, int]:  # noqa: ARG002
+    def count(self, index: str, body: dict[str, Any]) -> dict[str, int]:
         if self._count_raises is not None:
             raise self._count_raises
         return {"count": sum(1 for doc in self.docs if _matches(doc, body["query"]))}

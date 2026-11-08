@@ -41,7 +41,7 @@ def _run(
     deleted = [] if deleted is None else deleted
     client = MagicMock()
 
-    def delete_by_query(index, body, **_kw):  # noqa: ANN001 — opensearch-py shape
+    def delete_by_query(index, body, **_kw):  # opensearch-py shape
         ids = body["query"]["ids"]["values"]
         deleted.extend(ids)
         return {"deleted": len(ids)}

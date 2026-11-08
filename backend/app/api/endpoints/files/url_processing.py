@@ -163,7 +163,7 @@ def _apply_single_video_options(
 
     # Per-file skip summary: mark as disabled before pipeline starts
     if request_data.skip_summary:
-        media_file.summary_status = "disabled"  # type: ignore[assignment]
+        media_file.summary_status = "disabled"
         db.commit()
 
     # Assign to collections and apply tags immediately for single videos

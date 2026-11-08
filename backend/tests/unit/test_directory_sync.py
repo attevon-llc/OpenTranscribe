@@ -34,7 +34,7 @@ from app.auth.ldap_probe import DIRECTORY_PRESENT
 from app.auth.ldap_probe import LdapDirectoryUnavailableError
 from app.auth.ldap_probe import LdapProbe
 from app.auth.ldap_probe import probe_ldap_user
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.models.system_settings import SystemSettings
 from app.services import directory_sync_service as svc
 
@@ -478,7 +478,7 @@ class TestUpdateSettings:
         self, clean_directory_sync_settings
     ):
         cfg = svc.get_settings(clean_directory_sync_settings)
-        assert cfg["enabled"] == C.DEFAULT_DIRECTORY_SYNC_ENABLED
-        assert cfg["dry_run"] == C.DEFAULT_DIRECTORY_SYNC_DRY_RUN
-        assert cfg["schedule"] == C.DEFAULT_DIRECTORY_SYNC_SCHEDULE
-        assert cfg["max_disables_per_run"] == C.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
+        assert cfg["enabled"] == constants.DEFAULT_DIRECTORY_SYNC_ENABLED
+        assert cfg["dry_run"] == constants.DEFAULT_DIRECTORY_SYNC_DRY_RUN
+        assert cfg["schedule"] == constants.DEFAULT_DIRECTORY_SYNC_SCHEDULE
+        assert cfg["max_disables_per_run"] == constants.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN

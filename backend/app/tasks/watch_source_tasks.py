@@ -131,7 +131,7 @@ def scan_single(self: Any, source_id: int) -> dict:
         # left reading "running" forever.
         try:
             plan = _load_scan_plan(source_id)
-        except Exception as e:  # noqa: BLE001 - record and continue
+        except Exception as e:  # record and continue
             logger.error("Watch scan setup failed for source %s: %s", source_id, e, exc_info=True)
             summary["errors"] += 1
             _record_scan_result(
@@ -160,7 +160,7 @@ def scan_single(self: Any, source_id: int) -> dict:
                 f"Found {summary['found']}, imported {summary['imported']}, "
                 f"skipped {summary['skipped']}"
             )
-        except Exception as e:  # noqa: BLE001 - record and continue
+        except Exception as e:  # record and continue
             logger.error("Watch scan failed for source %s: %s", source_id, e, exc_info=True)
             status = "error"
             message = str(e)[:1000]
@@ -192,7 +192,7 @@ def _log_legal_refusal_hourly(source_id: int, refusal: ProcessingRefusal) -> Non
 
         key = f"watch_source:legal_refusal_logged:{source_id}"
         first = bool(get_redis().set(key, "1", nx=True, ex=3600))
-    except Exception as e:  # noqa: BLE001 - a log throttle only; the scan is skipped regardless
+    except Exception as e:  # a log throttle only; the scan is skipped regardless
         logger.debug("Watch source %s: refusal-log throttle unavailable: %s", source_id, e)
     log = logger.warning if first else logger.debug
     log("Watch source %s skipped by the legal processing gate: %s", source_id, refusal.message)
@@ -560,11 +560,11 @@ def stitch_and_import(
             if upload_stitched and client is not None:
                 try:
                     client.upload_file(stitched_path, stitched_remote)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     logger.warning("upload_stitched_to_source failed: %s", e)
 
         return {"status": result_status, "stitched": stitched_name}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("stitch_and_import failed for source %s group %s: %s", source_id, base_name, e)
         return {"status": "error", "error": str(e)}
     finally:
@@ -732,5 +732,5 @@ def _notify_scan_complete(user_id: int, source_uuid: str, status: str, summary: 
                 "summary": summary,
             },
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.debug("watch_source_scan WS notify failed: %s", e)

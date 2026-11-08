@@ -129,7 +129,7 @@ def pipeline_task_id(file_id: int) -> str | None:
         with session_scope() as db:
             mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             return str(mf.active_task_id) if mf and mf.active_task_id else None
-    except Exception as e:  # noqa: BLE001 — telemetry must never break the task it measures
+    except Exception as e:  # telemetry must never break the task it measures
         logger.debug(f"pipeline_task_id lookup failed for file {file_id}: {e}")
         return None
 

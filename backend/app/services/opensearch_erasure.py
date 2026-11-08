@@ -147,7 +147,7 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
             from app.services.opensearch_service import remove_speaker_embedding
 
             remove_speaker_embedding(speaker_uuid)
-        except Exception as e:  # noqa: BLE001 — any failure is a residual; the count still runs
+        except Exception as e:  # any failure is a residual; the count still runs
             fail("speakers", e)
 
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
@@ -157,7 +157,7 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
             left = _count_surviving(idx, {"ids": {"values": speaker_uuids}})
             if left:
                 fail("speakers", f"{left} voiceprint doc(s) survive in {idx}")
-        except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+        except Exception as e:  # unverifiable == not proven gone
             fail("speakers", f"could not verify {idx}: {e}")
 
 
@@ -180,7 +180,7 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
             from app.services.opensearch_service import remove_profile_embedding
 
             remove_profile_embedding(profile_uuid)
-        except Exception as e:  # noqa: BLE001 — any failure is a residual; the count still runs
+        except Exception as e:  # any failure is a residual; the count still runs
             fail("profiles", e)
 
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
@@ -203,7 +203,7 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
             left = _count_surviving(idx, query)
             if left:
                 fail("profiles", f"{left} profile embedding doc(s) survive in {idx}")
-        except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+        except Exception as e:  # unverifiable == not proven gone
             fail("profiles", f"could not verify {idx}: {e}")
 
 
@@ -230,7 +230,7 @@ def _erase_cluster_docs(cluster_uuids: list[str], fail: Callable[[str, object], 
             left = _count_surviving(idx, query)
             if left:
                 fail("clusters", f"{left} centroid doc(s) survive in {idx}")
-        except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+        except Exception as e:  # unverifiable == not proven gone
             fail("clusters", f"could not erase/verify {idx}: {e}")
 
 
@@ -248,7 +248,7 @@ def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -
         # which is the desired end state — not a failure to remove it.
         with contextlib.suppress(NotFoundError):
             client.delete(index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX, id=file_uuid)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         fail("transcript", e)
 
 
@@ -277,7 +277,7 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         from app.services.search.indexing_service import TranscriptIndexingService
 
         TranscriptIndexingService().delete_transcript_chunks(file_uuid)
-    except Exception as e:  # noqa: BLE001 — any failure is a residual; the count still runs
+    except Exception as e:  # any failure is a residual; the count still runs
         fail("transcript_chunks", e)
 
     try:
@@ -286,7 +286,7 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         left = TranscriptIndexingService().count_file_documents(file_uuid)
         if left:
             fail("transcript_chunks", f"{left} document(s) survive")
-    except Exception as e:  # noqa: BLE001 — unverifiable == not proven gone
+    except Exception as e:  # unverifiable == not proven gone
         fail("transcript_chunks", f"could not verify: {e}")
 
 
@@ -330,5 +330,5 @@ def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> No
         failures = (resp or {}).get("failures") or []
         if failures:
             fail("transcript_summaries", f"delete_by_query reported {len(failures)} failure(s)")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         fail("transcript_summaries", e)

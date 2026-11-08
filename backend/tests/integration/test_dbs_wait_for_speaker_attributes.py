@@ -71,7 +71,7 @@ CREATE TABLE task (
 
 
 def _run(cmd: list[str], *, stdin_text: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(  # fixed argv, no shell
         cmd, capture_output=True, text=True, input=stdin_text
     )
 

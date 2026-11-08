@@ -78,7 +78,7 @@ def _child_env(**extra: str) -> dict[str, str]:
 
 def _run_pytest(args: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
     """Run pytest in a child process and return the completed process."""
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(  # fixed argv, no shell
         [sys.executable, "-m", "pytest", *args],
         capture_output=True,
         text=True,

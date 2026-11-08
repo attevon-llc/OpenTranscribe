@@ -214,7 +214,7 @@ def _running_at_retry_priority() -> bool:
 
         delivery = getattr(current_task.request, "delivery_info", None) or {}
         return delivery.get("priority") == GPUPriority.TRANSCRIPTION_RETRY
-    except Exception:  # noqa: BLE001 - outside a worker: a fresh run
+    except Exception:  # outside a worker: a fresh run
         return False
 
 
@@ -317,7 +317,7 @@ def _cleanup_wav_quietly(local_wav_path: str) -> None:
         from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
 
         cleanup_shared_volume_wav(local_wav_path)
-    except Exception as cleanup_err:  # nosec B110 - cleanup must not mask the real outcome
+    except Exception as cleanup_err:  # cleanup must not mask the real outcome
         logger.debug("WAV cleanup skipped: %s", cleanup_err)
 
 

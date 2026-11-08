@@ -255,7 +255,7 @@ def _supervise(
     started = time.monotonic()
     total = plan.bytes_total
     with tempfile.TemporaryFile() as err:
-        proc = subprocess.Popen(  # noqa: S603  # nosec B603 - fixed argv built from the catalog, no shell
+        proc = subprocess.Popen(  # noqa: S603 - fixed argv built from the catalog, no shell  # nosec B603
             cmd,
             env=child_env(token, endpoint),
             cwd=BACKEND_DIR,

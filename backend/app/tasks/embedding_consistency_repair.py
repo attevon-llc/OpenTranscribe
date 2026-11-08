@@ -255,7 +255,7 @@ def _update_repair_progress(
             pipe = r.pipeline(True)  # transactional pipeline
             pipe.watch(_REDIS_PROGRESS_KEY)
 
-            raw_val: str | bytes | None = pipe.get(_REDIS_PROGRESS_KEY)  # type: ignore[assignment]
+            raw_val: str | bytes | None = pipe.get(_REDIS_PROGRESS_KEY)
             if not raw_val:
                 pipe.unwatch()
                 return None

@@ -294,7 +294,7 @@ def restamp(states: Mapping[int, str]) -> None:
     for value, ids in _by_value(dict(states)).items():
         try:
             complete = stamp_files(ids, value).complete and complete
-        except Exception:  # noqa: BLE001 - the post-filter covers the gap; the retry converges it
+        except Exception:  # the post-filter covers the gap; the retry converges it
             logger.warning("availability stamp failed; dispatching a reconcile", exc_info=True)
             complete = False
     if not complete:
@@ -319,7 +319,7 @@ def dispatch_reconcile(file_ids: Sequence[int] | None) -> None:
             kwargs={"file_ids": None if file_ids is None else [int(i) for i in file_ids]},
             priority=UtilityPriority.ROUTINE,
         )
-    except Exception:  # noqa: BLE001 - the 15-minute beat tick reconciles every unavailable file
+    except Exception:  # the 15-minute beat tick reconciles every unavailable file
         logger.warning(
             "availability reconcile dispatch failed; the beat tick will converge", exc_info=True
         )

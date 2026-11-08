@@ -105,7 +105,7 @@ def _do_list(cfg: dict[str, Any]) -> int:
     listing begins (``scheduled_job_settings.session_scope``), so nothing is held open here either.
     """
     backups = backup_s3.list_backups_s3(cfg, None)
-    print(json.dumps(backups, indent=2))  # noqa: T201 - intentional CLI output
+    print(json.dumps(backups, indent=2))  # intentional CLI output
     return 0
 
 
@@ -148,7 +148,7 @@ def _fetch(cfg: dict[str, Any], secret: str | None, filename: str, *, force: boo
 
     try:
         head = client.head_object(Bucket=bucket, Key=key)
-    except Exception as exc:  # noqa: BLE001 - surface as a clean FetchError, never a traceback
+    except Exception as exc:  # surface as a clean FetchError, never a traceback
         raise FetchError(f"could not find s3://{bucket}/{key}: {exc}") from exc
     expected_size = int(head.get("ContentLength", -1))
 
@@ -156,7 +156,7 @@ def _fetch(cfg: dict[str, Any], secret: str | None, filename: str, *, force: boo
     logger.info("Downloading s3://%s/%s -> %s", bucket, key, target)
     try:
         client.download_file(bucket, key, str(part_path))
-    except Exception as exc:  # noqa: BLE001 - surface as a clean FetchError, never a traceback
+    except Exception as exc:  # surface as a clean FetchError, never a traceback
         part_path.unlink(missing_ok=True)
         raise FetchError(f"download of s3://{bucket}/{key} failed: {exc}") from exc
 
@@ -213,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("%s", exc)
         return 1
 
-    print(json.dumps({"path": str(target)}))  # noqa: T201 - intentional CLI output
+    print(json.dumps({"path": str(target)}))  # intentional CLI output
     logger.info("Fetched %s", target)
     return 0
 

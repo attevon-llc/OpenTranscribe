@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 #: Machine-readable codes carried in the 403 ``detail``. The SPA branches on
 #: ``detail.code`` to render the forced-change screen; prose is not a contract,
 #: and a client that has to string-match an English message breaks on rewording.
-ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 # nosec B105
+ERROR_CODE_PASSWORD_CHANGE_REQUIRED = "password_change_required"  # noqa: S105 - an API error code, not a credential  # nosec B105
 ERROR_CODE_ACCOUNT_EXPIRED = "account_expired"
 ERROR_CODE_BANNER_ACKNOWLEDGMENT_REQUIRED = "banner_acknowledgment_required"
 #: Account exists and its credential worked, but an administrator has not admitted

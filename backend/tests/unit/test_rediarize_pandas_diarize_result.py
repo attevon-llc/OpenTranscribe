@@ -32,7 +32,7 @@ def _make_user(db):
     user = User(
         email=f"rediarize-pandas3-{uuid.uuid4().hex[:8]}@example.invalid",
         full_name="Rediarize Pandas3 Fixture",
-        hashed_password=get_password_hash("throwaway-password-1"),  # noqa: S106
+        hashed_password=get_password_hash("throwaway-password-1"),
         is_active=True,
         is_superuser=False,
         role="user",
@@ -134,7 +134,7 @@ def test_rediarize_completes_when_the_diarizer_returns_a_dataframe(db_session):
         # module-level name is bound at import time — patching the source module's attribute
         # would not affect it. Patch the name where the task actually looks it up.
         patch.object(mod, "session_scope", _test_session_scope),
-        patch.object(mod, "_prepare_audio", return_value=("/tmp/fake.wav", None)),  # noqa: S108
+        patch.object(mod, "_prepare_audio", return_value=("/tmp/fake.wav", None)),  # noqa: S108 - a stand-in path string; nothing is created there
         patch.object(mod, "_build_detector", return_value=_FakeLocalEngine(diarize_df)),
         patch("app.tasks.transcription.notifications.send_progress_notification"),
         patch("app.tasks.transcription.notifications.send_completion_notification"),

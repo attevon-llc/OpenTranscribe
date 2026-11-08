@@ -265,16 +265,16 @@ def _apply_task_fields(
     completed: bool,
     now: datetime,
 ) -> None:
-    task.status = status  # type: ignore[assignment]
+    task.status = status
     if progress is not None:
-        task.progress = progress  # type: ignore[assignment]
+        task.progress = progress
     if error_message:
-        task.error_message = error_message  # type: ignore[assignment]
+        task.error_message = error_message
     if completed:
-        task.completed_at = now  # type: ignore[assignment]
+        task.completed_at = now
 
     # Always update the timestamp for task state changes
-    task.updated_at = now  # type: ignore[assignment]
+    task.updated_at = now
 
 
 def _reopen_task_row(

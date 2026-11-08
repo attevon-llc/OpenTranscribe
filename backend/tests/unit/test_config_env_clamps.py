@@ -33,7 +33,7 @@ _PRINT_FIELD_TEMPLATE = "from app.core.config import Settings; print(Settings().
 def _read_field(run_in_clean_process, field: str, tmp_path, **env: str) -> str:
     # Annotated rather than returned directly: ``run_in_clean_process`` is an untyped
     # fixture, so mypy infers ``Any`` and flags ``no-any-return``. Naming the type here
-    # keeps every downstream comparison checked, which a ``# type: ignore`` would not.
+    # keeps every downstream comparison checked, which a type-ignore comment would not.
     out: str = run_in_clean_process(
         _PRINT_FIELD_TEMPLATE.format(field=field),
         UPLOAD_DIR=str(tmp_path / "up"),

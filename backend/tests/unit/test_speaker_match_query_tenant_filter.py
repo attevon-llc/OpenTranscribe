@@ -93,3 +93,58 @@ def test_stored_match_lookup_sends_the_resolved_tenant_filter(client, monkeypatc
     _index, body = client.searches[0]
     _assert_tenant_filter(body, organization_id)
     assert body["size"] == _knn(body)["k"] == 20
+
+
+def _failing_client(monkeypatch, exc: Exception) -> None:
+    from app.services.opensearch_service import client as os_client
+
+    class _Down:
+        def search(self, index: str, body: dict[str, Any]) -> dict[str, Any]:
+            raise exc
+
+    monkeypatch.setattr(os_client, "opensearch_client", _Down())
+    monkeypatch.setattr(os_client, "_org_file_ids_of", lambda _user_ids: [])
+
+
+def _prepared_service(monkeypatch):
+    from app.services.speaker_matching import match_storage
+
+    service = _service()
+    monkeypatch.setattr(service, "_scope_gate", lambda _u, _o, speaker_id=None: (True, 42))
+    monkeypatch.setattr(match_storage, "find_matching_speaker", lambda *a, **k: [{"id": 1}])
+    return service
+
+
+def test_an_opensearch_outage_is_reported_not_passed_off_as_no_matches(monkeypatch):
+    from opensearchpy.exceptions import ConnectionError as OsConnectionError
+
+    _failing_client(monkeypatch, OsConnectionError("N/A", "refused", Exception("refused")))
+    service = _prepared_service(monkeypatch)
+    diagnostics: dict[str, Any] = {}
+
+    result = service.find_and_store_speaker_matches(
+        SPEAKER_ID, np.ones(4, dtype=np.float32), USER_ID, diagnostics=diagnostics
+    )
+
+    assert result == []
+    assert diagnostics == {"opensearch_failed": True}
+
+
+def test_a_genuinely_empty_result_is_not_flagged_as_a_failure(client, monkeypatch):
+    service = _prepared_service(monkeypatch)
+    diagnostics: dict[str, Any] = {}
+
+    result = service.find_and_store_speaker_matches(
+        SPEAKER_ID, np.ones(4, dtype=np.float32), USER_ID, diagnostics=diagnostics
+    )
+
+    assert result == []
+    assert diagnostics == {}
+
+
+def test_a_non_opensearch_bug_propagates_instead_of_being_swallowed(monkeypatch):
+    _failing_client(monkeypatch, KeyError("hits"))
+    service = _prepared_service(monkeypatch)
+
+    with pytest.raises(KeyError):
+        service.find_and_store_speaker_matches(SPEAKER_ID, np.ones(4, dtype=np.float32), USER_ID)

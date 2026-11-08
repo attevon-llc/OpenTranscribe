@@ -549,10 +549,16 @@ def _unpin_opensearch_client_reexport():
     (``test_owner_listing_tenancy::test_reindex_status_counts_only_the_active_tenant`` after
     ``test_voiceprint_document_stamps_by_writer``). Removing the pinned entry after every test
     restores the forwarding, whichever test pinned it.
+
+    It also runs BEFORE the test: ``monkeypatch`` is created by an earlier autouse fixture, so
+    its undo runs after this teardown and re-pins the forwarded value of a package-level
+    ``setattr`` once the post-test removal has already happened. Clearing on entry catches that
+    pin before the next test reads it (``test_opensearch_client_unpin_after_monkeypatch``).
     """
-    yield
     import app.services.opensearch_service as package
 
+    vars(package).pop("opensearch_client", None)
+    yield
     vars(package).pop("opensearch_client", None)
 
 

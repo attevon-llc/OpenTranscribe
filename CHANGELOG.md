@@ -122,6 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Single sign-on (OIDC) no longer keeps a database connection busy while it waits for the identity provider during sign-in.
 - Two registrations of the same email at the same moment now answer the second with the usual "Email already registered" instead of a server error; saving the same new system setting twice at once, and attaching the same tag to a file twice at once, no longer fail.
 - Two sign-ins at the same moment can no longer both take the last free session slot when the concurrent-session limit is set; the second waits for the first and is then refused (or, under "terminate oldest", the session count still converges to the limit).
 - The scale seed (`scripts/seed-query-review.sh`) now moves every seeded table's id sequence past the rows it wrote. Before, organizations, holds, collections, clusters and chats kept their sequence at 1, so the first collection, share or chat created on a seeded stack failed with a duplicate key.

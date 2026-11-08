@@ -81,7 +81,7 @@ async def oidc_login(
     # provider's discovery document. Its blocking prologue (sync DB reads, and a Redis
     # state-count scan inside store_state) therefore has to be pushed back off the event
     # loop explicitly — as a sync handler FastAPI did that for us.
-    cfg = await run_in_threadpool(OIDCConfig.from_db, db)
+    cfg = await run_in_threadpool(_oidc_config_released, db)
     if not cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -127,6 +127,21 @@ async def oidc_login(
     response = JSONResponse(content={"authorization_url": authorization_url})
     set_oidc_state_binding(response, state_binding, _OIDC_STATE_EXPIRY_SECONDS, request)
     return response
+
+
+def _oidc_config_released(db: Session) -> OIDCConfig:
+    """Read the OIDC config, then end the read transaction (sync; threadpool it).
+
+    Both OIDC handlers go on to wait for the identity provider (discovery, the code
+    exchange, ID-token validation). The config read opened a transaction, and holding it
+    across those round trips kept a pooled connection idle in transaction for as long as
+    the provider took. ``OIDCConfig`` is plain values, so nothing reloads through the
+    session afterwards; the callback's later database work starts a new transaction.
+    """
+    try:
+        return OIDCConfig.from_db(db)
+    finally:
+        db.close()
 
 
 def _hash_binding(secret: str) -> str:
@@ -190,7 +205,7 @@ async def oidc_callback(
     # synchronous DB/Redis/audit call below is pushed off the event loop
     # explicitly, as oidc_login does (issue #997).
     # Load OIDC config from database (DB > .env > defaults)
-    cfg = await run_in_threadpool(OIDCConfig.from_db, db)
+    cfg = await run_in_threadpool(_oidc_config_released, db)
     if not cfg.enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

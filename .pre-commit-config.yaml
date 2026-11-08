@@ -103,6 +103,7 @@ repos:
           - redis==8.1.0
           - requests==2.34.2
           - slowapi==0.1.10
+          - speechmatics-batch==1.1.0
           - sqlalchemy==2.0.55
           - starlette==1.10.0
           - urllib3==2.8.0

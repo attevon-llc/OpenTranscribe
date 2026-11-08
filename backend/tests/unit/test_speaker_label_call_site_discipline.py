@@ -243,6 +243,11 @@ QUERY_ALLOWED: dict[str, str] = {
     "services/speaker_cleanup.py::_resync_speaker_docs": (
         "same speaker-document sync: the voiceprint index is erased by the purge, not hidden"
     ),
+    "services/opensearch_service/speaker_metadata.py::sync_speaker_profiles_to_opensearch": (
+        "same speaker-document sync (nightly drift repair): it only updates voiceprint documents "
+        "that already exist (mget, skipped when absent), so a purged scope stays empty, and the "
+        "index's reads are closed while voiceprints are off"
+    ),
     "utils/transcript_comparison.py::export_baseline": (
         "developer regression snapshot of the stored rows, written to local disk by "
         "`baseline_export_task`; not a user surface"

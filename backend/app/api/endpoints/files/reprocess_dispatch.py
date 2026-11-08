@@ -19,6 +19,7 @@ def start_reprocessing_task(
     user_id: int | None = None,
     db: Session | None = None,
     disable_diarization: bool | None = None,
+    source_language: str | None = None,
 ) -> None:
     """
     Start the background reprocessing task.
@@ -33,6 +34,7 @@ def start_reprocessing_task(
         num_speakers: Optional fixed number of speakers for diarization
         downstream_tasks: Optional list of downstream pipeline stage names to run after transcription
         whisper_model: Optional Whisper model override for this transcription
+        source_language: Language forced for this run (``None`` = the user's setting)
         user_id: Unused (kept for backward compatibility)
         db: Unused (kept for backward compatibility)
     """
@@ -52,6 +54,7 @@ def start_reprocessing_task(
             # diarization_source "provider" there, which would override the user's choice.
             disable_diarization=True if disable_diarization else None,
             whisper_model=whisper_model,
+            source_language=source_language,
         )
     else:
         logger.info("Skipping Celery task in test environment")
@@ -183,6 +186,7 @@ def dispatch_selective_tasks(
     whisper_model: str | None = None,
     disable_diarization: bool = False,
     owner_id: int | None = None,
+    source_language: str | None = None,
 ) -> None:
     """Dispatch Celery tasks for selected pipeline stages.
 
@@ -196,6 +200,7 @@ def dispatch_selective_tasks(
         user_id: Owner user ID (passed to tasks that need it).
         whisper_model: Optional Whisper model override for transcription.
         disable_diarization: Skip diarization; honoured by the transcription stage only.
+        source_language: Language forced for the transcription stage.
         owner_id: The file owner, whose speaker-detection choice a re-diarize runs with.
     """
 
@@ -215,6 +220,7 @@ def dispatch_selective_tasks(
             whisper_model=whisper_model,
             user_id=user_id,
             disable_diarization=disable_diarization,
+            source_language=source_language,
         )
     elif "rediarize" in stages:
         other_stages = [s for s in stages if s != "rediarize"]

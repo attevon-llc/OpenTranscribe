@@ -79,3 +79,28 @@ def test_citation_scan_count_does_not_grow_with_the_batch(db_session, normal_use
     assert len(small_log.matching(_SCAN)) == len(large_log.matching(_SCAN)) == 1, (
         large_log.describe()
     )  # exactly one UPDATE for the batch
+
+
+def test_a_kill_between_the_deletes_and_the_scrub_is_recovered(
+    db_session, normal_user, quiet_stores
+):
+    """Deletes committed, scrub never ran: the reconcile pass still removes the citations."""
+    gone = _files(db_session, normal_user, 2)
+    kept = _files(db_session, normal_user, 1)[0]
+    message_id = _quote(db_session, normal_user, [*gone, kept])
+    deferred: list[str] = []
+    for f in gone:  # the "kill": rows deleted, the deferred scrub is never called
+        assert fcs.purge_media_file(db_session, f, defer_citation_scrub=deferred)["deleted"]
+    db_session.expire_all()
+    assert len(db_session.get(ChatMessage, message_id).citations) == 4  # still dangling
+
+    rewritten = fcs.scrub_orphaned_citations(db_session)
+    db_session.commit()
+    db_session.expire_all()
+
+    assert rewritten == 1
+    assert db_session.get(ChatMessage, message_id).citations == [
+        {"file_uuid": str(kept.uuid), "snippet": "quoted"},
+        {"snippet": "names no file"},
+    ]
+    assert fcs.scrub_orphaned_citations(db_session) == 0  # idempotent

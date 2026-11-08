@@ -196,6 +196,43 @@ def scrub_chat_citations(db: Session, file_uuids: list[str]) -> int:
     return int(getattr(result, "rowcount", 0) or 0)
 
 
+def scrub_orphaned_citations(db: Session) -> int:
+    """Drop every chat citation whose file no longer exists. Does not commit.
+
+    The recovery half of the batched scrub (:func:`scrub_deferred_citations`): a batch
+    caller scrubs AFTER its row deletes, so a process killed in between leaves citations
+    naming destroyed files. This pass, run by the daily ``chat.retention_sweep``, finds
+    them by the absence of the ``media_file`` row (trashed files keep their row, so their
+    citations stay). Idempotent; a set-based pass, with the probe on ``media_file.uuid``.
+
+    Returns:
+        Number of chat messages rewritten.
+    """
+    from sqlalchemy import text
+
+    # A malformed file_uuid casts to NULL and is left alone: only a well-formed UUID with no
+    # media_file row is an orphan.
+    result = db.execute(
+        text(
+            """
+            UPDATE chat_message SET citations = (
+                SELECT COALESCE(jsonb_agg(c.value ORDER BY c.ordinality), '[]'::jsonb)
+                FROM jsonb_array_elements(chat_message.citations) WITH ORDINALITY AS c
+                WHERE CASE WHEN (c.value ->> 'file_uuid') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (c.value ->> 'file_uuid')::uuid END IS NULL
+                   OR EXISTS (SELECT 1 FROM media_file m WHERE m.uuid = CASE WHEN (c.value ->> 'file_uuid') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (c.value ->> 'file_uuid')::uuid END)
+            )
+            WHERE jsonb_typeof(citations) = 'array'
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(chat_message.citations) AS e
+                WHERE CASE WHEN (e.value ->> 'file_uuid') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (e.value ->> 'file_uuid')::uuid END IS NOT NULL
+                  AND NOT EXISTS (SELECT 1 FROM media_file m WHERE m.uuid = CASE WHEN (e.value ->> 'file_uuid') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (e.value ->> 'file_uuid')::uuid END)
+              )
+            """
+        )
+    )
+    return int(getattr(result, "rowcount", 0) or 0)
+
+
 def _load_purge_plan(db: Session, file: MediaFile) -> dict[str, Any]:
     """Read everything the external destroy needs, then hand back PLAIN DATA.
 

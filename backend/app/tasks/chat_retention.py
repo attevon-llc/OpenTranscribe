@@ -42,11 +42,14 @@ def chat_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signa
     from app.db.session_utils import session_scope
     from app.models.chat import ChatConversation
     from app.services.chat.settings import get_chat_settings
+    from app.services.file_cleanup_service import scrub_orphaned_citations
 
     with session_scope() as db:
+        # Recovery for the batched citation scrub: runs whether or not retention is on.
+        reconciled = scrub_orphaned_citations(db)
         settings = get_chat_settings(db)
         if settings.retention_days <= 0:
-            return {"status": "disabled", "retention_days": 0}
+            return {"status": "disabled", "retention_days": 0, "citations_reconciled": reconciled}
 
         cutoff = datetime.now(UTC) - timedelta(days=settings.retention_days)
 
@@ -86,4 +89,5 @@ def chat_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signa
         "retention_days": settings.retention_days,
         "deleted": deleted,
         "truncated": deleted >= MAX_DELETIONS_PER_RUN,
+        "citations_reconciled": reconciled,
     }

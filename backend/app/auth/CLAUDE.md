@@ -201,8 +201,8 @@ issue #1122). In single-tenant mode nothing changes. A grant never confers `org:
   constraint `ck_user_superuser_matches_role` (migration `v369`). Never write `is_superuser`
   independently — always via `roles.role_implies_superuser()`. External IdPs may grant at
   most `admin`; `super_admin` is local-only.
-- Short-lived JWT access token + long-lived refresh token with **rotation on every use**
-  (OAuth 2.1); the old JTI is revoked in the same call.
+- Refresh tokens **rotate on every use** via one conditional claim (`UPDATE ... WHERE revoked_at IS NULL`), so a token is spent once;
+  a spent token presented again revokes its session's family (rows sharing `absolute_expires_at`; RFC 9700 §4.14.2, `auth.token.reuse`).
 - **A session IS a `refresh_token` row.** Concurrent-session limits, rotation, revocation,
   the #324 fail-closed fallback and (since `v377`) idle/absolute timeouts all key off those
   rows. `session.py` used to carry a Redis `SessionManager` doing the timeout half with zero

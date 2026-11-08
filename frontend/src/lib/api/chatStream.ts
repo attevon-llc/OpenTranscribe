@@ -13,7 +13,8 @@
  */
 
 import { parseRetryAfter } from '$lib/utils/retryAfter';
-import axiosInstance, { getAuthHeaders } from '$lib/axios';
+import { getAuthHeaders } from '$lib/axios';
+import { refreshSession } from '$lib/auth/sessionRefresh';
 import { isCloudEdition } from '$lib/edition';
 import type { ChatStreamEvent, SendMessageRequest } from '$lib/types/chat';
 
@@ -220,7 +221,7 @@ async function streamPost(
     try {
       // External auth has no cookie refresh endpoint: the retry itself mints a
       // fresh bearer through getAuthHeaders. Local auth refreshes the cookie first.
-      if (!isCloudEdition) await axiosInstance.post('/auth/token/refresh', {});
+      if (!isCloudEdition) await refreshSession();
       response = await postStream(url, body, signal);
     } catch {
       // Fall through: the second 401 below hands off to the normal auth flow.

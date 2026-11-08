@@ -44,6 +44,10 @@ const EXEMPT: Record<string, string> = {
   'lib/utils/chatMarkdownExtensions':
     'Caches the lazily imported KaTeX library itself (static code, identical for every user); ' +
     'no user data is held, so it is safe to survive a session change.',
+  'lib/auth/sessionRefresh':
+    'Holds the cross-tab refresh coordinator: a timestamp of the last refresh any tab made and ' +
+    'the in-flight refresh promise. No user data; a timestamp from a previous session only ' +
+    'means "a refresh already happened since then", which is still true after a sign-in.',
   // ── Reset by a different, deliberate mechanism in logout() ──
   'stores/auth':
     'authStore.reset() is called explicitly by logout() and every failed-login path; ' +

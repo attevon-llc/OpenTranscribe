@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Open tabs of one browser now take turns refreshing the sign-in session (one refresh at a time, and a tab skips its own when another tab has just refreshed), so tabs whose session expires at the same moment stay signed in.
+- Sign-in is rate-limited per client address and username instead of per address alone, with a per-address ceiling of ten times `RATE_LIMIT_AUTH_PER_MINUTE` across usernames, so people behind one shared address no longer use up each other's attempts. Token refresh is limited per signed-in user. Behind your own proxy or load balancer, add its address range to `RATE_LIMIT_TRUSTED_PROXIES`.
 - The load-test runbook (`scripts/perf/load/README.md`, and Concurrent users in the Scale and query performance testing page) now gives one command per profile, the seed flags the personas need, the personas and what each covers, and what a run directory holds. Chat turns are limited to 20 a minute per client address in the code, so the runbook runs a fixed number of chat users.
 - Transcription queues now share fairly between users: a user's first 5 queued or running transcriptions keep the normal priority and each one after that is queued one step lower, so another user's file no longer waits behind someone's entire bulk upload. Administrators set the limit in Settings, File status, Recovery, Fair sharing between users (default 5, 0 restores strict first-come order); see Performance Tuning, Fair sharing between users.
 - Frontend dependency updates: axios 1.21, i18next-browser-languagedetector 8.2.3, katex 0.19.1, `@types/node` 26.6.6, and `package.json` now requires the SvelteKit 3.1.1 and adapter-static 4.0.1 the lockfile already resolved (#1349, #1321).
@@ -122,6 +124,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Test isolation groups had stopped applying after a test-runner upgrade, so tests that must not run at the same time could; the test runner is held at a version where they apply.
+- Single sign-on (OIDC) no longer keeps a database connection busy while it waits for the identity provider during sign-in.
+- Two registrations of the same email at the same moment now answer the second with the usual "Email already registered" instead of a server error; saving the same new system setting twice at once, and attaching the same tag to a file twice at once, no longer fail.
+- Two sign-ins at the same moment can no longer both take the last free session slot when the concurrent-session limit is set; the second waits for the first and is then refused (or, under "terminate oldest", the session count still converges to the limit).
 - The scale seed (`scripts/seed-query-review.sh`) now moves every seeded table's id sequence past the rows it wrote. Before, organizations, holds, collections, clusters and chats kept their sequence at 1, so the first collection, share or chat created on a seeded stack failed with a duplicate key.
 - Live notifications are no longer lost when someone connects or disconnects while a notification is being sent to everyone: the send could fail with "dictionary changed size during iteration", after which the server dropped its notification feed and missed whatever was published while it reconnected. A browser tab closing mid-send also no longer causes the user's next tab to be skipped.
 - Opening a live-updates connection no longer runs its sign-in check (a database query and token verification) on the server's event loop, so many browsers reconnecting at once, for example after a restart, no longer stall every other request.
@@ -241,6 +246,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A refresh token can now be used only once, even when two requests present it at the same moment. If a token that was already used is presented again, the session it belongs to is ended (recorded as `auth.token.reuse` in the audit log) and that browser has to sign in again; other sessions are not affected.
+- Request bodies are now size-limited everywhere. The API refuses a JSON or form body larger than `MAX_REQUEST_BODY_BYTES` (default 1 MiB) with `413` before the request is processed; the media upload and speaker-avatar routes keep their own limits. The bundled nginx configurations allow 10m on the API and keep 15G only for the upload locations (`/api/files`, `/s3/`, `/minio/`).
 - Password reset and email verification requests now take the same path whether or not the address has an account: the request looks the account up and queues a background task, and the mail is built and sent there. Invitations and account-change notices are sent from the same background tasks, with retries on temporary mail-server or network errors. An invitation is now refused up front (503) when no mail transport is configured, instead of being created and then failing.
 - Text from people (watch-source names, invitation senders, security-notice text) is now escaped wherever it is placed into an HTML email.
 - Outgoing SMTP no longer sends a username and password over an unencrypted connection, and plain unencrypted mail is only sent to a relay on the same machine. Email configurations that would do so are rejected with a clear message when saved (422), and refused at send time. Operators using a plaintext relay on another host must switch to STARTTLS or port 465.

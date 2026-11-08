@@ -24,7 +24,10 @@ from joserfc import jwt
 from joserfc.errors import ExpiredTokenError
 from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
+from sqlalchemy import update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
@@ -32,6 +35,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.revocation_error import RevocationError
 from app.auth.session_ceiling import _session_lifetime_minutes
 from app.auth.session_ceiling import enforce_session_ceiling
+from app.auth.session_ceiling import lock_user_for_session_mint
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
@@ -40,6 +44,15 @@ from app.models.refresh_token import RefreshToken
 from app.utils.time_format import as_utc
 
 logger = logging.getLogger(__name__)
+
+
+class RefreshTokenReplayError(Exception):
+    """The presented refresh token was already rotated or revoked by the time it was claimed.
+
+    Raised by :meth:`RefreshTokenOps.rotate_refresh_token` when its conditional claim
+    matched no row: another request spent the same token first. The caller answers 401
+    and runs :meth:`RefreshTokenOps.revoke_reused_token_family` (RFC 9700 §4.14.2).
+    """
 
 
 class RefreshTokenOps:
@@ -62,6 +75,10 @@ class RefreshTokenOps:
 
         def revoke_token(
             self, db: Session, jti: str, expires_at: datetime | None = None
+        ) -> None: ...
+
+        def _publish_revocation(
+            self, jti: str, expires_at: datetime | None, owner_id: int | None, *, durable: bool
         ) -> None: ...
 
     def create_refresh_token(
@@ -173,6 +190,12 @@ class RefreshTokenOps:
             last_activity_at=now,
             absolute_expires_at=absolute_expires_at,
         )
+
+        if enforce_concurrent_limit and max_concurrent_sessions > 0:
+            # Serialise this user's session mints so the ceiling below counts every
+            # concurrent one: without it, two transactions each saw only their own new
+            # row plus the committed ones and both kept theirs. Held until the commit.
+            lock_user_for_session_mint(db, user_id)
 
         db.add(refresh_token)
         # Flush (not commit) first: the new row needs an id and to be visible to the
@@ -382,8 +405,9 @@ class RefreshTokenOps:
         Rotate a refresh token by revoking the old one and creating a new one.
 
         This implements OAuth 2.1 refresh token rotation best practice:
-        - Revokes the old refresh token immediately
-        - Creates a new refresh token with fresh expiration
+        - Claims (revokes) the old refresh token with one conditional UPDATE, so a
+          token can be spent exactly once even under concurrent requests
+        - Creates a new refresh token with fresh expiration, in the same transaction
         - Limits the impact of stolen refresh tokens
 
         The successor row inherits ``absolute_expires_at`` **unchanged**, so the
@@ -405,8 +429,34 @@ class RefreshTokenOps:
 
         Returns:
             Tuple of (new_token_string, new_RefreshToken model instance)
+
+        Raises:
+            RefreshTokenReplayError: The token was already spent when claimed.
+            RevocationError: The rotation could not be recorded; nothing changed.
         """
-        # Create new refresh token FIRST (atomic safety: if this fails, user keeps old token)
+        # Claim the old token with ONE conditional UPDATE (PostgreSQL docs, "Read Committed
+        # Isolation Level"): a concurrent refresh presenting the same token blocks on the
+        # row lock, re-evaluates `revoked_at IS NULL` against the committed row once this
+        # transaction ends, and matches nothing. A read-then-revoke here minted two
+        # successors from one token. The claim and the successor commit together, so a
+        # failure before the commit leaves the old token valid and the client can retry.
+        old_jti = str(old_token_record.jti)
+        old_expires = as_utc(old_token_record.expires_at)
+        carried_ceiling = as_utc(old_token_record.absolute_expires_at)
+        try:
+            claimed = db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.jti == old_jti, RefreshToken.revoked_at.is_(None))
+                .values(revoked_at=func.now())
+                .returning(RefreshToken.id)
+            ).first()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise RevocationError("rotation could not be recorded") from exc
+        if claimed is None:
+            db.rollback()
+            raise RefreshTokenReplayError(old_jti)
+
         # A legacy row (pre-v377) carries NULL here; passing it through means the
         # successor gets a freshly-stamped ceiling rather than the session being
         # refused, which is how NULL is grandfathered.
@@ -415,48 +465,90 @@ class RefreshTokenOps:
         # SAME session continuing. Enforcing the cap here would let one busy client
         # evict OTHER devices' sessions purely by refreshing its own token — the cap
         # is a login-time and backstop-time control, not a per-refresh one (issue #632).
-        new_token, new_token_record = self.create_refresh_token(
-            db=db,
-            user_id=user_id,
-            user_uuid=user_uuid,
-            role=role,
-            user_agent=user_agent,
-            ip_address=ip_address,
-            absolute_expires_at=as_utc(old_token_record.absolute_expires_at),
-            enforce_concurrent_limit=False,
-        )
-
-        # Read now: a failed revocation below rolls the session back and expires
-        # this object, and a lazy reload could itself fail.
-        new_jti = str(new_token_record.jti)
-        new_expires = new_token_record.expires_at
-        logger.info(f"Issued new refresh token for user {user_id} (new_jti={new_jti[:8]}...)")
-
-        # Revoke the old token AFTER the new one exists; if that fails the successor
-        # is withdrawn again below and the caller answers with an error.
-        old_jti = str(old_token_record.jti)
-        old_expires = datetime(
-            old_token_record.expires_at.year,
-            old_token_record.expires_at.month,
-            old_token_record.expires_at.day,
-            old_token_record.expires_at.hour,
-            old_token_record.expires_at.minute,
-            old_token_record.expires_at.second,
-            old_token_record.expires_at.microsecond,
-            old_token_record.expires_at.tzinfo,
-        )
         try:
-            self.revoke_token(db, old_jti, old_expires)
-        except RevocationError:
-            # The old token is still valid, so the successor must not outlive this
-            # call: the caller answers with an error and the client retries with
-            # the token it still holds.
-            try:
-                self.revoke_token(db, new_jti, new_expires)
-            except RevocationError:
-                logger.error("Could not withdraw the successor of a rotation that failed")
-            raise
+            new_token, new_token_record = self.create_refresh_token(
+                db=db,
+                user_id=user_id,
+                user_uuid=user_uuid,
+                role=role,
+                user_agent=user_agent,
+                ip_address=ip_address,
+                absolute_expires_at=carried_ceiling,
+                enforce_concurrent_limit=False,
+            )
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise RevocationError("rotation could not be recorded") from exc
 
+        self._publish_revocation(old_jti, old_expires, user_id, durable=True)
         logger.info(f"Rotated out old refresh token for user {user_id} (old_jti={old_jti[:8]}...)")
 
         return new_token, new_token_record
+
+    def revoke_reused_token_family(self, db: Session, token: str) -> int:
+        """Revoke the live remainder of a session whose spent refresh token came back.
+
+        RFC 9700 §4.14.2: when a refresh token that was already rotated is presented
+        again, either the legitimate client or an attacker holds a copy, and the server
+        cannot tell which, so the whole token family is revoked. A family is every row
+        of one session: rotation carries ``absolute_expires_at`` forward unchanged, so
+        the rows of one chain share it exactly and no two logins do. A legacy row
+        (pre-v377, NULL ceiling) cannot be linked to its successors, so for it every
+        live session of the user is revoked instead.
+
+        Only a token whose signature verifies and whose row exists and is revoked
+        counts; a garbage or unknown token changes nothing. A revoked token whose
+        session has no live rows left (a plain logout, an eviction) revokes nothing
+        and is not reported as reuse.
+
+        Args:
+            db: Database session; committed here.
+            token: The refresh token string that was refused.
+
+        Returns:
+            How many live sessions were revoked (0 when this was not a reuse).
+        """
+        try:
+            payload = self.verify_token_with_fallback(token)
+        except JoseError:
+            return 0
+        if payload.get("type") != "refresh":
+            return 0
+        spent = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.token_hash == self._hash_token(token))
+            .first()
+        )
+        if spent is None or spent.revoked_at is None:
+            return 0
+        user_id = int(spent.user_id)
+        spent_jti = str(spent.jti)
+        conditions = [RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)]
+        if spent.absolute_expires_at is not None:
+            conditions.append(RefreshToken.absolute_expires_at == spent.absolute_expires_at)
+        try:
+            revoked = db.execute(
+                update(RefreshToken)
+                .where(*conditions)
+                .values(revoked_at=func.now())
+                .returning(RefreshToken.jti, RefreshToken.expires_at)
+            ).all()
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise RevocationError("reuse revocation could not be recorded") from exc
+        for jti, expires_at in revoked:
+            self._publish_revocation(str(jti), as_utc(expires_at), user_id, durable=True)
+        if revoked:
+            logger.warning(
+                "Refresh token reuse detected for user %s; revoked %d session(s)",
+                user_id,
+                len(revoked),
+            )
+            audit_logger.log(
+                event_type=AuditEventType.AUTH_TOKEN_REUSE,
+                outcome=AuditOutcome.FAILURE,
+                user_id=user_id,
+                details={"jti": spent_jti, "sessions_revoked": len(revoked)},
+            )
+        return len(revoked)

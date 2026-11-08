@@ -1048,6 +1048,7 @@ where noted.
 | `REQUIRE_ACCOUNT_APPROVAL` | `false` | `true` makes new and just-in-time provisioned accounts wait for administrator approval before they can sign in. |
 | `ALLOW_INSECURE_COOKIES` | `false` | Hardened deployments mark auth cookies Secure, which a browser drops over plain HTTP (sign-in appears to succeed, then no session). Set `true` only for a single-tenant install on a trusted LAN with no TLS in front; prefer [HTTPS](./nginx-setup.md). It relaxes nothing else. |
 | `MAX_UPLOAD_BYTES` | `16106127360` (15 GB) | Server-side ceiling on an uploaded file, checked when the upload is prepared and again when it completes. `0` disables the limit. |
+| `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Ceiling on every other request body (JSON and form requests), refused with `413` before the request is processed. The media upload and speaker-avatar routes keep their own limits. The bundled nginx configs cap `/api/` at `10m`, so raising this above 10 MiB also needs their `client_max_body_size` raised. |
 | `ENABLE_API_DOCS` | unset | A hardened deployment hides Swagger UI, ReDoc and the OpenAPI schema (`/api/docs`, `/api/redoc`, `/api/openapi.json`). `true` publishes them. |
 | `RUN_MIGRATIONS_ON_STARTUP` | `true` | Run Alembic migrations when the backend starts. Set `false` where a separate migration job owns the schema; `/health/ready` then fails until the schema is at head. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access-token lifetime. |
@@ -1190,6 +1191,7 @@ MFA_BACKUP_CODE_COUNT=10
 RATE_LIMIT_ENABLED=true
 RATE_LIMIT_AUTH_PER_MINUTE=10
 RATE_LIMIT_API_PER_MINUTE=100
+RATE_LIMIT_TRUSTED_PROXIES=        # proxy/load-balancer CIDRs allowed to set X-Forwarded-For
 
 # Audit Logging (FedRAMP AU-2/AU-3)
 AUDIT_LOG_ENABLED=true
@@ -1202,6 +1204,20 @@ LOGIN_BANNER_ENABLED=false
 LOGIN_BANNER_TEXT=This is a restricted system...
 LOGIN_BANNER_CLASSIFICATION=UNCLASSIFIED   # default
 ```
+
+:::note[Rate limits behind a proxy or load balancer]
+Sign-in is limited per client address **and** username (`RATE_LIMIT_AUTH_PER_MINUTE`), with a
+per-address ceiling ten times that across all usernames, so people sharing one office or NAT
+address do not use up each other's attempts. Token refresh is limited per signed-in user. Other
+sign-in steps that have no identity yet (registration, password reset, single sign-on) are
+limited per client address.
+
+The client address comes from `X-Forwarded-For` only when the request arrives from an address in
+`RATE_LIMIT_TRUSTED_PROXIES`. The bundled nginx overlays set it for their own network. **If you run
+your own reverse proxy or a load balancer in front, add its address range (CIDR) here**, or every
+request appears to come from the proxy and all users share one rate-limit address. Never add a
+wide range that untrusted machines can send from.
+:::
 
 ## Cloud ASR Providers
 

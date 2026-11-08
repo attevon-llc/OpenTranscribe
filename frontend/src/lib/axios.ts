@@ -311,9 +311,10 @@ axiosInstance.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        // Call refresh endpoint — refresh_token cookie is sent automatically
-        // (it's scoped to /api/auth path)
-        await axiosInstance.post('/auth/token/refresh', {});
+        // Coordinated with every other tab (one refresh at a time, skipped when another
+        // tab already did it): the shared refresh cookie can be spent only once.
+        const { refreshSession } = await import('$lib/auth/sessionRefresh');
+        await refreshSession();
 
         // Refresh succeeded — new cookies are set, retry queued requests
         processQueue(null);

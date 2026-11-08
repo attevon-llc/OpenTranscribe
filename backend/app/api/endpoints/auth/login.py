@@ -32,9 +32,12 @@ from app.auth.lockout import canonical_identifier
 from app.auth.lockout import check_and_record_attempt
 from app.auth.lockout_admin import get_lockout_info
 from app.auth.rate_limit import get_auth_rate_limit
+from app.auth.rate_limit import get_login_ip_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import login_rate_key
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.session_ceiling import enforce_session_ceiling
+from app.auth.session_ceiling import lock_user_for_session_mint
 from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import get_auth_settings
 from app.core.auth_types import AUTH_TYPE_LOCAL
@@ -311,9 +314,15 @@ def _enforce_concurrent_session_limit(
     """
     from app.models.refresh_token import RefreshToken
 
-    # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
-    # This acquires row-level locks on the user's active sessions
-    # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
+    # Lock the USER row first and hold it until the new session is minted (the
+    # refresh-token insert commits it). Locking only the existing session rows below
+    # could not serialise two sign-ins: neither sees the row the other is about to
+    # insert, so both counted one slot free and both minted. With the user row held,
+    # the second sign-in waits here, then counts the first one's session.
+    lock_user_for_session_mint(db, user_db.id)
+
+    # Row locks on the existing active sessions, so the eviction below works on a
+    # stable set. Cannot use with_for_update() on an aggregate, so count the rows.
     sessions_stmt = (
         select(RefreshToken)
         .where(
@@ -404,13 +413,26 @@ def _enforce_concurrent_session_limit(
             )
 
 
+def _login_form(
+    request: Request, form_data: OAuth2PasswordRequestForm = Depends()
+) -> OAuth2PasswordRequestForm:
+    """The sign-in form, with its username recorded for the rate-limit key.
+
+    Runs during dependency resolution, i.e. before the limited endpoint, which is when
+    ``rate_limit.login_rate_key`` reads it.
+    """
+    request.state.login_username = canonical_identifier(form_data.username, None)
+    return form_data
+
+
 @router.post("/token", response_model=Token)
 @router.post("/login", response_model=Token)  # Add alias for frontend compatibility
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_rate_limit(), key_func=login_rate_key)
+@limiter.limit(get_login_ip_rate_limit())
 def login_for_access_token(
     request: Request,
     response: Response,
-    form_data: OAuth2PasswordRequestForm = Depends(),
+    form_data: OAuth2PasswordRequestForm = Depends(_login_form),
     db: Session = Depends(get_db),
 ) -> JSONResponse:
     """OAuth2 compatible token login, get an access token for future requests.

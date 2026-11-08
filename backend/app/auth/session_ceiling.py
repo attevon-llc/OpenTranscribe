@@ -10,10 +10,12 @@ the periodic sweep in ``services/session_cap_service.py``.
 
 import logging
 
+from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,17 @@ def _session_lifetime_minutes(db: Session) -> tuple[int, int, int]:
             settings.SESSION_ABSOLUTE_TIMEOUT_MINUTES,
             settings.MAX_CONCURRENT_SESSIONS,
         )
+
+
+def lock_user_for_session_mint(db: Session, user_id: int) -> None:
+    """Hold *user_id*'s row lock until the caller's transaction ends.
+
+    Serialises the user's session mints. Row locks on the existing session rows cannot
+    do it: neither of two concurrent mints sees the row the other is about to insert,
+    so both counted a free slot and both kept their session. Taken by the interactive
+    sign-in's cap check and by ``create_refresh_token`` before its post-insert ceiling.
+    """
+    db.execute(select(User.id).where(User.id == user_id).with_for_update())
 
 
 def enforce_session_ceiling(

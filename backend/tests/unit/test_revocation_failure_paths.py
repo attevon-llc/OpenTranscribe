@@ -79,23 +79,23 @@ def audit_records(monkeypatch) -> list[dict]:
 
 
 @pytest.mark.unit
-class TestRotationWhenTheDatabaseFailsAfterTheSuccessorExists:
+class TestRotationWhenTheDatabaseFailsAfterTheClaim:
     def test_the_failure_stays_a_revocation_error(
-        self, service, db_session, normal_user, monkeypatch, reads_fail
+        self, service, db_session, normal_user, monkeypatch
     ):
-        """A lazy reload of the successor must not replace the typed error."""
+        """A commit that fails after the claim yields the typed error, not a follow-on one.
+
+        That the claim is undone is pinned against real commits in
+        ``tests/api/test_refresh_rotation_race.py``.
+        """
         old_token, old_row = _issue(service, db_session, normal_user)
         calls: list[str] = []
 
-        def _revoke(db, jti, expires_at=None):
-            calls.append(jti)
-            # What a failed revocation leaves behind: a rolled-back session whose
-            # objects are expired, over a database that no longer answers.
-            db.expire_all()
-            reads_fail["down"] = True
-            raise RevocationError("could not record revocation")
+        def _commit_fails():
+            calls.append("commit")
+            raise OperationalError("COMMIT", {}, Exception("database unavailable"))
 
-        monkeypatch.setattr(service, "revoke_token", _revoke)
+        monkeypatch.setattr(db_session, "commit", _commit_fails)
 
         with pytest.raises(RevocationError):
             service.rotate_refresh_token(
@@ -107,7 +107,7 @@ class TestRotationWhenTheDatabaseFailsAfterTheSuccessorExists:
                 role="user",
             )
 
-        assert len(calls) == 2, "the successor withdrawal was not attempted"
+        assert calls == ["commit"]
 
 
 @pytest.mark.unit

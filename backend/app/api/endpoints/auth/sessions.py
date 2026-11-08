@@ -34,6 +34,7 @@ from app.auth.oidc import OIDCConfig
 from app.auth.oidc import call_federated_logout
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import refresh_rate_key
 from app.auth.refresh_tokens import RefreshTokenReplayError
 from app.auth.revocation_error import RevocationError
 from app.auth.token_service import token_service
@@ -51,16 +52,35 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _refresh_body(request: Request, body: TokenRefreshRequest) -> TokenRefreshRequest:
+    """The refresh request, with the verified token subject recorded for the rate-limit key.
+
+    Only a token whose signature verifies sets ``request.state.refresh_subject``; the
+    endpoint re-verifies it in full (revocation, session lifetime) either way.
+    """
+    from app.auth.cookies import get_refresh_token_from_cookie
+
+    token = body.refresh_token or get_refresh_token_from_cookie(request)
+    if token:
+        try:
+            claims = token_service.verify_token_with_fallback(token)
+        except JoseError:
+            claims = {}
+        if claims.get("type") == "refresh" and claims.get("sub"):
+            request.state.refresh_subject = str(claims["sub"])
+    return body
+
+
 @router.post(
     "/token/refresh",
     response_model=Token,
     responses={503: {"description": "The rotation could not be recorded; retry."}},
 )
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_rate_limit(), key_func=refresh_rate_key)
 def refresh_access_token(
     request: Request,
     response: Response,
-    body: TokenRefreshRequest,
+    body: TokenRefreshRequest = Depends(_refresh_body),
     db: Session = Depends(get_db),
 ) -> Any:
     """

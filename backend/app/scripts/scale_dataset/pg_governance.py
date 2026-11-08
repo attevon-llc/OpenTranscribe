@@ -30,6 +30,7 @@ from app.models.sharing import CollectionShare
 from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerMatch
+from app.scripts.scale_dataset.pg_activity import seed_activity
 from app.scripts.scale_dataset.pg_synthetic import Shape
 from app.scripts.scale_dataset.pg_synthetic import _bump_sequence
 from app.scripts.scale_dataset.pg_synthetic import _fill
@@ -280,7 +281,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
 
 
 def seed_all(conn: Connection, shape: Shape, seed: str, password_hash: str) -> dict[str, int]:
-    """The whole dataset: core tables, then organizations, holds, collections, clusters, chat."""
+    """The whole dataset: core tables, governance tables, then the load test's activity rows."""
     from app.models.media import MediaFile
     from app.models.speaker import Speaker
     from app.models.user import User
@@ -292,6 +293,7 @@ def seed_all(conn: Connection, shape: Shape, seed: str, password_hash: str) -> d
     )
     counts = seed_dataset(conn, shape, seed, password_hash)
     counts.update(seed_governance(conn, shape, seed, bases))
+    counts.update(seed_activity(conn, shape, seed, bases.user, bases.file))
     bump_id_sequences(conn, counts)
     return counts
 
@@ -301,11 +303,14 @@ def bump_id_sequences(conn: Connection, tables: Iterable[str]) -> None:
 
     The seed writes explicit ids, which leaves a serial sequence where it was; the app's next
     INSERT (a collection, comment or chat created during a load test) would then collide.
-    Tables without a serial ``id`` (composite-key links, string task ids) are skipped.
+    Names that are not tables (``user_tag`` counts rows of ``tag``) and tables without a serial
+    ``id`` (composite-key links, string task ids) are skipped.
     """
     from app.db.base import Base
 
     for name in tables:
-        table = Base.metadata.tables[name]
+        table = Base.metadata.tables.get(name)
+        if table is None:
+            continue
         if "id" in table.c and isinstance(table.c.id.type, Integer):
             _bump_sequence(conn, table)

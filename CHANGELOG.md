@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The scale seed adds what the concurrent-user load test reads: comment threads written by each file's owner (`--comments`, default 300,000), personal tags that ordinary users own and that sit on their own files (`--user-tags`, default 20,000), and, with `--waveform-pm`, the cached waveform the file page draws (off by default so the query review's rows keep their width).
 - A concurrent-user load test (`scripts/perf/load/`, Locust): hundreds of simulated people sign in as the scale seed's users and browse, filter, open files, search and occasionally comment or start an upload, against an isolated `--fresh` stack only. The runbook in its README and in the Scale and query performance testing page covers 100, 500 and 1,000 users and what to record.
 - `/metrics` reports the API's database pool use: `db_pool_capacity`, `db_pool_checked_out` and `db_pool_overflow`. When checked-out connections reach the capacity, requests are waiting for a database connection.
 - A super admin can re-verify unfinished voiceprint purges on demand with `POST /api/admin/privacy-policy/purge-reverify` (optional `older_than_seconds`, at least 300, default 3600), instead of waiting for the scheduled check. The ids of cluster centroids a purge still owes were already kept in the database (`privacy_purge_pending`, v461), not only in the second pass's task message (#1334).

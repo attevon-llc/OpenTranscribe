@@ -40,6 +40,8 @@ TINY = pg.Shape(
     hidden=4,
     conversations=2,
     messages=4,
+    comments=10,
+    user_tags=4,
 )
 
 

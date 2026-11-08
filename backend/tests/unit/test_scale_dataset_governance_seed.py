@@ -41,6 +41,8 @@ SHAPE = pg.Shape(
     hidden=6,
     conversations=3,
     messages=9,
+    comments=10,
+    user_tags=4,
 )
 NEW = {
     "organization": 2,
@@ -178,7 +180,8 @@ def test_the_app_can_insert_after_the_seed_in_every_seeded_table(db_session):
     conn = db_session.connection()
     behind = []
     for name in counts:
-        if "id" not in Base.metadata.tables[name].c:  # composite-key link tables
+        table = Base.metadata.tables.get(name)
+        if table is None or "id" not in table.c:  # a count that is not a table, or a link table
             continue
         seq = conn.execute(
             text("SELECT pg_get_serial_sequence(:t, 'id')"), {"t": f'"{name}"'}

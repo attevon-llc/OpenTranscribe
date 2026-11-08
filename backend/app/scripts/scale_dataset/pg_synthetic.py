@@ -77,6 +77,9 @@ class Shape:
     hidden: int = 5_000
     conversations: int = 20_000
     messages: int = 200_000
+    comments: int = 300_000
+    user_tags: int = 20_000
+    waveform_pm: int = 0
 
     def __post_init__(self) -> None:
         if self.users < 3:
@@ -100,6 +103,12 @@ class Shape:
             raise ValueError("orgs, holds, collections, clusters, conversations must be >= 1")
         if min(self.files, self.speakers_per_file, self.segments_per_file, self.profiles) < 1:
             raise ValueError("files, speakers_per_file, segments_per_file, profiles must be >= 1")
+        if self.comments < 0:
+            raise ValueError("comments must be >= 0")
+        if not 0 <= self.user_tags <= self.files - self.heavy_user_files:
+            raise ValueError("user_tags must be between 0 and files - heavy_user_files")
+        if not 0 <= self.waveform_pm <= 1000:
+            raise ValueError("waveform_pm must be between 0 and 1000")
 
 
 def _check_seed(seed: str) -> str:
@@ -397,4 +406,5 @@ ANALYZE_TABLES: tuple[str, ...] = (
     "user_hidden_media",
     "chat_conversation",
     "chat_message",
+    "comment",
 )

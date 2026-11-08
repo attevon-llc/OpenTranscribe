@@ -2,10 +2,14 @@
 
 ## Purpose
 
-**Alembic is the sole schema authority.** `migrations.py:run_migrations()` executes on
-backend startup (`app/main.py` lifespan) and handles three cases: empty DB → `upgrade head`;
+**Alembic is the sole schema authority.** `migrations.py:run_migrations()` runs in the
+one-shot migrate step (`python -m app.startup.migrate`, the compose `migrate` service) and,
+where `RUN_MIGRATIONS_ON_STARTUP=true` (the default, and the dev stack), in the backend
+lifespan (`app/main.py`). It handles three cases: empty DB → `upgrade head`;
 existing *untracked* DB → detect version, `stamp`, then upgrade; already tracked → apply
-pending. `alembic upgrade head` by hand is **production-only**.
+pending. `alembic upgrade head` by hand is **production-only**, and skips the post-upgrade
+work below — prefer `python -m app.startup.migrate`. Design and citations:
+`docs/design/migrate_job_plan.md`.
 `database/init_db.sql` is **legacy reference only — not used for schema.**
 
 ## Key files
@@ -217,6 +221,14 @@ referenced them (detection arms, consistency tests, this file).
   `test_audit_protection_registry.py` compares with it. Never widen `mutable_columns` without a
   failing test that needs the column; every `ON DELETE SET NULL` column must be in
   `nullable_on_cascade` or deleting its parent fails.
+- **Only the migrate step holds owner credentials under the split.** `docker-compose.db-roles.yml`
+  blanks `POSTGRES_PASSWORD` / `MIGRATION_DATABASE_URL` on `backend` and every worker and sets
+  the API's `RUN_MIGRATIONS_ON_STARTUP=false` (dev too); `migrate` keeps them. Nothing in the
+  API may connect as `POSTGRES_USER`: the password login (`auth/direct_auth.get_db_connection`)
+  did, with its own psycopg2 connection, until it moved to `engine.raw_connection()`.
+  Pinned by `tests/unit/test_runtime_role_least_privilege.py`. The runtime-role check
+  (`role_check.enforce_runtime_role`) is unchanged: it measures the connected role on the
+  server and already refuses an owner/superuser runtime role when the split is requested.
 - **Reconcile** (`roles.py`) runs at the end of `run_migrations()` and as
   `python -m app.db.roles reconcile`, as the owner, idempotently; it repairs a `--no-acl` restore.
   **Never `DROP ROLE`.** `role_check.py` measures the runtime role (`has_table_privilege`) for the boot
@@ -307,11 +319,31 @@ storage is set and reset. `tests/unit/test_idle_in_transaction_backstop.py` asse
   already failing that way). `tests/unit/_migration_detection.py:
   assert_detected_at_or_after` asserts what the test is actually for: the ladder must
   never stamp *lower* than the revision whose markers the schema carries.
-- Only the **backend** runs migrations — Celery workers do not. The one gate is
-  `RUN_MIGRATIONS_ON_STARTUP` (`core/config.py`, default `true`; `false` for an orchestrated
-  deploy whose migrate Job owns them, in which case readiness asserts the schema is at head
-  and fails 503 otherwise). A migration failure calls `SystemExit(1)`; the container
-  aborts rather than serving a half-migrated schema.
+- Only the **migrate step and the backend** run migrations — Celery workers do not. The
+  backend's gate is `RUN_MIGRATIONS_ON_STARTUP` (`core/config.py`, default `true`, which old
+  compose files rely on). Every compose chain that runs the `migrate` service sets it
+  `false` on the API **except dev** (hot reload and `restart-backend` must apply a new
+  revision; the second run is a no-op under the lock); `tests/unit/
+  test_compose_migrate_service.py` enforces both, and that `migrate` gets the backend's
+  image/build and migration-relevant env in every file and chain. With it `false`,
+  readiness asserts the schema is at head and fails 503 otherwise
+  (`tests/unit/test_readiness_schema_gate.py`). A migration failure in the lifespan calls
+  `SystemExit(1)`; the container aborts rather than serving a half-migrated schema.
+- **The advisory-lock wait is bounded** (`MIGRATION_LOCK_TIMEOUT_S`, default 900 s, `0` =
+  forever). `_acquire_migration_lock` polls `pg_try_advisory_lock(42)` every 2 s, logs the
+  holder (pid/app/state from `pg_locks` + `pg_stat_activity`) on the first miss and progress
+  every 30 s, and raises `MigrationLockTimeoutError` at the deadline (migrate step exit 3).
+  `lock_timeout` DOES apply to `pg_advisory_lock` (measured on postgres 17.5); the poll loop
+  is kept for the progress/holder logging and because it needs no session GUC through a
+  pooler. Real-Postgres tests: `tests/unit/test_migration_lock_timeout.py`.
+- **Migrate step exit codes are a contract** (compose and Job controllers only see them):
+  `0` ok, `1` migration failed, `3` lock timeout, `4` database unreachable within
+  `DB_STARTUP_WAIT_S`. It lives in `app/startup/` (not here) because it also seeds via
+  `app.initial_data`, which `app.db` may not import (import-linter layers contract).
+- **Paths that skip `depends_on`** (`compose start`, `up --no-deps`) do not run the
+  migrate service. `scripts/common.sh:compose_run_migrate` runs it explicitly (restore
+  calls it before restarting the app); `opentranscribe.sh:perform_phased_restart` checks its
+  `up` and prints the migrate log on failure.
 - `_repair_skipped_v230()` runs after every successful migration — a permanent post-hook
   that re-applies v230's idempotent DDL for DBs upgraded through the pre-linearisation
   v250→v270 branch. Don't remove it.
@@ -321,3 +353,33 @@ storage is set and reset. `tests/unit/test_idle_in_transaction_backstop.py` asse
   this project's revision IDs are long descriptive names, not hashes.
 - Wrong-DB symptoms ("relation does not exist") almost always mean the stack was started
   with bare `docker compose` instead of `./opentr.sh start dev`. Relaunch before debugging.
+
+## Startup work and replicas (the lifespan audit)
+
+Every step of `app/main.py`'s lifespan is one of: in the migrate step, elected once per boot
+window (`utils/boot_once.run_once_per_boot`, Redis `SET NX EX`, fails open), dispatched to
+Celery, or deliberately per process. Add a new startup step to this table with its decision.
+
+| Step | Decision | Why |
+|---|---|---|
+| `configure_api_threadpool`, `_validate_production_secrets`, `ensure_nltk_data_private` | per process | process-local state / config check |
+| `run_migrations()` (+ v230 repair, concurrent index retries, role reconcile, idle timeout) | migrate step; lifespan only when `RUN_MIGRATIONS_ON_STARTUP=true` | schema is once per deploy; lock-bounded either way |
+| `init_db` seed | migrate step; lifespan inline when self-migrating, else elected (`seed_initial_data`) | the elected fallback covers a Job that only ran `alembic upgrade head` |
+| `_enforce_database_role_or_exit`, `_log_tenancy_mode_at_startup`, `_log_password_blocklist_status` | per process | checks/logs this process's own role and config |
+| `_provision_native_diarizer` | per process, with `DIAR_NATIVE_AUTO_PROVISION=false` for replicas sharing a models dir | marker-idempotent; the files live on a per-host volume an election cannot see |
+| `_register_chat_usage_hook`, PII / reranker warm-ups | per process | in-memory registries and models |
+| `ensure_indices_exist`, `ensure_v4_index_exists` | per process | idempotent no-ops once present |
+| `check_and_repair_indices` + chunk index repair | elected (`opensearch_repair_indices`) | expensive, shared cluster state |
+| speaker profile sync | elected dispatch to Celery | |
+| derived-cache retention PUT | per process | one idempotent PUT re-reading the admin setting |
+| legacy derived/audio cache reclaims | elected (`legacy_cache_reclaim`) | list+delete bucket objects; check-then-set flags |
+| `_clear_stale_task_state` | elected (concurrency audit M4) | |
+| `_setup_minio` bucket create/CORS/lifecycle/public-policy sweep, quarantine backfill | elected (`media_bucket_setup`) | shared bucket |
+| presign identity (`ensure_presign_identity`) | per process | memoized in-process; each replica signs with it |
+| startup recovery dispatch | elected (`startup_recovery_dispatch`) | the task lock stops overlap, not a second run after the first |
+| search maintenance, availability reconcile, tag tenant repair, neural bootstrap | elected | |
+| thumbnail migration / backfill dispatch | elected (`thumbnail_migration_dispatch`) | each walks the library |
+| imohash recompute dispatch | elected (`imohash_recompute_dispatch`) after the done-flag check | |
+| embedding normalization dispatch | elected (concurrency audit M12) | |
+
+Pinned by `tests/unit/test_startup_elections.py`.

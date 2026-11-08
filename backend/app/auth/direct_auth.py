@@ -11,7 +11,6 @@ from datetime import datetime
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-import psycopg2
 from joserfc import jwt
 from joserfc.jwk import OctKey
 
@@ -22,20 +21,20 @@ from app.core.config import settings
 from app.core.security import verify_and_update_password
 
 if TYPE_CHECKING:
-    from psycopg2.extensions import connection
     from psycopg2.extensions import cursor
+    from sqlalchemy.pool import PoolProxiedConnection
 
 
-def get_db_connection() -> connection:
-    """Get a direct database connection."""
-    conn = psycopg2.connect(
-        host=settings.POSTGRES_HOST,
-        port=settings.POSTGRES_PORT,
-        database=settings.POSTGRES_DB,
-        user=settings.POSTGRES_USER,
-        password=settings.POSTGRES_PASSWORD,
-    )
-    return conn
+def get_db_connection() -> PoolProxiedConnection:
+    """A DBAPI connection from the runtime engine's pool; ``close()`` returns it.
+
+    Runtime role, never ``POSTGRES_USER``: with the database role split the API holds no owner
+    credentials at all, and logins must not run as the table owner. The engine also carries
+    the SSL mode and the idle-in-transaction backstop.
+    """
+    from app.db.base import engine
+
+    return engine.raw_connection()
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -97,7 +96,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 logger = logging.getLogger(__name__)
 
 
-def _fetch_user_by_email(conn: connection, cursor: cursor, email: str) -> tuple | None:
+def _fetch_user_by_email(conn: PoolProxiedConnection, cursor: cursor, email: str) -> tuple | None:
     """Fetch user record from database by email.
 
     Args:
@@ -140,7 +139,7 @@ def _validate_user_can_authenticate(user_tuple: tuple, masked_email: str) -> boo
 
 
 def _verify_and_upgrade_password(
-    conn: connection,
+    conn: PoolProxiedConnection,
     cursor: cursor,
     user_id: str,
     password: str,

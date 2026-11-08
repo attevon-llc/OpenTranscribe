@@ -2,6 +2,9 @@
 # Use with: docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.local.yml up -d
 
 services:
+  migrate:
+    pull_policy: never
+
   backend:
     pull_policy: never
 

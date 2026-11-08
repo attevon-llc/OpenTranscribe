@@ -1,16 +1,29 @@
 # Optional database role split (docs: Operations -> Audit record integrity).
 #
 # Auto-loaded by opentr.sh / opentranscribe.sh when POSTGRES_APP_USER is set (in .env or the
-# shell). Every app service connects as that unprivileged role; only `backend` (which runs
-# migrations and re-applies the role's grants on startup) keeps the owner password, so a worker
-# that runs ffmpeg or model code on untrusted media never holds owner credentials.
+# shell). Every app service connects as that unprivileged role. Only the one-shot `migrate`
+# step (which runs migrations and re-applies the role's grants) keeps the owner password; the
+# API and every worker get it blanked, so code execution in any long-running process never
+# reaches owner (DDL) credentials. The API therefore does not migrate itself here, dev
+# included: after adding a revision, re-run `./opentr.sh start dev` (it runs `migrate`).
+# tests/unit/test_runtime_role_least_privilege.py enforces both.
 #
 # Declares no container_name, ports or volumes, so it needs no --fresh re-pinning.
 services:
+  # The migrate step runs the role reconcile at the end of every migration, so it needs the
+  # app role's name and password as well as the owner credentials it already has.
+  migrate:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+
   backend:
     environment:
       POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+      POSTGRES_PASSWORD: ""
+      MIGRATION_DATABASE_URL: ""
+      RUN_MIGRATIONS_ON_STARTUP: "false"
 
   celery-worker:
     environment:

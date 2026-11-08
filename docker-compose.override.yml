@@ -21,14 +21,14 @@ x-dev-environment: &dev-environment
   # processes disagreed the sweep would evict the dev stack back to 5 every night.
   MAX_CONCURRENT_SESSIONS: ${DEV_MAX_CONCURRENT_SESSIONS:-1000}
 
-# All 13 backend-image build blocks below build the same image and must agree on
+# All 14 backend-image build blocks below build the same image and must agree on
 # how — most importantly these args. Dockerfile.prod's APP_VERSION/GIT_SHA ARGs
 # default to "unknown"/empty; without args here a stack built from this file
 # (including a detached "the image IS the code" measurement stack, #55) cannot
 # say which commit produced it, which is the whole point of baking source in
 # instead of bind-mounting it. opentr.sh exports both from the environment
 # (VERSION file / `git rev-parse --short HEAD`, with a "-dirty" suffix for an
-# uncommitted tree). One anchor keeps all 13 blocks in sync — a copy-pasted
+# uncommitted tree). One anchor keeps all 14 blocks in sync — a copy-pasted
 # args: block would silently drift as services are added.
 #
 # Every `image:` tag below is `${OT_DEV_IMAGE_TAG:-latest}`, never a bare `:latest`.
@@ -55,6 +55,21 @@ x-backend-build: &backend-build
     GIT_SHA: ${GIT_SHA:-}
 
 services:
+  # The one-shot migrate step runs the working tree's alembic/ and app/ (bind mount), like
+  # the backend. Dev is the one chain where the backend ALSO keeps
+  # RUN_MIGRATIONS_ON_STARTUP=true (the default): a hot reload or `restart-backend` after
+  # adding a revision must still apply it, and nothing else re-runs this service. The
+  # second run finds the schema at head under the advisory lock and costs a second or two.
+  migrate:
+    image: opentranscribe-backend:${OT_DEV_IMAGE_TAG:-latest}
+    build:
+      <<: *backend-build
+    volumes:
+      - ./backend:/app
+      - /app/venv  # Exclude host backend/venv/ — see the `backend` service below for why
+    environment:
+      <<: *dev-environment
+
   # All backend services share the same image to save disk space
   # Image is built once and reused by all backend-based services
   backend:

@@ -27,6 +27,29 @@ See [Backup & Restore](./backup-restore.md). Then update:
 ./opentranscribe.sh update --version v0.7.0   # or pin this release explicitly
 ```
 
+## Migrations run in their own step
+
+**Check this if...** you run OpenTranscribe from your own compose files, or on Kubernetes or ECS.
+
+The compose files now contain a one-shot `migrate` service. It applies the migrations and
+exits, and only then do `backend` and the Celery workers start. The backend no longer migrates
+itself in the shipped production, lite and offline files (`RUN_MIGRATIONS_ON_STARTUP=false`
+there). Nothing changes for you if you use `./opentranscribe.sh update`: it installs the new
+compose files and the migration runs first, as before. A failed migration is now visible in
+`./opentranscribe.sh logs migrate`, and the backend is not started.
+
+- **Own compose files without a `migrate` service:** they keep working. The backend defaults to
+  `RUN_MIGRATIONS_ON_STARTUP=true` and migrates when it starts.
+- **Orchestrated deploys:** run `python -m app.startup.migrate` as a Job before the rollout and
+  start the API with `RUN_MIGRATIONS_ON_STARTUP=false`. If your Job ran `alembic upgrade head`,
+  switch it: the new command also does the post-upgrade work `alembic` alone skips (deferred
+  index builds, database role grants) and seeds the initial data.
+- **A migration lock that is never released** used to make every backend wait forever. A runner
+  now gives up after `MIGRATION_LOCK_TIMEOUT_S` (default 900 s), names the session that holds
+  the lock, and exits with code `3`.
+
+See [How migrations run](./upgrading.md#how-migrations-run).
+
 ## Hardened startup checks
 
 **Check this if...** your `.env` predates the current installer, or you wrote it by hand.

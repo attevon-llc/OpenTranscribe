@@ -89,9 +89,12 @@ budget):
 | `opensearch` | 60 s | JVM boot + shard recovery on a large existing index. |
 | GPU / CPU / embedding / model workers | 120 s | Cold model preload + first-run HuggingFace download. |
 
-`redis` uses a tight healthcheck (5 s timeout, 10 retries). Every worker —
-including `celery-nlp-worker` — waits on `backend: service_healthy`, so no worker
-can race the schema before migrations have applied.
+`redis` uses a tight healthcheck (5 s timeout, 10 retries). The one-shot `migrate`
+service waits on `postgres: service_healthy`, applies the migrations and exits; `backend`
+and every Celery worker wait on `migrate: service_completed_successfully`, and every
+worker also waits on `backend: service_healthy`, so nothing can race the schema before
+migrations have applied. `migrate` exiting `0` is its success state; `./opentr.sh start`
+does not report it as a stopped service.
 
 `./opentr.sh start` and `reset` launch with **`up -d --wait --wait-timeout 700`**:
 the command blocks until every service is healthy (the timeout covers the

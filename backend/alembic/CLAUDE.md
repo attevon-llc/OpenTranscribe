@@ -110,9 +110,11 @@ re-run that touches no rows needs nothing. Revisions before v453 predate the tri
   `tests/unit/_migration_detection.assert_detected_at_or_after` — that
   `_detect_schema_version()` never stamps the live schema *earlier* than this revision.
   Do not write `== REVISION`: it goes red the day the next revision lands.
-- The `pg_advisory_lock(42)` guard in the startup runner is **fixed** (dedicated connection
-  held across `command.upgrade()`, issue #284 A1.4) and documented in `app/db/CLAUDE.md` —
-  don't re-diagnose it here.
+- The advisory-lock guard (key 42) in the runner is **fixed** (dedicated connection held
+  across `command.upgrade()`, issue #284 A1.4; bounded wait via `MIGRATION_LOCK_TIMEOUT_S`)
+  and documented in `app/db/CLAUDE.md` — don't re-diagnose it here. Outside dev, revisions
+  are applied by the one-shot `migrate` compose service (`python -m app.startup.migrate`), so
+  a revision that misbehaves shows in `docker compose logs migrate`, not the backend's log.
 
 ## Gotchas
 

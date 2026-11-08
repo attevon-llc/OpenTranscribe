@@ -21,6 +21,12 @@ x-demo-worker: &demo-worker
     replicas: ${DEMO_WORKER_REPLICAS:-0}
 
 services:
+  # DEPLOYMENT_MODE is read at migration time (issue #1228); keep the migrate step's equal
+  # to the backend's.
+  migrate:
+    environment:
+      DEPLOYMENT_MODE: lite
+
   backend:
     environment:
       DEMO_MODE: "true"

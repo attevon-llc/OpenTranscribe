@@ -25,6 +25,13 @@
 # Both map to UID 1000; the volume mounts below reflect this difference.
 
 services:
+  # The migrate step runs whatever image the backend runs.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.blackwell
+    image: davidamacey/opentranscribe-backend:${OT_BLACKWELL_IMAGE_TAG:-blackwell}
+
   # Override backend to use Blackwell image
   backend:
     build:

@@ -1510,8 +1510,14 @@ perform_phased_restart() {
 
     # Phase 1: infrastructure + backend only, no dependents.
     echo -e "${BLUE}▶ Starting infrastructure + backend (phase 1/2)...${NC}"
+    # `up backend` runs the one-shot `migrate` first; if it fails, backend is never created.
     # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-    docker compose $compose_files up -d postgres redis minio opensearch backend
+    if ! docker compose $compose_files up -d postgres redis minio opensearch backend; then
+        echo -e "${RED}❌ Could not start the backend. Migrate step log (exit 1 = migration failed, 3 = lock wait timed out, 4 = database unreachable):${NC}"
+        # shellcheck disable=SC2086
+        docker compose $compose_files logs --tail 40 migrate 2>&1 || true
+        return 1
+    fi
 
     # Phase 2: poll /health directly. 15 minutes covers any realistic cold-boot
     # migration path.

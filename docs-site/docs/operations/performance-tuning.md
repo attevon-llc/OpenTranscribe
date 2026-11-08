@@ -610,24 +610,30 @@ The native pipeline achieves 95% speaker consistency because word-level timestam
 | LLM tasks slow, vLLM GPU at 100% | LLM GPU is the bottleneck | Add dedicated LLM GPU or use cloud API | Hardware/API cost |
 | Database queries slow | PostgreSQL needs tuning | Increase `shared_buffers`, `work_mem` | Free (config change) |
 | Search queries slow | CPU or disk on the OpenSearch host (heap is sized for the embedding model, not for data volume; see above) | Check CPU and disk first; raise `OPENSEARCH_JAVA_OPTS` only if the model needs it | CPU/RAM |
-| Many concurrent users, API slow | Backend needs scaling | ⚠️ **Not yet supported — see below.** Scale Celery workers instead (`REDACTION_CONCURRENCY`, `--gpu-scale`) | CPU/RAM |
+| Many concurrent users, API slow | Backend needs scaling | On an orchestrator, more API replicas with a migrate Job (see below); otherwise scale Celery workers (`REDACTION_CONCURRENCY`, `--gpu-scale`) | CPU/RAM |
 | Download queue backing up | Network bandwidth | Increase `DOWNLOAD_CONCURRENCY`, check bandwidth | Free/network |
 
-### ⚠️ Do not run more than one `backend` replica
+### Running more than one `backend` replica
 
-`backend.replicas` is effectively **capped at 1** today. The backend runs five one-shot startup
-steps with **no leader election**, so every replica runs all of them — and one of those dispatches
-`search_index_maintenance`, where concurrent dispatches have corrupted a reindex. The same risk
-applies to a rolling update, where the old and new pods overlap by design.
+The shipped compose files run **one** backend (it has a fixed `container_name`). On an
+orchestrator you can run more, provided the deployment does three things:
 
-Earlier versions of this page recommended running multiple backend replicas behind a load
-balancer. **That advice was wrong and could corrupt your search index.**
+1. **Migrations run once, before the rollout**, as a Job running `python -m app.startup.migrate`,
+   and every API replica runs with `RUN_MIGRATIONS_ON_STARTUP=false`. Replicas then never race
+   Alembic, and a replica that starts before the Job finishes answers 503 on `/health/ready`
+   until the schema is at head (see [How migrations run](./upgrading.md#how-migrations-run)).
+2. **All replicas share one Redis.** The startup steps that act on shared state
+   (`search_index_maintenance`, the OpenSearch index repair, recovery and backfill dispatches,
+   the media-bucket setup) are elected through Redis, so one replica per rollout runs each.
+   The old warning on this page, that concurrent `search_index_maintenance` dispatches could
+   corrupt a reindex, was about these steps before they were elected.
+3. **Native diarizer models are provisioned once.** If replicas share the diar-native models
+   directory, set `DIAR_NATIVE_AUTO_PROVISION=false` on them and export the models once, so
+   two replicas never write the same files.
 
-Scale the **workers** instead — they are designed for it (`REDACTION_CONCURRENCY`, additional
-Celery worker replicas, `./opentr.sh start dev --gpu-scale`). Leader election for the backend's
-startup steps is tracked in
-[#894](https://github.com/attevon-llc/OpenTranscribe/issues/894), and is a prerequisite for the
-Helm chart ([#864](https://github.com/attevon-llc/OpenTranscribe/issues/864)).
+Multi-replica operation is not yet part of the release test matrix. Scaling the **workers**
+(`REDACTION_CONCURRENCY`, additional Celery worker replicas, `./opentr.sh start dev
+--gpu-scale`) is still the first lever for throughput.
 
 ### When to Scale Vertically vs. Horizontally
 

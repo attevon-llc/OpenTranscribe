@@ -7,6 +7,16 @@
 #   - Production database initialization path
 
 services:
+  # The one-shot migrate step owns the schema here (docs/design/migrate_job_plan.md), so
+  # the API below never migrates: RUN_MIGRATIONS_ON_STARTUP=false, and /health/ready
+  # answers 503 until the schema is at head. Same image as `backend`, always.
+  migrate:
+    image: ${BACKEND_IMAGE:-davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod  # Production build
+    pull_policy: always
+
   backend:
     image: ${BACKEND_IMAGE:-davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}}
     build:
@@ -32,6 +42,10 @@ services:
       # Override in .env when Docker's pool is customised (`default-address-pools`)
       # or the proxy is external — .env.example documents the format.
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
+      # The `migrate` service above ran before this container started (depends_on in
+      # docker-compose.yml). Not overridable from .env on purpose: a replica that also
+      # migrated would bring back the race the migrate step exists to remove.
+      RUN_MIGRATIONS_ON_STARTUP: "false"
 
   celery-worker:
     image: ${BACKEND_IMAGE:-davidamacey/opentranscribe-backend:${OT_IMAGE_TAG:-latest}}

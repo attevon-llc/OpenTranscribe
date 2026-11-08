@@ -142,7 +142,7 @@ def test_lock_is_held_on_a_dedicated_connection_across_the_upgrade():
     from app.db.migrations import run_migrations
 
     source = inspect.getsource(run_migrations)
-    acquire_at = source.index("pg_advisory_lock(42)")
+    acquire_at = source.index("_acquire_migration_lock(lock_conn)")
     upgrade_at = source.index('command.upgrade(config, "head")')
     dispose_at = source.index("engine.dispose()")
 
@@ -158,7 +158,7 @@ def test_unlock_uses_the_same_session():
     from app.db.migrations import run_migrations
 
     source = inspect.getsource(run_migrations)
-    unlock_at = source.index("pg_advisory_unlock(42)")
+    unlock_at = source.index("pg_advisory_unlock({MIGRATION_LOCK_KEY})")
     tail = source[unlock_at - 300 : unlock_at]
 
     assert "unlock_engine = create_engine" not in source, (

@@ -35,13 +35,13 @@ guaranteed to match filename order (see `CLAUDE.md` in this directory for the `v
 
 ## Startup Runner (`app/db/migrations.py`)
 
-On backend startup (the FastAPI lifespan in `app/main.py`), `run_migrations()` automatically:
-1. Takes a PostgreSQL advisory lock so concurrent replicas do not race
+In the migrate step, and on backend startup (the FastAPI lifespan in `app/main.py`) unless `RUN_MIGRATIONS_ON_STARTUP=false`, `run_migrations()` automatically:
+1. Takes a PostgreSQL advisory lock so concurrent runners do not race (the wait is bounded by `MIGRATION_LOCK_TIMEOUT_S`)
 2. Detects the current database schema version (for databases that predate Alembic tracking)
 3. Stamps untracked databases with the appropriate version
 4. Runs `alembic upgrade head` to bring the DB to the current version
 
-So migrations apply automatically on every deploy and no manual `alembic upgrade head` is needed. A migration failure aborts startup. Set `RUN_MIGRATIONS_ON_STARTUP=false` only where a separate migrate job owns migrations; readiness then checks the schema is at head. Celery workers never run migrations.
+So migrations apply automatically on every deploy and no manual `alembic upgrade head` is needed. The same runner also runs as a one-shot step, `python -m app.startup.migrate` (the compose `migrate` service, or a Kubernetes Job); the shipped prod/lite/offline compose files use it and start the API with `RUN_MIGRATIONS_ON_STARTUP=false`, so replicas never race Alembic and readiness checks the schema is at head. A migration failure aborts startup (or exits the migrate step non-zero, which keeps the API from starting). Celery workers never run migrations.
 
 ## Migration Workflow
 

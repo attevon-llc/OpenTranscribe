@@ -1064,7 +1064,8 @@ where noted.
 | `MAX_UPLOAD_BYTES` | `16106127360` (15 GB) | Server-side ceiling on an uploaded file, checked when the upload is prepared and again when it completes. `0` disables the limit. |
 | `MAX_REQUEST_BODY_BYTES` | `1048576` (1 MiB) | Ceiling on every other request body (JSON and form requests), refused with `413` before the request is processed. The media upload and speaker-avatar routes keep their own limits. The bundled nginx configs cap `/api/` at `10m`, so raising this above 10 MiB also needs their `client_max_body_size` raised. |
 | `ENABLE_API_DOCS` | unset | A hardened deployment hides Swagger UI, ReDoc and the OpenAPI schema (`/api/docs`, `/api/redoc`, `/api/openapi.json`). `true` publishes them. |
-| `RUN_MIGRATIONS_ON_STARTUP` | `true` | Run Alembic migrations when the backend starts. Set `false` where a separate migration job owns the schema; `/health/ready` then fails until the schema is at head. |
+| `RUN_MIGRATIONS_ON_STARTUP` | `true` | Run Alembic migrations when the backend starts (single-container mode, and the dev stack). The shipped prod, lite and offline compose files run the one-shot `migrate` service first and set this `false` on the API; set it `false` wherever `python -m app.startup.migrate` runs as a separate step. `/health/ready` then answers 503 until the schema is at head. See [Upgrading](../operations/upgrading.md#how-migrations-run). |
+| `MIGRATION_LOCK_TIMEOUT_S` | `900` | How long a migration runner waits for another runner's migration lock before it fails (migrate step exit code `3`, with the holding session named in the log). `0` waits forever. |
 | `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Access-token lifetime. |
 | `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` | Refresh-token lifetime. |
 | `SESSION_IDLE_TIMEOUT_MINUTES` | `15` | Idle timeout. |

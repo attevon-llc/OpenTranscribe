@@ -84,13 +84,14 @@ def test_no_dev_override_image_line_hardcodes_latest(override_source):
     )
 
 
-def test_dev_override_has_all_thirteen_backend_image_lines(override_source):
+def test_dev_override_has_all_fourteen_backend_image_lines(override_source):
     """Must-fire control: proves the scan actually looks at all of them, not a subset."""
     backend_lines = [
         line for line in _image_lines(override_source) if "opentranscribe-backend:" in line
     ]
-    assert len(backend_lines) == 13, (
-        f"expected 13 backend image: lines (one per backend-based dev service), "
+    assert len(backend_lines) == 14, (
+        f"expected 14 backend image: lines (one per backend-based dev service, migrate "
+        f"included), "
         f"found {len(backend_lines)}: {backend_lines}"
     )
 

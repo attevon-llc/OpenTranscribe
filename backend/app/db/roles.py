@@ -6,7 +6,9 @@ tables, where it gets SELECT, INSERT and UPDATE of lifecycle columns only. It is
 runs on every startup, which also repairs a ``pg_dump --no-acl`` restore. Never ``DROP ROLE``:
 turning the split off leaves a harmless unused role behind.
 
-CLI for ``RUN_MIGRATIONS_ON_STARTUP=false`` deployments (run it after ``alembic upgrade``)::
+It runs at the end of ``run_migrations()``, i.e. in the one-shot migrate step
+(``python -m app.startup.migrate``), the only process that holds owner credentials under the
+db-roles overlay. CLI for a job that ran bare ``alembic upgrade`` (or after a restore)::
 
     python -m app.db.roles reconcile
 """

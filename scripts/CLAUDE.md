@@ -179,7 +179,7 @@ this file is for.
   `validate-deployments.sh` (~20 compose permutations in ~15 s),
   `release/check-version-consistency.py` (the six version sources + Alembic single head).
 - **PKI** — `pki/`: `setup-test-pki.sh`, `generate-test-env.sh`, `run-pki-e2e-leg.sh`; the gitignored `test-certs/` holds private keys. Details: `scripts/pki/CLAUDE.md`.
-- **`common.sh`** is sourced by both front ends (`opentr.sh`, `opentranscribe.sh`) and owns `backup_database` / `restore_database`; every `$VAR` in `opentr.sh` + `common.sh` must be defaulted. Details, restore primitives (#599/#600) and the guard's false-positive cases: `scripts/notes/common-sh.md`.
+- **`common.sh`** is sourced by both front ends (`opentr.sh`, `opentranscribe.sh`) and owns `backup_database` / `restore_database`; every `$VAR` in `opentr.sh` + `common.sh` must be defaulted. It also owns `compose_run_migrate`: any path that starts the API without `up`'s `depends_on` (`compose start`, `up --no-deps`) must call it first, because the prod API does not migrate itself (`docs/design/migrate_job_plan.md`). `verify_stack_health` treats an exited-0 container with restart policy `no` (the `migrate` one-shot) as done, not broken. Details, restore primitives (#599/#600) and the guard's false-positive cases: `scripts/notes/common-sh.md`.
 ## Fresh deployments (`opentr.sh --fresh`, state in `.fresh/`)
 
 The mechanics (state files, port offset, aux overlay isolation under `--fresh`, issue #347) are in `scripts/notes/fresh-deployments.md`. Root `CLAUDE.md` carries the rule.

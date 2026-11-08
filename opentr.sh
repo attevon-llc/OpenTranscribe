@@ -1161,7 +1161,7 @@ FRESH_OVERLAY_DIR=".fresh"
 # workers already use ${COMPOSE_PROJECT_NAME}-* in the base file, so the project
 # name namespaces those automatically — they're intentionally omitted here.
 FRESH_NAMED_SERVICES=(
-  postgres minio redis opensearch backend
+  postgres minio redis opensearch migrate backend
   celery-worker celery-download-worker celery-cpu-worker celery-redaction
   celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
   frontend flower docs
@@ -1346,7 +1346,7 @@ fresh_generate_overlay() {
 # appear in `docker compose config` when their flag wasn't passed — no special
 # casing needed here for that.
 FRESH_BAKED_SERVICES=(
-  backend
+  migrate backend
   celery-worker celery-download-worker celery-cpu-worker celery-redaction
   celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker celery-beat
   celery-worker-gpu-scaled celery-worker-gpu-transcribe celery-worker-gpu-diarize
@@ -1829,11 +1829,12 @@ preflight_ports_or_die() {
 # ran. This function only ever fails on a status Docker itself has already
 # decided is bad: `restarting`, `exited`, `dead`, or `unhealthy`. A service
 # with no healthcheck at all is judged on container status alone, per the
-# same reasoning.
+# same reasoning. Exception: a one-shot (restart policy "no") that exited 0 is done —
+# the `migrate` service's success state. A one-shot that exited non-zero still fails.
 verify_stack_health() {
   local compose_files="$1"
   local -a broken=()
-  local cid name status health
+  local cid name status health exit_code restart_policy
 
   # shellcheck disable=SC2086
   for cid in $(docker compose $compose_files ps -a -q 2>/dev/null); do
@@ -1842,6 +1843,10 @@ verify_stack_health() {
     [ -n "$name" ] || name="$cid"
     status="$(docker inspect --format '{{.State.Status}}' "$cid" 2>/dev/null)"
     health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null)"
+
+    exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$cid" 2>/dev/null)"
+    restart_policy="$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$cid" 2>/dev/null)"
+    [ "$status:$exit_code:${restart_policy:-no}" = "exited:0:no" ] && continue
 
     case "$status" in
       restarting|exited|dead)

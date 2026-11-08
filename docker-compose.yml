@@ -230,6 +230,47 @@ services:
       # burn the retry budget on a large existing index.
       start_period: 60s
 
+  # One-shot migrate step (docs/design/migrate_job_plan.md): Alembic plus the once-per-deploy
+  # post-upgrade work, then exit. Runs the BACKEND image, so every overlay that gives
+  # `backend` an image gives this one the same image too (tests/unit/
+  # test_compose_migrate_service.py fails on any chain where the two differ). `backend` and
+  # the Celery services wait for it with `service_completed_successfully`, so N API replicas
+  # never race Alembic; overlays that run it set RUN_MIGRATIONS_ON_STARTUP=false on the API.
+  # Exit codes: 0 ok, 1 migration failed, 3 lock wait timed out, 4 database unreachable.
+  migrate:
+    container_name: opentranscribe-migrate
+    restart: "no"
+    env_file:
+      - path: .env
+        required: false
+    security_opt:
+      - no-new-privileges:true
+    command: python -m app.startup.migrate
+    environment:
+      - PYANNOTE_METRICS_ENABLED=${PYANNOTE_METRICS_ENABLED:-false}
+      - HF_HUB_DISABLE_TELEMETRY=${HF_HUB_DISABLE_TELEMETRY:-1}
+      - DO_NOT_TRACK=${DO_NOT_TRACK:-1}
+      - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
+      - TENANCY_MODE=${TENANCY_MODE:-auto}
+      # Same internal wiring as `backend`: the migrate step must reach the database the
+      # API will serve from, nothing else.
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - MINIO_HOST=minio
+      - MINIO_PORT=9000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
+      - MODEL_BASE_DIR=/app/models
+      - TEMP_DIR=/app/temp
+    # The image's HEALTHCHECK probes the API port, which a one-shot never opens.
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     container_name: opentranscribe-backend
     restart: always
@@ -349,6 +390,8 @@ services:
       # failing fast on a genuinely broken backend.
       start_period: 600s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -454,6 +497,8 @@ services:
       # Cold first-run WhisperX + PyAnnote preload (and HF download) can exceed 40s.
       start_period: 120s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -508,6 +553,8 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -619,6 +666,8 @@ services:
       # PRELOAD_CPU_WHISPER model load can exceed 40s on first run.
       start_period: 120s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -697,6 +746,8 @@ services:
       retries: 3
       start_period: 60s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -751,6 +802,8 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -801,6 +854,8 @@ services:
     # Wait for backend (migrations applied) like every other worker, so the nlp
     # worker doesn't race the schema on first start.
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -864,6 +919,8 @@ services:
       # Embedding model load can exceed 40s on first run.
       start_period: 120s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -921,6 +978,8 @@ services:
       retries: 3
       start_period: 40s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -1007,6 +1066,8 @@ services:
       # Cold GPU model preload can exceed 40s on first run.
       start_period: 120s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -1076,6 +1137,8 @@ services:
       # Cold GPU model preload can exceed 40s on first run.
       start_period: 120s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:
@@ -1132,6 +1195,8 @@ services:
     tmpfs:
       - /app/temp:noexec,nosuid,size=20g,mode=1777
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       backend:
         condition: service_healthy
       redis:

@@ -157,8 +157,8 @@ Table definitions are grouped by domain in `app/models/`; `app/models/README.md`
 ### Alembic Setup
 - Alembic is configured in `backend/alembic.ini` (`script_location = alembic`, relative to `backend/`)
 - Migration files live in `backend/alembic/versions/`, named `v<NNN>_<description>.py`, from `v010_baseline` to the current head. Derive the head with `python3 scripts/release-tests/lib/alembic-head.py backend` from the repo root.
-- `run_migrations()` in `migrations.py` is called from the FastAPI lifespan on every backend startup (skipped only when `RUN_MIGRATIONS_ON_STARTUP=false`): it takes a PostgreSQL advisory lock, detects the current version of an untracked database, stamps it, and runs `alembic upgrade head`. A migration failure aborts startup.
-- Only the backend runs migrations; Celery workers do not.
+- `run_migrations()` in `migrations.py` is called by the one-shot migrate step (`python -m app.startup.migrate`, exit codes 0/1/3/4) and from the FastAPI lifespan unless `RUN_MIGRATIONS_ON_STARTUP=false`: it takes a PostgreSQL advisory lock (bounded wait, `MIGRATION_LOCK_TIMEOUT_S`), detects the current version of an untracked database, stamps it, and runs `alembic upgrade head`. A migration failure aborts startup.
+- Only the migrate step and the backend run migrations; Celery workers do not.
 
 ### Production Deployment
 1. **Create Migration**: Add a new migration in `backend/alembic/versions/`

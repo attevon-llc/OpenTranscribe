@@ -62,11 +62,15 @@ for you (a hand-written `-f` list silently drifts as overlays are added):
 <!-- Escape hatch below: only for recreating frontend/backend WITHOUT restarting postgres/
      minio/opensearch. If you find yourself needing this often, add a flag to opentr.sh
      instead of pasting raw compose commands into new docs. -->
-Surgical recreate (leaves data services running) — the one case the script doesn't cover:
+Surgical recreate (leaves data services running) — the one case the script doesn't cover.
+`--no-deps` skips the one-shot `migrate` service and the prod API does not migrate itself
+(`RUN_MIGRATIONS_ON_STARTUP=false`), so run the migrate step first or `/health/ready` stays 503
+on a new revision:
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.nginx.yml \
-               -f docker-compose.local.yml -f docker-compose.pki.yml \
-               up -d --no-deps --force-recreate frontend backend
+F="-f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.nginx.yml \
+   -f docker-compose.local.yml -f docker-compose.pki.yml"
+docker compose $F run --rm --no-deps migrate
+docker compose $F up -d --no-deps --force-recreate frontend backend
 ```
 
 Caching: COPY layers are content-hashed. If a change isn't picked up, touch a file (`echo "<!-- $(date +%s) -->" >> path/to/file`) rather than `--no-cache` (which re-runs `npm ci`). Never run `./opentranscribe.sh update` against local builds — it pulls from Docker Hub.

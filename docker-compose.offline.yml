@@ -36,10 +36,17 @@ services:
   opensearch:
     pull_policy: never
 
+  # One-shot migrate step; the API below never migrates (docs/design/migrate_job_plan.md).
+  migrate:
+    image: davidamacey/opentranscribe-backend:latest
+    pull_policy: never
+
   backend:
     image: davidamacey/opentranscribe-backend:latest
     pull_policy: never
     # No volumes needed - temp files live in container only
+    environment:
+      RUN_MIGRATIONS_ON_STARTUP: "false"
 
   celery-worker:
     image: davidamacey/opentranscribe-backend:latest

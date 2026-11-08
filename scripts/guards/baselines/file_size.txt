@@ -5,7 +5,7 @@ frontend/src/components/FilterSidebar.svelte::script	750	oversize: split by conc
 frontend/src/components/SettingsModal.svelte::script	982	oversize: split by concern planned
 frontend/src/lib/services/uploadService.ts	1400	v0.6.1 merge: release growth; split by concern planned
 frontend/src/routes/+page.svelte::script	1366	v0.7.0: #1101 moved delete logic to lib/trash (-53), #1102 wires the hidden-files mode (+4), legal holds moved query building to lib/gallery/galleryQuery (-44 net); split by concern planned
-opentr.sh	4882	v0.6.1 merge: release growth; +1 for #628 (--demo sets the lite flag; the lite/demo overlay moved to scripts/lib/lite-demo-overlay.sh, deduplicating start and reset); +1 for reset_and_init declaring DEMO_FLAG, which it now passes to that overlay; split by concern planned
+opentr.sh	4887	v0.6.1 merge: release growth; +1 for #628 (--demo sets the lite flag; the lite/demo overlay moved to scripts/lib/lite-demo-overlay.sh, deduplicating start and reset); +1 for reset_and_init declaring DEMO_FLAG, which it now passes to that overlay; +5 for its --demo arm (flag parity with start_app); split by concern planned
 opentranscribe.sh	2596	v0.6.1 merge: release growth; +6 for #628 (DEMO_MODE=true selects the public demo overlay in get_compose_files, fail-loud when it is missing); split by concern planned
 scripts/cleanup-test-data.py	1171	cohesive: one signature-scoped sweep (cutoff, shapes, finders, API deletes, planes) sharing one safety model; +13 for #1101: an API delete now only trashes, so the same delete path must also purge
 scripts/common.sh	1924	v0.6.1 merge: release growth; split by concern planned

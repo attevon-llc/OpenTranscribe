@@ -3321,6 +3321,11 @@ reset_and_init() {
         LITE_FLAG="--lite"
         shift
         ;;
+      --demo)
+        DEMO_FLAG="--demo"
+        LITE_FLAG="--lite"
+        shift
+        ;;
       --cpu)
         CPU_FLAG="--cpu"
         shift

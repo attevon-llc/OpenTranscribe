@@ -30,11 +30,9 @@ services:
   postgres:
     volumes:
       # Schema is built by Alembic migrations + initial_data on backend startup
-      # (Python) — same as the fresh-volume path. Do NOT mount init_db.sql here:
-      # running the legacy SQL during a first-init slows postgres past its
-      # healthcheck window, so compose marks it unhealthy and aborts the app
-      # tier (containers stuck "Created"). The fresh path has no such mount,
-      # which is exactly why it starts cleanly.
+      # (Python) — same as the fresh-volume path. No SQL init script is mounted
+      # (the legacy init_db.sql, removed in v0.7.0, once slowed a first init past
+      # the healthcheck window and aborted the app tier).
       - ${POSTGRES_DATA_PATH:-/mnt/nvm/opentranscribe/pg}:/var/lib/postgresql/data/
 
   opensearch:

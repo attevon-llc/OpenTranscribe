@@ -158,8 +158,7 @@ offline-package-build/
     │   ├── docker-compose.offline.yml
     │   ├── .env.example
     │   └── nginx.conf
-    ├── database/               # Database init scripts
-    │   └── init_db.sql
+    ├── database/               # Empty; the schema is created by Alembic on first start
     ├── .env                    # Environment configuration
     ├── installer.iss           # Inno Setup script
     ├── run_opentranscribe.bat  # Startup script
@@ -733,7 +732,6 @@ All installer files are in the `windows-installer/` directory. To update:
 Files automatically updated during build:
 - `.env` is generated from `.env.example`
 - `docker-compose.offline.yml` gets image versions from `docker-compose.yml`
-- `database/init_db.sql` is copied from latest
 - All `windows-installer/` files are copied as-is
 
 ### Version Updates

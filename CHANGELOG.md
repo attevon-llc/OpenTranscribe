@@ -145,6 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `database/init_db.sql`, the pre-Alembic schema snapshot. Nothing mounted, applied or read it; Alembic is the only schema source, and v0.3.3-era databases bootstrapped from it are still detected and stamped. `database/README.md` and the docs that pointed at it are updated.
 - The file page header no longer carries **Copy file ID**, **Place legal hold** or the **Legal hold** pill beside the title; they read as the title's own state. The banner below the title still says the file is held, holds are placed from the gallery or Settings, and the file ID moved to the collapsed **File details** section, with a copy button, for support tickets, takedown disputes and the audit log filter.
 - The gallery's "force delete processing files" prompt. A file still being processed is moved to the trash like any other (#1101).
 - `scripts/test-in-worktree.sh` (added in 0.6.1) is removed, together with its test. `./scripts/run-backend-tests.sh --throwaway-db` does the same job from any worktree and is the only throwaway-database runner.

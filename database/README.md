@@ -5,22 +5,12 @@
 </div>
 
 OpenTranscribe uses PostgreSQL. **The Alembic migration chain in `backend/alembic/versions/` is the
-sole authority for the schema.** This directory holds only a legacy reference file.
+sole authority for the schema.** This directory holds only this README.
 
-## Contents
-
-```
-database/
-├── init_db.sql    # Legacy reference snapshot. NOT used to create the schema.
-└── README.md      # This file
-```
-
-`init_db.sql` opens with a "REFERENCE ONLY" header: it is preserved for documentation and is far
-behind the current models (it defines a few dozen tables; the SQLAlchemy models define many more).
-It is not mounted by the Compose files and nothing applies it. Alembic revisions still mention it
-because releases up to v0.3.3 bootstrapped from it, and the migration runner can recognise such a
-database and stamp it. Do not edit it to change the schema, and do not treat its column lists as
-current.
+The legacy `init_db.sql` snapshot was removed in v0.7.0: nothing mounted or applied it. Alembic
+revisions and `backend/app/db/schema_detect/` still mention it because releases up to v0.3.3
+bootstrapped their schema from it, and the migration runner still recognises such a database and
+stamps it. The file is in git history (and in any v0.3.x tag) if you need to read it.
 
 ## Where the schema actually lives
 

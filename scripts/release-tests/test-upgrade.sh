@@ -1363,13 +1363,6 @@ phase_07_swap_to_new() {
     _replay_release_manifest "$REPO_ROOT" "$stage_after"
     [[ -f "$stage_after/docker-compose.prod.yml" ]] || gr_die "current head missing docker-compose.prod.yml"
 
-    # 0.4.0 no longer needs the database/init_db.sql bind mount, but copy it
-    # anyway in case the compose file still references it (harmless if unused).
-    if [[ -d "$REPO_ROOT/database" ]]; then
-        rm -rf "$stage_after/database"
-        cp -r "$REPO_ROOT/database" "$stage_after/database"
-    fi
-
     # docker-compose.prod.yml declares `build: context: ./docs-site` for the
     # docs service even though it normally just pulls a published image. With
     # pull_policy forced to 'never' below, an absent local docs image falls

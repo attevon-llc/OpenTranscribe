@@ -78,7 +78,7 @@ flowchart TB
 - **Redaction Queue**: PII / toxicity / profanity detection (dedicated `celery-redaction` CPU service)
 
 ### Data Layer
-- **PostgreSQL**: Relational data with Alembic-only migrations (`database/init_db.sql` is a legacy reference, not used)
+- **PostgreSQL**: Relational data with Alembic-only migrations (no SQL bootstrap file)
 - **MinIO**: S3-compatible object storage with private buckets and optional AES-256-GCM encryption at rest
 - **OpenSearch 3.4.0**: Full-text and vector search with alias-based speaker indices
 - **Redis**: Task queue broker and caching singleton
@@ -237,7 +237,7 @@ The system includes automatic repair for speaker embedding inconsistencies:
 ## Database Management
 
 All schema changes use **Alembic migrations** exclusively:
-- The database is bootstrapped entirely through Alembic (`database/init_db.sql` is a legacy reference and is not used)
+- The database is bootstrapped entirely through Alembic (there is no SQL bootstrap file)
 - Migrations run automatically on backend startup
 - Idempotent SQL (`IF NOT EXISTS`) for safety
 - Detection of the schema version of an existing, untracked database lives in `app/db/migrations.py` (`_detect_schema_version()`), over the per-era probes and ladder in `app/db/schema_detect/`

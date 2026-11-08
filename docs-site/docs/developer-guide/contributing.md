@@ -71,8 +71,8 @@ All schema changes must use Alembic migrations:
    a rebuild-and-restart over an existing database. Avoid `./opentr.sh reset dev` unless you intend to delete
    the dev data.
 
-The database is bootstrapped entirely through Alembic migrations. `database/init_db.sql` is a legacy
-reference only and is not used. Details: `backend/app/db/CLAUDE.md` and `backend/alembic/CLAUDE.md`.
+The database is bootstrapped entirely through Alembic migrations; there is no SQL bootstrap
+file. Details: `backend/app/db/CLAUDE.md` and `backend/alembic/CLAUDE.md`.
 
 ## Pre-Commit Hook Pipeline
 

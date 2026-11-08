@@ -14,7 +14,7 @@ scripts/download-models.py	1367	v0.6.1 merge: release growth; split by concern p
 scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
 scripts/release-tests/lib/guardrails.sh	1281	oversize: split by concern planned
-scripts/release-tests/test-upgrade.sh	2933	oversize: split by concern planned
+scripts/release-tests/test-upgrade.sh	2926	oversize: split by concern planned
 scripts/run-mutation-tests.sh	1173	oversize: split by concern planned
 scripts/security-scan.sh	1165	oversize: split by concern planned
 setup-opentranscribe.sh	2532	oversize: split by concern planned

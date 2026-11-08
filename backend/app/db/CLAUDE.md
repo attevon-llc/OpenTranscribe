@@ -10,7 +10,8 @@ existing *untracked* DB → detect version, `stamp`, then upgrade; already track
 pending. `alembic upgrade head` by hand is **production-only**, and skips the post-upgrade
 work below — prefer `python -m app.startup.migrate`. Design and citations:
 `docs/design/migrate_job_plan.md`.
-`database/init_db.sql` is **legacy reference only — not used for schema.**
+There is no SQL bootstrap file: the legacy `database/init_db.sql` was removed in v0.7.0
+(pre-Alembic v0.3.3 databases built from it are still detected and stamped).
 
 ## Key files
 

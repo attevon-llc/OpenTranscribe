@@ -283,7 +283,7 @@ The NAS overlay **no longer mounts the legacy `database/init_db.sql`**. The sche
 is built by Alembic/Python on backend startup (migrations run automatically), so
 the init script was redundant — and on a large bind mount it slowed the first
 boot enough to trigger the datastore healthcheck race described above.
-`database/init_db.sql` remains in the repo as a legacy reference only.
+The legacy file itself was removed from the repo in v0.7.0.
 :::
 
 :::warning[Protect live data]

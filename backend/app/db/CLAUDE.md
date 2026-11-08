@@ -221,6 +221,14 @@ referenced them (detection arms, consistency tests, this file).
   `test_audit_protection_registry.py` compares with it. Never widen `mutable_columns` without a
   failing test that needs the column; every `ON DELETE SET NULL` column must be in
   `nullable_on_cascade` or deleting its parent fails.
+- **Only the migrate step holds owner credentials under the split.** `docker-compose.db-roles.yml`
+  blanks `POSTGRES_PASSWORD` / `MIGRATION_DATABASE_URL` on `backend` and every worker and sets
+  the API's `RUN_MIGRATIONS_ON_STARTUP=false` (dev too); `migrate` keeps them. Nothing in the
+  API may connect as `POSTGRES_USER`: the password login (`auth/direct_auth.get_db_connection`)
+  did, with its own psycopg2 connection, until it moved to `engine.raw_connection()`.
+  Pinned by `tests/unit/test_runtime_role_least_privilege.py`. The runtime-role check
+  (`role_check.enforce_runtime_role`) is unchanged: it measures the connected role on the
+  server and already refuses an owner/superuser runtime role when the split is requested.
 - **Reconcile** (`roles.py`) runs at the end of `run_migrations()` and as
   `python -m app.db.roles reconcile`, as the owner, idempotently; it repairs a `--no-acl` restore.
   **Never `DROP ROLE`.** `role_check.py` measures the runtime role (`has_table_privilege`) for the boot

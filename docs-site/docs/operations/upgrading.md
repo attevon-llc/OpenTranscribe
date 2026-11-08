@@ -252,7 +252,9 @@ Migrations run once per start, in a dedicated one-shot step, never in every API 
   images without replacing the compose files therefore still migrates.
 - **The development stack** (`./opentr.sh start dev`) runs the `migrate` service *and* keeps
   migrating in the backend, so a hot reload or `./opentr.sh restart-backend` applies a revision
-  you just added. The second run finds the schema up to date.
+  you just added. The second run finds the schema up to date. With the database role split
+  (`POSTGRES_APP_USER`) the backend holds no owner credentials and does not migrate: re-run
+  `./opentr.sh start dev` after adding a revision.
 - **Kubernetes / ECS / any orchestrator**: run `python -m app.startup.migrate` as a Job (or a
   Helm pre-upgrade hook) with the backend image and the backend's database settings, and start
   the API with `RUN_MIGRATIONS_ON_STARTUP=false`. Use a Job rather than an init container: an

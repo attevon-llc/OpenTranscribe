@@ -30,19 +30,19 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 yaml = pytest.importorskip("yaml")
 
 #: Keys that decide WHICH code migrates and against WHAT. ``migrate`` must agree with
-#: ``backend`` on each, in every file and every chain.
+#: ``backend`` on each, in every file and every chain. The owner credentials
+#: (``POSTGRES_PASSWORD``, ``MIGRATION_DATABASE_URL``) are deliberately absent: under the role
+#: split only ``migrate`` holds them (test_runtime_role_least_privilege.py).
 IMAGE_KEYS = ("image", "build", "pull_policy")
 MIGRATION_ENV_KEYS = (
     "POSTGRES_HOST",
     "POSTGRES_PORT",
     "POSTGRES_DB",
     "POSTGRES_USER",
-    "POSTGRES_PASSWORD",
     "POSTGRES_APP_USER",
     "POSTGRES_APP_PASSWORD",
     "POSTGRES_SSLMODE",
     "DATABASE_URL",
-    "MIGRATION_DATABASE_URL",
     "DEPLOYMENT_MODE",
     "ENVIRONMENT",
     "TENANCY_MODE",

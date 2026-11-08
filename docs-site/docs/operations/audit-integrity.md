@@ -99,21 +99,24 @@ the tables; to create the role itself it also needs `CREATEROLE`.
 
 ## The two postures
 
-By default the backend runs the migrations, so it must also hold the owner credentials. The
-role split protects against SQL injection, ORM bugs and every worker, but code execution
-inside the backend process can still reach the owner password.
+With the shipped compose files, the role split is full separation. Only the one-shot
+`migrate` service holds the owner credentials: it applies the migrations and re-applies the
+application role's grants, then exits. The backend and every worker have the owner password
+removed, connect with the application role only, and never migrate
+(`RUN_MIGRATIONS_ON_STARTUP=false`, including the development stack). Code execution inside
+any long-running process therefore cannot reach the owner password. Interactive password
+sign-in connects with the application role as well.
 
-For full separation set `RUN_MIGRATIONS_ON_STARTUP=false`, give the backend only the
-application credentials, and run the migrations in a separate job that holds the owner
-credentials:
+On your own orchestrator, do the same: run the migrations as a separate job that holds the
+owner credentials, and give the API only the application credentials with
+`RUN_MIGRATIONS_ON_STARTUP=false`:
 
 ```bash
-alembic upgrade head
-python -m app.db.roles reconcile
+python -m app.startup.migrate     # migrations, then the grants (python -m app.db.roles reconcile)
 ```
 
-The second command re-applies the grants and is required after each upgrade and after a
-database restore.
+The grants are re-applied by every run of the migrate step, which covers each upgrade. After a
+database restore, run the migrate step (or `python -m app.db.roles reconcile`) again.
 
 ## Verify
 

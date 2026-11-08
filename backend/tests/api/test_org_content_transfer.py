@@ -10,7 +10,7 @@ from datetime import UTC
 from datetime import datetime
 
 import pytest
-from fastapi import status
+from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 from app.auth.audit_events import AuditEventType
 from app.core.exceptions import ConflictError
@@ -21,30 +21,41 @@ from app.models.tag import Tag
 from app.services import audit_outbox
 from app.services import org_content_transfer as oct_
 from app.services import user_deletion_service
-
-pytestmark = pytest.mark.usefixtures("organizations_capability_on")
+from app.services.org_content_transfer import restamp_documents
 
 
 class FakeOpenSearch:
-    def __init__(self) -> None:
+    def __init__(self, fail_first: int = 0) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.indices = self
+        self.fail_first = fail_first
 
     def exists(self, index: str) -> bool:
         del index
         return True
 
     def update_by_query(self, index, body, **_kw):
+        if self.fail_first:
+            self.fail_first -= 1
+            raise OSConnectionError("N/A", "down", Exception("down"))
         self.calls.append((index, body["query"]))
         return {"updated": 1, "version_conflicts": 0, "failures": []}
 
 
 @pytest.fixture()
-def search(monkeypatch) -> FakeOpenSearch:
-    fake = FakeOpenSearch()
-    monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: fake)
-    monkeypatch.setattr("app.core.celery.celery_app.send_task", lambda *a, **k: None)
-    return fake
+def dispatched(monkeypatch) -> list[dict]:
+    """Restamp messages the transfer queued (the task itself is tested in its own cases)."""
+    sent: list[dict] = []
+    monkeypatch.setattr(
+        "app.core.celery.celery_app.send_task",
+        lambda name, **kw: sent.append({"name": name, **kw}),
+    )
+    return sent
+
+
+@pytest.fixture()
+def search(dispatched: list[dict]) -> list[dict]:
+    return dispatched
 
 
 @pytest.fixture()
@@ -136,20 +147,63 @@ def test_a_held_file_is_not_re_owned_and_is_reported(gov, search):
     assert result.skipped_held == 1
     assert _owner_of(gov.db, MediaFile, held.id) == gov.alice.id
     assert _owner_of(gov.db, MediaFile, free.id) == gov.admin.id
-    selected = [c for _i, q in search.calls for c in q["bool"]["filter"] if "terms" in c]
-    ids = {i for c in selected for v in c["terms"].values() for i in v if isinstance(i, int)}
-    assert free.id in ids and held.id not in ids
+    assert [m["kwargs"]["file_ids"] for m in search] == [[free.id]]
 
 
-def test_restamp_selects_only_docs_not_already_on_the_new_owner(gov, search):
-    _world(gov)
+def test_restamp_selects_only_docs_not_already_on_the_new_owner(gov):
+    fake = FakeOpenSearch()
+    restamp_documents(
+        to_user_id=gov.admin.id, file_ids=[7], profile_ids=[3], cluster_uuids=["c"], client=fake
+    )
+    assert fake.calls
+    assert all(
+        q["bool"]["must_not"] == [{"term": {"user_id": gov.admin.id}}] for _i, q in fake.calls
+    )
+    assert any({"terms": {"file_id": [7]}} in q["bool"]["filter"] for _i, q in fake.calls)
+
+
+def test_the_transfer_queues_one_restamp_with_the_moved_ids(gov, search):
     f = gov.file(gov.alice)
     oct_.transfer_org_content(gov.db, organization_id=gov.org.id, from_user_id=gov.alice.id)
-    assert search.calls
-    assert all(
-        q["bool"]["must_not"] == [{"term": {"user_id": gov.admin.id}}] for _i, q in search.calls
+    assert [(m["name"], m["kwargs"]["file_ids"], m["kwargs"]["to_user_id"]) for m in search] == [
+        ("org_content_transfer.restamp", [f.id], gov.admin.id)
+    ]
+
+
+def test_the_restamp_task_retries_a_failed_first_attempt_and_then_succeeds(monkeypatch, dispatched):
+    from app.tasks.org_content_transfer_task import restamp
+
+    fake = FakeOpenSearch(fail_first=1)
+    monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: fake)
+    outcome = restamp.apply(
+        kwargs={"to_user_id": 5, "file_ids": [7], "profile_ids": [], "cluster_uuids": []}
     )
-    assert any({"terms": {"file_id": [f.id]}} in q["bool"]["filter"] for _i, q in search.calls)
+    assert outcome.successful(), outcome.traceback
+    assert fake.fail_first == 0 and fake.calls
+    assert [m["name"] for m in dispatched] == ["update_file_access_index"]
+
+
+def test_the_restamp_task_declares_its_retry_policy():
+    from app.tasks.org_content_transfer_task import restamp
+
+    assert restamp.acks_late is True
+    assert restamp.max_retries and restamp.retry_backoff
+    assert issubclass(OSConnectionError, restamp.autoretry_for)
+
+
+def test_a_quarantined_file_is_re_owned_and_stays_quarantined(gov, search):
+    quarantined = gov.file(
+        gov.alice,
+        is_quarantined=True,
+        quarantine_reason="takedown",
+        pre_quarantine_status="completed",
+    )
+    oct_.transfer_org_content(gov.db, organization_id=gov.org.id, from_user_id=gov.alice.id)
+    gov.db.expire_all()
+    row = gov.db.get(MediaFile, quarantined.id)
+    assert row.user_id == gov.admin.id
+    assert row.is_quarantined is True and row.quarantine_reason == "takedown"
+    assert [m["kwargs"]["file_ids"] for m in search] == [[quarantined.id]]
 
 
 def test_a_name_conflict_leaves_only_the_colliding_row(gov, search):
@@ -200,45 +254,6 @@ def test_the_owner_is_preferred_as_default_target(gov):
     gov.org.owner_user_id = gov.bob.id
     gov.db.commit()
     assert oct_.default_target(gov.db, gov.org.id, from_user_id=gov.alice.id) == gov.bob.id
-
-
-# --- API ---------------------------------------------------------------------------------------
-
-
-def _url(user) -> str:
-    return f"/api/org-admin/members/{user.uuid}/transfer-content"
-
-
-def test_api_admin_transfers_and_plain_member_cannot(client, gov, search):
-    _world(gov)
-    f = gov.file(gov.alice)
-    with gov.acting_as(gov.alice):
-        assert client.post(_url(gov.alice), json={}).status_code == status.HTTP_403_FORBIDDEN
-    assert _owner_of(gov.db, MediaFile, f.id) == gov.alice.id
-    with gov.acting_as(gov.admin):
-        response = client.post(_url(gov.alice), json={})
-    assert response.status_code == status.HTTP_200_OK, response.text
-    body = response.json()
-    assert body["counts"]["files"] == 1 and body["to_user_uuid"] == str(gov.admin.uuid)
-    assert _owner_of(gov.db, MediaFile, f.id) == gov.admin.id
-
-
-def test_api_cannot_reach_another_organizations_member(client, gov, search):
-    _world(gov)
-    _make(gov, gov.outsider, "org:member", org=gov.other_org)
-    f = gov.file(gov.outsider, org=gov.other_org)
-    with gov.acting_as(gov.admin):
-        response = client.post(_url(gov.outsider), json={})
-    assert response.status_code == status.HTTP_404_NOT_FOUND
-    assert _owner_of(gov.db, MediaFile, f.id) == gov.outsider.id
-
-
-def test_api_target_must_be_an_admin(client, gov, search):
-    _world(gov)
-    with gov.acting_as(gov.admin):
-        response = client.post(_url(gov.alice), json={"to_user_uuid": str(gov.bob.uuid)})
-    assert response.status_code == status.HTTP_409_CONFLICT
-    assert "not_an_org_admin" in response.text
 
 
 # --- account deletion hook ---------------------------------------------------------------------

@@ -890,10 +890,6 @@ ROUTE_NOT_FILE_CONTENT: dict[str, str] = {
     _r("org_admin_ownership.py::transfer_ownership"): (
         "hands the organization's owner role to another admin: writes the organization row only"
     ),
-    _r("org_admin_content_transfer.py::transfer_member_content"): (
-        "re-owns rows and never their content; held files are excluded by "
-        "hold_guard.not_held_pred inside org_content_transfer, not merely refused"
-    ),
     _r("self_erasure.py::cancel_erasure"): _ERASURE_CONTROL,
 }
 
@@ -1012,6 +1008,7 @@ TASK_EXEMPT: dict[str, str] = {
             "tasks/rename_propagation_task.py::propagate_speaker_rename",
             "tasks/rename_propagation_task.py::propagate_title_rename",
             "tasks/search_availability_task.py::availability_reconcile",
+            "tasks/org_content_transfer_task.py::restamp",
             "tasks/search_file_field_tasks.py::update_file_access_index",
             "tasks/search_file_field_tasks.py::update_file_tags_index",
             "tasks/search_file_field_tasks.py::index_file_summary",

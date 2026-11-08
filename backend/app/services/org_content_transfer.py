@@ -15,8 +15,8 @@ named in the result (``skipped_held``) and the audit event. A quarantined file m
 other; its quarantine state is untouched.
 
 The Postgres move and its audit event commit together. The OpenSearch ``user_id`` restamp runs
-after the commit and is idempotent (it keys on the file/profile/cluster ids that moved), so
-:func:`restamp_index` can be re-run if it failed. Account deletion otherwise removes documents
+after the commit as a Celery task with retries (``org_content_transfer.restamp``), selecting by
+the ids that moved and idempotent (:func:`restamp_documents`). Account deletion otherwise removes documents
 by ``user_id``, which is why the restamp matters.
 """
 
@@ -28,7 +28,6 @@ from dataclasses import field
 from typing import Any
 
 from kombu.exceptions import OperationalError
-from opensearchpy.exceptions import OpenSearchException
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
@@ -99,7 +98,7 @@ class TransferResult:
     file_ids: list[int] = field(default_factory=list)
     profile_ids: list[int] = field(default_factory=list)
     cluster_uuids: list[str] = field(default_factory=list)
-    index_complete: bool = False
+    restamp_queued: bool = False
 
     @property
     def total(self) -> int:
@@ -120,17 +119,6 @@ def _active_admin_ids(db: Session, organization_id: int, *, excluding: int) -> l
         .order_by(OrganizationMembership.created_at, OrganizationMembership.id)
     )
     return [int(row[0]) for row in rows]
-
-
-def user_id_for_uuid(db: Session, user_uuid: Any) -> int | None:
-    """The internal id of the account with this public uuid, or None."""
-    found = db.query(User.id).filter(User.uuid == user_uuid).scalar()
-    return int(found) if found is not None else None
-
-
-def uuid_for_user_id(db: Session, user_id: int) -> Any:
-    """The public uuid of an account that exists."""
-    return db.query(User.uuid).filter(User.id == user_id).scalar()
 
 
 def default_target(db: Session, organization_id: int, *, from_user_id: int) -> int | None:
@@ -242,7 +230,7 @@ def transfer_org_content(
         to_user_id: The receiving administrator; :func:`default_target` when omitted.
         actor: The administrator acting, None for a system call (account deletion).
         client: Request context for the audit event.
-        reason: ``member_removed`` | ``account_deleted`` | ``admin_transfer``; recorded.
+        reason: ``member_removed`` | ``account_deleted``; recorded.
 
     Raises:
         TransferError: nothing is written on a refusal.
@@ -334,7 +322,7 @@ def transfer_org_content(
     )
     db.commit()
     audit_outbox.deliver_staged(db)
-    result.index_complete = restamp_index(result, db=db)
+    result.restamp_queued = dispatch_restamp(result)
     return result
 
 
@@ -342,15 +330,31 @@ def _chunks(items: list[Any]) -> list[list[Any]]:
     return [items[i : i + _TERMS_CHUNK] for i in range(0, len(items), _TERMS_CHUNK)]
 
 
-def restamp_index(result: TransferResult, *, db: Session | None = None, client: Any = None) -> bool:
-    """Point the moved rows' search documents at the new owner; True when none was left behind.
+class RestampIncompleteError(Exception):
+    """Some documents were left unstamped (a version conflict with a concurrent write, or a
+    per-document failure). Raised so the task's retry runs the same idempotent restamp again."""
+
+
+def restamp_documents(
+    *,
+    to_user_id: int,
+    file_ids: list[int],
+    profile_ids: list[int],
+    cluster_uuids: list[str],
+    client: Any = None,
+) -> int:
+    """Point the moved rows' search documents at the new owner; returns documents updated.
 
     Per-file documents (chunks, digests, summaries, transcripts, per-file speaker documents) are
     selected by the ids that moved, never by the old ``user_id`` alone: a held file kept by the
-    departing member shares that ``user_id`` and must keep it. Idempotent; never raises, because
-    the Postgres move has committed. Afterwards the ``accessible_user_ids`` of the moved files are
-    recomputed (``update_file_access_index``).
+    departing member shares that ``user_id`` and must keep it. Each query also excludes documents
+    already on ``to_user_id``, so a re-run (a Celery retry, a replayed message) changes nothing.
+
+    Raises:
+        OpenSearchException: transport or index errors (the task retries them).
+        RestampIncompleteError: documents were skipped by a conflict or failure.
     """
+    from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
     from app.services.opensearch_service.update_by_query import update_by_query
     from app.services.search.availability_stamp import stamp_targets
 
@@ -359,54 +363,68 @@ def restamp_index(result: TransferResult, *, db: Session | None = None, client: 
 
         client = get_opensearch_client()
     if client is None:
-        return True
+        return 0
     script = {
         "source": "ctx._source.user_id = params.to",
         "lang": "painless",
-        "params": {"to": result.to_user_id},
+        "params": {"to": to_user_id},
     }
-    not_yet = {"must_not": [{"term": {"user_id": result.to_user_id}}]}
-    clean = True
+    not_yet = {"must_not": [{"term": {"user_id": to_user_id}}]}
+    updated = 0
+    incomplete = False
+
+    def run(index: str, filters: list[dict[str, Any]]) -> None:
+        nonlocal updated, incomplete
+        response = update_by_query(client, index, {"bool": {"filter": filters, **not_yet}}, script)
+        updated += int(response.get("updated", 0))
+        incomplete |= bool(response.get("failures") or int(response.get("version_conflicts", 0)))
+
+    for target in stamp_targets():
+        if not client.indices.exists(index=target.index):
+            continue
+        for chunk in _chunks(file_ids):
+            run(target.index, [{"terms": {target.id_field: chunk}}])
+    for index in speaker_embedding_indices():
+        if not client.indices.exists(index=index):
+            continue
+        for doc_type, field_name, ids in (
+            ("profile", "profile_id", profile_ids),
+            ("cluster", "cluster_uuid", cluster_uuids),
+        ):
+            for chunk in _chunks(list(ids)):
+                run(index, [{"term": {"document_type": doc_type}}, {"terms": {field_name: chunk}}])
+    if incomplete:
+        raise RestampIncompleteError("some documents were not restamped")
+    return updated
+
+
+RESTAMP_TASK = "org_content_transfer.restamp"
+
+
+def dispatch_restamp(result: TransferResult) -> bool:
+    """Queue the durable restamp after the commit; True when every message was accepted.
+
+    One message per ``_TERMS_CHUNK`` of files (profile and cluster ids ride the first), by task
+    name so the service layer does not import the task layer. The task retries on its own
+    (``tasks/org_content_transfer_task``); a broker outage here is the only way a transfer ends
+    without a restamp queued, and the caller sees ``False``.
+    """
+    from app.core.celery import celery_app
+
+    chunks = _chunks(result.file_ids) or [[]]
     try:
-        for target in stamp_targets():
-            if not client.indices.exists(index=target.index):
-                continue
-            for chunk in _chunks(result.file_ids):
-                query = {"bool": {"filter": [{"terms": {target.id_field: chunk}}], **not_yet}}
-                clean &= _ran(update_by_query(client, target.index, query, script))
-        from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
-
-        for index in speaker_embedding_indices():
-            if not client.indices.exists(index=index):
-                continue
-            for doc_type, field_name, ids in (
-                ("profile", "profile_id", result.profile_ids),
-                ("cluster", "cluster_uuid", result.cluster_uuids),
-            ):
-                for chunk in _chunks(list(ids)):
-                    query = {
-                        "bool": {
-                            "filter": [
-                                {"term": {"document_type": doc_type}},
-                                {"terms": {field_name: chunk}},
-                            ],
-                            **not_yet,
-                        }
-                    }
-                    clean &= _ran(update_by_query(client, index, query, script))
-    except OpenSearchException as error:  # committed already; the caller re-runs this
-        logger.error("Content transfer index restamp failed: %s", error)
+        for position, files in enumerate(chunks):
+            first = position == 0
+            celery_app.send_task(
+                RESTAMP_TASK,
+                kwargs={
+                    "to_user_id": result.to_user_id,
+                    "file_ids": files,
+                    "profile_ids": result.profile_ids if first else [],
+                    "cluster_uuids": result.cluster_uuids if first else [],
+                },
+            )
+    except OperationalError as error:
+        logger.error("Content transfer restamp not dispatched: %s", error)
         return False
-    if result.file_ids:
-        try:
-            from app.core.celery import celery_app
-
-            celery_app.send_task("update_file_access_index", args=[result.file_ids])
-        except OperationalError as error:
-            logger.error("Content transfer access reindex not dispatched: %s", error)
-            clean = False
-    return clean
-
-
-def _ran(response: dict[str, Any]) -> bool:
-    return not (response.get("failures") or int(response.get("version_conflicts", 0)))
+    return True

@@ -93,17 +93,16 @@ search index is re-pointed at the new owner, so search and chat keep finding the
   owner, else its longest-standing active admin. If the person is the only admin and still owns
   organization content, the deletion is refused with `409 no_transfer_target` until another admin
   exists. In the community edition nobody has an organization membership, so nothing changes.
-- **On request**, an organization admin calls `POST /api/org-admin/members/{user_uuid}/transfer-content`
-  with `{}` (the default recipient) or `{"to_user_uuid": "..."}`. The recipient must be an active
-  admin of the same organization (`409 not_an_org_admin`, `target_not_active` or `same_user`
-  otherwise). The reply lists the counts per kind, `skipped_held`, `skipped_conflict` and
-  `index_complete`. The routes are refused under a support access grant.
+- **Member removal** (managed edition): the platform calls the same transfer before it removes the
+  membership; core has no member-removal path of its own.
 - **Legal holds.** A file under a hold is never re-owned: it is counted in `skipped_held`, and
   account deletion is still refused while the person owns a held file. Quarantine is left as it is.
 - **Name conflicts.** A row whose name the recipient already uses (for example a speaker profile
   with the same name) stays with its owner and is counted in `skipped_conflict`; it is never renamed.
-- **Repeating is safe.** A second call moves nothing new and runs the search re-pointing again,
-  which is how to finish it when `index_complete` was `false`.
+- **Search follows.** After the commit a background task (`org_content_transfer.restamp`, utility
+  queue) re-points the search documents at the new owner. It retries with exponential backoff
+  (up to 8 times, 15 minutes at most between tries) on OpenSearch errors and survives a lost
+  worker, and a re-run changes nothing already moved.
 - **Audit.** The organization's audit log shows `org.content.transfer` with the counts, never a title.
 
 ## The receipt

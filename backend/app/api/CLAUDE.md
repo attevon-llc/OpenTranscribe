@@ -359,12 +359,3 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   404s there exactly like every other resource lookup.
 - Middleware order is load-bearing: `ObservabilityMiddleware` is added **last** in `main.py` so
   it runs outermost.
-
-## Organization content transfer (#1104)
-
-`org_admin_content_transfer.py` (`POST /org-admin/members/{uuid}/transfer-content`, org admin) and
-`user_deletion_service._hand_over_org_content` both call `services/org_content_transfer.transfer_org_content`
-— the one place that knows which tables move (`_TABLES`). Add a new organization-owned table there, not
-in a second path. Held files are skipped, the search restamp is by moved ids (never by old `user_id`
-alone) and is re-runnable. No ledger table: a failed restamp is retried by repeating the call
-(`index_complete` in the reply); a beat reconcile is not built.

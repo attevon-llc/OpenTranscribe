@@ -954,6 +954,7 @@ API_THREADPOOL_SIZE=0    # 0 = derived, see below
 DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
 DB_STATEMENT_TIMEOUT_MS=30000    # Postgres statement_timeout, API process only (0 = off)
 REQUEST_DEADLINE_SECONDS=55      # database work one request may do before 503 (0 = off)
+DB_OVERLOAD_RETRY_AFTER_SECONDS=2  # Retry-After on the overload 503
 UVICORN_LIMIT_CONCURRENCY=512    # open connections per API process before 503 (0 = none)
 CHAT_THREADPOOL_SIZE=0           # chat's own worker threads; 0 = a quarter of the DB pool, min 4
 ```
@@ -994,6 +995,14 @@ client has already abandoned stops holding a connection. The default, 55 s, is u
 clients wait. It is not a cancellation (a request computing in Python without querying runs on),
 and file uploads, chat replies, streaming downloads and exports, and `/metrics` are exempt
 (`backend/app/middleware/request_deadline.py` lists them with the reason for each).
+
+When the database side is overloaded (no pooled connection within `DB_POOL_TIMEOUT_SECONDS`, a
+statement past `DB_STATEMENT_TIMEOUT_MS`, or a request past `REQUEST_DEADLINE_SECONDS`) the API
+answers **503** with `Retry-After: DB_OVERLOAD_RETRY_AFTER_SECONDS` and the body
+`{"detail": "Server busy, try again shortly", "code": "server_busy"}`, logs one warning line per
+response (method, route, cause, pool usage; no traceback), and counts it in the Prometheus counter
+`api_overload_responses_total{cause}` (`pool_timeout`, `statement_timeout`, `deadline`). A rising
+count means the API needs more connections, processes or a cheaper query on the logged route.
 
 Hooks registered by a deployment (for example an upload-limits resolver) run on this thread
 pool, never on the event loop, but they run while the request holds a connection: keep them

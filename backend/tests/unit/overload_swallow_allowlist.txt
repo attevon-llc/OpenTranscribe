@@ -1,0 +1,60 @@
+# Broad `except` clauses around session use that may catch a database overload (pool
+# timeout, statement timeout, request deadline) and do not re-raise it.
+# Format: <path>::<function>  # <reason>. Checked by test_overload_classes_not_swallowed.py,
+# which fails on an unlisted finding, a stale entry and an entry with no reason.
+#
+# The authentication path (dependencies, lifecycle gates, approval, revocation fallback,
+# refresh-token verification, external-token JIT sync) re-raises and is NOT listed here.
+
+# Login and session mint: owned by scale lane E (scale_foundations_plan.md 5.6), which maps
+# infrastructure errors on the login path to 503.
+app/api/endpoints/auth/login.py::_resolve_lockout_account  # lane E (login); raises AccountLookupError, which the login handler answers
+app/api/endpoints/auth/login_completion.py::record_successful_login  # lane E (login); rolls back the best-effort login bookkeeping, login still completes
+app/auth/session_ceiling.py::_session_lifetime_minutes  # lane E (session mint at login); falls back to the .env session timeouts
+app/auth/ldap_auth.py::_resolve_login_config  # lane E (LDAP login); falls back to the .env LDAP config
+
+# WebSocket handshake: owned by scale lane F (plan section 6, M2 #8).
+app/api/websockets.py::_try_authenticate_token  # lane F: handshake auth failure on pool exhaustion is its finding (M2 #8)
+
+# Already answered as a retryable failure by the caller.
+app/auth/refresh_tokens.py::rotate_refresh_token  # RevocationError -> sessions.py answers 503 "retry" (the client keeps its old refresh token)
+app/auth/refresh_tokens.py::revoke_reused_token_family  # RevocationError -> logged by sessions.py; the reused token is refused either way
+app/auth/token_service.py::revoke_token  # RevocationError -> logout reports the failed revocation to the caller (sessions.py `failed`)
+app/auth/password_reset.py::confirm_password_reset  # answers "Could not complete the password reset. Please try again."; nothing is changed
+app/api/endpoints/auth/sessions.py::_revoke_all_and_commit  # the inner except guards a rollback after a failed logout-all, which then raises RevocationError
+app/api/endpoints/auth/sessions.py::logout  # logout reports each piece it could not end in `failed`; the cookies are cleared regardless
+app/api/endpoints/auth/sessions.py::_end_federated_session  # best-effort IdP single logout; local logout still completes
+
+# Not the request path.
+app/auth/token_service.py::cleanup_expired_tokens  # Celery beat housekeeping; returns 0 and runs again next schedule
+
+# Best-effort side effects after the request's own work has committed; failure is logged
+# and the response is unaffected.
+app/api/endpoints/auth/oidc.py::_store_session_id_token  # optional id_token for RP-initiated logout; login completes without it
+app/api/endpoints/auth/oidc.py::_complete_oidc_login  # optional OIDC refresh token storage; login completes without it
+app/api/endpoints/files/upload.py::_discard_upload  # cleanup of a failed upload's row; the upload already failed
+app/api/endpoints/files/upload_dispatch.py::_mark_upload_dispatch_failed  # marks a failed dispatch; the dispatch error is what is reported
+app/api/endpoints/files/redaction_gate.py::_withdraw_redaction_claim  # releases a claim; a stale claim expires on its own
+app/api/endpoints/files/bulk_actions.py::bulk_file_action  # per-file results list each failure; post-batch tag refresh is best-effort
+app/api/endpoints/speakers_merge.py::_refresh_analytics_after_merge  # analytics refresh after a committed merge
+app/api/endpoints/speakers_profile_workflow.py::_clear_video_cache_for_speaker  # cache clear after a committed update
+app/api/endpoints/speakers_suggestions.py::_reject_speaker_suggestion  # chunk-plane label sync is re-queued by the reconcile sweep
+app/api/endpoints/transcript_segments.py::_handle_speaker_change  # analytics refresh after a committed segment edit
+app/api/endpoints/summarization.py::_queue_topic_companion  # reports the companion as UNAVAILABLE; the summary itself is queued
+app/api/endpoints/prompts_sharing.py::get_shared_prompt_library  # the tag filter list is optional decoration on the library
+
+# Admin operations that report each failure in their own result.
+app/api/endpoints/files/management.py::recover_stuck_files_bulk  # per-file error list in the response
+app/api/endpoints/search_index_health.py::repair_indices  # per-index "failed" in the response
+app/api/endpoints/auth_config_connection_tests.py::_test_ldap_connection  # an admin "test connection" result: success=False
+app/api/endpoints/llm_connection_tests.py::test_llm_connection  # an admin "test connection" result: success=False
+app/api/endpoints/llm_local_endpoints.py::_probe_local_endpoint  # reports the endpoint unreachable in the probe result
+app/api/endpoints/llm_model_discovery.py::get_ollama_models  # model discovery answers success=False with a message
+app/api/endpoints/llm_model_discovery.py::_get_stored_api_key  # discovery proceeds without a stored key and says so
+
+# Read paths that degrade one part of a response. FOLLOW-UP (lead): convert these to
+# reraise_db_overload so an overload is a 503 rather than a partial answer.
+app/api/endpoints/embedding_migration.py::_compute_ground_truth_status  # admin migration status shows "unknown"
+app/api/endpoints/files/detail_response.py::get_file_collections  # file detail shows no collections for this response
+app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan  # answers queued=False; the scan is re-requested on the next view
+app/api/endpoints/speaker_update.py::trigger_retroactive_matching  # records suggestion_load_error and reports it

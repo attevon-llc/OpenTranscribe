@@ -39,6 +39,10 @@ class CapacitySettings(BaseSettings):
     # most clients give up at; uploads, SSE streams and /metrics are exempt
     # (app/middleware/request_deadline.py). 0 = off.
     REQUEST_DEADLINE_SECONDS: float = 55.0
+    # Retry-After (seconds) on the 503 the API answers when the database side is
+    # overloaded: pool timeout, statement timeout or request deadline
+    # (app/core/db_overload.py). At least 1.
+    DB_OVERLOAD_RETRY_AFTER_SECONDS: int = 2
     # Open connections (including WebSockets and SSE streams) one uvicorn process
     # accepts before answering 503. uvicorn reads the same variable itself
     # (--limit-concurrency); the app reads it to size the threadpool so that

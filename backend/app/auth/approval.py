@@ -46,6 +46,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.core.db_overload import reraise_db_overload
 from app.core.env import is_truthy
 
 if TYPE_CHECKING:
@@ -93,7 +94,9 @@ def approval_required(db: Session | None) -> bool | None:
     savepoint = db.begin_nested()
     try:
         value = AuthConfigService.get_effective_config(db, "require_account_approval")
-    except Exception:
+    except Exception as exc:
+        # Overload is not "unreadable": it is answered 503 (core/db_overload).
+        reraise_db_overload(exc)
         logger.warning("Could not read require_account_approval", exc_info=True)
         try:
             savepoint.rollback()

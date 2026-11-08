@@ -39,6 +39,7 @@ from app.auth.session_ceiling import lock_user_for_session_mint
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
+from app.core.db_overload import reraise_db_overload
 from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken
 from app.utils.time_format import as_utc
@@ -338,6 +339,9 @@ class RefreshTokenOps:
             logger.warning(f"Token verification failed: JWT error - {e}")
             return None, None
         except Exception as e:
+            # A busy database is not an invalid refresh token: answering "invalid" signs
+            # the user out. The overload is answered 503 (core/db_overload) instead.
+            reraise_db_overload(e)
             logger.error(f"Token verification error: {e}")
             return None, None
 

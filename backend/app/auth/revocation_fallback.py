@@ -10,6 +10,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.core.db_overload import reraise_db_overload
 from app.core.degradation import record_degradation
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
@@ -92,7 +93,10 @@ def is_revoked_from_database(
             .first()
         )
         return live is None
-    except Exception:
+    except Exception as exc:
+        # An overload is not a failed lookup: denying here would sign the caller out for
+        # a busy database. It is answered 503 (core/db_overload) and the client retries.
+        reraise_db_overload(exc)
         record_degradation("token_revocation", "deny")
         logger.critical(
             "Database revocation fallback failed for jti=%s...; denying (fail closed).",

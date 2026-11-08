@@ -359,6 +359,8 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
         successful read in this process did: an outage must not switch the gate
         off for a banner enabled only in the admin UI, and a deployment that never
         enabled it must not have its users held at a banner nobody can show them.
+        A database overload (pool timeout, statement timeout, request deadline) is
+        not a failed read: it propagates and the request is answered 503.
     """
     global _last_banner_read
 
@@ -382,7 +384,10 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
             .filter(AuthConfig.config_key.in_(("login_banner_enabled", "login_banner_text")))
             .all()
         }
-    except Exception:
+    except Exception as exc:
+        from app.core.db_overload import reraise_db_overload
+
+        reraise_db_overload(exc)
         from app.core.auth_settings import CONFIG_FALLBACK_LOG
         from app.core.auth_settings import count_config_fallback
 

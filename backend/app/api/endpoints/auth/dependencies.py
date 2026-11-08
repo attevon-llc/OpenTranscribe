@@ -36,6 +36,7 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.db_overload import reraise_db_overload
 from app.core.exceptions import DomainError
 from app.core.security import accepted_algorithms
 from app.db.base import get_db
@@ -93,6 +94,9 @@ def _load_token_user(
         # unavailable database.
         raise
     except Exception as e:
+        # Overload (pool/statement timeout, request deadline) is answered 503 and logged
+        # once by core/db_overload; it is neither this error log nor a fabricated user.
+        reraise_db_overload(e)
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")
         # In testing environment, we can create a mock user with the UUID from the token
@@ -322,7 +326,9 @@ def get_optional_current_user(
                 return external_user
         except Exception as e:
             # Never let an external-auth problem fail an optional-auth route;
-            # fall through to local JWT (and ultimately None).
+            # fall through to local JWT (and ultimately None). An overload is not an
+            # auth problem: it is answered 503, not as an anonymous caller.
+            reraise_db_overload(e)
             logger.debug(f"Error in optional external auth: {e}")
 
     try:
@@ -365,6 +371,7 @@ def get_optional_current_user(
     except JoseError:
         return None
     except Exception as e:
+        reraise_db_overload(e)
         logger.debug(f"Error in optional auth: {e}")
         return None
 

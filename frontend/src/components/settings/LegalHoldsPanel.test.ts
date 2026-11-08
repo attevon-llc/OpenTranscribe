@@ -13,7 +13,7 @@ vi.mock('$stores/locale', async () => {
   const t = (key: string, vars?: Record<string, unknown>) =>
     Object.entries(vars ?? {}).reduce(
       (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
-      en[key] ?? key
+      en[key] ?? en[`${key}_${vars?.count === 1 ? 'one' : 'other'}`] ?? key
     );
   return { t: readable(t), locale: readable('en') };
 });
@@ -154,7 +154,7 @@ describe('LegalHoldsPanel (organization scope, the default)', () => {
         matter_ref: 'CASE-42',
       })
     );
-    expect(toast.success).toHaveBeenCalledWith('Legal hold placed on 3 file(s).');
+    expect(toast.success).toHaveBeenCalledWith('Legal hold placed on 3 files.');
     await waitFor(() => expect(api.listHolds).toHaveBeenCalledTimes(2));
   });
 

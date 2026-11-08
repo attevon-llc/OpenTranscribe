@@ -82,7 +82,7 @@ describe('SearchSettings — neural bootstrap banner (#625)', () => {
     });
 
     expect(
-      screen.getByText(/settings\.search\.bootstrapDegradedBody.*"attempts":3/)
+      screen.getByText(/settings\.search\.bootstrapDegradedBody.*"count":3/)
     ).toBeInTheDocument();
     expect(
       screen.getByText(/settings\.search\.bootstrapLastError.*register_deploy/)

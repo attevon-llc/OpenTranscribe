@@ -13,7 +13,7 @@ vi.mock('$stores/locale', async () => {
   const t = (key: string, vars?: Record<string, unknown>) =>
     Object.entries(vars ?? {}).reduce(
       (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
-      en[key] ?? key
+      en[key] ?? en[`${key}_${vars?.count === 1 ? 'one' : 'other'}`] ?? key
     );
   return { t: readable(t), locale: readable('en') };
 });
@@ -245,7 +245,7 @@ describe('PurgeConfirmDialog', () => {
       await runToTheEnd();
 
       const kept = await screen.findByTestId('purge-protected');
-      expect(kept).toHaveTextContent('Kept because of a legal hold or takedown: 3 recording(s)');
+      expect(kept).toHaveTextContent('Kept because of a legal hold or takedown: 3 recordings');
       // The skip counters are not deletions.
       expect(screen.getByTestId('purge-results')).toHaveTextContent('Database records removed: 4');
     });
@@ -327,7 +327,7 @@ describe('PurgeConfirmDialog', () => {
       );
       await runToTheEnd();
 
-      expect(await screen.findByText(/2 item\(s\) still remain/)).toBeInTheDocument();
+      expect(await screen.findByText(/2 items still remain/)).toBeInTheDocument();
       expect(screen.getByTestId('purge-verification')).toHaveAttribute('role', 'alert');
       expect(screen.getByRole('dialog')).not.toHaveTextContent(
         'nothing from this deletion remains'
@@ -348,7 +348,7 @@ describe('PurgeConfirmDialog', () => {
       );
       await runToTheEnd();
 
-      expect(await screen.findByText(/2 check\(s\) could not be completed/)).toBeInTheDocument();
+      expect(await screen.findByText(/2 checks could not be completed/)).toBeInTheDocument();
       expect(screen.getByRole('dialog')).not.toHaveTextContent(
         'nothing from this deletion remains'
       );

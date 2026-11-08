@@ -183,6 +183,10 @@ describe('privacy.* copy in every locale', () => {
     JSON.parse(readFileSync(join(dir, f), 'utf8')) as Record<string, string>;
   const en = load('en.json');
   const keys = Object.keys(en).filter((k) => k.startsWith('privacy.'));
+  // A plural base carries each locale's own CLDR forms (ja: other only), so compare the form a
+  // locale actually has against English's `_other`.
+  const enFor = (k: string, loc: Record<string, string>) =>
+    k in loc ? en[k] : en[k.replace(/_(zero|one|two|few|many)$/, '_other')] ?? en[k];
   const placeholders = (s: string) => [...s.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort();
 
   it('has the keys the code maps to', () => {
@@ -200,10 +204,13 @@ describe('privacy.* copy in every locale', () => {
     '%s is translated, keeps every placeholder and never has an empty string',
     (file) => {
       const locale = load(file);
-      const sameAsEnglish = keys.filter((k) => locale[k] === en[k]);
+      const present = keys.filter((k) => k in locale);
+      const sameAsEnglish = present.filter((k) => locale[k] === en[k]);
       expect(sameAsEnglish).toEqual([]);
-      const broken = keys.filter(
-        (k) => !locale[k]?.trim() || placeholders(locale[k]).join() !== placeholders(en[k]).join()
+      const broken = present.filter(
+        (k) =>
+          !locale[k]?.trim() ||
+          placeholders(locale[k]).join() !== placeholders(enFor(k, locale)).join()
       );
       expect(broken).toEqual([]);
     }

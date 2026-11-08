@@ -160,7 +160,7 @@
       padding="1.5rem"
     />
   {:else}
-    <p class="panel-status">{$t('settings.sessions.count', { total })}</p>
+    <p class="panel-status">{$t('settings.sessions.count', { count: total })}</p>
     <div class="table-scroll">
       <table class="sessions-table">
         <thead>

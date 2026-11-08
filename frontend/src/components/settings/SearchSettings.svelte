@@ -459,7 +459,7 @@
     <div class="banner banner-warning">
       <div class="banner-title">{$t('settings.search.bootstrapDegradedTitle')}</div>
       <div class="banner-body">
-        {$t('settings.search.bootstrapDegradedBody', { attempts: bootstrapStatus.attempts })}
+        {$t('settings.search.bootstrapDegradedBody', { count: bootstrapStatus.attempts })}
       </div>
       {#if bootstrapStatus.last_error}
         <div class="banner-detail">
@@ -621,7 +621,7 @@
   message={degradedPreview
     ? $t('settings.search.reembedModalMessage', {
         count: degradedPreview.total_files,
-        users: degradedPreview.affected_users,
+        userPhrase: $t('settings.search.userCount', { count: degradedPreview.affected_users }),
       }) + (degradedPreview.truncated
         ? ' ' + $t('settings.search.reembedModalTruncated', { count: degradedPreview.total_files })
         : '')

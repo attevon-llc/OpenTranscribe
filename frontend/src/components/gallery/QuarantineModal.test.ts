@@ -153,15 +153,15 @@ describe('QuarantineModal', () => {
     );
     await chooseOperatorAction(container, 'routine review');
 
-    await fireEvent.click(getByText(/Quarantine 2 file\(s\)/i).closest('button')!);
+    await fireEvent.click(getByText(/Quarantine 2 files/i).closest('button')!);
 
     await waitFor(() => expect(toastStore.warning).toHaveBeenCalledTimes(1));
     const warning = vi.mocked(toastStore.warning).mock.calls[0][0];
-    expect(warning).toContain('1 file(s) quarantined, but');
+    expect(warning).toContain('1 file quarantined, but');
     expect(warning).toContain('could not be revoked');
     // Only the cleanly revoked file is reported as a success.
     expect(toastStore.success).toHaveBeenCalledTimes(1);
-    expect(toastStore.success).toHaveBeenCalledWith('1 file(s) quarantined');
+    expect(toastStore.success).toHaveBeenCalledWith('1 file quarantined');
   });
 
   it('the legal-hold checkbox is checked on mount', () => {

@@ -110,7 +110,7 @@ describe('SearchSettings — degraded-file re-embed preview+confirm (#626)', () 
     // The confirmation modal is up; nothing has been dispatched yet.
     expect(post).not.toHaveBeenCalled();
     expect(
-      screen.getByText(/settings\.search\.reembedModalMessage.*"count":7.*"users":2/)
+      screen.getByText(/settings\.search\.reembedModalMessage.*"count":7.*"userPhrase":/)
     ).toBeInTheDocument();
   });
 

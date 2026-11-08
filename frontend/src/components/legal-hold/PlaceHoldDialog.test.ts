@@ -81,7 +81,7 @@ describe('PlaceHoldDialog', () => {
       })
     );
     expect(orgApi.placeHold).not.toHaveBeenCalled();
-    expect(toast.success).toHaveBeenCalledWith('Legal hold placed on 2 file(s).');
+    expect(toast.success).toHaveBeenCalledWith('Legal hold placed on 2 files.');
     expect(placed).toHaveBeenCalledWith(expect.objectContaining({ fileUuids: [F1, F2] }));
   });
 

@@ -13,7 +13,7 @@ vi.mock('$stores/locale', async () => {
   return {
     locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
     t: readable((key: string, opts?: Record<string, unknown>) => {
-      let out = en[key] ?? key;
+      let out = en[key] ?? en[`${key}_${opts?.count === 1 ? 'one' : 'other'}`] ?? key;
       for (const [name, value] of Object.entries(opts ?? {})) {
         out = out.split(`{{${name}}}`).join(String(value));
       }

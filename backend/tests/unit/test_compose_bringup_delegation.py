@@ -69,6 +69,13 @@ HAND_BUILT_EXEMPTIONS = {
         "with the lite workers — still only reachable from here and opentr.sh, still "
         "not shippable."
     ),
+    "lib/lite-demo-overlay.sh": (
+        "not a second front end: it is a piece OF ./opentr.sh, sourced by it alone, so it cannot "
+        "delegate to it. It is the single home of opentr.sh's lite/demo overlay selection, which "
+        "start_app() and reset_and_init() both call (issue #628) instead of each keeping a copy. "
+        "The shipped side selects the same overlay from DEMO_MODE in opentranscribe.sh's "
+        "get_compose_files(), pinned by test_demo_overlay.py."
+    ),
 }
 
 _CODE_ONLY = re.compile(r"^\s*#")

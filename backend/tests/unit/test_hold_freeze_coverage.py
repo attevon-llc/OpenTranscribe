@@ -1005,6 +1005,7 @@ TASK_EXEMPT: dict[str, str] = {
             "tasks/search_indexing_task.py::backfill_speaker_id_fields_task",
             "tasks/search_maintenance_task.py::search_index_maintenance_task",
             "tasks/search_maintenance_task.py::neural_search_bootstrap_task",
+            "tasks/speaker_profile_sync_task.py::speaker_profile_opensearch_sync_task",
             "tasks/search_reembed_task.py::reembed_degraded_files_task",
             "tasks/speaker_clustering.py::cluster_speakers_for_file",
             "tasks/speaker_clustering.py::recluster_all_speakers",

@@ -93,6 +93,7 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     "search_index_sweep": {"queue": CeleryQueues.UTILITY},
     "search.reembed_degraded": {"queue": CeleryQueues.CPU},
     "neural_search_bootstrap": {"queue": CeleryQueues.UTILITY},
+    "speaker_profile_opensearch_sync": {"queue": CeleryQueues.UTILITY},
     "opensearch_orphan_cleanup": {"queue": CeleryQueues.CPU},
     "storage_orphan_sweep": {"queue": CeleryQueues.CPU},
     # Irreversible deletion of voiceprints / inferred gender after a privacy switch is off

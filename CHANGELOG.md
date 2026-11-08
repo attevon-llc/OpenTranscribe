@@ -98,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- API startup no longer waits on the speaker-profile search sync. On a library with hundreds of thousands of speakers it made one OpenSearch call per speaker (about 15 minutes), kept the API unhealthy so the stack failed to start, and held a database transaction open past the server's idle-in-transaction timeout. It now runs as a background task in batches (one multi-get and one bulk update per 500 speakers, no transaction held while waiting on OpenSearch) and only rewrites documents that differ.
 - The speaker profile list no longer runs a set of privacy-policy queries for every person who shared a profile with you; the policy of all owners is now read in a fixed number of statements, so the list stays fast when many people share with you.
 - Opening the speakers list no longer writes to the database: it used to issue one `UPDATE speaker` per listed speaker (about 198,000 for a very large library) and then discard them, and it ran several extra queries for every voiceprint-named speaker. `GET /api/speakers` without `file_uuid` is now paged (`skip`, `limit`; 1000 rows by default, ordered by speaker number); the file-scoped list is unchanged.
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.

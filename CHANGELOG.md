@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The gallery owner filter list loads faster for large libraries: it reads the distinct owners first instead of sorting every accessible file joined to its owner (#1337).
 - Paging through the gallery no longer repeats or skips files that share a sort value (size, duration, name, completion time), and a gallery page that is not full no longer runs every filter a second time to count itself (#1337).
 - The gallery filter panel loads faster when files are under legal hold: the held count and the Legal hold filter no longer test every file against the hold table one at a time (#1337).
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.

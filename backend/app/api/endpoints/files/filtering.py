@@ -24,6 +24,7 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
+from app.services.file_owner_queries import distinct_owner_ids
 from app.services.hidden_media_service import hidden_mode_pred
 from app.services.hold_guard import held_count_in
 from app.services.hold_guard import held_file_ids
@@ -532,14 +533,14 @@ def get_accessible_owners(
         )
         file_pred = MediaFile.id.in_(select(accessible_sq))
 
+    # The distinct owner ids first, then the users: joining every accessible file to ``user``
+    # and de-duplicating the joined rows sorted all of them (#1337 G11).
+    owner_ids = distinct_owner_ids(
+        sa.and_(file_pred, available_pred(include_quarantined=unavailable_list_exempt(bypass)))
+    )
     return (
         db.query(User)
-        .join(MediaFile, MediaFile.user_id == User.id)
-        .filter(
-            file_pred,
-            available_pred(include_quarantined=unavailable_list_exempt(bypass)),
-        )
-        .distinct()
+        .filter(User.id.in_(owner_ids))
         .order_by(User.full_name, User.email)
         .limit(OWNER_FACET_LIMIT)
         .all()

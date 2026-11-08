@@ -33,6 +33,7 @@ import uuid as uuid_pkg
 import pytest
 
 from app.core.enums import FileStatus
+from app.core.exceptions import ResourceNotFoundError
 from app.models.media import MediaFile
 from app.models.user import User
 from app.services.file_availability import exclude_unavailable
@@ -106,9 +107,9 @@ class TestQuarantineAccessGate:
             operator_action_reason="operator action (test)",
         )
 
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(ResourceNotFoundError) as exc:
             get_file_by_uuid_with_permission(db, str(file.uuid), owner.id, allow_public=True)
-        assert getattr(exc.value, "status_code", None) == 404
+        assert exc.value.status_code == 404
 
     def test_quarantined_file_still_visible_to_admin(self, world):
         """Admins keep visibility (the platform bypass passes the gate) for review."""

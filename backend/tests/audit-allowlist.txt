@@ -196,10 +196,6 @@ unit/test_multipart_upload.py::test_multipart_round_trip_against_real_storage::e
 # (`pytest.raises(HTTPException)`) and assert `exc.value.status_code` directly, which also
 # deletes the `# noqa: B017`. Deferred: all six live in files outside the change that added
 # the detector.
-test_takedown_quarantine.py::test_quarantine_hides_file_from_owner::broad-raises  # BACKLOG(#431): expects a 404 from get_file_by_uuid_with_permission for a quarantined file; the follow-up `getattr(exc.value, "status_code", None) == 404` passes for any exception with that attribute, including one raised assembling the call. Fix: `pytest.raises(HTTPException)` + `exc.value.status_code == 404`. UNTRIAGED.
-test_tenant_isolation.py::test_org_a_cannot_reach_org_b_file_by_uuid::broad-raises  # BACKLOG(#431): the comment already says `# HTTPException 403` — name it in the call. As written a TypeError from the four-argument signature reads as cross-org denial, which is the exact isolation claim this suite exists to make. UNTRIAGED.
-test_tenant_isolation.py::test_personal_scope_excludes_org_file::broad-raises  # BACKLOG(#431): same shape, organization_id=None path. Fix: `pytest.raises(HTTPException)` + assert on `exc.value.status_code`. UNTRIAGED.
-test_tenant_isolation.py::test_cross_org_shared_file_denied_under_org_scope::broad-raises  # BACKLOG(#431): same shape; the preceding `perm is None` assertion is real, so only the raises half is weak. Fix: `pytest.raises(HTTPException)`. UNTRIAGED.
 
 # --- bare-return (1)
 # The untested twin of `conditional-skip`: the test exits green having asserted nothing AND

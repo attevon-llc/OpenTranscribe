@@ -5700,6 +5700,7 @@
   "upload.videoUrl": "رابط الفيديو",
   "common.somethingWentWrong": "حدث خطأ ما",
   "common.rateLimited": "طلبات كثيرة جدًا — يرجى الانتظار لحظة.",
+  "common.serverBusy": "الخادم مشغول، يرجى المحاولة مرة أخرى بعد قليل",
   "search.searchFailed": "فشل البحث",
   "search.switchModelFailed": "تعذّر تبديل النموذج",
   "search.reindexStartFailed": "تعذّر بدء إعادة الفهرسة",

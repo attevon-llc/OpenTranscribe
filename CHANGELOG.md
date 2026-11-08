@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Frontend dependency updates: axios 1.21, i18next-browser-languagedetector 8.2.3, katex 0.19.1, `@types/node` 26.6.6, and `package.json` now requires the SvelteKit 3.1.1 and adapter-static 4.0.1 the lockfile already resolved (#1349, #1321).
+- Production image bases move to `denoland/deno:bin-2.9.8` and `emscripten/emsdk:6.0.13` (#1298, #1142).
 - The workflows set up Python, Node.js and the Trivy image scan through three shared local actions in `.github/actions/` instead of repeating the same steps, and the pin test now checks those actions too.
 - The licence-compliance report in `security-reports/license-compliance/` is regenerated from the v0.6.1 images and the current lockfile. It now lists `fpdf2` (LGPL-3.0, REVIEW), `python-docx` and `uharfbuzz`, and the Video.js 10 packages in place of Plyr. `scripts/generate-sbom-report.py` takes the image tag from `VERSION` instead of a hardcoded `v0.5.1` (#1309).
 - Deleting files in the gallery now asks to move them to the trash and says how many days they stay recoverable, and the confirmation message has an Undo button. The gallery and the Trash page update when a file is moved to the trash or restored in another tab or by another person. Releasing a legal hold now explains that an overdue file in the trash is then deleted forever within the hour (#1101).

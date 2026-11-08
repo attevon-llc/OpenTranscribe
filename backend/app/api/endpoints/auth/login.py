@@ -37,6 +37,7 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import login_rate_key
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.session_ceiling import enforce_session_ceiling
+from app.auth.session_ceiling import lock_user_for_session_mint
 from app.core.auth_settings import DynamicAuthSettings
 from app.core.auth_settings import get_auth_settings
 from app.core.auth_types import AUTH_TYPE_LOCAL
@@ -313,9 +314,15 @@ def _enforce_concurrent_session_limit(
     """
     from app.models.refresh_token import RefreshToken
 
-    # Use SELECT FOR UPDATE to prevent race conditions when checking/modifying sessions
-    # This acquires row-level locks on the user's active sessions
-    # Note: Cannot use with_for_update() on aggregate queries, so we query rows and count
+    # Lock the USER row first and hold it until the new session is minted (the
+    # refresh-token insert commits it). Locking only the existing session rows below
+    # could not serialise two sign-ins: neither sees the row the other is about to
+    # insert, so both counted one slot free and both minted. With the user row held,
+    # the second sign-in waits here, then counts the first one's session.
+    lock_user_for_session_mint(db, user_db.id)
+
+    # Row locks on the existing active sessions, so the eviction below works on a
+    # stable set. Cannot use with_for_update() on an aggregate, so count the rows.
     sessions_stmt = (
         select(RefreshToken)
         .where(

@@ -35,6 +35,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.revocation_error import RevocationError
 from app.auth.session_ceiling import _session_lifetime_minutes
 from app.auth.session_ceiling import enforce_session_ceiling
+from app.auth.session_ceiling import lock_user_for_session_mint
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
@@ -189,6 +190,12 @@ class RefreshTokenOps:
             last_activity_at=now,
             absolute_expires_at=absolute_expires_at,
         )
+
+        if enforce_concurrent_limit and max_concurrent_sessions > 0:
+            # Serialise this user's session mints so the ceiling below counts every
+            # concurrent one: without it, two transactions each saw only their own new
+            # row plus the committed ones and both kept theirs. Held until the commit.
+            lock_user_for_session_mint(db, user_id)
 
         db.add(refresh_token)
         # Flush (not commit) first: the new row needs an id and to be visible to the

@@ -16,6 +16,8 @@ import re
 import shlex
 import shutil
 import subprocess
+from datetime import datetime
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -257,3 +259,152 @@ def test_opentr_help_does_not_send_https_users_to_dev():
     assert "NGINX_SERVER_NAME" in block, "the HTTPS help block moved; update this test"
     assert "start dev" not in block
     assert "start prod" in block
+
+
+# ─── local CA + leaf (issue #1264) ───────────────────────────────────────────────────
+
+
+def _x509_text(cert: Path) -> str:
+    return subprocess.run(
+        ["openssl", "x509", "-in", str(cert), "-noout", "-text"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stdout
+
+
+def _generate(tmp_path: Path, *args: str) -> Path:
+    script = (
+        tmp_path / "scripts" / "generate-ssl-cert.sh"
+        if (tmp_path / "scripts").exists()
+        else _cert_script_copy(tmp_path)
+    )
+    result = subprocess.run(
+        ["bash", str(script), "lan.example.test", *args],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return tmp_path / "nginx" / "ssl"
+
+
+@needs_openssl
+def test_server_certificate_is_issued_by_a_local_ca_devices_can_trust(tmp_path):
+    ssl_dir = _generate(tmp_path, "--ip", "192.0.2.10")
+
+    ca_text = _x509_text(ssl_dir / "ca.crt")
+    assert re.search(r"Basic Constraints: critical\s+CA:TRUE", ca_text)
+    assert re.search(r"Key Usage: critical\s+Certificate Sign, CRL Sign", ca_text)
+
+    leaf_text = _x509_text(ssl_dir / "server.crt")
+    assert re.search(r"Basic Constraints: critical\s+CA:FALSE", leaf_text)
+    assert "TLS Web Server Authentication" in leaf_text
+    assert "Issuer: O = OpenTranscribe, CN = OpenTranscribe Local CA" in leaf_text
+
+    # The chain a device would build: trusting only ca.crt must validate the leaf.
+    verify = subprocess.run(
+        ["openssl", "verify", "-CAfile", str(ssl_dir / "ca.crt"), str(ssl_dir / "server.crt")],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stdout + verify.stderr
+
+
+@needs_openssl
+def test_server_certificate_validity_is_within_apples_825_day_limit(tmp_path):
+    ssl_dir = _generate(tmp_path)
+    out = subprocess.run(
+        ["openssl", "x509", "-in", str(ssl_dir / "server.crt"), "-noout", "-startdate", "-enddate"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
+    ).stdout
+    fmt = "%b %d %H:%M:%S %Y %Z"
+    start, end = (
+        datetime.strptime(line.split("=", 1)[1].strip().replace("  ", " "), fmt)
+        for line in out.strip().splitlines()
+    )
+    assert timedelta(days=0) < end - start <= timedelta(days=825)
+
+
+@needs_openssl
+def test_private_keys_are_owner_only(tmp_path):
+    ssl_dir = _generate(tmp_path)
+    for name in ("ca.key", "server.key"):
+        assert oct((ssl_dir / name).stat().st_mode & 0o777) == "0o600", name
+
+
+@needs_openssl
+def test_rerunning_reuses_the_ca_and_reissues_only_the_leaf(tmp_path):
+    ssl_dir = _generate(tmp_path)
+    ca_before = (ssl_dir / "ca.crt").read_bytes()
+    ca_key_before = (ssl_dir / "ca.key").read_bytes()
+    leaf_before = (ssl_dir / "server.crt").read_bytes()
+
+    _generate(tmp_path, "--ip", "192.0.2.77")
+
+    assert (ssl_dir / "ca.crt").read_bytes() == ca_before
+    assert (ssl_dir / "ca.key").read_bytes() == ca_key_before
+    assert (ssl_dir / "server.crt").read_bytes() != leaf_before
+    assert "IP Address:192.0.2.77" in _san(ssl_dir / "server.crt")
+    verify = subprocess.run(
+        ["openssl", "verify", "-CAfile", str(ssl_dir / "ca.crt"), str(ssl_dir / "server.crt")],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert verify.returncode == 0, verify.stdout + verify.stderr
+
+
+@needs_openssl
+def test_a_ca_whose_key_does_not_match_is_replaced_not_trusted(tmp_path):
+    ssl_dir = _generate(tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    other_dir = _generate(other)
+    (ssl_dir / "ca.key").write_bytes((other_dir / "ca.key").read_bytes())
+    ca_before = (ssl_dir / "ca.crt").read_bytes()
+
+    _generate(tmp_path)
+
+    assert (ssl_dir / "ca.crt").read_bytes() != ca_before
+
+
+# ─── wording (issue #1264) ───────────────────────────────────────────────────────────
+
+SETUP_SCRIPT = REPO_ROOT / "setup-opentranscribe.sh"
+MANAGER_SCRIPT = REPO_ROOT / "opentranscribe.sh"
+
+
+def test_the_installer_tells_people_to_trust_the_ca_not_the_server_certificate():
+    for path in (SETUP_SCRIPT, MANAGER_SCRIPT):
+        text = path.read_text(encoding="utf-8")
+        assert "ca.crt" in text, path.name
+        assert "Trust nginx/ssl/server.crt" not in text, path.name
+        assert "Copy nginx/ssl/server.crt" not in text, path.name
+        assert "trust the self-signed certificate" not in text, path.name
+
+
+def test_the_plain_http_warning_says_what_is_exposed_in_plain_words():
+    text = SETUP_SCRIPT.read_text(encoding="utf-8")
+    start = text.index("If you skip HTTPS:")
+    block = text[start : text.index("# On re-run where user previously said No", start)]
+    for needed in ("anyone on it can read them", "password", "microphone"):
+        assert needed in block, f"warning no longer mentions {needed!r}"
+
+
+def test_the_docs_describe_the_ca_flow():
+    page = (REPO_ROOT / "docs-site/docs/installation/small-business-lan.md").read_text(
+        encoding="utf-8"
+    )
+    assert "ca.crt" in page
+    assert "825" in page
+    assert "nginx/ssl/ca.key" in page
+    assert "Copy\n`nginx/ssl/server.crt`" not in page

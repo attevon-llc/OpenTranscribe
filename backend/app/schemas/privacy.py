@@ -306,6 +306,23 @@ class AdminPurgeRequest(PurgeRequest):
     scope: Literal["personal", "all"]
 
 
+class PurgeReverifyRequest(BaseModel):
+    """``POST /admin/privacy-policy/purge-reverify``: run the re-verify now instead of at its next tick.
+
+    Only a purge whose pending-centroid record is older than ``older_than_seconds`` is touched,
+    so a purge still running is not declared interrupted. The floor is five minutes: pass 2
+    starts a minute after pass 1, and a very large scope can take longer than that to finish.
+    """
+
+    older_than_seconds: int = Field(default=3600, ge=300, le=7 * 24 * 3600)
+
+
+class PurgeReverifyAccepted(BaseModel):
+    """202 body of the re-verify command; the outcome is audited per purge, task ``privacy.purge``."""
+
+    task_id: str
+
+
 class PurgeAccepted(BaseModel):
     """202 body of every purge endpoint. Poll ``GET /privacy/purge/{task_id}``."""
 

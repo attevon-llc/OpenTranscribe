@@ -225,7 +225,7 @@ function show_help {
     echo "  shell [svc]   Open shell in container (default: backend)"
     echo "  config        Show current configuration"
     echo "  health        Check service health"
-    echo "  setup-ssl     Set up HTTPS with self-signed SSL certificates"
+    echo "  setup-ssl     Set up HTTPS (local CA + server certificate)"
     echo "  version       Show version and check for updates"
     echo "  help          Show this help message"
     echo ""
@@ -1586,7 +1586,7 @@ show_access_info() {
         echo "  • MinIO Console:     https://$nginx_server_name/minio/"
         echo ""
         echo -e "${YELLOW}📝 Note: Add '$nginx_server_name' to your DNS or /etc/hosts${NC}"
-        echo -e "${YELLOW}   Trust nginx/ssl/server.crt on client devices for no warnings${NC}"
+        echo -e "${YELLOW}   Install nginx/ssl/ca.crt on client devices once to avoid browser warnings${NC}"
     else
         echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
         echo "  • Documentation:     http://localhost:${FRONTEND_PORT:-5173}/docs/"
@@ -2455,7 +2455,7 @@ case "${1:-help}" in
             echo -e "${YELLOW}⚠️  Existing SSL certificates detected!${NC}"
             echo "   nginx/ssl/server.crt and nginx/ssl/server.key already exist."
             echo ""
-            read -p "Overwrite existing certificates? (y/N) " -n 1 -r
+            read -p "Issue a new server certificate (the CA is kept)? (y/N) " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 echo -e "${GREEN}✓ Keeping existing certificates${NC}"
@@ -2499,9 +2499,8 @@ case "${1:-help}" in
         echo "   • /etc/hosts: Add '${lan_ip:-YOUR_SERVER_IP}  $hostname'"
         echo "   (Skip this step to use the server's IP address instead; the certificate covers it.)"
         echo ""
-        echo "2. Trust the certificate on each device:"
-        echo "   • Copy nginx/ssl/server.crt to client devices"
-        echo "   • Import into browser/system trust store"
+        echo "2. Trust the CA once on each device (a renewed server certificate needs nothing more):"
+        echo "   • Copy nginx/ssl/ca.crt (not server.crt) to the device and import it; keep ca.key here only"
         echo ""
         echo "3. Restart OpenTranscribe:"
         echo "   ./opentranscribe.sh restart"

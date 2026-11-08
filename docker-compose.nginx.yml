@@ -12,7 +12,7 @@
 #   3. Run: ./opentranscribe.sh start (installed deployment) or ./opentr.sh start prod.
 #      This overlay is loaded in production only; ./opentr.sh start dev skips it.
 #
-# For homelab/self-signed certificates:
+# For homelab (local CA + server certificate):
 #   ./scripts/generate-ssl-cert.sh transcribe.local
 #
 # For production with Let's Encrypt:

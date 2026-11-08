@@ -203,6 +203,7 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
   All three purge routes build a `PurgeScope` from the request context (never the body) and call
   `privacy.queue_purge`, which refuses with 409 `policy_still_enabled` unless the target is OFF at the purging layer or above,
   fails closed, and queues `privacy.purge_voiceprints`. The body must carry the literal `confirm: "PURGE"` (422 otherwise).
+  `POST /admin/privacy-policy/purge-reverify` (super_admin) queues `privacy.purge_reverify` now, with `grace_seconds` >= 300 so a purge still running is not failed as interrupted.
   Speaker, profile and cluster responses are shaped through `services/privacy/redact_view` (`redact_speaker_rows`,
   `derived_profile_genders`, `PrivacyView`): inferred gender serializes as `null` and an unverified voiceprint suggestion is
   omitted while the owner's scope has the feature off, using `set_committed_value` so the DB row is never changed. A route that

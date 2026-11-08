@@ -274,4 +274,4 @@ def test_a_rerun_never_changes_an_existing_choice(tmp_path):
 
 def test_the_https_prompt_says_credentials_cross_the_network_in_clear():
     body = extract_function(INSTALLER, "configure_https_settings")
-    assert "Sign-in passwords and transcripts cross your network unencrypted" in body
+    assert "Sign-in passwords and transcripts travel across your network as plain text" in body

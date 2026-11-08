@@ -589,6 +589,7 @@ ROUTE_NOT_FILE_CONTENT: dict[str, str] = {
             "org_admin_policy.py::patch_org_policy",
             "privacy.py::put_my_privacy",
             "privacy.py::put_instance_privacy_policy",
+            "privacy.py::reverify_pending_purges",
             "redaction_settings.py::update_redaction_settings",
             "redaction_settings.py::reset_redaction_settings",
             "redaction_settings.py::update_redaction_policy",

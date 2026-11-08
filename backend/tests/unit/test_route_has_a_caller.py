@@ -102,6 +102,7 @@ NO_FRONTEND_CALLER: dict[str, str] = {
     # v456 (#1357). A health probe for the unique-object-key indexes, read by the operator while
     # running the split tool; nothing in the SPA shows it on purpose (counts only, no remedy to
     # click) -- docs-site/docs/operations/object-storage.md names the route.
+    "/api/admin/privacy-policy/purge-reverify": "API-only operator command (#1334): runs the scheduled privacy.purge_reverify now; documented in docs-site/docs/operations/upgrading-to-0-7-0.md, pinned by api/privacy_purge/test_privacy_purge_reverify_command.py",
     "/api/admin/data-integrity/storage/keys": "API-only: operator probe paired with `python -m app.scripts.split_shared_storage_paths`; documented as an API read in docs-site/docs/operations/object-storage.md",
     "/api/llm-settings/status": "Real caller: E2E setup in backend/tests/e2e/test_chat_grounding.py, test_chat_trace_panel.py, test_full_pipeline_smoke.py, test_visual_regression.py (active-config pointer); the SPA uses /api/llm/status since #1046",
     # v400 (#362 lane C5). CommentSection.svelte serves BOTH planes from one

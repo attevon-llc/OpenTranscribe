@@ -69,7 +69,7 @@
               </div>
               <div class="detail-row">
                 <span class="detail-label">{$t('settings.statistics.successRate')}</span>
-                <span class="detail-value">{stats.tasks?.success_rate || 0}%</span>
+                <span class="detail-value" dir="ltr">{stats.tasks?.success_rate || 0}%</span>
               </div>
             </div>
           </div>

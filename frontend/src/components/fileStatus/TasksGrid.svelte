@@ -98,7 +98,7 @@
                   <div class="progress-bar-container">
                     <div class="progress-bar" style="width: {progressPercent}%"></div>
                   </div>
-                  <span class="task-progress-text">{progressPercent}%</span>
+                  <span class="task-progress-text" dir="ltr">{progressPercent}%</span>
                 {/if}
               </div>
             </td>

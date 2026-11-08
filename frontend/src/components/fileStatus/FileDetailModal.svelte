@@ -177,7 +177,7 @@
                     {#if typeof task.progress === 'number' && Number.isFinite(task.progress) && task.status === 'in_progress'}
                       <div class="metadata-item">
                         <span class="metadata-label">{$t('fileStatus.progress')}</span>
-                        <span class="metadata-value">{taskProgressPercent(task.progress)}%</span>
+                        <span class="metadata-value" dir="ltr">{taskProgressPercent(task.progress)}%</span>
                       </div>
                     {/if}
                     {#if task.whisper_model}

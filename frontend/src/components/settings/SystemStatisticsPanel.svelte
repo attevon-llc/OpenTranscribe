@@ -159,7 +159,7 @@
         <div class="stat-detail">{$t('settings.statistics.running')}: {stats.tasks?.running || 0}</div>
         <div class="stat-detail">{$t('settings.statistics.completed')}: {stats.tasks?.completed || 0}</div>
         <div class="stat-detail">{$t('settings.statistics.failed')}: {stats.tasks?.failed || 0}</div>
-        <div class="stat-detail">{$t('settings.statistics.successRate')}: {stats.tasks?.success_rate || 0}%</div>
+        <div class="stat-detail">{$t('settings.statistics.successRate')}: <bdi dir="ltr">{stats.tasks?.success_rate || 0}%</bdi></div>
       </div>
 
       <!-- Performance Stats -->

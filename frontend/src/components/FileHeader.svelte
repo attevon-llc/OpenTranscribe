@@ -241,7 +241,7 @@
           <span class="processing-label">{$t('fileDetail.processingInProgress')}</span>
           <span class="processing-step-text">{#if currentProcessingStep}{currentProcessingStep}{:else}{$t('fileDetail.processingFile')}{/if}</span>
         </div>
-        <span class="progress-percentage">{file.progress || 0}%</span>
+        <span class="progress-percentage" dir="ltr">{file.progress || 0}%</span>
       </div>
 
       <div class="progress-bar">

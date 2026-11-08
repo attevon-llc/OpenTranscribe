@@ -229,7 +229,7 @@
           <div class="overall-progress">
             <div class="progress-info">
               <span class="progress-label">{$t('upload.overallProgress')}</span>
-              <span class="progress-percent">{$totalProgress}%</span>
+              <span class="progress-percent" dir="ltr">{$totalProgress}%</span>
             </div>
             <div class="progress-bar">
               <div

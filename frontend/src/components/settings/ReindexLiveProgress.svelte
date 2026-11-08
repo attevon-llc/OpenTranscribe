@@ -38,7 +38,7 @@
           <div class="progress-fill" style="width: {Math.min(Math.round(reindexProgress.progress * 100), 100)}%"></div>
         </div>
         <span class="progress-text">
-          {Math.min(Math.round(reindexProgress.progress * 100), 100)}%
+          <bdi dir="ltr">{Math.min(Math.round(reindexProgress.progress * 100), 100)}%</bdi>
         </span>
       </div>
       <div class="reindex-details">

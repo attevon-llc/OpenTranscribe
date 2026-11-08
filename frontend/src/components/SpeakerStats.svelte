@@ -287,7 +287,7 @@
                 <span class="stat-label">{$t('stats.time')}</span>
               </div>
               <div class="stat-item">
-                <span class="stat-value">{safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%</span>
+                <span class="stat-value" dir="ltr">{safeCalculatePercentage(time, normalizedAnalytics.talk_time.total).toFixed(1)}%</span>
                 <span class="stat-label">{$t('stats.share')}</span>
               </div>
               {#if normalizedAnalytics.turn_taking?.total_turns > 0}

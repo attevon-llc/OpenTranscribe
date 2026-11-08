@@ -18,7 +18,7 @@
     <div class="progress-label">
       <span>{label}</span>
       {#if percent !== null}
-        <span class="progress-value">{Math.round(percent)}%</span>
+        <span class="progress-value" dir="ltr">{Math.round(percent)}%</span>
       {/if}
     </div>
   {/if}

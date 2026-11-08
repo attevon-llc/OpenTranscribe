@@ -312,7 +312,7 @@
                 {retroactiveProcessed} / {retroactiveTotal}
               </span>
               <span class="progress-percent">
-                {Math.round((retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100)}%
+                <bdi dir="ltr">{Math.round((retroactiveProcessed / Math.max(retroactiveTotal, 1)) * 100)}%</bdi>
                 {#if formatEta(retroactiveEtaSeconds)}
                   ({formatEta(retroactiveEtaSeconds)} {$t('common.remaining')})
                 {/if}

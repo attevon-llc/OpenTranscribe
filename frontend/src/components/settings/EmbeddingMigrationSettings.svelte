@@ -451,7 +451,7 @@
                   {$t('settings.embeddingMigration.processingFiles', { processed: processedFiles, total: totalFiles })}
                 </span>
                 <span class="progress-percent">
-                  {Math.round((processedFiles / Math.max(totalFiles, 1)) * 100)}%
+                  <bdi dir="ltr">{Math.round((processedFiles / Math.max(totalFiles, 1)) * 100)}%</bdi>
                   {#if formatEta(etaSeconds)}
                     ({formatEta(etaSeconds)} {$t('common.remaining')})
                   {/if}

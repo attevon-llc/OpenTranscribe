@@ -158,7 +158,7 @@
           style="width: {upload.progress}%; background-color: {getStatusColor(upload.status)}"
         ></div>
       </div>
-      <span class="progress-text">{upload.progress}%</span>
+      <span class="progress-text" dir="ltr">{upload.progress}%</span>
     </div>
   {/if}
 

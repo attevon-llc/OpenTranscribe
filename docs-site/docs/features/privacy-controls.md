@@ -662,9 +662,12 @@ target) that record the purge.
 
 An organization administrator sees the organization's events in **Settings, organization
 group, Audit log** (titled "Organization audit log"; managed editions with the `org.audit_logs`
-capability, route `GET /org-admin/audit-logs`). The three events below are stamped with the organization, so they
-appear there and in its event filter, labelled "Changed the privacy policy", "Deleted stored
-voiceprints" and "Deleted inferred gender data".
+capability, route `GET /org-admin/audit-logs`). Five of the events below are stamped with the organization, so they
+appear there and in its event filter: `org.policy.change` ("Changed the privacy policy"),
+`privacy.voiceprints.purge` ("Deleted stored voiceprints"), `privacy.gender.purge` ("Deleted
+inferred gender data"), `privacy.labels.resync` ("Rebuilt search speaker labels after a
+voiceprint switch changed") and `privacy.identity_source.reverify` ("Re-verified the speaker
+names the 0.6.0 upgrade marked as voiceprint-made").
 
 | Event | When |
 |---|---|

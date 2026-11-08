@@ -43,33 +43,53 @@
 </div>
 
 <style>
+  /* The toggle is only as wide as its text and the tip follows it on the same line; the opened
+     text drops below both at full width. `display: contents` lets the heading, the tip and the
+     content be placed as items of this one flex row (the tip is a sibling of the disclosure,
+     never inside its button). */
   .hold-explainer {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     column-gap: var(--space-2);
     font-size: var(--font-size-sm);
     color: var(--text-color);
   }
 
-  .disclosure {
-    min-width: 0;
+  .disclosure,
+  .hold-explainer :global(.expandable) {
+    display: contents;
   }
 
   .hold-explainer :global(.expandable) {
     border-block-end: none;
   }
 
+  .hold-explainer :global(.expandable-heading) {
+    order: 0;
+  }
+
   .hold-explainer :global(.expandable-header) {
+    inline-size: auto;
     padding-block: var(--space-2);
     padding-inline: 0;
     font-size: var(--font-size-sm);
   }
 
+  .hold-explainer :global(.expandable-title) {
+    flex: 0 1 auto;
+  }
+
   .tip-slot {
+    order: 1;
     display: inline-flex;
     align-items: center;
-    padding-block-start: var(--space-2);
+  }
+
+  .hold-explainer :global(.expandable-content) {
+    order: 2;
+    flex: 0 0 100%;
+    min-inline-size: 0;
   }
 
   .intro {

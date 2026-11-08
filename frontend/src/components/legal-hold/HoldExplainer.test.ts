@@ -1,6 +1,8 @@
 /** The plain-language "What does a legal hold do?" explainer (legal-hold plan, Lane D). */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 vi.mock('$stores/locale', async () =>
   (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
@@ -41,5 +43,33 @@ describe('HoldExplainer', () => {
     render(HoldExplainer, { props: { expanded: true, reason: 'SECRET-MATTER-REASON' } as never });
     expect(screen.getByText(/^Still works:/)).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('SECRET-MATTER-REASON');
+  });
+});
+
+describe('HoldExplainer layout', () => {
+  // jsdom does no layout, so the rules that put the tip beside the toggle text are read from
+  // the component's own CSS: the toggle must shrink to its text (not span the row and push the
+  // tip to the far edge), and the tip must sit in the same flex row as the toggle.
+  const css = (readFileSync(resolve(__dirname, 'HoldExplainer.svelte'), 'utf8').split(
+    '<style>'
+  )[1] ?? '') as string;
+  const rule = (selector: string) =>
+    css.match(new RegExp(`${selector.replace(/[.():]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+
+  it('sizes the toggle to its text so the tip sits next to it', () => {
+    expect(rule(':global(.expandable-header)')).toMatch(/inline-size:\s*auto/);
+    expect(rule(':global(.expandable-title)')).toMatch(/flex:\s*0 1 auto/);
+  });
+
+  it('does not reserve a stretching column for the disclosure', () => {
+    expect(css).not.toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto/);
+    expect(rule('.hold-explainer')).toMatch(/display:\s*flex/);
+  });
+
+  it('keeps the tip a sibling of the toggle button, never inside it', () => {
+    const { container } = render(HoldExplainer);
+    const tip = container.querySelector('.tip-slot');
+    expect(tip).not.toBeNull();
+    expect(tip?.closest('button')).toBeNull();
   });
 });

@@ -142,3 +142,12 @@ statement in each font file's own name table (name ID 13) plus the Debian copyri
 
 Crediting the permissive components here keeps this NOTICE an accurate map of what
 OpenTranscribe runs.
+
+Non-permissive third-party components
+-------------------------------------
+
+Every runtime dependency under copyleft, vendor or otherwise unusual terms (mutagen, fpdf2,
+ldap3, psycopg2, certifi, tqdm, lightningcss, the NVIDIA CUDA libraries, the Silo object-store
+image and others) is documented, with what it is, why it is used, where, its license and why it
+is compatible with AGPL-3.0, in docs-site/docs/legal/third-party-licenses.md
+(Legal > Third-party licenses on the docs site).

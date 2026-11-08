@@ -22,7 +22,8 @@ Scope
 
 Fail closed: UNKNOWN or missing licences, and BLOCKERs, fail unless
 ``scripts/licenses-allowlist.txt`` approves that exact ``ecosystem:name`` AND licence string with a
-written reason (a relicense invalidates the approval). A stale allowlist line also fails.
+written reason (a relicense invalidates the approval). A stale allowlist line also fails. Every
+non-permissive package must also be named in ``docs-site/docs/legal/third-party-licenses.md``.
 
 Exit codes: 0 pass, 1 policy violation, 2 unusable input (missing/empty/unparseable file,
 zero packages, malformed allowlist).
@@ -47,6 +48,7 @@ import license_gate as gate
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ALLOWLIST = REPO_ROOT / 'scripts' / 'licenses-allowlist.txt'
+DEFAULT_LICENSE_DOC = REPO_ROOT / 'docs-site' / 'docs' / 'legal' / 'third-party-licenses.md'
 REPORT_SUMMARY = REPO_ROOT / 'security-reports' / 'license-compliance' / 'SBOM-SUMMARY.md'
 SHIPPED_REPORTS = ('requirements.txt', 'requirements-nodeps.txt', 'requirements-lite.txt')
 FRONTEND_LOCK = 'frontend/package-lock.json'
@@ -114,6 +116,12 @@ def main(argv: list[str] | None = None) -> int:
         '--pip-report', type=Path, action='append', default=[], help='one pip --report JSON file'
     )
     parser.add_argument('--allowlist', type=Path, default=DEFAULT_ALLOWLIST)
+    parser.add_argument(
+        '--license-doc',
+        type=Path,
+        default=DEFAULT_LICENSE_DOC,
+        help='page that must name every non-permissive package (what/why/where/compatibility)',
+    )
     parser.add_argument('--out-dir', type=Path, default=Path('license-evidence'))
     parser.add_argument(
         '--verify-report-version',
@@ -143,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             allowlist = gate.load_allowlist(args.allowlist)
             result = gate.evaluate(packages, allowlist, scanned)
             failures += result.errors
+            failures += gate.check_license_doc(result.rows, args.license_doc)
             notes = [
                 f'Ecosystems scanned: {", ".join(scanned)}.',
                 'OS packages of the base images are not judged here (image SBOM at release).',

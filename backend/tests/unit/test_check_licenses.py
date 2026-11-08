@@ -67,8 +67,23 @@ def _entry(
     return TAB.join([eco_name, license_text, reason])
 
 
-def _run(tmp_path: Path, *argv: str) -> int:
-    return int(cli.main(["--root", str(tmp_path), "--out-dir", str(tmp_path / "out"), *argv]))
+def _run(tmp_path: Path, *argv: str, doc: str = "`*`") -> int:
+    """Run the CLI; the default doc's catch-all token keeps these cases about other gates."""
+    doc_path = tmp_path / "licence-doc.md"
+    doc_path.write_text(doc, encoding="utf-8")
+    return int(
+        cli.main(
+            [
+                "--root",
+                str(tmp_path),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "--license-doc",
+                str(doc_path),
+                *argv,
+            ]
+        )
+    )
 
 
 def _frontend(tmp_path: Path, entries: Mapping[str, Mapping[str, object]]) -> Path:
@@ -297,6 +312,17 @@ def test_pip_report_must_have_an_install_list(tmp_path: Path) -> None:
 # --- the gate end to end -------------------------------------------------------------------
 
 CLEAN_NPM = {"node_modules/a": {"version": "1.0.0", "license": "MIT"}}
+
+
+def test_nonpermissive_package_missing_from_the_licence_doc_fails(tmp_path: Path) -> None:
+    _frontend(
+        tmp_path, {**CLEAN_NPM, "node_modules/lcss": {"version": "1.0.0", "license": "MPL-2.0"}}
+    )
+    allow = _allowlist(tmp_path / "allow.txt")
+    argv = ("--npm-only", "--allowlist", str(allow))
+    assert _run(tmp_path, *argv, doc="`something-else`") == 1
+    assert _run(tmp_path, *argv, doc="`lcss`") == 0
+    assert _run(tmp_path, *argv, doc="the `lc*` family") == 0
 
 
 def test_clean_tree_passes_and_writes_evidence(tmp_path: Path) -> None:

@@ -89,9 +89,6 @@ def list_quarantined_files(
     else:
         condition = MediaFile.is_quarantined.is_(True)
 
-    base_query = db.query(MediaFile).filter(condition)
-    total = base_query.with_entities(func.count(MediaFile.id)).scalar() or 0
-
     rows = (
         db.query(MediaFile, owner_alias, quarantined_by_alias, Organization)
         .filter(condition)
@@ -103,6 +100,14 @@ def list_quarantined_files(
         .limit(limit)
         .all()
     )
+    # A short page already tells the total; only a full or empty-past-the-end page counts (#1337).
+    if len(rows) < limit and (rows or offset == 0):
+        total = offset + len(rows)
+    else:
+        total = (
+            db.query(MediaFile).filter(condition).with_entities(func.count(MediaFile.id)).scalar()
+            or 0
+        )
     audit_metadata_access(
         db,
         current_user,

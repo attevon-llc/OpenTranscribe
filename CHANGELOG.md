@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The administrator quarantine list no longer counts the whole queue when everything fits on one page (#1337).
 - Filtering the gallery by speaker is faster on large libraries: the privacy check behind it now looks only at speakers with the requested names instead of every speaker in the caller's scope (#1337).
 - The gallery owner filter list loads faster for large libraries: it reads the distinct owners first instead of sorting every accessible file joined to its owner (#1337).
 - Paging through the gallery no longer repeats or skips files that share a sort value (size, duration, name, completion time), and a gallery page that is not full no longer runs every filter a second time to count itself (#1337).

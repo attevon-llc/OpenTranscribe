@@ -167,6 +167,7 @@
       description={$t('settings.quarantine.emptyMessage')}
     />
   {:else}
+    <div class="table-scroll">
     <table class="quarantine-table">
       <thead>
         <tr>
@@ -189,7 +190,7 @@
               </a>
             </td>
             <!-- A person's name or email, never a bare integer id (issue #576). -->
-            <td>{file.owner}</td>
+            <td class="person-cell" title={file.owner}>{file.owner}</td>
             <td class="reason-cell">
               {#if file.reasonWithheld}
                 {$t('settings.quarantine.operatorHeldReason')}
@@ -205,7 +206,7 @@
               {/each}
             </td>
             <td>{formatDateTime(file.quarantinedAt, '—', $locale)}</td>
-            <td>{file.by || '—'}</td>
+            <td class="person-cell" title={file.by || undefined}>{file.by || '—'}</td>
             <td>
               {#if file.origin}
                 <span class="badge badge-origin" class:badge-operator={file.origin === 'platform'}>
@@ -249,6 +250,7 @@
         {/each}
       </tbody>
     </table>
+    </div>
 
     <div class="pagination">
       <button disabled={offset === 0 || loading} on:click={() => load(Math.max(0, offset - PAGE_SIZE))}>
@@ -336,8 +338,23 @@
   .quarantine-table td {
     padding: 0.5rem;
     border-bottom: 1px solid var(--border-color);
-    text-align: left;
+    text-align: start;
     vertical-align: top;
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+  }
+
+  .quarantine-table th {
+    white-space: nowrap;
+  }
+
+  .person-cell {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .reason-cell {
@@ -403,6 +420,7 @@
   .actions-cell {
     display: flex;
     gap: 0.75rem;
+    white-space: nowrap;
   }
 
   .action-link {

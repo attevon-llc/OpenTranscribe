@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Quarantine table no longer breaks "Release", "Actions" or email addresses mid-word: people are truncated with an ellipsis and a tooltip, headers and action buttons stay on one line, and the table scrolls sideways when narrow.
 - The Quarantine queue shows the quarantine date formatted in the interface language instead of raw ISO text.
 - System statistics sizes, the GPU name and the success rate read left-to-right inside Arabic labels ("12.00 GB", not "GB 12.00").
 - File details and the Settings file status show the file age, processing time and status in the interface language, formatted from the raw timestamps and status codes, instead of the server's English "2 hours ago" and "Completed".

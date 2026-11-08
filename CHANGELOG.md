@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Technical tokens inside Arabic copy (".env", environment variable names, compose file names) now read left-to-right, so ".env" no longer renders as "env." in the usage report and other settings text.
 - Percentages no longer render as "%99" beside Arabic text: Arabic copy keeps each figure and its percent sign together, and the screens that print a bare percentage (upload and processing progress, speaker confidence, statistics) set it left-to-right.
 - Counts in messages now use real plural forms in all 12 languages instead of "file(s)" hedges, for example "Legal hold placed on 1 file." versus "3 files." (Arabic has its six forms); a sentence with two counts pluralises each separately.
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.

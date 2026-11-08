@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.core import redaction_defaults
 from app.core.config import settings
+from app.core.db_overload import reraise_db_overload
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -192,6 +193,9 @@ def claim_and_dispatch_redaction_scan(
         db.commit()
     except Exception as e:  # noqa: BLE001
         db.rollback()
+        # An overload is the request's 503; nothing was claimed, so the retry finds the
+        # file exactly as it was.
+        reraise_db_overload(e)
         logger.warning(
             "Could not mark file %s pending for redaction (%s): %s", db_file.id, surface, e
         )

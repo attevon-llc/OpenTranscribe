@@ -45,10 +45,3 @@ app/api/endpoints/llm_connection_tests.py::test_llm_connection  # an admin "test
 app/api/endpoints/llm_local_endpoints.py::_probe_local_endpoint  # reports the endpoint unreachable in the probe result
 app/api/endpoints/llm_model_discovery.py::get_ollama_models  # model discovery answers success=False with a message
 app/api/endpoints/llm_model_discovery.py::_get_stored_api_key  # discovery proceeds without a stored key and says so
-
-# Read paths that degrade one part of a response. FOLLOW-UP (lead): convert these to
-# reraise_db_overload so an overload is a 503 rather than a partial answer.
-app/api/endpoints/embedding_migration.py::_compute_ground_truth_status  # admin migration status shows "unknown"
-app/api/endpoints/files/detail_response.py::get_file_collections  # file detail shows no collections for this response
-app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan  # answers queued=False; the scan is re-requested on the next view
-app/api/endpoints/speaker_update.py::trigger_retroactive_matching  # records suggestion_load_error and reports it

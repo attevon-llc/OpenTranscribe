@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
+from app.core.db_overload import reraise_db_overload
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
@@ -70,6 +71,8 @@ def _compute_ground_truth_status(db: Session) -> dict | None:
             "remaining_files": remaining,
         }
     except Exception as e:
+        # An overload is the request's 503: "not stalled" would be a guess presented as fact.
+        reraise_db_overload(e)
         logger.warning("Could not compute ground truth status: %s", e)
         return None
 

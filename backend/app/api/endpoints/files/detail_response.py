@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
 from app.api.error_handlers import ErrorHandler
+from app.core.db_overload import reraise_db_overload
 from app.core.env import env_bool
 from app.core.exceptions import DomainError
 from app.core.tenancy import UNSCOPED
@@ -143,6 +144,8 @@ def get_file_collections(
             for col in collection_objs
         ]
     except Exception as collection_error:
+        # An overload is the request's 503, not a file that shows no collections.
+        reraise_db_overload(collection_error)
         logger.exception(f"Error getting collections: {collection_error}")
         db.rollback()
         return []

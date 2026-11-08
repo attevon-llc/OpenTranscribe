@@ -41,7 +41,8 @@ def test_summary_retry_skips_an_outage_without_touching_the_file(monkeypatch):
     )
 
     with pytest.raises(ServiceUnavailableError):
-        asyncio.run(summary_retry.retry_summary_if_available(_ns(), "u"))
+        # The request session: `_retry_target` releases it before the LLM check.
+        asyncio.run(summary_retry.retry_summary_if_available(_ns(close=lambda: None), "u"))
 
     assert touched == []
 

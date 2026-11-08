@@ -40,7 +40,7 @@ their tests were deleted rather than kept as assertions about a call that cannot
 happen; see the note where section 1 was.
 
 The tests are behavioural, not structural: each wraps the real savepointed
-``db_session`` in :class:`_TrackedRequestSession` and has the stub for each
+``db_session`` in :class:`TrackedRequestSession` and has the stub for each
 network call report whether a transaction was open **at the moment it ran**. Each
 also asserts the handler really did read (or write) Postgres, so a handler that
 never touches the DB — or one gutted into returning a constant — cannot pass.
@@ -54,84 +54,10 @@ from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
 from app.models.system_settings import SystemSettings
 from app.models.user import User
-
-#: Session methods that (re)open a transaction on first use.
-_DB_WORK = frozenset(
-    {
-        "query",
-        "execute",
-        "add",
-        "add_all",
-        "flush",
-        "refresh",
-        "get",
-        "scalar",
-        "scalars",
-        "merge",
-        "delete",
-        "bulk_save_objects",
-    }
-)
-
-#: Session methods that END the current transaction and release the connection.
-_DB_RELEASE = frozenset({"commit", "rollback", "close"})
+from tests.unit._session_lifetime_trackers import TrackedRequestSession
 
 
-class _TrackedRequestSession:
-    """Stands in for the request-scoped ``Depends(get_db)`` session.
-
-    Records whether a Postgres transaction is open at the moment each network stub
-    runs, and how many separate transactions the handler opened.
-
-    ``close()`` is deliberately **not** forwarded: the ``db_session`` fixture is
-    savepoint-isolated inside the test's own transaction, and a real close would
-    unwind it. It is translated to ``expunge_all()``, which reproduces the part
-    that matters — every ORM instance the handler loaded becomes **detached**,
-    exactly as after ``get_db``'s session is released — so a handler that kept
-    reading an ORM row past the release fails here rather than silently working.
-    """
-
-    def __init__(self, session):
-        self._session = session
-        #: Is a transaction currently open?
-        self.open = False
-        #: How many distinct transactions were opened.
-        self.opened = 0
-        #: (label, transaction-open?) reported from inside each network call.
-        self.observations: list[tuple[str, bool]] = []
-
-    def observe(self, label: str) -> None:
-        self.observations.append((label, self.open))
-
-    @property
-    def seen(self) -> dict[str, bool]:
-        return dict(self.observations)
-
-    def __getattr__(self, name: str):
-        attr = getattr(self._session, name)
-        if name in _DB_WORK:
-
-            def _work(*args, **kwargs):
-                if not self.open:
-                    self.open = True
-                    self.opened += 1
-                return attr(*args, **kwargs)
-
-            return _work
-        if name in _DB_RELEASE:
-
-            def _release(*args, **kwargs):
-                self.open = False
-                if name == "close":
-                    # See the class docstring — never really close the harness session.
-                    return self._session.expunge_all()
-                return attr(*args, **kwargs)
-
-            return _release
-        return attr
-
-
-def _leak(tracker: _TrackedRequestSession, label: str) -> str:
+def _leak(tracker: TrackedRequestSession, label: str) -> str:
     return (
         f"the request transaction was held across the network call ({label}): "
         f"{tracker.observations}"
@@ -152,7 +78,7 @@ def tracked_db(db_session):
     very end — reported "no transaction open" with its ``db.close()`` DELETED. The
     test could not fail, which is worse than no test.
     """
-    tracker = _TrackedRequestSession(db_session)
+    tracker = TrackedRequestSession(db_session)
     tracker.query(User).filter(User.id == -1).first()
     assert tracker.open, "the harness must enter handlers with a request transaction open"
     return tracker
@@ -360,3 +286,93 @@ def test_backup_status_skips_the_probe_when_opensearch_is_excluded(
     assert result.include_opensearch is False
     assert result.opensearch_snapshot_status is None
     assert "opensearch_snapshot_status" not in tracked_db.seen
+
+
+# --------------------------------------------------------------------------- #
+# GET /llm/status and GET /files/{uuid}/summary-status: the provider health check
+#
+# Both are ``async def`` and await ``is_llm_available``, which dials the configured LLM
+# provider's models endpoint (3 s timeout) and opens its OWN session to read the
+# settings. The request session (opened by the auth dependency) used to stay open across
+# that dial, so each call held two pool connections, one of them idle in a transaction
+# for the whole outbound round trip. /llm/status is polled by every open SPA tab.
+# --------------------------------------------------------------------------- #
+def _observing_llm_check(tracker: TrackedRequestSession, available: bool):
+    async def _is_llm_available(user_id=None):
+        tracker.observe("llm_health_check")
+        return available
+
+    return _is_llm_available
+
+
+class _FakeLLMForStatus:
+    def __init__(self) -> None:
+        self.config = SimpleNamespace(
+            provider=SimpleNamespace(value="openai"), model="m", max_tokens=8192
+        )
+
+    def close(self) -> None:
+        return None
+
+
+def test_llm_status_dials_the_provider_outside_the_transaction(
+    normal_user, tracked_db, monkeypatch
+):
+    import asyncio
+
+    from app.api.endpoints import llm_status as status_ep
+
+    monkeypatch.setattr(status_ep, "is_llm_available", _observing_llm_check(tracked_db, True))
+    monkeypatch.setattr(
+        status_ep.LLMService, "create_from_settings", lambda user_id=None: _FakeLLMForStatus()
+    )
+
+    result = asyncio.run(status_ep.get_llm_status(current_user=normal_user, db=tracked_db))
+
+    assert tracked_db.seen["llm_health_check"] is False, _leak(tracked_db, "llm_health_check")
+    assert result["available"] is True
+    assert result["user_id"] == normal_user.id
+    assert result["provider"] == "openai"
+    assert result["context_window"] == 8192
+
+
+def test_summary_status_dials_the_provider_outside_the_transaction(
+    normal_user, db_session, tracked_db, monkeypatch
+):
+    import asyncio
+    import uuid
+
+    from app.api.endpoints.files import summary_status as summary_ep
+
+    media_file = MediaFile(
+        uuid=str(uuid.uuid4()),
+        filename="lifetime.wav",
+        title="lifetime",
+        storage_path="media/test/lifetime.wav",
+        content_type="audio/wav",
+        file_size=1,
+        status="completed",
+        summary_status="failed",
+        is_public=False,
+        user_id=normal_user.id,
+    )
+    db_session.add(media_file)
+    db_session.flush()
+    monkeypatch.setattr(summary_ep, "is_llm_available", _observing_llm_check(tracked_db, True))
+
+    result = asyncio.run(
+        summary_ep.get_summary_status(
+            file_uuid=str(media_file.uuid),
+            db=tracked_db,
+            current_user=normal_user,
+            ctx=_deployment_ctx(normal_user),
+        )
+    )
+
+    assert tracked_db.seen["llm_health_check"] is False, _leak(tracked_db, "llm_health_check")
+    # Read from the row, through the request session, before it was released.
+    assert result["file_id"] == str(media_file.uuid)
+    assert result["filename"] == "lifetime.wav"
+    assert result["summary_status"] == "failed"
+    assert result["llm_available"] is True
+    assert result["can_retry"] is True

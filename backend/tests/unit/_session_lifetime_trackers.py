@@ -4,7 +4,7 @@
 # every call site: a cast buries the thing being asserted, and widening a production
 # signature to suit a test is worse. Same convention as
 # tests/unit/test_proxy_identity_consistency.py.
-"""Shared stand-ins for the Celery task session-lifetime tests.
+"""Shared stand-ins for the session-lifetime tests (Celery tasks and API handlers).
 
 The tests swap a module's ``session_scope`` for ``ScopeTracker`` (a depth-tracking
 wrapper over the savepointed ``db_session``) and have each stub for a slow call
@@ -112,3 +112,79 @@ def make_transcribed_file(db_session, user, *, speakers: int = 2):
             start += 4.0
     db_session.flush()
     return media_file, created
+
+
+#: Session methods that (re)open a transaction on first use.
+_DB_WORK = frozenset(
+    {
+        "query",
+        "execute",
+        "add",
+        "add_all",
+        "flush",
+        "refresh",
+        "get",
+        "scalar",
+        "scalars",
+        "merge",
+        "delete",
+        "bulk_save_objects",
+    }
+)
+
+#: Session methods that END the current transaction and release the connection.
+_DB_RELEASE = frozenset({"commit", "rollback", "close"})
+
+
+class TrackedRequestSession:
+    """Stands in for the request-scoped ``Depends(get_db)`` session.
+
+    Records whether a Postgres transaction is open at the moment each network stub
+    runs, and how many separate transactions the handler opened.
+
+    ``close()`` is deliberately **not** forwarded: the ``db_session`` fixture is
+    savepoint-isolated inside the test's own transaction, and a real close would
+    unwind it. It is translated to ``expunge_all()``, which reproduces the part
+    that matters — every ORM instance the handler loaded becomes **detached**,
+    exactly as after ``get_db``'s session is released — so a handler that kept
+    reading an ORM row past the release fails here rather than silently working.
+    """
+
+    def __init__(self, session):
+        self._session = session
+        #: Is a transaction currently open?
+        self.open = False
+        #: How many distinct transactions were opened.
+        self.opened = 0
+        #: (label, transaction-open?) reported from inside each network call.
+        self.observations: list[tuple[str, bool]] = []
+
+    def observe(self, label: str) -> None:
+        self.observations.append((label, self.open))
+
+    @property
+    def seen(self) -> dict[str, bool]:
+        return dict(self.observations)
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._session, name)
+        if name in _DB_WORK:
+
+            def _work(*args, **kwargs):
+                if not self.open:
+                    self.open = True
+                    self.opened += 1
+                return attr(*args, **kwargs)
+
+            return _work
+        if name in _DB_RELEASE:
+
+            def _release(*args, **kwargs):
+                self.open = False
+                if name == "close":
+                    # See the class docstring — never really close the harness session.
+                    return self._session.expunge_all()
+                return attr(*args, **kwargs)
+
+            return _release
+        return attr

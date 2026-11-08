@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth import get_current_active_user
 from app.core.exceptions import DomainError
@@ -34,15 +35,20 @@ async def get_llm_status(
     Returns:
         Dictionary containing LLM availability status and details
     """
+    user_id = current_user.id
+    # The handler needs nothing more from the request session, which the auth dependency
+    # left in an open transaction. Release it before dialling the provider (3 s timeout),
+    # so a poll from every open tab does not pin a pool connection for the round trip.
+    await run_in_threadpool(db.close)
     try:
         # Check if LLM is available for this user
         try:
-            is_available = await is_llm_available(user_id=current_user.id)
+            is_available = await is_llm_available(user_id=user_id)
         except SQLAlchemyError:
             logger.error("LLM settings could not be read for status check", exc_info=True)
             return {
                 "available": False,
-                "user_id": current_user.id,
+                "user_id": user_id,
                 "provider": None,
                 "model": None,
                 "context_window": None,
@@ -54,14 +60,17 @@ async def get_llm_status(
         # depend on /api/llm-settings/status, which is unmounted without llm.user_settings.
         status_info: dict[str, Any] = {
             "available": is_available,
-            "user_id": current_user.id,
+            "user_id": user_id,
             "context_window": None,
         }
 
         if is_available:
             # Get additional info about the configured LLM
             try:
-                llm_service = LLMService.create_from_settings(user_id=current_user.id)
+                # Reads the settings through its own session: off the event loop.
+                llm_service = await run_in_threadpool(
+                    LLMService.create_from_settings, user_id=user_id
+                )
                 if llm_service:
                     status_info.update(
                         {
@@ -104,7 +113,7 @@ async def get_llm_status(
         logger.exception(f"Error checking LLM status: {e}")
         return {
             "available": False,
-            "user_id": current_user.id,
+            "user_id": user_id,
             "provider": None,
             "model": None,
             "context_window": None,

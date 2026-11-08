@@ -106,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Checking whether an AI provider is available (`GET /api/llm/status`, which every open browser tab polls, and `GET /api/files/{uuid}/summary-status`) no longer keeps a database connection and an open transaction for the duration of the outbound health check (up to 3 s per call). The database reads now finish and the connection is returned first, and they no longer run on the server's event loop.
 - A Celery worker child no longer ends its parent's database connection when it starts: the child now drops the connection pool it inherits without closing the shared sockets (`engine.dispose(close=False)`, as the SQLAlchemy documentation prescribes for forked processes). Before, every child start or respawn terminated the worker's own session.
 - System statistics mark the segment and speaker totals with "≈" when they are estimates on large libraries.
 - The Quarantine table now fits the Settings width without breaking words: six columns (owner and actor stacked), file names and people truncated with an ellipsis and a tooltip, and the "Held by" and legal hold badges never wrap.

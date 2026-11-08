@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -47,18 +48,17 @@ async def get_summary_status(
         - can_retry: whether a failed summary can be retried
         - summary_exists: whether a summary already exists
     """
-    # Get file by UUID (tenant-gated via ctx.org_id)
-    from app.services.uuid_helpers import get_file_by_uuid_with_permission
-
-    media_file = get_file_by_uuid_with_permission(
-        db, file_uuid, current_user.id, bypass=ctx.bypass, organization_id=ctx.org_id
-    )
-    file_id = media_file.id
+    user_id = current_user.id
+    # Every database read happens first, in the threadpool, and the request session is
+    # released before the provider health check (an outbound call with a 3 s timeout):
+    # the transaction the auth dependency opened must not stay open across it.
+    state = await run_in_threadpool(_read_summary_state, db, file_uuid, user_id, ctx)
+    file_id = state["file_id"]
 
     settings_unavailable = False
     try:
         # Check LLM availability for current user
-        llm_available = await is_llm_available(user_id=current_user.id)
+        llm_available = await is_llm_available(user_id=user_id)
     except SQLAlchemyError:
         logger.error(f"LLM settings unreadable for file {file_id}", exc_info=True)
         llm_available = False
@@ -67,41 +67,60 @@ async def get_summary_status(
         logger.warning(f"Failed to check LLM availability for file {file_id}: {e}")
         llm_available = False
 
-    # Check summary enable settings
-    from app.utils.summary_settings import is_summary_enabled_for_user
-    from app.utils.summary_settings import is_summary_enabled_system
-
-    system_enabled = is_summary_enabled_system(db)
-    user_enabled = is_summary_enabled_for_user(db, current_user.id)
-
     # Determine if retry is possible (not for disabled status)
-    summary_status_str = media_file.summary_status or "pending"
+    summary_status_str = state["summary_status"]
     can_retry = (
         summary_status_str == "failed"
         and llm_available
-        and media_file.status == "completed"  # Transcription must be complete
+        and state["status"] == "completed"  # Transcription must be complete
     )
 
     # Whether the user can generate a summary (manual trigger)
     can_generate = (
         llm_available
-        and media_file.status == "completed"
-        and (ctx.bypass.user_is_admin or system_enabled)
+        and state["status"] == "completed"
+        and (ctx.bypass.user_is_admin or state["system_enabled"])
     )
 
     return {
-        "file_id": str(media_file.uuid),  # Use UUID for frontend
+        "file_id": state["file_uuid"],  # Use UUID for frontend
         "summary_status": summary_status_str,
-        "summary_exists": bool(media_file.summary_data or media_file.summary_opensearch_id),
+        "summary_exists": state["summary_exists"],
         "llm_available": llm_available,
         "llm_settings_unavailable": settings_unavailable,
         "can_retry": can_retry,
-        "transcription_status": media_file.status,
-        "filename": media_file.filename,
-        "summary_enabled_system": system_enabled,
-        "summary_enabled_user": user_enabled,
+        "transcription_status": state["status"],
+        "filename": state["filename"],
+        "summary_enabled_system": state["system_enabled"],
+        "summary_enabled_user": state["user_enabled"],
         "can_generate": can_generate,
     }
+
+
+def _read_summary_state(
+    db: Session, file_uuid: str, user_id: int, ctx: RequestContext
+) -> dict[str, Any]:
+    """Read what the summary-status response needs as plain data, then release ``db``."""
+    from app.services.uuid_helpers import get_file_by_uuid_with_permission
+    from app.utils.summary_settings import is_summary_enabled_for_user
+    from app.utils.summary_settings import is_summary_enabled_system
+
+    # Get file by UUID (tenant-gated via ctx.org_id)
+    media_file = get_file_by_uuid_with_permission(
+        db, file_uuid, user_id, bypass=ctx.bypass, organization_id=ctx.org_id
+    )
+    state = {
+        "file_id": media_file.id,
+        "file_uuid": str(media_file.uuid),
+        "summary_status": media_file.summary_status or "pending",
+        "summary_exists": bool(media_file.summary_data or media_file.summary_opensearch_id),
+        "status": media_file.status,
+        "filename": media_file.filename,
+        "system_enabled": is_summary_enabled_system(db),
+        "user_enabled": is_summary_enabled_for_user(db, user_id),
+    }
+    db.close()
+    return state
 
 
 @router.post("/{file_uuid}/retry-summary", dependencies=[Depends(refuse_under_support_grant)])

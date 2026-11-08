@@ -263,6 +263,10 @@ should import `app.api` or `app.services` at module scope.
   `BROKER_ORPHAN_UNTRACKED_STALE_SECONDS` past delivery/ETA with no live holder and no
   `task_replay` heartbeat, capped by `BROKER_ORPHAN_MAX_REQUEUES`; a `task_replay`-recorded one
   is discarded, since that sweep re-sends it under the same id.
+  ⚠️ `read_queued_run_ids` measures the stage lists first (`LLEN` + `MEMORY USAGE`) and returns
+  `None` ("cannot tell", so no run is judged lost) above `QUEUE_SCAN_MAX_ENTRIES` (20,000) or
+  `QUEUE_SCAN_MAX_BYTES` (64 MB). Never go back to an unconditional `LRANGE 0 -1`: the `gpu`
+  queue is shared, and a 15 GB backlog was once copied into the cpu-worker every 60 s.
 - **Every user-triggered (`CPUPriority.USER_TRIGGERED`) and `download.*` task is classified**
   (#1159): on `task_replay.REPLAYABLE_TASKS`, or in `_USER_TASKS_NOT_REPLAYED`
   (`tests/unit/test_lost_task_replay.py`) with a written reason. The guard reads the Celery

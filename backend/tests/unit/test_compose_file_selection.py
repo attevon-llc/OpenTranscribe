@@ -57,6 +57,7 @@ DB_ROLES = "docker-compose.db-roles.yml"
 
 DIAR_GPU = "docker-compose.diar-native-gpu.yml"
 DEMO = "docker-compose.demo.yml"
+DEMO_CLOUDFLARE = "docker-compose.demo-cloudflare.yml"
 ALL_OVERLAYS = (
     BASE,
     PROD,
@@ -70,6 +71,7 @@ ALL_OVERLAYS = (
     LITE,
     DB_ROLES,
     DEMO,
+    DEMO_CLOUDFLARE,
 )
 
 
@@ -87,6 +89,8 @@ def _make_deployment(
     for name in overlays:
         (install / name).write_text("services: {}\n", encoding="utf-8")
     (install / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
+    (install / "nginx").mkdir(exist_ok=True)
+    (install / "nginx" / "cloudflare-real-ip.conf").write_text("# stub\n", encoding="utf-8")
     if certs:
         ssl_dir = install / "nginx" / "ssl"
         ssl_dir.mkdir(parents=True)

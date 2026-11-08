@@ -121,6 +121,9 @@ scripts/voiceprint-backup.py	optional,exec
 # (issue #628; docs: Operations > Public demo). `optional`: older releases have none.
 scripts/demo/demo-upgrade.sh	optional,exec
 scripts/demo/demo-reset.sh	optional,exec
+scripts/demo/refresh-cloudflare-ips.sh	optional,exec
+nginx/cloudflare-real-ip.conf	optional
+docker-compose.demo-cloudflare.yml	optional
 scripts/demo/systemd/opentranscribe-demo-upgrade.service	optional
 scripts/demo/systemd/opentranscribe-demo-upgrade.timer	optional
 scripts/demo/systemd/opentranscribe-demo-reset.service	optional

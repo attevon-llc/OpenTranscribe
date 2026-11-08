@@ -1092,10 +1092,10 @@ get_compose_files() {
         echo -e "${BLUE}   GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID default to 0/1 — set both in .env if that is wrong for this host.${NC}" >&2
     fi
 
-    # Public read-only demo (#628), last so its refusals win over every overlay above.
-    if [ "$(read_env_value DEMO_MODE)" = "true" ]; then
+    if [ "$(read_env_value DEMO_MODE)" = "true" ]; then # #628, last so its refusals win over every overlay above
         [ -f docker-compose.demo.yml ] && compose_files="$compose_files -f docker-compose.demo.yml" ||
             echo -e "${RED}❌ DEMO_MODE=true but docker-compose.demo.yml is missing: run './opentranscribe.sh update-full'${NC}" >&2
+        [[ " $compose_files " == *" -f docker-compose.nginx.yml "* && -f docker-compose.demo-cloudflare.yml && -f nginx/cloudflare-real-ip.conf ]] && compose_files="$compose_files -f docker-compose.demo-cloudflare.yml"
     fi
 
     echo "$compose_files"

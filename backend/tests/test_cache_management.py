@@ -314,9 +314,9 @@ class TestCanonicalDestroy:
         called = {}
         real_purge = file_cleanup_service.purge_media_file
 
-        def spy(db, file):
+        def spy(db, file, **kwargs):
             called["hit"] = True
-            return real_purge(db, file)
+            return real_purge(db, file, **kwargs)
 
         monkeypatch.setattr(file_cleanup_service, "purge_media_file", spy)
 

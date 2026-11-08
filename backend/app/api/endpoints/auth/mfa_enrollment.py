@@ -43,6 +43,7 @@ from app.auth.token_service import token_service
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.auth_types import TOKEN_TYPE_MFA
 from app.core.config import settings
+from app.core.security import accepted_algorithms
 from app.db.base import get_db
 from app.models.user import User
 from app.models.user_mfa import UserMFA
@@ -260,7 +261,7 @@ def get_user_for_enrollment(
             # joserfc's decode() verifies the signature/algorithm only and never
             # checks exp on its own, so this already peeks without enforcing
             # expiry — no equivalent of python-jose's verify_exp=False needed.
-            peeked = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM]).claims
+            peeked = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_MFA)).claims
         except JoseError:
             peeked = {}
 

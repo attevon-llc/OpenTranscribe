@@ -18,6 +18,7 @@ from app.auth.utils import local_password_allowed
 from app.auth.utils import mask_identifier
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.security import signing_algorithm
 from app.core.security import verify_and_update_password
 
 if TYPE_CHECKING:
@@ -44,14 +45,10 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     (``api/endpoints/auth/{login,pki,oidc,saml,proxy,sessions,mfa_enrollment}.py``),
     as does ``services/account_security_service.py``. It is the only access-token issuer.
 
-    **The signing algorithm is ``settings.JWT_ALGORITHM`` and is deliberately not
-    FIPS-branched.** The verifiers on the request path —
-    ``api/endpoints/auth/dependencies.py``'s ``get_current_user`` and
-    ``get_optional_current_user`` — decode with ``algorithms=[settings.JWT_ALGORITHM]``
-    and nothing else, so issuing under a different algorithm here would produce tokens
-    that authenticate no request. Issuer and verifier move together only via that one
-    setting; ``JWT_ALGORITHM_V3`` is read by ``core.security.verify_token``'s
-    dual-accept list, never by an access-token issuer.
+    **The signing algorithm is ``core.security.signing_algorithm`` — the one owner of
+    that decision — and every verifier accepts via ``core.security.accepted_algorithms``,**
+    so issuer and verifiers move together. ``tests/unit/test_jwt_algorithm_single_owner.py``
+    fails if this module builds its own algorithm list again.
 
     HS256 is an approved FIPS algorithm (HMAC per FIPS 198-1 over SHA-256 per
     FIPS 180-4, 128-bit security strength under SP 800-57 Pt.1 R5), so the default
@@ -88,9 +85,8 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
         }
     )
     key = OctKey.import_key(settings.JWT_SECRET_KEY)
-    return jwt.encode(
-        {"alg": settings.JWT_ALGORITHM}, to_encode, key, algorithms=[settings.JWT_ALGORITHM]
-    )
+    algorithm = signing_algorithm(TOKEN_TYPE_ACCESS)
+    return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
 
 
 logger = logging.getLogger(__name__)

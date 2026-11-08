@@ -49,52 +49,14 @@ FIPS_GATE_SETTING = "FIPS_VERSION"
 
 #: Path (relative to ``backend/app``) -> why reading ``FIPS_VERSION`` directly is
 #: legitimate there.
-FIPS_GATE_ALLOWED: dict[str, str] = {
-    "auth/mfa.py": (
-        "FOLLOW-UP. The MFA backup-code HASHING profile, not the JWT question — a "
-        "different decision that happens to read the same gate. It is already "
-        "correctly written as `FIPS_MODE and FIPS_VERSION == '140-3'`, so it is not "
-        "the always-true form this guard exists to catch; collapsing it onto "
-        "settings.fips_140_3_active is a pure simplification with no behaviour change, "
-        "deferred only because this change did not own that file."
-    ),
-}
+FIPS_GATE_ALLOWED: dict[str, str] = {}
 
-#: Path -> why a hand-built ``algorithms=`` list is legitimate there. Every entry
-#: below is HS256-only and internally consistent (it signs and verifies with the same
-#: ``settings.JWT_ALGORITHM``), so none of them can disagree with itself — but each is
-#: a copy of the decision, and the reason has to say what the residual risk is.
+#: Path -> why a hand-built ``algorithms=`` list is legitimate there. The four
+#: FOLLOW-UP copies that used to sit here (direct_auth, mfa_tokens, mfa_enrollment and
+#: the logout decode in sessions.py) now call the owners; the logout one was a real
+#: gap — a token signed before a JWT_ALGORITHM change was never revoked at logout
+#: (``tests/unit/test_jwt_migration_window_consumers.py``).
 ALGORITHM_LIST_ALLOWED: dict[str, str] = {
-    "auth/direct_auth.py": (
-        "FOLLOW-UP. THE production access-token issuer (every login path imports it). "
-        "It signs with settings.JWT_ALGORITHM, which is exactly what "
-        "signing_algorithm() returns, so it agrees with every verifier today — and "
-        "test_jwt_issuer_verifier_agreement.py mints from this very function in nine "
-        "configurations, so a divergence fails a test rather than a deployment. It "
-        "would drift only if signing_algorithm ever branched per token type."
-    ),
-    "api/endpoints/auth/mfa_tokens.py": (
-        "FOLLOW-UP. Mints AND verifies the MFA half-token with the same "
-        "settings.JWT_ALGORITHM, so the pair cannot disagree with itself. The issuer "
-        "is covered by test_jwt_issuer_verifier_agreement.py. Residual gap: under "
-        "FIPS_MIGRATION_MODE=compatible it accepts less than accepted_algorithms(), "
-        "so a half-token minted seconds before an operator changed JWT_ALGORITHM is "
-        "refused — bounded by the token's ~5 minute TTL."
-    ),
-    "api/endpoints/auth/mfa_enrollment.py": (
-        "FOLLOW-UP. A peek-decode of a token that mfa_tokens.py minted, with the same "
-        "hardcoded setting, so it matches its issuer. Same bounded residual gap as "
-        "mfa_tokens.py above."
-    ),
-    "api/endpoints/auth/sessions.py": (
-        "FOLLOW-UP, and the one with a real residual gap. The logout handler decodes "
-        "purpose-agnostically ('logging out with a refresh token is still a logout') "
-        "but with [settings.JWT_ALGORITHM] rather than accepted_algorithms(). While "
-        "create_refresh_token signed HS512 this silently revoked NOTHING for that "
-        "case; it works now that refresh tokens follow JWT_ALGORITHM, but a refresh "
-        "token issued before the upgrade still fails to revoke on logout until it "
-        "expires. Widening this to accepted_algorithms(TOKEN_TYPE_REFRESH) closes it."
-    ),
     "auth/oidc/claims.py": (
         "Not this decision at all. These are the IDENTITY PROVIDER's signing "
         "algorithms for an inbound ID token, negotiated from the provider's discovery "
@@ -378,9 +340,8 @@ def test_the_deferred_exemptions_are_counted_not_forgotten():
     """``FOLLOW-UP`` entries are tracked work, not a clean tree.
 
     Same convention as ``scripts/audit-tests.py``'s ``BACKLOG`` reasons: a green gate
-    must never read as "nothing left to do". These four modules each hold a copy of
-    the algorithm decision and were outside the file ownership of the change that
-    introduced this guard.
+    must never read as "nothing left to do". The set is empty: every module that held
+    a copy of the algorithm decision now delegates to the owners.
     """
     deferred = sorted(
         rel
@@ -389,14 +350,7 @@ def test_the_deferred_exemptions_are_counted_not_forgotten():
         if reason.startswith("FOLLOW-UP")
     )
 
-    assert deferred == [
-        "api/endpoints/auth/mfa_enrollment.py",
-        "api/endpoints/auth/mfa_tokens.py",
-        "api/endpoints/auth/sessions.py",
-        "auth/direct_auth.py",
-        "auth/mfa.py",
-    ], (
-        f"The deferred set changed: {deferred}. Shrinking it is progress — update this "
-        "list. Growing it means a new copy of the decision was accepted rather than "
-        "delegated."
+    assert deferred == [], (
+        f"New deferred copies of the algorithm decision: {deferred}. Delegate to "
+        f"core.security.{SIGNING_OWNER}()/{ACCEPTANCE_OWNER}() instead of exempting."
     )

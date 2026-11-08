@@ -608,8 +608,8 @@ verifier delegates to them:
   window is open.
 
 `accepted_algorithms` is what the request-path verifiers (`get_current_user` /
-`get_optional_current_user`), the WebSocket and SAML verifier (`verify_token`) and the
-refresh verifier all call, so acceptance can no longer be wider in one and narrower in
+`get_optional_current_user`), the WebSocket and SAML verifier (`verify_token`), the
+refresh verifier, logout and the MFA half-token verifier all call, so acceptance can no longer be wider in one and narrower in
 another. It previously could: under `FIPS_MIGRATION_MODE=strict` the WebSocket verifier
 accepted only `JWT_ALGORITHM_V3`, which **no issuer in the codebase mints**, so a strict
 deployment authenticated HTTP requests normally and refused every WebSocket handshake.
@@ -624,6 +624,8 @@ JWT_SECRET_KEY=<at least 64 bytes>   # HS512 needs a 512-bit key; startup warns 
 That one setting moves issuance and verification together, for all three token types.
 While `FIPS_MIGRATION_MODE=compatible`, HS256 tokens issued before the change stay
 verifiable, so a rolling restart does not sign anyone out; `strict` closes that window.
+Logout honours the same window: a token signed under the previous algorithm is revoked
+when its holder logs out (before v0.7.0 it was not, and stayed usable until it expired).
 
 ### Migration Process
 

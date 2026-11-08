@@ -37,7 +37,7 @@ fetch() {
     out="$(printf '%s\n' "$out" | tr -d '\r' | sed '/^[[:space:]]*$/d')"
     [ -n "$out" ] || { echo "empty list from $1" >&2; exit 2; }
     # Every line must be exactly one CIDR: a stray HTML error page must never become nginx config.
-    if printf '%s\n' "$out" | grep -qvE '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$|^[0-9a-fA-F:]+/[0-9]{1,3}$'; then
+    if [ "$(printf '%s\n' "$out" | grep -cvE '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$|^[0-9a-fA-F:]+/[0-9]{1,3}$')" -gt 0 ]; then
         echo "unexpected content from $1 (not a CIDR list)" >&2; exit 2
     fi
     printf '%s\n' "$out"

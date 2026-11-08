@@ -67,7 +67,7 @@ cookies_are_secure() {
   local line
   while IFS= read -r line || [ -n "$line" ]; do
     [ -n "$line" ] || continue
-    printf '%s' "$line" | grep -qi ';[[:space:]]*secure' || return 1
+    [ "$(printf '%s' "$line" | grep -ci ';[[:space:]]*secure')" -gt 0 ] || return 1
   done
   return 0
 }

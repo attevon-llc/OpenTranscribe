@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, "/app")
 
 import logging
+from typing import Any
 
 import numpy as np
 
@@ -59,6 +60,7 @@ def batch_process_speaker_matches() -> None:
         processed = 0
         matches_found = 0
         skipped_by_policy = 0
+        lookup_failures = 0
 
         # Privacy policy (#1280): a speaker whose file's owner or organization has voiceprints
         # off is not matched, and no match record or suggestion is written for it.
@@ -75,12 +77,16 @@ def batch_process_speaker_matches() -> None:
 
             if embedding:
                 # Find and store matches
+                diagnostics: dict[str, Any] = {}
                 found_matches = matching_service.find_and_store_speaker_matches(
                     speaker.id,
                     np.array(embedding),
                     speaker.user_id,
                     threshold=SPEAKER_CONFIDENCE_MEDIUM,
+                    diagnostics=diagnostics,
                 )
+                if diagnostics.get("opensearch_failed"):
+                    lookup_failures += 1
 
                 if found_matches:
                     matches_found += len(found_matches)
@@ -139,6 +145,10 @@ def batch_process_speaker_matches() -> None:
         logger.info(f"Processed: {processed} speakers")
         logger.info(f"Matches found: {matches_found}")
         logger.info(f"Skipped by privacy policy: {skipped_by_policy} speakers")
+        if lookup_failures:
+            logger.error(
+                f"OpenSearch lookup FAILED for {lookup_failures} speakers (not 'no match')"
+            )
 
         # Show some statistics
         match_count = db.query(SpeakerMatch).count()

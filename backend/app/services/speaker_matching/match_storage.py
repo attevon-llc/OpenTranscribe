@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 import numpy as np
+from opensearchpy.exceptions import OpenSearchException
 from sqlalchemy import func
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
@@ -232,9 +233,16 @@ def find_and_store_speaker_matches(
     user_id: int,
     threshold: float = SPEAKER_CONFIDENCE_MEDIUM,
     organization_id: OrgScope = UNSCOPED,
+    diagnostics: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Find all similar speakers and store matches in the database.
+
+    Matching is best-effort for the callers (a speaker is still processed when the
+    index is unreachable), so an OpenSearch failure returns ``[]`` rather than
+    raising. It is NOT silent: it is logged with the traceback and recorded in
+    ``diagnostics["opensearch_failed"]`` so a caller can tell "could not look"
+    from "found nothing". Any other exception (a bug, a DB error) propagates.
 
     Args:
         new_speaker_id: ID of the newly processed speaker
@@ -280,7 +288,13 @@ def find_and_store_speaker_matches(
 
         self.db.flush()
 
-    except Exception as e:
-        logger.error(f"Error finding and storing speaker matches: {e}")
+    except OpenSearchException:
+        logger.error(
+            "OpenSearch failed finding matches for speaker %s; reporting none found",
+            new_speaker_id,
+            exc_info=True,
+        )
+        if diagnostics is not None:
+            diagnostics["opensearch_failed"] = True
 
     return matches

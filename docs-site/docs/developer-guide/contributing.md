@@ -4,8 +4,12 @@ sidebar_position: 2
 
 # Contributing
 
-:::note Contributions paused
-We are not accepting outside code contributions at the moment. Issues and discussions are still welcome.
+:::note Outside code contributions are not accepted for now
+OpenTranscribe is not accepting outside code contributions at this time. Issues and pull requests
+are still welcome as bug reports and suggestions, and we read all of them, but the maintainer
+implements accepted changes personally. We plan to open contributions later, with a contributor
+agreement; this page will be updated when that happens. Thank you for your interest and your
+understanding.
 :::
 
 The steps below describe the development workflow for reference.

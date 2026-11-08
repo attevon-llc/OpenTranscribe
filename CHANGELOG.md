@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Contribution docs and the pull request template state plainly that outside code contributions are not accepted for now; issues and pull requests are welcome as suggestions and bug reports, and a contributor agreement will follow later.
+
 - The declared copyright holder and package author is "OpenTranscribe" everywhere (`pyproject.toml` files, image author labels), matching `NOTICE`, the docs footer and `frontend/package.json`.
 
 - Search no longer keeps a per-process cache of result pages. Its entries were emptied by any new transcript anywhere on the server, so it rarely helped, and it had repeatedly served stale or wrongly masked pages; every search now reflects the index and your redaction settings as they are. An identical repeat search runs again rather than being served from memory.

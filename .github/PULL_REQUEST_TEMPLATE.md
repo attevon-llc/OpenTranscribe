@@ -1,6 +1,6 @@
 # Pull Request
 
-> **Contributions paused.** We are not accepting outside code contributions at the moment. Issues and discussions are still welcome.
+> **Outside code contributions are not accepted for now.** You are welcome to open this pull request as a suggestion or bug report, and we will read it, but the maintainer implements accepted changes personally. Thank you for understanding.
 
 ## Description
 Brief description of what this PR does

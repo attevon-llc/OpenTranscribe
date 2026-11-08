@@ -129,7 +129,7 @@ Commits in this order, one concern each:
    - `backend/app/auth/rate_limit.py`: `default_limits` under demo; `backend/app/main.py`: `SlowAPIASGIMiddleware` under demo.
    - tests: two client addresses behind a trusted proxy get independent buckets; a forged XFF from an untrusted peer is ignored.
 6. `feat(demo): compose overlay, --demo flag and installer selection`
-   - new `docker-compose.demo.yml`; `opentr.sh` (`--demo` on `start`/`reset`, help, compose chain, fresh isolation classification); `opentranscribe.sh` (`DEMO_MODE=true` in `.env` selects the overlay); `release-manifest.txt`.
+   - new `docker-compose.demo.yml`; `opentr.sh` (`--demo` on `start`, implying `--lite`; the lite/demo overlay step lives in `scripts/lib/lite-demo-overlay.sh`); `opentranscribe.sh` (`DEMO_MODE=true` in `.env` selects the overlay); `release-manifest.txt`. The overlay declares no `container_name` or ports, so `--fresh` needs no extra isolation.
    - new `backend/tests/unit/test_demo_overlay.py`; `test_opentr_fresh_aux_isolation.py` classification.
 7. `feat(demo): seed bundle format, licence policy and importer`
    - new `backend/app/scripts/demo_seed/` (`bundle.py` schema + licence policy, `__main__.py` importer reusing `corpus_injection` row builders, MinIO upload, terminal redaction status, settle wait).
@@ -212,7 +212,7 @@ third-party segments excluded), LibriVox recordings (public domain).
 | Step | Needs | Owner |
 |---|---|---|
 | P-A merge this lane, wave sweep | lead | lead |
-| P-B demo-session endpoint + "Try the demo" + banner + disabled controls, 12 locales, browser check light/dark/`ar` | P-A | Sonnet lane |
+| P-B demo-session endpoint + "Try the demo" + banner + disabled controls + per-file licence attribution (CC BY items require it), 12 locales, browser check light/dark/`ar` | P-A | Sonnet lane |
 | P-C build seed bundle v1 on the GPU host (process each catalog item through the normal pipeline on a `--fresh` stack, export with `demo_seed export`, verify licences) | P-A, GPU 1 | lead |
 | P-D pre-generated conversations into the bundle | P-C | lane |
 | P-E `finish` criterion `demo-upgraded` | L-RELEASE | L-E3 |

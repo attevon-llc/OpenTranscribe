@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A public read-only demo mode (#628). With `DEMO_MODE=true` the API refuses every write and every live-update connection with `403 demo_read_only` (sign-in, token refresh and sign-out excepted), refuses to queue any background task, and limits each visitor address to `DEMO_RATE_LIMIT_PER_MINUTE` requests a minute on every route. `docker-compose.demo.yml` runs it on the CPU-only image with no workers, scheduler or Flower; `./opentr.sh start prod --demo` and `DEMO_MODE=true` in an installed deployment's `.env` select it. `scripts/demo/demo-reset.sh` resets the demo from a licence-checked seed bundle (`python -m app.scripts.demo_seed validate|import`) with the site closed throughout, and `scripts/demo/demo-upgrade.sh` moves it to each newly published release, checks `/health`, and rolls back if the check fails. Guide: Operations, Public demo.
 - Administrators can place a legal hold from the gallery selection or from a file's page, using one dialog that asks for a reason and an optional matter reference.
 - Instance administrators have a new Settings > Legal holds section to hold files or a whole collection without taking them down, and to release holds.
 - Held files show a Legal hold badge in the gallery, and a Legal hold filter and collection list them automatically; both appear only while something is held and cannot be edited or deleted.
@@ -95,6 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `DEPLOYMENT_MODE` accepts only `full` or `lite` (any case, surrounding spaces ignored) and stops startup with a clear message otherwise. An unknown value used to be accepted and silently re-enabled local transcription on the CPU-only image.
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.
 - The speakers page said "1 speakers have no match" when one speaker was waiting in Review; the message now uses each language's plural forms.
 - In right-to-left languages the player's speed menu and the floating preview's speed button showed rates as "×1" and "×0.5"; they now read "1×" and "0.5×".

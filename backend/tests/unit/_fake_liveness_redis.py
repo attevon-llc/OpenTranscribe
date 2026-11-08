@@ -153,6 +153,9 @@ class BrokenRedis:
 def install_fake_redis(monkeypatch) -> FakeRedis:
     """Route every ``get_redis()`` call through a fresh :class:`FakeRedis`."""
     fake = FakeRedis()
+    # Both clients: workers write liveness through get_redis(), request-path readers
+    # (stuck-task detection, the cancel endpoints) through get_request_redis().
     monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
     monkeypatch.setattr("app.core.broker_orphans.queued_run_ids", lambda: fake.queued_stage_runs)
     return fake

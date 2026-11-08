@@ -6,8 +6,9 @@ All synchronous code that needs a Redis connection should import
 per process via ``@lru_cache`` and reused for the lifetime of the
 worker / API server.
 
-``get_request_redis()`` is for calls made while serving a request (chat limits and
-Stop flags, the retrieval cache): same URL, with the configurable
+``get_request_redis()`` is for calls made while serving a request (every API route,
+auth, the services and task-plane helpers they reach; a guard test enforces it): same
+URL, with the configurable
 ``REDIS_REQUEST_*_TIMEOUT_SECONDS`` bounds, so a Redis that stops answering costs a
 request two seconds and a fail-open, never a thread held forever.
 

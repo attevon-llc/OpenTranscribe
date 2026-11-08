@@ -53,7 +53,7 @@ def _service(store: Any) -> TokenService:
 class TestThePublishSide:
     def test_stamping_the_epoch_publishes_it_for_every_process(self, monkeypatch):
         redis = _RecordingRedis()
-        monkeypatch.setattr(websocket_notify, "get_redis", lambda: redis)
+        monkeypatch.setattr(websocket_notify, "get_request_redis", lambda: redis)
         store = InMemoryStore()
 
         assert _service(store).stamp_user_revocation_epoch(USER_UUID) is True
@@ -72,7 +72,7 @@ class TestThePublishSide:
 
     def test_sockets_are_still_closed_when_the_epoch_write_fails(self, monkeypatch):
         redis = _RecordingRedis()
-        monkeypatch.setattr(websocket_notify, "get_redis", lambda: redis)
+        monkeypatch.setattr(websocket_notify, "get_request_redis", lambda: redis)
 
         assert _service(_RaisingStore()).stamp_user_revocation_epoch(USER_UUID) is False
 
@@ -80,7 +80,9 @@ class TestThePublishSide:
 
     def test_a_failed_publish_leaves_the_recorded_epoch_standing(self, monkeypatch):
         """Fail-secure: the fan-out is best-effort; the epoch is what refuses the token."""
-        monkeypatch.setattr(websocket_notify, "get_redis", lambda: _RecordingRedis(fail=True))
+        monkeypatch.setattr(
+            websocket_notify, "get_request_redis", lambda: _RecordingRedis(fail=True)
+        )
         store = InMemoryStore()
 
         assert _service(store).stamp_user_revocation_epoch(USER_UUID) is True
@@ -89,7 +91,7 @@ class TestThePublishSide:
 
     def test_no_user_means_no_message(self, monkeypatch):
         redis = _RecordingRedis()
-        monkeypatch.setattr(websocket_notify, "get_redis", lambda: redis)
+        monkeypatch.setattr(websocket_notify, "get_request_redis", lambda: redis)
 
         assert _service(InMemoryStore()).stamp_user_revocation_epoch(None) is False
 
@@ -248,7 +250,7 @@ class TestSingleSessionLogout:
 
     def test_the_publish_names_the_user_and_the_token(self, monkeypatch):
         redis = _RecordingRedis()
-        monkeypatch.setattr(websocket_notify, "get_redis", lambda: redis)
+        monkeypatch.setattr(websocket_notify, "get_request_redis", lambda: redis)
 
         assert websocket_notify.publish_token_revocation(USER_UUID, "token-a") is True
 

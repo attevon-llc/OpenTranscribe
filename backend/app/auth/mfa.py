@@ -341,9 +341,9 @@ class MFAService:
         ttl = MFAService.TOTP_INTERVAL * (2 * settings.TOTP_VALID_WINDOW + 1)
         key = f"mfa:totp:used:{user_id}:{code}"
         try:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            claimed = get_redis().set(key, "1", nx=True, ex=ttl)
+            claimed = get_request_redis().set(key, "1", nx=True, ex=ttl)
         except Exception as exc:  # noqa: BLE001 - Redis availability is a deployment concern
             if settings.MFA_REQUIRE_REDIS:
                 logger.error("TOTP replay protection unavailable (%s); refusing code", exc)

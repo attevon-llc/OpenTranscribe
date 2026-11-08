@@ -299,6 +299,7 @@ manager = ConnectionManager()
 
 # Redis client for pub/sub
 redis_client: redis.Redis | None = None
+_subscriber_task: asyncio.Task[None] | None = None
 
 
 def setup_redis() -> None:
@@ -309,18 +310,25 @@ def setup_redis() -> None:
     yields. Declaring it ``async def`` claimed otherwise (issue #320); callers must
     still invoke it from a coroutine so ``create_task`` has a loop to attach to.
     """
-    global redis_client
+    global redis_client, _subscriber_task
     if not redis_client:
         # health_check_interval + keepalive keep the long-lived pub/sub connection
         # from being reaped while idle (the root cause of the subscriber silently
         # dying) and let redis-py detect a dead socket proactively.
+        #
+        # A connect timeout, but deliberately no socket_timeout: the subscription waits
+        # in get_message(timeout=...) for as long as nothing is published, and a read
+        # timeout would turn that idle wait into an error (redis-py "Timeouts" docs).
         redis_client = redis.from_url(
             settings.REDIS_URL,
             health_check_interval=30,
             socket_keepalive=True,
+            socket_connect_timeout=settings.REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS,
         )
-        # Start Redis subscriber in background
-        asyncio.create_task(redis_subscriber())
+        # Start Redis subscriber in background. The reference is kept: the event loop
+        # holds only a weak one, so an unreferenced task can be collected mid-run
+        # (asyncio.create_task docs).
+        _subscriber_task = asyncio.create_task(redis_subscriber())
 
 
 async def _dispatch_notification(message: dict) -> None:

@@ -339,7 +339,7 @@ def test_metrics_returns_dict(client, super_admin_token_headers):
     """The metrics reader returns a dict (empty when no workers reported)."""
     redis = MagicMock()
     redis.keys.return_value = []
-    with patch("app.core.redis.get_redis", return_value=redis):
+    with patch("app.core.redis.get_request_redis", return_value=redis):
         resp = client.get(f"{_BASE}/metrics", headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json() == {}
@@ -347,7 +347,7 @@ def test_metrics_returns_dict(client, super_admin_token_headers):
 
 def test_metrics_answers_503_when_redis_is_unreachable(client, super_admin_token_headers):
     """An unreadable store is an outage, not "no workers reported"."""
-    with patch("app.core.redis.get_redis", side_effect=ConnectionError("refused")):
+    with patch("app.core.redis.get_request_redis", side_effect=ConnectionError("refused")):
         resp = client.get(f"{_BASE}/metrics", headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 

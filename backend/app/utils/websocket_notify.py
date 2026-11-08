@@ -22,7 +22,7 @@ import logging
 import uuid as uuid_pkg
 from collections.abc import Sequence
 
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ SESSION_REVOKED_EVENT = "session_revoked"
 def _publish(notification: dict, target: object, notification_type: str) -> bool:
     """Publish one message on the channel every API process subscribes to."""
     try:
-        get_redis().publish("websocket_notifications", json.dumps(notification))
+        get_request_redis().publish("websocket_notifications", json.dumps(notification))
         logger.info("Published WS notification for user %s: %s", target, notification_type)
         return True
     except Exception as e:

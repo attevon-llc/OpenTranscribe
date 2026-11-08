@@ -89,7 +89,7 @@ def _stack(*, llm_configured: bool = True, redis=None):
             "app.services.llm_service.LLMService.is_configured_for_user",
             return_value=llm_configured,
         ),
-        patch("app.core.redis.get_redis", return_value=fake_redis),
+        patch("app.core.redis.get_request_redis", return_value=fake_redis),
         patch.object(topic_extraction.extract_topics_task, "delay", delay),
         patch.object(topic_extraction, "send_topic_extraction_notification", notify),
     ):

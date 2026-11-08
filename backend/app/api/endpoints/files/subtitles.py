@@ -490,7 +490,7 @@ def bulk_export_stream(
     async def event_stream() -> AsyncIterator[str]:
         # The whole generator is iterated ON the event loop, so every Redis call in it
         # must be async. The result-cache read used to go through the synchronous
-        # ``get_redis()`` singleton, stalling every other request for the round trip
+        # ``get_request_redis()`` singleton, stalling every other request for the round trip
         # (issue #320); it now shares the async client already used for the pub/sub.
         client = get_async_redis()
 

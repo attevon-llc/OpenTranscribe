@@ -51,7 +51,7 @@ def _reset_local_cache():
 class TestSharedModeCacheVisibleAcrossProcesses:
     def test_mode_set_by_one_process_is_visible_to_another_without_opensearch(self, monkeypatch):
         network = _FakeRedisNetwork()
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: network)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: network)
 
         # "Process A" (e.g. the worker that ran finalize) sets the mode.
         EmbeddingModeService._set_cached_mode(MODE_V4)
@@ -73,7 +73,7 @@ class TestSharedModeCacheVisibleAcrossProcesses:
 
     def test_clear_cache_deletes_the_shared_key_not_just_the_local_one(self, monkeypatch):
         network = _FakeRedisNetwork()
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: network)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: network)
 
         EmbeddingModeService._set_cached_mode(MODE_V3)
         assert network.store  # the shared store actually holds something
@@ -88,7 +88,7 @@ class TestSharedModeCacheVisibleAcrossProcesses:
         def _broken_redis():
             raise ConnectionError("redis down")
 
-        monkeypatch.setattr("app.core.redis.get_redis", _broken_redis)
+        monkeypatch.setattr("app.core.redis.get_request_redis", _broken_redis)
 
         EmbeddingModeService._set_cached_mode(MODE_V4)  # Redis write fails, local succeeds
         assert EmbeddingModeService._get_cached_mode() == MODE_V4

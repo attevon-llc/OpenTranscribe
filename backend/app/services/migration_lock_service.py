@@ -13,7 +13,7 @@ import logging
 
 import redis
 
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class MigrationLockService:
     def _redis(self) -> redis.Redis | None:
         if self._client is None:
             try:
-                self._client = get_redis()
+                self._client = get_request_redis()
                 self._client.ping()
             except Exception as e:
                 logger.error(f"Migration lock: Redis unavailable: {e}")

@@ -88,10 +88,10 @@ def mark_queued(task_id: str) -> None:
     look lost, which recovery then answers by re-dispatching and superseding the original —
     one wasted queue slot, never two transcriptions.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().setex(
+        get_request_redis().setex(
             QUEUED_KEY.format(task_id=task_id),
             task_recovery_config.TRANSCRIPTION_QUEUE_MAX_WAIT,
             "1",
@@ -102,10 +102,10 @@ def mark_queued(task_id: str) -> None:
 
 def clear_run_markers(task_id: str) -> None:
     """Drop both markers for a run that recovery has retired."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().delete(
+        get_request_redis().delete(
             QUEUED_KEY.format(task_id=task_id), HEARTBEAT_KEY.format(task_id=task_id)
         )
     except Exception as e:
@@ -129,10 +129,10 @@ def _current_stage_id() -> str | None:
 
 
 def _beat(task_id: str, started_epoch: float, *, first: bool, owner: str | None = None) -> None:
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        pipe = get_redis().pipeline()
+        pipe = get_request_redis().pipeline()
         if first:
             pipe.delete(QUEUED_KEY.format(task_id=task_id))
         pipe.setex(
@@ -170,10 +170,10 @@ def _hands_back_to_broker(exc: BaseException | None) -> bool:
 
 def _release(task_id: str) -> None:
     """The stage ended and left nothing queued: drop its lease so the run reads as it is."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().delete(HEARTBEAT_KEY.format(task_id=task_id))
+        get_request_redis().delete(HEARTBEAT_KEY.format(task_id=task_id))
     except Exception as e:
         logger.warning("Could not release the lease of transcription %s: %s", task_id, e)
 
@@ -183,10 +183,10 @@ def _hand_back(task_id: str) -> None:
 
     Only called when :func:`_hands_back_to_broker` says a message is waiting.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        pipe = get_redis().pipeline()
+        pipe = get_request_redis().pipeline()
         pipe.delete(HEARTBEAT_KEY.format(task_id=task_id))
         pipe.setex(
             QUEUED_KEY.format(task_id=task_id),
@@ -266,14 +266,14 @@ def probe_runs(task_ids: Iterable[str]) -> dict[str, RunLiveness]:
     ids = [str(t) for t in task_ids]
     if not ids:
         return {}
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     keys: list[str] = []
     for task_id in ids:
         keys.append(HEARTBEAT_KEY.format(task_id=task_id))
         keys.append(QUEUED_KEY.format(task_id=task_id))
     try:
-        values = get_redis().mget(keys)
+        values = get_request_redis().mget(keys)
     except Exception as e:
         logger.warning(
             "Could not read transcription liveness (treating %d as unknown): %s", len(ids), e
@@ -317,10 +317,10 @@ INFRA_REQUEUES_KEY = "transcription_infra_requeues"
 
 def record_infra_requeue(file_uuid: str) -> int | None:
     """Count one more infrastructure requeue of ``file_uuid``; None when Redis is unreadable."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        count = get_redis().zincrby(INFRA_REQUEUES_KEY, 1, file_uuid)
+        count = get_request_redis().zincrby(INFRA_REQUEUES_KEY, 1, file_uuid)
         return int(count) if count is not None else None
     except Exception as e:
         logger.warning("Could not count an infrastructure requeue of %s: %s", file_uuid, e)
@@ -329,10 +329,10 @@ def record_infra_requeue(file_uuid: str) -> int | None:
 
 def infra_requeues(file_uuid: str) -> int:
     """How many infrastructure requeues ``file_uuid`` has had (0 when unknown)."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        score = get_redis().zscore(INFRA_REQUEUES_KEY, file_uuid)
+        score = get_request_redis().zscore(INFRA_REQUEUES_KEY, file_uuid)
     except Exception as e:
         logger.warning("Could not read the infrastructure requeues of %s: %s", file_uuid, e)
         return 0
@@ -341,10 +341,10 @@ def infra_requeues(file_uuid: str) -> int:
 
 def clear_infra_requeues(file_uuid: str) -> None:
     """Forget a file's infrastructure requeues once its run reached a terminal state."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().zrem(INFRA_REQUEUES_KEY, file_uuid)
+        get_request_redis().zrem(INFRA_REQUEUES_KEY, file_uuid)
     except Exception as e:
         logger.warning("Could not clear the infrastructure requeues of %s: %s", file_uuid, e)
 
@@ -355,10 +355,10 @@ def files_requeued_at_least(threshold: int) -> list[str] | None:
     The members, not a bare count, so the gauge can drop files whose run already ended (issue
     #1162): an entry that outlived its run must not hold the poison-loop alert up.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        members = get_redis().zrangebyscore(INFRA_REQUEUES_KEY, threshold, "+inf")
+        members = get_request_redis().zrangebyscore(INFRA_REQUEUES_KEY, threshold, "+inf")
     except Exception as e:
         logger.warning("Could not list requeued files: %s", e)
         return None

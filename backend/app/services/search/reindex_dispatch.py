@@ -102,10 +102,10 @@ def queue_transcript_reindex(
     key = _DEBOUNCE_KEY_TEMPLATE.format(file_uuid=file_uuid)
     claimed = False
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
         from app.tasks.search_indexing_task import index_transcript_search_task
 
-        redis = get_redis()
+        redis = get_request_redis()
         claimed = bool(redis.set(key, "1", nx=True, ex=TRANSCRIPT_REINDEX_DEBOUNCE_SECONDS))
         if not claimed:
             logger.debug(
@@ -147,9 +147,9 @@ def _report_queued(file_id: int) -> None:
 def _release_claim(key: str, file_uuid: str) -> None:
     """Drop a debounce claim whose publish failed; the key's TTL is the fallback."""
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        get_redis().delete(key)
+        get_request_redis().delete(key)
     except Exception:  # noqa: BLE001 — the claim expires on its own TTL
         logger.exception(f"Could not release the reindex debounce claim for file {file_uuid}")
 

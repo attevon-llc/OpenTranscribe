@@ -273,9 +273,9 @@ def get_engine_metrics(
     not be read, which is not the same answer.
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        r = get_redis()
+        r = get_request_redis()
         keys = r.keys(f"{_METRICS_KEY_PREFIX}*")
     except (RedisError, OSError) as exc:
         logger.error("engine-metrics: Redis unavailable", exc_info=True)

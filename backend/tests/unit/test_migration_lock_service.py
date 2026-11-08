@@ -39,7 +39,7 @@ class TestMigrationLockService:
 
     def test_activate_returns_false_when_redis_unavailable(self):
         self.service._client = None
-        with patch("app.services.migration_lock_service.get_redis") as mock_fn:
+        with patch("app.services.migration_lock_service.get_request_redis") as mock_fn:
             mock_fn.side_effect = ConnectionError("down")
             assert self.service.activate() is False
 
@@ -76,7 +76,7 @@ class TestMigrationLockService:
 
     def test_is_active_false_when_redis_unavailable(self):
         self.service._client = None
-        with patch("app.services.migration_lock_service.get_redis") as mock_fn:
+        with patch("app.services.migration_lock_service.get_request_redis") as mock_fn:
             mock_fn.side_effect = ConnectionError("down")
             assert self.service.is_active() is False
 

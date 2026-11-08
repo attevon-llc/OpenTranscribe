@@ -36,7 +36,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core import local_whisper_catalog as catalog
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 from app.db.base import get_db
 from app.schemas.local_models import LocalModelCatalogResponse
 from app.schemas.local_models import LocalModelDownloadRequest
@@ -59,7 +59,7 @@ def _error(status_code: int, code: str, **extra: Any) -> HTTPException:
 
 
 def _store() -> DownloadStore:
-    return DownloadStore(get_redis())
+    return DownloadStore(get_request_redis())
 
 
 def _audit(request: Request, actor: models.User, action: str, model_id: str) -> None:

@@ -63,7 +63,9 @@ def revocation(monkeypatch) -> TokenService:
 @pytest.fixture
 def client(db_session, monkeypatch) -> Iterator[TestClient]:
     with ws_test_client(db_session, monkeypatch) as test_client:
-        monkeypatch.setattr(websocket_notify, "get_redis", lambda: _LoopbackRedis(test_client))
+        monkeypatch.setattr(
+            websocket_notify, "get_request_redis", lambda: _LoopbackRedis(test_client)
+        )
         yield test_client
 
 

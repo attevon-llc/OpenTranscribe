@@ -259,10 +259,10 @@ def get_gpu_profiles(
     """Return recent GPU VRAM profiles from Redis."""
     import json
 
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        r = get_redis()
+        r = get_request_redis()
         task_ids = r.lrange("gpu:profile:history", 0, limit - 1)
         if not task_ids:
             return []

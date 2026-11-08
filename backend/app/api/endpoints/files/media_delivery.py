@@ -200,7 +200,7 @@ def _ensure_prepare_enqueued(
     masked under someone else's policy. It is ``""`` for audio and for unmasked
     policies, so those guard keys are unchanged.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
     from app.services.download_events import download_prep_guard_key
     from app.tasks.media_download import prepare_media_download_task
 
@@ -208,7 +208,7 @@ def _ensure_prepare_enqueued(
     # below is only a backstop. See release_download_prep_guard().
     guard_key = download_prep_guard_key(db_file.id, mode, variant)
     try:
-        first = get_redis().set(guard_key, "1", nx=True, ex=900)
+        first = get_request_redis().set(guard_key, "1", nx=True, ex=900)
     except Exception:
         # The Redis key is only a duplicate-dispatch guard; losing it costs one
         # redundant prepare task, whereas failing here would block the download.

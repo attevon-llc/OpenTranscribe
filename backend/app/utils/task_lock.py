@@ -16,7 +16,7 @@ from typing import TypeVar
 
 import redis
 
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ class TaskLockManager:
         """Lazy initialization of Redis client via shared singleton."""
         if self._redis_client is None and not self._redis_init_failed:
             try:
-                self._redis_client = get_redis()
+                self._redis_client = get_request_redis()
                 self._redis_client.ping()
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")

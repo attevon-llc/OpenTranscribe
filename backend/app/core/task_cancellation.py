@@ -170,13 +170,13 @@ def _flag_is_set(task_id: str) -> bool:
     that nobody asked to stop. The opposite direction would turn a momentary outage into every
     in-flight job on the host cancelling itself.
 
-    ``get_redis`` is imported inside the body, not at module scope, so a test patching
-    ``app.core.redis.get_redis`` is patching the object this actually calls.
+    ``get_request_redis`` is imported inside the body, not at module scope, so a test patching
+    ``app.core.redis.get_request_redis`` is patching the object this actually calls.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        return bool(get_redis().exists(CANCEL_KEY.format(task_id=task_id)))
+        return bool(get_request_redis().exists(CANCEL_KEY.format(task_id=task_id)))
     except Exception as e:
         logger.warning("Could not read the cancellation flag for task %s: %s", task_id, e)
         return False
@@ -195,10 +195,10 @@ def request_cancel(task_id: str, file_uuid: str) -> bool:
         caller must not report the work as stopping — ``cancel_active_task`` uses exactly that
         to decide whether the file may sit in ``CANCELLING``.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().setex(
+        get_request_redis().setex(
             CANCEL_KEY.format(task_id=task_id), _cancel_ttl_seconds(), file_uuid or "1"
         )
         return True
@@ -224,10 +224,10 @@ def cancel_requested(task_id: str) -> bool:
 
 def clear_cancel(task_id: str) -> None:
     """Drop a run's cancellation flag once the stop has been carried out or superseded."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().delete(CANCEL_KEY.format(task_id=task_id))
+        get_request_redis().delete(CANCEL_KEY.format(task_id=task_id))
     except Exception as e:
         logger.warning("Could not clear the cancellation flag for task %s: %s", task_id, e)
 

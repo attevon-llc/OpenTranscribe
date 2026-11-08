@@ -146,7 +146,7 @@ def test_a_reserved_task_is_still_counted(monkeypatch):
 
     from app.utils.stats_helpers import get_queue_depths
 
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
     assert get_queue_depths()["gpu"] == 1
 
 
@@ -303,7 +303,7 @@ def test_update_queue_depths_publishes_the_oldest_waiting_gauge(monkeypatch):
 
     now = time.time()
     fake = _FakeClient(heads={f"embedding{SEP}4": _message(published_at=now - 90)})
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
     update_queue_depths()
 

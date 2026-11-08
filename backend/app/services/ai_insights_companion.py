@@ -68,11 +68,11 @@ def _extraction_in_flight(db: Session, file_id: int) -> bool:
 
 def _claim_guard(file_id: int) -> bool | None:
     """Take the per-file dispatch guard. ``None`` means the guard could not be consulted."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     key = GUARD_KEY.format(file_id=file_id)
     try:
-        return bool(get_redis().set(key, "1", nx=True, ex=GUARD_TTL_SECONDS))
+        return bool(get_request_redis().set(key, "1", nx=True, ex=GUARD_TTL_SECONDS))
     except Exception:
         # Fail closed: a duplicate dispatch is a paid LLM call, a skipped companion costs
         # nothing the user cannot redo with the summary or the topics button.
@@ -81,10 +81,10 @@ def _claim_guard(file_id: int) -> bool | None:
 
 
 def _release_guard(file_id: int) -> None:
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().delete(GUARD_KEY.format(file_id=file_id))
+        get_request_redis().delete(GUARD_KEY.format(file_id=file_id))
     except Exception:
         logger.debug("Could not release topic companion guard for file %s", file_id)
 

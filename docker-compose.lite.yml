@@ -28,6 +28,13 @@ services:
     environment:
       - DEPLOYMENT_MODE=lite
 
+  # The migrate step runs the lite image too. DEPLOYMENT_MODE matters at migration time
+  # (a revision branches on it, issue #1228), so it must match the backend's.
+  migrate:
+    image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}
+    environment:
+      - DEPLOYMENT_MODE=lite
+
   # Override all backend workers to use the lite image
   backend:
     image: ${BACKEND_LITE_IMAGE:-davidamacey/opentranscribe-backend-lite:${OT_IMAGE_TAG:-latest}}

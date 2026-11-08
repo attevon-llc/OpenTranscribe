@@ -52,6 +52,14 @@ services:
   # nonexistent file and failed `up --build` with "open Dockerfile.dev: no
   # such file or directory" — undetected because opentr.sh refused --with-pki
   # in dev mode outright, so this overlay was never actually built.
+  # Same build and source as the backend below, so the migrate step applies the same tree.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    volumes:
+      - ./backend:/app
+
   backend:
     build:
       context: ./backend

@@ -7,6 +7,13 @@
 #
 # Declares no container_name, ports or volumes, so it needs no --fresh re-pinning.
 services:
+  # The migrate step runs the role reconcile at the end of every migration, so it needs the
+  # app role's name and password as well as the owner credentials it already has.
+  migrate:
+    environment:
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:-}
+
   backend:
     environment:
       POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}

@@ -48,8 +48,9 @@ def _function_body(text: str, name: str) -> str:
     return text[start : end + len("\n}\n")]
 
 
-# One line per fake container: "<cid> <name> <status> <health-or-dash>".
-_FakeContainer = tuple[str, str, str, str]
+# One line per fake container: "<cid> <name> <status> <health-or-dash>", optionally followed by
+# "<exit-code> <restart-policy>" (default "1 always", i.e. a long-running service that died).
+_FakeContainer = tuple[str, ...]
 
 
 def _write_fake_docker(bin_dir: Path, containers: list[_FakeContainer]) -> None:
@@ -78,9 +79,13 @@ def _write_fake_docker(bin_dir: Path, containers: list[_FakeContainer]) -> None:
                 name="$(echo "$line" | awk '{{print $2}}')"
                 status="$(echo "$line" | awk '{{print $3}}')"
                 health="$(echo "$line" | awk '{{print $4}}')"
+                exit_code="$(echo "$line" | awk '{{print ($5 == "" ? "1" : $5)}}')"
+                policy="$(echo "$line" | awk '{{print ($6 == "" ? "always" : $6)}}')"
                 case "$fmt" in
                     '{{{{.Name}}}}') echo "/${{name}}" ;;
                     '{{{{.State.Status}}}}') echo "$status" ;;
+                    '{{{{.State.ExitCode}}}}') echo "$exit_code" ;;
+                    '{{{{.HostConfig.RestartPolicy.Name}}}}') echo "$policy" ;;
                     '{{{{if .State.Health}}}}{{{{.State.Health.Status}}}}{{{{end}}}}')
                         [ "$health" = "-" ] && echo "" || echo "$health"
                         ;;
@@ -172,3 +177,28 @@ def test_broken_service_logs_are_printed_for_diagnosis(tmp_path: Path):
         [("cid1", "otfresh-x-postgres", "restarting", "-")],
     )
     assert "FAKE LOG for --tail=30 otfresh-x-postgres" in result.stdout
+
+
+def test_a_one_shot_that_completed_is_not_a_failure(tmp_path: Path):
+    """The `migrate` service exits 0 by design; compose only started the backend because of it."""
+    result = _run(
+        tmp_path,
+        [
+            ("cid1", "otfresh-x-migrate", "exited", "-", "0", "no"),
+            ("cid2", "otfresh-x-backend", "running", "healthy"),
+        ],
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_one_shot_that_failed_is_still_a_failure(tmp_path: Path):
+    result = _run(tmp_path, [("cid1", "otfresh-x-migrate", "exited", "-", "1", "no")])
+    assert result.returncode == 1
+    assert "otfresh-x-migrate" in result.stdout
+
+
+def test_a_long_running_service_that_exited_zero_is_still_a_failure(tmp_path: Path):
+    """Exit 0 only means "done" for a one-shot; a `restart: always` service must be running."""
+    result = _run(tmp_path, [("cid1", "otfresh-x-frontend", "exited", "-", "0", "always")])
+    assert result.returncode == 1
+    assert "otfresh-x-frontend" in result.stdout

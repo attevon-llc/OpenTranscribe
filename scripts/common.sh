@@ -1080,6 +1080,21 @@ pg_restore_restart_decision() {
   echo "hold:schema-mismatch"
 }
 
+# Run the one-shot `migrate` service when the chain defines it (docs/design/migrate_job_plan.md).
+# For paths that skip depends_on (`compose start`, `up --no-deps`): the prod API does not
+# migrate itself. No-op on pre-0.7.0 compose files, whose API still migrates on startup.
+# $1 = "-f a.yml -f b.yml"; returns the step's exit code (1 failed, 3 lock wait, 4 no database).
+compose_run_migrate() {
+  # shellcheck disable=SC2086
+  docker compose $1 config --services 2>/dev/null | grep -qx migrate || return 0
+  echo "🗄️  Running database migrations (one-shot migrate step)..."
+  # shellcheck disable=SC2086
+  docker compose $1 run --rm --no-deps migrate && return 0
+  local rc=$?
+  echo "❌ The migrate step failed (exit ${rc}: 1 migration failed, 3 migration lock wait timed out, 4 database unreachable)."
+  return "$rc"
+}
+
 #######################
 # VOICEPRINT (SPEAKER-EMBEDDING) BACKUP PRIMITIVES (issue #658)
 #######################
@@ -1870,8 +1885,10 @@ restore_database() {
     echo "       ./opentranscribe.sh update --rollback      # or: update --version vX.Y.Z"
     echo "   • Keep the current version and let it migrate this backup forward (intended"
     echo "     for data recovery, NOT for a version rollback):"
-    echo "       $frontend_cmd start dev                      # or: docker compose start backend …"
+    echo "       $frontend_cmd start dev                      # or: docker compose up -d (runs the migrate step first)"
   else
+    # `compose start` skips depends_on; --migrate-forward needs the migrate step.
+    compose_run_migrate "$compose_files" || { echo "⏸️  Database restored, but services were left STOPPED: the migration did not complete. Fix the cause above, then: $frontend_cmd start"; exit 1; }
     echo "🔄 Restarting services..."
     "${restart_services[@]}"
     echo "✅ Database restored successfully."

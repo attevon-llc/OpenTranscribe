@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Deleting many files at once (account or organization erasure, retention, trash purge, forced cleanup) now removes quoted chat citations in one pass for the whole batch instead of one scan of the chat history per file. A daily sweep also removes citations that name files that no longer exist, so an interrupted purge cannot leave them behind (#1337).
+- The ten-minute speaker embedding consistency check reads speakers and segments in bounded pages instead of loading millions of rows in one statement (#1337).
+- Removing a voiceprint scope's speaker matches, and counting them afterwards, no longer uses an OR of two subqueries; each side is probed on its own (#1337).
+- Clearing speaker statuses after a voiceprint purge loads profiles in one query and writes each batch with one bulk update (#1337).
 - The licence-compliance report in `security-reports/license-compliance/` is regenerated from the v0.6.1 images and the current lockfile. It now lists `fpdf2` (LGPL-3.0, REVIEW), `python-docx` and `uharfbuzz`, and the Video.js 10 packages in place of Plyr. `scripts/generate-sbom-report.py` takes the image tag from `VERSION` instead of a hardcoded `v0.5.1` (#1309).
 - Deleting files in the gallery now asks to move them to the trash and says how many days they stay recoverable, and the confirmation message has an Undo button. The gallery and the Trash page update when a file is moved to the trash or restored in another tab or by another person. Releasing a legal hold now explains that an overdue file in the trash is then deleted forever within the hour (#1101).
 - An organization admin's member or organization erasure is now scheduled instead of immediate: the request needs the admin's password or authenticator code, answers `202` with a request receipt instead of `200` with the erasure summary, and runs after 72 hours (24 to 168, `gdpr.org_erasure_delay_hours` and `gdpr.org_member_erasure_delay_hours`, set by a super_admin). It is refused under a support access grant. Database revision v464 allows one open request per subject instead of per user (#1105).
@@ -95,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Voiceprint retention now walks every page of candidate files. Previously, once enough files had already been purged, files older than the window but not yet purged were never selected; it also checks voiceprint presence for a whole page in one request instead of one per file (#1337).
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.
 - The speakers page said "1 speakers have no match" when one speaker was waiting in Review; the message now uses each language's plural forms.
 - In right-to-left languages the player's speed menu and the floating preview's speed button showed rates as "×1" and "×0.5"; they now read "1×" and "0.5×".

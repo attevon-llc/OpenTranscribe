@@ -63,16 +63,16 @@ Test certificates at `scripts/pki/test-certs/clients/`:
 
 ### Start LLDAP (LDAP)
 ```bash
-docker run -d --name lldap-test \
-  --network transcribe-app_default \
-  -p 3890:3890 -p 17170:17170 \
-  -e LLDAP_LDAP_BASE_DN="dc=example,dc=com" \
-  -e LLDAP_LDAP_USER_PASS="admin_password" \
-  -e LLDAP_JWT_SECRET="test-jwt-secret-key-change-me" \
-  lldap/lldap:v0.6.3
+./opentr.sh start dev --with-ldap-test
 ```
+The overlay (`docker-compose.ldap-test.yml` + `docker-compose.ldap-test-trust.yml`) serves LDAPS
+on `localhost:6360` (certificate from the repo test CA, issued by
+`scripts/pki/issue-test-server-cert.sh`) and keeps plaintext `ldap://localhost:3890` for
+host-side seeding only. The backend refuses plaintext binds and verifies the certificate, so it
+connects with `LDAP_SERVER=ldaps://lldap-test`, `LDAP_PORT=6360` and
+`LDAP_CA_CERT_FILE=/etc/opentranscribe/ldap-test-ca.crt` (mounted by the trust overlay).
 
-Create test users after LLDAP starts. `./opentr.sh start dev --with-ldap-test` (via
+The same command creates the test users (via
 `scripts/lib/dev-test-overlays.sh`'s `seed_ldap_fixture_users`) already does this, reading the
 passwords from `backend/tests/e2e/ldap_fixture_users.py` — prefer that over the loop below, which
 is here to show the mechanism:
@@ -91,15 +91,10 @@ backend/venv/bin/python backend/tests/e2e/ldap_fixture_users.py \
 
 ### Start Keycloak
 ```bash
-docker run -d --name keycloak-test \
-  --network transcribe-app_default \
-  -p 8180:8080 \
-  -e KEYCLOAK_ADMIN=admin \
-  -e KEYCLOAK_ADMIN_PASSWORD=admin \
-  quay.io/keycloak/keycloak:latest start-dev
+./opentr.sh start dev --with-keycloak-test   # pre-built image, ~25 s to healthy
 ```
 
-Then configure the realm, client, and test users (see `docs/KEYCLOAK_SETUP.md`).
+The realm, client and test users are described in `docs/KEYCLOAK_SETUP.md`.
 
 ---
 
@@ -116,11 +111,9 @@ pytest backend/tests/test_auth_config_integration.py -v
 # PKI auth tests (certificate parsing, endpoint integration)
 pytest backend/tests/pki_auth -v
 
-# MFA security tests
-RUN_MFA_TESTS=true pytest backend/tests/test_mfa_security.py -v
-
-# Auth config service tests (mock-based)
-RUN_AUTH_CONFIG_TESTS=true pytest backend/tests/test_auth_config_service.py -v
+# MFA security tests and auth config service tests (run by default; the old
+# RUN_MFA_TESTS / RUN_AUTH_CONFIG_TESTS gates are gone, see backend/tests/CLAUDE.md)
+pytest backend/tests/test_mfa_security.py backend/tests/test_auth_config_service.py -v
 
 # All backend tests (excludes E2E)
 pytest backend/tests/ --ignore=backend/tests/e2e -v
@@ -158,8 +151,6 @@ pytest backend/tests/e2e/ -v
 |------|-------------|
 | `RUN_AUTH_E2E=true` | Enable LDAP/Keycloak E2E config and login tests |
 | `RUN_PKI_E2E=true` | Enable PKI cert E2E tests (requires TLS overlay) |
-| `RUN_MFA_TESTS=true` | Enable MFA unit/integration tests |
-| `RUN_AUTH_CONFIG_TESTS=true` | Enable mock auth config service tests |
 
 ---
 
@@ -184,7 +175,7 @@ docker exec lldap-test /app/lldap_set_password \
 ### PKI Tests Need TLS
 PKI E2E tests require the nginx PKI overlay running on HTTPS:
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.pki-dev.yml up -d
+./opentr.sh start prod --build --with-pki
 ```
 PKI URL: `https://localhost:5182`
 
@@ -197,7 +188,7 @@ curl -s http://localhost:5174/api/auth/methods | python3 -m json.tool
 ```bash
 python3 -c "
 from ldap3 import Server, Connection
-s = Server('localhost', port=3890)
+s = Server('localhost', port=3890)  # plaintext host-side port, seeding/inspection only
 c = Connection(s, 'uid=admin,ou=people,dc=example,dc=com', 'admin_password', auto_bind=True)
 c.search('ou=people,dc=example,dc=com', '(objectClass=person)', attributes=['uid', 'mail'])
 for e in c.entries: print(e.uid, e.mail)

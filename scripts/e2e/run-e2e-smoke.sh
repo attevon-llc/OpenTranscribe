@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 exec "$SCRIPT_DIR/run-e2e.sh" \
+    backend/tests/e2e/test_dev_server_ssr_smoke.py \
     backend/tests/e2e/test_settings_modal.py \
     backend/tests/e2e/test_a11y.py \
     backend/tests/e2e/test_file_detail_transcript.py \

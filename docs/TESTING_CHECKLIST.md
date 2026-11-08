@@ -24,7 +24,7 @@ LOGIN_BANNER_TEXT="This is a U.S. Government system. Unauthorized access is proh
 LOGIN_BANNER_CLASSIFICATION=CUI
 
 # Restart backend
-docker compose restart backend
+./opentr.sh restart-backend
 ```
 
 ### Test Cases
@@ -56,7 +56,7 @@ MFA_ENABLED=true
 MFA_REQUIRED=false  # Set true to require for all users
 
 # Restart backend
-docker compose restart backend
+./opentr.sh restart-backend
 ```
 
 ### Test Cases
@@ -98,21 +98,23 @@ User enters username/password
 
 ### Setup
 ```bash
-# Start test LDAP server
-docker compose -f docker-compose.ldap-test.yml up -d
+# Start the stack with the test LDAP server (LLDAP, LDAPS on localhost:6360)
+./opentr.sh start dev --with-ldap-test
 
-# Configure in .env
+# Configure in .env (or Admin UI, Settings, Authentication). The backend refuses
+# plaintext binds and verifies the certificate; the trust overlay mounts the test CA.
 LDAP_ENABLED=true
-LDAP_SERVER=localhost
-LDAP_PORT=636
+LDAP_SERVER=ldaps://lldap-test
+LDAP_PORT=6360
 LDAP_USE_SSL=true
-LDAP_BIND_DN=cn=admin,dc=example,dc=org
-LDAP_BIND_PASSWORD=admin
-LDAP_SEARCH_BASE=dc=example,dc=org
-LDAP_ADMIN_GROUPS=cn=admins,ou=groups,dc=example,dc=org
+LDAP_CA_CERT_FILE=/etc/opentranscribe/ldap-test-ca.crt
+LDAP_BIND_DN=uid=admin,ou=people,dc=example,dc=com
+LDAP_BIND_PASSWORD=admin_password
+LDAP_SEARCH_BASE=dc=example,dc=com
+LDAP_USERNAME_ATTR=uid
 
 # Restart backend
-docker compose restart backend
+./opentr.sh restart-backend
 ```
 
 ### Test Cases
@@ -139,22 +141,22 @@ docker compose restart backend
 ### Setup
 ```bash
 # Start Keycloak
-docker compose -f docker-compose.keycloak.yml up -d keycloak
+./opentr.sh start dev --with-keycloak-test
 
-# Wait for startup (check http://localhost:8180)
-# Configure realm, client, users per docs/OIDC_SETUP.md
+# Wait for healthy (~25 s; check http://localhost:8180)
+# Configure realm, client, users per docs/KEYCLOAK_SETUP.md
 
 # Configure in .env
 KEYCLOAK_ENABLED=true
 KEYCLOAK_SERVER_URL=http://localhost:8180
 KEYCLOAK_REALM=opentranscribe
-KEYCLOAK_CLIENT_ID=opentranscribe-app
+KEYCLOAK_CLIENT_ID=opentranscribe
 KEYCLOAK_CLIENT_SECRET=<your-secret>
 KEYCLOAK_CALLBACK_URL=http://localhost:5174/api/auth/keycloak/callback
 KEYCLOAK_USE_PKCE=true
 
 # Restart backend
-docker compose restart backend
+./opentr.sh restart-backend
 ```
 
 ### Test Cases
@@ -191,7 +193,7 @@ PKI_VERIFY_REVOCATION=false
 PKI_ADMIN_DNS=emailAddress=admin@example.com,CN=Admin User,OU=Users,O=OpenTranscribe Admins
 
 # Restart backend
-docker compose restart backend
+./opentr.sh restart-backend
 ```
 
 ### Test Cases (API)
@@ -322,7 +324,7 @@ AUDIT_LOG_TO_OPENSEARCH=true
 
 ```bash
 # Check backend logs
-docker compose logs backend | grep "auth\."
+./opentr.sh logs backend | grep "auth\."
 
 # Check OpenSearch (if enabled)
 curl http://localhost:5180/audit-*/_search?pretty
@@ -364,7 +366,7 @@ curl http://localhost:5180/audit-*/_search?pretty
 
 ### Backend not starting
 ```bash
-docker compose logs backend
+./opentr.sh logs backend
 ```
 
 ### Check auth methods
@@ -379,5 +381,5 @@ curl http://localhost:5174/api/auth/methods | jq
 
 ### View all settings
 ```bash
-docker compose exec backend env | grep -E "(LDAP|KEYCLOAK|PKI|MFA|BANNER|RATE|LOCKOUT)"
+./opentr.sh shell backend   # then: env | grep -E "(LDAP|KEYCLOAK|PKI|MFA|BANNER|RATE|LOCKOUT)"
 ```

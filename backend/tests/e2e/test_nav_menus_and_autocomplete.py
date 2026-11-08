@@ -1,7 +1,7 @@
 """E2E: the UI-batch checks #1282 listed as "not covered anywhere" (#1266, #1272).
 
 Mobile nav drawer, user dropdown overflow, and search autocomplete. Read-only: nothing is
-created or changed, and the search term is one the suite itself indexed (``owned_search_term``).
+created or changed, and the autocomplete prefix is the title of the file the suite itself uploaded.
 """
 
 from __future__ import annotations
@@ -108,12 +108,17 @@ def search_input(gallery_page: Page, base_url: str) -> Page:
     return gallery_page
 
 
-def test_autocomplete_suggests_for_an_indexed_term_and_navigates_by_keyboard(
-    search_input: Page, owned_search_term: str
+def test_autocomplete_suggests_for_an_indexed_title_and_navigates_by_keyboard(
+    search_input: Page, owned_transcribed_file: dict[str, Any]
 ) -> None:
+    # Suggestions are title and speaker prefixes (search/suggestions.py), never transcript
+    # words, so type the start of the title of the file this suite uploaded (and deletes).
+    detail = owned_transcribed_file["detail"]
+    title = str(detail.get("title") or detail["filename"])
+    assert len(title) >= 9, title
     box = search_input.locator(".search-input")
     box.click()
-    box.press_sequentially(owned_search_term[:4], delay=40)
+    box.press_sequentially(title[:9], delay=40)
 
     listbox = search_input.locator(SUGGESTIONS)
     expect(listbox).to_be_visible(timeout=15000)

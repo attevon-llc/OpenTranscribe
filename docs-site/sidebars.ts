@@ -128,6 +128,7 @@ const sidebars: SidebarsConfig = {
         'operations/support-access',
         'operations/gdpr-erasure',
         'operations/telemetry',
+        'operations/public-demo',
         'legal/legal-documents',
         'operations/runbooks',
       ],

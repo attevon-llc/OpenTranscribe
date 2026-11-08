@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core import redaction_defaults
+from app.core.config import settings
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -221,6 +222,10 @@ def _lazy_dispatch_redaction(db: Session, db_file: MediaFile) -> None:
     bulk "Redact" action; this wrapper exists to carry that precondition, which the
     shared helper deliberately does not impose (a re-scan is legal from any status).
     """
+    if settings.DEMO_MODE:
+        # A read on the public demo writes nothing and enqueues nothing (#628); the seed
+        # leaves no file with a NULL redaction status, so nothing is withheld for long.
+        return
     claim_and_dispatch_redaction_scan(db, db_file, surface="lazy dispatch on transcript read")
 
 

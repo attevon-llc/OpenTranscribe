@@ -1,0 +1,15 @@
+# Upgrade the public demo to the newest published release (issue #628, E3).
+# Install: copy both units to /etc/systemd/system/, set the paths below, then
+#   systemctl daemon-reload && systemctl enable --now opentranscribe-demo-upgrade.timer
+[Unit]
+Description=OpenTranscribe public demo: upgrade to the newest release
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/opentranscribe
+Environment=DEMO_SEED_BUNDLE=/opt/opentranscribe-demo-seed/current
+ExecStart=/opt/opentranscribe/scripts/demo/demo-upgrade.sh
+# An upgrade can include a full reseed; the health wait alone allows 15 minutes.
+TimeoutStartSec=3600

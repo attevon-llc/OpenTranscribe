@@ -17,6 +17,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIASGIMiddleware
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -42,6 +43,7 @@ from app.core.validation_errors import validation_error_handler
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
+from app.middleware.demo_readonly import DemoReadOnlyMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
@@ -323,6 +325,12 @@ app = FastAPI(
 # still carries the CORS headers a browser needs to read the error.
 app.add_middleware(UploadBodyLimitMiddleware)
 
+# Public read-only demo (issue #628): a pass-through unless DEMO_MODE is on, then every write
+# and every WebSocket is refused before routing. Added AFTER the upload limit so it runs
+# OUTSIDE it (a refused upload never reads its body) and before CORS so it runs inside it
+# (the 403 still carries CORS headers).
+app.add_middleware(DemoReadOnlyMiddleware)
+
 # Set up CORS
 app.add_middleware(
     CORSMiddleware,
@@ -353,6 +361,11 @@ app.add_middleware(AuditMiddleware)
 
 # CSRF protection for cookie-based authentication (C2 security hardening)
 app.add_middleware(CSRFMiddleware)
+
+# Public demo only (#628): slowapi applies the limiter's default (per-client-IP) limit to
+# every undecorated route through this middleware; decorated routes keep their own.
+if settings.DEMO_MODE:
+    app.add_middleware(SlowAPIASGIMiddleware)
 
 # Observability MUST be the LAST add_middleware call so it runs OUTERMOST.
 # Starlette semantics (verified 0.48.0): add_middleware does

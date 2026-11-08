@@ -1,0 +1,55 @@
+# docker-compose.demo.yml — public read-only demo (issue #628)
+#
+# Layer it LAST, on top of the lite chain (CPU-only image; DEPLOYMENT_MODE stays `lite`):
+#   ./opentr.sh start prod --lite --demo                   (repository checkout)
+#   DEMO_MODE=true in .env, then ./opentranscribe.sh start  (installed deployment)
+#
+# What it does, layer by layer (docs-site/docs/operations/public-demo.md):
+# - DEMO_MODE=true on the API: every write and every WebSocket is refused before routing
+#   (backend/app/middleware/demo_readonly.py), every Celery publish is refused
+#   (backend/app/core/demo_publish.py), and a per-client-IP ceiling covers every route.
+# - No worker, no beat, no Flower: nothing exists that could run a task. The reset script
+#   raises DEMO_WORKER_REPLICAS to 1 only while it seeds, with nginx stopped.
+# - Telemetry and API-mediated uploads off; unlimited concurrent sessions, because every
+#   visitor shares one demo account.
+#
+# The values below are written as plain literals on purpose: a `${DEMO_MODE:-true}` default
+# would be read from the project's .env, where .env.example ships DEMO_MODE=false.
+
+x-demo-worker: &demo-worker
+  deploy:
+    replicas: ${DEMO_WORKER_REPLICAS:-0}
+
+services:
+  backend:
+    environment:
+      DEMO_MODE: "true"
+      DEPLOYMENT_MODE: lite
+      MAX_CONCURRENT_SESSIONS: "0"
+      ACCOUNT_EXPIRATION_ENABLED: "false"
+      API_MEDIATED_UPLOAD_ENABLED: "false"
+      OPENTRANSCRIBE_TELEMETRY: "false"
+      DEMO_RATE_LIMIT_PER_MINUTE: ${DEMO_RATE_LIMIT_PER_MINUTE:-120}
+      # nginx (Docker's pool) is always trusted. Add the subnet of anything that terminates
+      # TLS in front of nginx (an ALB, CloudFront) in .env — never a wildcard, which lets any
+      # client forge X-Forwarded-For (issue #284).
+      RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
+
+  celery-beat:
+    deploy:
+      replicas: 0
+    environment:
+      DEMO_MODE: "true"
+
+  flower:
+    deploy:
+      replicas: 0
+
+  celery-cpu-worker: *demo-worker
+  celery-nlp-worker: *demo-worker
+  celery-download-worker: *demo-worker
+  celery-embedding-worker: *demo-worker
+  celery-redaction: *demo-worker
+  celery-cloud-asr-worker:
+    deploy:
+      replicas: 0

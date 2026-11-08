@@ -16,6 +16,8 @@ source ./scripts/common.sh
 source ./scripts/lib/ldap-test-overlay.sh
 # shellcheck source=scripts/lib/fresh-prod.sh
 source ./scripts/lib/fresh-prod.sh
+# shellcheck source=scripts/lib/lite-demo-overlay.sh
+source ./scripts/lib/lite-demo-overlay.sh
 
 # .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
 # get one automatically -- only the main checkout does. Left alone, every
@@ -216,6 +218,7 @@ show_help() {
   echo "                         not whatever was on disk when a container last reloaded (#55)."
   echo "  --dry-run            - Print the compose files + command that WOULD run; start nothing"
   echo "  --lite               - Cloud provider does transcription and speaker detection (needs an account; audio leaves the machine)"
+  echo "  --demo               - Public read-only demo on the lite image (docs: Operations > Public demo)"
   echo "  --cpu                - Everything local on the CPU, full image: private, much slower than a GPU; no GPU overlay"
   echo "  --with-pki           - Enable PKI certificate authentication (mTLS). Works in dev (via"
   echo "                         docker-compose.pki-dev.yml, a built nginx in front of the"
@@ -2270,6 +2273,7 @@ start_app() {
   WITH_MONITORING_FLAG=""
   WITH_BACKUP_FLAG=""
   LITE_FLAG=""
+  DEMO_FLAG=""
   CPU_FLAG=""
   NO_NAS_FLAG=""
   FRESH_FLAG=""
@@ -2363,6 +2367,11 @@ start_app() {
         shift
         ;;
       --lite)
+        LITE_FLAG="--lite"
+        shift
+        ;;
+      --demo)
+        DEMO_FLAG="--demo"
         LITE_FLAG="--lite"
         shift
         ;;
@@ -2865,11 +2874,7 @@ start_app() {
     echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
-  # Add lite overlay if requested (cloud-only ASR, no GPU)
-  if [ -n "$LITE_FLAG" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
-    echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
-  fi
+  add_lite_and_demo_overlays
 
   add_nginx_overlay
 
@@ -3556,11 +3561,7 @@ reset_and_init() {
     echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
-  # Add lite overlay if requested (cloud-only ASR, no GPU)
-  if [ -n "$LITE_FLAG" ]; then
-    COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.lite.yml"
-    echo "☁️  Adding lite overlay (docker-compose.lite.yml)"
-  fi
+  add_lite_and_demo_overlays
 
   add_nginx_overlay
 

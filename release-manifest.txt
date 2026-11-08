@@ -95,6 +95,8 @@ docker-compose.scratch-tmpfs.yml	optional
 # overlay is the only thing there is to run.
 docker-compose.lite.yml	optional
 docker-compose.db-roles.yml	optional
+# Public read-only demo (issue #628): selected by get_compose_files() when DEMO_MODE=true.
+docker-compose.demo.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template
@@ -115,6 +117,14 @@ scripts/download-password-blocklist.sh	optional,exec
 # such path — but on a release that DOES have it, a missing copy means `backup` refuses
 # rather than quietly writing a dump with none of the deployment's biometric data in it.
 scripts/voiceprint-backup.py	optional,exec
+# The public demo's pull-based upgrader and nightly reset, with their systemd units
+# (issue #628; docs: Operations > Public demo). `optional`: older releases have none.
+scripts/demo/demo-upgrade.sh	optional,exec
+scripts/demo/demo-reset.sh	optional,exec
+scripts/demo/systemd/opentranscribe-demo-upgrade.service	optional
+scripts/demo/systemd/opentranscribe-demo-upgrade.timer	optional
+scripts/demo/systemd/opentranscribe-demo-reset.service	optional
+scripts/demo/systemd/opentranscribe-demo-reset.timer	optional
 
 # --- The management script itself ----------------------------------------------
 opentranscribe.sh	exec

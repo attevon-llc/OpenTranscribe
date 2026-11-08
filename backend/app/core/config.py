@@ -23,6 +23,7 @@ from app.core.env import env_bool
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
+from app.core.settings_deployment import DeploymentSettings
 from app.core.settings_proxy_auth import ProxyAuthSettings
 from app.utils.cpu_budget import parse_thread_count_setting
 
@@ -101,7 +102,7 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
     return search_filter.replace("{username_attr}", username_attr)
 
 
-class Settings(ProxyAuthSettings):
+class Settings(ProxyAuthSettings, DeploymentSettings):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
@@ -1338,7 +1339,6 @@ class Settings(ProxyAuthSettings):
     GLADIA_MODEL: str = os.getenv("GLADIA_MODEL", "standard")
     PYANNOTE_API_KEY: str = os.getenv("PYANNOTE_API_KEY", "")
     PYANNOTE_MODEL: str = os.getenv("PYANNOTE_MODEL", "parakeet")
-    DEPLOYMENT_MODE: str = os.getenv("DEPLOYMENT_MODE", "full")  # full or lite
 
     # ===== OpenSearch Toggle =====
     OPENSEARCH_ENABLED: bool = env_bool("OPENSEARCH_ENABLED", True)

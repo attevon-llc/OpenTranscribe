@@ -1,0 +1,53 @@
+{
+  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Every item built from these must still pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on when the bundle is built (docs-site/docs/operations/public-demo.md, 'Building the seed bundle'). Only the speech of people speaking in an official or professional public capacity is used; no private individual.",
+  "sources": [
+    {
+      "name": "NASA mission audio, briefings and NASA TV programmes",
+      "url": "https://images.nasa.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "attribution": "Courtesy NASA",
+      "shows": ["multi-speaker diarization", "speaker names", "science vocabulary search"],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "Voice of America news reports in several languages",
+      "url": "https://www.voanews.com/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.insidevoa.com/p/5831.html",
+      "attribution": "Voice of America",
+      "shows": ["multi-language transcripts", "summaries", "keyword and semantic search"],
+      "contains_private_individuals": false,
+      "license_checked_on": null,
+      "notes": "VOA marks some segments as third-party material; use only reports produced by VOA staff, and no street interviews."
+    },
+    {
+      "name": "NOAA and National Weather Service public briefings",
+      "url": "https://www.weather.gov/",
+      "license": "US-GOV-PD",
+      "license_url": "https://www.weather.gov/disclaimer",
+      "attribution": "NOAA / National Weather Service",
+      "shows": ["long recordings", "topic extraction"],
+      "contains_private_individuals": false,
+      "license_checked_on": null
+    },
+    {
+      "name": "Redaction showcase: a scripted clip voiced by the project team with invented names, numbers and addresses",
+      "url": "https://github.com/attevon-llc/OpenTranscribe",
+      "license": "CC0-1.0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": "OpenTranscribe project",
+      "shows": ["PII redaction"],
+      "contains_private_individuals": false,
+      "license_checked_on": null,
+      "notes": "Every personal detail is invented and the item is marked synthetic_pii: true."
+    }
+  ],
+  "excluded": [
+    {
+      "name": "AMI Meeting Corpus",
+      "reason": "CC BY 4.0, but the speakers are private individuals; the demo carries no private individual's voice."
+    }
+  ]
+}

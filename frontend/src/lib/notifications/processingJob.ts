@@ -79,8 +79,11 @@ const FINISHING_PLACEHOLDER_WEIGHT = 15;
 export const PLAN_GRACE_MS = 2 * 60_000;
 /** An outstanding run with no frame for this long is flagged as possibly stale. */
 export const STALE_AFTER_MS = 10 * 60_000;
-/** When the card should ask the server for the run (a missed frame, a reload). */
-const RECONCILE_AFTER_MS = 30_000;
+/**
+ * When the card should ask the server for the run (a missed frame, a reload): shortly after
+ * the transcript, since the plan normally lands within a second. `reconcile.ts` then backs off.
+ */
+const RECONCILE_AFTER_MS = 12_000;
 /** The server keeps a run this long (`POST_PROCESSING_STATUS_TTL_S`); older is unknowable. */
 const RUN_RETENTION_MS = 2 * 24 * 3600_000;
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { buildJobModel, type ProcessingJobModel } from '$lib/notifications/processingJob';
   import { countUnreadItems, groupPanelItems } from '$lib/notifications/jobGrouping';
@@ -23,9 +23,12 @@
 
   /** Re-evaluates relative times, the plan grace and staleness while the panel is open. */
   const CLOCK_MS = 30_000;
+  /** While a card is waiting on a plan or a missed frame, the clock must beat the first read. */
+  const UNCERTAIN_CLOCK_MS = 5_000;
 
   let now = Date.now();
   let clock: ReturnType<typeof setInterval> | undefined;
+  let clockMs = 0;
 
   function noteUpdate(_list: unknown) {
     now = Date.now();
@@ -45,6 +48,14 @@
   $: jobs = [...jobModels.values()];
   // A card that cannot tell what post-processing is doing (a missed frame) asks the server.
   $: reconcileJobs(jobs, now, websocketStore.applyPostProcessingSnapshot);
+  $: setClock(jobs.some((j) => j.awaitingPlan || j.reconcile) ? UNCERTAIN_CLOCK_MS : CLOCK_MS);
+
+  function setClock(ms: number) {
+    if (ms === clockMs) return;
+    clockMs = ms;
+    if (clock) clearInterval(clock);
+    clock = setInterval(() => (now = Date.now()), ms);
+  }
 
   function closePanel() {
     showNotificationsPanel.set(false);
@@ -62,10 +73,6 @@
   function dismiss(event: CustomEvent<{ ids: string[] }>) {
     for (const id of event.detail.ids) websocketStore.removeNotification(id);
   }
-
-  onMount(() => {
-    clock = setInterval(() => (now = Date.now()), CLOCK_MS);
-  });
 
   onDestroy(() => {
     if (clock) clearInterval(clock);

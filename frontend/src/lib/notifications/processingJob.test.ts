@@ -305,8 +305,9 @@ describe('missed frames', () => {
     expect(m.reconcile).toBe(true);
   });
 
-  it('asks the server when the plan is late', () => {
-    expect(model([txDone({ finishedAt: NOW - 45 * S })], false).reconcile).toBe(true);
+  it('asks the server shortly after the transcript when the plan has not landed', () => {
+    expect(model([txDone({ finishedAt: NOW - 20 * S })], false).reconcile).toBe(true);
+    expect(model([txDone({ finishedAt: NOW - 13 * S })], false).reconcile).toBe(true);
     expect(model([txDone({ finishedAt: NOW - 5 * S })], false).reconcile).toBe(false);
   });
 

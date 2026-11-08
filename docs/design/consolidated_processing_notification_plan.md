@@ -176,9 +176,9 @@ Complete / Transcript ready (100); a failure keeps the progress reached.
 
 Missed frames: an outstanding run with no frame for `STALE_AFTER_MS` (10 min) is flagged "No
 update for a while" (still Finishing up, never Complete). The model sets `reconcile` when the
-plan is late (> 30 s), when it would say Transcript ready, or when a finishing run is quiet for
-5 min; the open panel then reads `GET /files/{uuid}/post-processing` (throttled to once a minute
-per file, `reconcile.ts`) and folds the snapshot in like a plan. A 403/404 (file gone) folds in
+plan is late (> 12 s after the transcript), when it would say Transcript ready, or when a finishing run is quiet for
+5 min; the open panel then reads `GET /files/{uuid}/post-processing` (backed off per file: 15 s, 30 s, then
+every 60 s, `reconcile.ts`) and folds the snapshot in like a plan. A 403/404 (file gone) folds in
 "no run known"; a network error changes nothing.
 
 **Stale downstream records.** A summary/topics/redaction record older than the current

@@ -286,6 +286,22 @@ The limit is set in **Settings -> File status -> Recovery -> Fair sharing betwee
 upgrade keep their place. See
 [Performance Tuning](./performance-tuning.md#fair-sharing-between-users).
 
+## Multi-track files: choose the audio track
+
+**Check this if...** you transcribe videos that carry more than one audio track (dubs,
+commentary).
+
+Revision `v469_add_media_file_audio_streams` adds two nullable columns to `media_file`:
+`audio_streams` (what ffprobe found) and `audio_stream_index` (the track a user chose). It
+rewrites nothing and needs no action. Existing files have no track list until they are next
+processed; they keep transcribing the first audio track, which is what they always did.
+
+One behaviour change: speaker voiceprints and gender estimates on a multi-track file are now
+computed from the same track that was transcribed (the first, unless chosen). Before, they could
+be taken from a different track than the transcript. Nothing is recomputed automatically; re-run
+**Re-diarize Only** on an affected file if its speakers matter. See
+[Files with more than one audio track](../user-guide/uploading-files.md#files-with-more-than-one-audio-track).
+
 ## Organization erasures are scheduled, not immediate
 
 **Check this if...** you run organizations and call `POST /api/org-admin/gdpr/erase-user/{uuid}`

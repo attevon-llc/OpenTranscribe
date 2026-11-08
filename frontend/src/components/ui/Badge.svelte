@@ -33,15 +33,15 @@
   }
   .badge-success {
     background: rgba(var(--success-color-rgb, 34, 197, 94), 0.12);
-    color: var(--success-color, #16a34a);
+    color: var(--success-text);
   }
   .badge-warning {
     background: rgba(var(--warning-color-rgb, 245, 158, 11), 0.14);
-    color: var(--warning-color, #d97706);
+    color: var(--warning-text);
   }
   .badge-error {
     background: rgba(var(--error-color-rgb, 239, 68, 68), 0.12);
-    color: var(--error-color, #dc2626);
+    color: var(--error-text);
   }
   .badge-info {
     background: rgba(var(--primary-color-rgb), 0.12);

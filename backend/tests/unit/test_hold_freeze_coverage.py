@@ -49,6 +49,9 @@ GUARD_PRIMITIVES = frozenset(
         "is_held",
         "is_frozen",
         "frozen_states",
+        # Reads the two hold authorities itself (a UNION, #1337 G8) rather than calling
+        # held_pred, so it is a primitive, not a wrapper; same set as held_pred.
+        "held_file_ids",
     }
 )
 
@@ -59,7 +62,6 @@ GUARD_WRAPPERS: dict[str, str] = {
     "file_is_frozen": "tasks/hold_skip.py::file_is_frozen",
     "file_is_held": "tasks/hold_skip.py::file_is_held",
     "unheld_file_ids": "services/hold_guard.py::unheld_file_ids",
-    "held_file_ids": "services/hold_guard.py::held_file_ids",
 }
 
 GUARD_CALLS = GUARD_PRIMITIVES | frozenset(GUARD_WRAPPERS)

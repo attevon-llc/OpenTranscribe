@@ -35,7 +35,7 @@ Line references are to the tree at the commit that adds this file.
 | F8 | `/llm/status` (polled by every tab) and `/files/{uuid}/summary-status` held the request transaction across the provider health check | Medium | **Fixed** (C2); caching the result is R5 |
 | F9 | Connection budget is per PROCESS, documented as per container; defaults can reach 270 against `max_connections=200` | Medium | **Fixed** on `v070/concurrency2`: prefork pools 2 + 0, threads pools 2 + 3, worst case about 165; `tests/unit/test_db_connection_budget.py` (old defaults: 280, 285 with the gpu-scale worker) |
 | F10 | A prefork child's `engine.dispose()` closed the parent's connections | Medium | **Fixed** (C1) |
-| F11 | WebSocket fan-out is sequential with no send timeout (one slow client delays the subscriber for all) | Medium | Recommendation R7 |
+| F11 | WebSocket fan-out is sequential with no send timeout (one slow client delays the subscriber for all) | Medium | **Fixed** on `v070/concurrency2`: TaskGroup fan-out, 5 s `asyncio.timeout` per send, a stalled socket is dropped and closed |
 | F12 | Per-IP rate limits on page-load endpoints throttle many users behind one NAT or an untrusted proxy | Medium (config) | Recommendation R8 (documentation) |
 | F13 | No pool saturation metric | Low | **Added** (C6: `db_pool_*` gauges, `backend/app/core/db_metrics.py:146-189`) |
 | F14 | Cache invalidation push opens a new Redis connection per call | Low | Recommendation R9 |

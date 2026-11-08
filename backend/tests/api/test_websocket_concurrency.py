@@ -12,6 +12,9 @@ deployment worse for everyone at once:
    size during iteration``; the subscriber treated that as a lost connection, dropped its
    pub/sub subscription and slept, so every notification published meanwhile was lost for
    every user. Fan-out now iterates a snapshot.
+3. Fan-out awaited each send in turn with no timeout, so one client that stopped reading
+   held up every other user's notifications. Sends now run concurrently, each bounded by
+   ``WS_SEND_TIMEOUT_S``, and a socket that times out is dropped and closed.
 """
 
 from __future__ import annotations
@@ -177,3 +180,119 @@ def test_a_personal_message_reaches_every_tab_when_one_closes_mid_send():
     assert second.received == [_EVENT]
     assert third.received == [_EVENT]
     assert manager.active_connections[7] == [second.socket, third.socket]
+
+
+# --------------------------------------------------------------------------- #
+# One stalled client must not delay anyone else (concurrency audit F11)
+#
+# One subscriber task per process delivers every notification, and the fan-out awaited
+# each send in turn with no timeout: a client whose TCP window was full held up delivery
+# to every other user until its write drained, which for a dead peer is never.
+# --------------------------------------------------------------------------- #
+_SEND_TIMEOUT_S = 0.5
+
+
+class _StalledPeer(_Peer):
+    """A peer whose writes never complete, like a client that stopped reading."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.attempts = 0
+
+    async def _send(self, message: Message) -> None:
+        self.attempts += 1
+        await asyncio.Event().wait()
+
+
+class _TimedPeer(_Peer):
+    """A healthy peer that records when (on the loop clock) each frame arrived."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.arrived_at: list[float] = []
+
+    async def _send(self, message: Message) -> None:
+        await super()._send(message)
+        self.arrived_at.append(asyncio.get_running_loop().time())
+
+
+def _timed(coro_factory: Callable[[], Any]) -> tuple[float, float]:
+    """Run one fan-out; return ``(start, elapsed)`` on the loop clock.
+
+    Bounded by ``wait_for`` so the old sequential, timeout-free fan-out fails the test
+    instead of hanging the run.
+    """
+
+    async def _main() -> tuple[float, float]:
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        await asyncio.wait_for(coro_factory(), timeout=_SEND_TIMEOUT_S * 6)
+        return start, loop.time() - start
+
+    return asyncio.run(_main())
+
+
+@pytest.fixture
+def short_send_timeout(monkeypatch) -> None:
+    monkeypatch.setattr(ws_module, "WS_SEND_TIMEOUT_S", _SEND_TIMEOUT_S, raising=False)
+
+
+def test_a_stalled_client_does_not_delay_a_broadcast_to_the_others(short_send_timeout):
+    manager = ws_module.ConnectionManager()
+    stalled, fast = _StalledPeer(), _TimedPeer()
+    # The stalled socket comes FIRST, so a sequential fan-out reaches it before the other.
+    manager.connect(stalled.socket, 1)
+    manager.connect(fast.socket, 2)
+
+    start, elapsed = _timed(lambda: manager.broadcast(_EVENT))
+
+    assert fast.received == [_EVENT]
+    # Delivered while the stalled send was still pending, not after it gave up.
+    assert fast.arrived_at[0] - start < _SEND_TIMEOUT_S / 2, fast.arrived_at
+    # The fan-out itself is bounded by the per-send timeout (plus the bounded close).
+    assert elapsed < _SEND_TIMEOUT_S * 3, elapsed
+    # The stalled socket was dropped, so the next event does not wait on it again.
+    assert stalled.socket not in manager.socket_owners
+    assert manager.active_connections == {2: [fast.socket]}
+
+
+def test_a_stalled_tab_does_not_delay_the_same_users_other_tab(short_send_timeout):
+    manager = ws_module.ConnectionManager()
+    stalled, fast = _StalledPeer(), _TimedPeer()
+    manager.connect(stalled.socket, 7)
+    manager.connect(fast.socket, 7)
+
+    start, _elapsed = _timed(lambda: manager.send_personal_message(7, _EVENT))
+
+    assert fast.received == [_EVENT]
+    assert fast.arrived_at[0] - start < _SEND_TIMEOUT_S / 2, fast.arrived_at
+    assert manager.active_connections == {7: [fast.socket]}
+
+
+def test_a_dropped_socket_is_not_written_to_again(short_send_timeout):
+    """After the drop, the next event goes only to the live socket and does not wait."""
+    manager = ws_module.ConnectionManager()
+    stalled, fast = _StalledPeer(), _TimedPeer()
+    manager.connect(stalled.socket, 1)
+    manager.connect(fast.socket, 2)
+    _timed(lambda: manager.broadcast(_EVENT))
+    attempts = stalled.attempts
+
+    _start, elapsed = _timed(lambda: manager.broadcast(_EVENT))
+
+    assert fast.received == [_EVENT, _EVENT]
+    assert stalled.attempts == attempts
+    assert elapsed < _SEND_TIMEOUT_S / 2, elapsed
+
+
+def test_the_socket_can_still_disconnect_itself_after_a_drop():
+    """The socket's own coroutine runs disconnect() after the fan-out already dropped it."""
+    manager = ws_module.ConnectionManager()
+    peer = _Peer()
+    manager.connect(peer.socket, 4)
+    manager.disconnect(peer.socket, 4)
+
+    manager.disconnect(peer.socket, 4)
+
+    assert manager.active_connections == {}
+    assert manager.socket_owners == {}

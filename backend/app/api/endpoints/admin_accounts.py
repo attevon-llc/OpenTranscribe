@@ -30,6 +30,7 @@ from app.auth.password_history import add_password_to_history
 from app.auth.password_history import check_password_against_history
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
@@ -59,7 +60,7 @@ router = APIRouter()
 
 
 @router.post("/users/{user_uuid}/reset-password")
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_rate_limit(), key_func=user_or_ip_key)
 def admin_reset_user_password(
     request: Request,
     response: Response,

@@ -36,6 +36,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
 from app.core.locked_settings import locked_transcription_fields
@@ -222,7 +223,7 @@ def delete_pyannote_credential(
 
 
 @router.post("/diarization/pyannote/test", response_model=PyannoteConnectionTestResult)
-@limiter.limit(get_api_rate_limit())
+@limiter.limit(get_api_rate_limit(), key_func=user_or_ip_key)
 def test_pyannote_credential(
     request: Request,
     body: PyannoteConnectionTestRequest | None = None,

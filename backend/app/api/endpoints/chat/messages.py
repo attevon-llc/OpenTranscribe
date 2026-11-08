@@ -36,6 +36,7 @@ from app.api.endpoints.chat.common import resolve_effective_scope
 from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import LLM_CONTEXT_WINDOW_MAX
 from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.tenant_limits import resolve_allowed_models
@@ -429,7 +430,7 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
 
 
 @router.post("/conversations/{conversation_uuid}/messages")
-@limiter.limit("20/minute")
+@limiter.limit("20/minute", key_func=user_or_ip_key)
 def send_message(
     request: Request,
     response: Response,
@@ -460,7 +461,7 @@ def send_message(
 
 
 @router.post("/conversations/{conversation_uuid}/regenerate")
-@limiter.limit("20/minute")
+@limiter.limit("20/minute", key_func=user_or_ip_key)
 def regenerate(
     request: Request,
     response: Response,
@@ -512,7 +513,7 @@ class MessageEdit(BaseModel):
 
 
 @router.post("/conversations/{conversation_uuid}/messages/{message_uuid}/edit")
-@limiter.limit("20/minute")
+@limiter.limit("20/minute", key_func=user_or_ip_key)
 def edit_message(
     request: Request,
     response: Response,
@@ -570,7 +571,7 @@ def edit_message(
 
 
 @router.post("/messages/{message_uuid}/cancel")
-@limiter.limit("60/minute")
+@limiter.limit("60/minute", key_func=user_or_ip_key)
 def cancel_message(
     request: Request,
     response: Response,

@@ -1,13 +1,74 @@
 {
-  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Edit items to match the shipped bundle's item ids; a question is asked in its own conversation, followed by its follow-ups.",
+  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Replace each REPLACE-* item id with the shipped bundle's item ids (the ids of the collection's files); a question is asked in its own conversation, followed by its follow-ups. Cross-file questions list several items.",
   "conversations": [
     {
-      "id": "what-was-decided",
-      "title": "What was decided, and who owns what?",
-      "items": ["REPLACE-WITH-A-BUNDLE-ITEM-ID"],
+      "id": "news-compare",
+      "title": "How do the news reports differ across languages?",
+      "items": [
+        "REPLACE-NEWS-1",
+        "REPLACE-NEWS-2"
+      ],
       "questions": [
-        "What decisions were made in this recording?",
-        "Who is responsible for each follow-up, and by when?"
+        "Summarize each news report in two sentences, and say which language it was in.",
+        "Which report gives the most detail about its main event, and what did the reporter say about it?"
+      ]
+    },
+    {
+      "id": "government-decisions",
+      "title": "What did the commission decide, and what did the chair say about it?",
+      "items": [
+        "REPLACE-GOV-1",
+        "REPLACE-GOV-2"
+      ],
+      "questions": [
+        "What decisions or votes were taken in these meetings, and who proposed each?",
+        "What did the chair say about the main item on the agenda?"
+      ]
+    },
+    {
+      "id": "business-rates",
+      "title": "What did the Chair say about inflation and rates?",
+      "items": [
+        "REPLACE-FIN-1",
+        "REPLACE-FIN-2"
+      ],
+      "questions": [
+        "What did the Chair say about inflation, and how did that change between the two recordings?",
+        "Summarize the reasons given for the latest policy decision."
+      ]
+    },
+    {
+      "id": "training-steps",
+      "title": "What are the key safety and preparedness steps?",
+      "items": [
+        "REPLACE-TRAIN-1",
+        "REPLACE-TRAIN-2"
+      ],
+      "questions": [
+        "List the main steps each training video tells a viewer to take.",
+        "What did the instructor say about the most common mistake?"
+      ]
+    },
+    {
+      "id": "science-briefing",
+      "title": "What did the scientists say about the mission or the forecast?",
+      "items": [
+        "REPLACE-SCI-1",
+        "REPLACE-SCI-2"
+      ],
+      "questions": [
+        "Summarize the briefing in five bullet points.",
+        "What did the speakers say about risks or uncertainty, and who said it?"
+      ]
+    },
+    {
+      "id": "privacy-redaction",
+      "title": "What personal details were in the clip?",
+      "items": [
+        "REPLACE-PRIVACY-1"
+      ],
+      "questions": [
+        "What kinds of personal information appear in this recording, and how are they shown to a viewer?"
       ]
     }
   ]

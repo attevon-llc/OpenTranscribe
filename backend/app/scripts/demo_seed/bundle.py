@@ -7,6 +7,9 @@ A bundle is a directory the reset script mounts read-only at ``/seed``::
     transcripts/<item>.json     {"segments": [{"start", "end", "speaker", "text"}],
                                  "speakers": {"SPEAKER_00": "Display name"}}
 
+Every item names its ``collection`` (a key of :data:`COLLECTIONS`); the importer creates that
+collection for the demo user and files the item in it.
+
 ``manifest.json``::
 
     {"schema": 1, "bundle_version": "2026.11.1", "items": [ITEM, ...]}
@@ -46,8 +49,19 @@ ALLOWED_LICENSES = frozenset(
 #: Licences whose terms require the attribution text to be shown with the item.
 ATTRIBUTION_REQUIRED = frozenset({"CC-BY-4.0", "CC-BY-SA-4.0"})
 
+#: The named collections a seeded file may land in (id -> the name the visitor sees). The
+#: catalogue (``demo/seed-catalog.json``) uses the same ids; a new one is added here first.
+COLLECTIONS: dict[str, str] = {
+    "news": "News",
+    "government-meetings": "Government meetings",
+    "business-finance": "Business & finance",
+    "training-education": "Training & education",
+    "science-briefings": "Science & briefings",
+    "privacy-demo": "Privacy demo",
+}
+
 PROVENANCE_FIELDS = ("source_url", "license", "license_url", "attribution")
-REQUIRED_FIELDS = ("id", "title", "language", "media", "media_sha256", "transcript")
+REQUIRED_FIELDS = ("id", "title", "language", "collection", "media", "media_sha256", "transcript")
 
 
 @dataclass(frozen=True)
@@ -70,6 +84,7 @@ class SeedItem:
     media: Path
     media_sha256: str
     transcript: Path
+    collection: str
     license: str
     source_url: str
     license_url: str
@@ -144,6 +159,9 @@ def _item_problems(root: Path, raw: dict[str, Any]) -> list[str]:
     item_id = str(raw.get("id") or "?")
     problems = [f"{item_id}: missing {f}" for f in REQUIRED_FIELDS if not raw.get(f)]
     problems += [f"{item_id}: missing {f}" for f in PROVENANCE_FIELDS if not raw.get(f)]
+    collection = raw.get("collection")
+    if collection and collection not in COLLECTIONS:
+        problems.append(f"{item_id}: unknown collection {collection!r}")
     licence = raw.get("license")
     if licence and licence not in ALLOWED_LICENSES:
         problems.append(f"{item_id}: licence {licence!r} is not allowed on the demo")
@@ -196,6 +214,7 @@ def load_bundle(root: Path) -> tuple[str, list[SeedItem]]:
             media=root / raw["media"],
             media_sha256=str(raw["media_sha256"]),
             transcript=root / raw["transcript"],
+            collection=str(raw["collection"]),
             license=str(raw["license"]),
             source_url=str(raw["source_url"]),
             license_url=str(raw["license_url"]),

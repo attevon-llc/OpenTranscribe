@@ -220,6 +220,36 @@ def _seed_conversations(
             )
 
 
+def _file_into_collections(
+    db, user_id: int, items: list[SeedItem], uuid_by_item: dict[str, str]
+) -> None:
+    """One personal collection per named bundle collection, owned by the demo user."""
+    from app.models.collection import Collection
+    from app.models.collection import CollectionMember
+    from app.models.media import MediaFile
+    from app.scripts.demo_seed.bundle import COLLECTIONS
+
+    rows: dict[str, Collection] = {}
+    for item in items:
+        if item.collection not in rows:
+            row = Collection(
+                name=COLLECTIONS[item.collection],
+                user_id=user_id,
+                is_public=False,
+                source="manual",
+            )
+            db.add(row)
+            db.flush()
+            rows[item.collection] = row
+        media_id = db.query(MediaFile.id).filter(MediaFile.uuid == uuid_by_item[item.id]).scalar()
+        db.add(
+            CollectionMember(
+                collection_id=rows[item.collection].id, media_file_id=media_id, source="manual"
+            )
+        )
+    db.flush()
+
+
 def _pending_redactions(db) -> int:
     from app.core.redaction_defaults import REDACTION_STATUS_PENDING
     from app.models.media import MediaFile
@@ -250,6 +280,7 @@ def _import(bundle: Path) -> int:
         uuid_by_item[item.id] = _seed_item(item, version, user_id)
         print(f"seeded {item.id} ({item.license})")
     with SessionLocal() as db:
+        _file_into_collections(db, user_id, items, uuid_by_item)
         _seed_conversations(db, user_id, conversations, uuid_by_item)
         db.commit()
     print(f"seeded {len(conversations)} conversation(s)")

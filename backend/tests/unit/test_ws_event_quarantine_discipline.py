@@ -176,7 +176,7 @@ _DIRECT_SEND_ALLOWLIST: dict[str, tuple[int, str]] = {
         1,
         "corpus-wide re-clustering error for the calling user, no single MediaFile identity",
     ),
-    "tasks/speaker_embedding_consistency.py::speaker_embedding_consistency_check_task": (
+    "tasks/speaker_embedding_consistency.py::_check_and_dispatch": (
         2,
         "admin consistency-check corpus-wide progress/status, no single MediaFile identity",
     ),

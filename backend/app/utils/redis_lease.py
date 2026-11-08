@@ -89,3 +89,17 @@ class LeaseHeartbeat:
                 # Transient: keep trying. The lease survives as long as one beat in
                 # BEATS_PER_TTL lands.
                 logger.warning("Lease %s renewal failed (%s); retrying", self._name, exc)
+
+
+def adopt_lease_lock(client: redis.Redis, key: str, ttl: float, token: str) -> Lock:
+    """A handle on a lease another process acquired with ``acquire(token=token)``.
+
+    For a lease that spans several tasks (one task acquires it, later tasks renew and
+    release it), each task needs a ``Lock`` that knows the holder's token. redis-py keeps
+    the token on ``Lock.local`` and sets it there itself after a successful ``acquire``;
+    this sets it the same way, so ``reacquire()``, ``owned()`` and ``release()`` run
+    redis-py's owner-checked scripts against the shared token.
+    """
+    lock = make_lease_lock(client, key, ttl)
+    lock.local.token = client.get_encoder().encode(token)
+    return lock

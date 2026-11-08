@@ -21,24 +21,17 @@ from app.tasks import embedding_consistency_repair as repair_mod
 from app.tasks import speaker_embedding_consistency as task_mod
 from tests.fixtures.privacy_switches import file_in
 from tests.fixtures.privacy_switches import make_org
+from tests.unit._consistency_harness import RUN_KEYS
+
+pytestmark = pytest.mark.xdist_group("local_model_redis")
 
 
-class _Redis:
-    def __init__(self) -> None:
-        self.store: dict[str, str] = {}
-
-    def set(self, key, value, nx=False, ex=None):  # noqa: ANN001 — redis-py shape
-        if nx and key in self.store:
-            return False
-        self.store[key] = value
-        return True
-
-    def delete(self, *keys):  # noqa: ANN001
-        for key in keys:
-            self.store.pop(key, None)
-
-    def scan_iter(self, match=None):  # noqa: ANN001
-        return iter(())
+@pytest.fixture
+def run_redis(local_model_redis):
+    """The real throwaway Redis: the check holds its run lease there."""
+    local_model_redis.delete(*RUN_KEYS)
+    yield local_model_redis
+    local_model_redis.delete(*RUN_KEYS)
 
 
 @pytest.fixture
@@ -57,7 +50,7 @@ def world(db_session, normal_user):
 
 
 @contextmanager
-def _stores(db_session, pg_speakers: dict[str, int]):
+def _stores(db_session, pg_speakers: dict[str, int], redis_client):
     """The orchestrator and the counts with Postgres and OpenSearch replaced by recorders."""
     client = MagicMock()
     client.indices.exists.return_value = False
@@ -73,7 +66,7 @@ def _stores(db_session, pg_speakers: dict[str, int]):
         return MagicMock(id="t")
 
     with (
-        patch.object(task_mod, "get_redis", return_value=_Redis()),
+        patch.object(task_mod, "get_redis", return_value=redis_client),
         patch.object(task_mod, "session_scope", _session),
         patch("app.services.migration_progress_service.migration_progress") as progress,
         patch.object(task_mod, "_get_pg_speaker_uuids_with_segments", return_value=pg_speakers),
@@ -100,8 +93,10 @@ def _speakers(world, *names: str) -> dict[str, int]:
     return dict(world[n] for n in names)
 
 
-def test_a_missing_document_in_an_off_scope_is_healthy_and_queues_nothing(db_session, world):
-    with _stores(db_session, _speakers(world, "off")) as dispatched:
+def test_a_missing_document_in_an_off_scope_is_healthy_and_queues_nothing(
+    db_session, world, run_redis
+):
+    with _stores(db_session, _speakers(world, "off"), run_redis) as dispatched:
         result = task_mod.speaker_embedding_consistency_check_task.run()
 
     assert result["status"] == "healthy"
@@ -109,9 +104,11 @@ def test_a_missing_document_in_an_off_scope_is_healthy_and_queues_nothing(db_ses
     assert dispatched == []
 
 
-def test_the_same_missing_document_in_an_allowed_scope_is_still_repaired(db_session, world):
+def test_the_same_missing_document_in_an_allowed_scope_is_still_repaired(
+    db_session, world, run_redis
+):
     """The control: the shape is identical, only the scope differs."""
-    with _stores(db_session, _speakers(world, "allowed")) as dispatched:
+    with _stores(db_session, _speakers(world, "allowed"), run_redis) as dispatched:
         result = task_mod.speaker_embedding_consistency_check_task.run()
 
     assert result["status"] == "repairing"
@@ -120,8 +117,8 @@ def test_the_same_missing_document_in_an_allowed_scope_is_still_repaired(db_sess
     assert dispatched[0]["missing_v3_uuids"] == [world["allowed"][0]]
 
 
-def test_a_mixed_check_repairs_only_the_allowed_scope(db_session, world):
-    with _stores(db_session, _speakers(world, "allowed", "off")) as dispatched:
+def test_a_mixed_check_repairs_only_the_allowed_scope(db_session, world, run_redis):
+    with _stores(db_session, _speakers(world, "allowed", "off"), run_redis) as dispatched:
         result = task_mod.speaker_embedding_consistency_check_task.run()
 
     assert result["status"] == "repairing"
@@ -130,8 +127,8 @@ def test_a_mixed_check_repairs_only_the_allowed_scope(db_session, world):
     assert [kw["missing_v3_uuids"] for kw in dispatched] == [[world["allowed"][0]]]
 
 
-def test_the_dry_run_counts_leave_an_off_scope_out_of_missing(db_session, world):
-    with _stores(db_session, _speakers(world, "allowed", "off")):
+def test_the_dry_run_counts_leave_an_off_scope_out_of_missing(db_session, world, run_redis):
+    with _stores(db_session, _speakers(world, "allowed", "off"), run_redis):
         counts = task_mod.get_embedding_consistency_counts()
 
     assert counts["main_missing"] == 1

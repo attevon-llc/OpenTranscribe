@@ -33,13 +33,17 @@ from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.privacy.policy import voiceprints_allowed_for_file
-from app.tasks.speaker_embedding_consistency import _LOCK_TTL
+from app.tasks.embedding_consistency_run import LOCK_TTL as _LOCK_TTL
+from app.tasks.embedding_consistency_run import release_run_lease
+from app.tasks.embedding_consistency_run import renew_run_lease
+from app.tasks.embedding_consistency_run import run_lease
 from app.tasks.speaker_embedding_consistency import _REDIS_LAST_RUN_KEY
-from app.tasks.speaker_embedding_consistency import _REDIS_LOCK_KEY
 from app.tasks.speaker_embedding_consistency import _REDIS_PROGRESS_KEY
 from app.utils.websocket_notify import send_ws_event
 
 if TYPE_CHECKING:
+    from redis.lock import Lock
+
     from app.services.speaker_analysis_models import SegmentResult
     from app.tasks.migration_pipeline import PreparedFile
 
@@ -216,6 +220,8 @@ def _v4_result_writer(
 
 def _update_repair_progress(
     total_files: int,
+    *,
+    run_id: str,
     success: bool = True,
     file_uuid: str | None = None,
     repaired_count: int = 0,
@@ -225,7 +231,8 @@ def _update_repair_progress(
     """Atomically update repair progress in Redis + emit via ProgressTracker.
 
     Uses Redis WATCH/MULTI for optimistic locking to prevent lost updates
-    when multiple GPU batch workers complete concurrently. Only
+    when multiple GPU batch workers complete concurrently. A record belonging to another
+    run (*run_id* is not the run that wrote it) is left untouched. Only
     ``redis.WatchError`` (raised when another writer touched
     ``_REDIS_PROGRESS_KEY`` between ``watch()`` and ``execute()``) is retried;
     any other exception (e.g. a ``json.JSONDecodeError`` from corrupted
@@ -251,6 +258,9 @@ def _update_repair_progress(
                 return None
 
             progress = json.loads(raw_val)
+            if progress.get("run_id") != run_id:
+                pipe.unwatch()
+                return None
             progress["processed_files"] = progress.get("processed_files", 0) + 1
             progress["repaired"] = progress.get("repaired", 0) + repaired_count
             progress["skipped_by_policy"] = progress.get("skipped_by_policy", 0) + skipped_by_policy
@@ -370,6 +380,43 @@ def _run_repair_phase(
         return 0
 
 
+def _prepare_batch_files(
+    file_uuids: list[str], lease: Lock, *, total_files: int, run_id: str, user_id: int
+) -> list[tuple[str, Any]]:
+    """Prepare the batch's files; count the ones that need no GPU work as done."""
+    from app.tasks.migration_pipeline import prepare_file
+
+    files_with_speakers: list[tuple[str, Any]] = []
+    for fuuid in file_uuids:
+        # Renewing both checks and extends the run's lease: it fails once Stop deleted the
+        # flag or a newer run holds it, and otherwise this live batch keeps the lease from
+        # lapsing. A crashed run stops renewing and its lease expires on its own.
+        if not renew_run_lease(lease):
+            logger.warning("Consistency repair stopped — aborting batch")
+            break
+        try:
+            prepared = prepare_file(fuuid)
+            if prepared is None:
+                _update_repair_progress(total_files, run_id=run_id, success=True, user_id=user_id)
+            elif not _voiceprints_allowed(prepared.media_file_id):
+                # Privacy policy (#1280): no GPU time, no re-created document.
+                _update_repair_progress(
+                    total_files,
+                    run_id=run_id,
+                    success=True,
+                    user_id=user_id,
+                    skipped_by_policy=1,
+                )
+            else:
+                files_with_speakers.append((fuuid, prepared))
+        except Exception as e:
+            logger.error("Failed to prepare file %s: %s", fuuid, e)
+            _update_repair_progress(
+                total_files, run_id=run_id, success=False, file_uuid=fuuid, user_id=user_id
+            )
+    return files_with_speakers
+
+
 # ---------------------------------------------------------------------------
 # GPU batch Celery task
 # ---------------------------------------------------------------------------
@@ -389,11 +436,18 @@ def speaker_embedding_consistency_repair_batch_task(
     missing_v3_uuids: list[str] | None = None,
     missing_v4_uuids: list[str] | None = None,
     v4_exists: bool = False,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
-    """Re-extract embeddings for speakers missing from OpenSearch indices."""
+    """Re-extract embeddings for speakers missing from OpenSearch indices.
+
+    *missing_v3_uuids* / *missing_v4_uuids* name only this batch's own files' speakers.
+    *run_id* is the run that dispatched the batch: a batch whose run no longer holds the
+    lease (it lapsed and a newer run started, or an admin pressed Stop) does nothing. A
+    message with no run id predates run-scoped leases and stands down the same way; the
+    next check re-detects whatever it would have repaired.
+    """
     from app.services.embedding_mode_service import MODE_V3
     from app.services.embedding_mode_service import MODE_V4
-    from app.tasks.migration_pipeline import prepare_file
 
     logger.info(
         "Consistency repair batch %d/%d: processing %d files",
@@ -403,6 +457,14 @@ def speaker_embedding_consistency_repair_batch_task(
     )
 
     r = get_redis()
+    if not run_id:
+        logger.info("Consistency repair batch %d carries no run id; standing down", batch_index)
+        return {"status": "superseded", "batch_index": batch_index}
+    lease = run_lease(r, run_id)
+    if not renew_run_lease(lease):
+        logger.info("Consistency repair batch %d belongs to an ended run", batch_index)
+        return {"status": "superseded", "batch_index": batch_index}
+
     missing_v3_set = set(missing_v3_uuids or [])
     missing_v4_set = set(missing_v4_uuids or [])
 
@@ -420,33 +482,12 @@ def speaker_embedding_consistency_repair_batch_task(
             notify_user_id = json.loads(raw).get("user_id", 1)
 
     # Phase 1: Prepare files
-    files_with_speakers: list[tuple[str, Any]] = []
-    for fuuid in file_uuids:
-        # EXPIRE both checks and renews the run flag: it is false once Stop deleted the
-        # key, and otherwise this live batch keeps the run's lease from lapsing. A
-        # crashed run stops renewing and its flag expires on its own.
-        if not r.expire(_REDIS_LOCK_KEY, _LOCK_TTL):
-            logger.warning("Consistency repair stopped — aborting batch")
-            break
-        try:
-            prepared = prepare_file(fuuid)
-            if prepared is None:
-                _update_repair_progress(total_files, success=True, user_id=notify_user_id)
-            elif not _voiceprints_allowed(prepared.media_file_id):
-                # Privacy policy (#1280): no GPU time, no re-created document.
-                _update_repair_progress(
-                    total_files, success=True, user_id=notify_user_id, skipped_by_policy=1
-                )
-            else:
-                files_with_speakers.append((fuuid, prepared))
-        except Exception as e:
-            logger.error("Failed to prepare file %s: %s", fuuid, e)
-            _update_repair_progress(
-                total_files, success=False, file_uuid=fuuid, user_id=notify_user_id
-            )
+    files_with_speakers = _prepare_batch_files(
+        file_uuids, lease, total_files=total_files, run_id=run_id, user_id=notify_user_id
+    )
 
     if not files_with_speakers:
-        _check_repair_completion(total_files, user_id=notify_user_id)
+        _check_repair_completion(total_files, run_id=run_id, user_id=notify_user_id)
         return {"status": "no_files", "batch_index": batch_index}
 
     file_written: dict[str, int] = {}
@@ -454,7 +495,7 @@ def speaker_embedding_consistency_repair_batch_task(
     progress_emitted: set[str] = set()
 
     def is_running() -> bool:
-        return bool(r.expire(_REDIS_LOCK_KEY, _LOCK_TTL))
+        return renew_run_lease(lease)
 
     def _on_file_complete(fuuid: str) -> None:
         """Emit progress notification when a file finishes a repair phase."""
@@ -464,6 +505,7 @@ def speaker_embedding_consistency_repair_batch_task(
         count = file_written.get(fuuid, 0)
         _update_repair_progress(
             total_files,
+            run_id=run_id,
             success=count > 0,
             file_uuid=fuuid if count == 0 else None,
             repaired_count=count,
@@ -477,6 +519,7 @@ def speaker_embedding_consistency_repair_batch_task(
         progress_emitted.add(fuuid)
         _update_repair_progress(
             total_files,
+            run_id=run_id,
             success=False,
             file_uuid=fuuid,
             user_id=notify_user_id,
@@ -512,7 +555,7 @@ def speaker_embedding_consistency_repair_batch_task(
             on_file_fail=_on_file_failed,
         )
 
-    _check_repair_completion(total_files, user_id=notify_user_id)
+    _check_repair_completion(total_files, run_id=run_id, user_id=notify_user_id)
 
     # Free intermediate CUDA tensors for follow-on tasks
     from app.tasks.migration_pipeline import cleanup_gpu_memory
@@ -532,8 +575,12 @@ def speaker_embedding_consistency_repair_batch_task(
 # ---------------------------------------------------------------------------
 
 
-def _check_repair_completion(total_files: int, user_id: int = 1) -> None:
-    """Check if all batches are done and finalize."""
+def _check_repair_completion(total_files: int, *, run_id: str, user_id: int = 1) -> None:
+    """Finalize the run named *run_id* once every one of ITS files is counted.
+
+    The total is the run's own (stored with its progress), and the lease is released only
+    if this run still holds it, so a batch of another run can never end this one.
+    """
     from app.services.progress_tracker import ProgressTracker
 
     r = get_redis()
@@ -542,6 +589,9 @@ def _check_repair_completion(total_files: int, user_id: int = 1) -> None:
         return
 
     progress = json.loads(raw)
+    if progress.get("run_id") != run_id:
+        return
+    total_files = int(progress.get("total_files", total_files))
     processed = progress.get("processed_files", 0)
     # Prefer user_id from progress data (set by orchestrator)
     notify_user_id = progress.get("user_id", user_id)
@@ -582,7 +632,6 @@ def _check_repair_completion(total_files: int, user_id: int = 1) -> None:
             },
         )
 
-        # Release lock
-        r.delete(_REDIS_LOCK_KEY)
         r.delete(_REDIS_PROGRESS_KEY)
+        release_run_lease(run_lease(r, run_id))
         logger.info("Embedding consistency repair complete: %d files processed", total_files)

@@ -1,4 +1,4 @@
-"""Run-scoped state of one embedding-consistency repair: its batch plan.
+"""Run-scoped state of one embedding-consistency repair: its lease and its batch plan.
 
 The repair is one orchestrator (``speaker_embedding_consistency``) fanning out to many GPU
 batch tasks (``embedding_consistency_repair``). Everything the two halves must agree on
@@ -11,15 +11,30 @@ close to the worker and pass references to it, not the data itself. Every batch 
 carry the run's WHOLE missing-speaker set: on a library with ~100,000 affected files that was
 ~4,000 messages of ~117 MB each, Redis peaked at 52 GB and request-path Redis calls timed
 out with no user doing anything (measured by the #1337 load test).
+
+The run flag is a LEASE named by the run's id (``app/utils/redis_lease.py``): the
+orchestrator holds it with a heartbeat while it detects and dispatches, each batch renews it
+per file with redis-py's owner-checked ``reacquire``, and only the batch that completes THIS
+run releases it. A batch of an earlier run whose lease lapsed finds the lease is not its
+own and stands down. Before, any batch that saw "processed >= its total" deleted the flag
+-- including a left-over batch of an earlier run, counting into the current run's progress
+-- so the run ended early and the next 10-minute beat re-dispatched everything.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 
+import redis
+from redis.lock import Lock
+
 from app.core.pipeline_constants import FILES_PER_BATCH_TASK
+from app.utils.redis_lease import adopt_lease_lock
+
+logger = logging.getLogger(__name__)
 
 #: Most speaker UUIDs one batch message may name (per index list). A batch is at most
 #: ``FILES_PER_BATCH_TASK`` files AND at most this many speakers, so the message size is a
@@ -83,3 +98,47 @@ def plan_repair_batches(
     if current.file_uuids:
         batches.append(current)
     return batches
+
+
+# ---------------------------------------------------------------------------
+# The run's lease
+# ---------------------------------------------------------------------------
+
+#: The run flag. Its VALUE is the id of the run that holds it, so every batch can tell
+#: whether it still belongs to the current run.
+REDIS_LOCK_KEY = "embedding_consistency_running"
+#: Lease TTL. The orchestrator renews it from a heartbeat while it detects and dispatches;
+#: each batch renews it on every file. It must outlast the wait between two batches on a
+#: busy GPU queue; a run that stops renewing (crashed, or stopped) loses it after this.
+LOCK_TTL = 7200
+#: Longest the orchestrator's heartbeat renews the lease (a wedge backstop).
+ORCHESTRATOR_MAX_HOLD = 6 * 3600
+
+
+def run_lease(client: redis.Redis, run_id: str) -> Lock:
+    """The lease of the run named *run_id*, as that run holds it.
+
+    The orchestrator acquires it with ``lease.acquire(token=run_id)``; a batch adopts the
+    same token. Renewal and release are redis-py's own owner-checked scripts, so a run that
+    lost the lease (it lapsed and a newer run took it) can neither keep nor end the newer one.
+    """
+    return adopt_lease_lock(client, REDIS_LOCK_KEY, LOCK_TTL, run_id)
+
+
+def renew_run_lease(lease: Lock) -> bool:
+    """Reset the lease TTL; False once the lease is not this run's (lapsed, stopped, taken)."""
+    try:
+        lease.reacquire()
+    except redis.exceptions.LockNotOwnedError:
+        return False
+    return True
+
+
+def release_run_lease(lease: Lock) -> bool:
+    """End the run: delete the flag only if this run still holds it."""
+    try:
+        lease.release()
+    except redis.exceptions.LockError as exc:
+        logger.warning("Consistency run lease was no longer ours at release: %s", exc)
+        return False
+    return True

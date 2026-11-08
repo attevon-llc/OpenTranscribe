@@ -99,8 +99,9 @@ def test_the_consistency_repair_recreates_a_missing_document_only_when_allowed(
     assert written == ([str(speaker.uuid)] if allowed else [])
 
 
+@pytest.mark.xdist_group("local_model_redis")
 def test_the_repair_batch_counts_a_policy_skipped_file_as_done_not_failed(
-    bridged, normal_user, monkeypatch
+    bridged, normal_user, monkeypatch, local_model_redis
 ):
     org = make_org(bridged, voiceprints=False)
     media_file = file_in(bridged, normal_user, org)
@@ -112,7 +113,10 @@ def test_the_repair_batch_counts_a_policy_skipped_file_as_done_not_failed(
         lambda total, **kwargs: progress.append(kwargs),
     )
     monkeypatch.setattr(repair, "_check_repair_completion", lambda *a, **k: None)
-    monkeypatch.setattr(repair, "get_redis", lambda: MagicMock(get=lambda k: None))
+    run_id = f"policy-{uuid_pkg.uuid4().hex}"
+    lease = repair.run_lease(local_model_redis, run_id)
+    assert lease.acquire(blocking=False, token=run_id)
+    monkeypatch.setattr(repair, "get_redis", lambda: local_model_redis)
     prepared = _prepared(normal_user, media_file, speaker)
     runs: list[int] = []
     monkeypatch.setattr(repair, "_run_repair_phase", lambda *a, **k: note(runs, 1, 0))
@@ -122,11 +126,13 @@ def test_the_repair_batch_counts_a_policy_skipped_file_as_done_not_failed(
             [str(media_file.uuid)],
             total_files=1,
             missing_v3_uuids=[str(speaker.uuid)],
+            run_id=run_id,
         )
+    lease.release()
 
     assert result["status"] == "no_files"
     assert runs == []
-    assert progress == [{"success": True, "user_id": 1, "skipped_by_policy": 1}]
+    assert progress == [{"run_id": run_id, "success": True, "user_id": 1, "skipped_by_policy": 1}]
 
 
 # ---------------------------------------------------------------------------

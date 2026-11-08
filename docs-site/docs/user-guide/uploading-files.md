@@ -463,7 +463,7 @@ Record audio directly in your browser without any external software:
 - **Audio level meter** shows real-time volume so you can verify your microphone is working
 - **Duration counter** displays elapsed recording time
 - **Pause/Resume** the recording at any time without losing progress
-- Recording format: WebM with the Opus codec. Quality (**Standard**, **High** or **Maximum**), the maximum duration and auto-stop are set under **Settings > Recording Settings**
+- Recording format: WebM with the Opus codec. Quality (**Standard**, **High** or **Maximum**), the maximum duration and auto-stop are set under **Settings > Microphone Recording**
 
 ### Finishing a Recording
 

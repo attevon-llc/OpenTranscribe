@@ -230,6 +230,12 @@ DEFAULT_TRANSCRIPTION_MAX_SPEAKERS = 20
 DEFAULT_SPEAKER_PROMPT_BEHAVIOR = "always_prompt"
 DEFAULT_GARBAGE_CLEANUP_ENABLED = True
 DEFAULT_GARBAGE_CLEANUP_THRESHOLD = 50
+# Per-user fairness in the transcription queues (services/transcription_fairness.py).
+# A user's runs past this many queued-or-running ones are published one priority step
+# lower, so another user's file is not stuck behind a bulk upload. DB-backed
+# (SystemSettings key below, read through the settings cache, no restart); 0 disables.
+TRANSCRIPTION_FAIR_SHARE_THRESHOLD_KEY = "transcription.fair_share_threshold"
+DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD = 5
 
 # Field groups for the scoped reset (DELETE /user-settings/transcription?group=...).
 # The union must equal the fields the PUT handler persists; a unit test enforces it.

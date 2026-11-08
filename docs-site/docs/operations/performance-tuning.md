@@ -171,6 +171,28 @@ GPU_SCALE_WORKERS=4         # Parallel workers
 
 See the [Multi-GPU Scaling](../configuration/multi-gpu-scaling) documentation for details.
 
+### Fair sharing between users
+
+Transcriptions are queued by priority, first come first served within a priority. Without a
+limit, one user who uploads a folder of 500 files would put every other user's file behind all
+500. So a user's first 5 queued or running transcriptions go in at the normal priority, and each
+one after that goes in one step lower: another user's new file starts as soon as those first 5
+are through, ahead of the rest of the bulk upload. The bulk owner's own files still run in the
+order they were uploaded.
+
+The limit is the system setting `transcription.fair_share_threshold` (default `5`; `0` turns the
+rule off and restores strict first-come order). It is stored in the database, takes effect within
+the settings cache's 30 seconds, and needs no restart:
+
+```bash
+docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -c \
+  "INSERT INTO system_settings (key, value) VALUES ('transcription.fair_share_threshold', '10')
+   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;"
+```
+
+A run's priority is decided when it is queued, so lowering the limit does not reorder runs
+already waiting, and an automatic retry of an interrupted run always keeps its place at the front.
+
 ### Auto-Detection Logic
 
 The `HardwareConfig` class in `backend/app/utils/hardware_detection.py` handles all auto-detection:

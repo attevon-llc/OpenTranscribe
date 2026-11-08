@@ -15,6 +15,7 @@ these answers to decide whether to create, alias, or *delete* an index.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable
 from collections.abc import Iterable
@@ -22,6 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
 
+from cachetools import TTLCache
 from opensearchpy import OpenSearch
 from opensearchpy import RequestsHttpConnection
 from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
@@ -90,7 +92,14 @@ _sentence_transformer_model: SentenceTransformer | None = None
 _ORG_FILES_TTL_SECONDS = 5.0
 #: ``index.max_terms_count`` is 65,536; stay well inside it.
 _ORG_FILES_CAP = 50_000
-_org_files_cache: dict[tuple[int, ...], tuple[float, list[int] | None]] = {}
+#: Distinct user-id sets remembered at once. Bounded (concurrency audit L6): a plain dict
+#: keyed by every set a kNN read ever asked about grew for the life of the process.
+_ORG_FILES_CACHE_MAX_ENTRIES = 1024
+# cachetools' TTLCache is not thread-safe and API threads share it, hence the lock.
+_org_files_cache: TTLCache[tuple[int, ...], list[int] | None] = TTLCache(
+    maxsize=_ORG_FILES_CACHE_MAX_ENTRIES, ttl=_ORG_FILES_TTL_SECONDS
+)
+_org_files_cache_lock = threading.Lock()
 
 
 def _org_file_ids_of(user_ids: Iterable[int]) -> list[int] | None:
@@ -102,10 +111,9 @@ def _org_file_ids_of(user_ids: Iterable[int]) -> list[int] | None:
     because a kNN read runs once per speaker.
     """
     key = tuple(sorted({int(u) for u in user_ids}))
-    now = time.monotonic()
-    cached = _org_files_cache.get(key)
-    if cached is not None and now - cached[0] < _ORG_FILES_TTL_SECONDS:
-        return cached[1]
+    with _org_files_cache_lock:
+        if key in _org_files_cache:
+            return _org_files_cache[key]
     found: list[int] | None
     try:
         from app.db.base import SessionLocal
@@ -133,7 +141,8 @@ def _org_file_ids_of(user_ids: Iterable[int]) -> list[int] | None:
     except Exception:
         logger.exception("personal-scope voiceprint gate: could not list organization files")
         found = None
-    _org_files_cache[key] = (now, found)
+    with _org_files_cache_lock:
+        _org_files_cache[key] = found
     return found
 
 

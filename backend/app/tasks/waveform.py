@@ -39,6 +39,15 @@ def _get_storage_path(file_id: int) -> str | None:
         return str(media_file.storage_path)
 
 
+def _get_audio_stream_index(file_id: int) -> int | None:
+    """The track the user chose for this file (None = the first); read when drawing the original."""
+    with session_scope() as db:
+        index: int | None = (
+            db.query(MediaFile.audio_stream_index).filter(MediaFile.id == file_id).scalar()
+        )
+        return index
+
+
 def _download_temp_audio_safe(file_uuid: str) -> str | None:
     """Download the preprocessed 16 kHz WAV from MinIO temp.
 
@@ -163,7 +172,7 @@ def generate_waveform_task(
                 return {"success": False, "error": "Download failed"}
 
         logger.info(f"Generating waveform visualization for file {file_id}")
-        waveform_generator = WaveformGenerator()
+        waveform_generator = WaveformGenerator(audio_stream_index=_get_audio_stream_index(file_id))
         waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
 
         if not waveform_data:

@@ -7068,5 +7068,20 @@
   "demo.buildInfoNoTime": "Версия {{version}}",
   "demo.attribution": "Авторство: {{credit}}. Лицензия: {{license}}.",
   "demo.attributionSource": "Первоисточник",
-  "demo.readOnlyToast": "Это демо только для чтения. Изменения отключены."
+  "demo.readOnlyToast": "Это демо только для чтения. Изменения отключены.",
+  "audioTracks.title": "Аудиодорожки",
+  "audioTracks.listLabel": "Аудиодорожки в этом файле",
+  "audioTracks.trackNumber": "Дорожка {{number}}",
+  "audioTracks.transcribed": "Расшифрована",
+  "audioTracks.default": "по умолчанию",
+  "audioTracks.untagged": "Язык не указан",
+  "audioTracks.mono": "Моно",
+  "audioTracks.stereo": "Стерео",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Дорожка {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Аудиодорожка для расшифровки",
+  "audioTracks.selectHint": "Расшифровка, определение говорящих и звук воспроизведения используют эту дорожку.",
+  "audioTracks.mismatchTitle": "Язык не совпадает с тегом аудиодорожки",
+  "audioTracks.mismatchBody": "Аудиодорожка этой записи помечена как {{tagged}}, но речь определена как {{detected}}. Если вы ожидали другой язык, можно повторно обработать файл с другой аудиодорожкой.",
+  "audioTracks.chooseAnother": "Выбрать другую дорожку"
 }

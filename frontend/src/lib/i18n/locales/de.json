@@ -6878,5 +6878,20 @@
   "demo.buildInfoNoTime": "Version {{version}}",
   "demo.attribution": "Quelle: {{credit}}. Lizenziert unter {{license}}.",
   "demo.attributionSource": "Originalquelle",
-  "demo.readOnlyToast": "Dies ist eine schreibgeschützte Demo. Änderungen sind deaktiviert."
+  "demo.readOnlyToast": "Dies ist eine schreibgeschützte Demo. Änderungen sind deaktiviert.",
+  "audioTracks.title": "Audiospuren",
+  "audioTracks.listLabel": "Audiospuren in dieser Datei",
+  "audioTracks.trackNumber": "Spur {{number}}",
+  "audioTracks.transcribed": "Transkribiert",
+  "audioTracks.default": "Standard",
+  "audioTracks.untagged": "Sprache nicht angegeben",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stereo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Spur {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Zu transkribierende Audiospur",
+  "audioTracks.selectHint": "Transkript, Sprechererkennung und Wiedergabe-Audio verwenden diese Spur.",
+  "audioTracks.mismatchTitle": "Sprache weicht vom Tag der Audiospur ab",
+  "audioTracks.mismatchBody": "Die Audiospur dieser Aufnahme ist als {{tagged}} gekennzeichnet, die erkannte Sprache ist jedoch {{detected}}. Wenn Sie eine andere Sprache erwartet haben, können Sie die Datei mit einer anderen Audiospur erneut verarbeiten.",
+  "audioTracks.chooseAnother": "Andere Spur wählen"
 }

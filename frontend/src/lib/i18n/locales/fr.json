@@ -6973,5 +6973,20 @@
   "demo.buildInfoNoTime": "Version {{version}}",
   "demo.attribution": "Crédit : {{credit}}. Sous licence {{license}}.",
   "demo.attributionSource": "Source d'origine",
-  "demo.readOnlyToast": "Ceci est une démo en lecture seule. Les modifications sont désactivées."
+  "demo.readOnlyToast": "Ceci est une démo en lecture seule. Les modifications sont désactivées.",
+  "audioTracks.title": "Pistes audio",
+  "audioTracks.listLabel": "Pistes audio de ce fichier",
+  "audioTracks.trackNumber": "Piste {{number}}",
+  "audioTracks.transcribed": "Transcrite",
+  "audioTracks.default": "par défaut",
+  "audioTracks.untagged": "Langue non indiquée",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stéréo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Piste {{number}} : {{description}}",
+  "audioTracks.selectLabel": "Piste audio à transcrire",
+  "audioTracks.selectHint": "La transcription, la détection des locuteurs et l’audio de lecture utilisent cette piste.",
+  "audioTracks.mismatchTitle": "La langue diffère de l’étiquette de la piste audio",
+  "audioTracks.mismatchBody": "La piste audio de cet enregistrement est étiquetée {{tagged}}, mais la parole a été détectée comme {{detected}}. Si vous attendiez une autre langue, vous pouvez retraiter le fichier avec une autre piste audio.",
+  "audioTracks.chooseAnother": "Choisir une autre piste"
 }

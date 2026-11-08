@@ -28,17 +28,22 @@ from app.services.playback_rendition import rendition_object_name
 logger = logging.getLogger(__name__)
 
 
-def _load(file_uuid: str) -> tuple[int, str, str | None] | None:
-    """(id, storage_path, playback_path) for the file, or None if it is gone."""
+def _load(file_uuid: str) -> tuple[int, str, str | None, int | None] | None:
+    """(id, storage_path, playback_path, audio_stream_index) for the file, or None if gone."""
     with session_scope() as db:
         row = (
-            db.query(MediaFile.id, MediaFile.storage_path, MediaFile.playback_path)
+            db.query(
+                MediaFile.id,
+                MediaFile.storage_path,
+                MediaFile.playback_path,
+                MediaFile.audio_stream_index,
+            )
             .filter(MediaFile.uuid == file_uuid)
             .first()
         )
         if row is None or not row.storage_path:
             return None
-        return int(row.id), str(row.storage_path), row.playback_path
+        return int(row.id), str(row.storage_path), row.playback_path, row.audio_stream_index
 
 
 def _record(file_id: int, object_name: str) -> bool:
@@ -96,7 +101,7 @@ def create_playback_rendition_task(self: Any, file_uuid: str) -> dict:
     loaded = _load(file_uuid)
     if loaded is None:
         return {"status": "missing"}
-    file_id, storage_path, playback_path = loaded
+    file_id, storage_path, playback_path, audio_stream_index = loaded
     if playback_path:
         return {"status": "exists"}
 
@@ -110,11 +115,11 @@ def create_playback_rendition_task(self: Any, file_uuid: str) -> dict:
         download_file_to_path(storage_path, source)
         try:
             probe = probe_media(source)
-            need = classify_playback(probe)
+            need = classify_playback(probe, audio_stream_index)
             if need is PlaybackNeed.NONE:
                 return {"status": "not_needed"}
             output = os.path.join(work_dir, "playback.m4a")
-            encode_audio_rendition(source, output, probe)
+            encode_audio_rendition(source, output, probe, audio_stream_index)
         except RuntimeError as e:
             logger.warning("Playback rendition failed for file %s: %s", file_id, e)
             return {"status": "failed"}

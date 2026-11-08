@@ -25,6 +25,9 @@ class VideoProcessingHost:
         @staticmethod
         def _media_filename(file_id: int) -> str: ...
 
+        @staticmethod
+        def _media_audio_stream_index(file_id: int) -> int | None: ...
+
         def generate_cache_key(
             self,
             file_id: int,

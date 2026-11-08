@@ -6783,5 +6783,20 @@
   "demo.buildInfoNoTime": "버전 {{version}}",
   "demo.attribution": "출처 표기: {{credit}}. 라이선스: {{license}}.",
   "demo.attributionSource": "원본 출처",
-  "demo.readOnlyToast": "읽기 전용 데모입니다. 변경은 비활성화되어 있습니다."
+  "demo.readOnlyToast": "읽기 전용 데모입니다. 변경은 비활성화되어 있습니다.",
+  "audioTracks.title": "오디오 트랙",
+  "audioTracks.listLabel": "이 파일의 오디오 트랙",
+  "audioTracks.trackNumber": "트랙 {{number}}",
+  "audioTracks.transcribed": "전사됨",
+  "audioTracks.default": "기본",
+  "audioTracks.untagged": "언어 태그 없음",
+  "audioTracks.mono": "모노",
+  "audioTracks.stereo": "스테레오",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "트랙 {{number}}: {{description}}",
+  "audioTracks.selectLabel": "전사할 오디오 트랙",
+  "audioTracks.selectHint": "전사, 화자 감지, 재생 오디오가 모두 이 트랙을 사용합니다.",
+  "audioTracks.mismatchTitle": "언어가 오디오 트랙 태그와 다릅니다",
+  "audioTracks.mismatchBody": "이 녹음의 오디오 트랙은 {{tagged}}(으)로 태그되어 있지만 음성은 {{detected}}(으)로 감지되었습니다. 다른 언어를 예상했다면 다른 오디오 트랙으로 다시 처리할 수 있습니다.",
+  "audioTracks.chooseAnother": "다른 트랙 선택"
 }

@@ -363,6 +363,17 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 raise Exception(f"Media file {file_id} not found")
             return str(row[0])
 
+    @staticmethod
+    def _media_audio_stream_index(file_id: int) -> int | None:
+        """The audio track the user chose for this file (None = the first), in its own session."""
+        from app.models.media import MediaFile
+
+        with session_scope() as db:
+            index: int | None = (
+                db.query(MediaFile.audio_stream_index).filter(MediaFile.id == file_id).scalar()
+            )
+            return index
+
     def _upload_to_cache(
         self,
         output_path: Path,

@@ -6878,5 +6878,20 @@
   "demo.buildInfoNoTime": "Versie {{version}}",
   "demo.attribution": "Bronvermelding: {{credit}}. Gelicenseerd onder {{license}}.",
   "demo.attributionSource": "Oorspronkelijke bron",
-  "demo.readOnlyToast": "Dit is een alleen-lezen demo. Wijzigingen zijn uitgeschakeld."
+  "demo.readOnlyToast": "Dit is een alleen-lezen demo. Wijzigingen zijn uitgeschakeld.",
+  "audioTracks.title": "Audiosporen",
+  "audioTracks.listLabel": "Audiosporen in dit bestand",
+  "audioTracks.trackNumber": "Spoor {{number}}",
+  "audioTracks.transcribed": "Getranscribeerd",
+  "audioTracks.default": "standaard",
+  "audioTracks.untagged": "Taal niet aangegeven",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stereo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Spoor {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Te transcriberen audiospoor",
+  "audioTracks.selectHint": "Het transcript, de sprekerdetectie en de afspeelaudio gebruiken dit spoor.",
+  "audioTracks.mismatchTitle": "Taal wijkt af van het label van het audiospoor",
+  "audioTracks.mismatchBody": "Het audiospoor van deze opname is gelabeld als {{tagged}}, maar de spraak is herkend als {{detected}}. Als je een andere taal verwachtte, kun je het bestand opnieuw verwerken met een ander audiospoor.",
+  "audioTracks.chooseAnother": "Ander spoor kiezen"
 }

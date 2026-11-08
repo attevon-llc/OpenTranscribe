@@ -149,7 +149,7 @@ def test_no_db_scope_open_during_model_load_and_inference(
     # `predicted_gender == None`: the fixture's other speaker had been scored instead.
     scored: dict[str, int] = {}
 
-    def fake_inference(audio_source, work_items, service):
+    def fake_inference(audio_source, work_items, service, audio_stream_index=None):
         tracked.observe("gender_inference")
         assert work_items, "fixture produced no work items — the test would prove nothing"
         scored["speaker_id"] = work_items[0][0]
@@ -195,7 +195,7 @@ def test_scope_is_released_when_inference_fails(db_session, normal_user, tracked
     """A failure in the slow phase must not leave a scope open either."""
     media_file, _ = _make_file_with_speech(db_session, normal_user)
 
-    def boom(audio_source, work_items, service):
+    def boom(audio_source, work_items, service, audio_stream_index=None):
         tracked.observe("gender_inference")
         raise RuntimeError("ffmpeg segment fetch failed")
 

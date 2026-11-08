@@ -61,6 +61,16 @@ class ReprocessRequest(BaseModel):
             "stage selection is rejected with 422."
         ),
     )
+    audio_stream_index: int | None = Field(
+        None,
+        ge=0,
+        description=(
+            "Audio track to transcribe (and play) in a multi-track file: the `index` of an "
+            "entry in the file's `audio_streams` (the N of ffmpeg's `-map 0:a:N`). None keeps "
+            "the file's current choice (the first track by default). An index the file does "
+            "not have is rejected with 422."
+        ),
+    )
     whisper_model: str | None = Field(
         None,
         description="Whisper model to use for reprocessing. "
@@ -193,6 +203,16 @@ class PrepareUploadRequest(BaseModel):
         "Only applies to local ASR provider. Accepts the deployment's model or a "
         "lightweight CPU model (tiny, base); anything else is rejected with 422.",
         examples=["tiny", "base", "large-v3-turbo"],
+    )
+    audio_stream_index: int | None = Field(
+        None,
+        ge=0,
+        description=(
+            "Audio track to transcribe in a multi-track file (the N of ffmpeg's `-map 0:a:N`). "
+            "A new upload cannot be checked against its tracks before it exists, so an index "
+            "the file turns out not to have fails the run with a clear message; a negative "
+            "value is rejected with 422. None = the first track."
+        ),
     )
     use_presigned: bool | None = Field(
         False,

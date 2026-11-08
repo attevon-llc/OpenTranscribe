@@ -7258,5 +7258,20 @@
   "demo.buildInfoNoTime": "الإصدار ⁦{{version}}⁩",
   "demo.attribution": "الإسناد: {{credit}}. مرخّص بموجب ⁦{{license}}⁩.",
   "demo.attributionSource": "المصدر الأصلي",
-  "demo.readOnlyToast": "هذا عرض تجريبي للقراءة فقط. التغييرات معطّلة."
+  "demo.readOnlyToast": "هذا عرض تجريبي للقراءة فقط. التغييرات معطّلة.",
+  "audioTracks.title": "المسارات الصوتية",
+  "audioTracks.listLabel": "المسارات الصوتية في هذا الملف",
+  "audioTracks.trackNumber": "المسار {{number}}",
+  "audioTracks.transcribed": "تم تفريغه",
+  "audioTracks.default": "افتراضي",
+  "audioTracks.untagged": "اللغة غير محددة",
+  "audioTracks.mono": "أحادي",
+  "audioTracks.stereo": "ستيريو",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "المسار {{number}}: {{description}}",
+  "audioTracks.selectLabel": "المسار الصوتي المراد تفريغه",
+  "audioTracks.selectHint": "يستخدم التفريغ النصي وكشف المتحدثين وصوت التشغيل هذا المسار.",
+  "audioTracks.mismatchTitle": "اللغة تختلف عن وسم المسار الصوتي",
+  "audioTracks.mismatchBody": "المسار الصوتي لهذا التسجيل موسوم بـ {{tagged}}، لكن الكلام اكتُشف بوصفه {{detected}}. إذا كنت تتوقع لغة مختلفة، يمكنك إعادة المعالجة باستخدام مسار صوتي آخر.",
+  "audioTracks.chooseAnother": "اختر مساراً آخر"
 }

@@ -107,6 +107,8 @@ class PreparedFile:
     speaker_segments: dict[int, list[dict[str, float]]]  # speaker_id → segments
     media_file_id: int
     user_id: int
+    #: The track the file's speakers were heard on (``media_file.audio_stream_index``; None = first).
+    audio_stream_index: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)  # Migration-specific data
     #: Tenant of the file (``media_file.organization_id``; None = personal). Every voiceprint
     #: document a writer builds from this file must carry it, or an organization's voiceprint
@@ -194,6 +196,7 @@ def prepare_file(
         storage_path = media_file.storage_path
         media_file_id = int(media_file.id)
         user_id = int(media_file.user_id)
+        audio_stream_index = media_file.audio_stream_index
         organization_id = (
             int(media_file.organization_id) if media_file.organization_id is not None else None
         )
@@ -241,6 +244,7 @@ def prepare_file(
         speaker_segments=speaker_segments,
         media_file_id=media_file_id,
         user_id=user_id,
+        audio_stream_index=audio_stream_index,
         extra=extra,
         organization_id=organization_id,
     )
@@ -282,7 +286,13 @@ def submit_segment_fetches(
     futures = []
     for speaker, seg in work_items:
         duration = seg["end"] - seg["start"]
-        fut = pool.submit(extract_audio_segment_np, prepared.audio_source, seg["start"], duration)
+        fut = pool.submit(
+            extract_audio_segment_np,
+            prepared.audio_source,
+            seg["start"],
+            duration,
+            audio_stream_index=prepared.audio_stream_index,
+        )
         futures.append((speaker, seg, fut))
     return futures
 

@@ -6783,5 +6783,20 @@
   "demo.buildInfoNoTime": "バージョン {{version}}",
   "demo.attribution": "クレジット: {{credit}}。ライセンス: {{license}}。",
   "demo.attributionSource": "元のソース",
-  "demo.readOnlyToast": "これは読み取り専用のデモです。変更は無効になっています。"
+  "demo.readOnlyToast": "これは読み取り専用のデモです。変更は無効になっています。",
+  "audioTracks.title": "音声トラック",
+  "audioTracks.listLabel": "このファイルの音声トラック",
+  "audioTracks.trackNumber": "トラック {{number}}",
+  "audioTracks.transcribed": "文字起こし済み",
+  "audioTracks.default": "デフォルト",
+  "audioTracks.untagged": "言語タグなし",
+  "audioTracks.mono": "モノラル",
+  "audioTracks.stereo": "ステレオ",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "トラック {{number}}: {{description}}",
+  "audioTracks.selectLabel": "文字起こしする音声トラック",
+  "audioTracks.selectHint": "文字起こし、話者検出、再生音声はすべてこのトラックを使用します。",
+  "audioTracks.mismatchTitle": "言語が音声トラックのタグと異なります",
+  "audioTracks.mismatchBody": "この録音の音声トラックには {{tagged}} のタグが付いていますが、音声は {{detected}} と検出されました。別の言語を想定していた場合は、別の音声トラックで再処理できます。",
+  "audioTracks.chooseAnother": "別のトラックを選択"
 }

@@ -6973,5 +6973,20 @@
   "demo.buildInfoNoTime": "Versão {{version}}",
   "demo.attribution": "Crédito: {{credit}}. Licenciado sob {{license}}.",
   "demo.attributionSource": "Fonte original",
-  "demo.readOnlyToast": "Esta é uma demonstração somente leitura. As alterações estão desativadas."
+  "demo.readOnlyToast": "Esta é uma demonstração somente leitura. As alterações estão desativadas.",
+  "audioTracks.title": "Faixas de áudio",
+  "audioTracks.listLabel": "Faixas de áudio deste arquivo",
+  "audioTracks.trackNumber": "Faixa {{number}}",
+  "audioTracks.transcribed": "Transcrita",
+  "audioTracks.default": "padrão",
+  "audioTracks.untagged": "Idioma não indicado",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Estéreo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Faixa {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Faixa de áudio a transcrever",
+  "audioTracks.selectHint": "A transcrição, a detecção de locutores e o áudio de reprodução usam esta faixa.",
+  "audioTracks.mismatchTitle": "O idioma difere da etiqueta da faixa de áudio",
+  "audioTracks.mismatchBody": "A faixa de áudio desta gravação está etiquetada como {{tagged}}, mas a fala foi detectada como {{detected}}. Se você esperava outro idioma, pode reprocessar o arquivo com outra faixa de áudio.",
+  "audioTracks.chooseAnother": "Escolher outra faixa"
 }

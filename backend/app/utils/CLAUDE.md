@@ -221,3 +221,9 @@ the dev API does).
   **either** column, so rows predating the change (SHA-256 in `file_hash`, imohash in `imohash`)
   keep deduplicating. Never use either for security-sensitive equality.
 - `encryption.py` transparently decrypts legacy Fernet ciphertext — don't assume a single format.
+- `audio_stream.py` is the one audio-track rule (#1263): every ffmpeg audio decode splices
+  `audio_map_args(index)` (`-map 0:a:N?`, index = `media_file.audio_stream_index`, None = first),
+  and a structural test fails a decode without it. A non-first track also needs a playback
+  rendition built from it; `api/endpoints/files/audio_track.py` drops the old rendition, cached
+  audio and waveform when the choice changes. `language_mismatch` compares through
+  `utils/language.normalize_language`, so `pt`/`por` agree.

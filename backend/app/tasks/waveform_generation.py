@@ -124,7 +124,11 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
 
         with temp_file_context(file_data, suffix=file_ext) as temp_file_path:
             # Generate waveform data
-            waveform_generator = WaveformGenerator()
+            with session_scope() as db:
+                audio_stream_index = (
+                    db.query(MediaFile.audio_stream_index).filter(MediaFile.id == file_id).scalar()
+                )
+            waveform_generator = WaveformGenerator(audio_stream_index=audio_stream_index)
             waveform_data = waveform_generator.generate_waveform_data(temp_file_path)
 
             if waveform_data:

@@ -272,6 +272,8 @@ def create_prepared_record(
     db_file.requested_max_speakers = request.max_speakers  # type: ignore[assignment]
     db_file.requested_num_speakers = request.num_speakers  # type: ignore[assignment]
     db_file.requested_disable_diarization = True if request.disable_diarization else None  # type: ignore[assignment]
+    # The track to transcribe in a multi-track file (issue #1263); None = the first.
+    db_file.audio_stream_index = request.audio_stream_index  # type: ignore[assignment]
 
     # The uploader's stated voiceprint consent (issue #1356), recorded with the row and who said it.
     file_consent.stamp_new_file(db_file, request.voiceprint_consent, int(current_user.id))

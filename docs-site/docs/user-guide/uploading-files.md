@@ -131,12 +131,43 @@ with defaults** to skip ahead with your saved settings. The first step has three
 3. Optionally add tags and collections (see below)
 4. Click **Upload**
 
+### Files with more than one audio track
+
+A video can carry several audio tracks, for example the original language and a dub. OpenTranscribe
+reads the tracks when it processes a file and, if there is more than one, lists them on the file's
+page under **Audio tracks**: the language the container tags the track with, its channels, codec and
+title, with the transcribed one marked.
+
+Until you choose otherwise, the **first** track is transcribed. To use another one, open the file's
+page, click **Reprocess**, pick **Transcription & Diarization** (or **Re-diarize Only**), and choose
+the track under **Audio track to transcribe** on the settings step. The transcript, the speaker
+detection, the waveform and the audio you hear in the player all follow that track. Because a
+browser cannot switch tracks inside a video itself, choosing a track other than the first gives the
+file an audio-only preview of that track in place of the picture; choosing the first track again
+brings the original back. A single-track file shows no picker and behaves as before.
+
+If the language detected in the speech differs from the language the chosen track is tagged with,
+a quiet notice on the file's page says so and offers **Choose another track**. The tag is only what
+the person who made the file wrote down, so no action is needed when the transcript reads
+correctly. A track with no language tag never triggers the notice. Files transcribed before this
+version show their tracks the next time they are processed.
+
+Through the API, `GET /api/files/{uuid}` returns `audio_streams` (each with `index`, `codec`,
+`channels`, `language`, `title`, `default`) and `audio_stream_index`, and `POST
+/api/files/{uuid}/reprocess` accepts `audio_stream_index`. An index the file does not have is
+answered with 422 and nothing is changed. A new upload can name the track in the `prepare`
+request, but an upload cannot be checked against tracks it has not shown yet, so a wrong index
+fails that run rather than the request.
+
 ### Large videos: audio extraction
 
 When a video is larger than your threshold, the upload dialog adds an **Extract** step offering
 **Extract Audio** (recommended) or **Upload Full Video**. Extraction runs in your browser before
 anything is sent, so only the much smaller audio track is uploaded. Turn it on or off, set the
 **File Size Threshold**, and choose whether to be asked each time under **Settings > Audio Extraction**.
+The browser extracts the first audio track of the video. A video with several tracks where you
+want another one should be uploaded in full (**Upload Full Video**) and then reprocessed with the
+track you want.
 
 ### Media URL (1800+ Platforms)
 1. In **Add Media**, open the **Media URL** tab and paste the video URL

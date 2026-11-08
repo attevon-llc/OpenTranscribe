@@ -6973,5 +6973,20 @@
   "demo.buildInfoNoTime": "Versione {{version}}",
   "demo.attribution": "Crediti: {{credit}}. Concesso in licenza con {{license}}.",
   "demo.attributionSource": "Fonte originale",
-  "demo.readOnlyToast": "Questa è una demo in sola lettura. Le modifiche sono disattivate."
+  "demo.readOnlyToast": "Questa è una demo in sola lettura. Le modifiche sono disattivate.",
+  "audioTracks.title": "Tracce audio",
+  "audioTracks.listLabel": "Tracce audio di questo file",
+  "audioTracks.trackNumber": "Traccia {{number}}",
+  "audioTracks.transcribed": "Trascritta",
+  "audioTracks.default": "predefinita",
+  "audioTracks.untagged": "Lingua non indicata",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stereo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Traccia {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Traccia audio da trascrivere",
+  "audioTracks.selectHint": "La trascrizione, il rilevamento dei parlanti e l’audio di riproduzione usano questa traccia.",
+  "audioTracks.mismatchTitle": "La lingua differisce dall’etichetta della traccia audio",
+  "audioTracks.mismatchBody": "La traccia audio di questa registrazione è etichettata come {{tagged}}, ma il parlato è stato rilevato come {{detected}}. Se ti aspettavi un’altra lingua, puoi rielaborare il file con un’altra traccia audio.",
+  "audioTracks.chooseAnother": "Scegli un’altra traccia"
 }

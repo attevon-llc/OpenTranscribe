@@ -441,6 +441,7 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
 
         file_id = int(media_file.id)
         storage_path = str(media_file.storage_path)
+        audio_stream_index = media_file.audio_stream_index
 
         speaker_ids = [
             int(row[0])
@@ -482,6 +483,7 @@ def _load_detection_inputs(file_uuid: str) -> dict | None:
     return {
         "file_id": file_id,
         "storage_path": storage_path,
+        "audio_stream_index": audio_stream_index,
         "speaker_ids": speaker_ids,
         "speaker_segments": speaker_segments,
         "segment_count": len(segment_rows),
@@ -605,6 +607,7 @@ def _detect_speaker_attributes(file_uuid: str, user_id: int, task_id: str) -> di
                     audio_source,
                     work_items,
                     service,
+                    audio_stream_index=inputs.get("audio_stream_index"),
                 )
 
         _update_attr_task(task_id, "in_progress", progress=0.8)

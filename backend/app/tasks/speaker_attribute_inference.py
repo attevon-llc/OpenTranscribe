@@ -109,6 +109,7 @@ def _run_gender_inference_parallel(
     audio_source: str,
     work_items: list[tuple[int, dict]],
     service: SpeakerAttributeService,
+    audio_stream_index: int | None = None,
 ) -> tuple[dict[int, dict[str, float]], dict[int, int]]:
     """Run gender inference on segments fetched in parallel.
 
@@ -125,7 +126,13 @@ def _run_gender_inference_parallel(
         futures = []
         for speaker_id, seg in work_items:
             duration = seg["end"] - seg["start"]
-            fut = pool.submit(extract_audio_segment_np, audio_source, seg["start"], duration)
+            fut = pool.submit(
+                extract_audio_segment_np,
+                audio_source,
+                seg["start"],
+                duration,
+                audio_stream_index=audio_stream_index,
+            )
             futures.append((speaker_id, fut))
 
         for speaker_id, fut in futures:

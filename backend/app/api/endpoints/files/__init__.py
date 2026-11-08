@@ -292,6 +292,7 @@ def reprocess_media_file(
         stages=stages,
         whisper_model=whisper_model,
         disable_diarization=disable_diarization,
+        audio_stream_index=(reprocess_request.audio_stream_index if reprocess_request else None),
         organization_id=ctx.org_id,
         bypass=ctx.bypass,
     )

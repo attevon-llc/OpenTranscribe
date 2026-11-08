@@ -156,6 +156,37 @@ NGINX_HTTPS_PORT=8443
 You then browse to `https://<hostname>:8443`, and visitors who arrive on the HTTP port are sent to
 that HTTPS port, not to 443.
 
+## Check the install from a phone or laptop
+
+`scripts/test-lan-install.sh` checks the install from the **client's** side of the network. Run it
+on a laptop on the same network as the server (not on the server: there every port answers). It
+is read-only and never signs in. It needs `bash`, `curl` and `openssl`.
+
+1. Copy `nginx/ssl/ca.crt` from the server to the laptop.
+2. Run it with the address you will really use (name and IP are separate runs):
+
+   ```bash
+   scripts/test-lan-install.sh --host opentranscribe.local --ca ./ca.crt
+   scripts/test-lan-install.sh --host 192.168.1.50 --ca ./ca.crt --expect-untrusted
+   ```
+
+   Add `--https-port 8443` if you changed `NGINX_HTTPS_PORT`.
+
+It checks that HTTPS answers with the certificate chaining to `ca.crt`, that the certificate names
+the address you used, that port 80 only redirects, that the plain app port (5173), the API port
+(8080) and the docs port (5183) are **not** reachable from the network, and that cookies carry
+`Secure`. `--expect-untrusted` adds a control: without `ca.crt` the certificate must be rejected,
+which shows the CA is not already trusted by accident. Exit code 0 means every check passed.
+
+The script cannot see a phone's trust store or microphone prompt. It prints a short checklist for
+those: install `ca.crt`, open the address with no warning, sign in, reload and stay signed in, and
+confirm the Record page asks for microphone access.
+
+:::note
+Validated on real devices: **pending owner run** (iOS, Android, macOS, Windows). The script's
+verdict logic is unit-tested; the device flows above are not yet confirmed on hardware.
+:::
+
 ## If the server's address changes
 
 The server certificate lists the server's addresses at the time it was generated. After an address

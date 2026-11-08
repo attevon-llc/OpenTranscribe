@@ -204,17 +204,19 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
         db.flush()
         return
 
-    already_tagged = {
-        row[0]
-        for row in db.query(FileTag.tag_id).filter(
-            FileTag.media_file_id == file_id, FileTag.tag_id.in_(tag_ids)
-        )
-    }
-    for tag_id in dict.fromkeys(tag_ids):
-        if tag_id not in already_tagged:
-            db.add(FileTag(media_file_id=file_id, tag_id=tag_id, source=TAG_SOURCE_MANUAL))
-
+    # ON CONFLICT DO NOTHING on (media_file_id, tag_id): an already-attached tag, or one
+    # a concurrent caller attaches first, is skipped instead of failing the insert.
     db.flush()
+    db.execute(
+        pg_insert(FileTag)
+        .values(
+            [
+                {"media_file_id": file_id, "tag_id": tag_id, "source": TAG_SOURCE_MANUAL}
+                for tag_id in dict.fromkeys(tag_ids)
+            ]
+        )
+        .on_conflict_do_nothing(index_elements=[FileTag.media_file_id, FileTag.tag_id])
+    )
 
     on_tags_changed(db, [file_id], user_id=user_id)
 

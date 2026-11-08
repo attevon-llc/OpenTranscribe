@@ -19,7 +19,7 @@ This directory contains small, low-dependency helpers shared by endpoints, servi
 ```
 utils/
 ├── Database, identity and access
-│   ├── db_helpers.py           # Query builders, get_or_create, tenant scoping (apply_tenant_scope)
+│   ├── db_helpers.py           # Query builders, tenant scoping (apply_tenant_scope)
 │   ├── uuid7.py                # RFC 9562 UUIDv7 generator (the default= for every model uuid column)
 │   ├── pagination.py           # paginate(): count + offset + limit in one call
 │   ├── tenant_sharing.py       # Tenant gates for per-user items shared "with everyone"
@@ -111,7 +111,6 @@ def get_user_files_query(db: Session, user_id: int, *, organization_id=UNSCOPED)
 def apply_tenant_scope(...):
     """SQL-plane default-deny tenant filter; mirrors api/deps_context.scope_to_context."""
 
-def get_or_create[T](db, model, defaults=None, **kwargs) -> tuple[T, bool]
 def safe_get_by_id[T](db, model, obj_id, user_id=None) -> T | None
 def bulk_update[T](db, model, updates, id_field="id") -> bool
 
@@ -125,10 +124,6 @@ Tag creation and attachment live in `services/tag_service.py` and `services/tag_
 ```python
 query = get_user_files_query(db, user.id)
 files = query.order_by(MediaFile.upload_time.desc()).all()
-
-tag, created = get_or_create(
-    db, Tag, name=tag_name
-)  # check models: Tag is tenant-scoped, prefer tag_service
 ```
 
 ## ⚙️ Task Utilities (`task_utils.py`, `task_cancel.py`, `stuck_file_recovery.py`, `file_retry.py`)

@@ -122,6 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two registrations of the same email at the same moment now answer the second with the usual "Email already registered" instead of a server error; saving the same new system setting twice at once, and attaching the same tag to a file twice at once, no longer fail.
 - Two sign-ins at the same moment can no longer both take the last free session slot when the concurrent-session limit is set; the second waits for the first and is then refused (or, under "terminate oldest", the session count still converges to the limit).
 - The scale seed (`scripts/seed-query-review.sh`) now moves every seeded table's id sequence past the rows it wrote. Before, organizations, holds, collections, clusters and chats kept their sequence at 1, so the first collection, share or chat created on a seeded stack failed with a duplicate key.
 - Live notifications are no longer lost when someone connects or disconnects while a notification is being sent to everyone: the send could fail with "dictionary changed size during iteration", after which the server dropped its notification feed and missed whatever was published while it reconnected. A browser tab closing mid-send also no longer causes the user's next tab to be skipped.

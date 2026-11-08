@@ -29,6 +29,10 @@ class DeploymentSettings(BaseSettings):
     # Per-client-IP ceiling on every route, applied only when DEMO_MODE is on: a public demo
     # is reached by strangers, and the per-route auth limits do not cover the read surface.
     DEMO_RATE_LIMIT_PER_MINUTE: int = 120
+    # The one shared, ordinary (non-admin) account visitors sign in as; created by the seeder
+    # (``python -m app.scripts.demo_seed import``). Unused unless DEMO_MODE is on.
+    DEMO_USER_EMAIL: str = ""
+    DEMO_USER_PASSWORD: str = ""
 
     @field_validator("DEPLOYMENT_MODE", mode="after")
     @classmethod

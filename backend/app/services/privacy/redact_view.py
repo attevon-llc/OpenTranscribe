@@ -150,6 +150,19 @@ class PrivacyView:
             )
         return self._voiceprints[key]
 
+    def preload_voiceprint_scopes(self, scopes: Iterable[tuple[int, int | None]]) -> None:
+        """Resolve the file-less voiceprint decision of every not-yet-known scope in one batch.
+
+        Fills the same memo entries :meth:`voiceprints_for_scope` reads when it is called
+        without a file, so the answers are identical to asking one scope at a time.
+        """
+        wanted = {(int(u), o) for u, o in scopes} - set(self._voiceprints)
+        if wanted:
+            for (user_id, org_id), decision in policy.voiceprint_decisions(
+                self._db, wanted
+            ).items():
+                self._voiceprints[(int(user_id or 0), org_id)] = decision
+
     def gender_for_scope(self, user_id: int, organization_id: int | None) -> Decision:
         """May gender be inferred for this scope?"""
         scope = (int(user_id), organization_id)
@@ -349,8 +362,8 @@ def machine_identity_clauses(
 
     The off scopes are decided in Python (the policy has layers and hooks SQL cannot ask):
     one query reads the DISTINCT ``(owner, organization)`` of the files in
-    ``file_ids_select`` that carry a machine identity, and each scope is asked once through
-    the view. Scopes are matched with ``or_`` of per-scope conditions, never
+    ``file_ids_select`` that carry a machine identity, and the scopes are decided together in
+    one batch through the view. Scopes are matched with ``or_`` of per-scope conditions, never
     ``tuple_(...).in_(...)``: ``(user, NULL) IN (...)`` is NULL in SQL and would silently let
     every personal-workspace row through.
 
@@ -439,8 +452,8 @@ def _in_off_file(
 
     The off scopes are decided in Python (the policy has layers and hooks SQL cannot ask):
     one query reads the DISTINCT ``(owner, organization)`` of the files in ``file_ids_select``
-    that hold a speaker satisfying ``carries``, and each scope is asked once through the view.
-    Scopes are matched with ``or_`` of per-scope conditions, never ``tuple_(...).in_(...)``:
+    that hold a speaker satisfying ``carries``, and every scope is decided in one batch through
+    the view (:meth:`PrivacyView.preload_voiceprint_scopes`). Scopes are matched with ``or_`` of per-scope conditions, never ``tuple_(...).in_(...)``:
     ``(user, NULL) IN (...)`` is NULL in SQL and would silently let every personal-workspace
     row through.
     """
@@ -460,12 +473,14 @@ def _in_off_file(
         )
         .distinct()
     ).all()
+    candidates = [
+        (int(user_id), int(org_id) if org_id is not None else None) for user_id, org_id in scopes
+    ]
+    view.preload_voiceprint_scopes(candidates)
     off = [
-        (int(user_id), org_id)
-        for user_id, org_id in scopes
-        if not view.voiceprints_for_scope(
-            int(user_id), int(org_id) if org_id is not None else None
-        ).enabled
+        (user_id, org_id)
+        for user_id, org_id in candidates
+        if not view.voiceprints_for_scope(user_id, org_id).enabled
     ]
     if not off:
         return None

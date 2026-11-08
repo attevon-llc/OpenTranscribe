@@ -35,6 +35,7 @@ import time
 from collections.abc import Callable
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING
 from typing import Literal
 
@@ -252,20 +253,40 @@ def _stored_layers_many(db: Session, scopes: Iterable[Scope]) -> dict[Scope, dic
     return out
 
 
+def _stored_layers_isolated(db: Session, wanted: list[Scope]) -> dict[Scope, dict[str, bool]]:
+    """:func:`_stored_layers_many` in a savepoint; a scope missing from the result is unreadable.
+
+    When the batched read fails for several scopes, each scope is read again on its own, so a
+    failure denies exactly the scopes a one-scope read would deny: a broken
+    ``organization_policy`` table must not hide a personal scope, which never reads it. The
+    retry only runs on the error path.
+    """
+    try:
+        return _isolated(db, lambda: _stored_layers_many(db, wanted))
+    except Exception:
+        logger.exception("privacy policy read failed; denying voiceprints and gender")
+    if len(wanted) < 2:
+        return {}
+    out: dict[Scope, dict[str, bool]] = {}
+    for scope in wanted:
+        try:
+            out.update(_isolated(db, partial(_stored_layers_many, db, [scope])))
+        except Exception:
+            logger.exception("privacy policy read failed for scope %s; denying", scope)
+    return out
+
+
 def _resolve_many(db: Session, scopes: Iterable[Scope]) -> dict[Scope, tuple[PrivacyPolicy, bool]]:
     """The policy of each scope and whether every layer was read cleanly (False = an error denial)."""
     wanted = list(dict.fromkeys(scopes))
     platform = {org: _platform_layer(db, org) for org in {o for _, o in wanted}}
-    try:
-        stored_by_scope = _isolated(db, lambda: _stored_layers_many(db, wanted))
-    except Exception:
-        logger.exception("privacy policy read failed; denying voiceprints and gender")
-        stored_by_scope = None
+    stored_by_scope = _stored_layers_isolated(db, wanted)
 
     out: dict[Scope, tuple[PrivacyPolicy, bool]] = {}
     for scope in wanted:
         platform_vp, platform_gender, platform_ok = platform[scope[1]]
-        if stored_by_scope is None:
+        stored = stored_by_scope.get(scope)
+        if stored is None:
             out[scope] = (
                 PrivacyPolicy(
                     voiceprints=platform_vp if not platform_vp.enabled else _DENY_INSTANCE,
@@ -274,7 +295,6 @@ def _resolve_many(db: Session, scopes: Iterable[Scope]) -> dict[Scope, tuple[Pri
                 False,
             )
             continue
-        stored = stored_by_scope[scope]
         out[scope] = (
             PrivacyPolicy(
                 voiceprints=_first_off(
@@ -387,6 +407,21 @@ def _voiceprint_decision(
     db: Session, user_id: int | None, organization_id: int | None, media_file_id: int | None
 ) -> tuple[Decision, bool]:
     layers, clean = _resolve(db, user_id, organization_id)
+    return _voiceprint_after_layers(db, user_id, organization_id, media_file_id, layers, clean)
+
+
+def _voiceprint_after_layers(
+    db: Session,
+    user_id: int | None,
+    organization_id: int | None,
+    media_file_id: int | None,
+    layers: PrivacyPolicy,
+    clean: bool,
+) -> tuple[Decision, bool]:
+    """The file layer and consent hooks, applied to already-resolved layers.
+
+    Shared by the single and the batched decision so the two cannot drift apart.
+    """
     if not layers.voiceprints.enabled:
         return layers.voiceprints, clean
     # File layer: after the stored layers, before the consent hooks (a cheap deny first).
@@ -416,6 +451,21 @@ def voiceprint_decision(
 ) -> Decision:
     """May a voiceprint be CREATED for this scope? Layers plus the ``create`` consent hooks."""
     return _voiceprint_decision(db, user_id, organization_id, media_file_id)[0]
+
+
+def voiceprint_decisions(db: Session, scopes: Iterable[Scope]) -> dict[Scope, Decision]:
+    """:func:`voiceprint_decision` (no file) for many scopes, the layers in one batch.
+
+    The four layers are read once for every scope (:func:`_resolve_many`); the consent hooks,
+    when any are registered, are still asked once per scope whose layers allow, with the same
+    ``create`` request the single-scope call builds. Each value equals
+    ``voiceprint_decision(db, user_id=u, organization_id=o)``: the parity test in
+    ``tests/unit/test_privacy_voiceprint_decisions_batched.py`` holds the two together.
+    """
+    return {
+        scope: _voiceprint_after_layers(db, scope[0], scope[1], None, layers, clean)[0]
+        for scope, (layers, clean) in _resolve_many(db, scopes).items()
+    }
 
 
 def gender_decision(db: Session, *, user_id: int | None, organization_id: int | None) -> Decision:

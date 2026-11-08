@@ -231,12 +231,16 @@ class TestRetrySummaryIfAvailable:
             summary_data={"bluf": "must survive"},
         )
 
+        mf_id = mf.id
+
         result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
 
         assert result is False
-        # The early "LLM unavailable" return must happen BEFORE any reset.
-        assert mf.summary_status == "failed"
-        assert mf.summary_data == {"bluf": "must survive"}
+        # The early "LLM unavailable" return must happen BEFORE any reset. Read back from
+        # the database: the function releases its session, so `mf` itself is detached.
+        refetched = db_session.query(MediaFile).filter(MediaFile.id == mf_id).one()
+        assert refetched.summary_status == "failed"
+        assert refetched.summary_data == {"bluf": "must survive"}
 
     def test_returns_false_when_the_transcription_is_not_completed(
         self, db_session, make_media_file, monkeypatch
@@ -269,12 +273,17 @@ class TestRetrySummaryIfAvailable:
             raising=True,
         )
 
-        result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
+        mf_id, mf_uuid = mf.id, str(mf.uuid)
+
+        result = asyncio.run(summary_retry.retry_summary_if_available(db_session, mf_uuid))
 
         assert result is True
-        assert calls == [str(mf.uuid)]
-        assert mf.summary_status == "pending"
-        assert mf.summary_data is None
+        assert calls == [mf_uuid]
+        # Read back from the database: the function releases the session it was handed
+        # before the provider check, so the test's own instance is detached by then.
+        refetched = db_session.query(MediaFile).filter(MediaFile.id == mf_id).one()
+        assert refetched.summary_status == "pending"
+        assert refetched.summary_data is None
 
     def test_the_availability_check_is_made_for_the_files_owner(
         self, db_session, make_media_file, normal_user, monkeypatch
@@ -289,9 +298,11 @@ class TestRetrySummaryIfAvailable:
             def close(self) -> None:
                 pass
 
+        owner = normal_user.id
+
         def _settings(user_id):
             configured_for.append(user_id)
-            return _Healthy() if user_id == normal_user.id else None
+            return _Healthy() if user_id == owner else None
 
         monkeypatch.setattr(
             "app.services.llm_service.LLMService.create_from_user_settings", _settings
@@ -304,12 +315,13 @@ class TestRetrySummaryIfAvailable:
             raising=True,
         )
         mf = make_media_file(status=FileStatus.COMPLETED, summary_status="failed")
+        owner_id, mf_uuid = normal_user.id, str(mf.uuid)
 
-        result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
+        result = asyncio.run(summary_retry.retry_summary_if_available(db_session, mf_uuid))
 
         assert result is True, "the owner has a provider, so the retry must be queued"
-        assert configured_for == [normal_user.id]
-        assert calls == [str(mf.uuid)]
+        assert configured_for == [owner_id]
+        assert calls == [mf_uuid]
 
     def test_a_file_whose_owner_has_no_provider_is_not_retried(
         self, db_session, make_media_file, monkeypatch
@@ -328,12 +340,15 @@ class TestRetrySummaryIfAvailable:
             status=FileStatus.COMPLETED, summary_status="failed", summary_data={"bluf": "keep"}
         )
 
+        mf_id = mf.id
+
         result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
 
         assert result is False
         assert calls == []
-        assert mf.summary_status == "failed"
-        assert mf.summary_data == {"bluf": "keep"}
+        refetched = db_session.query(MediaFile).filter(MediaFile.id == mf_id).one()
+        assert refetched.summary_status == "failed"
+        assert refetched.summary_data == {"bluf": "keep"}
 
     def test_a_dispatch_failure_restores_the_prior_summary_instead_of_destroying_it(
         self, db_session, make_media_file, monkeypatch
@@ -367,15 +382,15 @@ class TestRetrySummaryIfAvailable:
 
         monkeypatch.setattr(summarization.summarize_transcript_task, "delay", _boom, raising=True)
 
+        mf_id = mf.id
+
         result = asyncio.run(summary_retry.retry_summary_if_available(db_session, str(mf.uuid)))
 
         assert result is False
         # The fix: a failed dispatch restores the prior summary rather than
-        # leaving it wiped with nothing queued to regenerate it.
-        assert mf.summary_status == "failed"
-        assert mf.summary_data == {"bluf": "should survive a failed retry"}
-        # Prove it was actually committed, not just mutated in memory.
-        db_session.expire(mf)
-        refetched = db_session.query(MediaFile).filter(MediaFile.id == mf.id).one()
+        # leaving it wiped with nothing queued to regenerate it. Read back from the
+        # database, which also proves the restore was committed, not just mutated in
+        # memory (the function releases the session it was handed, detaching `mf`).
+        refetched = db_session.query(MediaFile).filter(MediaFile.id == mf_id).one()
         assert refetched.summary_status == "failed"
         assert refetched.summary_data == {"bluf": "should survive a failed retry"}

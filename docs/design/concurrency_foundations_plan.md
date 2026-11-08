@@ -29,7 +29,7 @@ Line references are to the tree at the commit that adds this file.
 | F2 | A streamed chat reply held a pooled DB connection, idle in a transaction, for the whole generation | High | **Fixed** (C3) |
 | F3 | No per-user fairness in the transcription queues: one bulk upload delays everyone | High | Recommendation R2 |
 | F4 | `/api/search`, `/search/count`, `/search/suggestions` hold the request transaction across OpenSearch; the session auditor cannot see it | Medium | **Fixed** on `v070/concurrency2` (also `/search/filters`; auditor now sees search-service calls) |
-| F5 | Async handlers run synchronous SQLAlchemy on the event loop (pool checkout can block the loop up to 30 s) | Medium | 3 hot ones **fixed** (C2, C4); the rest R4 |
+| F5 | Async handlers run synchronous SQLAlchemy on the event loop (pool checkout can block the loop up to 30 s) | Medium | 3 hot ones **fixed** (C2, C4); the other 12 **fixed** on `v070/concurrency2`, guarded by `tests/api/test_async_handler_session_use.py` |
 | F6 | WebSocket fan-out iterated live collections across awaits: lost notifications for everyone | Medium | **Fixed** (C5) |
 | F7 | WebSocket handshake authenticated on the event loop | Medium | **Fixed** (C4) |
 | F8 | `/llm/status` (polled by every tab) and `/files/{uuid}/summary-status` held the request transaction across the provider health check | Medium | **Fixed** (C2); caching the result is R5 |

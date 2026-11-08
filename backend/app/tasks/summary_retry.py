@@ -7,6 +7,7 @@ similar to the transcription retry mechanism in utils/file_retry.py
 
 import logging
 
+from anyio import to_thread
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -100,42 +101,24 @@ async def check_llm_availability(user_id: int | None = None) -> bool:
         return False
 
 
-async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
-    """
-    Retry summary generation for a specific file if LLM is available
-
-    Args:
-        db: Database session
-        file_uuid: UUID of the file to retry
-
-    Returns:
-        True if retry was queued successfully, False otherwise
-    """
+def _retry_target(db: Session, file_uuid: str) -> tuple[int, int] | None:
+    """``(file_id, owner_id)`` for *file_uuid*, or None; the read transaction is released."""
     from app.services.uuid_helpers import get_by_uuid_optional
 
-    # `async def` and `await` here, not `asyncio.run()`: this function's one
-    # caller (`retry_summary` in api/endpoints/files/summary_status.py) is
-    # itself an async endpoint handler already running inside a live event
-    # loop, and `asyncio.run()` cannot start a second one nested inside it —
-    # every call from that endpoint raised `RuntimeError: asyncio.run()
-    # cannot be called from a running event loop`, so the retry-summary
-    # endpoint's success path has never worked (issue #474).
-    # Get internal ID for logging. get_by_uuid_optional, not get_file_by_uuid --
-    # see the matching comment in reset_summary_for_retry above.
+    # get_by_uuid_optional, not get_file_by_uuid -- see the matching comment in
+    # reset_summary_for_retry above.
     media_file = get_by_uuid_optional(db, MediaFile, file_uuid)
-    if not media_file:
-        logger.debug(f"File {file_uuid} not found for retry")
-        return False
+    target = (int(media_file.id), int(media_file.user_id)) if media_file else None
+    db.close()
+    return target
 
-    # Availability is per user: ask for THIS file's owner. An unreadable settings DB raises
-    # a 503 here, before anything is reset, so the retry is skipped for this cycle and no
-    # file's status changes.
-    with llm_settings_outage_as_503():
-        llm_available = await check_llm_availability(int(media_file.user_id))
-    file_id = media_file.id
 
-    if not llm_available:
-        logger.debug(f"LLM not available for retry of file {file_id}")
+def _reset_and_queue(db: Session, file_uuid: str, file_id: int) -> bool:
+    """Reset the summary, queue the regeneration, and restore the old state on a failed queue."""
+    from app.services.uuid_helpers import get_by_uuid_optional
+
+    media_file = get_by_uuid_optional(db, MediaFile, file_uuid)
+    if media_file is None:
         return False
 
     # Capture the pre-reset values so a failed dispatch below can restore
@@ -178,3 +161,45 @@ async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
             )
             db.rollback()
         return False
+
+
+async def retry_summary_if_available(db: Session, file_uuid: str) -> bool:
+    """
+    Retry summary generation for a specific file if LLM is available
+
+    Called from the async ``retry_summary`` endpoint, so every database step runs
+    through the AnyIO threadpool (``to_thread.run_sync``, the primitive Starlette's
+    ``run_in_threadpool`` wraps) and the request transaction is released before the
+    provider health check; only that check is awaited on the event loop.
+
+    Args:
+        db: Database session
+        file_uuid: UUID of the file to retry
+
+    Returns:
+        True if retry was queued successfully, False otherwise
+    """
+    # `async def` and `await` here, not `asyncio.run()`: this function's one
+    # caller (`retry_summary` in api/endpoints/files/summary_status.py) is
+    # itself an async endpoint handler already running inside a live event
+    # loop, and `asyncio.run()` cannot start a second one nested inside it —
+    # every call from that endpoint raised `RuntimeError: asyncio.run()
+    # cannot be called from a running event loop`, so the retry-summary
+    # endpoint's success path has never worked (issue #474).
+    target = await to_thread.run_sync(_retry_target, db, file_uuid)
+    if target is None:
+        logger.debug(f"File {file_uuid} not found for retry")
+        return False
+    file_id, owner_id = target
+
+    # Availability is per user: ask for THIS file's owner. An unreadable settings DB raises
+    # a 503 here, before anything is reset, so the retry is skipped for this cycle and no
+    # file's status changes.
+    with llm_settings_outage_as_503():
+        llm_available = await check_llm_availability(owner_id)
+
+    if not llm_available:
+        logger.debug(f"LLM not available for retry of file {file_id}")
+        return False
+
+    return await to_thread.run_sync(_reset_and_queue, db, file_uuid, file_id)

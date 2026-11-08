@@ -23,7 +23,6 @@ from fastapi import status
 from pydantic import BaseModel
 from pydantic import Field
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
@@ -78,12 +77,16 @@ def _load_pending_file(db: Session, file_id: str, user: User) -> MediaFile:
     response_model=dict[str, Any],
     dependencies=[Depends(refuse_under_support_grant)],
 )
-async def sign_upload_parts(
+def sign_upload_parts(
     request: PartUrlRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
-    """Sign the next batch of part URLs, optionally listing parts already stored."""
+    """Sign the next batch of part URLs, optionally listing parts already stored.
+
+    A plain ``def``: the row lookup and both object-storage calls are synchronous, so the
+    whole handler runs in the threadpool, off the event loop.
+    """
     db_file = _load_pending_file(db, request.file_id, current_user)
     object_name = str(db_file.storage_path)
 
@@ -98,8 +101,8 @@ async def sign_upload_parts(
     expires_in = 0
     if wanted:
         try:
-            urls, expires_in = await run_in_threadpool(
-                multipart_upload.presign_parts, object_name, request.upload_id, wanted
+            urls, expires_in = multipart_upload.presign_parts(
+                object_name, request.upload_id, wanted
             )
         except Exception as e:
             logger.warning(f"Could not sign parts for {object_name}: {e}")
@@ -115,8 +118,8 @@ async def sign_upload_parts(
 
     if request.include_uploaded:
         try:
-            response["uploaded_parts"] = await run_in_threadpool(
-                multipart_upload.list_uploaded_parts, object_name, request.upload_id
+            response["uploaded_parts"] = multipart_upload.list_uploaded_parts(
+                object_name, request.upload_id
             )
         except Exception as e:
             # A vanished upload cannot be resumed; say so instead of returning an

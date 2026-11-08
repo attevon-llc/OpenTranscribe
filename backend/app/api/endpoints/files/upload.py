@@ -341,6 +341,16 @@ def _update_file_hash(db_file: MediaFile, client_file_hash: str | None, filename
         logger.warning(f"No file hash provided for {filename} - duplicate detection may not work")
 
 
+def _commit_and_refresh(db: Session, db_file: MediaFile) -> None:
+    db.commit()
+    db.refresh(db_file)
+
+
+def _discard_file_record(db: Session, db_file: MediaFile) -> None:
+    db.delete(db_file)
+    db.commit()
+
+
 async def process_file_upload(
     file: UploadFile,
     db: Session,
@@ -423,8 +433,14 @@ async def process_file_upload(
         file_size = int(file.headers.get("content-length", 0))
 
     # Get or create file record
-    db_file = _get_or_create_file_record(
-        db, file, current_user, file_size, existing_file_uuid, organization_id
+    db_file = await run_in_threadpool(
+        _get_or_create_file_record,
+        db,
+        file,
+        current_user,
+        file_size,
+        existing_file_uuid,
+        organization_id,
     )
 
     # Generate storage path with sanitized filename
@@ -507,22 +523,19 @@ async def process_file_upload(
             db_file.summary_status = "disabled"
 
         with benchmark_timing.stage(task_id, "db_commit"):
-            db.commit()
-            db.refresh(db_file)
+            await run_in_threadpool(_commit_and_refresh, db, db_file)
 
     except (HTTPException, DomainError):
         # Re-raise HTTP exceptions after cleanup. Everything below this try/except
         # only runs once the row has committed with its storage_path, i.e. the
         # bytes are already in object storage — nothing past this point may
         # re-enter this delete-the-row handling (issue #905).
-        db.delete(db_file)
-        db.commit()
+        await run_in_threadpool(_discard_file_record, db, db_file)
         raise
     except Exception as e:
         # Clean up on failure. Container paths and storage errors are logged,
         # never returned to the caller (#859).
-        db.delete(db_file)
-        db.commit()
+        await run_in_threadpool(_discard_file_record, db, db_file)
         logger.exception("Upload failed")
         raise ErrorHandler.internal_error("The file upload could not be completed.") from e
     finally:
@@ -550,7 +563,8 @@ async def process_file_upload(
     # a PROCESSING failure (ERROR + last_error_message), never a deleted row
     # (issue #905): the bytes are already stored, so deleting the row would leak
     # the MinIO object and hide a real failure behind a generic 500.
-    dispatch_upload_pipeline_or_mark_error(
+    await run_in_threadpool(
+        dispatch_upload_pipeline_or_mark_error,
         db,
         db_file,
         user_id=current_user.id,

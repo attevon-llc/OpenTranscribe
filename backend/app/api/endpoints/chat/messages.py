@@ -28,7 +28,6 @@ from pydantic import Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
-from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
@@ -431,7 +430,7 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
 
 @router.post("/conversations/{conversation_uuid}/messages")
 @limiter.limit("20/minute")
-async def send_message(
+def send_message(
     request: Request,
     response: Response,
     conversation_uuid: str,
@@ -444,34 +443,35 @@ async def send_message(
     Frames: ``start``, ``status``, ``sources``, ``delta``, ``usage``, ``done``,
     ``error``. The request body is POSTed (never a query string) so message text
     never lands in access logs or browser history.
+
+    A plain ``def``: everything before the stream is synchronous (the conversation
+    lookup, Redis, key decryption, per-file permission checks, a commit), so FastAPI
+    runs it in the threadpool rather than on the event loop every other request and
+    stream shares. Only the reply itself streams from the loop.
     """
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
-    # _prepare_turn is fully synchronous (Redis, key decryption, per-file
-    # permission checks, a commit). Calling it directly from an async handler
-    # would block the event loop — and with up to 100 files each fanning out into
-    # permission queries, that stalls every other request in the process,
-    # including other users' in-flight SSE streams.
-    kwargs = await run_in_threadpool(
-        _prepare_turn, request, db, ctx, conversation, body.content, body.search_mode
-    )
+    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, body.search_mode)
     # FastAPI closes this session only after the response is SENT, i.e. when the model
     # finishes. _prepare_turn reopened its transaction after committing, so release the
     # pooled connection now: otherwise every in-flight chat holds one for the whole reply.
     user_id = ctx.user.id
-    await run_in_threadpool(db.close)
+    db.close()
     return _streaming_response(kwargs, user_id)
 
 
 @router.post("/conversations/{conversation_uuid}/regenerate")
 @limiter.limit("20/minute")
-async def regenerate(
+def regenerate(
     request: Request,
     response: Response,
     conversation_uuid: str,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Re-answer the last user message, superseding the previous reply."""
+    """Re-answer the last user message, superseding the previous reply.
+
+    A plain ``def`` for the reason given on :func:`send_message`.
+    """
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
     last_user = (
@@ -491,7 +491,7 @@ async def regenerate(
     # replace it — it vanishes from the thread, from prompt history and from
     # export, with no answer and no way back.
     question = str(last_user.content)
-    kwargs = await run_in_threadpool(_prepare_turn, request, db, ctx, conversation, question, None)
+    kwargs = _prepare_turn(request, db, ctx, conversation, question, None)
 
     db.query(ChatMessage).filter(
         ChatMessage.conversation_id == conversation.id,
@@ -513,7 +513,7 @@ class MessageEdit(BaseModel):
 
 @router.post("/conversations/{conversation_uuid}/messages/{message_uuid}/edit")
 @limiter.limit("20/minute")
-async def edit_message(
+def edit_message(
     request: Request,
     response: Response,
     conversation_uuid: str,
@@ -529,6 +529,8 @@ async def edit_message(
     the audit trail and any citations already acted on), the tail is marked
     ``superseded`` — hidden from the thread and excluded from prompt history,
     but still on record.
+
+    A plain ``def`` for the reason given on :func:`send_message`.
     """
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
@@ -554,9 +556,7 @@ async def edit_message(
         .filter(ChatMessage.conversation_id == conversation.id)
         .scalar()
     )
-    kwargs = await run_in_threadpool(
-        _prepare_turn, request, db, ctx, conversation, body.content, None
-    )
+    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, None)
 
     # Retire the edited question and everything downstream of it.
     db.query(ChatMessage).filter(

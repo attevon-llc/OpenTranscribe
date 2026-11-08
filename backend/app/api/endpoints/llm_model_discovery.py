@@ -9,6 +9,7 @@ from fastapi import Depends
 from fastapi import Request
 from fastapi import Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app import models
 from app.api.endpoints.auth import get_current_active_user
@@ -248,10 +249,14 @@ async def get_openai_compatible_models(
     """
     import aiohttp
 
-    # Resolve effective API key
+    # Resolve effective API key off the event loop, then return the request's connection
+    # before dialing the provider (FastAPI, "Concurrency and async / await").
     effective_api_key = api_key
     if not effective_api_key and config_id:
-        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+        effective_api_key = await run_in_threadpool(
+            _get_stored_api_key, db, config_id, current_user.id
+        )
+    await run_in_threadpool(db.close)
 
     # Build models URL
     clean_url = base_url.strip().rstrip("/")
@@ -403,10 +408,14 @@ async def get_anthropic_models(
     """
     import aiohttp
 
-    # Resolve effective API key
+    # Resolve effective API key off the event loop, then return the request's connection
+    # before dialing the provider (FastAPI, "Concurrency and async / await").
     effective_api_key = api_key
     if not effective_api_key and config_id:
-        effective_api_key = _get_stored_api_key(db, config_id, current_user.id)
+        effective_api_key = await run_in_threadpool(
+            _get_stored_api_key, db, config_id, current_user.id
+        )
+    await run_in_threadpool(db.close)
 
     if not effective_api_key:
         return _model_discovery_response(

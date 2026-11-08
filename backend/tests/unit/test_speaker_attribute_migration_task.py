@@ -54,6 +54,7 @@ from app.services.speaker_analysis_models import SegmentResult
 from app.tasks import migration_pipeline
 from app.tasks import speaker_attribute_migration_task as sat
 from app.tasks.migration_pipeline import PreparedFile
+from tests.helpers import StoreBackedTaskLocks
 
 # --------------------------------------------------------------------------------------
 # Fixtures / helpers
@@ -356,22 +357,29 @@ def test_the_unexpected_label_no_longer_fails_the_file_in_the_pipeline(
 # --------------------------------------------------------------------------------------
 
 
-def test_lock_has_a_one_hour_ttl_and_is_released_when_an_exception_hits_mid_run(
+def test_lock_is_held_during_the_run_and_released_when_an_exception_hits_mid_run(
     monkeypatch, db_session, normal_user
 ):
+    """The orchestrator lock is a task_lock lease (its TTL is pinned in
+    test_startup_preserves_live_locks.py); here: held while the body runs, gone after it fails."""
     mf = _media_file(db_session, normal_user)
     _speaker(db_session, mf, normal_user, "SPEAKER_00")
 
     fake_redis = FakeRedis()
     monkeypatch.setattr(sat.attribute_migration_progress, "_redis_client", fake_redis)
+    locks = StoreBackedTaskLocks(fake_redis.store)
+    monkeypatch.setattr(sat, "task_lock_manager", locks)
+    lock_key = f"{sat.attribute_migration_progress.key_prefix}:orchestrator_lock"
 
     @contextlib.contextmanager
     def _scope():
         yield db_session
 
     monkeypatch.setattr(sat, "session_scope", _scope)
+    held_when_it_failed: list[bool] = []
 
     def _boom(*_a, **_kw):
+        held_when_it_failed.append(locks.is_locked(lock_key))
         raise RuntimeError("boom")
 
     monkeypatch.setattr(migration_admin_notify, "send_ws_event", _boom)
@@ -383,15 +391,8 @@ def test_lock_has_a_one_hour_ttl_and_is_released_when_an_exception_hits_mid_run(
         sat.migrate_speaker_attributes_task.pop_request()
 
     assert result == {"status": "error", "message": "boom"}
-
-    lock_key = f"{sat.attribute_migration_progress.key_prefix}:orchestrator_lock"
-    lock_set_calls = [c for c in fake_redis.set_calls if c["key"] == lock_key]
-    assert len(lock_set_calls) == 1
-    assert lock_set_calls[0]["nx"] is True
-    assert lock_set_calls[0]["ex"] == 3600
-
-    assert lock_key in fake_redis.delete_calls, "the except block must release the lock"
-    assert lock_key not in fake_redis.store, "and the release must actually take effect"
+    assert held_when_it_failed == [True], "the body must run under the lock"
+    assert lock_key not in fake_redis.store, "the lock must be released after the failure"
 
 
 # --------------------------------------------------------------------------------------

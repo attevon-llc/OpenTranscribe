@@ -27,6 +27,7 @@ from app.services.progress_tracker import ProgressTracker
 from app.services.progress_tracker import emit_progress_notification
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks.migration_pipeline import PreparedFile
+from app.utils.task_lock import task_lock_manager
 
 logger = logging.getLogger(__name__)
 
@@ -226,9 +227,6 @@ def migrate_speakers_combined_task(self: Any, user_id: int) -> dict[str, Any]:
 
     Processes all completed files, running both models on each file's audio.
     """
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
-
     task_id = self.request.id
     logger.info("Starting combined speaker migration: task_id=%s", task_id)
 
@@ -238,14 +236,24 @@ def migrate_speakers_combined_task(self: Any, user_id: int) -> dict[str, Any]:
             "message": "Combined migration already in progress",
         }
 
-    # Atomic lock to prevent double-dispatch from concurrent /start calls
+    # Atomic lock to prevent double-dispatch from concurrent /start calls. A renewed
+    # lease: a crashed orchestrator frees it within TASK_LOCK_LEASE_SECONDS, so API
+    # startup no longer has to delete it (and with it a live orchestrator's lock).
     r = get_redis()
     lock_key = f"{combined_migration_progress.key_prefix}:orchestrator_lock"
-    if not r.set(lock_key, task_id, nx=True, ex=3600):
-        return {
-            "status": "skipped",
-            "message": "Combined migration orchestrator already starting",
-        }
+    with task_lock_manager.acquire_lock(lock_key, timeout=3600) as acquired:
+        if not acquired:
+            return {
+                "status": "skipped",
+                "message": "Combined migration orchestrator already starting",
+            }
+        return _orchestrate_combined(r, user_id, task_id)
+
+
+def _orchestrate_combined(r: Any, user_id: int, task_id: str) -> dict[str, Any]:
+    """Dispatch the combined-analysis batches; the caller holds the orchestrator lock."""
+    from app.models.media import FileStatus
+    from app.models.media import MediaFile
 
     try:
         with session_scope() as db:
@@ -314,8 +322,6 @@ def migrate_speakers_combined_task(self: Any, user_id: int) -> dict[str, Any]:
     except Exception as e:
         logger.error("Orchestrator failed: %s", e, exc_info=True)
         return {"status": "error", "message": str(e)}
-    finally:
-        r.delete(lock_key)
 
 
 # ---------------------------------------------------------------------------

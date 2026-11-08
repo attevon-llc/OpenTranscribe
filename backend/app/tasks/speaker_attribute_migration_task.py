@@ -30,6 +30,7 @@ from app.services.progress_tracker import ProgressTracker
 from app.services.progress_tracker import emit_progress_notification
 from app.services.speaker_analysis_models import SegmentResult
 from app.tasks.migration_pipeline import PreparedFile
+from app.utils.task_lock import task_lock_manager
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -313,16 +314,22 @@ def migrate_speaker_attributes_task(self: Any, user_id: int, force: bool = False
             "message": "Attribute migration already in progress",
         }
 
-    # Atomic lock
+    # Atomic lock, as a renewed lease: a crashed orchestrator frees it within
+    # TASK_LOCK_LEASE_SECONDS, so API startup no longer has to delete it.
     lock_key = f"{attribute_migration_progress.key_prefix}:orchestrator_lock"
-    r = attribute_migration_progress.redis_client
-    if r and not r.set(lock_key, task_id, nx=True, ex=3600):
-        logger.warning("Another orchestrator already holds the lock")
-        return {
-            "status": "skipped",
-            "message": "Attribute migration already starting",
-        }
+    with task_lock_manager.acquire_lock(lock_key, timeout=3600) as acquired:
+        if not acquired:
+            logger.warning("Another orchestrator already holds the lock")
+            return {
+                "status": "skipped",
+                "message": "Attribute migration already starting",
+            }
+        return _orchestrate_attributes(user_id, task_id, force)
 
+
+def _orchestrate_attributes(user_id: int, task_id: str, force: bool) -> dict[str, Any]:
+    """Dispatch the attribute-detection batches; the caller holds the orchestrator lock."""
+    r = attribute_migration_progress.redis_client
     try:
         # _reset_all_speaker_attributes does its own explicit commit (preserved);
         # session_scope's exit commit is then a harmless no-op. Reads use the same scope.
@@ -348,8 +355,6 @@ def migrate_speaker_attributes_task(self: Any, user_id: int, force: bool = False
 
             if total_files == 0:
                 logger.info("No files need speaker attribute detection")
-                if r:
-                    r.delete(lock_key)
                 return {
                     "status": "skipped",
                     "message": "No files to process",
@@ -398,10 +403,6 @@ def migrate_speaker_attributes_task(self: Any, user_id: int, force: bool = False
                 ex=86400,
             )
 
-        # Release lock — orchestrator's job is done once batches are dispatched
-        if r:
-            r.delete(lock_key)
-
         logger.info(
             "Dispatched %d attribute detection batches for %d files",
             len(batches),
@@ -432,8 +433,6 @@ def migrate_speaker_attributes_task(self: Any, user_id: int, force: bool = False
 
     except Exception as e:
         logger.error("Orchestrator failed: %s", e, exc_info=True)
-        if r:
-            r.delete(lock_key)
         return {"status": "error", "message": str(e)}
 
 

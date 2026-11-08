@@ -422,7 +422,10 @@ def speaker_embedding_consistency_repair_batch_task(
     # Phase 1: Prepare files
     files_with_speakers: list[tuple[str, Any]] = []
     for fuuid in file_uuids:
-        if not r.exists(_REDIS_LOCK_KEY):
+        # EXPIRE both checks and renews the run flag: it is false once Stop deleted the
+        # key, and otherwise this live batch keeps the run's lease from lapsing. A
+        # crashed run stops renewing and its flag expires on its own.
+        if not r.expire(_REDIS_LOCK_KEY, _LOCK_TTL):
             logger.warning("Consistency repair stopped — aborting batch")
             break
         try:
@@ -451,7 +454,7 @@ def speaker_embedding_consistency_repair_batch_task(
     progress_emitted: set[str] = set()
 
     def is_running() -> bool:
-        return bool(r.exists(_REDIS_LOCK_KEY))
+        return bool(r.expire(_REDIS_LOCK_KEY, _LOCK_TTL))
 
     def _on_file_complete(fuuid: str) -> None:
         """Emit progress notification when a file finishes a repair phase."""

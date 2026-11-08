@@ -23,6 +23,9 @@ from app.services.privacy import policy as privacy_policy
 
 logger = logging.getLogger(__name__)
 
+#: Renewed-lease task lock (app/utils/task_lock.py) for the normalization pass.
+NORMALIZE_EMBEDDINGS_LOCK_KEY = "normalize_embeddings_lock"
+
 # Batch size for scroll API
 SCROLL_BATCH_SIZE = 500
 SCROLL_TIMEOUT = "5m"
@@ -261,17 +264,13 @@ def normalize_speaker_embeddings_task(
 
     Runs automatically on startup via the FastAPI lifespan hook.
     """
-    from app.core.redis import get_redis
+    from app.utils.task_lock import task_lock_manager
 
-    r = get_redis()
-    if not r.set("normalize_embeddings_lock", "1", nx=True, ex=600):
-        logger.info("Embedding normalization already running, skipping")
-        return {"status": "already_running"}
-
-    try:
+    with task_lock_manager.acquire_lock(NORMALIZE_EMBEDDINGS_LOCK_KEY, timeout=3600) as acquired:
+        if not acquired:
+            logger.info("Embedding normalization already running (or lock unavailable), skipping")
+            return {"status": "already_running"}
         return _run_normalize_embeddings(batch_size)
-    finally:
-        r.delete("normalize_embeddings_lock")
 
 
 def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:

@@ -3,9 +3,9 @@
 Several startup steps were written for a single-instance deployment and are actively
 harmful when more than one API replica boots:
 
-* ``_clear_stale_task_state()`` deletes **all** ``task_progress:*`` keys and every
-  coordination lock. With N replicas, the second one to start wipes progress and locks
-  belonging to work the first is actively coordinating.
+* ``_clear_stale_task_state()`` clears reindex cancel requests; a replica booting later
+  must not drop a request made after the first one came up. (It once deleted every lock
+  and progress key; those are leases that expire on their own now.)
 * the neural-search model deploy and ``check_and_repair_indices`` each run on every
   replica, doing the same expensive work N times against one OpenSearch cluster.
 

@@ -103,6 +103,9 @@ def group_batch_files_task(batch_id: int, user_id: int) -> dict[str, Any]:
 AUTO_LABEL_BATCH_SIZE = 10
 _PROGRESS_KEY = "auto_label_progress:{user_id}"
 _LOCK_KEY = "auto_label_lock:{user_id}"
+#: The run flag's lease. The coordinator sets it and every batch renews it, so a live
+#: run keeps it and a crashed one releases it on its own (API startup no longer clears it).
+_LOCK_TTL_SECONDS = 3600
 
 
 def pending_suggestion_ids(
@@ -186,7 +189,7 @@ def retroactive_auto_label_task(
     lock_key = _LOCK_KEY.format(user_id=user_id)
 
     # Guard against concurrent runs
-    if not redis.set(lock_key, "1", ex=3600, nx=True):
+    if not redis.set(lock_key, "1", ex=_LOCK_TTL_SECONDS, nx=True):
         logger.info(f"Auto-label already running for user {user_id}")
         return {"status": "already_running"}
 
@@ -294,6 +297,7 @@ def auto_label_batch_task(
     redis = get_redis()
     progress_key = _PROGRESS_KEY.format(user_id=user_id)
     lock_key = _LOCK_KEY.format(user_id=user_id)
+    redis.expire(lock_key, _LOCK_TTL_SECONDS)
 
     batch_result = {
         "processed": 0,

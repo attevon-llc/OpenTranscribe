@@ -8,10 +8,7 @@
 
 # Login and session mint: owned by scale lane E (scale_foundations_plan.md 5.6), which maps
 # infrastructure errors on the login path to 503.
-app/api/endpoints/auth/login.py::_resolve_lockout_account  # lane E (login); raises AccountLookupError, which the login handler answers
 app/api/endpoints/auth/login_completion.py::record_successful_login  # lane E (login); rolls back the best-effort login bookkeeping, login still completes
-app/auth/session_ceiling.py::_session_lifetime_minutes  # lane E (session mint at login); falls back to the .env session timeouts
-app/auth/ldap_auth.py::_resolve_login_config  # lane E (LDAP login); falls back to the .env LDAP config
 
 # WebSocket handshake: owned by scale lane F (plan section 6, M2 #8).
 app/api/websockets.py::_try_authenticate_token  # lane F: handshake auth failure on pool exhaustion is its finding (M2 #8)

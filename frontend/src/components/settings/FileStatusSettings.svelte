@@ -18,7 +18,9 @@
   import { settingsReturnQuery, stampSettingsReturn } from '$lib/settings/returnToSettings';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { createPoller } from '$lib/utils/poller';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
+  import { formatFileAge } from '$lib/utils/formatting';
+  import { translateFileStatus } from '$lib/fileStatus/statusLabel';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -29,6 +31,7 @@
     status: string | null;
     display_status: string;
     formatted_file_age: string;
+    upload_time?: string | null;
   }
   interface StatusPayload {
     status_counts: Record<'total' | 'completed' | 'processing' | 'pending' | 'error', number>;
@@ -146,8 +149,8 @@
         {#each data.problem_files.files as f (f.uuid)}
           <li>
             <a class="file-name" href={`/files/${f.uuid}`}>{f.filename}</a>
-            <span class="file-age">{f.formatted_file_age}</span>
-            <Badge variant={variantFor(f.status)}>{f.display_status}</Badge>
+            <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
+            <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
           </li>
         {/each}
       </ul>
@@ -161,8 +164,8 @@
         {#each data.recent_files.files as f (f.uuid)}
           <li>
             <a class="file-name" href={`/files/${f.uuid}`}>{f.filename}</a>
-            <span class="file-age">{f.formatted_file_age}</span>
-            <Badge variant={variantFor(f.status)}>{f.display_status}</Badge>
+            <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
+            <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
           </li>
         {/each}
       </ul>

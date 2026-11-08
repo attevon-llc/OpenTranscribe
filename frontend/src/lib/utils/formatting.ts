@@ -366,3 +366,59 @@ export function formatLanguageNames(codes: string[], locale?: string): string {
 
   return names.join(', ');
 }
+
+/**
+ * How long ago a file was uploaded, in the reader's language ("2 hours ago", "قبل ساعتين").
+ *
+ * The server's `formatted_file_age` is English text; this is the client-side `Intl` replacement.
+ * Returns `''` for a missing or unparseable time so callers can fall back to the server text.
+ *
+ * @param uploadTime ISO timestamp (or Date) of the upload.
+ * @param locale BCP-47 locale of the interface.
+ * @param now Epoch milliseconds to measure against (injectable for tests and ticking labels).
+ */
+export function formatFileAge(
+  uploadTime: string | Date | null | undefined,
+  locale?: string,
+  now: number = Date.now()
+): string {
+  if (!uploadTime) return '';
+  const then = new Date(uploadTime).getTime();
+  if (!Number.isFinite(then)) return '';
+  const seconds = Math.max(0, Math.floor((now - then) / 1000));
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['day', 86400],
+    ['hour', 3600],
+    ['minute', 60],
+  ];
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  for (const [unit, size] of units) {
+    if (seconds >= size) return formatter.format(-Math.floor(seconds / size), unit);
+  }
+  return formatter.format(0, 'second');
+}
+
+/**
+ * A task's processing time as locale-aware units ("1 min 5 sec"), from the two timestamps the
+ * server already sends, instead of its English `formatted_processing_time`. `''` when either
+ * time is missing or the range is negative.
+ */
+export function formatProcessingTime(
+  start: string | Date | null | undefined,
+  end: string | Date | null | undefined,
+  locale?: string
+): string {
+  if (!start || !end) return '';
+  const total = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000);
+  if (!Number.isFinite(total) || total < 0) return '';
+  const part = (value: number, unit: 'hour' | 'minute' | 'second') =>
+    new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'narrow' }).format(value);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const parts: string[] = [];
+  if (hours) parts.push(part(hours, 'hour'));
+  if (hours || minutes) parts.push(part(minutes, 'minute'));
+  parts.push(part(seconds, 'second'));
+  return parts.join(' ');
+}

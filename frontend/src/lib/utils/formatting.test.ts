@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   formatDate,
+  formatFileAge,
+  formatProcessingTime,
   formatEta,
   formatElapsed,
   formatAuditTimestamp,
@@ -380,5 +382,28 @@ describe('formatAuditTimestamp', () => {
 
   it('returns an unparseable value unchanged', () => {
     expect(formatAuditTimestamp('nope', 'en')).toBe('nope');
+  });
+});
+
+describe('formatFileAge', () => {
+  const now = Date.UTC(2026, 10, 7, 12, 0, 0);
+  it('formats in the requested language, not English', () => {
+    expect(formatFileAge(new Date(now - 2 * 3600_000), 'de', now)).toBe('vor 2 Stunden');
+    expect(formatFileAge(new Date(now - 3 * 86400_000), 'es', now)).toBe('hace 3 días');
+  });
+  it('is empty for a missing or invalid time so callers can fall back', () => {
+    expect(formatFileAge(null, 'de', now)).toBe('');
+    expect(formatFileAge('not a date', 'de', now)).toBe('');
+  });
+});
+
+describe('formatProcessingTime', () => {
+  it('splits into locale units from the two timestamps', () => {
+    const out = formatProcessingTime('2026-08-01T10:00:00Z', '2026-08-01T11:01:05Z', 'en');
+    expect(out).toBe('1h 1m 5s');
+  });
+  it('is empty without both times or for a negative range', () => {
+    expect(formatProcessingTime('2026-08-01T10:00:00Z', null, 'en')).toBe('');
+    expect(formatProcessingTime('2026-08-01T11:00:00Z', '2026-08-01T10:00:00Z', 'en')).toBe('');
   });
 });

@@ -1,7 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { t, locale } from '$stores/locale';
-  import { formatDateTime, taskProgressPercent } from '$lib/utils/formatting';
+  import {
+    formatDateTime,
+    formatFileAge,
+    formatProcessingTime,
+    taskProgressPercent,
+  } from '$lib/utils/formatting';
+  import { translateFileStatus } from '$lib/fileStatus/statusLabel';
   import ProcessingProvenance from '$components/ProcessingProvenance.svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
 
@@ -14,26 +20,6 @@
   function closeModal() {
     dispatch('close');
   }
-
-  // Helper function to translate status values
-  function translateStatus(status: string): string {
-    const statusMap: Record<string, string> = {
-      'completed': $t('common.completed'),
-      'processing': $t('common.processing'),
-      'pending': $t('common.pending'),
-      'error': $t('common.error'),
-      'failed': $t('fileStatus.failed'),
-      'in_progress': $t('fileStatus.inProgress'),
-      'Completed': $t('common.completed'),
-      'Processing': $t('common.processing'),
-      'Pending': $t('common.pending'),
-      'Error': $t('common.error'),
-      'Failed': $t('fileStatus.failed'),
-      'In Progress': $t('fileStatus.inProgress'),
-    };
-    return statusMap[status] || status;
-  }
-
 </script>
 
 {#if detailedStatus && selectedFile}
@@ -54,7 +40,7 @@
             <div class="metadata-item">
               <span class="metadata-label">{$t('common.status')}:</span>
               <span class="status-badge {detailedStatus.file.status_badge_class || 'status-unknown'}">
-                {translateStatus(detailedStatus.file.display_status || detailedStatus.file.status)}
+                {translateFileStatus($t, detailedStatus.file.status, detailedStatus.file.display_status)}
               </span>
             </div>
             <div class="metadata-item">
@@ -81,7 +67,7 @@
             {/if}
             <div class="metadata-item">
               <span class="metadata-label">{$t('fileStatus.fileAge')}:</span>
-              <span class="metadata-value">{detailedStatus.file.formatted_file_age || $t('fileStatus.unknown')}</span>
+              <span class="metadata-value">{formatFileAge(detailedStatus.file.upload_time, $locale) || detailedStatus.file.formatted_file_age || $t('fileStatus.unknown')}</span>
             </div>
             {#if detailedStatus.file.whisper_model}
               <div class="metadata-item">
@@ -148,7 +134,7 @@
                 <div class="task-metadata-card">
                   <div class="task-card-header">
                     <span class="task-type-label">{task.task_type}</span>
-                    <span class="status-badge {task.status_badge_class || 'status-unknown'}">{translateStatus(task.status)}</span>
+                    <span class="status-badge {task.status_badge_class || 'status-unknown'}">{translateFileStatus($t, task.status, task.status)}</span>
                   </div>
                   <div class="task-metadata-items">
                     <div class="metadata-item">
@@ -168,7 +154,7 @@
                       </div>
                       <div class="metadata-item">
                         <span class="metadata-label">{$t('fileStatus.processingTime')}</span>
-                        <span class="metadata-value">{task.formatted_processing_time || $t('common.unknown')}</span>
+                        <span class="metadata-value">{formatProcessingTime(task.created_at, task.completed_at, $locale) || task.formatted_processing_time || $t('common.unknown')}</span>
                       </div>
                     {/if}
                     <!-- `progress !== undefined` let `null` through: `null !== undefined`

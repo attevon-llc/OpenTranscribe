@@ -16874,6 +16874,10 @@
       "RetryConfig": {
         "description": "Response schema for retry configuration",
         "properties": {
+          "fair_share_threshold": {
+            "title": "Fair Share Threshold",
+            "type": "integer"
+          },
           "max_retries": {
             "title": "Max Retries",
             "type": "integer"
@@ -16885,7 +16889,8 @@
         },
         "required": [
           "max_retries",
-          "retry_limit_enabled"
+          "retry_limit_enabled",
+          "fair_share_threshold"
         ],
         "title": "RetryConfig",
         "type": "object"
@@ -16893,6 +16898,17 @@
       "RetryConfigUpdate": {
         "description": "Schema for updating retry configuration",
         "properties": {
+          "fair_share_threshold": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fair Share Threshold"
+          },
           "max_retries": {
             "anyOf": [
               {

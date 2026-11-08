@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_ENABLED
 from app.core.constants import DEFAULT_GARBAGE_CLEANUP_THRESHOLD
+from app.core.constants import DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD
+from app.core.constants import TRANSCRIPTION_FAIR_SHARE_THRESHOLD_KEY
 from app.core.env import is_truthy
 from app.core.env import parse_bool
 from app.models.system_settings import SystemSettings
@@ -233,10 +235,15 @@ def get_retry_config(db: Session) -> dict:
         Dictionary with retry configuration:
         - max_retries: int (0 = unlimited)
         - retry_limit_enabled: bool
+        - fair_share_threshold: int, queued runs per user before later ones are queued
+          behind other users' (0 = off; ``services/transcription_fairness.py``)
     """
     return {
         "max_retries": get_setting_int(db, "transcription.max_retries", 3),
         "retry_limit_enabled": get_setting_bool(db, "transcription.retry_limit_enabled", True),
+        "fair_share_threshold": get_setting_int(
+            db, TRANSCRIPTION_FAIR_SHARE_THRESHOLD_KEY, DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD
+        ),
     }
 
 
@@ -297,7 +304,10 @@ def retry_ceiling_message(db: Session, retry_count: int) -> str | None:
 
 
 def update_retry_config(
-    db: Session, max_retries: int | None = None, retry_limit_enabled: bool | None = None
+    db: Session,
+    max_retries: int | None = None,
+    retry_limit_enabled: bool | None = None,
+    fair_share_threshold: int | None = None,
 ) -> dict:
     """
     Update retry configuration.
@@ -306,6 +316,7 @@ def update_retry_config(
         db: Database session
         max_retries: New max retries value (None to keep current)
         retry_limit_enabled: New enabled state (None to keep current)
+        fair_share_threshold: New per-user fair-share threshold (None to keep current)
 
     Returns:
         Updated retry configuration
@@ -324,6 +335,15 @@ def update_retry_config(
             "transcription.retry_limit_enabled",
             retry_limit_enabled,
             "Whether to enforce retry limits on transcription processing",
+        )
+
+    if fair_share_threshold is not None:
+        set_setting(
+            db,
+            TRANSCRIPTION_FAIR_SHARE_THRESHOLD_KEY,
+            fair_share_threshold,
+            "Queued or running transcriptions per user before that user's later runs are "
+            "queued behind other users' (0 = off)",
         )
 
     return get_retry_config(db)

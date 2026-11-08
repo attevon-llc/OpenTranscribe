@@ -65,11 +65,9 @@ async def upload_profile_avatar(
     current_user: User = Depends(get_current_active_user),
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
-    """Upload an avatar image for a speaker profile.
-
-    ``async`` for the upload read; every database step runs through ``run_in_threadpool``
-    so none of them blocks the event loop (FastAPI, "Concurrency and async / await").
-    """
+    """Upload an avatar image for a speaker profile."""
+    # `async` for the upload read; every database step runs through run_in_threadpool
+    # so none of them blocks the event loop (FastAPI, "Concurrency and async / await").
     try:
         profile_id, profile_ref = await run_in_threadpool(
             _owned_profile_ref, db, profile_uuid, current_user, ctx.org_id

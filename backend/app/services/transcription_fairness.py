@@ -20,7 +20,8 @@ Deliberately simple, and not a full fair scheduler: a run's priority is decided 
 dispatch, so a backlog that drains later is not promoted, and many users each under the
 threshold share the normal priority FIFO as before. The threshold is the DB-backed setting
 ``transcription.fair_share_threshold`` (default
-:data:`~app.core.constants.DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD`); 0 turns it off.
+:data:`~app.core.constants.DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD`), set in Settings >
+File status > Recovery > Fair sharing between users (``PUT /admin/settings/retry-config``); 0 turns it off.
 """
 
 from __future__ import annotations
@@ -28,19 +29,19 @@ from __future__ import annotations
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.constants import DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD
-from app.core.constants import TRANSCRIPTION_FAIR_SHARE_THRESHOLD_KEY
 from app.models.media import Task
-from app.services.system_settings_service import get_setting_int
+from app.services.system_settings_service import get_retry_config
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
 from app.utils.task_utils import TASK_STATUS_PENDING
 
 
 def fair_share_threshold(db: Session) -> int:
-    """The configured threshold; 0 (or a negative value) means no demotion."""
-    return get_setting_int(
-        db, TRANSCRIPTION_FAIR_SHARE_THRESHOLD_KEY, DEFAULT_TRANSCRIPTION_FAIR_SHARE_THRESHOLD
-    )
+    """The configured threshold; 0 (or a negative value) means no demotion.
+
+    One reader with the admin endpoint (``GET /admin/settings/retry-config``), so the
+    value the Settings page shows is the value dispatch uses.
+    """
+    return int(get_retry_config(db)["fair_share_threshold"])
 
 
 def active_transcriptions(db: Session, user_id: int) -> int:

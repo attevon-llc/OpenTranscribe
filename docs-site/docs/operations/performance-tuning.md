@@ -180,15 +180,10 @@ one after that goes in one step lower: another user's new file starts as soon as
 are through, ahead of the rest of the bulk upload. The bulk owner's own files still run in the
 order they were uploaded.
 
-The limit is the system setting `transcription.fair_share_threshold` (default `5`; `0` turns the
-rule off and restores strict first-come order). It is stored in the database, takes effect within
-the settings cache's 30 seconds, and needs no restart:
-
-```bash
-docker exec opentranscribe-postgres psql -U postgres -d opentranscribe -c \
-  "INSERT INTO system_settings (key, value) VALUES ('transcription.fair_share_threshold', '10')
-   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;"
-```
+An administrator sets the limit in **Settings > File status > Recovery > Fair sharing between
+users** (default `5`; `0` turns the rule off and restores strict first-come order). The value is
+stored in the database (`transcription.fair_share_threshold`), applies within 30 seconds, and
+needs no restart.
 
 A run's priority is decided when it is queued, so lowering the limit does not reorder runs
 already waiting, and an automatic retry of an interrupted run always keeps its place at the front.

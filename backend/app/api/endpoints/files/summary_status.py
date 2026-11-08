@@ -184,11 +184,9 @@ async def retry_summary(
 ) -> dict[str, Any]:
     """
     Retry failed summary generation for a file
-
-    The checks and the reset run through ``run_in_threadpool``; the request transaction
-    is released before the provider health check, which is the only work awaited on the
-    event loop.
     """
+    # The checks and the reset run through run_in_threadpool; the request transaction
+    # is released before the provider health check, the only work awaited on the loop.
     user_id = int(current_user.id)
     file_id, file_ref = await run_in_threadpool(
         _retry_preconditions, db, file_uuid, current_user, ctx

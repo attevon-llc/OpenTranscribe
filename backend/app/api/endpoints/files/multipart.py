@@ -82,11 +82,9 @@ def sign_upload_parts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ) -> dict[str, Any]:
-    """Sign the next batch of part URLs, optionally listing parts already stored.
-
-    A plain ``def``: the row lookup and both object-storage calls are synchronous, so the
-    whole handler runs in the threadpool, off the event loop.
-    """
+    """Sign the next batch of part URLs, optionally listing parts already stored."""
+    # A plain `def`: the row lookup and both object-storage calls are synchronous, so the
+    # whole handler runs in the threadpool, off the event loop.
     db_file = _load_pending_file(db, request.file_id, current_user)
     object_name = str(db_file.storage_path)
 

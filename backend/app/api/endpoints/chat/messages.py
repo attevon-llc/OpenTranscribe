@@ -444,12 +444,11 @@ def send_message(
     Frames: ``start``, ``status``, ``sources``, ``delta``, ``usage``, ``done``,
     ``error``. The request body is POSTed (never a query string) so message text
     never lands in access logs or browser history.
-
-    A plain ``def``: everything before the stream is synchronous (the conversation
-    lookup, Redis, key decryption, per-file permission checks, a commit), so FastAPI
-    runs it in the threadpool rather than on the event loop every other request and
-    stream shares. Only the reply itself streams from the loop.
     """
+    # A plain `def`: everything before the stream is synchronous (the conversation
+    # lookup, Redis, key decryption, per-file permission checks, a commit), so FastAPI
+    # runs it in the threadpool rather than on the event loop every other request and
+    # stream shares. Only the reply itself streams from the loop.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
     kwargs = _prepare_turn(request, db, ctx, conversation, body.content, body.search_mode)
     # FastAPI closes this session only after the response is SENT, i.e. when the model
@@ -469,10 +468,8 @@ def regenerate(
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ):
-    """Re-answer the last user message, superseding the previous reply.
-
-    A plain ``def`` for the reason given on :func:`send_message`.
-    """
+    """Re-answer the last user message, superseding the previous reply."""
+    # A plain `def` for the reason given in send_message.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
     last_user = (
@@ -530,9 +527,8 @@ def edit_message(
     the audit trail and any citations already acted on), the tail is marked
     ``superseded`` — hidden from the thread and excluded from prompt history,
     but still on record.
-
-    A plain ``def`` for the reason given on :func:`send_message`.
     """
+    # A plain `def` for the reason given in send_message.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
     target = (

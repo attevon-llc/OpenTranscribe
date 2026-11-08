@@ -33,6 +33,7 @@ _KEYS = [
     "transcription.retry_limit_enabled",
     "transcription.garbage_cleanup_enabled",
     "transcription.max_word_length",
+    "transcription.fair_share_threshold",
 ]
 
 
@@ -238,3 +239,36 @@ def test_garbage_put_out_of_range_is_a_422_and_is_not_persisted(
     response = client.put(GARBAGE, headers=admin_token_headers, json={"max_word_length": value})
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     assert sss.get_garbage_cleanup_config(db_session)["max_word_length"] == 50
+
+
+# ---------------------------------------------------------------------------
+# Fair sharing (transcription.fair_share_threshold), on the same retry-config pair
+# ---------------------------------------------------------------------------
+def test_fair_share_threshold_defaults_on_and_is_settable_alone(
+    client, admin_token_headers, clean_transcription_settings, db_session
+):
+    """The Settings card reads and writes the threshold through this endpoint.
+
+    The written value is the one dispatch reads (``transcription_fairness``), and
+    writing it leaves the retry fields alone.
+    """
+    from app.services.transcription_fairness import fair_share_threshold
+
+    assert client.get(RETRY, headers=admin_token_headers).json()["fair_share_threshold"] == 5
+
+    response = client.put(RETRY, headers=admin_token_headers, json={"fair_share_threshold": 12})
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["fair_share_threshold"] == 12
+    assert body["max_retries"] == 3
+    assert body["retry_limit_enabled"] is True
+    assert fair_share_threshold(db_session) == 12
+
+
+@pytest.mark.parametrize("value", [-1, 1001])
+def test_fair_share_threshold_out_of_range_is_a_422_and_is_not_persisted(
+    client, admin_token_headers, clean_transcription_settings, db_session, value
+):
+    response = client.put(RETRY, headers=admin_token_headers, json={"fair_share_threshold": value})
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert sss.get_retry_config(db_session)["fair_share_threshold"] == 5

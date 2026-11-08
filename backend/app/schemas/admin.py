@@ -26,6 +26,9 @@ class RetryConfig(BaseModel):
 
     max_retries: int
     retry_limit_enabled: bool
+    #: Queued or running transcriptions per user before that user's later runs are
+    #: queued behind other users' (0 = off).
+    fair_share_threshold: int
 
 
 class RetryConfigUpdate(BaseModel):
@@ -33,6 +36,14 @@ class RetryConfigUpdate(BaseModel):
 
     max_retries: int | None = None
     retry_limit_enabled: bool | None = None
+    fair_share_threshold: int | None = None
+
+    @field_validator("fair_share_threshold")
+    @classmethod
+    def validate_fair_share_threshold(cls, v: int | None) -> int | None:
+        if v is not None and (v < 0 or v > 1000):
+            raise ValueError("fair_share_threshold must be between 0 and 1000 (0 = off)")
+        return v
 
     @field_validator("max_retries")
     @classmethod

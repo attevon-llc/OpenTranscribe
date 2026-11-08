@@ -38,7 +38,13 @@ def url_seams(monkeypatch):
 
         return _delay
 
-    monkeypatch.setattr(url_video_import.process_youtube_url_task, "delay", _record(task_calls))
+    # Published with apply_async so it can carry the download fairness priority.
+    url_record = _record(task_calls)
+    monkeypatch.setattr(
+        url_video_import.process_youtube_url_task,
+        "apply_async",
+        lambda kwargs=None, **_options: url_record(**kwargs),
+    )
     monkeypatch.setattr(
         url_processing.process_youtube_playlist_task, "delay", _record(playlist_calls)
     )

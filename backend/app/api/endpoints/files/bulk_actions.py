@@ -125,8 +125,13 @@ def _process_single_file_action(
     is_org_admin: bool = False,
     ctx: RequestContext | None = None,
     http_request: Request | None = None,
+    bulk: bool = False,
 ) -> BulkActionResult:
-    """Process a single file action, returning the result."""
+    """Process a single file action, returning the result.
+
+    ``bulk`` is True when the request names more than one file: NLP work it starts goes
+    in behind single requests (``services/dispatch_priority.py``).
+    """
     if action == "delete":
         # Delete resolves the file under its own rule (services/delete_permissions),
         # not the "editor" pre-check below: an editor share must NOT pass, and an
@@ -195,12 +200,14 @@ def _process_single_file_action(
             disable_diarization,
             user_id=current_user.id,
         ),
-        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
+        "summarize": lambda: _handle_summarize_action(
+            db, file_uuid, file_id, current_user.id, bulk=bulk
+        ),
         "redact": lambda: _redact_if_enabled(
             db, db_file, file_uuid, file_id, current_user, bypass, organization_id
         ),
         "identify_speakers": lambda: _handle_identify_speakers_action(
-            db, file_uuid, file_id, current_user.id
+            db, file_uuid, file_id, current_user.id, bulk=bulk
         ),
         "add_tag": lambda: _apply_batch_tag(
             db, file_uuid, file_id, tag, add=True, user_id=current_user.id, bypass=bypass
@@ -275,6 +282,7 @@ def bulk_file_action(
                     is_org_admin=ctx.is_org_admin,
                     ctx=ctx,
                     http_request=http_request,
+                    bulk=len(request.file_uuids) > 1,
                 )
                 results.append(result)
             except RedactionNotEnabledError:

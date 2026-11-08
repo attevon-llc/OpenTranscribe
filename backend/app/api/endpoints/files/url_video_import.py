@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import DomainError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.services.dispatch_priority import download_priority
 from app.services.error_categorization_service import ErrorCategorizationService
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
@@ -265,16 +266,20 @@ def _dispatch_url_video_task(
             {"media_username": media_username, "media_password": media_password},
             context=media_credentials_context(user_id, str(media_file.uuid)),
         )
-        task_result = process_youtube_url_task.delay(
-            url=normalized_url,
-            user_id=user_id,
-            file_uuid=str(media_file.uuid),
-            media_credentials_ref=credentials_ref,
-            collection_ids=collection_ids,
-            tag_names=tag_names,
-            video_quality=video_quality,
-            audio_only=audio_only,
-            audio_quality=audio_quality,
+        task_result = process_youtube_url_task.apply_async(
+            kwargs={
+                "url": normalized_url,
+                "user_id": user_id,
+                "file_uuid": str(media_file.uuid),
+                "media_credentials_ref": credentials_ref,
+                "collection_ids": collection_ids,
+                "tag_names": tag_names,
+                "video_quality": video_quality,
+                "audio_only": audio_only,
+                "audio_quality": audio_quality,
+            },
+            # Behind other users' downloads once this owner has many imports in flight.
+            priority=download_priority(db, user_id, new_file_id=int(media_file.id)),
         )
         logger.info(
             f"Dispatched media processing task {task_result.id} for MediaFile {media_file.id}"

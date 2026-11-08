@@ -19,6 +19,7 @@ from app.api.endpoints.files.crud import delete_media_file
 from app.core.constants import HIDDEN_MEDIA_PER_USER_CAP
 from app.core.env import env_bool
 from app.core.exceptions import DomainError
+from app.core.queues import NLPPriority
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import FileStatus
@@ -26,6 +27,7 @@ from app.models.media import MediaFile
 from app.models.tag import Tag
 from app.models.user import User
 from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
+from app.services.dispatch_priority import nlp_priority
 from app.services.llm_settings_outage import LLM_SETTINGS_UNREADABLE_MESSAGE
 from app.services.platform_bypass import PlatformBypass
 from app.services.tag_bulk import BulkTagOutcome
@@ -212,9 +214,13 @@ def _llm_unavailable(file_uuid: str, user_id: int | None) -> BulkActionResult | 
 
 
 def _handle_summarize_action(
-    db: Session, file_uuid: str, file_id: int, user_id: int | None = None
+    db: Session, file_uuid: str, file_id: int, user_id: int | None = None, *, bulk: bool = False
 ) -> BulkActionResult:
-    """Handle summarize action for bulk operations."""
+    """Handle summarize action for bulk operations.
+
+    ``bulk`` (more than one file in the request) queues it behind single requests
+    (``services/dispatch_priority.py``).
+    """
 
     unavailable = _llm_unavailable(file_uuid, user_id)
     if unavailable is not None:
@@ -231,9 +237,9 @@ def _handle_summarize_action(
         )
 
     if not env_bool("SKIP_CELERY"):
-        task = summarize_transcript_task.delay(
-            file_uuid=file_uuid,
-            force_regenerate=False,
+        task = summarize_transcript_task.apply_async(
+            kwargs={"file_uuid": file_uuid, "force_regenerate": False},
+            priority=nlp_priority(db, user_id, base=NLPPriority.USER_TRIGGERED, bulk=bulk),
         )
         message = f"Summarization started (task: {task.id})"
     else:
@@ -243,7 +249,7 @@ def _handle_summarize_action(
 
 
 def _handle_identify_speakers_action(
-    db: Session, file_uuid: str, file_id: int, user_id: int | None = None
+    db: Session, file_uuid: str, file_id: int, user_id: int | None = None, *, bulk: bool = False
 ) -> BulkActionResult:
     """Handle LLM speaker identification for bulk operations.
 
@@ -281,7 +287,10 @@ def _handle_identify_speakers_action(
         )
 
     if not env_bool("SKIP_CELERY"):
-        task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        task = identify_speakers_llm_task.apply_async(
+            kwargs={"file_uuid": file_uuid},
+            priority=nlp_priority(db, user_id, base=NLPPriority.USER_TRIGGERED, bulk=bulk),
+        )
         message = f"Speaker identification started (task: {task.id})"
     else:
         message = "Speaker identification prepared (test mode)"

@@ -89,6 +89,14 @@ STREAM_HEADERS = {
 
 # Rough tokens-per-file estimate for the context sizing hint (a typical
 # transcript chunk set, not the full transcript — chat retrieves excerpts).
+#: Chat turns (send, regenerate, edit) per user per minute, across every conversation.
+#: A named scope rather than ``@limiter.limit``: the limiter keys buckets by request path
+#: by default (``key_style="url"``), which made the limit per conversation, so opening
+#: another conversation bought another allowance. ``shared_limit``'s scope replaces the
+#: path in the bucket key (slowapi, ``Limiter.shared_limit``).
+CHAT_TURN_LIMIT = "20/minute"
+CHAT_CANCEL_LIMIT = "60/minute"
+
 _ESTIMATED_TOKENS_PER_FILE = 700
 
 
@@ -430,7 +438,7 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
 
 
 @router.post("/conversations/{conversation_uuid}/messages")
-@limiter.limit("20/minute", key_func=user_or_ip_key)
+@limiter.shared_limit(CHAT_TURN_LIMIT, scope="chat-turn", key_func=user_or_ip_key)
 def send_message(
     request: Request,
     response: Response,
@@ -460,7 +468,7 @@ def send_message(
 
 
 @router.post("/conversations/{conversation_uuid}/regenerate")
-@limiter.limit("20/minute", key_func=user_or_ip_key)
+@limiter.shared_limit(CHAT_TURN_LIMIT, scope="chat-turn", key_func=user_or_ip_key)
 def regenerate(
     request: Request,
     response: Response,
@@ -510,7 +518,7 @@ class MessageEdit(BaseModel):
 
 
 @router.post("/conversations/{conversation_uuid}/messages/{message_uuid}/edit")
-@limiter.limit("20/minute", key_func=user_or_ip_key)
+@limiter.shared_limit(CHAT_TURN_LIMIT, scope="chat-turn", key_func=user_or_ip_key)
 def edit_message(
     request: Request,
     response: Response,
@@ -567,7 +575,7 @@ def edit_message(
 
 
 @router.post("/messages/{message_uuid}/cancel")
-@limiter.limit("60/minute", key_func=user_or_ip_key)
+@limiter.shared_limit(CHAT_CANCEL_LIMIT, scope="chat-cancel", key_func=user_or_ip_key)
 def cancel_message(
     request: Request,
     response: Response,

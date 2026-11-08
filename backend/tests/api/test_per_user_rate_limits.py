@@ -34,8 +34,8 @@ _AUTHENTICATED_DEPENDENCIES = frozenset(
 )
 
 
-#: One fixed conversation: the limiter's default ``key_style`` is "url", so the bucket is
-#: per request path as well as per key, and the two users must hit the same path.
+#: One fixed conversation for the two-user test, so it holds whichever way the chat
+#: limit is scoped.
 _CONVERSATION = uuid.uuid4()
 
 
@@ -62,6 +62,33 @@ def test_two_users_behind_one_ip_get_separate_chat_buckets(
     assert other.status_code == status.HTTP_404_NOT_FOUND, other.text
 
 
+def test_the_chat_limit_counts_one_user_across_conversations(
+    client, user_token_headers, rate_limiting_enabled
+):
+    """Opening another conversation does not buy another 20 messages a minute.
+
+    The limiter's default ``key_style`` is "url", so a plain ``@limiter.limit`` keeps
+    a bucket per request path, i.e. per conversation. The chat turn routes share one
+    named scope instead.
+    """
+    first, second = uuid.uuid4(), uuid.uuid4()
+    for index in range(20):
+        conversation = first if index % 2 == 0 else second
+        response = client.post(
+            f"/api/chat/conversations/{conversation}/messages",
+            json={"content": "hello"},
+            headers=user_token_headers,
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND, response.text
+
+    third = client.post(
+        f"/api/chat/conversations/{uuid.uuid4()}/messages",
+        json={"content": "hello"},
+        headers=user_token_headers,
+    )
+    assert third.status_code == status.HTTP_429_TOO_MANY_REQUESTS, third.text
+
+
 def _limited_routes() -> list[tuple[str, str, bool, bool]]:
     """``(location, handler, keyed_per_user, authenticated)`` for every limited route."""
     found = []
@@ -73,7 +100,8 @@ def _limited_routes() -> list[tuple[str, str, bool, bool]]:
             limits = [
                 d
                 for d in node.decorator_list
-                if isinstance(d, ast.Call) and ast.unparse(d.func) == "limiter.limit"
+                if isinstance(d, ast.Call)
+                and ast.unparse(d.func) in ("limiter.limit", "limiter.shared_limit")
             ]
             if not limits:
                 continue

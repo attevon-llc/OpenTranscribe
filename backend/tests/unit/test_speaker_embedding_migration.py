@@ -1,5 +1,11 @@
 """Characterization tests for ``app/tasks/speaker_embedding_migration.py``.
 
+**Superseded in part (concurrency audit M12):** startup no longer runs this task inline;
+it ``.delay()``s it, and the task itself records ``embedding_normalization_done`` only
+after a clean run (no ``error``, no ``failed``), so the OpenSearch-outage bug described in
+point 1 below is closed. ``test_embedding_normalization_dispatch.py`` pins that. The return
+shapes pinned here are still what the task's flag decision reads.
+
 This task runs exactly once per backend process, 60 s after FastAPI startup, via
 ``app/startup/maintenance.py::_run_one_time_embedding_normalization`` (L442-513). It is invoked
 **synchronously** (``normalize_speaker_embeddings_task.apply(throw=False)`` at L469,

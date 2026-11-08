@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 #: Renewed-lease task lock (app/utils/task_lock.py) for the normalization pass.
 NORMALIZE_EMBEDDINGS_LOCK_KEY = "normalize_embeddings_lock"
+#: ``SystemSettings`` key recording that the one-time normalization has completed.
+NORMALIZATION_DONE_KEY = "embedding_normalization_done"
 
 # Batch size for scroll API
 SCROLL_BATCH_SIZE = 500
@@ -262,7 +264,9 @@ def normalize_speaker_embeddings_task(
     holds cluster centroids). Idempotent — already-normalized vectors
     are skipped (tolerance 0.01).
 
-    Runs automatically on startup via the FastAPI lifespan hook.
+    Dispatched once from API startup (``startup/maintenance.py``) until it has completed.
+    A clean run (no error, no failed vector) records ``NORMALIZATION_DONE_KEY`` itself;
+    a skipped, failed or partial run leaves it unset so the next start dispatches again.
     """
     from app.utils.task_lock import task_lock_manager
 
@@ -270,7 +274,30 @@ def normalize_speaker_embeddings_task(
         if not acquired:
             logger.info("Embedding normalization already running (or lock unavailable), skipping")
             return {"status": "already_running"}
-        return _run_normalize_embeddings(batch_size)
+        summary = _run_normalize_embeddings(batch_size)
+    if not summary.get("error") and not summary.get("failed"):
+        _mark_normalization_done()
+    return summary
+
+
+def _mark_normalization_done() -> None:
+    from app.models.system_settings import SystemSettings
+
+    with session_scope() as db:
+        setting = (
+            db.query(SystemSettings).filter(SystemSettings.key == NORMALIZATION_DONE_KEY).first()
+        )
+        if setting is None:
+            db.add(
+                SystemSettings(
+                    key=NORMALIZATION_DONE_KEY,
+                    value="true",
+                    description="One-time embedding L2 normalization migration completed",
+                )
+            )
+        else:
+            setting.value = "true"
+    logger.info("Embedding normalization complete; it will not be dispatched again")
 
 
 def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:

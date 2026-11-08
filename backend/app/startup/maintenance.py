@@ -344,73 +344,40 @@ async def _run_imohash_recompute() -> None:
 
 
 async def _run_one_time_embedding_normalization() -> None:
-    """One-time migration: normalize legacy embeddings for users upgrading.
+    """Dispatch the one-time embedding normalization to a worker until it has completed.
 
-    Checks a DB flag first — if already done, returns immediately.
-    After successful normalization, sets the flag so it never runs again.
+    It used to run ``normalize_speaker_embeddings_task.apply()`` here: a full scroll over
+    the speaker indices inline in the API lifespan, on the event loop every request shares,
+    on every replica (concurrency audit M12). It also set the "done" flag from the result,
+    so an ``already_running`` skip or an OpenSearch outage (both ``normalized: 0``) marked
+    the migration done without it having run. Now the API only checks the flag and
+    publishes, elected so one replica does it, and the task sets the flag after a clean run.
     """
     try:
         await asyncio.sleep(60)
-
-        from app.db.base import SessionLocal
-        from app.models.system_settings import SystemSettings
-
-        db = SessionLocal()
-        try:
-            flag = (
-                db.query(SystemSettings)
-                .filter(SystemSettings.key == "embedding_normalization_done")
-                .first()
-            )
-            if flag and flag.value == "true":
-                logger.info("Embedding normalization already completed — skipping")
-                return
-        finally:
-            db.close()
-
-        from app.tasks.speaker_embedding_migration import normalize_speaker_embeddings_task
-
-        result = normalize_speaker_embeddings_task.apply(throw=False)
-        if result and result.result and result.result.get("normalized", 0) == 0:
-            # All vectors already normalized — set flag
-            db = SessionLocal()
-            try:
-                setting = (
-                    db.query(SystemSettings)
-                    .filter(SystemSettings.key == "embedding_normalization_done")
-                    .first()
-                )
-                if not setting:
-                    setting = SystemSettings(
-                        key="embedding_normalization_done",
-                        value="true",
-                        description="One-time embedding L2 normalization migration completed",
-                    )
-                    db.add(setting)
-                else:
-                    setting.value = "true"
-                db.commit()
-                logger.info("Embedding normalization flag set — will not run again")
-            finally:
-                db.close()
-        elif result and result.result:
-            stats = result.result
-            logger.info(
-                "Embedding normalization migrated %d vectors (checked %d)",
-                stats.get("normalized", 0),
-                stats.get("total_found", 0),
-            )
-            # Set flag after successful migration
-            db = SessionLocal()
-            try:
-                setting = SystemSettings(
-                    key="embedding_normalization_done",
-                    value="true",
-                    description="One-time embedding L2 normalization migration completed",
-                )
-                db.merge(setting)
-                db.commit()
-            finally:
-                db.close()
+        await run_in_threadpool(_dispatch_embedding_normalization)
     except Exception as e:
-        logger.error(f"Embedding normalization migration error: {e}")
+        logger.error(f"Embedding normalization dispatch error: {e}")
+
+
+def _dispatch_embedding_normalization() -> None:
+    """Blocking half of the startup step (DB read, Redis election, broker publish)."""
+    from app.db.base import SessionLocal
+    from app.models.system_settings import SystemSettings
+    from app.tasks.speaker_embedding_migration import NORMALIZATION_DONE_KEY
+    from app.tasks.speaker_embedding_migration import normalize_speaker_embeddings_task
+    from app.utils.boot_once import run_once_per_boot
+
+    db = SessionLocal()
+    try:
+        flag = db.query(SystemSettings).filter(SystemSettings.key == NORMALIZATION_DONE_KEY).first()
+        done = flag is not None and flag.value == "true"
+    finally:
+        db.close()
+    if done:
+        logger.info("Embedding normalization already completed — skipping")
+        return
+    if not run_once_per_boot("embedding_normalization"):
+        return
+    result = normalize_speaker_embeddings_task.delay()
+    logger.info("Embedding normalization dispatched to a worker: %s", getattr(result, "id", None))

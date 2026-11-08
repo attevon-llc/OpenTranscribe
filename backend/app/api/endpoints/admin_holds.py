@@ -122,6 +122,7 @@ def list_admin_holds(
 @limiter.limit(get_search_rate_limit(), key_func=user_or_ip_key)
 def search_admin_hold_files(
     request: Request,
+    response: Response,
     q: str = Query(..., min_length=1, max_length=200, description="Part of a title or file name"),
     limit: int = Query(20, ge=1, le=ADMIN_FILE_SEARCH_MAX),
     offset: int = Query(0, ge=0),

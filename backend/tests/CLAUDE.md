@@ -110,6 +110,15 @@ what it appears to. A green one from the wrong schema is worse.
   `norecursedirs=["tests/e2e"]`. **`--strict-markers` makes an unregistered marker a collection
   error** — register any new marker in `[tool.pytest.ini_options] markers` or collection fails.
   (The e2e markers live in `tests/e2e/pytest.ini`, which is a separate rootdir config.)
+- **CI shards the suite (issue #1099).** `.github/workflows/pre-commit.yml` runs `tests/` as
+  `--splits 8 --group N` (pytest-split, `duration_based_chunks`, balanced by the committed
+  `backend/.test_durations`); a stale file unbalances legs but never drops a test.
+  `shard_manifest.py` (`-p tests.shard_manifest`, needs `python -m pytest` so `backend/` is on
+  `sys.path`) records each leg's selected ids and `scripts/guards/check_shard_coverage.py`
+  proves legs are disjoint and complete against one unsplit collection. `test_ci_sharding.py`
+  pins it. Per-leg coverage is NOT enforced (`--cov-fail-under=0`); the pyproject floor applies to
+  the merged data in the `Backend Tests (pytest)` aggregate job. Refresh recipe:
+  `docs-site/docs/developer-guide/testing.md`.
 - **CUDA device guard (issue #719).** `conftest.py`'s `pytest_configure` asks pytest's own
   `Expression` parser whether the active `-m` selection can ever satisfy `gpu` (satisfiability,
   not a `"gpu" in markexpr` substring check — the default expression `not integration and not

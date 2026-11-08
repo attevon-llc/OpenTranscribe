@@ -5,7 +5,9 @@
    * The radio groups build their own items from player state: the speed list the player
    * offers (`default-playback-rates`, set by `MediaPlayer`) and the caption tracks plus Off.
    * The library positions the menu (it mirrors `align` in RTL), so nothing here sets
-   * `position`.
+   * `position`. The audio bar sits under the page header, so its menu opens downward: opened
+   * upward against the viewport it covered the top navigation. The video menu stays above its
+   * controls, over the picture.
    */
   export let audio = false;
   /** Unique id of the trigger button; the menu ids derive from it. */
@@ -23,7 +25,7 @@
 <media-tooltip trigger={id} side="top" class="tip"><media-text token="menu.settings">Settings</media-text></media-tooltip>
 <media-menu
   id={menuId}
-  side="top"
+  side={audio ? 'bottom' : 'top'}
   align="end"
   boundary={audio ? 'viewport' : undefined}
   class="settings-menu"

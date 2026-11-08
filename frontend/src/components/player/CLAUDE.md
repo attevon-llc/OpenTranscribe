@@ -58,6 +58,9 @@ elements' API: they render their own `<video>`/`<audio>` and take a `PlayerHandl
 - The time readout (`.time`) is `direction: ltr` with `unicode-bidi: isolate`: inheriting RTL
   reorders it to "total / elapsed" and moves its start margin against the volume slider
   (`test_time_readout_stays_elapsed_then_total_in_rtl`).
+- The audio player's settings menu opens downward (`side="bottom"`): the bar sits under the page
+  header, and an upward menu covered the top navigation. The video menu stays `side="top"`. The
+  mini player's control row sets `row-reverse` under `:dir(rtl)` like `.controls-row`.
 - Menus and tooltips are positioned by the library (Popover API top layer); never give them a
   `position` (`floatingPanel.convention.test.ts`).
 - Tests: jsdom runs these elements and their store. `VideoPlayer.controls.test.ts` and

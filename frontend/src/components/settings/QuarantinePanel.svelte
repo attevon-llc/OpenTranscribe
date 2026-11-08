@@ -16,7 +16,8 @@
    * (when present) must go to User Management, never to an erasure action.
    */
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
+  import { formatDateTime } from '$lib/utils/formatting';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -166,29 +167,29 @@
       description={$t('settings.quarantine.emptyMessage')}
     />
   {:else}
+    <div class="table-scroll">
     <table class="quarantine-table">
       <thead>
         <tr>
           <th>{$t('settings.quarantine.columnFile')}</th>
-          <th>{$t('settings.quarantine.columnOwner')}</th>
           <th>{$t('settings.quarantine.columnReason')}</th>
+          <th>{$t('settings.quarantine.columnOwner')} / {$t('settings.quarantine.columnBy')}</th>
           <th>{$t('settings.quarantine.columnTakenDown')}</th>
-          <th>{$t('settings.quarantine.columnBy')}</th>
           <th>{$t('settings.quarantine.columnHeldBy')}</th>
-          <th>{$t('settings.quarantine.columnLegalHold')}</th>
           <th>{$t('settings.quarantine.columnActions')}</th>
         </tr>
       </thead>
       <tbody>
         {#each files as file (file.uuid)}
           <tr>
-            <td>
-              <a href={`/files/${file.uuid}`} target="_blank" rel="noopener noreferrer">
-                {file.label}
-              </a>
+            <td class="file-cell">
+              <a
+                href={`/files/${file.uuid}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={file.label}>{file.label}</a
+              >
             </td>
-            <!-- A person's name or email, never a bare integer id (issue #576). -->
-            <td>{file.owner}</td>
             <td class="reason-cell">
               {#if file.reasonWithheld}
                 {$t('settings.quarantine.operatorHeldReason')}
@@ -203,9 +204,13 @@
                 </div>
               {/each}
             </td>
-            <td>{file.quarantinedAt || '—'}</td>
-            <td>{file.by || '—'}</td>
+            <td class="people-cell">
+              <div class="person" title={file.owner}>{file.owner}</div>
+              <div class="person person-by" title={file.by || undefined}>{file.by || '—'}</div>
+            </td>
+            <td>{formatDateTime(file.quarantinedAt, '—', $locale)}</td>
             <td>
+              <div class="badges-cell">
               {#if file.origin}
                 <span class="badge badge-origin" class:badge-operator={file.origin === 'platform'}>
                   {$t(
@@ -215,11 +220,10 @@
                   )}
                 </span>
               {/if}
-            </td>
-            <td>
               {#if file.legalHold}
                 <span class="badge badge-hold">{$t('settings.quarantine.legalHoldBadge')}</span>
               {/if}
+              </div>
             </td>
             <td class="actions-cell">
               {#if !file.canRelease}
@@ -248,6 +252,7 @@
         {/each}
       </tbody>
     </table>
+    </div>
 
     <div class="pagination">
       <button disabled={offset === 0 || loading} on:click={() => load(Math.max(0, offset - PAGE_SIZE))}>
@@ -328,6 +333,8 @@
   .quarantine-table {
     width: 100%;
     border-collapse: collapse;
+    overflow-wrap: normal;
+    word-break: normal;
     font-size: 0.8125rem;
   }
 
@@ -335,8 +342,48 @@
   .quarantine-table td {
     padding: 0.5rem;
     border-bottom: 1px solid var(--border-color);
-    text-align: left;
+    text-align: start;
     vertical-align: top;
+  }
+
+  .table-scroll {
+    overflow-x: auto;
+  }
+
+  .quarantine-table th {
+    white-space: nowrap;
+  }
+
+  .file-cell {
+    min-width: 120px;
+    max-width: 180px;
+  }
+
+  .file-cell a,
+  .person {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .people-cell {
+    max-width: 200px;
+  }
+
+  .person-by {
+    color: var(--text-secondary);
+  }
+
+  .badges-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .badge {
+    white-space: nowrap;
   }
 
   .reason-cell {
@@ -402,6 +449,7 @@
   .actions-cell {
     display: flex;
     gap: 0.75rem;
+    white-space: nowrap;
   }
 
   .action-link {

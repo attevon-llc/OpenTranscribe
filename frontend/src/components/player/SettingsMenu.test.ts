@@ -20,6 +20,18 @@ describe('SettingsMenu boundary', () => {
   });
 });
 
+describe('SettingsMenu side', () => {
+  it('opens the audio player menu downward so it never covers the top navigation', () => {
+    const { container } = render(SettingsMenu, { props: { id: 'a', audio: true } });
+    expect(container.querySelector('media-menu')?.getAttribute('side')).toBe('bottom');
+  });
+
+  it('keeps the video player menu above its controls', () => {
+    const { container } = render(SettingsMenu, { props: { id: 'v', audio: false } });
+    expect(container.querySelector('media-menu')?.getAttribute('side')).toBe('top');
+  });
+});
+
 describe('SettingsMenu speed values in right-to-left languages', () => {
   // Arabic showed "×1" and "×0.5": a rate is a technical value, read left to right.
   it('keeps the speed hint and every rate label left to right', () => {

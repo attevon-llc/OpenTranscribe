@@ -396,7 +396,7 @@
                 <span class="speaker-name">{@html sanitizeHighlightHtml(s.name)}</span>
                 {#if s.role}<span class="speaker-role">{@html sanitizeHighlightHtml(s.role)}</span>{/if}
                 {#if s.talkTime !== null && s.talkTime !== undefined}
-                  <span class="speaker-talktime">{s.talkTime}%</span>
+                  <span class="speaker-talktime" dir="ltr">{s.talkTime}%</span>
                 {/if}
               </div>
               {#if s.points && s.points.length > 0}

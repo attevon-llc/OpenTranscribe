@@ -186,7 +186,7 @@
               })}
             </span>
             <span class="progress-percent">
-              {Math.round((migrationProcessedFiles / Math.max(migrationTotalFiles, 1)) * 100)}%
+              <bdi dir="ltr">{Math.round((migrationProcessedFiles / Math.max(migrationTotalFiles, 1)) * 100)}%</bdi>
               {#if formatEta(etaSeconds)}
                 ({formatEta(etaSeconds)} {$t('common.remaining')})
               {/if}

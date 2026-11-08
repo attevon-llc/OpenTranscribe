@@ -98,6 +98,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Quarantine table now fits the Settings width without breaking words: six columns (owner and actor stacked), file names and people truncated with an ellipsis and a tooltip, and the "Held by" and legal hold badges never wrap.
+- The Quarantine table no longer breaks "Release", "Actions" or email addresses mid-word: people are truncated with an ellipsis and a tooltip, headers and action buttons stay on one line, and the table scrolls sideways when narrow.
+- The Quarantine queue shows the quarantine date formatted in the interface language instead of raw ISO text.
+- System statistics sizes, the GPU name and the success rate read left-to-right inside Arabic labels ("12.00 GB", not "GB 12.00").
+- File details and the Settings file status show the file age, processing time and status in the interface language, formatted from the raw timestamps and status codes, instead of the server's English "2 hours ago" and "Completed".
+- The Collections panel no longer prints "No collections yet" straight under the computed "Legal hold" entry: the empty state now sits under a "Your collections" subheading (translated in all 12 languages).
+- The legal hold explainer's info tip now sits beside the "What does a legal hold do?" toggle text, not at the far edge of the banner, panel and dialog.
+- The audio player's speed and settings menu opens below its control bar instead of upward over the top navigation and logo, in right-to-left and left-to-right languages alike.
+- The mini player (search and speaker previews) keeps its control bar in the same order as the file page player in right-to-left languages instead of mirroring it.
+- The Search details panel names a result's language in the interface language ("Englisch" in German) instead of the browser's, and so does the chat warning about unsupported languages.
+- Technical tokens inside Arabic copy (".env", environment variable names, compose file names) now read left-to-right, so ".env" no longer renders as "env." in the usage report and other settings text.
+- Percentages no longer render as "%99" beside Arabic text: Arabic copy keeps each figure and its percent sign together, and the screens that print a bare percentage (upload and processing progress, speaker confidence, statistics) set it left-to-right.
+- Counts in messages now use real plural forms in all 12 languages instead of "file(s)" hedges, for example "Legal hold placed on 1 file." versus "3 files." (Arabic has its six forms); a sentence with two counts pluralises each separately.
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.
 - The speakers page said "1 speakers have no match" when one speaker was waiting in Review; the message now uses each language's plural forms.
 - In right-to-left languages the player's speed menu and the floating preview's speed button showed rates as "×1" and "×0.5"; they now read "1×" and "0.5×".

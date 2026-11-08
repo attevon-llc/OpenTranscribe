@@ -29,7 +29,7 @@
     <div class="progress-bar-fill" class:active class:failed style="width: {value}%"></div>
   </div>
   <span class="progress-text" aria-hidden="true">
-    {value}%
+    <bdi dir="ltr">{value}%</bdi>
     {#if eta}
       <span class="progress-eta">{$t('notifications.job.eta', { duration: eta })}</span>
     {/if}

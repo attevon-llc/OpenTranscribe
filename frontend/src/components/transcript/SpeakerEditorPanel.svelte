@@ -331,7 +331,7 @@
                                 {#if hint.role && hint.role !== 'unknown'}
                                   <span class="chip-role">{hint.role}</span>
                                 {/if}
-                                <span class="chip-confidence">{Math.round(hint.confidence * 100)}%</span>
+                                <span class="chip-confidence" dir="ltr">{Math.round(hint.confidence * 100)}%</span>
                               </button>
                             {/each}
                           </div>
@@ -383,7 +383,7 @@
                                 ? $t('transcript.sourceContentAnalysis')
                                   : $t('transcript.sourceVoiceSimilarity')}
                             </span>
-                            <span class="chip-confidence">{Math.round(speaker.confidence * 100)}%</span>
+                            <span class="chip-confidence" dir="ltr">{Math.round(speaker.confidence * 100)}%</span>
                           </button>
                         </div>
                       {/if}
@@ -472,7 +472,7 @@
                               {#if match.same_speaker}
                                 {$t('transcript.currentVideo')}
                               {:else if match.confidence}
-                                {Math.round(match.confidence * 100)}%
+                                <bdi dir="ltr">{Math.round(match.confidence * 100)}%</bdi>
                               {:else}
                                 {$t('transcript.profileMatch')}
                               {/if}
@@ -493,7 +493,7 @@
                                     {#if match.same_speaker}
                                       {$t('transcript.currentVideo')}
                                     {:else if match.confidence}
-                                      {Math.round(match.confidence * 100)}%
+                                      <bdi dir="ltr">{Math.round(match.confidence * 100)}%</bdi>
                                     {:else}
                                       {$t('transcript.profileMatch')}
                                     {/if}

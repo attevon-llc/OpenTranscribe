@@ -78,7 +78,7 @@
             <span class="suggestion-name">{item.suggested_name}</span>
             {#if item.confidence != null && !isNaN(item.confidence)}
               <span class="confidence" style="color: {confidenceColor(item.confidence)}">
-                {(item.confidence * 100).toFixed(0)}%
+                <bdi dir="ltr">{(item.confidence * 100).toFixed(0)}%</bdi>
               </span>
             {/if}
             {#if item.suggestion_source}

@@ -98,7 +98,8 @@
   // ISO codes the backend sends ("es") into the reader's own language ("Spanish"),
   // falling back to the raw code for anything it does not know.
   $: unsupportedLanguageList = formatLanguageNames(
-    message.msg_metadata?.context_languages?.languages ?? []
+    message.msg_metadata?.context_languages?.languages ?? [],
+    $locale
   );
   $: timestamp = formatDateTime(message.created_at, '', $locale);
   $: canEdit = isUser && !message.pending;

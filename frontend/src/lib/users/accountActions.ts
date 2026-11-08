@@ -275,7 +275,7 @@ export function createAccountActions(
           (result, name) =>
             tr('userManagement.forceLogoutSuccess', {
               name,
-              sessions: result?.sessions_terminated ?? 0,
+              count: result?.sessions_terminated ?? 0,
             }),
           tr('userManagement.forceLogoutFailed')
         ),

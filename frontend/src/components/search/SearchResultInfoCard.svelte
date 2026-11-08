@@ -113,7 +113,7 @@
       <div class="fact"><dt>{$t('common.size')}</dt><dd><bdi>{formatFileSize(hit.file_size)}</bdi></dd></div>
     {/if}
     {#if hit.language}
-      <div class="fact"><dt>{$t('filter.language')}</dt><dd>{formatLanguageNames([hit.language])}</dd></div>
+      <div class="fact"><dt>{$t('filter.language')}</dt><dd>{formatLanguageNames([hit.language], $locale)}</dd></div>
     {/if}
     <div class="fact">
       <dt>{$t('search.infoMatches')}</dt>

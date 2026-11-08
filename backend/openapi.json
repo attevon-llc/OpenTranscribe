@@ -571,6 +571,69 @@
         "title": "ApproveBody",
         "type": "object"
       },
+      "AudioStreamInfo": {
+        "description": "One audio track of a container, as ffprobe described it (issue #1263).",
+        "properties": {
+          "channels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channels"
+          },
+          "codec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codec"
+          },
+          "default": {
+            "default": false,
+            "title": "Default",
+            "type": "boolean"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "title": "AudioStreamInfo",
+        "type": "object"
+      },
       "AuditIntegrityStatus": {
         "description": "Measured audit-record protection.",
         "properties": {
@@ -958,6 +1021,25 @@
           }
         },
         "title": "AuthMailDesignationUpdate",
+        "type": "object"
+      },
+      "AuthMailReadinessResponse": {
+        "description": "The two booleans a plain admin may see about auth mail; nothing else.\n\nA deliberate allowlist, not a projection of ``AuthMailDesignationResponse``:\nthe designation carries the config's name, UUID, provider and the env-SMTP\nflag, which describe the deployment's mail infrastructure and stay\nsuper_admin-only. ``deliverable`` is \"configured\", not \"proven working\".",
+        "properties": {
+          "deliverable": {
+            "title": "Deliverable",
+            "type": "boolean"
+          },
+          "verification_required": {
+            "title": "Verification Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deliverable",
+          "verification_required"
+        ],
+        "title": "AuthMailReadinessResponse",
         "type": "object"
       },
       "AuthMethodTestResponse": {
@@ -10112,6 +10194,31 @@
             ],
             "title": "Audio Sample Rate"
           },
+          "audio_stream_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Stream Index"
+          },
+          "audio_streams": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AudioStreamInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Streams"
+          },
           "author": {
             "anyOf": [
               {
@@ -10739,6 +10846,11 @@
             ],
             "title": "Audio Channels"
           },
+          "audio_language_mismatch": {
+            "default": false,
+            "title": "Audio Language Mismatch",
+            "type": "boolean"
+          },
           "audio_sample_rate": {
             "anyOf": [
               {
@@ -10749,6 +10861,42 @@
               }
             ],
             "title": "Audio Sample Rate"
+          },
+          "audio_stream_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Stream Index"
+          },
+          "audio_streams": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AudioStreamInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Streams"
+          },
+          "audio_track_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Track Language"
           },
           "author": {
             "anyOf": [
@@ -14387,6 +14535,19 @@
       "PrepareUploadRequest": {
         "description": "Request schema for preparing a file upload.\n\nThis schema is used to create a file record before the actual upload starts.\n\nAttributes:\n    filename: Name of the file to be uploaded\n    file_size: Size of the file in bytes\n    content_type: MIME type of the file\n    file_hash: Content fingerprint of the source, for duplicate detection\n    extracted_from_video: Optional metadata from original video file (if audio was extracted client-side)\n    min_speakers: Optional minimum number of speakers for diarization\n    max_speakers: Optional maximum number of speakers for diarization\n    num_speakers: Optional fixed number of speakers for diarization (overrides min/max)\n    collection_ids: Optional collection UUIDs to add the file to after creation\n    tag_names: Optional tag names to apply to the file after creation",
         "properties": {
+          "audio_stream_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audio track to transcribe in a multi-track file (the N of ffmpeg's `-map 0:a:N`). A new upload cannot be checked against its tracks before it exists, so an index the file turns out not to have fails the run with a clear message; a negative value is rejected with 422. None = the first track.",
+            "title": "Audio Stream Index"
+          },
           "collection_ids": {
             "anyOf": [
               {
@@ -16717,6 +16878,19 @@
       "ReprocessRequest": {
         "description": "Request schema for reprocessing a file with optional speaker diarization settings.\n\nAttributes:\n    stages: Pipeline stages to re-run. Empty list = full reprocess (backward compatible).\n    min_speakers: Optional minimum number of speakers for diarization\n    max_speakers: Optional maximum number of speakers for diarization\n    num_speakers: Optional fixed number of speakers for diarization (overrides min/max)",
         "properties": {
+          "audio_stream_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Audio track to transcribe (and play) in a multi-track file: the `index` of an entry in the file's `audio_streams` (the N of ffmpeg's `-map 0:a:N`). None keeps the file's current choice (the first track by default). An index the file does not have is rejected with 422.",
+            "title": "Audio Stream Index"
+          },
           "disable_diarization": {
             "anyOf": [
               {
@@ -27089,6 +27263,33 @@
           }
         ],
         "summary": "Update Auth Mail Designation",
+        "tags": [
+          "auth-config"
+        ]
+      }
+    },
+    "/api/admin/auth-config/email/readiness": {
+      "get": {
+        "description": "Whether auth mail can be delivered, for admins who invite users (admin+).\n\nA plain admin can invite users but cannot read the designation (super_admin),\nso the invite form had no way to warn that the invitation will not be sent.\nThis returns only ``deliverable`` and ``verification_required``; the config\nname, UUID, provider and env-SMTP flag never leave the super_admin route.",
+        "operationId": "get_auth_mail_readiness_api_admin_auth_config_email_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMailReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Auth Mail Readiness",
         "tags": [
           "auth-config"
         ]

@@ -40,6 +40,7 @@ from app.auth.provider_registry import unregister_verifier
 from app.db.base import engine as app_engine
 from app.db.base import get_db
 from app.models.user import User
+from tests.query_budget import StatementLog
 from tests.query_budget import count_statements
 
 pytestmark = pytest.mark.unit
@@ -188,3 +189,39 @@ def test_a_kept_object_survives_the_commit_without_a_reload(db_session, normal_u
     with count_statements(db_session.connection()) as log:
         assert normal_user.email.endswith("@example.com")
     assert log.count == 0, log.describe()
+
+
+def _banner_statements(log: StatementLog) -> list[str]:
+    return log.matching(r"FROM auth_config")
+
+
+def test_the_banner_gate_reads_auth_config_once_per_cache_generation(db_session, admin_user):
+    """A warm cache answers the banner gate with no ``auth_config`` statement (plan 2.4.2).
+
+    ``AuthConfigService.set_config`` publishes the edited row, which drops the cached
+    banner state: the next request reads the rows again and enforces the new value.
+    """
+    from app.api.endpoints.auth.lifecycle_gates import _banner_requirement
+    from app.services.auth_config_service import AuthConfigService
+
+    with count_statements(db_session.connection()) as cold:
+        assert _banner_requirement(db_session)[0] is False
+    with count_statements(db_session.connection()) as warm:
+        assert _banner_requirement(db_session)[0] is False
+
+    assert len(_banner_statements(cold)) == 1, cold.describe()
+    assert _banner_statements(warm) == [], warm.describe()
+
+    AuthConfigService.set_config(
+        db=db_session,
+        key="login_banner_enabled",
+        value=True,
+        is_sensitive=False,
+        category="banner",
+        user_id=admin_user.id,
+        data_type="bool",
+    )
+
+    with count_statements(db_session.connection()) as after_edit:
+        assert _banner_requirement(db_session)[0] is True
+    assert len(_banner_statements(after_edit)) == 1, after_edit.describe()

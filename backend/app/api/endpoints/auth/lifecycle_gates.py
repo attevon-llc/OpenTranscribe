@@ -8,6 +8,7 @@ into its own globals and calls them from there.
 import logging
 from datetime import UTC
 from datetime import datetime
+from typing import cast
 
 from fastapi import HTTPException
 from fastapi import Request
@@ -332,6 +333,15 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
     precedence the banner endpoints use, so a banner enabled in the admin UI is
     enforced, not just displayed.
 
+    The answer is kept in the process-level auth settings cache
+    (``core/process_auth_settings.py``, key ``LOGIN_BANNER_STATE_KEY``): this runs on
+    every authenticated request, and the two rows change only when an administrator
+    edits the banner. ``AuthConfigService.set_config`` publishes the edited row, which
+    drops the cached pair, so this process enforces the change on its next request;
+    other API processes within ``AUTH_CONFIG_CACHE_SECONDS``, the staleness every
+    process-level auth setting already accepts. A miss is read with the request's own
+    session, never a second pooled connection.
+
     ``text_last_changed_at`` is the ``login_banner_text`` row's ``updated_at``,
     which is what makes an acknowledgment expire when the wording changes; see
     :func:`_enforce_banner_acknowledgment`. It is ``None`` when the text comes
@@ -354,6 +364,14 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
 
     if db is None or not hasattr(db, "query"):
         return settings.LOGIN_BANNER_ENABLED, None
+
+    from app.core.process_auth_settings import LOGIN_BANNER_STATE_KEY
+    from app.core.process_auth_settings import lookup_process_auth_setting
+    from app.core.process_auth_settings import publish_process_auth_setting
+
+    cached = lookup_process_auth_setting(LOGIN_BANNER_STATE_KEY)
+    if cached is not None:
+        return cast(tuple[bool, datetime | None], cached)
 
     try:
         from app.models.auth_config import AuthConfig
@@ -389,6 +407,7 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
 
     text_row = rows.get("login_banner_text")
     _last_banner_read = (enabled, getattr(text_row, "updated_at", None))
+    publish_process_auth_setting(LOGIN_BANNER_STATE_KEY, _last_banner_read)
     return _last_banner_read
 
 

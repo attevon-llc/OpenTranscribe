@@ -102,6 +102,13 @@ CONTENT_AUDIT_DEDUP_SECONDS = 900
 #: ``audit.content_access`` capability, switches on the view / media-access / export events.
 AUDIT_CONTENT_ACCESS_SETTING_KEY = "audit.content_access.enabled"
 AUDIT_CONTENT_ACCESS_DEFAULT = False
+
+# One-time thumbnail passes (scale plan 5.2). ``SystemSettings`` keys whose value ``"true"``
+# records that a pass reached the end of the library; startup then dispatches nothing. Absent
+# (the coded default) means not done. An administrator deletes the row to run a pass again
+# (docs-site/docs/operations/runbooks.md).
+THUMBNAIL_BACKFILL_DONE_KEY = "thumbnail_backfill_done"
+THUMBNAIL_WEBP_MIGRATION_DONE_KEY = "thumbnail_webp_migration_done"
 #: Rough cost of content auditing, shown in the admin help text (governance plan 3.4): an
 #: event is ~0.8 KB; with de-dup an active user writes ~34 KB a day.
 AUDIT_EVENT_BYTES_ESTIMATE = 800

@@ -10,17 +10,25 @@ phases — read the candidate rows, re-render and re-upload each thumbnail with
 **no** session open, then write the new paths back. One session used to wrap the
 whole batch, so up to ``batch_size`` presigned reads and MinIO round trips ran
 inside a single Postgres transaction holding ``ACCESS SHARE`` on ``media_file``.
+
+**One-time passes** (scale plan 5.2): both chains walk ids upward with a cursor and,
+when a pass reaches the end of the library, set a ``SystemSettings`` done flag
+(``THUMBNAIL_WEBP_MIGRATION_DONE_KEY`` / ``THUMBNAIL_BACKFILL_DONE_KEY``) whatever the
+per-file outcomes, so a file whose generation always fails is not retried on every boot.
+Every dispatch runs at ``CPUPriority.MAINTENANCE``: no user is waiting on it.
 """
 
 import io
 import logging
 from typing import Any
 
+from app.core import constants
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
+from app.models.system_settings import SystemSettings
 from app.services.minio_service import delete_file
 from app.services.minio_service import get_file_url
 from app.services.minio_service import upload_file
@@ -29,8 +37,26 @@ from app.services.thumbnail import generate_thumbnail_from_url
 logger = logging.getLogger(__name__)
 
 
+def one_time_pass_done(key: str) -> bool:
+    """True when the one-time pass named by ``key`` already reached the end of the library.
+
+    A fresh read, never the settings cache: the flag is written by a worker process.
+    """
+    with session_scope() as db:
+        row = db.query(SystemSettings.value).filter(SystemSettings.key == key).first()
+    return row is not None and row[0] == "true"
+
+
+def _mark_pass_done(key: str, description: str) -> None:
+    from app.services.system_settings_service import set_setting
+
+    with session_scope() as db:
+        set_setting(db, key, "true", description)
+    logger.info("One-time thumbnail pass %s complete; it will not be dispatched again", key)
+
+
 @celery_app.task(name="migrate_thumbnails_to_webp", bind=True, priority=CPUPriority.ADMIN_BATCH)
-def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20) -> dict:
+def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20, after_id: int = 0) -> dict:
     """
     Migrate existing JPEG thumbnails to optimized WebP format.
 
@@ -38,8 +64,13 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20) -> dict:
     Skips YouTube/URL downloads which already have optimized thumbnails.
     Uses presigned URLs for efficient streaming - no full video download needed.
 
+    Walks ids upward from ``after_id``: a file that fails stays ``.jpg``, and without the
+    cursor more than ``batch_size`` such files made every batch re-select the same rows and
+    chain itself forever. The pass that reaches the end sets the done flag.
+
     Args:
         batch_size: Number of files to process per batch (default: 20)
+        after_id: Only consider media files with a larger id.
 
     Returns:
         Dictionary with migration statistics
@@ -54,7 +85,7 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20) -> dict:
 
     try:
         # Phase 1 — read (DB session open, Postgres only).
-        candidates, has_more = _load_migration_batch(batch_size)
+        candidates, has_more = _load_migration_batch(batch_size, after_id)
         summary["files_found"] = len(candidates)
         summary["has_more"] = has_more
 
@@ -86,11 +117,18 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20) -> dict:
                 f"{summary['files_skipped']} skipped, {summary['files_failed']} failed. "
                 "Scheduling next batch..."
             )
-            migrate_thumbnails_to_webp.delay(batch_size=batch_size)
+            migrate_thumbnails_to_webp.apply_async(
+                kwargs={"batch_size": batch_size, "after_id": candidates[-1]["id"]},
+                priority=CPUPriority.MAINTENANCE,
+            )
         else:
             logger.info(
                 f"Thumbnail migration completed: {summary['files_migrated']} migrated, "
                 f"{summary['files_skipped']} skipped, {summary['files_failed']} failed."
+            )
+            _mark_pass_done(
+                constants.THUMBNAIL_WEBP_MIGRATION_DONE_KEY,
+                "One-time JPEG to WebP thumbnail migration reached the end of the library",
             )
 
     except Exception as e:
@@ -100,7 +138,7 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20) -> dict:
     return summary
 
 
-def _load_migration_batch(batch_size: int) -> tuple[list[dict], bool]:
+def _load_migration_batch(batch_size: int, after_id: int = 0) -> tuple[list[dict], bool]:
     """Read one batch of JPEG-thumbnail files, then release the DB session.
 
     Returns **plain data only** — no ORM instances — so the caller can run the
@@ -112,6 +150,7 @@ def _load_migration_batch(batch_size: int) -> tuple[list[dict], bool]:
 
     Args:
         batch_size: Maximum number of files in the returned batch.
+        after_id: Only rows with a larger id, in id order (the chain's cursor).
 
     Returns:
         ``(batch, has_more)`` where each item is
@@ -124,7 +163,9 @@ def _load_migration_batch(batch_size: int) -> tuple[list[dict], bool]:
                 MediaFile.thumbnail_path.like("%.jpg"),
                 MediaFile.source_url.is_(None),  # Skip YouTube/URL downloads
                 MediaFile.status == FileStatus.COMPLETED,
+                MediaFile.id > after_id,
             )
+            .order_by(MediaFile.id)
             .limit(batch_size + 1)  # Get one extra to check if there's more
             .all()
         )
@@ -235,7 +276,8 @@ def backfill_missing_thumbnails(self: Any, after_id: int = 0, batch_size: int = 
     Covers the rows whose shared legacy thumbnail key was cleared by the v456 revision
     (``uq_media_file_thumbnail_path``). Walks ids upward from ``after_id`` and chains itself,
     so a file whose generation keeps failing is attempted once per run, never in a loop. The
-    session is closed before anything is dispatched.
+    session is closed before anything is dispatched. The run that reaches the end sets
+    ``THUMBNAIL_BACKFILL_DONE_KEY`` whatever the per-file outcomes, so later boots skip it.
 
     Args:
         after_id: Only consider media files with a larger id.
@@ -264,8 +306,18 @@ def backfill_missing_thumbnails(self: Any, after_id: int = 0, batch_size: int = 
     from app.tasks.thumbnail import generate_thumbnail_task
 
     for file_id, user_id, storage_path in batch:
-        generate_thumbnail_task.delay(file_id, user_id, storage_path)
+        generate_thumbnail_task.apply_async(
+            args=(file_id, user_id, storage_path), priority=CPUPriority.MAINTENANCE
+        )
     last_id = batch[-1][0] if batch else after_id
     if has_more:
-        backfill_missing_thumbnails.delay(after_id=last_id, batch_size=batch_size)
+        backfill_missing_thumbnails.apply_async(
+            kwargs={"after_id": last_id, "batch_size": batch_size},
+            priority=CPUPriority.MAINTENANCE,
+        )
+    else:
+        _mark_pass_done(
+            constants.THUMBNAIL_BACKFILL_DONE_KEY,
+            "One-time missing-thumbnail backfill reached the end of the library",
+        )
     return {"dispatched": len(batch), "has_more": has_more, "last_id": last_id}

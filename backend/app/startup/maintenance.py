@@ -376,23 +376,50 @@ async def _run_tag_tenant_repair() -> None:
 
 
 async def _run_thumbnail_migration() -> None:
-    """Schedule thumbnail migration from JPEG to WebP after a delay."""
+    """Dispatch the one-time thumbnail passes (WebP migration, missing backfill) until done.
+
+    Each pass sets a ``SystemSettings`` done flag when it reaches the end of the library
+    (``tasks/thumbnail_migration``), so a boot after that dispatches nothing. Before the flag,
+    every boot re-walked every thumbnail-less video and re-queued the files whose generation
+    always fails (M2 #11: 24,920 tasks per restart). Same pattern as the imohash recompute.
+    """
     try:
         await asyncio.sleep(45)  # Wait for other startup tasks
-        from app.tasks.thumbnail_migration import backfill_missing_thumbnails
-        from app.tasks.thumbnail_migration import migrate_thumbnails_to_webp
-        from app.utils.boot_once import run_once_per_boot
-
-        # One replica per boot window: each dispatch walks the whole media library.
-        if not run_once_per_boot("thumbnail_migration_dispatch"):
-            return
-
-        result = migrate_thumbnails_to_webp.delay(batch_size=20)
-        logger.info(f"Thumbnail migration task scheduled: {result.id}")
-        backfill = backfill_missing_thumbnails.delay()
-        logger.info(f"Thumbnail backfill task scheduled: {backfill.id}")
+        await run_in_threadpool(_dispatch_thumbnail_passes)
     except Exception as e:
         logger.error(f"Error scheduling thumbnail migration: {e}")
+
+
+def _dispatch_thumbnail_passes() -> None:
+    """Blocking half of the startup step (DB read, Redis election, broker publish)."""
+    from app.core import constants
+    from app.core.queues import CPUPriority
+    from app.tasks.thumbnail_migration import backfill_missing_thumbnails
+    from app.tasks.thumbnail_migration import migrate_thumbnails_to_webp
+    from app.tasks.thumbnail_migration import one_time_pass_done
+    from app.utils.boot_once import run_once_per_boot
+
+    pending = [
+        (task, kwargs)
+        for key, task, kwargs in (
+            (
+                constants.THUMBNAIL_WEBP_MIGRATION_DONE_KEY,
+                migrate_thumbnails_to_webp,
+                {"batch_size": 20},
+            ),
+            (constants.THUMBNAIL_BACKFILL_DONE_KEY, backfill_missing_thumbnails, {}),
+        )
+        if not one_time_pass_done(key)
+    ]
+    if not pending:
+        logger.info("Thumbnail passes already completed; nothing to dispatch")
+        return
+    # One replica per boot window: each dispatch walks the whole media library.
+    if not run_once_per_boot("thumbnail_migration_dispatch"):
+        return
+    for task, kwargs in pending:
+        result = task.apply_async(kwargs=kwargs, priority=CPUPriority.MAINTENANCE)
+        logger.info(f"Thumbnail task {task.name} scheduled: {result.id}")
 
 
 async def _run_imohash_recompute() -> None:

@@ -31,3 +31,20 @@ def test_query_plans_against_the_current_schema(db_session, path):
     plan = "\n".join(str(r[0]) for r in db_session.execute(text(f"EXPLAIN {body}")))
 
     assert "(cost=" in plan, plan
+
+
+SETUP = sorted((QUERIES / "setup").glob("*.sql"))
+
+
+def test_every_setup_file_belongs_to_a_query():
+    assert SETUP
+    assert {p.stem for p in SETUP} <= {p.stem for p in FILES}
+
+
+@pytest.mark.parametrize("path", SETUP, ids=lambda p: p.stem)
+def test_setup_statement_runs_against_the_current_schema(db_session, path):
+    body = "\n".join(line.split("--")[0] for line in path.read_text().splitlines()).strip()
+
+    result = db_session.execute(text(body))  # rolled back with the test savepoint
+
+    assert result.rowcount >= 0

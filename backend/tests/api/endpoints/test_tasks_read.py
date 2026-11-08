@@ -257,7 +257,7 @@ class TestListTasksReportsFailure:
         def _boom(*_args, **_kwargs):
             raise RuntimeError("simulated query failure")
 
-        monkeypatch.setattr(tasks_module, "_get_user_media_files", _boom)
+        monkeypatch.setattr(tasks_module, "list_task_page", _boom)
 
         response = client.get("/api/tasks", headers=user_token_headers)
 

@@ -151,6 +151,9 @@ def get_system_stats(
     platform-wide aggregate counts, not anything scoped to the caller's own
     organization. Platform staff still bypass the gate
     (``require_capability``'s ``platform_admin_bypass``).
+
+    ``transcripts.total_segments`` and ``speakers.total`` are planner estimates once the table
+    holds 100,000 rows or more (``*_is_estimate`` says which); smaller tables are exact.
     """
     logger.info(f"System stats requested by user {current_user.email}")
 
@@ -201,22 +204,18 @@ def get_system_stats(
 
         # Consolidated database statistics (efficient aggregate queries)
         from app.utils.stats_helpers import get_file_stats
-        from app.utils.stats_helpers import get_file_timing_stats
         from app.utils.stats_helpers import get_models_info
-        from app.utils.stats_helpers import get_processing_eta
         from app.utils.stats_helpers import get_queue_depths
         from app.utils.stats_helpers import get_recent_tasks
-        from app.utils.stats_helpers import get_task_stats
-        from app.utils.stats_helpers import get_throughput_stats
+        from app.utils.stats_helpers import get_task_and_timing_stats
+        from app.utils.stats_helpers import get_throughput_and_eta
         from app.utils.stats_helpers import get_user_stats
 
         user_stats = get_user_stats(db)
         file_stats = get_file_stats(db)
-        task_stats = get_task_stats(db)
+        task_stats, file_timing = get_task_and_timing_stats(db)
         recent = get_recent_tasks(db, limit=10)
-        throughput = get_throughput_stats(db)
-        eta = get_processing_eta(db)
-        file_timing = get_file_timing_stats(db)
+        throughput, eta = get_throughput_and_eta(db)
         queue_depths = get_queue_depths()
         models_info = get_models_info()
 
@@ -233,9 +232,13 @@ def get_system_stats(
                 "total_duration": file_stats["total_duration"],
                 "segments": total_segments,
             },
-            "transcripts": {"total_segments": total_segments},
+            "transcripts": {
+                "total_segments": total_segments,
+                "total_segments_is_estimate": file_stats["segments_estimated"],
+            },
             "speakers": {
                 "total": total_speakers,
+                "total_is_estimate": file_stats["speakers_estimated"],
                 "avg_per_file": round(total_speakers / total_files, 2) if total_files > 0 else 0,
             },
             "models": models_info,

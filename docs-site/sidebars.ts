@@ -147,6 +147,7 @@ const sidebars: SidebarsConfig = {
         'developer-guide/contributing',
         'developer-guide/testing',
         'developer-guide/full-test-matrix',
+        'developer-guide/performance-testing',
         'developer-guide/releasing',
         'developer-guide/object-store-decision',
         'developer-guide/ffmpeg-wasm-build',

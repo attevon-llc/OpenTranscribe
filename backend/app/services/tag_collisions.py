@@ -20,6 +20,7 @@ from typing import Final
 from uuid import UUID
 
 from sqlalchemy import distinct
+from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy import not_
 from sqlalchemy import select
@@ -292,12 +293,13 @@ def list_unused_tag_rows(db: Session, *, user_id: int, organization_id: int | No
     counts references deployment-wide.
     """
     accessible = select(accessible_file_ids_subquery(db, user_id, organization_id))
-    in_use = select(FileTag.tag_id).where(
-        FileTag.tag_id.is_not(None), FileTag.media_file_id.in_(accessible)
-    )
+    # NOT EXISTS, not NOT IN (subquery): the planner can anti-join the former (14x on 2,000
+    # tags / 300,000 file_tag rows, #1337 G13). `tag_id` is nullable, but a NULL never equals
+    # `Tag.id`, so both forms drop and keep the same tags.
+    in_use = exists().where(FileTag.tag_id == Tag.id, FileTag.media_file_id.in_(accessible))
     rows: list[Tag] = (
         db.query(Tag)
-        .filter(owned_or_system(user_id, organization_id), Tag.id.not_in(in_use))
+        .filter(owned_or_system(user_id, organization_id), ~in_use)
         .order_by(Tag.name)
         .all()
     )

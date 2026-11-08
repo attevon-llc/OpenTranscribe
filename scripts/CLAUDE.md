@@ -183,6 +183,37 @@ this file is for.
 ## Fresh deployments (`opentr.sh --fresh`, state in `.fresh/`)
 
 The mechanics (state files, port offset, aux overlay isolation under `--fresh`, issue #347) are in `scripts/notes/fresh-deployments.md`. Root `CLAUDE.md` carries the rule.
+## Scale and query performance testing
+
+Seed a large synthetic dataset into a local isolated `--fresh` stack, drive the real endpoints,
+replay the hot statements under `EXPLAIN`, and keep the fix honest with a regression check. Never
+the dev stack: the seed tool and the driver refuse its ports. Method and traps:
+`docs-site/docs/developer-guide/performance-testing.md`.
+
+```bash
+./opentr.sh start dev --fresh perf1337 --port-offset 300            # isolated stack (backend :5474, Postgres :5476)
+./scripts/seed-query-review.sh --fresh perf1337                      # default shape: 100k files, 1M speakers, 10M segments (~30 min)
+./scripts/seed-query-review.sh --fresh perf1337 --files 1000 --users 50 --segments-per-file 10   # quick run
+docker exec "$PG" pg_dump -U postgres -Fc -d opentranscribe > ~/ot-cleanup-work/1337/perf/seed-perf1337.dump   # snapshot
+docker exec -i "$PG" pg_restore -U postgres -d opentranscribe --clean --if-exists < ~/ot-cleanup-work/1337/perf/seed-perf1337.dump   # restore, then ANALYZE
+scripts/perf/query-review/drive.py run --check-routes --base-url http://localhost:5474
+scripts/perf/query-review/drive.py run --base-url http://localhost:5474 --out <run dir> --repeat 20
+scripts/perf/query-review/drive.py summarise --calls <run dir>/calls.csv --access-log <run dir>/access.log > <run dir>/driver.csv
+PG=<fresh postgres container> scripts/perf/query-review/explain.sh <run-id> [id ...]
+```
+
+- `seed-query-review.sh` wraps `python -m app.scripts.scale_dataset` (`backend/app/scripts/scale_dataset/`);
+  identities `perf-1@loadtest.invalid` (admin), `perf-2@...` (heavy), `perf-3@...`, password `loadtest-password`.
+- `scripts/perf/query-review/queries/<id>.sql` are the replayable statements (`<id>.after.sql` is the
+  rewrite, `C1`-`C3` are controls that must not move more than 15% between runs, `queries/setup/<id>.sql`
+  runs first inside the same rolled-back transaction). `backend/tests/unit/test_query_review_sql_files.py`
+  plans every one against the current schema.
+- Enable `pg_stat_statements`/`auto_explain` with an UNQUOTED
+  `ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements, auto_explain;` (quoted, Postgres will not start).
+- Regression checks use `backend/tests/query_budget.py` (`count_statements`): assert the statement count is
+  EQUAL at two row counts (for example 2 and 12) with a control that the response held both, never a ceiling.
+  Prove each check red on a `git archive HEAD` tree first.
+
 ## docker-build-push.sh
 
 The tag grammar (capability in the repository, restated in the tag, issue #680), the platform table and the build/push traps: `scripts/notes/docker-build-push.md`. Ask `./scripts/docker-build-push.sh list-platforms` for the platform set; never transcribe it.

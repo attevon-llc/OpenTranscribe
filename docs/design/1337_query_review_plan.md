@@ -248,7 +248,7 @@ guard refuses ports 5176/5178/5180 (`corpus_injection/env.py:105-120`).
 4. Enable the extensions on this stack only (writes `postgresql.auto.conf` inside the fresh
    `otfresh-perf1337_postgres_data` volume; the live stack is untouched):
    ```sql
-   ALTER SYSTEM SET shared_preload_libraries = 'pg_stat_statements,auto_explain';
+   ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements, auto_explain;
    ALTER SYSTEM SET pg_stat_statements.track = 'top';
    ALTER SYSTEM SET pg_stat_statements.max = 10000;
    ALTER SYSTEM SET track_io_timing = on;
@@ -260,6 +260,8 @@ guard refuses ports 5176/5178/5180 (`corpus_injection/env.py:105-120`).
    ALTER SYSTEM SET auto_explain.log_nested_statements = on;
    ALTER SYSTEM SET auto_explain.log_format = 'json';
    ```
+   The list is written UNQUOTED: a quoted `'a,b'` is stored as one library name
+   (`"a,b"`) and Postgres then crash-loops (found in the M1 baseline).
    Restart through the script: `./opentr.sh stop --fresh perf1337` then
    `./opentr.sh start dev --fresh perf1337`. Then:
    ```sql

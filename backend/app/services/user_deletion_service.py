@@ -458,7 +458,19 @@ def _hand_over_org_content(db: Session, user_id: int) -> None:
                 reason="account_deleted",
             )
         except org_content_transfer.TransferError as error:
-            raise ConflictError({"code": error.code, "message": error.message}) from error
+            # Only no_transfer_target is reachable: no explicit target is passed and org_id came
+            # from an existing membership. Anything else is a bug, not a caller's 409.
+            if error.code != "no_transfer_target":
+                raise
+            raise ConflictError(
+                {
+                    "code": "no_transfer_target",
+                    "message": (
+                        "An organization still holds this account's content and has no other "
+                        "active administrator to take it over. Add another administrator first."
+                    ),
+                }
+            ) from error
 
 
 def delete_user_account(db: Session, user: User) -> list[dict[str, Any]]:

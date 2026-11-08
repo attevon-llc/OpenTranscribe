@@ -364,7 +364,10 @@ To run that check now instead of waiting for the next tick, a super admin can ca
 sets how old a purge's record must be before it is touched (at least 300; the default is the
 scheduled check's hour), so a purge that is still running is not marked interrupted. It answers
 202 with a task id, and each purge it handles is audited under its own purge id. Repeating it is
-safe.
+safe. Only one check runs at a time: a run that starts while another is still going (the
+scheduled one and yours, say) does nothing and returns `skipped: 1`, so no purge is handled,
+audited or marked interrupted twice. The lock is held in Redis; while Redis is unreachable the
+check does not run and the unfinished work waits for the next tick.
 
 The upgrade itself needs nothing from you. A purge interrupted before the upgrade is not in the
 new table, so the scheduled check cannot find it. The voiceprint orphan sweep removes those

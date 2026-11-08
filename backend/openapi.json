@@ -30614,7 +30614,7 @@
     },
     "/api/admin/privacy-policy/purge-reverify": {
       "post": {
-        "description": "Finish the centroid work of purges a dead worker left (super_admin), without waiting for the beat.\n\nRuns the same ``privacy.purge_reverify`` the schedule runs hourly: deletes and measures the\ncentroid documents recorded in ``privacy_purge_pending`` for purges older than the cutoff,\nand fails a purge whose final pass never ended (``reason: interrupted``). Each purge it\ntouches is audited under its own task id. Safe to repeat.",
+        "description": "Finish the centroid work of purges a dead worker left (super_admin), without waiting for the beat.\n\nRuns the same ``privacy.purge_reverify`` the schedule runs every 15 minutes (never two at\nonce): deletes and measures the centroid documents recorded in ``privacy_purge_pending`` for\npurges older than the cutoff, and fails a purge whose final pass never ended (``reason: interrupted``). Each purge it\ntouches is audited under its own task id. Safe to repeat.",
         "operationId": "reverify_pending_purges_api_admin_privacy_policy_purge_reverify_post",
         "requestBody": {
           "content": {

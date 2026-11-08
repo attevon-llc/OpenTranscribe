@@ -30,6 +30,9 @@ ADMIN_PURGE = "/api/admin/privacy-policy/purge"
 
 
 BODY = {"targets": ["voiceprints", "inferred_gender"], "confirm": "PURGE"}
+#: ``privacy_purge_task.REVERIFY_LOCK_KEY``, spelled out so the overlap test runs against a tree
+#: without the lease and FAILS there rather than erroring; that test pins the two equal.
+REVERIFY_LEASE_KEY = "privacy_purge_reverify"
 
 
 # --------------------------------------------------------------------------- #

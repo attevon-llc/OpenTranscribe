@@ -25,6 +25,8 @@ Fail closed (a concurrent duplicate destroys, duplicates or corrupts state):
     ``recluster_speakers_user_*``: rewrites a user's clusters.
     ``session_cap_sweep``, ``account_inactivity_sweep``, ``directory_sync*``: revoke
     sessions, disable accounts.
+    ``privacy_purge_reverify``: deletes a purge's leftover documents and fails it as
+    interrupted; two overlapping runs take the same rows and audit and fail each purge twice.
 
 Fail open (``FAIL_OPEN_LOCKS``, with the reason a duplicate is harmless).
 """

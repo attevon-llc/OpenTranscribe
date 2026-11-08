@@ -42,8 +42,9 @@ def test_a_super_admin_queues_the_reverify_with_the_default_cutoff(
     assert queued == [{"grace_seconds": purge_pending.REVERIFY_GRACE_SECONDS}]
 
 
+@pytest.mark.xdist_group("local_model_redis")
 def test_the_cutoff_is_passed_to_the_task_that_accepts_it(
-    client, super_admin_token_headers, queued
+    client, super_admin_token_headers, queued, reverify_lease
 ):
     response = client.post(
         REVERIFY, headers=super_admin_token_headers, json={"older_than_seconds": 600}
@@ -53,7 +54,8 @@ def test_the_cutoff_is_passed_to_the_task_that_accepts_it(
     assert queued == [{"grace_seconds": 600}]
     # The kwarg the endpoint sends is one the real task takes: nothing pending, nothing due.
     summary = privacy_purge_reverify_task.apply(kwargs=queued[0]).get(propagate=True)
-    assert set(summary) == {"rows", "finished", "remaining", "interrupted"}
+    assert set(summary) == {"rows", "finished", "remaining", "interrupted", "skipped"}
+    assert summary["skipped"] == 0, "the run took its lease"
 
 
 @pytest.mark.parametrize("seconds", [0, 299, 7 * 24 * 3600 + 1])

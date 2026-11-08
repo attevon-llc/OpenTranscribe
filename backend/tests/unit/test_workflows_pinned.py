@@ -283,8 +283,14 @@ def test_ci_postgres_matches_the_shipped_compose_image() -> None:
     compose = yaml.safe_load((WORKFLOWS_DIR.parents[1] / "docker-compose.yml").read_text())
     shipped = compose["services"]["postgres"]["image"]
     ci = yaml.safe_load((WORKFLOWS_DIR / "pre-commit.yml").read_text())
-    tested = ci["jobs"]["backend-tests"]["services"]["postgres"]["image"]
-    assert tested == shipped
+    tested = {
+        name: job["services"]["postgres"]["image"]
+        for name, job in ci["jobs"].items()
+        if "postgres" in job.get("services", {})
+    }
+    # The sharded suite, its collection proof and the FIPS re-run each own a Postgres.
+    assert {"backend-test-shard", "backend-shard-proof", "backend-fips-tests"} <= set(tested)
+    assert set(tested.values()) == {shipped}, tested
 
 
 def test_ratchet_fails_when_a_fenced_file_is_compliant(tmp_path: Path) -> None:

@@ -109,6 +109,34 @@ To PostHog Cloud in the EU region (`https://eu.i.posthog.com`), into a project u
 this report, with client IP capture discarded. You can block that host at your firewall
 without affecting anything else.
 
+## Configuring the receiver
+
+The report needs a receiver, and **no receiver ships in the image**. Both variables are
+deployment configuration in `.env` (the admin UI cannot change them), read by the backend and
+the workers; restart them after changing either.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY` | unset | The receiver's public, write-only project key (a PostHog project API key, `phc_...`). Unset or blank means the report cannot be turned on. |
+| `OPENTRANSCRIBE_TELEMETRY_ENDPOINT` | `https://eu.i.posthog.com/i/v0/e/` | The capture URL. Change it for another PostHog region or a self-hosted PostHog. |
+
+With the key unset, which is the shipped state, the install fails closed: the settings card
+says no receiver is configured on this server, turning the report on is refused, and the hourly task sends
+nothing even if the admin switch was somehow stored as on. The default endpoint is not a
+reason to send: without a key, no request is built. A test proves this with both variables
+unset (`test_the_shipped_state_no_key_and_no_endpoint_sends_nothing`).
+
+For the project that receives the reports (maintainers and anyone running their own receiver):
+
+1. Create a PostHog project used only for this report, in the region matching the endpoint.
+2. In the project settings, turn on "Discard client IP data", so the address is dropped on
+   arrival even though the request already asks for that.
+3. Put the project API key in `OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY`. The key can only write
+   events, so it is not a secret in the access-control sense, but keep it out of the git history
+   of forks; set it in `.env` or the release environment.
+4. Turn the report on in a test install (`DO_NOT_TRACK=0`, then Settings > Privacy & Redaction)
+   and check that one `opentranscribe_heartbeat` event arrives with the four properties above.
+
 ## Third-party libraries
 
 Separately from this report, the shipped containers switch off the telemetry and update checks

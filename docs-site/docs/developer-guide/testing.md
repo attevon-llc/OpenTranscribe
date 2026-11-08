@@ -606,6 +606,64 @@ unit/API suite (job "Backend Tests (pytest)", against a fresh Postgres with the 
 The complete suite, including E2E, needs the live stack and runs locally — see
 `./scripts/run-integration-tests.sh` and `./scripts/run-dev-tests.sh` above.
 
+### How the CI jobs are split (issue #1099)
+
+The suite is ~29,000 tests and about 100 CPU-minutes, so CI runs it in parallel pieces. Every
+test and every hook still runs; only the wall clock changes.
+
+- **Backend tests are sharded** into 8 matrix legs ("Backend test shard N/8") with
+  [pytest-split](https://jerry-git.github.io/pytest-split/) (`--splits 8 --group N`,
+  `duration_based_chunks`), each leg still running pytest-xdist inside. The groups are
+  balanced from `backend/.test_durations` (per-test seconds). **A stale file only unbalances
+  the legs; it can never drop a test.** Refresh it after large test additions, from a quiet
+  checkout with a database (use `-n auto`, not a fixed count):
+
+  ```bash
+  cd backend && python -m pytest tests --store-durations --durations-path .test_durations -n auto
+  ```
+
+  The command writes one compact JSON object; re-sorting the keys and putting one entry per
+  line keeps the diff reviewable.
+- **Sharding is proven lossless on every PR.** The "Backend full collection (shard proof)" job
+  collects the whole suite once, each leg records the node ids it selected
+  (`backend/tests/shard_manifest.py`), and `scripts/guards/check_shard_coverage.py` fails
+  unless the legs are disjoint and their union is exactly the full collection.
+  `backend/tests/unit/test_ci_sharding.py` pins the same property over a synthetic suite with
+  the real library, and that the matrix lists every group.
+- **The required checks keep their names.** `Backend Tests (pytest)` and `Run Pre-commit
+  Hooks` are now aggregate jobs that are green only when every leg passed (plus, for the
+  backend, the shard proof and the merged coverage clearing the `fail_under` floor in
+  `backend/pyproject.toml`). Per-leg coverage is not enforced, because one leg executes only
+  a fraction of `app/`.
+- **Pre-commit runs its two hook tiers in parallel legs** (`pre-commit` and `pre-push`
+  stages), each with its own cache of the hook environments keyed on the hash of
+  `.pre-commit-config.yaml` ([actions/cache](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)).
+- Runs for a superseded commit are cancelled (`concurrency`), and the pip cache is keyed on
+  `requirements-ci.txt`.
+
+Measured before (master PR runs, GitHub-hosted 4 vCPU): total 33-44 min, `Backend Tests
+(pytest)` 42 min of which the pytest step was 36 min, `Run Pre-commit Hooks` 17-18 min (commit
+tier 8-9, push tier 7-8). The suite is 29,207 tests and 6,259 CPU-seconds of recorded test time
+plus about 2 minutes of collection that every leg repeats. Estimate after (not yet measured on
+GitHub): each of 8 legs carries about 784 CPU-seconds (about 4 min of test time on 4 workers
+at the observed 1.29x coverage overhead) plus about 4.5 min of install and 2.6 min of
+collection, so about 12 min for the backend and about 10 min for pre-commit in parallel. The
+fixed install and collection costs, not the tests, are what keep this above the 8-minute
+goal; shrinking them (a prebuilt CI image, a collection cache) is the next step.
+
+To compare after a push, from the PR's runs:
+
+```bash
+gh run list --workflow pre-commit.yml --limit 10 --json databaseId,conclusion,startedAt,updatedAt
+gh run view <id> --json jobs   # per-job and per-step startedAt/completedAt
+```
+
+Look at the slowest "Backend test shard N/8" (it sets the wall clock), the time of the
+"Backend Tests (pytest)" aggregate, and the cache-hit line of "Cache pre-commit environments".
+
+To add a shard, change `--splits`, the `group` list and the manifest names in the workflow
+together; `test_ci_sharding.py` fails if they disagree.
+
 ## Debugging Tips
 
 1. **Use `--headed` flag** to watch browser tests

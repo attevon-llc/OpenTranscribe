@@ -18,6 +18,8 @@ source ./scripts/lib/ldap-test-overlay.sh
 source ./scripts/lib/fresh-prod.sh
 # shellcheck source=scripts/lib/lite-demo-overlay.sh
 source ./scripts/lib/lite-demo-overlay.sh
+# shellcheck source=scripts/lib/model-cache-dir.sh
+source ./scripts/lib/model-cache-dir.sh
 
 # .env is gitignored, so a git worktree (e.g. .claude/worktrees/<name>) does not
 # get one automatically -- only the main checkout does. Left alone, every
@@ -57,6 +59,7 @@ if [ -f ".env" ]; then
   # shellcheck source=.env
   source ./.env
   set +a
+  MODEL_CACHE_DIR="$(resolve_model_cache_dir "$PWD")"; export MODEL_CACHE_DIR # worktree: main checkout's cache
 fi
 
 # Fail loudly, with a specific diagnosis, when a command that actually needs
@@ -1115,21 +1118,18 @@ add_pki_overlay() {
     return
   fi
 
-  if ! ./scripts/pki/generate-test-env.sh --quiet \
-    --https-port "${PKI_HTTPS_PORT:-5182}" --http-port "${PKI_HTTP_PORT:-5187}"; then
-    echo "❌ Failed to generate PKI test env (scripts/pki/generate-test-env.sh)"
-    exit 1
+  # --dry-run writes nothing: skip generating; the overlay is still listed in the chain.
+  if [ -z "$DRY_RUN_FLAG" ]; then
+    if ! ./scripts/pki/generate-test-env.sh --quiet \
+      --https-port "${PKI_HTTPS_PORT:-5182}" --http-port "${PKI_HTTP_PORT:-5187}"; then
+      echo "❌ Failed to generate PKI test env (scripts/pki/generate-test-env.sh)"
+      exit 1
+    fi
+    set -a
+    # shellcheck source=scripts/pki/test-certs/pki-test.env
+    source scripts/pki/test-certs/pki-test.env
+    set +a
   fi
-
-  # Source the fragment AFTER .env (sourced at the top of this script), same
-  # ordering rule apply_gpu_device_override() follows for GPU_DEVICE_ID:
-  # PKI_HTTP_PORT is a live line in .env.example, so a pre-export would
-  # otherwise lose to it. .env itself is never opened by this function or by
-  # generate-test-env.sh.
-  set -a
-  # shellcheck source=scripts/pki/test-certs/pki-test.env
-  source scripts/pki/test-certs/pki-test.env
-  set +a
 
   COMPOSE_FILES="$COMPOSE_FILES -f $pki_compose_file -f scripts/pki/test-certs/pki-test.compose.yml"
   echo "🔐 Adding PKI authentication overlay ($pki_compose_file + generated test-env fragment)"

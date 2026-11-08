@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The API waits at most 5 s for a database connection before answering 503 (`DB_POOL_TIMEOUT_SECONDS`, was 10 s): with the overload answered 503 and `Retry-After`, a longer wait only holds a thread and a socket.
 - An API request that has done 55 s of work gets no further database queries and is answered 503 (`REQUEST_DEADLINE_SECONDS`; 0 turns it off). Under load, work for requests whose clients had given up at 60 s kept running, and holding connections, for up to 292 s. Uploads, chat replies, streaming downloads and exports, and `/metrics` are exempt.
 - The API bounds every database statement with a Postgres `statement_timeout` of 30 s (`DB_STATEMENT_TIMEOUT_MS`, set on the backend service in `docker-compose.yml`; 0 turns it off). Nothing bounded a statement before. Celery workers and the migrate step are unaffected: the coded default is 0. A cancelled statement is answered 503.
 - CI speed (#1099): the backend suite runs as 8 duration-balanced shards (pytest-split, `backend/.test_durations`) and the two pre-commit tiers run in parallel legs. `Backend Tests (pytest)` and `Run Pre-commit Hooks` stay the required checks, now aggregating every leg; a shard-proof job and `scripts/guards/check_shard_coverage.py` fail the run unless the shards run every test exactly once, and the pyproject coverage floor applies to the merged coverage. See Developer Guide > Testing.

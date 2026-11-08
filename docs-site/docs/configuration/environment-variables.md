@@ -951,7 +951,7 @@ Database initialization is handled entirely by Alembic migrations on backend sta
 DB_POOL_SIZE=20          # API process SQLAlchemy pool
 DB_MAX_OVERFLOW=40       # extra connections above the pool under load
 API_THREADPOOL_SIZE=0    # 0 = derived, see below
-DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
+DB_POOL_TIMEOUT_SECONDS=5        # wait for a connection before answering 503 (SQLAlchemy: 30)
 DB_STATEMENT_TIMEOUT_MS=30000    # Postgres statement_timeout, API process only (0 = off)
 REQUEST_DEADLINE_SECONDS=55      # database work one request may do before 503 (0 = off)
 DB_OVERLOAD_RETRY_AFTER_SECONDS=2  # Retry-After on the overload 503
@@ -965,11 +965,13 @@ Chat's blocking steps (retrieval, masking, saving the answer, a Bedrock stream) 
 rest of the API runs on.
 
 The API runs synchronous handlers, synchronous dependencies and `run_in_threadpool` calls on
-one thread pool. A request holds its pooled database connection from authentication until the
-response is sent, including while it waits for a thread for its next step. With `C` connections
-(`DB_POOL_SIZE + DB_MAX_OVERFLOW`) and `T` threads, a burst of `C + T` or more concurrent requests
-can leave every connection with a request waiting for a thread and every thread with a request
-waiting for a connection, until the pool timeout (`DB_POOL_TIMEOUT_SECONDS`) fails the waiters.
+one thread pool. A request takes a pooled database connection for its authentication checks and
+returns it as soon as those are decided; the handler then takes one for its own queries and holds
+it until the response is sent, including while it waits for a thread for its next step. With `C`
+connections (`DB_POOL_SIZE + DB_MAX_OVERFLOW`) and `T` threads, a burst of `C + T` or more
+concurrent requests can leave every connection with a request waiting for a thread and every
+thread with a request waiting for a connection, until the pool timeout (`DB_POOL_TIMEOUT_SECONDS`,
+5 s) answers the waiters 503. A long wait only holds a thread and a socket, so it is kept short.
 
 The sizing rule is `UVICORN_LIMIT_CONCURRENCY < C + T`. uvicorn answers 503 once that many
 connections are open, so no more requests than that can be in flight and the stall above cannot

@@ -19,16 +19,17 @@ class CapacitySettings(BaseSettings):
     DB_MAX_OVERFLOW: int = 40
     # Worker threads for the API's sync handlers, sync dependencies and
     # run_in_threadpool calls (Starlette's default is 40). 0 = size it to the DB
-    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A request
-    # holds its pooled connection from authentication until it ends, so with fewer
-    # threads than connections a burst can leave every thread blocked waiting for a
+    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A handler
+    # holds its pooled connection until its response is sent, so with fewer threads
+    # than connections a burst can leave every thread blocked waiting for a
     # connection while the requests holding them wait for a thread (#1169). See
     # app/core/threadpool.py.
     API_THREADPOOL_SIZE: int = 0
-    # Seconds a request waits for a pooled connection before it fails (SQLAlchemy's
-    # default is 30). A burst that exhausts the pool then answers an error quickly
-    # instead of piling up requests that each hold a thread for half a minute.
-    DB_POOL_TIMEOUT_SECONDS: float = 10.0
+    # Seconds a request waits for a pooled connection before it is answered 503 with
+    # Retry-After (SQLAlchemy's default is 30; app/api/overload_response.py). A longer wait
+    # only holds a thread and a socket, so a burst that exhausts the pool is refused
+    # quickly instead of piling up requests.
+    DB_POOL_TIMEOUT_SECONDS: float = 5.0
     # Postgres statement_timeout for every connection of THIS process's pool, in ms
     # (app/db/migration_connection.install_statement_timeout). 0 = off, the coded default,
     # so Celery workers, the migrate step and scripts are unaffected; the backend service's

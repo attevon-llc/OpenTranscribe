@@ -6,13 +6,11 @@ token row, the auth cookies and the audit event are the ones every other sign-in
 
 from __future__ import annotations
 
-import json
-import logging
-
 import pytest
 
 from app.auth.roles import role_implies_superuser
 from app.core.config import settings
+from app.models.audit_outbox import AuditOutbox
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 
@@ -26,21 +24,7 @@ def demo(monkeypatch, normal_user):
     return normal_user
 
 
-def _audit_details(caplog) -> list[dict]:
-    events = []
-    for record in caplog.records:
-        if record.name != "audit":
-            continue
-        try:
-            events.append(json.loads(record.getMessage()))
-        except ValueError:
-            continue
-    return events
-
-
-def test_a_visitor_gets_a_real_session_with_no_password(client, db_session, demo, caplog):
-    caplog.set_level(logging.INFO, logger="audit")
-
+def test_a_visitor_gets_a_real_session_with_no_password(client, db_session, demo):
     response = client.post(URL)
 
     assert response.status_code == 200, response.text
@@ -50,7 +34,14 @@ def test_a_visitor_gets_a_real_session_with_no_password(client, db_session, demo
     rows = db_session.query(RefreshToken).filter(RefreshToken.user_id == demo.id).all()
     assert len(rows) == 1
     assert rows[0].revoked_at is None
-    logins = [e for e in _audit_details(caplog) if e.get("event_type") == "auth.login.success"]
+    # The login event is staged in the audit outbox with the session (scale plan 5.6).
+    logins = [
+        row.payload
+        for row in db_session.query(AuditOutbox)
+        .filter(AuditOutbox.event_type == "auth.login.success")
+        .all()
+        if row.payload.get("user_id") == demo.id
+    ]
     assert [e["details"]["auth_method"] for e in logins] == ["demo"]
     assert logins[0]["username"] == demo.email
 

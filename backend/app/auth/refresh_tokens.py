@@ -15,10 +15,12 @@ Implements the FedRAMP AC-12 session controls that ride on refresh tokens:
 
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from typing import TYPE_CHECKING
+from typing import Any
 
 from joserfc import jwt
 from joserfc.errors import ExpiredTokenError
@@ -93,6 +95,7 @@ class RefreshTokenOps:
         absolute_expires_at: datetime | None = None,
         *,
         enforce_concurrent_limit: bool = True,
+        audit_stager: Callable[..., object] | None = None,
     ) -> tuple[str, RefreshToken]:
         """
         Create a new refresh token for a user.
@@ -130,6 +133,13 @@ class RefreshTokenOps:
                 rotation is not a new session, and capping there would let one
                 busy client evict OTHER devices' sessions purely by refreshing
                 its own. Every other caller keeps the default ``True``.
+            audit_stager: Stages the ``auth.session.created`` event in this
+                transaction instead of logging it after the commit
+                (``services.audit_outbox.stage``, passed in because ``app.auth`` may
+                not import ``app.services``). The caller then delivers what it staged
+                (``audit_outbox.take_staged`` / ``deliver``); the beat relay retries.
+                The password login passes it so the response does not wait on
+                OpenSearch (scale_foundations_plan.md 5.6).
 
         Returns:
             Tuple of (token_string, RefreshToken model instance)
@@ -224,6 +234,21 @@ class RefreshTokenOps:
                 batch_limit=SESSION_CAP_EVICTION_BATCH_LIMIT,
             )
 
+        # Single choke point: every session (refresh_token row) is created here,
+        # whatever the auth method or whether this is a fresh login or a rotation
+        # — so this is the one place that needs to emit it, not every call site.
+        session_event: dict[str, Any] = {
+            "event_type": AuditEventType.AUTH_SESSION_CREATED,
+            "outcome": AuditOutcome.SUCCESS,
+            "user_id": user_id,
+            "source_ip": ip_address,
+            "user_agent": user_agent,
+            "details": {"jti": jti},
+        }
+        if audit_stager is not None:
+            # In this transaction, so the session and its record commit together.
+            audit_stager(db, **session_event)
+
         db.commit()
         db.refresh(refresh_token)
 
@@ -232,17 +257,8 @@ class RefreshTokenOps:
             f"(jti={jti[:8]}..., expires={expires_at.isoformat()})"
         )
 
-        # Single choke point: every session (refresh_token row) is created here,
-        # whatever the auth method or whether this is a fresh login or a rotation
-        # — so this is the one place that needs to emit it, not every call site.
-        audit_logger.log(
-            event_type=AuditEventType.AUTH_SESSION_CREATED,
-            outcome=AuditOutcome.SUCCESS,
-            user_id=user_id,
-            source_ip=ip_address,
-            user_agent=user_agent,
-            details={"jti": jti},
-        )
+        if audit_stager is None:
+            audit_logger.log(**session_event)
 
         return token, refresh_token
 

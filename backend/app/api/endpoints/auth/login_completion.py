@@ -14,6 +14,7 @@ from datetime import timedelta
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
 
 from app.api.endpoints.auth.mfa_tokens import MFA_SCOPE_ENROLL
 from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
@@ -35,6 +36,7 @@ from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
 from app.models.user import User
 from app.models.user_mfa import UserMFA
+from app.services import audit_outbox
 
 logger = logging.getLogger(__name__)
 
@@ -249,10 +251,27 @@ def _generate_login_tokens(
 
     access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
 
+    # The login-success and session-created events go through the audit outbox, staged
+    # in the session's own transaction: they commit with the session or not at all, and
+    # the response does not wait on two OpenSearch writes (0.6-1.95 s each under load,
+    # scale_foundations_plan.md 5.6). Delivery runs after the response is sent; the beat
+    # relay retries whatever it misses.
+    audit_outbox.stage(
+        db,
+        **audit_logger.login_success_event(
+            user_id=user.id,
+            username=str(user.email),
+            source_ip=client_ip,
+            user_agent=user_agent,
+            # The method actually used, not one inferred from LDAP_ENABLED + auth_type: a
+            # PKI/OIDC user falling back to a local password was audited as "ldap".
+            auth_method=auth_method or str(user.auth_type),
+        ),
+    )
     # Stamp last_login_at with the session it records (FedRAMP AC-2(3)).
     record_successful_login(user)
 
-    # Generate refresh token (FedRAMP AC-12); its commit writes the stamp.
+    # Generate refresh token (FedRAMP AC-12); its commit writes all of the above.
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
         user_id=user.id,
@@ -260,17 +279,7 @@ def _generate_login_tokens(
         role=user_role,
         user_agent=user_agent,
         ip_address=client_ip,
-    )
-
-    # Log successful login
-    audit_logger.log_login_success(
-        user_id=user.id,
-        username=str(user.email),
-        source_ip=client_ip,
-        user_agent=user_agent,
-        # The method actually used, not one inferred from LDAP_ENABLED + auth_type: a
-        # PKI/OIDC user falling back to a local password was audited as "ldap".
-        auth_method=auth_method or str(user.auth_type),
+        audit_stager=audit_outbox.stage,
     )
 
     logger.info(f"Login successful for user: {str(user.email)}")
@@ -280,7 +289,8 @@ def _generate_login_tokens(
             "token_type": "bearer",
             "refresh_token": refresh_token,
             "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        }
+        },
+        background=BackgroundTask(audit_outbox.deliver, audit_outbox.take_staged(db)),
     )
 
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)

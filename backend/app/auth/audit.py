@@ -499,14 +499,31 @@ class AuditLogger:
                 key if a caller's dict happens to carry one.
         """
         self.log(
-            event_type=AuditEventType.AUTH_LOGIN_SUCCESS,
-            outcome=AuditOutcome.SUCCESS,
-            user_id=user_id,
-            username=username,
-            source_ip=source_ip,
-            user_agent=user_agent,
-            details={**(details or {}), "auth_method": auth_method},
+            **self.login_success_event(
+                user_id, username, source_ip, user_agent, auth_method, details=details
+            )
         )
+
+    @staticmethod
+    def login_success_event(
+        user_id: int,
+        username: str,
+        source_ip: str,
+        user_agent: str,
+        auth_method: str,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """The :meth:`log` arguments of a successful login, for :meth:`log_login_success`
+        and for a caller that stages the event in the outbox (``services/audit_outbox``)."""
+        return {
+            "event_type": AuditEventType.AUTH_LOGIN_SUCCESS,
+            "outcome": AuditOutcome.SUCCESS,
+            "user_id": user_id,
+            "username": username,
+            "source_ip": source_ip,
+            "user_agent": user_agent,
+            "details": {**(details or {}), "auth_method": auth_method},
+        }
 
     def log_login_failure(
         self,

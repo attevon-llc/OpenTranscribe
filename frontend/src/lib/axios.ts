@@ -1,12 +1,17 @@
 import axios from 'axios';
 import { isCloudEdition } from '$lib/edition';
-import { parseRetryAfter } from '$lib/utils/retryAfter';
+import { parseRetryAfter, retryAfterFromHeaders } from '$lib/utils/retryAfter';
 import {
   isSessionEndingCode,
   SUPPORT_ERROR_TOAST,
   supportGrantErrorCode,
 } from '$lib/supportAccess/errors';
 import { SUPPORT_GRANT_HEADER, getSupportAccessHeaders } from '$lib/supportAccess/headers';
+
+/** Methods safe to replay after a 503 (RFC 9110 9.2.2 idempotent + safe; never POST/PATCH/DELETE). */
+const BUSY_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+/** Longest Retry-After honoured; a larger value is clamped, jitter is added on top. */
+const BUSY_RETRY_MAX_WAIT_S = 10;
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
@@ -249,6 +254,28 @@ axiosInstance.interceptors.response.use(
       const retryAfterSeconds = parseRetryAfter(error.response.headers?.['retry-after']);
       if (retryAfterSeconds !== null) {
         error.retryAfterSeconds = retryAfterSeconds;
+      }
+    }
+
+    // Server busy (scale lane A2): a 503 carrying Retry-After means "overloaded, come back
+    // shortly" (MDN Retry-After; RFC 9110 10.2.3), NOT "your session is gone". It therefore
+    // never reaches the 401 refresh / sign-out paths below. Idempotent methods are replayed
+    // ONCE through the instance (axios interceptor docs: re-dispatching from the error handler
+    // is the supported retry shape); everything else rejects with `retryAfterSeconds` set and
+    // `getErrorMessage` renders the translated "server is busy" sentence.
+    if (error.response?.status === 503) {
+      const busyWait = retryAfterFromHeaders(error.response.headers);
+      if (busyWait !== null) {
+        error.retryAfterSeconds = busyWait;
+        const cfg = error.config;
+        const method = String(cfg?.method ?? 'get').toUpperCase();
+        if (cfg && !cfg._busyRetry && BUSY_RETRY_METHODS.has(method)) {
+          cfg._busyRetry = true;
+          const waitMs = Math.min(busyWait, BUSY_RETRY_MAX_WAIT_S) * 1000 + Math.random() * 1000;
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          return axiosInstance(cfg);
+        }
+        return Promise.reject(error);
       }
     }
 

@@ -5432,6 +5432,7 @@
   "upload.videoUrl": "Video URL",
   "common.somethingWentWrong": "Something went wrong",
   "common.rateLimited": "Too many requests — please wait a moment.",
+  "common.serverBusy": "The server is busy, please try again in a moment",
   "search.searchFailed": "Search failed",
   "search.switchModelFailed": "Failed to switch model",
   "search.reindexStartFailed": "Failed to start re-indexing",

@@ -5557,6 +5557,7 @@
   "upload.videoUrl": "URL видео",
   "common.somethingWentWrong": "Что-то пошло не так",
   "common.rateLimited": "Слишком много запросов — подождите немного.",
+  "common.serverBusy": "Сервер занят, повторите попытку через минуту",
   "search.searchFailed": "Не удалось выполнить поиск",
   "search.switchModelFailed": "Не удалось переключить модель",
   "search.reindexStartFailed": "Не удалось запустить переиндексацию",

@@ -74,6 +74,13 @@ export function getErrorMessage(
   fallback = get(t)('common.somethingWentWrong')
 ): string {
   const e = error as AxiosLikeError;
+  // An overloaded server (503 + Retry-After): ours to word, and translated.
+  if (
+    e?.response?.status === 503 &&
+    typeof (error as RateLimitedError).retryAfterSeconds === 'number'
+  ) {
+    return get(t)('common.serverBusy');
+  }
   const detail = e?.response?.data?.detail;
   // A legal hold refusal (issue #1276) is translated here, once, from WHO holds the item: the
   // server's own sentence is English, and every delete, remove and reprocess site reads this.

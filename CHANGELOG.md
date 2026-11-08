@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The Quarantine table now fits the Settings width without breaking words: six columns (owner and actor stacked), file names and people truncated with an ellipsis and a tooltip, and the "Held by" and legal hold badges never wrap.
 - The Quarantine table no longer breaks "Release", "Actions" or email addresses mid-word: people are truncated with an ellipsis and a tooltip, headers and action buttons stay on one line, and the table scrolls sideways when narrow.
 - The Quarantine queue shows the quarantine date formatted in the interface language instead of raw ISO text.
 - System statistics sizes, the GPU name and the success rate read left-to-right inside Arabic labels ("12.00 GB", not "GB 12.00").

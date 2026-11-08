@@ -36,19 +36,36 @@ const row = {
 const css = readFileSync(resolve(__dirname, 'QuarantinePanel.svelte'), 'utf8').split('<style>')[1];
 
 describe('QuarantinePanel cells', () => {
-  it('truncates people with an ellipsis and a title instead of breaking mid-address', async () => {
+  const rows = async () => {
     vi.mocked(axiosInstance.get).mockResolvedValue({ data: { files: [row], total: 1 } } as never);
     const { container } = render(QuarantinePanel, { scope: 'organization' });
     await waitFor(() => expect(container.querySelector('tbody tr')).not.toBeNull());
-    const person = container.querySelector('.person-cell');
-    expect(person?.getAttribute('title')).toBe(row.owner_display);
-    expect(css).toMatch(/\.person-cell\s*\{[^}]*text-overflow:\s*ellipsis/);
+    return container;
+  };
+  const rule = (sel: string) =>
+    css.match(new RegExp(`${sel.replace(/[.]/g, '\\$&')}\\s*(?:,[^{]*)?\\{([^}]*)\\}`))?.[1] ?? '';
+
+  it('truncates the file name and people with an ellipsis and a title', async () => {
+    const c = await rows();
+    expect(c.querySelector('.file-cell a')?.getAttribute('title')).toBe('a.wav');
+    expect(c.querySelector('.person')?.getAttribute('title')).toBe(row.owner_display);
+    expect(rule('.person')).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule('.file-cell')).toMatch(/min-width:\s*\d+px/);
   });
 
-  it('keeps headers and action buttons on one line inside a horizontally scrolling wrapper', () => {
+  it('stacks owner and actor in one cell: six columns, not eight', async () => {
+    const c = await rows();
+    expect(c.querySelectorAll('thead th').length).toBe(6);
+    expect(c.querySelectorAll('tbody tr:first-child > td').length).toBe(6);
+    expect(c.querySelectorAll('.people-cell .person').length).toBe(2);
+  });
+
+  it('never breaks inside a word: badges, headers and actions are nowrap, nothing forces breaks', () => {
+    expect(rule('.badge')).toMatch(/white-space:\s*nowrap/);
     expect(css).toMatch(/th\s*\{[^}]*white-space:\s*nowrap/);
-    expect(css).toMatch(/\.actions-cell\s*\{[^}]*white-space:\s*nowrap/);
-    expect(css).toMatch(/\.table-scroll\s*\{[^}]*overflow-x:\s*auto/);
+    expect(rule('.actions-cell')).toMatch(/white-space:\s*nowrap/);
+    expect(css).toMatch(/\.quarantine-table\s*\{[^}]*overflow-wrap:\s*normal/);
+    expect(css).not.toMatch(/break-all|break-word|overflow-wrap:\s*(anywhere|break-word)/);
     expect(css).not.toMatch(/text-align:\s*left/);
   });
 });

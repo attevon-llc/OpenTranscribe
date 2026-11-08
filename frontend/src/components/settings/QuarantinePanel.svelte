@@ -172,25 +172,24 @@
       <thead>
         <tr>
           <th>{$t('settings.quarantine.columnFile')}</th>
-          <th>{$t('settings.quarantine.columnOwner')}</th>
           <th>{$t('settings.quarantine.columnReason')}</th>
+          <th>{$t('settings.quarantine.columnOwner')} / {$t('settings.quarantine.columnBy')}</th>
           <th>{$t('settings.quarantine.columnTakenDown')}</th>
-          <th>{$t('settings.quarantine.columnBy')}</th>
           <th>{$t('settings.quarantine.columnHeldBy')}</th>
-          <th>{$t('settings.quarantine.columnLegalHold')}</th>
           <th>{$t('settings.quarantine.columnActions')}</th>
         </tr>
       </thead>
       <tbody>
         {#each files as file (file.uuid)}
           <tr>
-            <td>
-              <a href={`/files/${file.uuid}`} target="_blank" rel="noopener noreferrer">
-                {file.label}
-              </a>
+            <td class="file-cell">
+              <a
+                href={`/files/${file.uuid}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={file.label}>{file.label}</a
+              >
             </td>
-            <!-- A person's name or email, never a bare integer id (issue #576). -->
-            <td class="person-cell" title={file.owner}>{file.owner}</td>
             <td class="reason-cell">
               {#if file.reasonWithheld}
                 {$t('settings.quarantine.operatorHeldReason')}
@@ -205,9 +204,13 @@
                 </div>
               {/each}
             </td>
+            <td class="people-cell">
+              <div class="person" title={file.owner}>{file.owner}</div>
+              <div class="person person-by" title={file.by || undefined}>{file.by || '—'}</div>
+            </td>
             <td>{formatDateTime(file.quarantinedAt, '—', $locale)}</td>
-            <td class="person-cell" title={file.by || undefined}>{file.by || '—'}</td>
             <td>
+              <div class="badges-cell">
               {#if file.origin}
                 <span class="badge badge-origin" class:badge-operator={file.origin === 'platform'}>
                   {$t(
@@ -217,11 +220,10 @@
                   )}
                 </span>
               {/if}
-            </td>
-            <td>
               {#if file.legalHold}
                 <span class="badge badge-hold">{$t('settings.quarantine.legalHoldBadge')}</span>
               {/if}
+              </div>
             </td>
             <td class="actions-cell">
               {#if !file.canRelease}
@@ -331,6 +333,8 @@
   .quarantine-table {
     width: 100%;
     border-collapse: collapse;
+    overflow-wrap: normal;
+    word-break: normal;
     font-size: 0.8125rem;
   }
 
@@ -350,10 +354,35 @@
     white-space: nowrap;
   }
 
-  .person-cell {
+  .file-cell {
+    min-width: 120px;
     max-width: 180px;
+  }
+
+  .file-cell a,
+  .person {
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .people-cell {
+    max-width: 200px;
+  }
+
+  .person-by {
+    color: var(--text-secondary);
+  }
+
+  .badges-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+  }
+
+  .badge {
     white-space: nowrap;
   }
 

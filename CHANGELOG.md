@@ -121,6 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Asking for a summary or for topic suggestions no longer reads every line of the transcript just to check that one exists; the check is now a single existence query, which matters for multi-hour recordings and for batch topic extraction.
 - The API process's short-lived cache of which files belong to organizations (used to keep personal voiceprint matches inside the right workspace) is now capped at 1,024 entries and thread-safe; it previously kept every entry it had ever made for the life of the process.
 - The per-user chat limits hold under load: two chat requests sent at the same moment can no longer both take the last free stream slot (the check and the claim are now one Redis operation, as is the hourly counter and its expiry), and a reply that streams for longer than five minutes keeps its slot instead of having it freed while it is still running.
 - The one-time speaker embedding normalization no longer runs inside the web server 60 seconds after every start. It used to scan the speaker indexes on the API's request loop, on every replica; it is now handed to a background worker once, and it is recorded as done only after it completes without errors. Previously an OpenSearch outage at that moment, or a run already in progress, marked it done without it having run.

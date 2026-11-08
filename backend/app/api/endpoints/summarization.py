@@ -64,6 +64,7 @@ from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.speaker_tasks import identify_speakers_llm_task
 from app.tasks.summarization import summarize_transcript_task
 from app.utils.content_disposition import attachment_header
+from app.utils.db_helpers import file_has_transcript
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -154,7 +155,7 @@ def _summarize_preconditions(
         require_usable_prompt_uuid(db, request.prompt_uuid, ctx)
 
     # Check if file has completed transcription
-    if not media_file.transcript_segments:
+    if not file_has_transcript(db, file_id):
         raise HTTPException(
             status_code=400,
             detail="File must have completed transcription before summarization",

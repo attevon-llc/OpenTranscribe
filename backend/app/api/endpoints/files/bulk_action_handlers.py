@@ -33,6 +33,7 @@ from app.services.platform_bypass import PlatformBypass
 from app.services.tag_bulk import BulkTagOutcome
 from app.services.tag_bulk import apply_tag_to_file
 from app.tasks.summarization import summarize_transcript_task
+from app.utils.db_helpers import file_has_transcript
 from app.utils.stuck_file_recovery import recover_stuck_file
 from app.utils.task_cancel import cancel_active_task
 
@@ -321,7 +322,7 @@ def _handle_redact_action(db: Session, file_uuid: str, file_id: int) -> BulkActi
             message="File must be completed before redaction",
             error="INVALID_STATUS",
         )
-    if not db_file.transcript_segments:
+    if not file_has_transcript(db, file_id):
         return BulkActionResult(
             file_uuid=file_uuid,
             success=False,

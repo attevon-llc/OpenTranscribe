@@ -578,6 +578,23 @@ def test_the_usage_report_sends_nothing_without_a_receiver_key(
 
 
 @pytest.mark.xdist_group("telemetry_setting")
+def test_the_shipped_state_no_key_and_no_endpoint_sends_nothing(
+    task_uses_test_session, report_sends, monkeypatch
+):
+    """What a release ships: neither receiver variable set at all, admin switch forced ON.
+
+    The default endpoint is the EU PostHog host, so only the missing key stands between this
+    install and a request to a third party. Unset (not merely blank) must still block.
+    """
+    _force_enabled(task_uses_test_session)
+    monkeypatch.delenv("OPENTRANSCRIBE_TELEMETRY_PROJECT_KEY", raising=False)
+    monkeypatch.delenv("OPENTRANSCRIBE_TELEMETRY_ENDPOINT", raising=False)
+
+    assert _run_report_task() == "blocked"
+    assert report_sends == []
+
+
+@pytest.mark.xdist_group("telemetry_setting")
 def test_the_usage_report_control_sends_exactly_one_request_when_allowed(
     task_uses_test_session, report_sends
 ):

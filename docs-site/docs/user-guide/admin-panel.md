@@ -425,7 +425,8 @@ comments cannot be changed, and background work (a new summary, topic extraction
 auto-labelling, a redaction rescan) skips it. Held files stay readable, searchable, playable,
 exportable and downloadable, and anyone who can see one can still add a comment.
 
-- **Place a hold:** search for files by title or file name and select them (up to 500), or choose a
+- **Place a hold:** search for files by title or file name and select them (up to 500; the search
+  covers every file of your organization, whoever owns it, including the trash), or choose a
   collection, give a reason
   (10 to 2,000 characters) and optionally a matter reference. Only files and collections of your own
   organization can be held: anything else answers "not found", the same as a missing one.
@@ -466,7 +467,8 @@ platform administrators cannot release an organization's hold. It has no capabil
 operator must always be able to act on a legal demand) and is refused under a support-access grant.
 
 API: `GET/POST /api/admin/holds`, `GET /api/admin/holds/{uuid}`,
-`POST /api/admin/holds/{uuid}/release`. Place with `scope` `file` (up to 500 `file_uuids`, any
+`POST /api/admin/holds/{uuid}/release`, and `GET /api/admin/holds/files/search?q=` (the picker's
+search over every tenant's files, audited as a cross-tenant metadata read). Place with `scope` `file` (up to 500 `file_uuids`, any
 tenant) or `collection` (`collection_uuid`), a `reason` of 10 to 2,000 characters and an optional
 `matter_ref`. See [Legal holds](./legal-holds.md#for-administrators).
 
@@ -478,8 +480,8 @@ owners):
 
 - **Gallery:** select the files and choose **Quarantine** from the **Organize** menu.
 - **Settings > Quarantine:** choose **Quarantine files**, then type part of a title or file name
-  and pick each file from the list. The picked files show as chips you can remove before
-  submitting. Nobody needs a file's ID.
+  and pick each file from the list (every tenant's files, each with its owner and organization).
+  The picked files show as chips you can remove before submitting. Nobody needs a file's ID.
 
 The same screen lists what is quarantined and releases it. How quarantine differs from a legal
 hold is in [Legal holds](./legal-holds.md#hold-quarantine-trash-and-deletion-compared).

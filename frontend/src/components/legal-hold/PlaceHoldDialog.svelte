@@ -25,7 +25,7 @@
   } from '$lib/legalHold/authority';
   import { holdsApiFor } from '$lib/legalHold/holdsApi';
   import type { Collection } from '$lib/types/collection';
-  import type { MediaFile } from '$lib/types/media';
+  import type { AdminFileHit } from '$lib/api/fileSearch';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
@@ -40,7 +40,7 @@
   const dispatch = createEventDispatcher<{ close: void; placed: { hold: OrgHold; fileUuids: string[] } }>();
 
   let scope: 'file' | 'collection' = 'file';
-  let pickedFiles: MediaFile[] = [];
+  let pickedFiles: AdminFileHit[] = [];
   let collectionUuid = '';
   let collections: Collection[] = [];
   let reason = '';
@@ -143,6 +143,7 @@
         </label>
       {:else}
         <FileSearchPicker
+          scope={placer}
           bind:selected={pickedFiles}
           max={HOLD_MAX_FILES}
           label={$t('holds.pickFilesLabel')}

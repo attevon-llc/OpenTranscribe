@@ -43,9 +43,11 @@ call these functions, not `axios` directly.
   literal `confirm: 'PURGE'` (`PURGE_CONFIRM_WORD`); the UI makes the person type it.
   `trash.ts` covers the trash (#1101): `GET /files/trash`, restore, purge, empty, and the bulk `delete`/`restore`
   actions the gallery uses; `getTrashRetentionDays` reads the window for the delete confirmation.
-  `fileSearch.ts` (`searchFiles`) is the file pickers' search: `GET /files` with `search`,
-  `ownership=all`, `hidden=include`, i.e. exactly what the caller's gallery may list (single
-  tenancy: an admin sees every file; multi-tenant: own and shared files in the active tenant).
+  `fileSearch.ts` (`searchAdminFiles(scope, q)`) is the hold/takedown pickers' search:
+  `GET /org-admin/holds/files/search` (every file of the caller's organization, gated by
+  `require_org_admin` and `org.legal_hold`) or `GET /admin/holds/files/search` (every tenant's;
+  instance admins, audited as a cross-tenant metadata read). Trash and takedowns included, because a hold reaches
+  them. Literal paths per scope, for the route-has-a-caller scanner.
   `captions.ts` covers `GET /files/{uuid}/captions`, the player's server-built WebVTT track
   (`VideoPlayer.svelte`); never build cues from `transcript_segments` in the browser.
 

@@ -24,7 +24,7 @@ const orgAdmin = vi.hoisted(() => ({ listQuarantinedFiles: vi.fn(), releaseFile:
 vi.mock('$lib/api/orgAdmin', () => ({ OrgAdminApi: orgAdmin }));
 const notices = vi.hoisted(() => ({ list: vi.fn(), create: vi.fn(), notify: vi.fn() }));
 vi.mock('$lib/api/takedownNotices', () => ({ TakedownNoticesApi: notices }));
-const fileSearch = vi.hoisted(() => ({ searchFiles: vi.fn() }));
+const fileSearch = vi.hoisted(() => ({ searchAdminFiles: vi.fn() }));
 vi.mock('$lib/api/fileSearch', () => fileSearch);
 
 import QuarantinePanel from './QuarantinePanel.svelte';
@@ -42,7 +42,7 @@ beforeEach(() => {
   admin.listQuarantinedFiles.mockResolvedValue({ files: [], total: 0 });
   orgAdmin.listQuarantinedFiles.mockResolvedValue({ files: [], total: 0 });
   notices.list.mockResolvedValue({ notices: [], total: 0 });
-  fileSearch.searchFiles.mockResolvedValue([CLIP]);
+  fileSearch.searchAdminFiles.mockResolvedValue([CLIP]);
   admin.quarantineFile.mockResolvedValue({ uuid: 'f-1', is_quarantined: true });
 });
 
@@ -57,7 +57,7 @@ describe('QuarantinePanel: Quarantine files by search and select', () => {
 
     await fireEvent.input(search, { target: { value: 'leak' } });
     await fireEvent.click(await screen.findByRole('option', { name: /Leaked clip/ }));
-    expect(fileSearch.searchFiles).toHaveBeenCalledWith('leak');
+    expect(fileSearch.searchAdminFiles).toHaveBeenCalledWith('platform', 'leak');
 
     await fireEvent.input(screen.getByPlaceholderText(/DMCA notice reference/i), {
       target: { value: 'Rights holder notice' },

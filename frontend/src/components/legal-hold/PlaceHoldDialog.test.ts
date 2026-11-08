@@ -6,9 +6,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
-);
+vi.mock('$stores/locale', async () => {
+  const mocks = await import('../../test-mocks/galleryToolbarMocks');
+  const { readable } = await import('svelte/store');
+  return { ...mocks.englishLocale(), locale: readable('en') };
+});
 const orgApi = vi.hoisted(() => ({ placeHold: vi.fn() }));
 vi.mock('$lib/api/orgAdmin', () => ({ OrgAdminApi: orgApi }));
 const adminApi = vi.hoisted(() => ({ placeHold: vi.fn() }));
@@ -17,7 +19,7 @@ const collectionsApi = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('$lib/api/collections', () => ({ CollectionsApi: collectionsApi }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
-const fileSearch = vi.hoisted(() => ({ searchFiles: vi.fn() }));
+const fileSearch = vi.hoisted(() => ({ searchAdminFiles: vi.fn() }));
 vi.mock('$lib/api/fileSearch', () => fileSearch);
 
 import PlaceHoldDialog from './PlaceHoldDialog.svelte';
@@ -160,11 +162,12 @@ describe('PlaceHoldDialog from Settings: search and select, never file IDs', () 
   });
 
   it('places a hold on the files picked by name, sending their uuids', async () => {
-    fileSearch.searchFiles.mockResolvedValueOnce([board]).mockResolvedValueOnce([budget]);
+    fileSearch.searchAdminFiles.mockResolvedValueOnce([board]).mockResolvedValueOnce([budget]);
     open({ placer: 'platform', fileUuids: null });
 
     await pick('board', /Board meeting/);
     await pick('budget', /Budget review/);
+    expect(fileSearch.searchAdminFiles).toHaveBeenCalledWith('platform', 'board');
     await fireEvent.input(reasonBox(), { target: { value: REASON } });
     expect(submit()).toBeEnabled();
     await fireEvent.click(submit());
@@ -184,5 +187,12 @@ describe('PlaceHoldDialog from Settings: search and select, never file IDs', () 
     await fireEvent.input(reasonBox(), { target: { value: REASON } });
     expect(screen.getByRole('radio', { name: 'Specific files' })).toBeChecked();
     expect(submit()).toBeDisabled();
+  });
+
+  it("an organization administrator's dialog searches the organization's files", async () => {
+    fileSearch.searchAdminFiles.mockResolvedValue([board]);
+    open({ placer: 'organization', fileUuids: null });
+    await pick('board', /Board meeting/);
+    expect(fileSearch.searchAdminFiles).toHaveBeenCalledWith('organization', 'board');
   });
 });

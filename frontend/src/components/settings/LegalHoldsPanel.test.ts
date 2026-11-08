@@ -36,7 +36,7 @@ const collectionsApi = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('$lib/api/collections', () => ({ CollectionsApi: collectionsApi }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
-const fileSearch = vi.hoisted(() => ({ searchFiles: vi.fn() }));
+const fileSearch = vi.hoisted(() => ({ searchAdminFiles: vi.fn() }));
 vi.mock('$lib/api/fileSearch', () => fileSearch);
 
 import LegalHoldsPanel from './LegalHoldsPanel.svelte';
@@ -168,7 +168,7 @@ describe('LegalHoldsPanel (organization scope, the default)', () => {
 
   it('holds named files picked by searching for them, never by typing an ID', async () => {
     api.placeHold.mockResolvedValue(hold({ scope: 'file', file_count: 1 }));
-    fileSearch.searchFiles.mockResolvedValue([
+    fileSearch.searchAdminFiles.mockResolvedValue([
       { uuid: FILE, title: 'Deposition audio', filename: 'depo.wav' },
     ]);
     await openPlace();
@@ -182,6 +182,8 @@ describe('LegalHoldsPanel (organization scope, the default)', () => {
       target: { value: 'depo' },
     });
     await fireEvent.click(await screen.findByRole('option', { name: /Deposition audio/ }));
+    // The organization's own route: every member's file, not the admin's gallery.
+    expect(fileSearch.searchAdminFiles).toHaveBeenCalledWith('organization', 'depo');
     expect(screen.getByRole('button', { name: 'Place hold' })).toBeEnabled();
     await fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
 

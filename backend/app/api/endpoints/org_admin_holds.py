@@ -14,6 +14,11 @@ Gating: ``require_org_admin`` plus the server-enforced ``org.legal_hold`` capabi
 ``api/router.py`` with no platform-admin bypass and refused under a support grant). Platform
 staff are not organization administrators, so they cannot place or release an organization's
 hold through the product. The reason is read by this organization's administrators only.
+
+``GET /org-admin/holds/files/search`` is the "Place a hold" picker: a title or file-name search
+over every file of the organization (every member's, the trash, hidden and taken-down files
+included), which is exactly what ``POST`` here accepts. The gallery list could not serve it: it
+shows an administrator their own and shared files only.
 """
 
 import logging
@@ -33,17 +38,22 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.org_admin import org_id_of
+from app.auth.rate_limit import get_search_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_HOLD_RATE_LIMIT
 from app.db.base import get_db
 from app.models.content_hold import ContentHold
 from app.models.media import MediaFile
+from app.schemas.content_hold import AdminFileSearchResult
 from app.schemas.content_hold import HoldCreate
 from app.schemas.content_hold import HoldList
 from app.schemas.content_hold import HoldOut
 from app.schemas.content_hold import HoldRelease
 from app.services import content_hold_service as holds
+from app.services.admin_file_search import ADMIN_FILE_SEARCH_MAX
+from app.services.admin_file_search import admin_file_search_result
+from app.services.admin_file_search import search_files_for_admin
 from app.services.collection_visibility import visible_collections_by_uuid
 from app.services.content_hold_queries import list_holds
 from app.services.content_hold_records import hold_records
@@ -104,6 +114,23 @@ def list_org_holds(
     org_id = org_id_of(ctx)
     rows, total = list_holds(db, org_id, active_only=active_only, limit=limit, offset=offset)
     return HoldList(holds=_serialize(db, org_id, rows), total=total)
+
+
+@router.get("/files/search", response_model=AdminFileSearchResult)
+@limiter.limit(get_search_rate_limit(), key_func=user_or_ip_key)
+def search_org_hold_files(
+    request: Request,
+    q: str = Query(..., min_length=1, max_length=200, description="Part of a title or file name"),
+    limit: int = Query(20, ge=1, le=ADMIN_FILE_SEARCH_MAX),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(require_org_admin),
+) -> Any:
+    """This organization's files whose title or file name contains ``q``, for the hold picker."""
+    matches, total = search_files_for_admin(
+        db, search=q.strip(), organization_id=org_id_of(ctx), limit=limit, offset=offset
+    )
+    return admin_file_search_result(matches, total, with_organization=False)
 
 
 @router.get("/{hold_uuid}", response_model=HoldOut)

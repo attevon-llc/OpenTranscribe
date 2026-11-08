@@ -4,19 +4,23 @@
   nobody has to find and paste a file's internal ID.
 
   Built from the shared `SearchableSelect` (the debounced combobox) and `Chip`, over
-  `searchFiles` (`$lib/api/fileSearch`, the gallery's `GET /files`). The parent owns the
-  selection (`bind:selected`) and maps it to uuids for its own API.
+  `searchAdminFiles` (`$lib/api/fileSearch`): `scope="organization"` searches every file of the
+  caller's organization, `scope="platform"` every tenant's, the same reach the hold routes
+  accept. Each option says whose file it is, and whether it is in the trash, taken down or
+  already held. The parent owns the selection (`bind:selected`) and maps it to uuids.
 -->
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import Chip from '$components/ui/Chip.svelte';
   import SearchableSelect from '$components/ui/SearchableSelect.svelte';
-  import { searchFiles } from '$lib/api/fileSearch';
-  import type { MediaFile } from '$lib/types/media';
-  import { t } from '$stores/locale';
+  import { searchAdminFiles, type AdminFileHit, type AdminFileScope } from '$lib/api/fileSearch';
+  import { formatDate } from '$lib/utils/formatting';
+  import { locale, t } from '$stores/locale';
 
+  /** Whose files to search: the caller's organization, or every tenant. */
+  export let scope: AdminFileScope;
   /** The chosen files, in the order they were picked. Bindable. */
-  export let selected: MediaFile[] = [];
+  export let selected: AdminFileHit[] = [];
   /** The most files the action accepts; the search is replaced by a note once reached. */
   export let max = Number.POSITIVE_INFINITY;
   /** Visible label of the search field. */
@@ -26,36 +30,41 @@
   /** While the parent is submitting: chips stay visible, nothing can be added or removed. */
   export let disabled = false;
 
-  const dispatch = createEventDispatcher<{ change: MediaFile[] }>();
+  const dispatch = createEventDispatcher<{ change: AdminFileHit[] }>();
 
   let query = '';
 
   $: chosen = new Set(selected.map((f) => f.uuid));
   $: full = selected.length >= max;
 
-  function nameOf(file: MediaFile): string {
+  function nameOf(file: AdminFileHit): string {
     return file.title || file.filename;
   }
 
-  /** Title, then the file name when it differs, then the upload date: enough to tell two apart. */
-  function optionLabel(file: MediaFile): string {
+  /** Enough to tell two files apart: name, file name, owner, organization, date, and its state. */
+  function optionLabel(file: AdminFileHit): string {
     const parts = [nameOf(file)];
-    if (file.title && file.filename && file.title !== file.filename) parts.push(file.filename);
-    if (file.formatted_upload_date) parts.push(file.formatted_upload_date);
+    if (file.title && file.title !== file.filename) parts.push(file.filename);
+    if (file.owner) parts.push(file.owner);
+    if (file.organization_name) parts.push(file.organization_name);
+    if (file.upload_time) parts.push(formatDate(file.upload_time, $locale));
+    if (file.availability === 'trashed') parts.push($t('filePicker.inTrash'));
+    if (file.availability === 'quarantined') parts.push($t('filePicker.quarantined'));
+    if (file.hold?.held) parts.push($t('filePicker.held'));
     return parts.join(' · ');
   }
 
-  async function search(q: string): Promise<MediaFile[]> {
-    const found = await searchFiles(q);
+  async function search(q: string): Promise<AdminFileHit[]> {
+    const found = await searchAdminFiles(scope, q);
     return found.filter((f) => !chosen.has(f.uuid));
   }
 
-  function update(next: MediaFile[]) {
+  function update(next: AdminFileHit[]) {
     selected = next;
     dispatch('change', next);
   }
 
-  function add(event: CustomEvent<MediaFile>) {
+  function add(event: CustomEvent<AdminFileHit>) {
     query = '';
     if (disabled || full || chosen.has(event.detail.uuid)) return;
     update([...selected, event.detail]);

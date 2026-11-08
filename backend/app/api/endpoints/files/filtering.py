@@ -22,6 +22,7 @@ from app.models.speaker import Speaker
 from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.models.user import User
+from app.services.admin_file_search import title_or_filename_matches
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
 from app.services.file_owner_queries import distinct_owner_ids
@@ -31,7 +32,6 @@ from app.services.hold_guard import held_file_ids
 from app.services.hold_guard import not_held_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.search.availability_field import exclude_unavailable_clause
-from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +55,8 @@ def apply_search_filter(query: Query, search: str | None) -> Query:
         Filtered query
     """
     if search:
-        # Escape LIKE metacharacters so user input like "%" or "_" is treated literally
-        escaped = escape_like(search)
-        conditions = [MediaFile.filename.ilike(f"%{escaped}%", escape="\\")]
-        if MediaFile.title is not None:
-            conditions.append(MediaFile.title.ilike(f"%{escaped}%", escape="\\"))
-        query = query.filter(sa.or_(*conditions))
+        # One predicate with the administrators' file pickers (services/admin_file_search).
+        query = query.filter(title_or_filename_matches(search))
     return query
 
 

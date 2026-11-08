@@ -153,7 +153,11 @@ end of this section).
 - **From Settings:** in **Settings > Legal holds**, choose **Place a hold**. **Specific files** is
   selected: type part of a title or file name, pick the file from the list, and repeat for each
   file (up to 500). The picked files show as chips; remove one with its **x**, or use **Clear
-  selection**. The search covers the files you can see in your own gallery.
+  selection**. Each result shows its owner and upload date (and, for the service operator, its
+  organization), and says when the file is in the trash, quarantined or already held. An
+  organization administrator searches every file of the organization, whoever owns it; the
+  service operator searches every file of every organization. Files in the trash and quarantined
+  files are included, because a hold still applies to them.
 - **By collection:** in the same dialog choose **A whole collection** and pick the collection.
 
 The file page has no hold button: its header shows the recording, and holds are placed from the
@@ -176,8 +180,15 @@ overdue file in the trash be deleted forever within the hour.
 
 | Edition | Routes |
 |---|---|
-| Self-hosted operator hold | `GET /api/admin/holds`, `GET /api/admin/holds/{uuid}`, `POST /api/admin/holds`, `POST /api/admin/holds/{uuid}/release` |
-| Organization hold | `GET /api/org-admin/holds`, `GET /api/org-admin/holds/{uuid}`, `POST /api/org-admin/holds`, `POST /api/org-admin/holds/{uuid}/release` |
+| Self-hosted operator hold | `GET /api/admin/holds`, `GET /api/admin/holds/{uuid}`, `POST /api/admin/holds`, `POST /api/admin/holds/{uuid}/release`, `GET /api/admin/holds/files/search` |
+| Organization hold | `GET /api/org-admin/holds`, `GET /api/org-admin/holds/{uuid}`, `POST /api/org-admin/holds`, `POST /api/org-admin/holds/{uuid}/release`, `GET /api/org-admin/holds/files/search` |
+
+`GET .../holds/files/search?q=<text>&limit=<1-50>&offset=<n>` finds files whose title or file name
+contains `q`, newest first, with the owner, the upload time, whether the file is `available`,
+`trashed` or `quarantined`, and who already holds it (never why). The organization route covers
+every file of the caller's organization; the operator route covers every tenant, adds each file's
+organization and is audited as a cross-tenant metadata read. Both answer 403 to anyone who is not
+that kind of administrator and are rate-limited like search.
 
 Place a hold on files:
 

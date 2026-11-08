@@ -208,6 +208,100 @@
         "title": "ActivePromptSelection",
         "type": "object"
       },
+      "AdminFileHit": {
+        "description": "One file an administrator's hold or takedown picker may offer.",
+        "properties": {
+          "availability": {
+            "enum": [
+              "available",
+              "trashed",
+              "quarantined"
+            ],
+            "title": "Availability",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "hold": {
+            "$ref": "#/components/schemas/HoldSummary"
+          },
+          "organization_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Name"
+          },
+          "owner": {
+            "title": "Owner",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "upload_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upload Time"
+          },
+          "uuid": {
+            "format": "uuid",
+            "title": "Uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "uuid",
+          "filename",
+          "owner",
+          "availability",
+          "hold"
+        ],
+        "title": "AdminFileHit",
+        "type": "object"
+      },
+      "AdminFileSearchResult": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/AdminFileHit"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "files",
+          "total"
+        ],
+        "title": "AdminFileSearchResult",
+        "type": "object"
+      },
       "AdminPasswordResetRequest": {
         "description": "Request body for admin-initiated password reset.\n\nMoving password from query parameter to request body prevents\npassword exposure in server logs, browser history, and referrer headers.",
         "properties": {
@@ -29360,6 +29454,81 @@
         ]
       }
     },
+    "/api/admin/holds/files/search": {
+      "get": {
+        "description": "Files of any tenant whose title or file name contains ``q``, for the hold and takedown pickers.",
+        "operationId": "search_admin_hold_files_api_admin_holds_files_search_get",
+        "parameters": [
+          {
+            "description": "Part of a title or file name",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Part of a title or file name",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFileSearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Search Admin Hold Files",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/api/admin/holds/{hold_uuid}": {
       "get": {
         "description": "One platform hold, with the files it covers (up to 500).",
@@ -45402,6 +45571,81 @@
           }
         ],
         "summary": "Place Org Hold",
+        "tags": [
+          "org-admin"
+        ]
+      }
+    },
+    "/api/org-admin/holds/files/search": {
+      "get": {
+        "description": "This organization's files whose title or file name contains ``q``, for the hold picker.",
+        "operationId": "search_org_hold_files_api_org_admin_holds_files_search_get",
+        "parameters": [
+          {
+            "description": "Part of a title or file name",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Part of a title or file name",
+              "maxLength": 200,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminFileSearchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Search Org Hold Files",
         "tags": [
           "org-admin"
         ]

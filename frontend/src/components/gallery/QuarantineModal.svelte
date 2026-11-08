@@ -20,7 +20,7 @@
    * owners once per owner afterwards instead of once per file.
    *
    * `chooseFiles` (Settings > Quarantine) replaces the fixed selection with a search-and-select
-   * picker (`FileSearchPicker`, over the gallery's own `GET /files`), so an administrator never
+   * picker (`FileSearchPicker`, platform scope: every tenant's files), so an administrator never
    * has to find a file's ID; the rest of the form is the same one the gallery opens.
    */
   import { createEventDispatcher } from 'svelte';
@@ -36,9 +36,13 @@
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { MediaFile } from '$lib/types/media';
+  import type { AdminFileHit } from '$lib/api/fileSearch';
+
+  /** What a takedown needs of a file: the gallery passes rows, the picker search hits. */
+  type QuarantineTarget = Pick<MediaFile, 'uuid' | 'filename' | 'title'> | AdminFileHit;
 
   export let isOpen = false;
-  export let files: MediaFile[] = [];
+  export let files: QuarantineTarget[] = [];
   /** Let the administrator search for and select the files here (Settings), instead of a fixed selection. */
   export let chooseFiles = false;
 
@@ -64,8 +68,12 @@
   $: canSubmit =
     reasonTrimmed.length > 0 && files.length > 0 && !submitting && isBasisValid(basis);
 
+  // The picker's own selection; mirrored into `files`, which the submit loop reads.
+  let pickedFiles: AdminFileHit[] = [];
+  $: if (chooseFiles) files = pickedFiles;
+
   function resetForm() {
-    if (chooseFiles) files = [];
+    if (chooseFiles) pickedFiles = [];
     reason = '';
     legalHold = true;
     basis = emptyBasis();
@@ -166,7 +174,8 @@
   <div class="quarantine-modal-body">
     {#if chooseFiles}
       <FileSearchPicker
-        bind:selected={files}
+        scope="platform"
+        bind:selected={pickedFiles}
         label={$t('gallery.quarantine.pickFilesLabel')}
         help={$t('gallery.quarantine.pickFilesHelp')}
         disabled={submitting}

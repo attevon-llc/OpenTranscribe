@@ -112,7 +112,11 @@ def test_the_middleware_sets_a_deadline_for_an_ordinary_request():
 
 
 @pytest.mark.parametrize(
-    "path", ["/metrics", f"{settings.API_PREFIX}/files/{uuid.uuid4()}/download-stream"]
+    "path",
+    [
+        "/metrics",
+        f"{settings.API_PREFIX}/files/0b6c1f5e-3d2a-4c8e-9f41-7a5d2e8c6b10/download-stream",
+    ],
 )
 def test_an_exempt_route_gets_no_deadline(path):
     with _deadline_app() as client:

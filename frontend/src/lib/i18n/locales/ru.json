@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "Язык интерфейса",
   "settings.language.hint": "Изменения применяются сразу",
   "settings.language.changed": "Язык успешно изменён",
+  "settings.language.machineTranslated": "машинный перевод",
   "settings.profile.title": "Профиль и безопасность",
   "settings.profile.description": "Управляйте данными учётной записи, паролем и многофакторной аутентификацией",
   "settings.profile.accountInfo": "Данные учётной записи",

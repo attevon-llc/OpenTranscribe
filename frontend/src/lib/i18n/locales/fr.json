@@ -1572,6 +1572,7 @@
   "settings.garbageCleanup.tooltip": "WhisperX peut parfois mal interpréter le bruit de fond (ventilateurs, statique, grondements) comme des \"mots\" extrêmement longs sans espaces. Cette fonctionnalité détecte et remplace ces artefacts.",
   "settings.keepEditing": "Continuer l'Édition",
   "settings.language.changed": "Langue changée avec succès",
+  "settings.language.machineTranslated": "traduction automatique",
   "settings.language.description": "Choisissez votre langue préférée pour l'interface",
   "settings.language.hint": "Les changements prennent effet immédiatement",
   "settings.language.selectLabel": "Langue de l'Interface",

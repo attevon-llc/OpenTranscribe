@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "Interface Language",
   "settings.language.hint": "Changes take effect immediately",
   "settings.language.changed": "Language changed successfully",
+  "settings.language.machineTranslated": "machine-translated",
   "settings.profile.title": "Profile & Security",
   "settings.profile.description": "Manage your account information, password, and multi-factor authentication",
   "settings.profile.accountInfo": "Account Info",

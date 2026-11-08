@@ -358,7 +358,7 @@ repos:
         entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/check-licenses.py --npm-only'
         language: system
         pass_filenames: false
-        files: ^(frontend/package(-lock)?\.json|scripts/(check-licenses\.py|licenses-allowlist\.txt|lib/license_.*\.py))$
+        files: ^(frontend/package(-lock)?\.json|docs-site/docs/legal/third-party-licenses\.md|scripts/(check-licenses\.py|licenses-allowlist\.txt|lib/license_.*\.py))$
       # --offline: the online audits need a token and make the hook depend on the network.
       - id: zizmor
         name: GitHub Actions workflows pass the zizmor security audit

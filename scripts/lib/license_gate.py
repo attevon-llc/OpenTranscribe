@@ -480,6 +480,34 @@ def evaluate(
     return Result(rows, errors)
 
 
+# --- licence documentation -----------------------------------------------------------------
+
+_DOC_TOKEN = re.compile(r'`([^`\s]+)`')
+
+
+def check_license_doc(rows: Iterable[Row], doc: Path) -> list[str]:
+    """Errors for every non-ALLOW package the licence documentation page does not name.
+
+    The page is prose (what / why / where / licence / AGPL-3.0 compatibility); only coverage is
+    machine-checkable. A backticked name covers that package; a backticked ``prefix*`` covers a
+    family (platform builds, ``nvidia-*``).
+    """
+    try:
+        text = doc.read_text(encoding='utf-8')
+    except OSError as exc:
+        raise InputError(f'{doc}: {exc}') from exc
+    tokens = set(_DOC_TOKEN.findall(text))
+    prefixes = tuple(t[:-1] for t in tokens if t.endswith('*'))
+    errors: list[str] = []
+    for name in sorted({r.package.name for r in rows if r.category != 'allow'}):
+        if name not in tokens and not name.startswith(prefixes):
+            errors.append(
+                f'UNDOCUMENTED: {name} is not permissive but {doc.name} does not name it '
+                '(add what / why / where / licence / compatibility)'
+            )
+    return errors
+
+
 # --- report version ------------------------------------------------------------------------
 
 _VERSION = re.compile(r'\bv?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.]+)?)\b')

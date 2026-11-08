@@ -27,6 +27,14 @@ export const SUPPORTED_LANGUAGES: Language[] = [
 
 export const DEFAULT_LANGUAGE = 'en';
 
+/**
+ * English is the authored source; every other locale is machine-translated with no human
+ * review (owner decision 2026-11-08), and the language picker says so.
+ */
+export function isMachineTranslated(code: string): boolean {
+  return code !== DEFAULT_LANGUAGE;
+}
+
 export function isValidLanguageCode(code: string): boolean {
   return SUPPORTED_LANGUAGES.some((lang) => lang.code === code);
 }

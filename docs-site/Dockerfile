@@ -64,7 +64,7 @@ FROM nginx:1.31.8-alpine3.24
 LABEL org.opencontainers.image.title="OpenTranscribe Documentation" \
       org.opencontainers.image.description="Docusaurus documentation site for OpenTranscribe" \
       org.opencontainers.image.vendor="OpenTranscribe" \
-      org.opencontainers.image.authors="OpenTranscribe Contributors" \
+      org.opencontainers.image.authors="OpenTranscribe" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
       org.opencontainers.image.source="https://github.com/attevon-llc/OpenTranscribe" \
       org.opencontainers.image.documentation="https://github.com/attevon-llc/OpenTranscribe/blob/master/README.md"

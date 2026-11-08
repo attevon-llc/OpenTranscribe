@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "インターフェース言語",
   "settings.language.hint": "変更は即座に反映されます",
   "settings.language.changed": "言語が正常に変更されました",
+  "settings.language.machineTranslated": "機械翻訳",
   "settings.profile.title": "プロフィールとセキュリティ",
   "settings.profile.description": "アカウント情報、パスワード、多要素認証を管理します",
   "settings.profile.accountInfo": "アカウント情報",

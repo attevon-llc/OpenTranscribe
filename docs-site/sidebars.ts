@@ -130,6 +130,7 @@ const sidebars: SidebarsConfig = {
         'operations/telemetry',
         'operations/public-demo',
         'legal/legal-documents',
+        'legal/third-party-licenses',
         'operations/runbooks',
       ],
     },

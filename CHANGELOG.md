@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The interface language picker (Settings > Language) marks every non-English language as machine-translated, in the reader's own language; the translations have no human review.
+- A Third-party licenses page (Legal) documents every non-permissive runtime dependency (mutagen, fpdf2, ldap3, psycopg2, certifi, tqdm, lightningcss, the NVIDIA libraries, the Silo image): what it is, why it is used, where, its license and why it is compatible with AGPL-3.0. A test fails when the generated license inventory lists a package the page does not name; `NOTICE` links to it.
+- `.github/CODEOWNERS` assigns every path to the maintainer.
 - `scripts/perf/load/run.sh --fresh NAME --profile PROFILE` runs one load test end to end into one directory: a sampler records every 5 s the stack's Postgres connections by state (including idle in transaction), the API's `db_pool_*` gauges, every Celery queue's depth, CPU and memory of the stack's own containers and the project GPUs' memory and utilisation (GPU 0 is refused), then `summarize.py` writes a markdown report with per-endpoint p50/p95/p99, failures by cause, percentile history and a pass/fail verdict against `thresholds.toml`.
 - The concurrent-user load test (`scripts/perf/load/`) now covers the whole API with eight personas: viewers (every gallery filter, file pages, transcript paging, exports, waveform and media links, search, speakers, settings), editors (comments, tags, collections, segment and speaker edits, hide, reprocess and uploads, each undone in the same task), chat users streaming against the mock LLM, the administrator, the organization administrator, open browser tabs holding the live socket, and pipeline uploaders that follow a real recording to "completed". Every API group is either called by a persona or excluded with a written reason, and a test fails when that table drifts. Load shapes are named profiles chosen with `--load-profile`: smoke, steady, ramp (100/250/500/1,000), spike, soak and pipeline.
 - The scale seed adds what the concurrent-user load test reads: comment threads written by each file's owner (`--comments`, default 300,000), personal tags that ordinary users own and that sit on their own files (`--user-tags`, default 20,000), and, with `--waveform-pm`, the cached waveform the file page draws (off by default so the query review's rows keep their width).
@@ -64,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Administrators can place a legal hold on files or a collection without taking them down (`GET/POST /api/admin/holds`, `GET /api/admin/holds/{uuid}`, `POST /api/admin/holds/{uuid}/release`); hold records say whether the platform or an organization placed them (migration `v467`). A comment on a held file is recorded as `content.hold.annotation`.
 
 ### Changed
+
+- Contribution docs and the pull request template state plainly that outside code contributions are not accepted for now; issues and pull requests are welcome as suggestions and bug reports, and a contributor agreement will follow later.
+
+- The declared copyright holder and package author is "OpenTranscribe" everywhere (`pyproject.toml` files, image author labels), matching `NOTICE`, the docs footer and `frontend/package.json`.
 
 - Search no longer keeps a per-process cache of result pages. Its entries were emptied by any new transcript anywhere on the server, so it rarely helped, and it had repeatedly served stale or wrongly masked pages; every search now reflects the index and your redaction settings as they are. An identical repeat search runs again rather than being served from memory.
 - Open tabs of one browser now take turns refreshing the sign-in session (one refresh at a time, and a tab skips its own when another tab has just refreshed), so tabs whose session expires at the same moment stay signed in.

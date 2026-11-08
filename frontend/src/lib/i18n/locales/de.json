@@ -1534,6 +1534,7 @@
   "settings.garbageCleanup.tooltip": "WhisperX kann manchmal Hintergrundgeräusche (Lüfter, Rauschen, Grollen) als extrem lange \"Wörter\" ohne Leerzeichen fehlinterpretieren. Diese Funktion erkennt und ersetzt diese Artefakte.",
   "settings.keepEditing": "Weiter bearbeiten",
   "settings.language.changed": "Sprache erfolgreich geändert",
+  "settings.language.machineTranslated": "maschinell übersetzt",
   "settings.language.description": "Wählen Sie Ihre bevorzugte Sprache für die Oberfläche",
   "settings.language.hint": "Änderungen werden sofort wirksam",
   "settings.language.selectLabel": "Oberflächensprache",

@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "Lingua dell'interfaccia",
   "settings.language.hint": "Le modifiche hanno effetto immediato",
   "settings.language.changed": "Lingua cambiata con successo",
+  "settings.language.machineTranslated": "traduzione automatica",
   "settings.profile.title": "Profilo e sicurezza",
   "settings.profile.description": "Gestisci le informazioni del tuo account, la password e l'autenticazione a due fattori",
   "settings.profile.accountInfo": "Informazioni account",

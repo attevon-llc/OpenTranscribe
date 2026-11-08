@@ -2,7 +2,10 @@
 
 Thank you for your interest in contributing to OpenTranscribe! This document provides guidelines and information for contributors.
 
-> **Contributions paused.** We are not accepting outside code contributions at the moment. Issues and discussions are still welcome.
+> **Outside code contributions are not accepted for now.** Issues and pull requests are still
+> welcome as bug reports and suggestions, and we read all of them, but the maintainer implements
+> accepted changes personally. We plan to open contributions later, with a contributor agreement;
+> this page will be updated when that happens. Thank you for your interest and your understanding.
 
 ## 🌟 Ways to Contribute
 
@@ -18,7 +21,8 @@ Thank you for your interest in contributing to OpenTranscribe! This document pro
 - Consider implementation complexity
 - Discuss with maintainers before starting work
 
-### 🔧 Code Contributions
+### 🔧 Code Contributions (not accepted for now)
+Pull requests are read as suggestions; the maintainer will implement accepted changes. The list below describes the areas where ideas are most useful.
 - Fix bugs and implement features
 - Improve documentation
 - Add tests and improve coverage

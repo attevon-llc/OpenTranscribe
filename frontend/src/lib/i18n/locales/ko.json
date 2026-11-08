@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "인터페이스 언어",
   "settings.language.hint": "변경 사항은 즉시 적용됩니다",
   "settings.language.changed": "언어가 성공적으로 변경되었습니다",
+  "settings.language.machineTranslated": "기계 번역",
   "settings.profile.title": "프로필 및 보안",
   "settings.profile.description": "계정 정보, 비밀번호, 2단계 인증을 관리합니다",
   "settings.profile.accountInfo": "계정 정보",

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { locale, SUPPORTED_LANGUAGES, t } from "$stores/locale";
   import { toastStore } from "$stores/toast";
+  import { isMachineTranslated } from "$lib/i18n/languages";
 
   // The <select> renders the store directly rather than mirroring it into a
   // second `bind:value` variable. The mirror was a reset-race: `bind:value` wrote
@@ -31,7 +32,9 @@
     >
       {#each SUPPORTED_LANGUAGES as lang}
         <option value={lang.code}>
-          {lang.nativeName} ({lang.name})
+          {lang.nativeName} ({lang.name}){isMachineTranslated(lang.code)
+            ? ` · ${$t("settings.language.machineTranslated")}`
+            : ""}
         </option>
       {/each}
     </select>

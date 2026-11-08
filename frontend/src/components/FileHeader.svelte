@@ -3,13 +3,9 @@
   import { createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
   import ConfirmationModal from './ConfirmationModal.svelte';
-  import HoldBadge from '$components/ui/HoldBadge.svelte';
-  import CopyButton from '$components/ui/CopyButton.svelte';
   import HeldFileBanner from '$components/legal-hold/HeldFileBanner.svelte';
-  import FilePlaceHoldAction from '$components/legal-hold/FilePlaceHoldAction.svelte';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
   import { reportHoldRefusal } from '$lib/legalHold/refusal';
-  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
 
@@ -166,7 +162,6 @@
     {:else}
       <div class="title-display-container">
         <h1>{getDisplayName(file)}</h1>
-        <HoldBadge hold={file?.hold} />
         {#if sharedPermission}
           <span class="shared-chip">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -192,21 +187,6 @@
             <path d="m14.5 5.5 4 4"></path>
           </svg>
         </button>
-        {#if file?.uuid}
-          <span class="file-id-actions">
-            <CopyButton
-              text={String(file.uuid)}
-              label={$t('fileDetail.copyId')}
-              copiedLabel={$t('fileDetail.copyIdDone')}
-              on:copied={() => toastStore.success($t('fileDetail.copyIdDone'))}
-            />
-            <FilePlaceHoldAction
-              fileUuid={String(file.uuid)}
-              fileLabel={getDisplayName(file)}
-              on:placed={(e) => dispatch('holdPlaced', e.detail)}
-            />
-          </span>
-        {/if}
       </div>
     {/if}
   </div>
@@ -318,13 +298,6 @@
 />
 
 <style>
-  .file-id-actions {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-
   .edit-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;

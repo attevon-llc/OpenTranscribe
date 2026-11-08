@@ -627,7 +627,6 @@
         {currentProcessingStep}
         sharedPermission={myPermission ?? null}
         on:titleUpdated={(e) => { if (file) file.title = e.detail.title; }}
-        on:holdPlaced={(e) => { if (file) file = { ...file, hold: markHeld(file.hold, [e.detail.authority]) }; }}
       />
     </div>
 

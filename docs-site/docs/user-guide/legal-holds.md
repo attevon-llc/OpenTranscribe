@@ -91,12 +91,13 @@ Through the API, `GET /api/files?held=true` lists held files (`held=false` lists
 `GET /api/files/metadata-filters` returns a `held_count`. Each listed file carries a `hold` object
 saying whether it is held and by whom (`platform`, `organization` or both), never why.
 
-### Finding a recording's ID
+### A recording's ID
 
-Holds that name individual recordings use the recording's **file ID**. A file's ID is the last part
-of its address on the file page (the long identifier after `/files/`). On the file page, the
-**Copy file ID** button next to the title copies it for you. The ID is the same one the audit log
-and the API use, so it is also how you find everything that happened to a recording.
+You never need a recording's ID to hold or quarantine it: the administrator screens find files by
+title or file name (see [Placing a hold in the application](#placing-a-hold-in-the-application)).
+When support, a takedown dispute or the audit log asks for a file's ID, open the file, expand
+**File details** and use the copy button beside **File ID**. It is also the last part of the file
+page's address (the long identifier after `/files/`).
 
 ## Hold, quarantine, trash and deletion compared
 
@@ -149,13 +150,17 @@ end of this section).
 - **From the gallery:** select one or more files and choose **Place legal hold** from the selection
   actions. A dialog shows how many files are affected, asks for the reason and an optional matter
   reference, and explains what a hold does. It is offered to administrators only.
-- **From the file page:** use the **Place legal hold** button in the file's header.
-- **By file ID:** in **Settings > Legal holds**, choose **Place a hold**, choose **Specific files**,
-  and paste one file ID per line (use **Copy file ID** on each file page to get them).
+- **From Settings:** in **Settings > Legal holds**, choose **Place a hold**. **Specific files** is
+  selected: type part of a title or file name, pick the file from the list, and repeat for each
+  file (up to 500). The picked files show as chips; remove one with its **x**, or use **Clear
+  selection**. The search covers the files you can see in your own gallery.
 - **By collection:** in the same dialog choose **A whole collection** and pick the collection.
 
+The file page has no hold button: its header shows the recording, and holds are placed from the
+gallery or from Settings.
+
 A held file shows the **Legal hold** badge in the gallery and the collection list. On the file page
-a banner says the file is held and by whom, with an expandable **What does a legal hold do?**
+a banner below the title says the file is held and by whom, with an expandable **What does a legal hold do?**
 explanation, and the controls that would change the file are disabled with a tooltip. The comment
 box stays enabled.
 

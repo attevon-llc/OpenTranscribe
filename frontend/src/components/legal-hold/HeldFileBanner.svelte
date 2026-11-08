@@ -39,17 +39,19 @@
     gap: var(--space-3);
     margin-block: var(--space-3);
     padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--color-warning-border);
-    border-inline-start: 4px solid var(--warning-solid);
+    /* Informational, not a warning: a hold is a records status, not something wrong with the
+       file, and it sits below the title so it never reads as the title's own state. */
+    border: 1px solid var(--border-color);
+    border-inline-start: 3px solid var(--info-solid);
     border-radius: var(--radius-md);
-    background: var(--color-warning-bg);
+    background: var(--surface-secondary);
     color: var(--text-color);
   }
 
   .icon {
     display: inline-flex;
     flex-shrink: 0;
-    color: var(--color-warning-text);
+    color: var(--color-info-text);
     padding-block-start: var(--space-0-5);
   }
 
@@ -60,7 +62,7 @@
 
   .title {
     margin: 0;
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
   }
 

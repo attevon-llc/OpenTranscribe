@@ -3,4 +3,3 @@ noqa::backend/app/db/migrations.py	1	suppression: reason to be added
 noqa::backend/app/services/asr/aws_provider.py	1	suppression: reason to be added
 noqa::backend/app/services/asr/gladia_provider.py	1	suppression: reason to be added
 noqa::backend/app/services/asr/pyannote_provider.py	1	suppression: reason to be added
-type-ignore::backend/tests/unit/test_config_env_clamps.py	1	suppression: reason to be added

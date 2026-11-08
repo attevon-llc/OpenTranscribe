@@ -325,6 +325,17 @@ be taken from a different track than the transcript. Nothing is recomputed autom
 **Re-diarize Only** on an affected file if its speakers matter. See
 [Files with more than one audio track](../user-guide/uploading-files.md#files-with-more-than-one-audio-track).
 
+## Forcing the transcription language on reprocess
+
+**Check this if...** you want to know what changed in the database for the forced-language option.
+
+Revision `v470_add_requested_source_language` adds one nullable `media_file.requested_source_language`
+column (an ISO code or `auto`) with a `CHECK` on its shape. It rewrites nothing and needs no
+action: NULL means "use the user's saved language", which is what every existing file did. The
+column is part of the file's stored request, so retries and stuck-file recovery replay a forced
+language. Downgrading drops the column and discards stored choices. See
+[Forcing the transcription language](../user-guide/uploading-files.md#forcing-the-transcription-language).
+
 ## Organization erasures are scheduled, not immediate
 
 **Check this if...** you run organizations and call `POST /api/org-admin/gdpr/erase-user/{uuid}`

@@ -16,7 +16,8 @@
    * (when present) must go to User Management, never to an erasure action.
    */
   import { onMount } from 'svelte';
-  import { t } from '$stores/locale';
+  import { t, locale } from '$stores/locale';
+  import { formatDateTime } from '$lib/utils/formatting';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -203,7 +204,7 @@
                 </div>
               {/each}
             </td>
-            <td>{file.quarantinedAt || '—'}</td>
+            <td>{formatDateTime(file.quarantinedAt, '—', $locale)}</td>
             <td>{file.by || '—'}</td>
             <td>
               {#if file.origin}

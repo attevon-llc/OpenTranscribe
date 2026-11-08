@@ -46,8 +46,12 @@ def fake_repo(tmp_path: Path) -> Path:
     )
     _write(
         root / "backend" / "venv" / "bin" / "python",
-        f'#!/bin/bash\necho pytest >> "{log}"\necho STUB-PYTEST-RUNNING\n'
-        '[[ -n "${STUB_PYTEST_HANG:-}" ]] && sleep 2\n'
+        f'#!/bin/bash\necho pytest >> "{log}"\n'
+        'if [[ -n "${STUB_PYTEST_HANG:-}" ]]; then\n'
+        # A read-write open of a fifo never blocks; held before announcing, so the test's
+        # release cannot arrive before there is a reader. Parked until the signal is sent.
+        '  exec 3<>"$STUB_PYTEST_HANG"\n  echo STUB-PYTEST-RUNNING\n  read -r _ <&3\n'
+        "else\n  echo STUB-PYTEST-RUNNING\nfi\n"
         '[[ -n "${STUB_PYTEST_FAIL:-}" ]] && exit 1\nexit 0\n',
     )
     stubs = root / "stubs"
@@ -96,7 +100,9 @@ def test_failed_start_stops_the_half_started_stack(fake_repo: Path) -> None:
 
 @pytest.mark.parametrize(("sig", "code"), [(signal.SIGINT, 130), (signal.SIGTERM, 143)])
 def test_interrupt_during_pytest_stops_the_stack(fake_repo: Path, sig: int, code: int) -> None:
-    proc = _run(fake_repo, STUB_PYTEST_HANG="1")
+    hold = fake_repo / "hold.fifo"
+    os.mkfifo(hold)
+    proc = _run(fake_repo, STUB_PYTEST_HANG=str(hold))
     try:
         assert proc.stdout is not None
         seen = []
@@ -107,6 +113,13 @@ def test_interrupt_during_pytest_stops_the_stack(fake_repo: Path, sig: int, code
         else:
             pytest.fail("stub pytest never started:\n" + "".join(seen))
         proc.send_signal(sig)
+        # bash runs its trap only once the foreground stub returns, so the stub is released
+        # AFTER the signal is pending: the interrupt cannot lose a race with a finished stub.
+        fd = os.open(hold, os.O_WRONLY | os.O_NONBLOCK)  # ENXIO, not a hang, if nothing waits
+        try:
+            os.write(fd, b"go\n")
+        finally:
+            os.close(fd)
         rest, _ = proc.communicate(timeout=60)
         out = "".join(seen) + rest
     finally:

@@ -1,6 +1,7 @@
 import contextlib
 import os
 import unicodedata
+from collections.abc import Callable
 from typing import Any
 
 from joserfc import jwt
@@ -339,9 +340,20 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(normalize_password(password))
 
 
-def authenticate_user(db: Session, email: str, password: str) -> User | None:
+def authenticate_user(
+    db: Session,
+    email: str,
+    password: str,
+    *,
+    before_hash: Callable[[User], None] | None = None,
+) -> User | None:
     """
     Authenticate a user by email and password.
+
+    ``before_hash`` runs with the user row loaded and before the password hash is computed:
+    the login path passes ``session_utils.end_read_transaction`` so no pooled connection is
+    held across PBKDF2 (the slowest step of a login). It is a parameter because ``app.core``
+    may not import ``app.db`` (``pyproject.toml`` import-linter layers).
 
     Note: LDAP users cannot authenticate via this function - they must use
     LDAP authentication. This function is for local users only.
@@ -374,6 +386,8 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
     if not user.hashed_password:
         return None
 
+    if before_hash is not None:
+        before_hash(user)
     if not verify_password(password, str(user.hashed_password)):
         return None
     return user

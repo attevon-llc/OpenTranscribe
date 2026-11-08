@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Open tabs of one browser now take turns refreshing the sign-in session (one refresh at a time, and a tab skips its own when another tab has just refreshed), so tabs whose session expires at the same moment stay signed in.
 - Sign-in is rate-limited per client address and username instead of per address alone, with a per-address ceiling of ten times `RATE_LIMIT_AUTH_PER_MINUTE` across usernames, so people behind one shared address no longer use up each other's attempts. Token refresh is limited per signed-in user. Behind your own proxy or load balancer, add its address range to `RATE_LIMIT_TRUSTED_PROXIES`.
 - The load-test runbook (`scripts/perf/load/README.md`, and Concurrent users in the Scale and query performance testing page) now gives one command per profile, the seed flags the personas need, the personas and what each covers, and what a run directory holds. Chat turns are limited to 20 a minute per client address in the code, so the runbook runs a fixed number of chat users.
 - Transcription queues now share fairly between users: a user's first 5 queued or running transcriptions keep the normal priority and each one after that is queued one step lower, so another user's file no longer waits behind someone's entire bulk upload. Administrators set the limit in Settings, File status, Recovery, Fair sharing between users (default 5, 0 restores strict first-come order); see Performance Tuning, Fair sharing between users.

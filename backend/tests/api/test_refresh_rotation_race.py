@@ -180,3 +180,34 @@ def test_a_failed_rotation_leaves_the_presented_token_usable(committed_user, mon
 
     assert _live_sessions(user_id) == 1
     assert _refresh(token) == 200
+
+
+def _refresh_as(token: str, device: str) -> tuple[int, str]:
+    """Refresh from a named client (its own user agent)."""
+    client = TestClient(app)
+    response = client.post(
+        "/api/auth/token/refresh",
+        json={"refresh_token": token},
+        headers={"User-Agent": f"opentr-test-{device}"},
+    )
+    rotated: str = response.json().get("refresh_token", "") if response.status_code == 200 else ""
+    return response.status_code, rotated
+
+
+def test_a_stolen_token_replayed_from_another_device_ends_the_session(committed_user, audit_events):
+    """Real reuse: the legitimate device rotated, then a copy of the old token turns up.
+
+    The browser's cross-tab refresh lock (frontend ``sessionRefresh.ts``) keeps one
+    browser from ever looking like this; a second device holding a copy still must.
+    """
+    user_id, user_uuid = committed_user
+    stolen = _issue(user_id, user_uuid)
+    code, current = _refresh_as(stolen, "laptop")
+    assert code == 200
+
+    assert _refresh_as(stolen, "attacker")[0] == 401
+
+    # The legitimate device's fresh token is revoked with the rest of the family.
+    assert _refresh_as(current, "laptop")[0] == 401
+    assert _live_sessions(user_id) == 0
+    assert audit_events.count(REUSE_EVENT) == 1

@@ -1,10 +1,11 @@
 import { writable, derived, get } from 'svelte/store';
-import axiosInstance, { abortAllRequests } from '../lib/axios';
+import axiosInstance, { abortAllRequests } from '$lib/axios';
 import { t } from '$stores/locale';
 import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
 import { probeSessionWithRetry, SESSION_PROBE_TIMEOUT_MS } from '$lib/auth/sessionProbe';
+import { refreshSession } from '$lib/auth/sessionRefresh';
 import { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
 import {
   asAuthError,
@@ -322,7 +323,8 @@ export async function initAuth() {
     if (data.refreshable) {
       // Access token expired but a refresh cookie is present — restore the
       // session silently instead of bouncing the user to the login page.
-      await axiosInstance.post('/auth/token/refresh', {}, { timeout: SESSION_PROBE_TIMEOUT_MS });
+      // Every open tab restores at once after a browser restart; refresh in turn.
+      await refreshSession({ timeoutMs: SESSION_PROBE_TIMEOUT_MS });
       const userData = await fetchUserInfo();
       if (userData) {
         authStore.setToken('cookie');

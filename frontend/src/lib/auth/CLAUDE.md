@@ -16,6 +16,10 @@ the SPA cannot read; the SPA learns state from `GET /auth/session` and `GET /aut
 - `sessionProbe.ts` (bounded, visibly-retrying probe that gates first render), `sessionRecheck.ts`
   (what to do when the server closes the realtime socket because sessions were revoked),
   `sessionTimeouts.ts` + `idleGuard.ts` (idle/absolute timeout for externally-owned sessions, #1106).
+- `sessionRefresh.ts` — **the only caller of `POST /auth/token/refresh`** (axios 401 handler, boot
+  restore, chat stream retry). Serialises refreshes across tabs with the Web Locks API: the server
+  spends a refresh token once and treats a second use as reuse, ending the session, so tabs must
+  never refresh concurrently. Never call the refresh endpoint directly.
 - `oidcLogin.ts`, `oidcCallback.ts` (nothing in it may throw), `oidcRedirect.ts` (validates the IdP
   URL before the browser is sent to it), `externalSignIn.ts` (cloud-edition sign-in; a no-op in the
   community build), `loginBanner.ts` (FedRAMP AC-8), `loginIdentifier.ts` (email vs username).

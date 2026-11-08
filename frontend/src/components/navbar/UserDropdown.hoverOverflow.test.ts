@@ -20,3 +20,13 @@ describe('UserDropdown item hover geometry', () => {
     expect(style).not.toMatch(/text-align:\s*left/);
   });
 });
+
+describe('UserDropdown menu placement', () => {
+  it('leaves positioning to anchoredPanel: no physical left/right/inset on .dropdown-menu', () => {
+    const blocks = [...style.matchAll(/\.dropdown-menu\s*\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const body of blocks) {
+      expect(body).not.toMatch(/(^|[\s;])(left|right|inset(-inline)?(-start|-end)?)\s*:/);
+    }
+  });
+});

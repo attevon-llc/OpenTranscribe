@@ -101,6 +101,29 @@ def test_user_dropdown_has_no_horizontal_scrollbar(
         context.close()
 
 
+@pytest.mark.parametrize("locale", ["en", "ar"])
+def test_user_dropdown_stays_inside_a_390px_viewport(
+    browser: Any, shared_auth_state: str, base_url: str, locale: str
+) -> None:
+    """At phone width the menu must fit, in RTL as well (it spilled ~10px in `ar`)."""
+    context, page = _page_at(browser, shared_auth_state, 390, 844)
+    try:
+        page.add_init_script(f"window.localStorage.setItem('locale', '{locale}')")
+        page.goto(base_url)
+        page.wait_for_selector(".mobile-toggle button", timeout=APP_SHELL_READY_MS)
+        expect(page.locator("html")).to_have_attribute("dir", "rtl" if locale == "ar" else "ltr")
+        page.locator(".mobile-toggle button").click()
+        page.locator(".nav-links.open .user-button").first.click()
+        menu = page.locator(".dropdown-menu").first
+        expect(menu).to_be_visible()
+        box = menu.bounding_box()
+        assert box is not None
+        assert box["x"] >= 0 and box["x"] + box["width"] <= 390 + 0.5, box
+    finally:
+        page.close()
+        context.close()
+
+
 @pytest.fixture
 def search_input(gallery_page: Page, base_url: str) -> Page:
     gallery_page.goto(f"{base_url}/search")

@@ -511,9 +511,11 @@
 
   @media (max-width: 768px) {
     /* Mobile dropdown adjustments */
+    /* Position belongs to anchoredPanel (inline left/top, clamped to the viewport, RTL-aware).
+       A physical `right` here over-constrains the fixed box and, in RTL, wins over `left`,
+       pushing the menu past the viewport edge. */
     .dropdown-menu {
       width: 220px;
-      right: -10px;
     }
 
     .dropdown-item {

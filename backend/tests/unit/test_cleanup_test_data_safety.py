@@ -692,6 +692,19 @@ _E2E_LITERAL_NOT_PERSISTED: dict[str, str] = {
     "backend/tests/e2e/test_legal_hold_ui.py::e2e matter closed ": (
         "the release reason on the same released hold record as 'e2e legal hold '"
     ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e hold by name ": (
+        "the reason of the hold placed from Settings > Legal holds; released in a finally, and "
+        "like 'e2e legal hold ' the released content_hold row is the audit record the product "
+        "keeps by design"
+    ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e takedown ": (
+        "the requester reference typed into the quarantine form; stored on the takedown_notice "
+        "row, which the app never deletes (takedown.py: notice FKs are SET NULL so the evidence "
+        "outlives the file), so it is an audit record, not a name a sweep should remove"
+    ),
+    "backend/tests/e2e/test_legal_hold_ui.py::e2e operator action ": (
+        "the operator basis on the same takedown_notice record as 'e2e takedown '"
+    ),
     "backend/tests/e2e/test_upload_tray_and_notifications.py::e2e-card-processing-": (
         "a filename inside seeded notification records in a throwaway browser context's "
         "localStorage; no file or row exists server-side"

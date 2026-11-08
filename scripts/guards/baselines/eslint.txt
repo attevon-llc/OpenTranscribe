@@ -24,7 +24,6 @@ frontend/src/components/FilterSidebar.svelte::prefer-const	3	lint: burn-down pla
 frontend/src/components/FilterSidebar.svelte::svelte/require-each-key	5	lint: burn-down planned
 frontend/src/components/FloatingPreviewPlayer.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/IdleTimeoutDialog.svelte::svelte/infinite-reactive-loop	1	lint: burn-down planned
-frontend/src/components/MetadataDisplay.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/MetadataDisplay.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/Navbar.notificationsMount.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/Navbar.svelte::no-restricted-imports	9	lint: burn-down planned
@@ -97,7 +96,6 @@ frontend/src/components/gallery/FileListSkeleton.svelte::no-restricted-imports	1
 frontend/src/components/gallery/FileListSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/gallery/GalleryFilterPanel.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/gallery/GallerySelectionActions.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
-frontend/src/components/gallery/QuarantineModal.svelte::parse-error	1	lint: burn-down planned
 frontend/src/components/gallery/VirtualGrid.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned
 frontend/src/components/gallery/VirtualGrid.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/gallery/VirtualList.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned

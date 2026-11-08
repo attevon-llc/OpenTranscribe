@@ -468,6 +468,11 @@ class MediaFile(Base):
             "trash_origin IS NULL OR trash_origin IN ('user', 'retention')",
             name="ck_media_file_trash_origin",
         ),
+        # v469 (issue #1263): the chosen track is a ``-map 0:a:N`` ordinal.
+        CheckConstraint(
+            "audio_stream_index IS NULL OR audio_stream_index >= 0",
+            name="ck_media_file_audio_stream_index",
+        ),
         CheckConstraint(
             "(deleted_at IS NULL AND purge_after IS NULL AND trash_origin IS NULL "
             "AND deleted_by_user_id IS NULL) "

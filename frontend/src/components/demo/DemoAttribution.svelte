@@ -25,10 +25,10 @@
     {before}{#if safeHref(item.license_url)}<a
         href={safeHref(item.license_url)}
         target="_blank"
-        rel="noopener noreferrer">{item.license}</a
+        rel="external noopener noreferrer">{item.license}</a
       >{:else}{item.license}{/if}{after}
     {#if safeHref(item.source_url)}
-      <a href={safeHref(item.source_url)} target="_blank" rel="noopener noreferrer"
+      <a href={safeHref(item.source_url)} target="_blank" rel="external noopener noreferrer"
         >{$t('demo.attributionSource')}</a
       >
     {/if}

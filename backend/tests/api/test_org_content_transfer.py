@@ -287,6 +287,9 @@ def test_deleting_the_last_admins_account_is_refused_while_content_remains(
     _make(gov, gov.admin, "org:member")
     _make(gov, gov.alice, "org:admin")
     f = gov.file(gov.alice)
-    with pytest.raises(ConflictError):
+    with pytest.raises(ConflictError) as refused:
         user_deletion_service.delete_user_account(gov.db, gov.alice)
+    assert isinstance(refused.value.detail, dict)
+    assert refused.value.detail["code"] == "no_transfer_target"
+    assert "Add another administrator first" in refused.value.detail["message"]
     assert _owner_of(gov.db, MediaFile, f.id) == gov.alice.id

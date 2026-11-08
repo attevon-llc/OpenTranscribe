@@ -1,4 +1,4 @@
-import { derived, get, writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import {
   getDemoAttributions,
   getDemoInfo,
@@ -14,8 +14,6 @@ import {
 export const demoMode = writable(false);
 export const demoInfo = writable<DemoInfo | null>(null);
 export const demoAttributions = writable<Record<string, DemoAttribution>>({});
-
-export const isDemo = derived(demoMode, ($m) => $m);
 
 export async function loadDemoInfo(): Promise<void> {
   try {

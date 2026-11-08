@@ -255,6 +255,12 @@ _ABORT_HANDLING_EXEMPT: dict[str, str] = {
         "Corpus-wide variant of speaker.cluster_for_file — same embedding/OpenSearch-only call "
         "graph, no engine stage."
     ),
+    "app.tasks.org_content_transfer_task::org_content_transfer.restamp": (
+        "Re-points search documents at a new owner with OpenSearch update_by_query calls "
+        "(services/org_content_transfer.restamp_documents); it touches no media file's status, "
+        "has no generic except, and never constructs an Engine stage, so no checkpoint is "
+        "reachable."
+    ),
 }
 
 

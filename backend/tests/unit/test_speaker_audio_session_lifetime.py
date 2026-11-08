@@ -253,7 +253,9 @@ def reassignment_env(db_session, monkeypatch):
 
     monkeypatch.setattr("app.services.minio_service.download_file", _download)
 
-    def _prepare(temp_file_path, content_type, temp_dir):
+    def _prepare(
+        temp_file_path, content_type, temp_dir, progress_callback=None, *, audio_stream_index=None
+    ):
         tracker.observe("ffmpeg_prepare")
         return temp_file_path
 

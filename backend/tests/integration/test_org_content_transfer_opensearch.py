@@ -52,25 +52,25 @@ def indices(monkeypatch):
     chunks, transcripts = f"test_oct_chunks_{tag}", f"test_oct_transcripts_{tag}"
     monkeypatch.setattr(settings, "OPENSEARCH_CHUNKS_INDEX", chunks)
     monkeypatch.setattr(settings, "OPENSEARCH_TRANSCRIPT_INDEX", transcripts)
-    for name in (chunks, transcripts):
-        client.indices.create(index=name, body=MAPPING)
-    for file_id, availability in (
-        (LIVE, "available"),
-        (HELD, "available"),
-        (QUARANTINED_FILE, "quarantined"),
-    ):
-        for name in (chunks, transcripts):
-            client.index(
-                index=name,
-                body={
-                    "file_id": file_id,
-                    "user_id": OLD,
-                    "organization_id": 7,
-                    AVAILABILITY_FIELD: availability,
-                },
-            )
-    client.indices.refresh(index=f"{chunks},{transcripts}")
     try:
+        for name in (chunks, transcripts):
+            client.indices.create(index=name, body=MAPPING)
+        for file_id, availability in (
+            (LIVE, "available"),
+            (HELD, "available"),
+            (QUARANTINED_FILE, "quarantined"),
+        ):
+            for name in (chunks, transcripts):
+                client.index(
+                    index=name,
+                    body={
+                        "file_id": file_id,
+                        "user_id": OLD,
+                        "organization_id": 7,
+                        AVAILABILITY_FIELD: availability,
+                    },
+                )
+        client.indices.refresh(index=f"{chunks},{transcripts}")
         yield client, chunks, transcripts
     finally:
         for name in (chunks, transcripts):

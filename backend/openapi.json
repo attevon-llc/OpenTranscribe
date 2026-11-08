@@ -15181,6 +15181,34 @@
         "title": "PurgeRequest",
         "type": "object"
       },
+      "PurgeReverifyAccepted": {
+        "description": "202 body of the re-verify command; the outcome is audited per purge, task ``privacy.purge``.",
+        "properties": {
+          "task_id": {
+            "title": "Task Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "PurgeReverifyAccepted",
+        "type": "object"
+      },
+      "PurgeReverifyRequest": {
+        "description": "``POST /admin/privacy-policy/purge-reverify``: run the re-verify now instead of at its next tick.\n\nOnly a purge whose pending-centroid record is older than ``older_than_seconds`` is touched,\nso a purge still running is not declared interrupted. The floor is five minutes: pass 2\nstarts a minute after pass 1, and a very large scope can take longer than that to finish.",
+        "properties": {
+          "older_than_seconds": {
+            "default": 3600,
+            "maximum": 604800.0,
+            "minimum": 300.0,
+            "title": "Older Than Seconds",
+            "type": "integer"
+          }
+        },
+        "title": "PurgeReverifyRequest",
+        "type": "object"
+      },
       "PurgeStatus": {
         "description": "``GET /privacy/purge/{task_id}``: readable only by the person who started the purge.",
         "properties": {
@@ -30098,6 +30126,63 @@
           }
         ],
         "summary": "Purge Instance Data",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/privacy-policy/purge-reverify": {
+      "post": {
+        "description": "Finish the centroid work of purges a dead worker left (super_admin), without waiting for the beat.\n\nRuns the same ``privacy.purge_reverify`` the schedule runs hourly: deletes and measures the\ncentroid documents recorded in ``privacy_purge_pending`` for purges older than the cutoff,\nand fails a purge whose final pass never ended (``reason: interrupted``). Each purge it\ntouches is audited under its own task id. Safe to repeat.",
+        "operationId": "reverify_pending_purges_api_admin_privacy_policy_purge_reverify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PurgeReverifyRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeReverifyAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "The re-verify could not be queued."
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Reverify Pending Purges",
         "tags": [
           "admin"
         ]

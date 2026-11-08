@@ -280,14 +280,18 @@ def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set
         for queue in names
         for priority in priority_steps
     ]
-    # Entry counts come from the one priority-sharded depth implementation.
-    depths = queue_snapshot(client, names)
-    entries = sum(depths.get(queue, {}).get("pending", 0) for queue in names)
+    # Bytes first: queue_snapshot also peeks at each list's oldest message, which must not
+    # happen on a backlog already known to be over the byte budget.
     sizes = client.pipeline(transaction=False)
     for key in keys:
         sizes.memory_usage(key)
     # A missing key has no memory usage (nil).
     footprint = sum(int(n or 0) for n in sizes.execute())
+    entries = 0
+    if footprint <= QUEUE_SCAN_MAX_BYTES:
+        # Entry counts come from the one priority-sharded depth implementation.
+        depths = queue_snapshot(client, names)
+        entries = sum(depths.get(queue, {}).get("pending", 0) for queue in names)
     if entries > QUEUE_SCAN_MAX_ENTRIES or footprint > QUEUE_SCAN_MAX_BYTES:
         logger.warning(
             "Not reading the stage queues: %d messages, ~%d MB (limits %d, %d MB); "

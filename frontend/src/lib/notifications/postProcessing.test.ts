@@ -143,6 +143,36 @@ describe('upsertPostProcessingRecord', () => {
     expect(upsertPostProcessingRecord([tx], { tasks: {} }, NOW, ids, 'T')).toBeNull();
   });
 
+  it('a snapshot read hours later is dated by the run, not by the read (no "Just now")', () => {
+    const twoHoursAgo = NOW / 1000 - 7200;
+    const snap = plan(twoHoursAgo, { analytics: 'done' });
+    const next = upsertPostProcessingRecord([tx], snap, NOW, ids, 'T', true);
+    expect(next?.[0].timestamp.getTime()).toBe(twoHoursAgo * 1000);
+  });
+
+  it("a snapshot with no run on record keeps the file card's own time, not the read time", () => {
+    const next = upsertPostProcessingRecord(
+      [tx],
+      { file_id: 'f1', run_at: null, tasks: {} },
+      NOW,
+      ids,
+      'T',
+      true
+    );
+    expect(next?.[0].timestamp).toEqual(tx.timestamp);
+  });
+
+  it('a live frame is still stamped with its arrival', () => {
+    const next = upsertPostProcessingRecord(
+      [tx],
+      plan(NOW / 1000 - 50, { analytics: 'queued' }),
+      NOW,
+      ids,
+      'T'
+    );
+    expect(next?.[0].timestamp.getTime()).toBe(NOW);
+  });
+
   it('is pinned by retention while outstanding, clearable once finished, kept when failed', () => {
     const open = upsertPostProcessingRecord([tx], plan(10, { analytics: 'queued' }), NOW, ids, 'T');
     expect(open && isAutoClearable(open[0])).toBe(false);

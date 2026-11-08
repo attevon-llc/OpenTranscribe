@@ -5,7 +5,8 @@ from pathlib import Path
 
 import ffmpeg
 
-from app.utils.audio_stream import AUDIO_MAP_SPEC
+from app.utils.audio_stream import audio_map_spec
+from app.utils.audio_stream import effective_audio_index
 from app.utils.cpu_budget import effective_cpu_count
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,8 @@ def extract_audio_from_video(  # noqa: C901
     video_path: str,
     output_path: str,
     progress_callback: ProgressCallback = None,
+    *,
+    audio_stream_index: int | None = None,
 ) -> None:
     """
     Extract audio from a video file using ffmpeg.
@@ -118,6 +121,7 @@ def extract_audio_from_video(  # noqa: C901
         video_path: Path to the input video file
         output_path: Path for the output audio file
         progress_callback: Optional callback(progress: float 0-1, message: str)
+        audio_stream_index: Audio track to extract (``-map 0:a:N``); None = the first
     """
     logger.info(f"Extracting audio from video file {video_path}")
 
@@ -136,7 +140,7 @@ def extract_audio_from_video(  # noqa: C901
             ar="16000",
             ac=1,
             vn=None,
-            map=AUDIO_MAP_SPEC,
+            map=audio_map_spec(audio_stream_index),
             threads=_ffmpeg_threads(),
         ).run(quiet=True, overwrite_output=True)
 
@@ -200,6 +204,8 @@ def convert_audio_format(  # noqa: C901
     input_path: str,
     output_path: str,
     progress_callback: ProgressCallback = None,
+    *,
+    audio_stream_index: int | None = None,
 ) -> None:
     """
     Convert audio file to WAV format using ffmpeg.
@@ -208,6 +214,7 @@ def convert_audio_format(  # noqa: C901
         input_path: Path to the input audio file
         output_path: Path for the output WAV file
         progress_callback: Optional callback(progress: float 0-1, message: str)
+        audio_stream_index: Audio track to convert (``-map 0:a:N``); None = the first
     """
     logger.info("Converting audio to WAV format")
 
@@ -225,7 +232,7 @@ def convert_audio_format(  # noqa: C901
             acodec="pcm_s16le",
             ar="16000",
             ac=1,
-            map=AUDIO_MAP_SPEC,
+            map=audio_map_spec(audio_stream_index),
             threads=_ffmpeg_threads(),
         ).run(quiet=True, overwrite_output=True)
 
@@ -286,6 +293,8 @@ def prepare_audio_for_transcription(
     content_type: str,
     temp_dir: str,
     progress_callback: ProgressCallback = None,
+    *,
+    audio_stream_index: int | None = None,
 ) -> str:
     """
     Prepare audio file for transcription by extracting from video or converting format.
@@ -295,6 +304,7 @@ def prepare_audio_for_transcription(
         content_type: MIME type of the input file
         temp_dir: Temporary directory for processing
         progress_callback: Optional callback(progress: float 0-1, message: str)
+        audio_stream_index: Audio track to decode; None = the first audio stream
 
     Returns:
         Path to the prepared audio file
@@ -302,13 +312,24 @@ def prepare_audio_for_transcription(
     temp_audio_path = os.path.join(temp_dir, "audio.wav")
 
     if content_type.startswith("video/"):
-        extract_audio_from_video(temp_file_path, temp_audio_path, progress_callback)
+        extract_audio_from_video(
+            temp_file_path,
+            temp_audio_path,
+            progress_callback,
+            audio_stream_index=audio_stream_index,
+        )
         return temp_audio_path
     else:
         # For audio files, convert to WAV format if needed
         file_ext = Path(temp_file_path).suffix.lower()
-        if file_ext != ".wav":
-            convert_audio_format(temp_file_path, temp_audio_path, progress_callback)
+        # A multi-stream WAV/W64 can hold more than one track; only the first is the file itself.
+        if file_ext != ".wav" or effective_audio_index(audio_stream_index) != 0:
+            convert_audio_format(
+                temp_file_path,
+                temp_audio_path,
+                progress_callback,
+                audio_stream_index=audio_stream_index,
+            )
             return temp_audio_path
         else:
             # No conversion needed - signal completion if callback provided

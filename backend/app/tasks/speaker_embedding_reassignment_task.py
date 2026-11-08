@@ -296,6 +296,7 @@ def _load_reassignment_plan(
             "storage_path": str(media_file.storage_path),
             "content_type": str(media_file.content_type),
             "filename": str(media_file.filename),
+            "audio_stream_index": media_file.audio_stream_index,
             "target_speaker": {
                 "id": int(target_speaker.id),
                 "name": str(target_speaker.name),
@@ -348,7 +349,10 @@ def _extract_segment_embedding(plan: dict) -> np.ndarray | None:
             f.write(file_data.read())
 
         audio_file_path = prepare_audio_for_transcription(
-            temp_file_path, plan["content_type"], temp_dir
+            temp_file_path,
+            plan["content_type"],
+            temp_dir,
+            audio_stream_index=plan.get("audio_stream_index"),
         )
 
         # Use cached embedding service for warm model reuse

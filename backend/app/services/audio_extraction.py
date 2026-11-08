@@ -91,14 +91,18 @@ def _probe_audio_codec(media_path: str) -> str | None:
 
 
 def _build_audio_extract_command(
-    ffmpeg_path: str, input_path: str, output_path: str, codec_args: list[str]
+    ffmpeg_path: str,
+    input_path: str,
+    output_path: str,
+    codec_args: list[str],
+    audio_stream_index: int | None = None,
 ) -> list[str]:
     """Build an ffmpeg command that strips video and writes an audio-only file."""
     return [
         ffmpeg_path,
         "-i",
         str(input_path),
-        *audio_map_args(),
+        *audio_map_args(audio_stream_index),
         "-vn",
         *codec_args,
         "-y",
@@ -243,7 +247,11 @@ class AudioExtractionMixin(VideoProcessingHost):
 
             output_path = temp_dir_path / f"audio.{ext}"
             ffmpeg_cmd = _build_audio_extract_command(
-                ffmpeg_path, str(original_path), str(output_path), codec_args
+                ffmpeg_path,
+                str(original_path),
+                str(output_path),
+                codec_args,
+                self._media_audio_stream_index(file_id),
             )
 
             try:

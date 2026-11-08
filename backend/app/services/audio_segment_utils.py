@@ -93,6 +93,7 @@ def extract_audio_segment_np(
     start: float,
     duration: float,
     target_sr: int = 16000,
+    audio_stream_index: int | None = None,
 ) -> np.ndarray | None:
     """Extract a specific audio segment via ffmpeg seeking.
 
@@ -104,6 +105,7 @@ def extract_audio_segment_np(
         start: Segment start time in seconds.
         duration: Segment duration in seconds.
         target_sr: Target sample rate.
+        audio_stream_index: Audio track to read (``-map 0:a:N``); None = the first.
 
     Returns:
         1-D float32 numpy array or None on failure.
@@ -118,7 +120,7 @@ def extract_audio_segment_np(
         str(max(0.0, start)),
         "-i",
         audio_source,
-        *audio_map_args(),
+        *audio_map_args(audio_stream_index),
         "-t",
         str(duration),
         "-vn",
@@ -157,12 +159,14 @@ def extract_audio_segment_np(
 def load_full_audio_np(
     audio_path: str,
     target_sr: int = 16000,
+    audio_stream_index: int | None = None,
 ) -> np.ndarray:
     """Load entire audio file to float32 numpy array via ffmpeg.
 
     Args:
         audio_path: Path to the audio file.
         target_sr: Target sample rate.
+        audio_stream_index: Audio track to read (``-map 0:a:N``); None = the first.
 
     Returns:
         1-D float32 numpy array (mono, normalized).
@@ -174,7 +178,7 @@ def load_full_audio_np(
         "ffmpeg",
         "-i",
         audio_path,
-        *audio_map_args(),
+        *audio_map_args(audio_stream_index),
         "-f",
         "f32le",
         "-acodec",

@@ -97,7 +97,7 @@ def test_run_gender_inference_parallel_aggregates_and_skips_bad_clips(monkeypatc
         4.0: "raise",
     }
 
-    def fake_extract(source, start, duration):
+    def fake_extract(source, start, duration, audio_stream_index=None):
         assert source == "src"
         clip = clips[start]
         if isinstance(clip, str):

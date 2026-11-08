@@ -200,7 +200,7 @@ def task_env(db_session, monkeypatch):
     )
     calls = {"inference": 0}
 
-    def fake_inference(audio_source, work_items, service):
+    def fake_inference(audio_source, work_items, service, audio_stream_index=None):
         calls["inference"] += 1
         return {work_items[0][0]: {"male": 0.9, "female": 0.1}}, {work_items[0][0]: 1}
 

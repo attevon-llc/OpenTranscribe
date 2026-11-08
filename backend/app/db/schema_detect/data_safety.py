@@ -1,4 +1,4 @@
-"""Schema detection, v463 onward: the data-safety cluster (trash, hide, scheduled erasure, holds).
+"""Schema detection, v463 onward: the data-safety cluster (trash, hide, scheduled erasure, holds) and v469's audio tracks.
 
 v461 closed the governance era (``governance.py``); this era builds on its top rung
 (``governance.matches_v462``). ``probe()`` issues this era's queries after every older era's;
@@ -35,6 +35,7 @@ class DataSafetyFacts:
     has_user_hidden_media: bool
     has_content_hold_authority: bool
     has_organization_owner: bool
+    has_media_file_audio_streams: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
@@ -68,6 +69,12 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
         has_organization_owner=_check_exists(
             "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conname = 'fk_organization_owner_user')"
         ),
+        # v469: the audio tracks of a media file and the chosen one (issue #1263). Keyed on the
+        # CHECK the revision creates last.
+        has_media_file_audio_streams=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+            "WHERE conname = 'ck_media_file_audio_stream_index')"
+        ),
     )
 
 
@@ -91,7 +98,12 @@ def matches_v468(f: SchemaFacts) -> bool:
     return matches_v467(f) and f.data_safety.has_organization_owner
 
 
+def matches_v469(f: SchemaFacts) -> bool:
+    return matches_v468(f) and f.data_safety.has_media_file_audio_streams
+
+
 ARMS: tuple[Arm, ...] = (
+    (matches_v469, "v469_add_media_file_audio_streams"),
     (matches_v468, "v468_add_organization_owner"),
     (matches_v467, "v467_add_content_hold_authority"),
     (matches_v465, "v465_add_user_hidden_media"),

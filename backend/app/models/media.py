@@ -204,6 +204,13 @@ class MediaFile(Base):
         Integer, nullable=True
     )  # Audio sample rate (Hz)
     audio_bit_depth: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Audio bit depth
+    # Every audio track ffprobe found at ingest (issue #1263, v469): a list of
+    # {index, codec, channels, language, title, default}; ``index`` is the N of ``-map 0:a:N``.
+    # NULL = not probed yet.
+    audio_streams: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    # The track the user chose to transcribe and play. NULL = the first audio stream, which is
+    # what every decode path read before v469. Read through ``utils.audio_stream``.
+    audio_stream_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Creation information
     #

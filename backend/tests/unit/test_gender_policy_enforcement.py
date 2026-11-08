@@ -299,7 +299,7 @@ def task_env(db_session, monkeypatch):
     )
     state: dict[str, Any] = {"inference": 0, "during_inference": None}
 
-    def fake_inference(audio_source, work_items, service):
+    def fake_inference(audio_source, work_items, service, audio_stream_index=None):
         state["inference"] += 1
         if state["during_inference"] is not None:
             state["during_inference"]()

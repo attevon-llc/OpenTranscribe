@@ -141,6 +141,7 @@ def _prepare_audio(
     content_type: str,
     filename: str,
     file_uuid: str | None = None,
+    audio_stream_index: int | None = None,
 ) -> tuple[str, str | None]:
     """Get a 16 kHz WAV on local disk for diarization.
 
@@ -184,7 +185,9 @@ def _prepare_audio(
     with open(temp_file_path, "wb") as f:
         f.write(file_data.read())
 
-    audio_file_path = prepare_audio_for_transcription(temp_file_path, content_type, temp_dir)
+    audio_file_path = prepare_audio_for_transcription(
+        temp_file_path, content_type, temp_dir, audio_stream_index=audio_stream_index
+    )
     return audio_file_path, temp_dir
 
 
@@ -228,6 +231,7 @@ def _start(file_uuid: str, task_id: str, engine: str) -> dict:
             "storage_path": str(media_file.storage_path),
             "content_type": str(media_file.content_type),
             "filename": str(media_file.filename),
+            "audio_stream_index": media_file.audio_stream_index,
         }
         create_task_record(db, task_id, user_id, file_id, "rediarize")
         update_task_status(db, task_id, "in_progress", progress=0.05)
@@ -630,7 +634,11 @@ def rediarize_task(
             user_id, file_id, 0.15, "Preparing audio", stage=TranscriptionStage.DIARIZE
         )
         audio_file_path, temp_dir = _prepare_audio(
-            meta["storage_path"], meta["content_type"], meta["filename"], file_uuid=file_uuid
+            meta["storage_path"],
+            meta["content_type"],
+            meta["filename"],
+            file_uuid=file_uuid,
+            audio_stream_index=meta.get("audio_stream_index"),
         )
         speaker_range = resolve_speaker_range_for_user(
             user_id, min_speakers, max_speakers, num_speakers

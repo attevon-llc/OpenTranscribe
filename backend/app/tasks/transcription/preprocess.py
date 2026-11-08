@@ -33,6 +33,7 @@ from .audio_processor import get_audio_file_extension
 from .audio_processor import prepare_audio_for_transcription
 from .metadata_extractor import extract_media_metadata
 from .metadata_extractor import extract_media_metadata_from_url
+from .metadata_extractor import probe_audio_streams
 from .metadata_extractor import probe_media_duration
 from .metadata_extractor import update_media_file_metadata
 from .notifications import send_progress_notification
@@ -207,6 +208,7 @@ def _run_preprocess(
             storage_path = str(media_file.storage_path)
             file_name = str(media_file.filename)
             content_type = str(media_file.content_type)
+            audio_stream_index = media_file.audio_stream_index
 
             update_task_status(db, task_id, "in_progress", progress=0.05)
 
@@ -230,6 +232,7 @@ def _run_preprocess(
                     user_id,
                     content_type,
                     task_id,
+                    audio_stream_index,
                 )
             else:
                 media_source = _preprocess_audio(
@@ -241,6 +244,7 @@ def _run_preprocess(
                     user_id,
                     content_type,
                     task_id,
+                    audio_stream_index,
                 )
 
             _dispatch_playback_rendition_if_needed(file_id, file_uuid, media_source)
@@ -330,6 +334,7 @@ def _preprocess_video(
     user_id: int,
     content_type: str,
     task_id: str,
+    audio_stream_index: int | None = None,
 ) -> str:
     """Extract audio + metadata from a video in parallel, with presigned-URL fallback.
 
@@ -369,7 +374,7 @@ def _preprocess_video(
 
     def _run_ffmpeg_against(source: str) -> None:
         with benchmark_timing.stage(task_id, "ffmpeg"):
-            extract_audio_from_video(source, temp_audio_path)
+            extract_audio_from_video(source, temp_audio_path, audio_stream_index=audio_stream_index)
 
     def _run_metadata_against(source_url_or_path: str, is_url: bool) -> None:
         # Reuses the best-effort metadata helper but hands in the exact
@@ -427,6 +432,7 @@ def _preprocess_audio(
     user_id: int,
     content_type: str,
     task_id: str,
+    audio_stream_index: int | None = None,
 ) -> str:
     """Download audio file and convert to WAV. Returns the downloaded original's path."""
     from app.services.minio_service import download_file_to_path
@@ -451,7 +457,9 @@ def _preprocess_audio(
 
     # Convert to WAV (modifies temp_audio_path in-place via prepare_audio_for_transcription)
     with benchmark_timing.stage(task_id, "ffmpeg"):
-        result_path = prepare_audio_for_transcription(temp_input_path, content_type, temp_dir)
+        result_path = prepare_audio_for_transcription(
+            temp_input_path, content_type, temp_dir, audio_stream_index=audio_stream_index
+        )
 
     # If prepare returned a different path (e.g., input was already .wav), copy it
     if result_path != temp_audio_path:
@@ -487,23 +495,29 @@ def _extract_metadata_best_effort(
             # estimate for others (MP3), so a local file is also asked ffprobe. The
             # presigned-URL path already IS ffprobe. Probed before the session opens.
             probed_duration: float | None = None
+            audio_streams: list[dict] | None = None
 
             if existing_local_path and os.path.exists(existing_local_path):
                 metadata = extract_media_metadata(existing_local_path)
                 probed_duration = probe_media_duration(existing_local_path)
+                audio_streams = probe_audio_streams(existing_local_path)
             elif presigned_url:
                 metadata = extract_media_metadata_from_url(presigned_url)
+                audio_streams = probe_audio_streams(presigned_url)
             else:
                 fallback_local = os.path.join(temp_dir, f"meta_input{file_ext}")
                 download_file_to_path(storage_path, fallback_local)
                 metadata = extract_media_metadata(fallback_local)
                 probed_duration = probe_media_duration(fallback_local)
+                audio_streams = probe_audio_streams(fallback_local)
                 local_path_for_raw = fallback_local
 
-            if metadata or probed_duration:
+            if metadata or probed_duration or audio_streams is not None:
                 with session_scope() as db:
                     mf = get_refreshed_object(db, MediaFile, file_id)
                     if mf:
+                        if audio_streams is not None:
+                            mf.audio_streams = audio_streams
                         if metadata:
                             update_media_file_metadata(
                                 mf,
@@ -573,7 +587,8 @@ def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source:
             media_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             if media_file is None or media_file.playback_path:
                 return
-        need = classify_playback(probe_media(source))
+            audio_stream_index = media_file.audio_stream_index
+        need = classify_playback(probe_media(source), audio_stream_index)
         if need is PlaybackNeed.NONE:
             return
         from app.tasks.playback_rendition import create_playback_rendition_task

@@ -39,6 +39,8 @@ from app.services.speaker_status_service import SpeakerStatusService
 from app.services.tag_scope import TagWriteRights
 from app.services.tag_scope import tag_ownership
 from app.services.tag_scope import tenant_bound_or_system
+from app.utils.audio_stream import language_mismatch
+from app.utils.audio_stream import transcribed_track
 
 from .crud import get_media_file_by_uuid
 from .redaction_gate import _redaction_pending
@@ -285,6 +287,11 @@ def _build_media_file_response(
     """
     response = MediaFileDetail.model_validate(db_file)
     response.tags = tags
+    track = transcribed_track(db_file.audio_streams, db_file.audio_stream_index)
+    response.audio_track_language = track.get("language") if track else None
+    response.audio_language_mismatch = language_mismatch(
+        db_file.language, response.audio_track_language
+    )
     response.collections = collections  # type: ignore[assignment]
     # Validated into the response schema here, while the instances are loaded: that is
     # what maps the internal user/file ids to UUIDs. Assigning the ORM rows directly

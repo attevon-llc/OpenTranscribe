@@ -30,8 +30,14 @@ class WaveformGenerator:
     # Sample rate used for waveform extraction
     WAVEFORM_SAMPLE_RATE = 22050
 
-    def __init__(self: Any) -> None:
-        """Initialize the waveform generator."""
+    def __init__(self: Any, audio_stream_index: int | None = None) -> None:
+        """Initialize the waveform generator.
+
+        Args:
+            audio_stream_index: Audio track to draw (``-map 0:a:N``) when reading an original
+                container; None = the first. Ignored by ``generate_from_16khz_wav``.
+        """
+        self.audio_stream_index = audio_stream_index
         self._check_dependencies()
 
     def _check_dependencies(self: Any) -> None:
@@ -142,7 +148,7 @@ class WaveformGenerator:
         Returns:
             Numpy array of audio samples as float32, or None if extraction failed
         """
-        ffmpeg_cmd = ["ffmpeg", "-i", file_path, *audio_map_args()]
+        ffmpeg_cmd = ["ffmpeg", "-i", file_path, *audio_map_args(self.audio_stream_index)]
 
         # Add duration flag to ensure we get the complete audio stream
         if duration > 0:

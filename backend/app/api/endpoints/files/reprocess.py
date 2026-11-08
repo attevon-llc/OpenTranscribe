@@ -6,6 +6,9 @@ from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.endpoints.files.audio_track import apply_audio_track
+from app.api.endpoints.files.audio_track import drop_stale_track_artifacts
+from app.api.endpoints.files.audio_track import validate_audio_track_request
 from app.api.endpoints.files.reprocess_clear import clear_selective_data
 from app.api.endpoints.files.reprocess_dispatch import dispatch_selective_tasks
 from app.api.endpoints.files.reprocess_dispatch import start_reprocessing_task
@@ -194,6 +197,7 @@ def process_file_reprocess(
     stages: list[str] | None = None,
     whisper_model: str | None = None,
     disable_diarization: bool = False,
+    audio_stream_index: int | None = None,
     *,
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
@@ -287,6 +291,7 @@ def process_file_reprocess(
                 detail=f"File has reached maximum retry attempts ({config['max_retries']}). Contact admin for help.",
             )
 
+        validate_audio_track_request(media_file, audio_stream_index, stages)
         refuse_unrunnable_rerun(
             db,
             int(media_file.user_id),
@@ -294,6 +299,9 @@ def process_file_reprocess(
             whisper_model=whisper_model,
             disable_diarization=disable_diarization,
         )
+        track_change = apply_audio_track(db, media_file, audio_stream_index)
+        if track_change is not None:
+            drop_stale_track_artifacts(track_change)
 
         logger.info(
             f"Starting reprocessing for file {file_uuid} (id: {file_id}) by user {current_user.email}"

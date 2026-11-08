@@ -162,7 +162,7 @@ def _video_plays(probe: MediaProbe) -> bool:
     return probe.video_codec in _PLAYABLE_VIDEO_CODECS
 
 
-def classify_playback(probe: MediaProbe) -> PlaybackNeed:
+def classify_playback(probe: MediaProbe, audio_stream_index: int | None = None) -> PlaybackNeed:
     """Decide what a probed original needs before both browsers can play it. Pure.
 
     A file with a real video stream is judged on its picture: if the picture cannot be
@@ -173,7 +173,17 @@ def classify_playback(probe: MediaProbe) -> PlaybackNeed:
 
     A file with no video stream (cover art does not count) is judged as audio, whatever
     its declared type says.
+
+    A browser plays a container's default audio track and offers no way to pick another, so a
+    file whose chosen audio track is not the first (issue #1263) always needs a rendition
+    carrying that track, whatever its codecs: a preview for a video, a conversion for audio.
     """
+    if audio_stream_index and probe.audio_codec is not None:
+        return (
+            PlaybackNeed.AUDIO_ONLY_PREVIEW
+            if probe.video_codec is not None
+            else PlaybackNeed.CONVERT_AUDIO
+        )
     if probe.video_codec is not None:
         if _video_plays(probe) or probe.audio_codec is None:
             return PlaybackNeed.NONE
@@ -270,8 +280,13 @@ def rendition_object_name(storage_path: str) -> str:
     return f"{storage_path}{RENDITION_SUFFIX}"
 
 
-def build_encode_command(source: str, output_path: str, probe: MediaProbe) -> list[str]:
-    """The ffmpeg argv for an AAC/M4A rendition of the first audio track. Pure.
+def build_encode_command(
+    source: str,
+    output_path: str,
+    probe: MediaProbe,
+    audio_stream_index: int | None = None,
+) -> list[str]:
+    """The ffmpeg argv for an AAC/M4A rendition of one audio track (default: the first). Pure.
 
     ``-aac_coder fast``: measured on a 60-minute 44.1 kHz stereo AIFF in the backend
     image, the default two-loop coder took 157 s and the fast coder 56 s, both at the
@@ -287,7 +302,7 @@ def build_encode_command(source: str, output_path: str, probe: MediaProbe) -> li
         "-y",
         "-i",
         source,
-        *audio_map_args(),
+        *audio_map_args(audio_stream_index),
         "-vn",
         "-sn",
         "-dn",
@@ -311,14 +326,19 @@ def build_encode_command(source: str, output_path: str, probe: MediaProbe) -> li
     return cmd
 
 
-def encode_audio_rendition(source: str, output_path: str, probe: MediaProbe) -> None:
+def encode_audio_rendition(
+    source: str,
+    output_path: str,
+    probe: MediaProbe,
+    audio_stream_index: int | None = None,
+) -> None:
     """Encode the rendition to ``output_path``.
 
     Raises:
         RuntimeError: ffmpeg failed, timed out, or wrote nothing.
     """
     timeout = ENCODE_TIMEOUT_FLOOR_SECONDS + int((probe.duration or 0) * 0.25)
-    cmd = build_encode_command(source, output_path, probe)
+    cmd = build_encode_command(source, output_path, probe, audio_stream_index)
     try:
         result = subprocess.run(  # noqa: S603  # nosec B603 — fixed argv, no shell
             cmd, capture_output=True, timeout=timeout, check=False

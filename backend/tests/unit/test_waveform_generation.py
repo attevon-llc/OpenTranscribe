@@ -252,7 +252,7 @@ class TestGenerateWaveformDataTask:
 
         calls = {"count": 0}
 
-        def fake_ctor():
+        def fake_ctor(**_kwargs):
             call_count = calls["count"]
             calls["count"] += 1
             # First file processed succeeds, second fails.

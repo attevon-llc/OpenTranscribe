@@ -105,7 +105,7 @@ class _FakeAttributeService:
         pass
 
 
-def _fake_inference_success(audio_source, work_items, service):
+def _fake_inference_success(audio_source, work_items, service, audio_stream_index=None):
     if not work_items:
         return {}, {}
     speaker_id = work_items[0][0]

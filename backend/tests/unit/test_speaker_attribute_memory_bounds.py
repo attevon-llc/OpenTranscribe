@@ -148,7 +148,7 @@ def test_task_fetches_only_capped_windows(db_session, normal_user, tracking_env,
     media_file, _ = _long_turn_file(db_session, normal_user)
     seen: list[float] = []
 
-    def fake_inference(audio_source, work_items, service):
+    def fake_inference(audio_source, work_items, service, audio_stream_index=None):
         seen.extend(seg["end"] - seg["start"] for _, seg in work_items)
         return {}, {}
 

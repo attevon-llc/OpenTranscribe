@@ -20,6 +20,17 @@ from app.schemas.transcript import GroupedTranscriptSegment
 from app.schemas.transcript import TranscriptSegment
 
 
+class AudioStreamInfo(BaseModel):
+    """One audio track of a container, as ffprobe described it (issue #1263)."""
+
+    index: int
+    codec: str | None = None
+    channels: int | None = None
+    language: str | None = None
+    title: str | None = None
+    default: bool = False
+
+
 class MediaFileBase(BaseModel):
     filename: str
 
@@ -143,6 +154,13 @@ class MediaFile(MediaFileBase, UUIDBaseSchema):
     audio_sample_rate: int | None = None
     audio_bit_depth: int | None = None
 
+    #: The audio tracks of the container (issue #1263): ``index`` (the N of ``-map 0:a:N``),
+    #: ``codec``, ``channels``, ``language`` (the container tag, ISO 639-2 as written), ``title``,
+    #: ``default``. None until the file has been probed.
+    audio_streams: list[AudioStreamInfo] | None = None
+    #: The track chosen for transcription. None = the first audio stream.
+    audio_stream_index: int | None = None
+
     # Creation and device information
     creation_date: datetime | None = None
     last_modified_date: datetime | None = None
@@ -245,6 +263,12 @@ class MediaFileDetail(MediaFile):
     quarantine_reason: str | None = None
     quarantined_at: datetime | None = None
     legal_hold: bool = False
+
+    #: True when the detected language differs from the language tagged on the transcribed
+    #: audio track (issue #1263). A calm notice, never an error; false when either side is unknown.
+    audio_language_mismatch: bool = False
+    #: The language the transcribed track is tagged with (ISO 639-2 as written), for the notice.
+    audio_track_language: str | None = None
 
     #: Per-file voiceprint consent (issue #1356): the uploader's recorded claim, not verified.
     voiceprint_consent: Literal["unspecified", "granted", "declined"] = "unspecified"

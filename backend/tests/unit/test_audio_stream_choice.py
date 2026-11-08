@@ -157,7 +157,7 @@ GUARDED = [
     "services/audio_segment_utils.py",
     "services/audio_extraction.py",
 ]
-_SELECTORS = {"audio_map_args", "AUDIO_MAP_SPEC"}
+_SELECTORS = {"audio_map_args", "AUDIO_MAP_SPEC", "audio_map_spec"}
 
 
 def unselected_ffmpeg_functions(source: str) -> list[str]:

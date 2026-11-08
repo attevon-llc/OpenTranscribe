@@ -420,6 +420,21 @@ def extract_media_metadata_from_url(url: str, timeout: int = 15) -> dict[str, An
     return out if out else None
 
 
+def probe_audio_streams(source: str, timeout: int = 15) -> list[dict[str, Any]] | None:
+    """Describe every audio track of a local path or URL (issue #1263).
+
+    One header-only ffprobe call; the answer is stored on the file so the UI can offer a
+    track picker. Returns None when ffprobe cannot answer, and ``[]`` for a file with no
+    audio stream, so the two are not confused.
+    """
+    from app.utils.audio_stream import audio_streams_from_ffprobe
+
+    if not source:
+        return None
+    data = _run_ffprobe_json(source, timeout)
+    return None if data is None else audio_streams_from_ffprobe(data)
+
+
 def probe_media_duration(source: str, timeout: int = 15) -> float | None:
     """Return the container duration ffprobe reports for a local path or URL.
 

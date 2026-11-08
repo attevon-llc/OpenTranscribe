@@ -95,6 +95,7 @@ def _load_speaker_embedding_inputs(file_uuid: str, task_id: str) -> dict:
         storage_path = str(media_file.storage_path)
         content_type = str(media_file.content_type)
         filename = str(media_file.filename)
+        audio_stream_index = media_file.audio_stream_index
 
         create_task_record(db, task_id, user_id, file_id, "speaker_embedding")
         update_task_status(db, task_id, "in_progress", progress=0.1)
@@ -137,6 +138,7 @@ def _load_speaker_embedding_inputs(file_uuid: str, task_id: str) -> dict:
         "storage_path": storage_path,
         "content_type": content_type,
         "filename": filename,
+        "audio_stream_index": audio_stream_index,
         "processed_segments": processed_segments,
     }
 
@@ -173,7 +175,12 @@ def _stage_audio_for_embeddings(file_uuid: str, inputs: dict, temp_dir: str) -> 
         f.write(file_data.read())
     # Re-run the 16 kHz mono conversion the preprocess task would otherwise
     # already have done for us.
-    return prepare_audio_for_transcription(temp_file_path, inputs["content_type"], temp_dir)
+    return prepare_audio_for_transcription(
+        temp_file_path,
+        inputs["content_type"],
+        temp_dir,
+        audio_stream_index=inputs.get("audio_stream_index"),
+    )
 
 
 def _extract_aggregated_embeddings(file_uuid: str, task_id: str, inputs: dict) -> dict:

@@ -23,17 +23,13 @@ from app.core.env import env_bool
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
+from app.core.settings_concurrency import ConcurrencySettings
 from app.core.settings_deployment import DeploymentSettings
 from app.core.settings_proxy_auth import ProxyAuthSettings
 from app.utils.cpu_budget import parse_thread_count_setting
 
 _config_logger = logging.getLogger(__name__)
 
-
-#: Shipped default for :attr:`Settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`.
-#: A module constant rather than a literal in the field so a test can pin the
-#: DEFAULT independently of whatever an operator set in the running environment.
-DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 
 #: Shipped default for :attr:`Settings.CACHE_BUCKET_NAME` — the historical hardcoded
 #: value, so an existing deployment that sets nothing keeps the bucket it already has.
@@ -102,7 +98,7 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
     return search_filter.replace("{username_attr}", username_attr)
 
 
-class Settings(ProxyAuthSettings, DeploymentSettings):
+class Settings(ProxyAuthSettings, DeploymentSettings, ConcurrencySettings):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
@@ -700,32 +696,6 @@ class Settings(ProxyAuthSettings, DeploymentSettings):
     # their own engines, so these sizes mainly control API concurrency.
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 40
-    # Worker threads for the API's sync handlers, sync dependencies and
-    # run_in_threadpool calls (Starlette's default is 40). 0 = size it to the DB
-    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A request
-    # holds its pooled connection from authentication until it ends, so with fewer
-    # threads than connections a burst can leave every thread blocked waiting for a
-    # connection while the requests holding them wait for a thread (#1169). See
-    # app/core/threadpool.py.
-    API_THREADPOOL_SIZE: int = 0
-
-    # Server-side backstop for the "transaction held open across slow work"
-    # bug class (issue #440). Postgres terminates a backend that has an OPEN
-    # transaction and is running NO query for this long. It cannot interrupt a
-    # slow *query* — only an idle one — so a legitimately long-running statement
-    # is never affected; the only thing it kills is a connection sitting on
-    # ACCESS SHARE locks and pinning the VACUUM horizon while the process does
-    # something else (HTTP call, model inference, file I/O).
-    #
-    # This is defence in depth, NOT the fix: the 35 real leaks were fixed in the
-    # code and `scripts/audit-session-lifetime.py` keeps the idiom from
-    # returning. 5 minutes is ~10x the slowest legitimate transaction here and
-    # ~1/10 of the 48-minute leak that motivated it. Set to 0 to disable.
-    #
-    # Applies to the shared app engine only. `db/migrations.py` builds its own
-    # engines, so a long `ALTER TABLE` and the advisory-lock holder are outside
-    # this timeout by construction.
-    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
 
     @field_validator(
         "DB_POOL_SIZE",

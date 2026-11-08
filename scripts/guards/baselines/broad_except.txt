@@ -342,7 +342,6 @@ backend/app/utils/prompt_manager.py	1	ratchet: may only go down
 backend/app/utils/pyannote_utils.py	2	ratchet: may only go down
 backend/app/utils/segment_dedup.py	1	ratchet: may only go down
 backend/app/utils/stats_helpers.py	3	ratchet: may only go down
-backend/app/utils/task_lock.py	4	ratchet: may only go down
 backend/app/utils/task_cancel.py	2	ratchet: may only go down
 backend/app/utils/stuck_file_recovery.py	1	ratchet: may only go down
 backend/app/utils/file_retry.py	3	ratchet: may only go down

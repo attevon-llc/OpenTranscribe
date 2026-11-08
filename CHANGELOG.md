@@ -121,6 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scheduled and maintenance tasks keep their lock for as long as they actually run: a task lock is now a lease the running task renews (`TASK_LOCK_LEASE_SECONDS`, default 60), so a slow run is no longer joined by a second copy and a crashed run frees its lock within a minute. With Redis unreachable, a task whose duplicate would delete or re-run work is skipped instead of run unlocked, one failed Redis check no longer disables locking until restart, and an error inside a locked task (including a Celery retry) now reaches Celery as itself.
 - The scale seed (`scripts/seed-query-review.sh`) now moves every seeded table's id sequence past the rows it wrote. Before, organizations, holds, collections, clusters and chats kept their sequence at 1, so the first collection, share or chat created on a seeded stack failed with a duplicate key.
 - Live notifications are no longer lost when someone connects or disconnects while a notification is being sent to everyone: the send could fail with "dictionary changed size during iteration", after which the server dropped its notification feed and missed whatever was published while it reconnected. A browser tab closing mid-send also no longer causes the user's next tab to be skipped.
 - Opening a live-updates connection no longer runs its sign-in check (a database query and token verification) on the server's event loop, so many browsers reconnecting at once, for example after a restart, no longer stall every other request.

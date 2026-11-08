@@ -238,8 +238,7 @@ def real_lock_manager(monkeypatch):
         if not ready:
             pytest.fail("throwaway redis container did not become ready in time")
 
-        mgr = TaskLockManager()
-        mgr._redis_client = client
+        mgr = TaskLockManager(client_factory=lambda: client)
         monkeypatch.setattr(backup_tasks, "task_lock_manager", mgr)
         yield mgr
     finally:

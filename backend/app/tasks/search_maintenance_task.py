@@ -164,7 +164,7 @@ MAINTENANCE_LOCK_KEY = "search_index_maintenance"
 
 
 @celery_app.task(name="search_index_maintenance", priority=CPUPriority.MAINTENANCE)
-@with_task_lock(MAINTENANCE_LOCK_KEY, timeout=120)
+@with_task_lock(MAINTENANCE_LOCK_KEY, timeout=3600)
 def search_index_maintenance_task() -> dict[str, Any]:
     """
     Check for completed files missing from the search index and trigger re-indexing.
@@ -176,8 +176,9 @@ def search_index_maintenance_task() -> dict[str, Any]:
     - Index recovery: after OpenSearch data loss or index recreation
 
     Concurrency is held off by ``with_task_lock`` rather than a hand-rolled
-    ``SET NX``: the manual version let a ``redis.RedisError`` propagate out of
-    the task, where ``TaskLockManager`` fails open and still does the work.
+    ``SET NX``. The lock is a renewed lease, so a pass that runs long keeps it
+    (the old fixed 120 s TTL let a second pass start under a slow first one),
+    and with Redis down this task is skipped rather than run unlocked.
 
     Returns:
         Dict with maintenance stats, or ``with_task_lock``'s ``{"skipped": True,

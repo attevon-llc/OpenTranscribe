@@ -98,7 +98,7 @@ so keep heavy imports lazy.
   stood down. It **retains** `active_task_id` (the handle both halves key on) and queues
   `transcription.reconcile_cancellation` as a bounded backstop. It no longer calls
   `celery_app.control.revoke`, which was dead on every pool type — see `app/tasks/CLAUDE.md`.
-- `task_lock.py` — Redis lock preventing overlapping periodic tasks. `task_utils.py` — task
+- `task_lock.py` — Redis lock preventing overlapping periodic tasks: a lease the holder renews (`redis_lease.py`, `TASK_LOCK_LEASE_SECONDS`), so never delete another process's lock to "recover" it; it expires on its own. Fails CLOSED when Redis is down unless the key is in `FAIL_OPEN_LOCKS` with a reason. `task_utils.py` — task
   records, status transitions; `task_cancel.py`, `stuck_file_recovery.py` and `file_retry.py`
   hold cancellation, stuck-file recovery and the retry reset. `error_classification.py` — permanent vs
   retriable, gating retry decisions.

@@ -44,6 +44,8 @@ TINY = pg.Shape(
     hidden=4,
     conversations=2,
     messages=4,
+    comments=10,
+    user_tags=4,
 )
 
 
@@ -103,29 +105,34 @@ _REFERENCES = {
 def fingerprint(conn: Connection, base_ids: dict[str, int] | None = None) -> dict[str, str]:
     """md5 of the generated columns per table (rows with id > ``base_ids[table]``).
 
-    Ids are taken relative to the table's first seeded row: the seed claims its range from the
-    table's sequence, so the absolute ids depend on what else the shared database has handed
-    out, while the rows' shape does not.
+    Ids, and columns holding another table's id, are replaced by the row's ordinal among that
+    table's seeded rows. The seed claims each id range from the table's sequence, so absolute ids
+    depend on what else the shared database has handed out, and one table can hold several
+    claimed ranges (core tags and the activity seed's personal tags) with a gap between them that
+    a parallel writer decides. The ordinal is the same in every run; the raw offset is not.
     """
     tables = _fingerprint_tables()
-    first: dict[str, int] = {}
-    for name, table in tables.items():
-        if name != "task":
-            lowest = conn.execute(
-                select(func.min(table.c.id)).where(table.c.id > (base_ids or {}).get(name, 0))
-            ).scalar_one()
-            first[name] = int(lowest) - 1 if lowest is not None else 0
+    ranks = {
+        name: select(
+            table.c.id.label("id"), func.row_number().over(order_by=table.c.id).label("rn")
+        )
+        .where(table.c.id > (base_ids or {}).get(name, 0))
+        .subquery()
+        for name, table in tables.items()
+        if name != "task"
+    }
     out: dict[str, str] = {}
     for name, table in tables.items():
         parts = []
         for c in _FINGERPRINT_COLUMNS[name]:
             ref = name if c == "id" else _REFERENCES.get(c)
             col = table.c[c]
-            parts.append(
-                cast(col - first[ref], Text)
-                if ref is not None and ref in first
-                else cast(col, Text)
-            )
+            if ref is not None and ref in ranks:
+                rank = ranks[ref]
+                ordinal = select(rank.c.rn).where(rank.c.id == col).scalar_subquery()
+                parts.append(cast(func.coalesce(ordinal, -1), Text))
+            else:
+                parts.append(cast(col, Text))
         row = func.concat_ws("|", *parts)
         agg = func.string_agg(row, aggregate_order_by(literal(","), table.c.id))
         stmt = select(func.md5(func.coalesce(agg, "")))

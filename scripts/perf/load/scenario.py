@@ -1,20 +1,22 @@
-"""Route table and target guard for the concurrent load test (locust-free).
+"""Target guard, identities and small helpers for the concurrent load test (locust-free).
 
-``locustfile.py`` imports this module for every path it calls, and
-``backend/tests/unit/test_load_scenario_routes.py`` imports it without Locust (Locust
-monkey-patches the standard library with gevent on import, so it must never load inside the
-backend test process). Keeping the routes here is what lets that test check each one against
-``backend/openapi.json``.
+``locustfile.py`` and the persona modules import this module, and the backend's unit tests import
+it without Locust (Locust monkey-patches the standard library with gevent on import, so it must
+never load inside the backend test process). The route table lives in ``routes.py`` for the same
+reason.
 
 The guard reuses the isolation rule of ``scripts/seed-query-review.sh``: the target is a
 ``./opentr.sh --fresh NAME`` stack, its port comes from ``.fresh/NAME.offset``, and the shared
-dev stack's ports are refused. There is no override.
+dev stack's ports are refused. There is no override and no remote mode.
 """
 
 from __future__ import annotations
 
+import struct
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BASE_BACKEND_PORT = 5174  # BACKEND_PORT in .env.example; a --fresh stack adds its offset
@@ -24,35 +26,22 @@ PASSWORD = 'loadtest-password'
 EMAIL_DOMAIN = 'loadtest.invalid'
 ADMIN_INDEX = 1  # perf-1: the seed's one admin
 HEAVY_INDEX = 2  # perf-2: owns 20,000 files in the default shape
-FIRST_ORDINARY_INDEX = 3
+ORG_ADMIN_INDEX = 3  # perf-3: the admin of the seed's first organization
+FIRST_POOL_INDEX = 4
 
-# (method, OpenAPI path template). Every request the scenario makes goes through one of these.
-ROUTES: dict[str, tuple[str, str]] = {
-    'login': ('POST', '/api/auth/login'),
-    'session': ('GET', '/api/auth/session'),
-    'me': ('GET', '/api/auth/me'),
-    'files.list': ('GET', '/api/files'),
-    'files.metadata_filters': ('GET', '/api/files/metadata-filters'),
-    'files.owners': ('GET', '/api/files/owners'),
-    'files.detail': ('GET', '/api/files/{file_uuid}'),
-    'files.segments': ('GET', '/api/files/{file_uuid}/segments'),
-    'files.prepare': ('POST', '/api/files/prepare'),
-    'files.delete': ('DELETE', '/api/files/{file_uuid}'),
-    'files.purge': ('DELETE', '/api/files/{file_uuid}/purge'),
-    'comments.list': ('GET', '/api/comments/files/{file_uuid}/comments'),
-    'comments.create': ('POST', '/api/comments/files/{file_uuid}/comments'),
-    'comments.delete': ('DELETE', '/api/comments/{comment_uuid}'),
-    'tags.list': ('GET', '/api/tags'),
-    'collections.list': ('GET', '/api/collections'),
-    'search': ('GET', '/api/search'),
-    'speakers.for_filter': ('GET', '/api/speakers'),
-    'profiles.list': ('GET', '/api/speaker-profiles/profiles'),
-    'tasks.list': ('GET', '/api/tasks'),
-    'admin.stats': ('GET', '/api/admin/stats'),
-    'system.stats': ('GET', '/api/system/stats'),
-}
+# Each persona that writes, chats or listens gets its own block of identities, so two personas
+# never edit the same person's files. Shares of perf-4 .. perf-<seeded users>, in this order.
+POOL_SHARES: tuple[tuple[str, float], ...] = (
+    ('viewer', 0.55),
+    ('editor', 0.15),
+    ('chat', 0.10),
+    ('ws', 0.10),
+    ('pipeline', 0.10),
+)
+MIN_SEEDED_USERS = FIRST_POOL_INDEX + len(POOL_SHARES) - 1
 
-SORT_FIELDS = ('upload_time', 'duration', 'file_size', 'completed_at')
+# A small real recording (10 s, 16 kHz mono PCM) the editor and the pipeline profile upload.
+SAMPLE_AUDIO = REPO_ROOT / 'backend' / 'tests' / 'fixtures' / 'media' / 'sample_short.wav'
 
 
 class NotIsolatedError(RuntimeError):
@@ -64,6 +53,11 @@ class Target:
     fresh: str
     offset: int
     base_url: str
+
+    @property
+    def compose_project(self) -> str:
+        """The compose project ``./opentr.sh --fresh NAME`` runs the stack under."""
+        return f'otfresh-{self.fresh}'
 
 
 def resolve_target(
@@ -101,14 +95,53 @@ def identity(index: int) -> str:
     return f'perf-{index}@{EMAIL_DOMAIN}'
 
 
-def ordinary_index(n: int, seeded_users: int) -> int:
-    """Map the n-th simulated ordinary user (0-based) onto perf-3..perf-<seeded_users>."""
-    span = seeded_users - FIRST_ORDINARY_INDEX + 1
-    if span < 1:
-        raise ValueError(f'the seed needs at least {FIRST_ORDINARY_INDEX} users')
-    return FIRST_ORDINARY_INDEX + (n % span)
+def pool_bounds(persona: str, seeded_users: int) -> tuple[int, int]:
+    """First and last seeded user index (inclusive) of ``persona``'s identity block."""
+    if seeded_users < MIN_SEEDED_USERS:
+        raise ValueError(f'the load test needs a seed of at least {MIN_SEEDED_USERS} users')
+    span = seeded_users - FIRST_POOL_INDEX + 1
+    lo = FIRST_POOL_INDEX
+    for i, (name, share) in enumerate(POOL_SHARES):
+        size = max(1, int(span * share))
+        if i == len(POOL_SHARES) - 1:
+            size = seeded_users - lo + 1  # the last block takes the rounding remainder
+        if name == persona:
+            return lo, lo + size - 1
+        lo += size
+    raise KeyError(f'unknown identity pool {persona!r}')
 
 
-def path(name: str, **params: str) -> str:
-    """Fill a route template, e.g. ``path("files.detail", file_uuid=u)``."""
-    return ROUTES[name][1].format(**params)
+def pool_index(persona: str, n: int, seeded_users: int) -> int:
+    """Map the n-th simulated user (0-based) of ``persona`` onto its identity block."""
+    lo, hi = pool_bounds(persona, seeded_users)
+    return lo + n % (hi - lo + 1)
+
+
+def cookie_value(jar: Iterable[Any], name: str) -> str:
+    """The value of cookie ``name`` in a ``http.cookiejar.CookieJar`` (``''`` when absent)."""
+    for cookie in jar:
+        if cookie.name == name:
+            return str(cookie.value)
+    return ''
+
+
+def ws_url(base_url: str) -> str:
+    """The live-notification socket of the backend at ``base_url``."""
+    return base_url.replace('http://', 'ws://', 1).replace('https://', 'wss://', 1) + '/api/ws'
+
+
+def unique_wav(audio: bytes, marker: str) -> bytes:
+    """``audio`` with a RIFF ``JUNK`` chunk holding ``marker`` appended, so no two uploads match.
+
+    RIFF readers skip chunks they do not know (the WAVE format allows ``JUNK`` for padding), so
+    the recording is unchanged; its size and last bytes differ, which is what the upload's
+    content fingerprint samples. The RIFF size field at bytes 4..8 is updated.
+    """
+    if audio[:4] != b'RIFF' or audio[8:12] != b'WAVE':
+        raise ValueError('not a RIFF/WAVE file')
+    payload = marker.encode()
+    if len(payload) % 2:
+        payload += b'\0'  # chunks are word-aligned
+    chunk = b'JUNK' + struct.pack('<I', len(payload)) + payload
+    body = audio + chunk
+    return body[:4] + struct.pack('<I', len(body) - 8) + body[8:]

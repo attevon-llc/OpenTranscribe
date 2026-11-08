@@ -1,204 +1,289 @@
-"""The Locust load scenario calls only real routes, and refuses anything but a --fresh stack.
+"""The Locust load scenario calls only real routes, covers the API, and cleans up after itself.
 
-``scripts/perf/load/locustfile.py`` is run by hand against an isolated stack, so nothing else
-would notice a renamed route: the scenario would just report 404s as "load". This imports the
-locustfile against a minimal stand-in for ``locust`` (the real package patches the standard
-library with gevent on import and must never load inside the test process), runs every task
+``scripts/perf/load/`` is run by hand against an isolated stack, so nothing else would notice a
+renamed route: the scenario would just report 404s as "load". This imports it against inert
+stand-ins for ``locust``, ``gevent`` and ``websocket`` (``tests/fixtures/locust_stub.py``; the
+real packages patch the standard library and must never load here), runs every persona's tasks
 with a recording client, and checks each request against ``backend/openapi.json``.
 """
 
 from __future__ import annotations
 
-import importlib.util
-import json
-import random
-import re
-import sys
-import types
-from pathlib import Path
+import io
+import wave
+from collections import Counter
+from collections import defaultdict
 from typing import Any
 
 import pytest
 
-_REPO = Path(__file__).resolve().parents[3]
-_LOAD_DIR = _REPO / "scripts" / "perf" / "load"
-_OPENAPI = _REPO / "backend" / "openapi.json"
+from tests.fixtures import locust_stub as stub
 
-
-class _Hook:
-    def add_listener(self, fn: Any) -> Any:
-        return fn
-
-
-class _StubHttpUser:
-    abstract = True
-
-
-def _task(weight: int = 1) -> Any:
-    def mark(fn: Any) -> Any:
-        fn.locust_task_weight = weight
-        return fn
-
-    return mark
-
-
-def _tag(*names: str) -> Any:
-    def mark(fn: Any) -> Any:
-        fn.locust_tag_set = set(names)
-        return fn
-
-    return mark
-
-
-class _StubLocust(types.ModuleType):
-    """The subset of the locust API the locustfile uses, as inert stand-ins.
-
-    Attributes are declared on the class so mypy checks every use of the stub.
-    """
-
-    HttpUser = _StubHttpUser
-    task = staticmethod(_task)
-    tag = staticmethod(_tag)
-    events = types.SimpleNamespace(init_command_line_parser=_Hook(), init=_Hook())
-
-    @staticmethod
-    def between(low: float, high: float) -> Any:
-        return lambda _user: low
-
-
-class _Response:
-    def __init__(self, path: str, method: str) -> None:
-        self.status_code = 200
-        self.error = None
-        self._path, self._method = path, method
-
-    def json(self) -> dict[str, Any]:
-        if self._path == "/api/files" and self._method == "GET":
-            return {"items": [{"uuid": "file-a"}, {"uuid": "file-b"}]}
-        if self._path == "/api/files/prepare":
-            return {"file_id": "file-new", "is_duplicate": 0}
-        return {"uuid": "comment-a"}
-
-    def success(self) -> None:
-        pass
-
-    def failure(self, reason: str) -> None:
-        raise AssertionError(f"the stub never fails a call, got failure {reason!r}")
-
-    def __enter__(self) -> _Response:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
-
-
-class _Cookies(dict):
-    pass
-
-
-class _RecordingClient:
-    def __init__(self) -> None:
-        self.cookies = _Cookies()
-        self.calls: list[tuple[str, str, str]] = []
-
-    def request(self, method: str, url: str, **kwargs: Any) -> _Response:
-        self.calls.append((method, url, kwargs["name"]))
-        if url == "/api/auth/login":
-            # The real login answers with Set-Cookie for the session and the CSRF token.
-            self.cookies["csrf_token"] = "token"
-            return _Response(url, method)
-        if method != "GET":
-            assert kwargs["headers"].get("X-CSRF-Token") == "token", f"{method} {url} lacks CSRF"
-        return _Response(url, method)
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
 @pytest.fixture
-def load_modules(monkeypatch):
-    monkeypatch.setitem(sys.modules, "locust", _StubLocust("locust"))
-    monkeypatch.syspath_prepend(str(_LOAD_DIR))
-    modules = {}
-    for name in ("scenario", "locustfile"):
-        spec = importlib.util.spec_from_file_location(name, _LOAD_DIR / f"{name}.py")
-        assert spec is not None and spec.loader is not None
-        module = importlib.util.module_from_spec(spec)
-        monkeypatch.setitem(sys.modules, name, module)
-        spec.loader.exec_module(module)
-        modules[name] = module
-    return modules
+def load(monkeypatch):
+    return stub.load_modules(monkeypatch)
 
 
-def _openapi_routes() -> list[tuple[str, re.Pattern[str]]]:
-    paths = json.loads(_OPENAPI.read_text())["paths"]
-    routes = []
-    for template, operations in paths.items():
-        pattern = re.compile("^" + re.sub(r"\{[^}]+\}", "[^/]+", template) + "$")
-        routes += [(method.upper(), pattern) for method in operations]
-    return routes
+@pytest.fixture
+def run(load):
+    return stub.run_personas(load["locustfile"])
 
 
-def _run_every_task(locustfile: Any) -> _RecordingClient:
-    client = _RecordingClient()
-    options = types.SimpleNamespace(request_timeout=5.0, seeded_users=50)
-    saved = random.getstate()
-    random.seed(1337)  # the scenario draws from the module RNG; fixed so every run is identical
-    try:
-        for cls in (locustfile.OrdinaryUser, locustfile.HeavyOwner, locustfile.Administrator):
-            user = cls.__new__(cls)
-            user.environment = types.SimpleNamespace(parsed_options=options)
-            user.client = client
-            user.on_start()
-            tasks = [
-                getattr(user, name)
-                for name in dir(cls)
-                if hasattr(getattr(cls, name), "locust_task_weight")
-            ]
-            assert tasks, f"{cls.__name__} has no tasks"
-            for _ in range(60):  # enough draws to reach every random branch
-                for run in tasks:
-                    run()
-    finally:
-        random.setstate(saved)
-    return client
+@pytest.fixture(scope="module")
+def spec():
+    return stub.openapi()
 
 
-def test_every_request_the_scenario_makes_is_a_real_route(load_modules):
-    client = _run_every_task(load_modules["locustfile"])
-    routes = _openapi_routes()
-    unknown = sorted(
-        {
-            f"{method} {url}"
-            for method, url, _ in client.calls
-            if not any(m == method and p.match(url) for m, p in routes)
+def _route_key(call: stub.Call) -> str:
+    return call.name.split(" ")[0]
+
+
+# --- every request is a real route ----------------------------------------------------------
+
+
+def test_every_request_is_a_real_route_with_its_required_query_parameters(load, run, spec):
+    routes = load["routes"]
+    unknown, missing = set(), set()
+    for call in run.client.calls:
+        found = stub.operation_for(call.method, call.url, spec)
+        if found is None or found[0] != routes.ROUTES[_route_key(call)][1]:
+            # also a literal path the router would hand to a templated one
+            unknown.add(f"{call.method} {call.url} -> {found and found[0]}")
+            continue
+        required = {
+            p["name"]
+            for p in found[1].get("parameters", [])
+            if p["in"] == "query" and p.get("required")
         }
+        if required - set(call.params):
+            missing.add(f"{call.method} {found[0]} lacks {sorted(required - set(call.params))}")
+
+    assert run.client.calls
+    assert not unknown, f"not in backend/openapi.json: {sorted(unknown)}"
+    assert not missing, sorted(missing)
+
+
+def test_every_declared_route_exists_and_is_exercised(load, run, spec):
+    routes = load["routes"]
+    for key, (method, template) in routes.ROUTES.items():
+        assert method.lower() in spec["paths"].get(template, {}), (key, method, template)
+    used = {_route_key(call) for call in run.client.calls}
+
+    assert used == set(routes.ROUTES), set(routes.ROUTES) ^ used
+
+
+def test_the_socket_path_is_the_apps_websocket_route(load):
+    from starlette.routing import WebSocketRoute
+
+    from app.main import app
+
+    paths = {route.path for route in app.routes if isinstance(route, WebSocketRoute)}
+
+    assert load["routes"].WS_PATH in paths, paths
+
+
+# --- every API group is covered by a persona, or excluded with a reason ---------------------
+
+
+def _groups(spec: dict[str, Any]) -> dict[str, str]:
+    """``"METHOD template" -> first OpenAPI tag`` for every operation."""
+    return {
+        f"{method.upper()} {template}": (op.get("tags") or ["-"])[0]
+        for template, operations in spec["paths"].items()
+        for method, op in operations.items()
+    }
+
+
+def coverage_problems(
+    all_groups: set[str],
+    observed: dict[str, set[str]],
+    declared: dict[str, tuple[str, ...]],
+    excluded: dict[str, str],
+) -> list[str]:
+    """What is wrong with the coverage table, empty when nothing is."""
+    problems = []
+    for group in sorted(all_groups - set(observed) - set(excluded)):
+        problems.append(f"{group}: no persona calls it and it is not excluded")
+    for group in sorted(set(observed) & set(excluded)):
+        problems.append(f"{group}: excluded but a persona calls it")
+    for group, reason in excluded.items():
+        if not reason.strip():
+            problems.append(f"{group}: excluded without a reason")
+        if group not in all_groups:
+            problems.append(f"{group}: excluded but not an OpenAPI group (stale)")
+    as_declared = {group: set(personas) for group, personas in declared.items()}
+    if as_declared != observed:
+        problems.append(f"GROUP_PERSONAS differs from the recorded run: {observed}")
+    return problems
+
+
+def _observed(run: stub.Run, spec: dict[str, Any]) -> dict[str, set[str]]:
+    groups = _groups(spec)
+    observed: dict[str, set[str]] = defaultdict(set)
+    for call in run.client.calls:
+        template = stub.operation_for(call.method, call.url, spec)
+        assert template is not None
+        observed[groups[f"{call.method} {template[0]}"]].add(call.persona)
+    return dict(observed)
+
+
+def test_every_api_group_is_covered_by_a_persona_or_excluded_with_a_reason(load, run, spec):
+    routes = load["routes"]
+    all_groups = set(_groups(spec).values())
+
+    problems = coverage_problems(
+        all_groups, _observed(run, spec), routes.GROUP_PERSONAS, routes.EXCLUDED_GROUPS
     )
-    assert not unknown, f"not in backend/openapi.json: {unknown}"
+
+    assert not problems, problems
 
 
-def test_every_declared_route_exists_and_is_exercised(load_modules):
-    scenario = load_modules["scenario"]
-    routes = _openapi_routes()
-    for key, (method, template) in scenario.ROUTES.items():
-        concrete = re.sub(r"\{[^}]+\}", "x", template)
-        assert any(m == method and p.match(concrete) for m, p in routes), (key, method, template)
-    client = _run_every_task(load_modules["locustfile"])
-    used = {name.split(" ")[0] for _, _, name in client.calls}
-    assert used == set(scenario.ROUTES), set(scenario.ROUTES) ^ used
+def test_the_coverage_check_reports_a_new_group_and_a_stale_exclusion(load, run, spec):
+    routes = load["routes"]
+    all_groups = set(_groups(spec).values()) | {"brand-new-group"}
+    excluded = {**routes.EXCLUDED_GROUPS, "files": "covered, so this is wrong", "gone": "x"}
+
+    problems = coverage_problems(all_groups, _observed(run, spec), routes.GROUP_PERSONAS, excluded)
+
+    assert "brand-new-group: no persona calls it and it is not excluded" in problems
+    assert "files: excluded but a persona calls it" in problems
+    assert "gone: excluded but not an OpenAPI group (stale)" in problems
 
 
-def test_writes_clean_up_after_themselves(load_modules):
-    client = _run_every_task(load_modules["locustfile"])
-    methods = [(m, url) for m, url, _ in client.calls]
-    created_comments = methods.count(
-        ("POST", "/api/comments/files/file-a/comments")
-    ) + methods.count(("POST", "/api/comments/files/file-b/comments"))
-    assert created_comments > 0
-    assert methods.count(("DELETE", "/api/comments/comment-a")) == created_comments
-    prepared = methods.count(("POST", "/api/files/prepare"))
-    assert prepared > 0
-    assert methods.count(("DELETE", "/api/files/file-new/purge")) == prepared
-    assert ("POST", "/api/files/complete") not in methods, (
-        "an upload must never dispatch processing"
+# --- writes: only with the write tag, and always undone -------------------------------------
+
+
+def test_a_read_only_run_makes_no_write(load):
+    run = stub.run_personas(load["locustfile"], exclude_tags=frozenset({"write"}), rounds=10)
+    writes = {
+        f"{c.persona}.{c.task}: {c.method} {c.url}"
+        for c in run.client.calls
+        if c.method in WRITE_METHODS
+        and c.url != "/api/auth/login"
+        and c.persona != "PipelineUploader"
+    }
+
+    assert any(c.persona == "Editor" for c in run.client.calls)
+    assert not writes, sorted(writes)
+
+
+def test_only_the_gpu_tagged_tasks_send_a_recording_to_the_pipeline(load):
+    web = tuple(n for n in load["locustfile"].USER_CLASSES if n != "PipelineUploader")
+    without_gpu = stub.run_personas(
+        load["locustfile"], exclude_tags=frozenset({"gpu"}), personas=web, rounds=10
     )
+    with_gpu = stub.run_personas(load["locustfile"], personas=web, rounds=10)
+
+    def uploads(run: stub.Run) -> int:
+        return sum(1 for c in run.client.calls if (c.method, c.url) == ("POST", "/api/files"))
+
+    assert uploads(without_gpu) == 0
+    assert uploads(with_gpu) > 0
+
+
+def test_writes_clean_up_after_themselves(run):
+    by_route = Counter(_route_key(c) for c in run.client.calls)
+    labels = Counter(c.name for c in run.client.calls)
+    pairs = [
+        ("comments.create", "comments.delete"),
+        ("tags.add_to_file", "tags.delete"),
+        ("collections.create", "collections.delete"),
+        ("collections.add_media", "collections.remove_media"),
+        ("speakers.create", "speakers.merge"),
+        ("files.hide", "files.unhide"),
+        ("files.prepare", "files.purge"),
+        ("files.upload", "files.purge real upload"),
+        ("llm.create", "llm.delete"),
+        ("chat.create", "chat.delete"),
+    ]
+
+    for made, undone in pairs:
+        count = labels[undone] if " " in undone else by_route[undone]
+        assert by_route[made] > 0, made
+        assert by_route[made] == count, (made, by_route[made], undone, count)
+    # every segment edit and every speaker reassignment is followed by its restore
+    assert labels["segments.update restore"] == labels["segments.update"] > 0
+    assert labels["segments.speaker restore"] == labels["segments.speaker"] > 0
+
+
+def test_an_upload_is_purged_only_after_the_pipeline_finished_it(run):
+    seen: list[str] = []
+    for call in run.client.calls:
+        if call.persona != "PipelineUploader":
+            continue
+        seen.append(_route_key(call))
+    first = seen.index("files.upload")
+
+    assert seen[first : first + 4] == [
+        "files.upload",
+        "files.status_detail",
+        "files.delete",
+        "files.purge",
+    ]
+    assert any(f.kind == "PIPELINE" and f.error is None for f in run.fired)
+
+
+# --- streams, sockets and the gated personas ------------------------------------------------
+
+
+def test_a_chat_turn_records_the_first_token_and_the_whole_answer(run):
+    names = {(f.kind, f.name) for f in run.fired if f.error is None}
+
+    assert ("SSE", "mock-gpt first token") in names
+    assert ("SSE", "mock-gpt whole answer") in names
+    assert ("SSE", "mock-slow whole answer") in names
+
+
+def test_the_listener_holds_an_authenticated_socket_and_times_the_echo(load, run):
+    sockets = stub.StubWebsocket.sockets
+    fired = {(f.kind, f.name) for f in run.fired if f.error is None}
+
+    assert sockets, "the listener never connected"
+    assert sockets[0].url == "ws://localhost:5474" + load["routes"].WS_PATH
+    assert sockets[0].kwargs["cookie"] == "access_token=jwt"
+    assert sockets[0].kwargs["origin"] == stub.HOST
+    assert ("WS", "connect") in fired
+    assert ("WS", "echo round trip") in fired
+    assert ("WS", "notification file_status") in fired
+
+
+def test_the_org_admin_stops_when_the_edition_has_no_org_pages(load):
+    run = stub.run_personas(load["locustfile"], capabilities={}, personas=("OrgAdmin",), rounds=2)
+
+    assert run.stopped == ["OrgAdmin"]
+    assert not [c for c in run.client.calls if c.url.startswith("/api/org-admin")]
+
+
+# --- identities, the sample recording and the target guard -----------------------------------
+
+
+def test_identity_blocks_are_disjoint_and_cover_every_ordinary_user(load):
+    scenario = load["scenario"]
+    seeded = 60
+    blocks = [scenario.pool_bounds(name, seeded) for name, _ in scenario.POOL_SHARES]
+    covered = [i for lo, hi in blocks for i in range(lo, hi + 1)]
+
+    assert covered == list(range(scenario.FIRST_POOL_INDEX, seeded + 1))
+    assert all(lo <= hi for lo, hi in blocks)
+    with pytest.raises(ValueError, match="at least"):
+        scenario.pool_bounds("viewer", scenario.MIN_SEEDED_USERS - 1)
+
+
+def test_each_upload_is_a_distinct_valid_recording(load):
+    scenario = load["scenario"]
+    audio = scenario.SAMPLE_AUDIO.read_bytes()
+    first, second = scenario.unique_wav(audio, "a1"), scenario.unique_wav(audio, "b22")
+
+    def frames(data: bytes) -> bytes:
+        with wave.open(io.BytesIO(data)) as w:
+            pcm: bytes = w.readframes(w.getnframes())
+        return pcm
+
+    assert first != second != audio
+    assert frames(first) == frames(second) == frames(audio)
 
 
 @pytest.mark.parametrize(
@@ -212,19 +297,20 @@ def test_writes_clean_up_after_themselves(load_modules):
         ("300", "http://localhost:5474", None),
     ],
 )
-def test_the_target_must_be_a_fresh_stack(load_modules, tmp_path, offset, host, expected):
-    scenario = load_modules["scenario"]
+def test_the_target_must_be_a_fresh_stack(load, tmp_path, offset, host, expected):
+    scenario = load["scenario"]
     if offset is not None:
         (tmp_path / ".fresh").mkdir()
         (tmp_path / ".fresh" / "perf1337.offset").write_text(offset + "\n")
     if expected is None:
         target = scenario.resolve_target("perf1337", host, repo_root=tmp_path)
         assert target.base_url == "http://localhost:5474"
+        assert target.compose_project == "otfresh-perf1337"
     else:
         with pytest.raises(scenario.NotIsolatedError, match=expected):
             scenario.resolve_target("perf1337", host, repo_root=tmp_path)
 
 
-def test_no_fresh_name_is_refused(load_modules):
-    with pytest.raises(load_modules["scenario"].NotIsolatedError, match="--fresh NAME is required"):
-        load_modules["scenario"].resolve_target("", None)
+def test_no_fresh_name_is_refused(load):
+    with pytest.raises(load["scenario"].NotIsolatedError, match="--fresh NAME is required"):
+        load["scenario"].resolve_target("", None)

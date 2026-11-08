@@ -34,6 +34,18 @@ logger = logging.getLogger(__name__)
 #: and reaches a Celery worker within the TTL.
 AUTH_CONFIG_CACHE_SECONDS = 30.0
 
+#: Cache key of the login-banner gate's ``(enabled, text_changed_at)`` pair
+#: (``api/endpoints/auth/lifecycle_gates._banner_requirement``). Derived from two
+#: ``auth_config`` rows, so publishing either row's value drops it (``_DERIVED_KEYS``).
+LOGIN_BANNER_STATE_KEY = "login_banner_state"
+
+#: Cache entries computed from another key's row: publishing the source key drops them,
+#: so the post-commit prime in ``AuthConfigService.set_config`` reaches them too.
+_DERIVED_KEYS: dict[str, tuple[str, ...]] = {
+    "login_banner_enabled": (LOGIN_BANNER_STATE_KEY,),
+    "login_banner_text": (LOGIN_BANNER_STATE_KEY,),
+}
+
 _process_cache: dict[str, Any] = {}
 _process_cache_expiry: float = 0.0
 _process_cache_lock = threading.Lock()
@@ -104,6 +116,16 @@ def _cache_lookup(key: str) -> Any:
         return _process_cache.get(key)
 
 
+def lookup_process_auth_setting(key: str) -> Any:
+    """Return *key* from the current cache generation, or ``None`` when it is not cached.
+
+    For a caller that resolves the value itself on a miss (with the session it already
+    holds) and then publishes it, rather than letting :class:`_ProcessAuthSettings` open
+    a session of its own.
+    """
+    return _cache_lookup(key)
+
+
 def publish_process_auth_setting(key: str, value: Any) -> None:
     """Publish an already-resolved effective value to the whole process.
 
@@ -129,6 +151,8 @@ def publish_process_auth_setting(key: str, value: Any) -> None:
             _process_cache.pop(key, None)
         else:
             _process_cache[key] = value
+        for derived in _DERIVED_KEYS.get(key, ()):
+            _process_cache.pop(derived, None)
 
 
 def _read_effective_from_own_session(key: str) -> Any:

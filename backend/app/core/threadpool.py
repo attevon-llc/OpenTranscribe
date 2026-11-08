@@ -1,17 +1,18 @@
 """Size the API process's worker-thread pool against its database pool (#1169).
 
 Starlette runs every sync handler, sync dependency and ``run_in_threadpool`` call on
-anyio's default thread limiter, which allows 40 threads. Requests in this app hold
-their pooled database connection from authentication until the response is sent,
-including while they wait for a thread for their next step.
+anyio's default thread limiter, which allows 40 threads. Authentication returns its
+pooled connection as soon as it has decided (``app.db.session_utils.end_read_transaction``);
+the handler then takes one at its first query and holds it until the response is sent,
+including while it waits for a thread for its next step.
 
 That makes the two pools interact. With ``C`` connections (``DB_POOL_SIZE +
 DB_MAX_OVERFLOW``) and ``T`` threads, a burst of ``C + T`` or more concurrent
 requests can reach a state where all ``C`` connections belong to requests waiting for
 a thread, and all ``T`` threads belong to requests waiting for a connection. Nothing
-moves until the pool timeout (``DB_POOL_TIMEOUT_SECONDS``) fails the waiters. Fewer than ``C + T``
-concurrent requests cannot get there, because at most ``concurrency - C`` threads can
-be blocked on the pool.
+moves until the pool timeout (``DB_POOL_TIMEOUT_SECONDS``) answers the waiters 503.
+Fewer than ``C + T`` concurrent requests cannot get there, because at most
+``concurrency - C`` threads can be blocked on the pool.
 
 Sizing rule (audit H2). uvicorn's ``--limit-concurrency`` ``L``
 (``UVICORN_LIMIT_CONCURRENCY``) answers 503 once ``L`` connections are open, so at most
@@ -24,10 +25,11 @@ sizes ``T`` to ``max(40, C, L - C + 1)``.
 ``L`` cannot simply be set just under ``C + T`` (120 by default): the 121st open browser
 tab would be refused. ``L`` is sized for the sockets one process should hold (512 by
 default) and ``T`` follows it. Threads are created on demand and only run while there
-is work, so the large ``T`` costs nothing at rest. ``DB_POOL_TIMEOUT_SECONDS`` (10 s)
-bounds any residual wait. To serve more open connections, raise ``L`` (``T`` follows) or
-add API processes; to serve more concurrent database work, raise the pool (and
-``PG_MAX_CONNECTIONS``).
+is work, so the large ``T`` costs nothing at rest. ``DB_POOL_TIMEOUT_SECONDS`` (5 s)
+bounds any residual wait, and the waiter is answered 503 with ``Retry-After``
+(``app/api/overload_response.py``), not 500. To serve more open connections, raise ``L``
+(``T`` follows) or add API processes; to serve more concurrent database work, raise the
+pool (and ``PG_MAX_CONNECTIONS``).
 """
 
 from __future__ import annotations

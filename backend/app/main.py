@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIASGIMiddleware
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -26,10 +27,13 @@ from starlette.responses import Response
 from app.api.endpoints.alertmanager_webhook import router as alertmanager_webhook_router
 from app.api.health import router as health_router
 from app.api.hold_refusal import hold_refused_handler
+from app.api.overload_response import handle_db_overload
+from app.api.overload_response import handle_http_exception
 from app.api.router import api_router
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
+from app.core.db_overload import OVERLOAD_EXCEPTION_CLASSES
 from app.core.env import env_bool
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
@@ -46,6 +50,7 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.demo_readonly import DemoReadOnlyMiddleware
 from app.middleware.observability import ObservabilityMiddleware
+from app.middleware.request_deadline import RequestDeadlineMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
 from app.services.hold_guard import HoldRefusedError
@@ -291,6 +296,10 @@ app = FastAPI(
     default_timeout=3600,
 )
 
+# Request deadline (app/db/request_deadline.py). Added FIRST, so it is the innermost
+# middleware and the deadline covers only the app's own work. Pure ASGI: no child task.
+app.add_middleware(RequestDeadlineMiddleware)
+
 # Upload size limits enforced while the body streams (issue #999). Added BEFORE CORS so
 # it runs INSIDE it (see the ordering note at ObservabilityMiddleware): its early 413
 # still carries the CORS headers a browser needs to read the error.
@@ -395,6 +404,13 @@ async def handle_domain_error(request: Request, exc: DomainError) -> Response:
         request, HTTPException(status_code=exc.status_code, detail=exc.detail, headers=exc.headers)
     )
 
+
+# Database overload (pool timeout, statement timeout, request deadline): 503 + Retry-After,
+# one log line, no traceback (api/overload_response). A 5xx HTTPException raised from one is
+# answered the same way; every other HTTPException goes to FastAPI's own handler.
+for _overload_class in OVERLOAD_EXCEPTION_CLASSES:
+    app.add_exception_handler(_overload_class, handle_db_overload)
+app.add_exception_handler(StarletteHTTPException, handle_http_exception)
 
 # A HoldRefusedError no route translated (legal-hold freeze backstop): 409 FILE_UNDER_LEGAL_HOLD.
 app.add_exception_handler(HoldRefusedError, hold_refused_handler)

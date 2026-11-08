@@ -21,6 +21,7 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.provider_registry import ExternalIdentity
+from app.core.db_overload import reraise_db_overload
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,9 @@ def _authenticate_external_token(request: Request, token: str, db: Session) -> U
             detail=str(e),
             headers={"WWW-Authenticate": "Bearer"},
         ) from None
-    except Exception:
+    except Exception as exc:
+        # An overload is answered 503 by core/db_overload, not as a rejected credential.
+        reraise_db_overload(exc)
         logger.exception("External JIT sync failed; rejecting credential")
         db.rollback()
         raise HTTPException(

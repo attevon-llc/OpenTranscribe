@@ -8,6 +8,8 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 from app.core.db_metrics import register_pool_collector
 from app.db.migration_connection import install_idle_in_transaction_timeout
+from app.db.migration_connection import install_statement_timeout
+from app.db.request_deadline import install_request_deadline
 
 # Build connect_args with PostgreSQL SSL mode when configured
 connect_args: dict = {}
@@ -41,6 +43,15 @@ register_pool_collector(engine, settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW
 # libpq `options=-c` startup parameter (proxies reject those); startup also sets it on the role
 # (app.db.roles.apply_idle_timeout_to_role) so non-pooled sessions get it too.
 install_idle_in_transaction_timeout(engine, settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS)
+
+# Per-statement bound, set for the API process only: the coded default is 0 (off) and only
+# the backend service's compose environment sets it (30 s), so Celery workers, the migrate
+# step and scripts are unaffected. A cancelled statement is answered 503 (core/db_overload).
+install_statement_timeout(engine, settings.DB_STATEMENT_TIMEOUT_MS)
+
+# Per-request bound: a request past REQUEST_DEADLINE_SECONDS gets no more statements. A no-op
+# wherever no request set a deadline (Celery workers, startup work, scripts).
+install_request_deadline(engine)
 
 # Create sessionmaker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -278,6 +278,19 @@ an app-engine session `SHOW`s the configured value on a default install, and tha
 storage is set and reset. `tests/unit/test_idle_in_transaction_backstop.py` asserts no startup
 `options` and the connect listener.
 
+## Request connection lifecycle (`docs/design/scale_foundations_plan.md` section 2)
+
+1. **Auth ends its transaction.** `get_current_user` / `get_current_active_user` /
+   `get_optional_current_user` call `session_utils.end_read_transaction(db, user)` (expunge,
+   commit, re-add), so a handler starts with **no** connection checked out. Measure it with the
+   pool (`checkedout()`), not `Session.in_transaction()`: the re-`add()` autobegins an ORM
+   transaction that holds no connection.
+2. **Never hold a transaction across non-DB I/O** (the section above).
+3. **Overload is a 503.** Pool timeout, `DB_STATEMENT_TIMEOUT_MS` (API only, compose sets it) and
+   `REQUEST_DEADLINE_SECONDS` (`request_deadline.py`) answer 503 + `Retry-After`, one log line
+   (`api/overload_response.py`). A broad `except` around session use calls
+   `core.db_overload.reraise_db_overload(exc)` first; `test_overload_classes_not_swallowed.py`.
+
 ## Gotchas
 
 - **A restore is not finished until you decide which image serves it.** The backend

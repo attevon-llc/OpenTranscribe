@@ -36,9 +36,11 @@ from app.auth.roles import ROLE_SUPER_ADMIN
 from app.auth.token_service import token_service
 from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.config import settings
+from app.core.db_overload import reraise_db_overload
 from app.core.exceptions import DomainError
 from app.core.security import accepted_algorithms
 from app.db.base import get_db
+from app.db.session_utils import end_read_transaction
 from app.models.user import User
 from app.schemas.user import TokenPayload
 
@@ -92,6 +94,9 @@ def _load_token_user(
         # unavailable database.
         raise
     except Exception as e:
+        # Overload (pool/statement timeout, request deadline) is answered 503 and logged
+        # once by core/db_overload; it is neither this error log nor a fabricated user.
+        reraise_db_overload(e)
         # Handle database connection errors or other issues
         logger.error(f"Error retrieving user: {e}")
         # In testing environment, we can create a mock user with the UUID from the token
@@ -145,6 +150,7 @@ def get_current_user(
     # is a no-op there.
     external_user = _authenticate_external_token(request, token, db)
     if external_user is not None:
+        end_read_transaction(db, external_user)
         return external_user
 
     credentials_exception = HTTPException(
@@ -199,7 +205,11 @@ def get_current_user(
     except JoseError as e:
         raise credentials_exception from e
 
-    return _load_token_user(request, db, user_uuid, user_role, token_data, credentials_exception)
+    user = _load_token_user(request, db, user_uuid, user_role, token_data, credentials_exception)
+    # Some routes depend on this alone (the session probe among them), so it ends its own
+    # read transaction; get_current_active_user ends the one its gates open.
+    end_read_transaction(db, user)
+    return user
 
 
 def get_current_active_user(
@@ -218,8 +228,10 @@ def get_current_active_user(
     refused account as anonymous instead of answering 403.
 
     ``db`` is the same session ``get_current_user`` already resolved (FastAPI
-    caches a dependency per request), so the banner gate costs one extra query,
-    not an extra connection.
+    caches a dependency per request). ``get_current_user`` has already ended its
+    read transaction, so a gate that queries opens a short new one, which is
+    ended again before the handler runs: the handler starts with no connection
+    held, and checks one out at its own first statement.
 
     Raises:
         HTTPException: 400 for a deactivated account; 403 with a machine-readable
@@ -244,6 +256,9 @@ def get_current_active_user(
     # sets differ, so a caller owing both clears them in this order.
     _enforce_banner_acknowledgment(current_user, request, db)
     _enforce_password_change(current_user, request)
+    # Authentication is decided: return the connection to the pool now, not after the
+    # response is sent (backend/app/db/CLAUDE.md, "Request connection lifecycle").
+    end_read_transaction(db, current_user)
     return current_user
 
 
@@ -307,10 +322,13 @@ def get_optional_current_user(
                 request.state.external_identity = external_identity
                 request.state.user_id = external_user.id
                 request.state.org_id = getattr(external_user, "external_org_id", None)
+                end_read_transaction(db, external_user)
                 return external_user
         except Exception as e:
             # Never let an external-auth problem fail an optional-auth route;
-            # fall through to local JWT (and ultimately None).
+            # fall through to local JWT (and ultimately None). An overload is not an
+            # auth problem: it is answered 503, not as an anonymous caller.
+            reraise_db_overload(e)
             logger.debug(f"Error in optional external auth: {e}")
 
     try:
@@ -347,11 +365,13 @@ def get_optional_current_user(
         if user is None or not user.is_active or not admitted_on_optional_auth(user, request, db):
             return None
 
+        end_read_transaction(db, user)
         return user  # type: ignore[no-any-return]
 
     except JoseError:
         return None
     except Exception as e:
+        reraise_db_overload(e)
         logger.debug(f"Error in optional auth: {e}")
         return None
 

@@ -6,7 +6,8 @@ Two routers, mounted in ``api/router.py``:
   caller (``GET /effective``), the caller's own voiceprint switch (``GET|PUT /me``), purging the
   caller's own data (``POST /me/purge``) and reading the status of a purge the caller started.
 * ``admin_router`` (``/admin/privacy-policy``, super_admin): the instance layer
-  (``GET|PUT``) and the instance purge (``POST /purge``).
+  (``GET|PUT``), the instance purge (``POST /purge``) and the re-verify of purges a lost worker
+  left unfinished (``POST /purge-reverify``).
 
 Turning a switch off hides data and never deletes it; a purge is the separate, explicit,
 audited deletion. Contract and error codes: ``app.schemas.privacy``.
@@ -47,6 +48,8 @@ from app.schemas.privacy import PrivacyDecision
 from app.schemas.privacy import PurgeAccepted
 from app.schemas.privacy import PurgeAuditRef
 from app.schemas.privacy import PurgeRequest
+from app.schemas.privacy import PurgeReverifyAccepted
+from app.schemas.privacy import PurgeReverifyRequest
 from app.schemas.privacy import PurgeStatus
 from app.schemas.privacy import UserPrivacyPolicy
 from app.schemas.privacy import UserPrivacyPolicyUpdate
@@ -61,6 +64,7 @@ from app.services.privacy.purge import read_record
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.privacy_purge_task import TASK_TYPE
+from app.tasks.privacy_purge_task import privacy_purge_reverify_task
 
 logger = logging.getLogger(__name__)
 
@@ -322,3 +326,43 @@ def purge_instance_data(
         )
     scope = PurgeScope("instance_all" if body.scope == "all" else "instance_personal")
     return queue_purge(db, request, scope, list(body.targets), current_user)
+
+
+@admin_router.post(
+    "/purge-reverify",
+    response_model=PurgeReverifyAccepted,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={503: {"description": "The re-verify could not be queued."}},
+)
+def reverify_pending_purges(
+    request: Request,
+    body: PurgeReverifyRequest | None = None,
+    current_user: models.User = Depends(get_current_active_superuser),
+) -> PurgeReverifyAccepted:
+    """Finish the centroid work of purges a dead worker left (super_admin), without waiting for the beat.
+
+    Runs the same ``privacy.purge_reverify`` the schedule runs hourly: deletes and measures the
+    centroid documents recorded in ``privacy_purge_pending`` for purges older than the cutoff,
+    and fails a purge whose final pass never ended (``reason: interrupted``). Each purge it
+    touches is audited under its own task id. Safe to repeat.
+    """
+    cutoff = (body or PurgeReverifyRequest()).older_than_seconds
+    try:
+        result = privacy_purge_reverify_task.apply_async(kwargs={"grace_seconds": cutoff})
+    except Exception as exc:
+        logger.exception("privacy purge re-verify could not be queued")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The re-verify could not be queued. Try again shortly.",
+        ) from exc
+    source_ip, user_agent = _get_client_info(request)
+    audit_logger.log(
+        event_type=AuditEventType.ADMIN_SETTINGS_CHANGE,
+        outcome=AuditOutcome.SUCCESS,
+        user_id=current_user.id,
+        username=str(current_user.email),
+        source_ip=source_ip,
+        user_agent=user_agent,
+        details={"action": "privacy_purge_reverify", "older_than_seconds": cutoff},
+    )
+    return PurgeReverifyAccepted(task_id=str(result.id))

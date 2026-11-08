@@ -272,6 +272,13 @@ left more than an hour: it deletes and re-measures what was left, records an aud
 and marks a purge that never reached its second pass as failed with the reason `interrupted`
 instead of leaving it in progress. If you see that reason, run the purge again.
 
+To run that check now instead of waiting for the next tick, a super admin can call
+`POST /api/admin/privacy-policy/purge-reverify`. The optional body `{"older_than_seconds": 3600}`
+sets how old a purge's record must be before it is touched (at least 300; the default is the
+scheduled check's hour), so a purge that is still running is not marked interrupted. It answers
+202 with a task id, and each purge it handles is audited under its own purge id. Repeating it is
+safe.
+
 The upgrade itself needs nothing from you. A purge interrupted before the upgrade is not in the
 new table, so the scheduled check cannot find it. The voiceprint orphan sweep removes those
 leftovers: it deletes any voice-cluster entry in the search index whose cluster no longer exists

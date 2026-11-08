@@ -331,6 +331,10 @@ AUDITED_ROUTES: dict[tuple[str, str], Audited] = {
 #: Compliance-family routes that deliberately write none of the events above, with the reason.
 _READ = "a read: lists, fetches and status of compliance records write no compliance event"
 NOT_AUDITED: dict[tuple[str, str], str] = {
+    ("POST", "/api/admin/privacy-policy/purge-reverify"): (
+        "queues the scheduled privacy.purge_reverify; the task, not the route, writes one "
+        "privacy purge event per purge it finishes, under that purge's own task id"
+    ),
     ("GET", "/api/admin/data-integrity/counts"): _READ,
     ("GET", "/api/admin/data-integrity/status"): _READ,
     ("GET", "/api/admin/data-integrity/storage/counts"): _READ,

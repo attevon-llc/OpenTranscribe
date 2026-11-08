@@ -585,11 +585,12 @@ lost on every restart -- so a Redis outage on this deployment's single backend m
 session revoked just before the outage would still be honoured until Redis (or the fallback
 below) recovers.
 
-:::note Single backend replica only
-OpenTranscribe does not support running more than one backend replica (no leader election;
-a second replica races `search_index_maintenance` on startup — see
-`operations/performance-tuning.md`). This section is about surviving a **Redis** outage on the
-one backend, not about coordinating multiple backends.
+:::note One backend replica in the shipped compose files
+The shipped compose files run one backend. Running more on an orchestrator needs a migrate Job
+and a shared Redis; see
+[Running more than one backend replica](./performance-tuning.md#running-more-than-one-backend-replica).
+This section is about surviving a **Redis** outage on the backend, not about coordinating
+multiple backends.
 :::
 
 OpenTranscribe handles the Redis-loss case rather than degrading silently:

@@ -303,7 +303,8 @@ Authentication itself is not middleware; it is a FastAPI dependency (`api/endpoi
 # Simplified from main.py
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: validate secrets, run_migrations() (unless RUN_MIGRATIONS_ON_STARTUP=false),
+    # Startup: validate secrets, run_migrations() (unless RUN_MIGRATIONS_ON_STARTUP=false;
+    # then the one-shot `python -m app.startup.migrate` step owns them),
     # seed initial data, warm services, start background threads
     yield
     # Shutdown: cleanup

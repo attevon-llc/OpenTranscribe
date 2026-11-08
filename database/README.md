@@ -41,9 +41,11 @@ creation script. Further super_admins are promoted from the admin UI.
 
 ## How migrations run
 
-`run_migrations()` in `backend/app/db/migrations.py` runs on backend startup (unless
-`RUN_MIGRATIONS_ON_STARTUP=false`, for deployments that run a separate migrate job) under a
-PostgreSQL advisory lock, and handles three cases:
+`run_migrations()` in `backend/app/db/migrations.py` runs in the one-shot migrate step
+(`python -m app.startup.migrate`, the compose `migrate` service that `backend` and the workers
+wait for) and, unless `RUN_MIGRATIONS_ON_STARTUP=false`, on backend startup. It runs under a
+PostgreSQL advisory lock whose wait is bounded by `MIGRATION_LOCK_TIMEOUT_S`, and handles
+three cases:
 
 1. **Empty database:** `alembic upgrade head`.
 2. **Existing database with no Alembic version table:** detect which revision its schema matches

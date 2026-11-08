@@ -116,7 +116,9 @@ upgrade: running the migration chain on a populated database can take minutes,
 and Compose's dependency resolver would otherwise give up and terminate the
 backend mid-migration.
 
-Migrations run automatically when the backend starts. When it is finished, the
+Migrations run automatically before the backend starts: from 0.7.0 the compose files
+run a one-shot `migrate` service first, and the backend only starts once it has
+finished (see [How migrations run](#how-migrations-run)). When it is finished, the
 script prints the version that is actually running.
 
 ### Manual Upgrade
@@ -219,13 +221,47 @@ from one taken several versions ago.
 
 ### How Migrations Work
 
-OpenTranscribe uses Alembic for database schema migrations. On every backend startup, the system automatically:
+OpenTranscribe uses Alembic for database schema migrations. Each time the stack starts, the migration step automatically:
 
 1. Detects the current database schema version
 2. Stamps untracked databases with the appropriate version
 3. Runs any pending migrations to bring the database up to date
 
 You do not need to run migrations manually -- they execute automatically.
+
+### How migrations run
+
+Migrations run once per start, in a dedicated one-shot step, never in every API process:
+
+- **The shipped compose files (0.7.0 and later)** define a `migrate` service that runs
+  `python -m app.startup.migrate` with the backend image and then exits. `backend` and every
+  Celery worker wait for it to **exit successfully**
+  (`depends_on: condition: service_completed_successfully`), and the backend is started with
+  `RUN_MIGRATIONS_ON_STARTUP=false`, so it never migrates itself. If the migration fails, the
+  backend is not started at all. Read why in the step's own log:
+
+  ```bash
+  ./opentranscribe.sh logs migrate          # or: docker compose logs migrate
+  ```
+
+  Its exit code says what happened: `0` done, `1` a migration failed, `3` another process
+  held the migration lock for longer than `MIGRATION_LOCK_TIMEOUT_S` (default 900 s; the log
+  names that process), `4` the database did not accept connections.
+- **Compose files from before 0.7.0** have no `migrate` service. Their backend keeps the
+  default `RUN_MIGRATIONS_ON_STARTUP=true` and migrates on startup, as before. Upgrading the
+  images without replacing the compose files therefore still migrates.
+- **The development stack** (`./opentr.sh start dev`) runs the `migrate` service *and* keeps
+  migrating in the backend, so a hot reload or `./opentr.sh restart-backend` applies a revision
+  you just added. The second run finds the schema up to date.
+- **Kubernetes / ECS / any orchestrator**: run `python -m app.startup.migrate` as a Job (or a
+  Helm pre-upgrade hook) with the backend image and the backend's database settings, and start
+  the API with `RUN_MIGRATIONS_ON_STARTUP=false`. Use a Job rather than an init container: an
+  init container runs once per pod. A pod that starts before the Job finishes answers 503 on
+  `/health/ready` until the schema is at head, so it never receives traffic against an old
+  schema.
+
+Two migration runners at once are safe: they take turns on a PostgreSQL advisory lock, and the
+second finds the schema up to date.
 
 ### Current Migration Chain
 
@@ -313,8 +349,10 @@ spelled out in [Upgrading to 0.6.0](./upgrading-to-0-6-0.md). For the later rele
 
 If a migration fails on startup:
 
-1. **Check the backend logs** for the specific error:
+1. **Check the migrate step's log** for the specific error (on compose files from before 0.7.0,
+   and on the development stack, the backend's log has it):
    ```bash
+   docker compose logs migrate
    docker compose logs backend | grep -i "alembic\|migration\|error"
    ```
 2. **Restore your backup** if the migration left the database in a broken state:
@@ -340,7 +378,7 @@ If a migration fails on startup:
 3. **Report the issue** -- migration failures are bugs. File an issue with the error output.
 
 :::note
-All OpenTranscribe migrations use idempotent SQL (`IF NOT EXISTS`, `DO $$ ... END $$` blocks), which means they are safe to re-run. If a migration partially completed, restarting the backend will attempt to finish it.
+All OpenTranscribe migrations use idempotent SQL (`IF NOT EXISTS`, `DO $$ ... END $$` blocks), which means they are safe to re-run. If a migration partially completed, starting the stack again (`./opentranscribe.sh start`) re-runs the migrate step, which attempts to finish it.
 :::
 
 ## Rolling Back

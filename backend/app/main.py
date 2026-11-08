@@ -94,7 +94,16 @@ async def _drain_websockets() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan context manager for startup and shutdown events."""
+    """FastAPI lifespan: the event-loop lag sampler wraps the startup/shutdown body."""
+    from app.core.loop_lag import loop_lag_monitor
+
+    async with loop_lag_monitor(), _lifespan_body(app):
+        yield
+
+
+@asynccontextmanager
+async def _lifespan_body(app: FastAPI) -> AsyncIterator[None]:
+    """Startup and shutdown events."""
     # First, and in test mode too: the thread limiter belongs to this event loop, and
     # every request it serves depends on its size relative to the DB pool (#1169).
     from app.core.threadpool import configure_api_threadpool

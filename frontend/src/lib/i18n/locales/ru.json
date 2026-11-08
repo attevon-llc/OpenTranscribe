@@ -7054,5 +7054,6 @@
   "demo.buildInfo": "Версия {{version}}, обновлено {{time}}",
   "demo.buildInfoNoTime": "Версия {{version}}",
   "demo.attribution": "Авторство: {{credit}}. Лицензия: {{license}}.",
-  "demo.attributionSource": "Первоисточник"
+  "demo.attributionSource": "Первоисточник",
+  "demo.readOnlyToast": "Это демо только для чтения. Изменения отключены."
 }

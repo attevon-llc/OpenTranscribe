@@ -6864,5 +6864,6 @@
   "demo.buildInfo": "Versie {{version}}, bijgewerkt op {{time}}",
   "demo.buildInfoNoTime": "Versie {{version}}",
   "demo.attribution": "Bronvermelding: {{credit}}. Gelicenseerd onder {{license}}.",
-  "demo.attributionSource": "Oorspronkelijke bron"
+  "demo.attributionSource": "Oorspronkelijke bron",
+  "demo.readOnlyToast": "Dit is een alleen-lezen demo. Wijzigingen zijn uitgeschakeld."
 }

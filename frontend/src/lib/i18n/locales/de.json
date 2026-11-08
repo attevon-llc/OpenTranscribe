@@ -6864,5 +6864,6 @@
   "demo.buildInfo": "Version {{version}}, aktualisiert am {{time}}",
   "demo.buildInfoNoTime": "Version {{version}}",
   "demo.attribution": "Quelle: {{credit}}. Lizenziert unter {{license}}.",
-  "demo.attributionSource": "Originalquelle"
+  "demo.attributionSource": "Originalquelle",
+  "demo.readOnlyToast": "Dies ist eine schreibgeschützte Demo. Änderungen sind deaktiviert."
 }

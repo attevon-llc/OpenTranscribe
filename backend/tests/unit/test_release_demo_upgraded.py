@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -119,17 +120,25 @@ def test_a_demo_still_on_the_old_tag_fails_closed_when_the_wait_ends(tmp_path):
 
 
 @pytest.mark.parametrize("result", ["rolled-back", "rollback-failed"])
-def test_a_demo_that_rolled_back_from_this_tag_fails_at_once(tmp_path, result):
-    # WAIT=0 also ends a pending poll, so prove "at once" with a long wait that must not be used.
+def test_a_demo_that_rolled_back_from_this_tag_fails_at_once_as_a_rollback(tmp_path, result):
+    # A 5 s deadline with a 1 s poll: a reader that mistook the rollback for "still pending"
+    # would wait it out and report "had not reached", which the assertions below reject.
+    started = time.monotonic()
     rc, rows = _run(
         tmp_path,
-        env={**_file_env(tmp_path), "DEMO_UPGRADE_WAIT_SECONDS": "3600"},
+        env={
+            **_file_env(tmp_path),
+            "DEMO_UPGRADE_WAIT_SECONDS": "5",
+            "DEMO_UPGRADE_POLL_SECONDS": "1",
+        },
         record={"tag": "v0.6.1", "previous_tag": VERSION, "result": result},
     )
 
+    assert time.monotonic() - started < 3
     assert rc == 1
     assert rows[0][1:3] == ["demo-upgraded", "fail"]
     assert "rolled back" in rows[0][3]
+    assert rows[-1] == ["FAIL_OUT", "1"]
 
 
 def test_an_unreadable_record_is_not_measured_and_stops_the_stage(tmp_path):

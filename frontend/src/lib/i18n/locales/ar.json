@@ -7244,5 +7244,6 @@
   "demo.buildInfo": "الإصدار ⁦{{version}}⁩، تمت الترقية في ⁦{{time}}⁩",
   "demo.buildInfoNoTime": "الإصدار ⁦{{version}}⁩",
   "demo.attribution": "الإسناد: {{credit}}. مرخّص بموجب ⁦{{license}}⁩.",
-  "demo.attributionSource": "المصدر الأصلي"
+  "demo.attributionSource": "المصدر الأصلي",
+  "demo.readOnlyToast": "هذا عرض تجريبي للقراءة فقط. التغييرات معطّلة."
 }

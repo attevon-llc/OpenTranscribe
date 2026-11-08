@@ -6769,5 +6769,6 @@
   "demo.buildInfo": "版本 {{version}}，升级于 {{time}}",
   "demo.buildInfoNoTime": "版本 {{version}}",
   "demo.attribution": "署名：{{credit}}。许可协议：{{license}}。",
-  "demo.attributionSource": "原始来源"
+  "demo.attributionSource": "原始来源",
+  "demo.readOnlyToast": "这是只读演示。更改已被禁用。"
 }

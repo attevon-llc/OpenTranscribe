@@ -6769,5 +6769,6 @@
   "demo.buildInfo": "バージョン {{version}}、{{time}} にアップグレード",
   "demo.buildInfoNoTime": "バージョン {{version}}",
   "demo.attribution": "クレジット: {{credit}}。ライセンス: {{license}}。",
-  "demo.attributionSource": "元のソース"
+  "demo.attributionSource": "元のソース",
+  "demo.readOnlyToast": "これは読み取り専用のデモです。変更は無効になっています。"
 }

@@ -2,8 +2,9 @@
 
 Driven through a small app that mounts the real router with the real limiter wiring and a
 stand-in database, so a regression in the gating, the per-IP limit or the role check fails
-here. The token mint itself (``_generate_login_tokens``) is the shared login path and is
-replaced by a recorder; its own tests live with the login suite.
+here. The mint itself, the role refusal and the 404 are proven on a real database in
+``tests/api/test_demo_session_mint.py``; what stays here needs no database: the
+missing-user refusal, the per-IP limit and the two read endpoints.
 """
 
 from __future__ import annotations
@@ -102,40 +103,6 @@ def _client(mod, db: FakeDb, current_user=None) -> TestClient:
     if current_user is not None:
         app.dependency_overrides[mod.get_current_active_user] = lambda: current_user
     return TestClient(app)
-
-
-def test_outside_demo_mode_the_session_endpoint_does_not_exist(mod, minted, monkeypatch):
-    monkeypatch.setattr(settings, "DEMO_MODE", False)
-
-    response = _client(mod, FakeDb([_user()])).post("/api/auth/demo/session")
-
-    assert response.status_code == 404
-    assert minted == []
-
-
-def test_in_demo_mode_a_visitor_gets_the_demo_users_session_with_no_password(
-    mod, minted, monkeypatch
-):
-    monkeypatch.setattr(settings, "DEMO_MODE", True)
-    user = _user()
-
-    response = _client(mod, FakeDb([user])).post("/api/auth/demo/session")
-
-    assert response.status_code == 200
-    assert response.json()["access_token"] == "x"
-    assert [(c["user"], c["role"], c["auth_method"]) for c in minted] == [(user, "user", "demo")]
-
-
-@pytest.mark.parametrize("role", ["admin", "super_admin"])
-def test_an_elevated_demo_account_is_never_signed_in_without_a_password(
-    mod, minted, monkeypatch, role
-):
-    monkeypatch.setattr(settings, "DEMO_MODE", True)
-
-    response = _client(mod, FakeDb([_user(role=role)])).post("/api/auth/demo/session")
-
-    assert response.status_code == 503
-    assert minted == []
 
 
 @pytest.mark.parametrize("users", [[], [_user(active=False)]])

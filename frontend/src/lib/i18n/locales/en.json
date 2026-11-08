@@ -6864,5 +6864,6 @@
   "demo.buildInfo": "Version {{version}}, upgraded {{time}}",
   "demo.buildInfoNoTime": "Version {{version}}",
   "demo.attribution": "Credit: {{credit}}. Licensed under {{license}}.",
-  "demo.attributionSource": "Original source"
+  "demo.attributionSource": "Original source",
+  "demo.readOnlyToast": "This is a read-only demo. Changes are turned off."
 }

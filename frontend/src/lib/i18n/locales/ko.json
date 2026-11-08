@@ -6769,5 +6769,6 @@
   "demo.buildInfo": "버전 {{version}}, {{time}}에 업그레이드됨",
   "demo.buildInfoNoTime": "버전 {{version}}",
   "demo.attribution": "출처 표기: {{credit}}. 라이선스: {{license}}.",
-  "demo.attributionSource": "원본 출처"
+  "demo.attributionSource": "원본 출처",
+  "demo.readOnlyToast": "읽기 전용 데모입니다. 변경은 비활성화되어 있습니다."
 }

@@ -1,0 +1,11 @@
+# Reset the public demo to its seed (issue #628, decision D6).
+[Unit]
+Description=OpenTranscribe public demo: nightly reset to the seed
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/opentranscribe
+Environment=DEMO_SEED_BUNDLE=/opt/opentranscribe-demo-seed/current
+ExecStart=/opt/opentranscribe/scripts/demo/demo-reset.sh
+TimeoutStartSec=3600

@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writable, get } from 'svelte/store';
 import type { Notification, NotificationType } from '../stores/websocket';
+import { resetProgressFloor } from '$lib/notifications/progressFloor';
 
 vi.mock('../stores/auth', () => ({ token: writable(null) }));
 
@@ -126,6 +127,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetProgressFloor();
   setNotifications([]);
   llmAvailable.set(false);
   showNotificationsPanel.set(true);
@@ -333,7 +335,9 @@ describe('processing card: one card per file', () => {
   });
 
   /** The backend's post-processing run for f1: a plan at server time 100, then outcomes. */
-  const postProcessing = (tasks: Record<string, 'queued' | 'started' | 'done' | 'skipped'>) =>
+  const postProcessing = (
+    tasks: Record<string, 'queued' | 'started' | 'done' | 'failed' | 'skipped'>
+  ) =>
     baseNotification({
       id: 'post_processing_status-f1',
       type: 'post_processing_status',
@@ -433,6 +437,33 @@ describe('processing card: one card per file', () => {
       '80'
     );
     expect(container.querySelector('.job-detail')?.textContent).toBe('notifications.job.preparing');
+  });
+
+  it('the bar never goes backwards when the task set grows under it', async () => {
+    llmAvailable.set(false);
+    setNotifications([txDone()]);
+    const { container } = await renderPanel();
+    const bar = () =>
+      container.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow');
+    expect(bar()).toBe('80');
+
+    // An LLM appearing adds weighted summary/topic tasks: the mean alone would fall to 67.
+    llmAvailable.set(true);
+    await tick();
+    expect(bar()).toBe('80');
+  });
+
+  it('a card with several failed tasks names all of them', async () => {
+    setNotifications([
+      postProcessing({ ...ALL_FINISHED, search_indexing: 'failed', analytics: 'failed' }),
+      txDone(),
+    ]);
+    const { container } = await renderPanel();
+
+    const detail = container.querySelector('.job-detail')?.textContent ?? '';
+    expect(detail).toContain('notifications.job.failedTasks');
+    expect(detail).toContain('notifications.job.task.search_indexing');
+    expect(detail).toContain('notifications.job.task.analytics');
   });
 
   it('the details toggle is wired for assistive tech and lists task durations', async () => {

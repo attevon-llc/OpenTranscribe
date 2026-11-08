@@ -1157,6 +1157,7 @@
   "notifications.job.notConfirmed": "Die letzten Schritte konnten nicht bestätigt werden",
   "notifications.job.stale": "Seit einer Weile keine Aktualisierung",
   "notifications.job.failedTask": "{{task}} fehlgeschlagen",
+  "notifications.job.failedTasks": "Fehlgeschlagen: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: erfordert Aufmerksamkeit",
   "notifications.job.announceReady": "{{filename}}: Transkript bereit",
   "notifications.job.task.search_indexing": "Suchindexierung",

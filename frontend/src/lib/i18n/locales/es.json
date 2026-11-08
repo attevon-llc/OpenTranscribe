@@ -1194,6 +1194,7 @@
   "notifications.job.notConfirmed": "No se pudieron confirmar los últimos pasos",
   "notifications.job.stale": "Sin novedades desde hace un rato",
   "notifications.job.failedTask": "Falló: {{task}}",
+  "notifications.job.failedTasks": "Fallaron: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: requiere atención",
   "notifications.job.announceReady": "{{filename}}: transcripción lista",
   "notifications.job.task.search_indexing": "Indexación para búsqueda",

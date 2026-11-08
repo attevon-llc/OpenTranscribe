@@ -1,7 +1,7 @@
 """E2E: the UI-batch checks #1282 listed as "not covered anywhere" (#1266, #1272).
 
 Mobile nav drawer, user dropdown overflow, and search autocomplete. Read-only: nothing is
-created or changed, and the search term is one the suite itself indexed (``owned_search_term``).
+created or changed, and the autocomplete prefix is the title of the file the suite itself uploaded.
 """
 
 from __future__ import annotations
@@ -101,6 +101,29 @@ def test_user_dropdown_has_no_horizontal_scrollbar(
         context.close()
 
 
+@pytest.mark.parametrize("locale", ["en", "ar"])
+def test_user_dropdown_stays_inside_a_390px_viewport(
+    browser: Any, shared_auth_state: str, base_url: str, locale: str
+) -> None:
+    """At phone width the menu must fit, in RTL as well (it spilled ~10px in `ar`)."""
+    context, page = _page_at(browser, shared_auth_state, 390, 844)
+    try:
+        page.add_init_script(f"window.localStorage.setItem('locale', '{locale}')")
+        page.goto(base_url)
+        page.wait_for_selector(".mobile-toggle button", timeout=APP_SHELL_READY_MS)
+        expect(page.locator("html")).to_have_attribute("dir", "rtl" if locale == "ar" else "ltr")
+        page.locator(".mobile-toggle button").click()
+        page.locator(".nav-links.open .user-button").first.click()
+        menu = page.locator(".dropdown-menu").first
+        expect(menu).to_be_visible()
+        box = menu.bounding_box()
+        assert box is not None
+        assert box["x"] >= 0 and box["x"] + box["width"] <= 390 + 0.5, box
+    finally:
+        page.close()
+        context.close()
+
+
 @pytest.fixture
 def search_input(gallery_page: Page, base_url: str) -> Page:
     gallery_page.goto(f"{base_url}/search")
@@ -108,12 +131,17 @@ def search_input(gallery_page: Page, base_url: str) -> Page:
     return gallery_page
 
 
-def test_autocomplete_suggests_for_an_indexed_term_and_navigates_by_keyboard(
-    search_input: Page, owned_search_term: str
+def test_autocomplete_suggests_for_an_indexed_title_and_navigates_by_keyboard(
+    search_input: Page, owned_transcribed_file: dict[str, Any]
 ) -> None:
+    # Suggestions are title and speaker prefixes (search/suggestions.py), never transcript
+    # words, so type the start of the title of the file this suite uploaded (and deletes).
+    detail = owned_transcribed_file["detail"]
+    title = str(detail.get("title") or detail["filename"])
+    assert len(title) >= 9, title
     box = search_input.locator(".search-input")
     box.click()
-    box.press_sequentially(owned_search_term[:4], delay=40)
+    box.press_sequentially(title[:9], delay=40)
 
     listbox = search_input.locator(SUGGESTIONS)
     expect(listbox).to_be_visible(timeout=15000)

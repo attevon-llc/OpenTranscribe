@@ -86,11 +86,17 @@
       const tasks = list.format(more > 0 ? [...names, `+${more}`] : names);
       return translate('notifications.job.waitingOn', { tasks });
     }
-    if (j.state === 'attention' && j.failure) {
+    if (j.state === 'attention' && j.failures.length === 1) {
+      const [only] = j.failures;
       const failed = translate('notifications.job.failedTask', {
-        task: taskName(j.failure.task, translate),
+        task: taskName(only.task, translate),
       });
-      return j.failure.message ? `${failed}: ${j.failure.message}` : failed;
+      return only.message ? `${failed}: ${only.message}` : failed;
+    }
+    if (j.state === 'attention' && j.failures.length > 1) {
+      // Every failed task, never just the first: the others would otherwise go unmentioned.
+      const names = j.failures.map((f) => taskName(f.task, translate));
+      return translate('notifications.job.failedTasks', { tasks: list.format(names) });
     }
     if (j.state === 'ready') return translate('notifications.job.notConfirmed');
     return undefined;

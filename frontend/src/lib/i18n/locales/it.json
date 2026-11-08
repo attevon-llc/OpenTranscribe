@@ -1719,6 +1719,7 @@
   "notifications.job.notConfirmed": "Impossibile confermare gli ultimi passaggi",
   "notifications.job.stale": "Nessun aggiornamento da un po’",
   "notifications.job.failedTask": "Non riuscito: {{task}}",
+  "notifications.job.failedTasks": "Non riusciti: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: richiede attenzione",
   "notifications.job.announceReady": "{{filename}}: trascrizione pronta",
   "notifications.job.task.search_indexing": "Indicizzazione per la ricerca",

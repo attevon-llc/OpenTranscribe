@@ -1690,6 +1690,7 @@
   "notifications.job.notConfirmed": "Não foi possível confirmar as etapas finais",
   "notifications.job.stale": "Sem atualizações há algum tempo",
   "notifications.job.failedTask": "Falhou: {{task}}",
+  "notifications.job.failedTasks": "Falharam: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: requer atenção",
   "notifications.job.announceReady": "{{filename}}: transcrição pronta",
   "notifications.job.task.search_indexing": "Indexação para busca",

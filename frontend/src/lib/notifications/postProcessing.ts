@@ -91,6 +91,27 @@ export function postProcessingOutstanding(run: PostProcessingRun): boolean {
 }
 
 /**
+ * When the card's newest record should read as having happened. A live frame happened now. A
+ * REST snapshot (`force`) is read long after the fact, so stamping it with the read time made a
+ * two-hour-old card say "Just now": it carries the server time of its newest task instead, or,
+ * with no run on record, keeps the file's own transcription record's time.
+ */
+function recordTime(
+  run: PostProcessingRun,
+  existing: Notification | undefined,
+  list: Notification[],
+  fileId: string,
+  now: number,
+  snapshot: boolean
+): Date {
+  if (!snapshot) return new Date(now);
+  const newest = Math.max(0, ...Object.values(run.tasks).map((e) => e.at)) * 1000;
+  if (newest > 0) return new Date(Math.min(newest, now));
+  const own = list.find((n) => n.progressId === `transcription_status_${fileId}`);
+  return existing?.timestamp ?? own?.timestamp ?? new Date(now);
+}
+
+/**
  * Applies a frame to the notification list: updates the file's `post_processing_status`
  * record, or creates it when the file already has a transcription record (a frame for a file
  * with no card at all, e.g. an admin reindex of an old file, is dropped). Returns null when
@@ -134,7 +155,7 @@ export function upsertPostProcessingRecord(
       progressId,
     }),
     message: '',
-    timestamp: new Date(now),
+    timestamp: recordTime(run, existing, list, fileId, now, force),
     read,
     readAt: read ? existing?.readAt : undefined,
     data,

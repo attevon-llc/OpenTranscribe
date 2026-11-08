@@ -10,10 +10,17 @@
 import axiosInstance from '$lib/axios';
 import type { PostProcessingFrame } from './postProcessing';
 
-/** At most one read per file per minute, however often the panel re-renders. */
-export const RECONCILE_THROTTLE_MS = 60_000;
+/** The first read of a file waits this long; each unanswered read doubles the wait. */
+export const RECONCILE_FIRST_MS = 15_000;
+/** The wait between reads never grows past this, however long a card stays uncertain. */
+export const RECONCILE_MAX_MS = 60_000;
 
-const lastAsked = new Map<string, number>();
+/** Wait before read number `attempts + 1` of a file: 15 s, 30 s, then 60 s, however often it re-renders. */
+export function reconcileDelayMs(attempts: number): number {
+  return Math.min(RECONCILE_MAX_MS, RECONCILE_FIRST_MS * 2 ** Math.max(0, attempts - 1));
+}
+
+const lastAsked = new Map<string, { at: number; attempts: number }>();
 
 function statusOf(error: unknown): number | undefined {
   const response = (error as { response?: { status?: unknown } } | null)?.response;
@@ -48,8 +55,8 @@ export function reconcileJobs(
   for (const job of jobs) {
     if (!job.reconcile) continue;
     const last = lastAsked.get(job.fileId);
-    if (last !== undefined && now - last < RECONCILE_THROTTLE_MS) continue;
-    lastAsked.set(job.fileId, now);
+    if (last !== undefined && now - last.at < reconcileDelayMs(last.attempts)) continue;
+    lastAsked.set(job.fileId, { at: now, attempts: (last?.attempts ?? 0) + 1 });
     fetcher(job.fileId)
       .then((snapshot) => {
         if (snapshot) apply(snapshot);

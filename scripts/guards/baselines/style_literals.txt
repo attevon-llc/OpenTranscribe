@@ -1115,7 +1115,7 @@ physical::frontend/src/components/gallery/VirtualList.svelte	2	styling layer: pr
 physical::frontend/src/components/groups/GroupMemberSearch.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/groups/GroupsOverview.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/mfa/MfaEnrollment.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
-physical::frontend/src/components/navbar/UserDropdown.svelte	3	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
+physical::frontend/src/components/navbar/UserDropdown.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/search/SearchAutocomplete.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/settings/ASRConfigModal.svelte	2	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md
 physical::frontend/src/components/settings/ASRSettings.svelte	4	styling layer: pre-migration literal, burn-down planned in docs/design/frontend_styling_layer_plan.md

@@ -1714,6 +1714,7 @@
   "notifications.job.notConfirmed": "De laatste stappen konden niet worden bevestigd",
   "notifications.job.stale": "Al een tijdje geen update",
   "notifications.job.failedTask": "{{task}} mislukt",
+  "notifications.job.failedTasks": "Mislukt: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: vraagt aandacht",
   "notifications.job.announceReady": "{{filename}}: transcript gereed",
   "notifications.job.task.search_indexing": "Zoekindexering",

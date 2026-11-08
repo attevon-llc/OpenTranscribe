@@ -1194,6 +1194,7 @@
   "notifications.job.notConfirmed": "Les dernières étapes n’ont pas pu être confirmées",
   "notifications.job.stale": "Aucune mise à jour depuis un moment",
   "notifications.job.failedTask": "Échec : {{task}}",
+  "notifications.job.failedTasks": "Échecs : {{tasks}}",
   "notifications.job.announceAttention": "{{filename}} : nécessite votre attention",
   "notifications.job.announceReady": "{{filename}} : transcription prête",
   "notifications.job.task.search_indexing": "Indexation pour la recherche",

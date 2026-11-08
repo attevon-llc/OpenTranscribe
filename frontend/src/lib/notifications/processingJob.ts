@@ -79,8 +79,11 @@ const FINISHING_PLACEHOLDER_WEIGHT = 15;
 export const PLAN_GRACE_MS = 2 * 60_000;
 /** An outstanding run with no frame for this long is flagged as possibly stale. */
 export const STALE_AFTER_MS = 10 * 60_000;
-/** When the card should ask the server for the run (a missed frame, a reload). */
-const RECONCILE_AFTER_MS = 30_000;
+/**
+ * When the card should ask the server for the run (a missed frame, a reload): shortly after
+ * the transcript, since the plan normally lands within a second. `reconcile.ts` then backs off.
+ */
+const RECONCILE_AFTER_MS = 12_000;
 /** The server keeps a run this long (`POST_PROCESSING_STATUS_TTL_S`); older is unknowable. */
 const RUN_RETENTION_MS = 2 * 24 * 3600_000;
 
@@ -160,7 +163,10 @@ export interface ProcessingJobModel {
   timestamp: Date;
   currentStep?: string;
   etaDisplay?: string;
-  failure?: { task: JobTaskKey; message: string };
+  /** Every failed task of an `attention` card, in display order (empty otherwise). */
+  failures: Array<{ task: JobTaskKey; message: string }>;
+  /** The transcription run this card shows; progress may only rise within one run. */
+  run?: number;
 }
 
 export interface JobModelOptions {
@@ -454,7 +460,8 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
 
   // ---- overall state ------------------------------------------------------------------------
   const outstandingTasks = visible.filter((t) => t.tier !== 'main' && isOutstanding(t.state));
-  const failedTask = visible.find((t) => t.state === 'failed');
+  const failedTasks = visible.filter((t) => t.state === 'failed');
+  const failedTask = failedTasks[0];
   let state: JobState;
   if (mainFailed) state = 'attention';
   else if (hasMain && !mainDone) state = 'processing';
@@ -515,7 +522,6 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
     tx.progress.etaSeconds > 0
       ? formatCompactDuration(tx.progress.etaSeconds)
       : undefined;
-  const failureTask = state === 'attention' ? failedTask : undefined;
 
   return {
     key: item.key,
@@ -535,8 +541,13 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
     timestamp: newest.timestamp,
     currentStep: state === 'processing' ? runningMain?.message : undefined,
     etaDisplay: state === 'processing' ? eta : undefined,
-    failure: failureTask
-      ? { task: failureTask.key, message: failureTask.message ?? '' }
-      : undefined,
+    failures:
+      state === 'attention'
+        ? // Diarization is a step of the transcription run, so its failure is that run's failure.
+          failedTasks
+            .filter((t) => t.key !== 'diarization')
+            .map((t) => ({ task: t.key, message: t.message ?? '' }))
+        : [],
+    run: txStart,
   };
 }

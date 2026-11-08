@@ -1714,6 +1714,7 @@
   "notifications.job.notConfirmed": "Final steps could not be confirmed",
   "notifications.job.stale": "No update for a while",
   "notifications.job.failedTask": "{{task}} failed",
+  "notifications.job.failedTasks": "Failed: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: needs attention",
   "notifications.job.announceReady": "{{filename}}: transcript ready",
   "notifications.job.task.search_indexing": "Search indexing",

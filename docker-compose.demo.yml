@@ -38,9 +38,11 @@ services:
       # Where the upgrade script's record is mounted (below); the login page shows the time.
       DEMO_STATUS_FILE: /run/demo/demo-status.json
       DEMO_RATE_LIMIT_PER_MINUTE: ${DEMO_RATE_LIMIT_PER_MINUTE:-120}
-      # nginx (Docker's pool) is always trusted. Add the subnet of anything that terminates
-      # TLS in front of nginx (an ALB, CloudFront) in .env — never a wildcard, which lets any
-      # client forge X-Forwarded-For (issue #284).
+      # nginx (Docker's pool) is always trusted. Cloudflare is NOT listed here: nginx itself
+      # restores the visitor address from CF-Connecting-IP for Cloudflare peers only (the nginx
+      # service below), so the backend sees a plain nginx-to-backend hop. Add the subnet of any
+      # other TLS terminator in .env — never a wildcard, which lets any client forge
+      # X-Forwarded-For (issue #284).
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
     volumes:
       # demo-upgrade.sh writes this file in the install directory (the compose project

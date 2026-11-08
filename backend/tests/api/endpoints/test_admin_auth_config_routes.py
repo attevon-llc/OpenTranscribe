@@ -290,3 +290,57 @@ def test_migrate_writes_the_missing_key_then_migrates_nothing_on_a_re_run(
     second = client.post(MIGRATE, headers=super_admin_token_headers)
     assert second.status_code == status.HTTP_200_OK
     assert second.json()["migrated_count"] == 0
+
+
+READINESS = f"{BASE}/email/readiness"
+
+#: What a plain admin may learn about auth mail. Anything else is deployment mail
+#: infrastructure (config name/UUID/provider, env SMTP) and stays super_admin-only.
+_READINESS_ALLOWLIST = {"deliverable", "verification_required"}
+
+
+def test_readiness_refuses_a_plain_user(client, user_token_headers):
+    assert (
+        client.get(READINESS, headers=user_token_headers).status_code == status.HTTP_403_FORBIDDEN
+    )
+
+
+def test_readiness_refuses_the_anonymous(client):
+    assert client.get(READINESS).status_code == status.HTTP_401_UNAUTHORIZED
+
+
+def test_readiness_is_readable_by_a_plain_admin_and_leaks_nothing_else(
+    client, admin_token_headers, no_designation
+):
+    """The designated row's identity must not reach a plain admin through this route."""
+    config = _make_email_config(no_designation)
+    designation.set_designation(no_designation, str(config.uuid))
+    no_designation.commit()
+
+    response = client.get(READINESS, headers=admin_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert set(body) == _READINESS_ALLOWLIST
+    assert body["deliverable"] is True
+    for secret in (str(config.uuid), config.name, "smtp.invalid", "noreply@example.com"):
+        assert secret not in response.text
+
+
+def test_readiness_reports_not_deliverable_when_nothing_can_send(
+    client, admin_token_headers, no_designation, monkeypatch
+):
+    from app.services import email_service as email_mod
+
+    monkeypatch.setattr(email_mod.settings, "SMTP_HOST", "")
+    response = client.get(READINESS, headers=admin_token_headers)
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["deliverable"] is False
+
+
+def test_the_designation_stays_super_admin_only(client, admin_token_headers):
+    """Adding readiness for admins must not have loosened the richer route."""
+    assert (
+        client.get(DESIGNATION, headers=admin_token_headers).status_code
+        == status.HTTP_403_FORBIDDEN
+    )

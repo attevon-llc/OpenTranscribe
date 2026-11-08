@@ -12,6 +12,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BASE_POSTGRES_PORT=5176
+BASE_OPENSEARCH_PORT=5180
+BASE_MINIO_PORT=5178
 
 FRESH_NAME=""
 PORT_OFFSET=""
@@ -44,6 +46,9 @@ fi
 
 export POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
 export POSTGRES_PORT=$((BASE_POSTGRES_PORT + PORT_OFFSET))
+# The isolation guard (corpus_injection/env.py) also refuses .env's dev OpenSearch/MinIO ports.
+export OPENSEARCH_PORT=$((BASE_OPENSEARCH_PORT + PORT_OFFSET))
+export MINIO_PORT=$((BASE_MINIO_PORT + PORT_OFFSET))
 
 VENV_PY="${OPENTRANSCRIBE_VENV_PYTHON:-}"
 if [[ -z "$VENV_PY" ]]; then

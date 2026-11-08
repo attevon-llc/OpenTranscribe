@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Administrators choose the files for a legal hold (Settings > Legal holds) by typing part of a title or file name and selecting them from a list, shown as removable chips, instead of pasting one file ID per line. Settings > Quarantine gains **Quarantine files**, the gallery's takedown form with the same picker. The picker searches through the gallery's own file list, so it offers only files the administrator can already see there. The held-file banner on the file page is styled as information rather than a warning.
 - Contribution docs and the pull request template state plainly that outside code contributions are not accepted for now; issues and pull requests are welcome as suggestions and bug reports, and a contributor agreement will follow later.
 
 - The declared copyright holder and package author is "OpenTranscribe" everywhere (`pyproject.toml` files, image author labels), matching `NOTICE`, the docs footer and `frontend/package.json`.

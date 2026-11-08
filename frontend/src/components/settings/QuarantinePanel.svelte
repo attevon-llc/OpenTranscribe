@@ -14,6 +14,11 @@
    * no button that reaches a GDPR erasure route — `AdminApi` carries zero GDPR
    * methods (`admin.gdpr.absence.test.ts` guards that), and a row's owner link
    * (when present) must go to User Management, never to an erasure action.
+   *
+   * The operator queue also offers "Quarantine files": the gallery's takedown form
+   * (`gallery/QuarantineModal`) with a search-and-select picker in place of a fixed
+   * selection, so no file ID is ever typed. Organization scope does not offer it, matching
+   * the gallery, where only instance administrators see Quarantine.
    */
   import { onMount } from 'svelte';
   import { t, locale } from '$stores/locale';
@@ -27,6 +32,7 @@
   import { OrgAdminApi } from '$lib/api/orgAdmin';
   import { settingsModalStore } from '$stores/settingsModalStore';
   import TakedownStatusChip from '$components/takedown/TakedownStatusChip.svelte';
+  import QuarantineModal from '$components/gallery/QuarantineModal.svelte';
   import { toRows, type QueueRow, type QueueScope } from './quarantineRows';
   import { TAKEDOWN_NOTICE_TYPE_KEYS, labelFor } from '$lib/i18n/keyMaps';
 
@@ -46,6 +52,7 @@
    * issue #689's remedy). Not a subset of the first — a released file whose
    * hold was kept has `is_quarantined=false, legal_hold=true`. */
   let showLegalHoldsOnly = false;
+  let quarantining = false;
 
   async function load(newOffset = 0) {
     loading = true;
@@ -134,21 +141,33 @@
     {/if}
   </p>
 
-  <div class="view-toggle">
-    <button
-      class="toggle-btn"
-      class:active={!showLegalHoldsOnly}
-      on:click={() => showLegalHoldsOnly && toggleView()}
-    >
-      {$t('settings.quarantine.tabQuarantined')}
-    </button>
-    <button
-      class="toggle-btn"
-      class:active={showLegalHoldsOnly}
-      on:click={() => !showLegalHoldsOnly && toggleView()}
-    >
-      {$t('settings.quarantine.tabLegalHold')}
-    </button>
+  <div class="toolbar">
+    <div class="view-toggle">
+      <button
+        class="toggle-btn"
+        class:active={!showLegalHoldsOnly}
+        on:click={() => showLegalHoldsOnly && toggleView()}
+      >
+        {$t('settings.quarantine.tabQuarantined')}
+      </button>
+      <button
+        class="toggle-btn"
+        class:active={showLegalHoldsOnly}
+        on:click={() => !showLegalHoldsOnly && toggleView()}
+      >
+        {$t('settings.quarantine.tabLegalHold')}
+      </button>
+    </div>
+    {#if !isOrg}
+      <button
+        class="btn btn-primary"
+        type="button"
+        data-testid="quarantine-choose-files"
+        on:click={() => (quarantining = true)}
+      >
+        {$t('settings.quarantine.quarantineFiles')}
+      </button>
+    {/if}
   </div>
 
   {#if loading && files.length === 0}
@@ -266,6 +285,15 @@
   {/if}
 </div>
 
+{#if !isOrg}
+  <QuarantineModal
+    isOpen={quarantining}
+    chooseFiles
+    on:quarantined={() => load(0)}
+    on:close={() => (quarantining = false)}
+  />
+{/if}
+
 <style>
   .quarantine-panel {
     display: flex;
@@ -284,10 +312,18 @@
     margin: 0;
   }
 
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin: 0.5rem 0;
+  }
+
   .view-toggle {
     display: flex;
     gap: 0.25rem;
-    margin: 0.5rem 0;
   }
 
   .toggle-btn {
@@ -301,9 +337,9 @@
   }
 
   .toggle-btn.active {
-    background: var(--accent-color, #2563eb);
-    color: white;
-    border-color: var(--accent-color, #2563eb);
+    background: var(--accent-color);
+    color: var(--text-on-solid);
+    border-color: var(--accent-color);
   }
 
   .state-row {

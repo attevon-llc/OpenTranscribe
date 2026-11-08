@@ -17,6 +17,8 @@ const collectionsApi = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('$lib/api/collections', () => ({ CollectionsApi: collectionsApi }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
+const fileSearch = vi.hoisted(() => ({ searchFiles: vi.fn() }));
+vi.mock('$lib/api/fileSearch', () => fileSearch);
 
 import PlaceHoldDialog from './PlaceHoldDialog.svelte';
 
@@ -135,5 +137,52 @@ describe('PlaceHoldDialog', () => {
   it('includes the explainer', () => {
     open({ placer: 'platform' });
     expect(screen.getByRole('button', { name: 'What does a legal hold do?' })).toBeInTheDocument();
+  });
+});
+
+describe('PlaceHoldDialog from Settings: search and select, never file IDs', () => {
+  const board = { uuid: F1, title: 'Board meeting', filename: 'board.mp4' };
+  const budget = { uuid: F2, title: 'Budget review', filename: 'budget.mp4' };
+
+  async function pick(query: string, name: RegExp) {
+    await fireEvent.input(screen.getByRole('combobox', { name: 'Files to hold' }), {
+      target: { value: query },
+    });
+    await fireEvent.click(await screen.findByRole('option', { name }));
+  }
+
+  it('opens on Specific files with a search field and no box for pasting IDs', async () => {
+    open({ placer: 'platform', fileUuids: null });
+    await waitFor(() => expect(collectionsApi.list).toHaveBeenCalled());
+    expect(screen.getByRole('radio', { name: 'Specific files' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Files to hold' })).toBeInTheDocument();
+    expect(screen.queryByText(/file id/i)).toBeNull();
+  });
+
+  it('places a hold on the files picked by name, sending their uuids', async () => {
+    fileSearch.searchFiles.mockResolvedValueOnce([board]).mockResolvedValueOnce([budget]);
+    open({ placer: 'platform', fileUuids: null });
+
+    await pick('board', /Board meeting/);
+    await pick('budget', /Budget review/);
+    await fireEvent.input(reasonBox(), { target: { value: REASON } });
+    expect(submit()).toBeEnabled();
+    await fireEvent.click(submit());
+
+    await waitFor(() =>
+      expect(adminApi.placeHold).toHaveBeenCalledWith({
+        scope: 'file',
+        file_uuids: [F1, F2],
+        reason: REASON,
+        matter_ref: undefined,
+      })
+    );
+  });
+
+  it('keeps Place disabled until at least one file is picked', async () => {
+    open({ placer: 'platform', fileUuids: null });
+    await fireEvent.input(reasonBox(), { target: { value: REASON } });
+    expect(screen.getByRole('radio', { name: 'Specific files' })).toBeChecked();
+    expect(submit()).toBeDisabled();
   });
 });

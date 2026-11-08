@@ -425,7 +425,8 @@ comments cannot be changed, and background work (a new summary, topic extraction
 auto-labelling, a redaction rescan) skips it. Held files stay readable, searchable, playable,
 exportable and downloadable, and anyone who can see one can still add a comment.
 
-- **Place a hold:** choose a collection or paste file IDs (one per line, up to 500), give a reason
+- **Place a hold:** search for files by title or file name and select them (up to 500), or choose a
+  collection, give a reason
   (10 to 2,000 characters) and optionally a matter reference. Only files and collections of your own
   organization can be held: anything else answers "not found", the same as a missing one.
 - **A collection hold covers files added later,** and a file under it cannot be removed from the
@@ -468,6 +469,20 @@ API: `GET/POST /api/admin/holds`, `GET /api/admin/holds/{uuid}`,
 `POST /api/admin/holds/{uuid}/release`. Place with `scope` `file` (up to 500 `file_uuids`, any
 tenant) or `collection` (`collection_uuid`), a `reason` of 10 to 2,000 characters and an optional
 `matter_ref`. See [Legal holds](./legal-holds.md#for-administrators).
+
+### Quarantine (takedown)
+
+A platform administrator takes files down in either of two places, with the same form (a reason,
+the notice it acts on or "operator action", an optional legal hold, and optionally emailing the
+owners):
+
+- **Gallery:** select the files and choose **Quarantine** from the **Organize** menu.
+- **Settings > Quarantine:** choose **Quarantine files**, then type part of a title or file name
+  and pick each file from the list. The picked files show as chips you can remove before
+  submitting. Nobody needs a file's ID.
+
+The same screen lists what is quarantined and releases it. How quarantine differs from a legal
+hold is in [Legal holds](./legal-holds.md#hold-quarantine-trash-and-deletion-compared).
 
 ## Search Settings
 

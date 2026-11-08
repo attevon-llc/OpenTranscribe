@@ -73,6 +73,11 @@ primitive in the same spirit as this folder.
 - `MetadataChips.svelte` — renders a `Chip` row from a metadata object/list.
 - `CopyButton.svelte` — click-to-copy control with a transient "copied" state.
 - `SearchableSelect.svelte` — debounced async combobox (`fetchFn`/`getLabel` props, arrow-key nav).
+- `FileSearchPicker.svelte` — choose files by title or file name: `SearchableSelect` over
+  `$lib/api/fileSearch` (the gallery's `GET /files`, so the server's own scoping applies) plus
+  removable `Chip`s; `bind:selected` (MediaFile[]), `max`, `label`, `help`, `disabled`. The
+  administrator screens (legal hold, quarantine) use it so nobody types a file ID. Never add a
+  second file search for a picker.
 - `SearchBar.svelte` — the shared search-input shell (icon, clear button, debounce).
 - `ConnectionStatusBanner.svelte` — global banner for WebSocket/API connectivity loss.
 - `ExpandableSection.svelte` — accessible collapsible (`aria-expanded`/`aria-controls`, chevron, slide).

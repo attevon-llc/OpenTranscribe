@@ -36,6 +36,8 @@ const collectionsApi = vi.hoisted(() => ({ list: vi.fn() }));
 vi.mock('$lib/api/collections', () => ({ CollectionsApi: collectionsApi }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
+const fileSearch = vi.hoisted(() => ({ searchFiles: vi.fn() }));
+vi.mock('$lib/api/fileSearch', () => fileSearch);
 
 import LegalHoldsPanel from './LegalHoldsPanel.svelte';
 
@@ -71,6 +73,12 @@ async function openPlace() {
   await screen.findByText('Collection: Matter 14');
   await fireEvent.click(screen.getByRole('button', { name: 'Place a hold' }));
   await screen.findByText('Place a legal hold');
+}
+
+/** The dialog opens on "Specific files"; these tests hold a whole collection. */
+async function chooseCollection(): Promise<HTMLElement> {
+  await fireEvent.click(screen.getByRole('radio', { name: 'A whole collection' }));
+  return screen.findByRole('combobox', { name: 'Collection' });
 }
 
 describe('LegalHoldsPanel (organization scope, the default)', () => {
@@ -135,7 +143,7 @@ describe('LegalHoldsPanel (organization scope, the default)', () => {
     const place = screen.getByRole('button', { name: 'Place hold' });
     expect(place).toBeDisabled();
 
-    await fireEvent.change(screen.getByRole('combobox'), { target: { value: COLLECTION } });
+    await fireEvent.change(await chooseCollection(), { target: { value: COLLECTION } });
     expect(place).toBeDisabled(); // a collection alone is not enough
     const reasons = screen.getAllByRole('textbox');
     await fireEvent.input(reasons[0], { target: { value: 'too short' } });
@@ -158,25 +166,29 @@ describe('LegalHoldsPanel (organization scope, the default)', () => {
     await waitFor(() => expect(api.listHolds).toHaveBeenCalledTimes(2));
   });
 
-  it('holds named files: one valid id per line, nothing malformed', async () => {
+  it('holds named files picked by searching for them, never by typing an ID', async () => {
     api.placeHold.mockResolvedValue(hold({ scope: 'file', file_count: 1 }));
+    fileSearch.searchFiles.mockResolvedValue([
+      { uuid: FILE, title: 'Deposition audio', filename: 'depo.wav' },
+    ]);
     await openPlace();
-    await fireEvent.click(screen.getByLabelText('Specific files'));
+    expect(screen.getByRole('radio', { name: 'Specific files' })).toBeChecked();
+    expect(screen.queryByText(/file id/i)).toBeNull();
 
-    const [ids, reason] = screen.getAllByRole('textbox');
-    await fireEvent.input(reason, { target: { value: REASON } });
-    await fireEvent.input(ids, { target: { value: `${FILE}\nnot-an-id` } });
-    expect(screen.getByRole('button', { name: 'Place hold' })).toBeDisabled();
-    expect(screen.getByText(/Enter one valid file ID per line/)).toBeInTheDocument();
+    await fireEvent.input(screen.getByTestId('place-hold-reason'), { target: { value: REASON } });
+    expect(screen.getByRole('button', { name: 'Place hold' })).toBeDisabled(); // nothing picked
 
-    await fireEvent.input(ids, { target: { value: `${FILE}\n${COLLECTION}\n` } });
+    await fireEvent.input(screen.getByRole('combobox', { name: 'Files to hold' }), {
+      target: { value: 'depo' },
+    });
+    await fireEvent.click(await screen.findByRole('option', { name: /Deposition audio/ }));
     expect(screen.getByRole('button', { name: 'Place hold' })).toBeEnabled();
     await fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
 
     await waitFor(() =>
       expect(api.placeHold).toHaveBeenCalledWith({
         scope: 'file',
-        file_uuids: [FILE, COLLECTION],
+        file_uuids: [FILE],
         reason: REASON,
         matter_ref: undefined,
       })
@@ -188,7 +200,7 @@ describe('LegalHoldsPanel (organization scope, the default)', () => {
       response: { status: 404, data: { detail: 'File not found' } },
     });
     await openPlace();
-    await fireEvent.change(screen.getByRole('combobox'), { target: { value: COLLECTION } });
+    await fireEvent.change(await chooseCollection(), { target: { value: COLLECTION } });
     await fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: REASON } });
 
     await fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
@@ -233,7 +245,7 @@ describe('LegalHoldsPanel (platform scope)', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Place a hold' }));
     await screen.findByText('Place a legal hold');
-    await fireEvent.change(screen.getByRole('combobox'), { target: { value: COLLECTION } });
+    await fireEvent.change(await chooseCollection(), { target: { value: COLLECTION } });
     await fireEvent.input(screen.getAllByRole('textbox')[0], { target: { value: REASON } });
     await fireEvent.click(screen.getByRole('button', { name: 'Place hold' }));
     await waitFor(() =>

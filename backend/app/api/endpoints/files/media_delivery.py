@@ -314,9 +314,7 @@ def download_stream(
     import contextlib
     import json as _json
 
-    import redis.asyncio as aioredis
-
-    from app.core.config import settings
+    from app.core.redis import get_async_redis
     from app.services.download_events import download_events_channel
 
     if mode not in _DOWNLOAD_MODES:
@@ -377,10 +375,7 @@ def download_stream(
         from redis.exceptions import RedisError
         from redis.exceptions import TimeoutError as RedisTimeoutError
 
-        client = aioredis.from_url(
-            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
-        )
-        pubsub = client.pubsub()
+        pubsub = get_async_redis().pubsub()
         await pubsub.subscribe(download_events_channel(file_uuid))
         try:
             # 2. RE-CHECK after subscribing (issue #284 A1.22).
@@ -434,10 +429,10 @@ def download_stream(
         except asyncio.CancelledError:
             raise
         finally:
+            # Returns the pub/sub connection to the shared pool; the client stays open.
             with contextlib.suppress(Exception):
                 await pubsub.unsubscribe(download_events_channel(file_uuid))
                 await pubsub.close()
-                await client.close()
 
     return StreamingResponse(
         event_stream(),

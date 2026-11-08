@@ -24,12 +24,20 @@ Out of scope (they use separate Redis databases or async clients):
 - ``youtube_rate_limiter.py`` (db=1)
 - ``video_processing_service.py`` (async)
 - ``api/websockets.py`` (async subscriber)
+
+``get_async_redis()`` is the one shared ``redis.asyncio`` client for the API's SSE
+streams (download progress, bulk export). Its connection pool belongs to the event loop
+it was created on, so there is one per loop; a stream borrows a connection for its
+pub/sub and returns it on close, and never closes the client itself.
 """
 
+import asyncio
+import weakref
 from functools import lru_cache
 from typing import Any
 
 import redis
+import redis.asyncio as aioredis
 
 from app.core.config import settings
 from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
@@ -70,3 +78,25 @@ def get_probe_redis() -> redis.Redis:
         socket_timeout=DEPENDENCY_PROBE_TIMEOUT_SECONDS,
         socket_connect_timeout=DEPENDENCY_PROBE_TIMEOUT_SECONDS,
     )
+
+
+_async_clients: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, aioredis.Redis] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def get_async_redis() -> aioredis.Redis:
+    """Return the running event loop's shared async Redis client (db 0).
+
+    One client, and so one connection pool, per loop rather than one per SSE stream: a
+    pool built per stream opened and tore down its own connections for every progress
+    stream a browser kept open. Must be called from inside the loop.
+    """
+    loop = asyncio.get_running_loop()
+    client = _async_clients.get(loop)
+    if client is None:
+        client = aioredis.from_url(
+            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
+        )
+        _async_clients[loop] = client
+    return client

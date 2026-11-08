@@ -13,9 +13,6 @@ app/api/endpoints/auth/login_completion.py::record_successful_login  # lane E (l
 app/auth/session_ceiling.py::_session_lifetime_minutes  # lane E (session mint at login); falls back to the .env session timeouts
 app/auth/ldap_auth.py::_resolve_login_config  # lane E (LDAP login); falls back to the .env LDAP config
 
-# WebSocket handshake: owned by scale lane F (plan section 6, M2 #8).
-app/api/websockets.py::_try_authenticate_token  # lane F: handshake auth failure on pool exhaustion is its finding (M2 #8)
-
 # Already answered as a retryable failure by the caller.
 app/auth/refresh_tokens.py::rotate_refresh_token  # RevocationError -> sessions.py answers 503 "retry" (the client keeps its old refresh token)
 app/auth/refresh_tokens.py::revoke_reused_token_family  # RevocationError -> logged by sessions.py; the reused token is refused either way

@@ -103,6 +103,14 @@ See `backend/CLAUDE.md`, `backend/app/auth/CLAUDE.md`, `backend/app/services/CLA
 
 ## Gotchas
 
+- **`/ws` answers database overload with close code 1013, never 4003.** A pool, statement or
+  deadline timeout while authenticating the handshake closes `1013 "Server busy"` (RFC 6455
+  7.4.1, IANA "Try Again Later"); 4003 means "invalid token" and the SPA treats it as a
+  credential problem. `_try_authenticate_token` calls `reraise_db_overload` first. The per-user
+  socket cap and the per-process cap are per process: total open sockets =
+  `UVICORN_WORKERS x UVICORN_LIMIT_CONCURRENCY`. `core/loop_lag.py` exports
+  `event_loop_lag_seconds`. `GET /chat/conversations/{uuid}/messages` drops (and logs once per
+  request) a stored citation that no longer validates instead of failing the list.
 - **Speaker-detection choices are validated by the pipeline plan, never re-derived here
   (#1224).** `GET /user-settings/pipeline` (`endpoints/pipeline_settings.py`, capability
   `transcription.prefs`, read-only, DB reads only) returns the four steps of the caller's next

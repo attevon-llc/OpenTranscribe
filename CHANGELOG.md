@@ -157,6 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- WebSocket handshake under database overload (scale foundations Lane F, M2 #8): a pool or statement timeout now closes the socket with 1013 "Try Again Later" (RFC 6455 7.4.1) instead of 4003 "Authentication error"; the SPA already reconnects with backoff on 1013. New `event_loop_lag_seconds` histogram (`core/loop_lag.py`). A conversation with one malformed stored citation lists its other messages instead of answering 500 (M2 #15).
 - `./opentr.sh` resolves a relative `MODEL_CACHE_DIR` (the `./models` default) against the main checkout, so a git worktree no longer bind-mounts an empty model directory.
 - `./opentr.sh start --with-pki --dry-run` no longer runs `scripts/pki/generate-test-env.sh`, so a dry run writes nothing.
 - Auth test guides (`docs/TESTING_CHECKLIST.md`, `backend/tests/AUTH_TEST_SETUP.md`) describe the LDAPS test overlay and the `./opentr.sh` start commands; the privacy audit-event list in the docs names all five organization-stamped events.

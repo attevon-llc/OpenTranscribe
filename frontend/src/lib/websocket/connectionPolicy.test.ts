@@ -81,3 +81,10 @@ describe('uiConnectionStatus', () => {
     );
   });
 });
+
+describe('closeAction for server overload (1013 Try Again Later)', () => {
+  it('backs off and reconnects rather than treating the close as a refusal', () => {
+    expect(closeAction(1013, false)).toBe('reconnect');
+    expect(closeAction(1013, false, true)).toBe('reconnect');
+  });
+});

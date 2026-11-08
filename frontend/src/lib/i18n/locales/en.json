@@ -6856,5 +6856,20 @@
   "takedown.admin.export": "Export",
   "takedown.admin.exportEmpty": "There are no notices to export yet.",
   "settings.quarantine.holdHelp": "Quarantine and legal hold are separate. A takedown can carry its own legal hold, which preserves the file while it is quarantined. A legal hold set in Settings keeps a file without quarantining it.",
-  "settings.quarantine.holdHelpLink": "Open Legal holds"
+  "settings.quarantine.holdHelpLink": "Open Legal holds",
+  "audioTracks.title": "Audio tracks",
+  "audioTracks.listLabel": "Audio tracks in this file",
+  "audioTracks.trackNumber": "Track {{number}}",
+  "audioTracks.transcribed": "Transcribed",
+  "audioTracks.default": "default",
+  "audioTracks.untagged": "Language not tagged",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stereo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Track {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Audio track to transcribe",
+  "audioTracks.selectHint": "The transcript, speaker detection and playback audio all use this track.",
+  "audioTracks.mismatchTitle": "Language differs from the audio track's tag",
+  "audioTracks.mismatchBody": "This recording's audio track is tagged {{tagged}}, but the speech was detected as {{detected}}. If you expected a different language, you can re-process using another audio track.",
+  "audioTracks.chooseAnother": "Choose another track"
 }

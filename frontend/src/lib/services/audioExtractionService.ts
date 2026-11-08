@@ -491,6 +491,11 @@ class AudioExtractionService {
       const ffmpegArgs = [
         '-i',
         inputFileName,
+        // The same track the server decodes when no other is chosen (#1263). Without a -map
+        // ffmpeg takes the stream with the most channels, which on a multi-track file can be
+        // a different track than the one the server would read.
+        '-map',
+        '0:a:0?',
         '-vn', // No video
         '-c:a',
         'copy', // Copy audio stream without re-encoding

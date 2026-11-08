@@ -6761,5 +6761,20 @@
   "takedown.admin.export": "导出",
   "takedown.admin.exportEmpty": "目前没有可导出的通知。",
   "settings.quarantine.holdHelp": "隔离与法律保全是两项独立的功能。下架可以带有自己的法律保全，在文件被下架期间保留该文件。在设置中设定的法律保全则保留文件而不下架。",
-  "settings.quarantine.holdHelpLink": "打开法律保全"
+  "settings.quarantine.holdHelpLink": "打开法律保全",
+  "audioTracks.title": "音轨",
+  "audioTracks.listLabel": "此文件中的音轨",
+  "audioTracks.trackNumber": "音轨 {{number}}",
+  "audioTracks.transcribed": "已转写",
+  "audioTracks.default": "默认",
+  "audioTracks.untagged": "未标注语言",
+  "audioTracks.mono": "单声道",
+  "audioTracks.stereo": "立体声",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "音轨 {{number}}：{{description}}",
+  "audioTracks.selectLabel": "要转写的音轨",
+  "audioTracks.selectHint": "转写、说话人检测和播放音频都使用此音轨。",
+  "audioTracks.mismatchTitle": "语言与音轨标签不一致",
+  "audioTracks.mismatchBody": "此录音的音轨标注为 {{tagged}}，但检测到的语音为 {{detected}}。如果您期望的是其他语言，可以使用另一条音轨重新处理。",
+  "audioTracks.chooseAnother": "选择其他音轨"
 }

@@ -8,6 +8,7 @@
   import Spinner from './ui/Spinner.svelte';
   import BaseModal from './ui/BaseModal.svelte';
   import PerFileModelSelect from './PerFileModelSelect.svelte';
+  import AudioTrackSelect from './AudioTrackSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { reprocessFile, reprocessFiles } from '$lib/api/reprocess';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
@@ -62,6 +63,9 @@
   let isCloudASR = false;
   let activeASRProvider = 'local';
   let activeASRModel = '';
+
+  // Audio track of a multi-track file (#1263); single-file mode only.
+  let selectedAudioTrack: number | null = null;
 
   // Model selection for reprocessing
   let selectedReprocessModel: string | null = null;
@@ -138,7 +142,9 @@
         maxSpeakers,
         numSpeakers,
         model: selectedReprocessModel,
-        modelChoiceEnabled
+        modelChoiceEnabled,
+        audioStreamIndex: bulkMode ? null : selectedAudioTrack,
+        audioStreams: bulkMode ? null : file?.audio_streams
       });
 
       if (bulkMode) {
@@ -217,6 +223,7 @@
   $: if (showModal) {
     resetState();
     selectedReprocessModel = null;
+    selectedAudioTrack = file?.audio_stream_index ?? file?.audio_streams?.[0]?.index ?? null;
     void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     llmStatusStore.initialize();
@@ -387,6 +394,10 @@
                       <p class="model-hint-text">{$t('uploader.fastProcessingHint')}</p>
                     {/if}
                   </div>
+                {/if}
+
+                {#if !bulkMode && (selectedStages.has('transcription') || selectedStages.has('rediarize'))}
+                  <AudioTrackSelect streams={file?.audio_streams} bind:value={selectedAudioTrack} />
                 {/if}
 
                 {#if showSpeakerSettings}

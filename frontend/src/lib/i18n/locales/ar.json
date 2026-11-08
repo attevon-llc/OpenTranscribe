@@ -7236,5 +7236,20 @@
   "takedown.admin.export": "تصدير",
   "takedown.admin.exportEmpty": "لا توجد إشعارات للتصدير بعد.",
   "settings.quarantine.holdHelp": "الحجر والحجز القانوني أمران منفصلان. يمكن أن تحمل الإزالة حجزاً قانونياً خاصاً بها يحفظ الملف أثناء إزالته. أما الحجز القانوني المحدَّد في الإعدادات فيحفظ الملف دون إزالته.",
-  "settings.quarantine.holdHelpLink": "فتح الحجوزات القانونية"
+  "settings.quarantine.holdHelpLink": "فتح الحجوزات القانونية",
+  "audioTracks.title": "المسارات الصوتية",
+  "audioTracks.listLabel": "المسارات الصوتية في هذا الملف",
+  "audioTracks.trackNumber": "المسار {{number}}",
+  "audioTracks.transcribed": "تم تفريغه",
+  "audioTracks.default": "افتراضي",
+  "audioTracks.untagged": "اللغة غير محددة",
+  "audioTracks.mono": "أحادي",
+  "audioTracks.stereo": "ستيريو",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "المسار {{number}}: {{description}}",
+  "audioTracks.selectLabel": "المسار الصوتي المراد تفريغه",
+  "audioTracks.selectHint": "يستخدم التفريغ النصي وكشف المتحدثين وصوت التشغيل هذا المسار.",
+  "audioTracks.mismatchTitle": "اللغة تختلف عن وسم المسار الصوتي",
+  "audioTracks.mismatchBody": "المسار الصوتي لهذا التسجيل موسوم بـ {{tagged}}، لكن الكلام اكتُشف بوصفه {{detected}}. إذا كنت تتوقع لغة مختلفة، يمكنك إعادة المعالجة باستخدام مسار صوتي آخر.",
+  "audioTracks.chooseAnother": "اختر مساراً آخر"
 }

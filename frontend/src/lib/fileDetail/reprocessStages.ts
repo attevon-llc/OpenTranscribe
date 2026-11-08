@@ -7,6 +7,7 @@
  * authority on what it accepts.
  */
 import type { Translate } from '$lib/i18n';
+import { audioTrackBodyField, type AudioStream } from '$lib/fileDetail/audioTracks';
 import {
   speakerSubmitRange,
   type TranscriptionSettings,
@@ -33,6 +34,10 @@ export interface ReprocessFile {
   transcript_segments?: unknown[];
   total_segments?: number;
   diarization_disabled?: boolean;
+  /** The container's audio tracks (#1263); a track picker is offered when there are two or more. */
+  audio_streams?: AudioStream[] | null;
+  /** The track currently chosen for transcription; null/absent = the first. */
+  audio_stream_index?: number | null;
 }
 
 /**
@@ -207,6 +212,9 @@ export interface ReprocessRequestInput {
   /** The per-file Whisper model, honoured only where the deployment lets users choose. */
   model: string | null;
   modelChoiceEnabled: boolean;
+  /** The audio track picked in a single-file re-run of a multi-track file (#1263). */
+  audioStreamIndex?: number | null;
+  audioStreams?: AudioStream[] | null;
 }
 
 /** The request body shared by the single-file and bulk endpoints. */
@@ -227,6 +235,10 @@ export function buildReprocessBody(input: ReprocessRequestInput): Record<string,
 
   if (input.model && input.modelChoiceEnabled) {
     body.whisper_model = input.model;
+  }
+  // Only a stage that decodes audio can use a track; the server answers 422 for any other.
+  if (input.stages.includes('transcription') || input.stages.includes('rediarize')) {
+    Object.assign(body, audioTrackBodyField(input.audioStreamIndex ?? null, input.audioStreams));
   }
   return body;
 }

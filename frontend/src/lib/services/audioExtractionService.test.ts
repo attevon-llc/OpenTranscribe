@@ -244,6 +244,21 @@ describe('extractAudio — success path', () => {
     expect(result.metadata.extractedFileName).toMatch(/\.mp3$/);
   });
 
+  it('maps the first audio stream explicitly, as the server does (#1263)', async () => {
+    const extractionArgs: string[][] = [];
+    fake.execImpl = (args) => {
+      if (args.includes('-f')) emitRealisticMetadataLog(fake);
+      else extractionArgs.push(args);
+      return 0;
+    };
+
+    await new AudioExtractionService().extractAudio(videoFile('clip.mp4', 1000));
+
+    expect(extractionArgs).toHaveLength(1);
+    const args = extractionArgs[0];
+    expect(args[args.indexOf('-map') + 1]).toBe('0:a:0?');
+  });
+
   it('throws EXTRACTION_FAILED on a non-zero FFmpeg exit code instead of returning an empty blob, and cleans up its temp files (BC-5)', async () => {
     fake.execImpl = (args) => {
       if (args.includes('-f')) return 0; // metadata probe still succeeds

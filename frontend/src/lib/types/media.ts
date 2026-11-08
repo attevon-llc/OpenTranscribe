@@ -33,6 +33,7 @@ export interface DerivedFieldProvenance {
  */
 import type { HoldSummary } from '$lib/types/hold';
 import type { Tag } from '$lib/types/tag';
+import type { AudioStream } from '$lib/fileDetail/audioTracks';
 
 /**
  * Every value of the backend `FileStatus` enum (`backend/app/core/enums.py`).
@@ -128,6 +129,11 @@ export interface MediaFile {
   audio_sample_rate?: number;
   audio_bit_depth?: number;
 
+  // Audio tracks of the container (#1263). `audio_stream_index` is the track chosen for
+  // transcription; absent/null = the first.
+  audio_streams?: AudioStream[] | null;
+  audio_stream_index?: number | null;
+
   // Creation info
   creation_date?: string;
   last_modified_date?: string;
@@ -188,6 +194,11 @@ export interface MediaFileDetail extends MediaFile {
   quarantine_reason?: string | null;
   quarantined_at?: string | null;
   legal_hold?: boolean;
+
+  /** The detected language and the transcribed track's tag disagree (#1263). */
+  audio_language_mismatch?: boolean;
+  /** The transcribed track's language tag as written (ISO 639-2), for the notice. */
+  audio_track_language?: string | null;
 
   /**
    * Full tag objects, the same shape `/api/tags` returns (#326). `GET /files`

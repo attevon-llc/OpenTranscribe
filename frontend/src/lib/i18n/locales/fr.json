@@ -6951,5 +6951,20 @@
   "takedown.admin.export": "Exporter",
   "takedown.admin.exportEmpty": "Il n'y a pas encore d'avis à exporter.",
   "settings.quarantine.holdHelp": "La quarantaine et la conservation légale sont deux fonctions distinctes. Un retrait peut porter sa propre conservation légale, qui préserve le fichier pendant qu'il est retiré. Une conservation légale définie dans les paramètres conserve un fichier sans le retirer.",
-  "settings.quarantine.holdHelpLink": "Ouvrir Conservations légales"
+  "settings.quarantine.holdHelpLink": "Ouvrir Conservations légales",
+  "audioTracks.title": "Pistes audio",
+  "audioTracks.listLabel": "Pistes audio de ce fichier",
+  "audioTracks.trackNumber": "Piste {{number}}",
+  "audioTracks.transcribed": "Transcrite",
+  "audioTracks.default": "par défaut",
+  "audioTracks.untagged": "Langue non indiquée",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stéréo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Piste {{number}} : {{description}}",
+  "audioTracks.selectLabel": "Piste audio à transcrire",
+  "audioTracks.selectHint": "La transcription, la détection des locuteurs et l’audio de lecture utilisent cette piste.",
+  "audioTracks.mismatchTitle": "La langue diffère de l’étiquette de la piste audio",
+  "audioTracks.mismatchBody": "La piste audio de cet enregistrement est étiquetée {{tagged}}, mais la parole a été détectée comme {{detected}}. Si vous attendiez une autre langue, vous pouvez retraiter le fichier avec une autre piste audio.",
+  "audioTracks.chooseAnother": "Choisir une autre piste"
 }

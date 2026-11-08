@@ -6761,5 +6761,20 @@
   "takedown.admin.export": "エクスポート",
   "takedown.admin.exportEmpty": "エクスポートする通知はまだありません。",
   "settings.quarantine.holdHelp": "隔離と法的保全は別の機能です。削除には独自の法的保全を付けることができ、削除中もファイルが保存されます。設定で指定する法的保全は、ファイルを削除せずに保存します。",
-  "settings.quarantine.holdHelpLink": "法的保全を開く"
+  "settings.quarantine.holdHelpLink": "法的保全を開く",
+  "audioTracks.title": "音声トラック",
+  "audioTracks.listLabel": "このファイルの音声トラック",
+  "audioTracks.trackNumber": "トラック {{number}}",
+  "audioTracks.transcribed": "文字起こし済み",
+  "audioTracks.default": "デフォルト",
+  "audioTracks.untagged": "言語タグなし",
+  "audioTracks.mono": "モノラル",
+  "audioTracks.stereo": "ステレオ",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "トラック {{number}}: {{description}}",
+  "audioTracks.selectLabel": "文字起こしする音声トラック",
+  "audioTracks.selectHint": "文字起こし、話者検出、再生音声はすべてこのトラックを使用します。",
+  "audioTracks.mismatchTitle": "言語が音声トラックのタグと異なります",
+  "audioTracks.mismatchBody": "この録音の音声トラックには {{tagged}} のタグが付いていますが、音声は {{detected}} と検出されました。別の言語を想定していた場合は、別の音声トラックで再処理できます。",
+  "audioTracks.chooseAnother": "別のトラックを選択"
 }

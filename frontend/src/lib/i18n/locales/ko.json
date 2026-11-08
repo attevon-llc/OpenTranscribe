@@ -6761,5 +6761,20 @@
   "takedown.admin.export": "내보내기",
   "takedown.admin.exportEmpty": "내보낼 통지가 아직 없습니다.",
   "settings.quarantine.holdHelp": "격리와 법적 보존은 서로 다른 기능입니다. 삭제 조치에는 자체 법적 보존이 붙을 수 있으며, 삭제된 동안 파일을 보존합니다. 설정에서 지정한 법적 보존은 파일을 삭제하지 않고 보존합니다.",
-  "settings.quarantine.holdHelpLink": "법적 보존 열기"
+  "settings.quarantine.holdHelpLink": "법적 보존 열기",
+  "audioTracks.title": "오디오 트랙",
+  "audioTracks.listLabel": "이 파일의 오디오 트랙",
+  "audioTracks.trackNumber": "트랙 {{number}}",
+  "audioTracks.transcribed": "전사됨",
+  "audioTracks.default": "기본",
+  "audioTracks.untagged": "언어 태그 없음",
+  "audioTracks.mono": "모노",
+  "audioTracks.stereo": "스테레오",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "트랙 {{number}}: {{description}}",
+  "audioTracks.selectLabel": "전사할 오디오 트랙",
+  "audioTracks.selectHint": "전사, 화자 감지, 재생 오디오가 모두 이 트랙을 사용합니다.",
+  "audioTracks.mismatchTitle": "언어가 오디오 트랙 태그와 다릅니다",
+  "audioTracks.mismatchBody": "이 녹음의 오디오 트랙은 {{tagged}}(으)로 태그되어 있지만 음성은 {{detected}}(으)로 감지되었습니다. 다른 언어를 예상했다면 다른 오디오 트랙으로 다시 처리할 수 있습니다.",
+  "audioTracks.chooseAnother": "다른 트랙 선택"
 }

@@ -6951,5 +6951,20 @@
   "takedown.admin.export": "Exportar",
   "takedown.admin.exportEmpty": "Aún no hay avisos que exportar.",
   "settings.quarantine.holdHelp": "La cuarentena y la retención legal son funciones distintas. Una retirada puede llevar su propia retención legal, que conserva el archivo mientras está retirado. Una retención legal definida en Ajustes conserva un archivo sin retirarlo.",
-  "settings.quarantine.holdHelpLink": "Abrir Retenciones legales"
+  "settings.quarantine.holdHelpLink": "Abrir Retenciones legales",
+  "audioTracks.title": "Pistas de audio",
+  "audioTracks.listLabel": "Pistas de audio de este archivo",
+  "audioTracks.trackNumber": "Pista {{number}}",
+  "audioTracks.transcribed": "Transcrita",
+  "audioTracks.default": "predeterminada",
+  "audioTracks.untagged": "Idioma sin etiquetar",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Estéreo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Pista {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Pista de audio que se transcribirá",
+  "audioTracks.selectHint": "La transcripción, la detección de hablantes y el audio de reproducción usan esta pista.",
+  "audioTracks.mismatchTitle": "El idioma difiere de la etiqueta de la pista de audio",
+  "audioTracks.mismatchBody": "La pista de audio de esta grabación está etiquetada como {{tagged}}, pero el habla se detectó como {{detected}}. Si esperaba otro idioma, puede volver a procesar el archivo con otra pista de audio.",
+  "audioTracks.chooseAnother": "Elegir otra pista"
 }

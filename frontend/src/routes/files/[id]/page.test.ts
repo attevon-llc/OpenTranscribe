@@ -41,6 +41,12 @@ vi.mock('$stores/locale', () => ({
       return () => {};
     },
   },
+  locale: {
+    subscribe: (run: (value: string) => void) => {
+      run('en');
+      return () => {};
+    },
+  },
 }));
 
 const mockGetAISuggestions = vi.hoisted(() => vi.fn());

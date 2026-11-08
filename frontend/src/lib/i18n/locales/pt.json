@@ -6951,5 +6951,20 @@
   "takedown.admin.export": "Exportar",
   "takedown.admin.exportEmpty": "Ainda não há notificações para exportar.",
   "settings.quarantine.holdHelp": "Quarentena e retenção legal são funções separadas. Uma remoção pode ter sua própria retenção legal, que preserva o arquivo enquanto ele está removido. Uma retenção legal definida em Configurações mantém um arquivo sem removê-lo.",
-  "settings.quarantine.holdHelpLink": "Abrir Retenções legais"
+  "settings.quarantine.holdHelpLink": "Abrir Retenções legais",
+  "audioTracks.title": "Faixas de áudio",
+  "audioTracks.listLabel": "Faixas de áudio deste arquivo",
+  "audioTracks.trackNumber": "Faixa {{number}}",
+  "audioTracks.transcribed": "Transcrita",
+  "audioTracks.default": "padrão",
+  "audioTracks.untagged": "Idioma não indicado",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Estéreo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Faixa {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Faixa de áudio a transcrever",
+  "audioTracks.selectHint": "A transcrição, a detecção de locutores e o áudio de reprodução usam esta faixa.",
+  "audioTracks.mismatchTitle": "O idioma difere da etiqueta da faixa de áudio",
+  "audioTracks.mismatchBody": "A faixa de áudio desta gravação está etiquetada como {{tagged}}, mas a fala foi detectada como {{detected}}. Se você esperava outro idioma, pode reprocessar o arquivo com outra faixa de áudio.",
+  "audioTracks.chooseAnother": "Escolher outra faixa"
 }

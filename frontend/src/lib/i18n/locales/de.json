@@ -6856,5 +6856,20 @@
   "takedown.admin.export": "Exportieren",
   "takedown.admin.exportEmpty": "Es gibt noch keine Meldungen zum Exportieren.",
   "settings.quarantine.holdHelp": "Quarantäne und rechtliche Sperre sind getrennte Funktionen. Eine Entfernung kann eine eigene rechtliche Sperre tragen, die die Datei bewahrt, solange sie entfernt ist. Eine in den Einstellungen gesetzte rechtliche Sperre bewahrt eine Datei, ohne sie zu entfernen.",
-  "settings.quarantine.holdHelpLink": "Rechtliche Sperren öffnen"
+  "settings.quarantine.holdHelpLink": "Rechtliche Sperren öffnen",
+  "audioTracks.title": "Audiospuren",
+  "audioTracks.listLabel": "Audiospuren in dieser Datei",
+  "audioTracks.trackNumber": "Spur {{number}}",
+  "audioTracks.transcribed": "Transkribiert",
+  "audioTracks.default": "Standard",
+  "audioTracks.untagged": "Sprache nicht angegeben",
+  "audioTracks.mono": "Mono",
+  "audioTracks.stereo": "Stereo",
+  "audioTracks.channels": "{{n}}ch",
+  "audioTracks.optionLabel": "Spur {{number}}: {{description}}",
+  "audioTracks.selectLabel": "Zu transkribierende Audiospur",
+  "audioTracks.selectHint": "Transkript, Sprechererkennung und Wiedergabe-Audio verwenden diese Spur.",
+  "audioTracks.mismatchTitle": "Sprache weicht vom Tag der Audiospur ab",
+  "audioTracks.mismatchBody": "Die Audiospur dieser Aufnahme ist als {{tagged}} gekennzeichnet, die erkannte Sprache ist jedoch {{detected}}. Wenn Sie eine andere Sprache erwartet haben, können Sie die Datei mit einer anderen Audiospur erneut verarbeiten.",
+  "audioTracks.chooseAnother": "Andere Spur wählen"
 }

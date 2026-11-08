@@ -34,6 +34,7 @@
   import FilePlayer from '$components/fileDetail/FilePlayer.svelte';
   import MetadataDisplay from '$components/MetadataDisplay.svelte';
   import ProcessingSection from '$components/fileDetail/ProcessingSection.svelte';
+  import AudioTracksNotice from '$components/fileDetail/AudioTracksNotice.svelte';
   import AnalyticsSection from '$components/AnalyticsSection.svelte';
   import TranscriptDisplay from '$components/TranscriptDisplay.svelte';
   import TranscriptActionsBar from '$components/transcript/TranscriptActionsBar.svelte';
@@ -726,6 +727,15 @@
         />
 
         {#if !isEditingSpeakers}
+          <AudioTracksNotice
+            streams={file?.audio_streams}
+            chosen={file?.audio_stream_index}
+            detectedLanguage={file?.language}
+            mismatch={file?.audio_language_mismatch === true}
+            trackLanguage={file?.audio_track_language}
+            canReprocess={canEdit && file?.hold?.held !== true}
+            on:chooseTrack={() => (showReprocessModal = true)}
+          />
           <MetadataDisplay
             {file}
             bind:showMetadata

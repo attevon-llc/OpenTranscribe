@@ -125,6 +125,8 @@ def routes_and_openapi(app) -> tuple[dict, dict]:
 
 
 def find_celery_app():
+    from celery import Celery
+
     for mod, preferred in [
         ('app.core.celery', True),
         *((m, False) for m in _find_module_defining(r'\bCelery\(')),
@@ -133,7 +135,8 @@ def find_celery_app():
         if m is None:
             continue
         for v in vars(m).values():
-            if type(v).__name__ == 'Celery':
+            # isinstance: the app may be a subclass (DemoAwareCelery, issue #628).
+            if isinstance(v, Celery):
                 return v
     raise RuntimeError('no Celery app found')
 

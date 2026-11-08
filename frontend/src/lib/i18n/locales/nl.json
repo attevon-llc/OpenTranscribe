@@ -2942,6 +2942,10 @@
   "reprocess.stageRediarizeDisabled": "Vereist tijdstempels op woordniveau. Transcribeer dit bestand eerst opnieuw.",
   "reprocess.llmNotAvailable": "Er is geen LLM-provider geconfigureerd. Configureer dit in Beheerdersinstellingen.",
   "reprocess.speakerSettings": "Sprekerinstellingen",
+  "reprocess.language": "Transcriptietaal",
+  "reprocess.languageDefault": "Standaard: {{language}}",
+  "reprocess.languageHint": "Kies de gesproken taal als automatische detectie het mis heeft. Geldt alleen voor deze run.",
+  "reprocess.languageMismatchHint": "De gedetecteerde taal kwam niet overeen met de tag van het audiospoor. Kies de taal die echt wordt gesproken om correct te transcriberen.",
   "reprocess.v4InfoTitle": "v4-sprekerdetectie",
   "reprocess.v4PathTranscription": "Volledige nieuwe transcriptie",
   "reprocess.v4PathTranscriptionDesc": "Nieuwe transcripttekst + v4-sprekerembeddings. Beste nauwkeurigheid, maar vervangt alle gegevens.",
@@ -6894,5 +6898,6 @@
   "audioTracks.selectHint": "Het transcript, de sprekerdetectie en de afspeelaudio gebruiken dit spoor.",
   "audioTracks.mismatchTitle": "Taal wijkt af van het label van het audiospoor",
   "audioTracks.mismatchBody": "Het audiospoor van deze opname is gelabeld als {{tagged}}, maar de spraak is herkend als {{detected}}. Als je een andere taal verwachtte, kun je het bestand opnieuw verwerken met een ander audiospoor.",
-  "audioTracks.chooseAnother": "Ander spoor kiezen"
+  "audioTracks.chooseAnother": "Ander spoor of andere taal kiezen",
+  "audioTracks.chooseLanguage": "Taal kiezen"
 }

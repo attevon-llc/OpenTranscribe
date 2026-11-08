@@ -3142,6 +3142,10 @@
   "reprocess.stageRediarizeDisabled": "يتطلب طوابع زمنية على مستوى الكلمة. يرجى إعادة تفريغ هذا الملف نصيًا أولاً.",
   "reprocess.llmNotAvailable": "لم يتم إعداد مزوّد النموذج اللغوي الكبير (LLM). يرجى إعداده من إعدادات الإدارة.",
   "reprocess.speakerSettings": "إعدادات المتحدثين",
+  "reprocess.language": "لغة النسخ",
+  "reprocess.languageDefault": "الافتراضي: {{language}}",
+  "reprocess.languageHint": "اختر اللغة المنطوقة إذا أخطأ الكشف التلقائي. ينطبق على هذا التشغيل فقط.",
+  "reprocess.languageMismatchHint": "لم تطابق اللغة المكتشفة وسم المسار الصوتي. اختر اللغة المنطوقة فعلاً للحصول على نسخ صحيح.",
   "reprocess.v4InfoTitle": "اكتشاف المتحدثين v4",
   "reprocess.v4PathTranscription": "إعادة تفريغ نصي كاملة",
   "reprocess.v4PathTranscriptionDesc": "نص مفرغ جديد بالإضافة إلى متجهات تضمين المتحدثين v4. أعلى دقة لكنه يستبدل جميع البيانات.",
@@ -7274,5 +7278,6 @@
   "audioTracks.selectHint": "يستخدم التفريغ النصي وكشف المتحدثين وصوت التشغيل هذا المسار.",
   "audioTracks.mismatchTitle": "اللغة تختلف عن وسم المسار الصوتي",
   "audioTracks.mismatchBody": "المسار الصوتي لهذا التسجيل موسوم بـ {{tagged}}، لكن الكلام اكتُشف بوصفه {{detected}}. إذا كنت تتوقع لغة مختلفة، يمكنك إعادة المعالجة باستخدام مسار صوتي آخر.",
-  "audioTracks.chooseAnother": "اختر مساراً آخر"
+  "audioTracks.chooseAnother": "اختر مساراً أو لغة أخرى",
+  "audioTracks.chooseLanguage": "اختر لغة"
 }

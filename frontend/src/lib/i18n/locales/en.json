@@ -2942,6 +2942,10 @@
   "reprocess.stageRediarizeDisabled": "Requires word-level timestamps. Re-transcribe this file first.",
   "reprocess.llmNotAvailable": "LLM provider is not configured. Configure in Admin Settings.",
   "reprocess.speakerSettings": "Speaker Settings",
+  "reprocess.language": "Transcription language",
+  "reprocess.languageDefault": "Default: {{language}}",
+  "reprocess.languageHint": "Choose the spoken language if auto-detection gets it wrong. Applies to this run only.",
+  "reprocess.languageMismatchHint": "The detected language did not match the audio track's tag. Pick the language that is actually spoken to transcribe it correctly.",
   "reprocess.v4InfoTitle": "v4 Speaker Detection",
   "reprocess.v4PathTranscription": "Full Re-transcription",
   "reprocess.v4PathTranscriptionDesc": "New transcript text + v4 speaker embeddings. Best accuracy but replaces all data.",
@@ -6894,5 +6898,6 @@
   "audioTracks.selectHint": "The transcript, speaker detection and playback audio all use this track.",
   "audioTracks.mismatchTitle": "Language differs from the audio track's tag",
   "audioTracks.mismatchBody": "This recording's audio track is tagged {{tagged}}, but the speech was detected as {{detected}}. If you expected a different language, you can re-process using another audio track.",
-  "audioTracks.chooseAnother": "Choose another track"
+  "audioTracks.chooseAnother": "Choose another track or language",
+  "audioTracks.chooseLanguage": "Choose a language"
 }

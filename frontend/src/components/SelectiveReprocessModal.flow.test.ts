@@ -268,6 +268,75 @@ describe('submitting', () => {
     expect(mockAxios.post.mock.calls[0][1]).not.toHaveProperty('whisper_model');
   });
 
+  describe('forcing the transcription language (#1263)', () => {
+    const LANGS = { auto: 'Auto-detect', fr: 'French', en: 'English' };
+    const select = () => document.querySelector<HTMLSelectElement>('#reprocess-language-select');
+
+    async function toSettings(file: Record<string, unknown>) {
+      mockGetDefaults.mockResolvedValue({
+        min_speakers: 1,
+        max_speakers: 20,
+        available_source_languages: LANGS,
+      });
+      await open({ file });
+      await fireEvent.click(boxes()[BOX.transcription]);
+      await fireEvent.click(primary());
+      await waitFor(() => expect(document.querySelector('#modal-min-speakers')).not.toBeNull());
+    }
+
+    it('offers the saved setting first, then the supported languages', async () => {
+      await toSettings(DONE);
+      await waitFor(() => expect(select()).not.toBeNull());
+      expect(Array.from(select()!.options).map((o) => [o.value, o.textContent])).toEqual([
+        ['', 'reprocess.languageDefault'],
+        ['auto', 'Auto-detect'],
+        ['en', 'English'],
+        ['fr', 'French'],
+      ]);
+      expect(select()!.value).toBe('');
+    });
+
+    it('sends the chosen language with the transcription stage, and none by default', async () => {
+      await toSettings(DONE);
+      await waitFor(() => expect(select()).not.toBeNull());
+      await fireEvent.change(select()!, { target: { value: 'fr' } });
+      await run();
+      await waitFor(() => expect(mockAxios.post).toHaveBeenCalled());
+      expect(mockAxios.post.mock.calls[0][1]).toMatchObject({
+        stages: ['transcription'],
+        language: 'fr',
+      });
+    });
+
+    it('sends no language when the user left the default', async () => {
+      await toSettings(DONE);
+      await run();
+      await waitFor(() => expect(mockAxios.post).toHaveBeenCalled());
+      expect(mockAxios.post.mock.calls[0][1]).not.toHaveProperty('language');
+    });
+
+    it('highlights the field when the server flagged a language mismatch', async () => {
+      await toSettings({ ...DONE, audio_language_mismatch: true });
+      await waitFor(() => expect(select()).not.toBeNull());
+      expect(document.querySelector('.forced-language')?.classList.contains('highlight')).toBe(
+        true
+      );
+    });
+
+    it('is not offered in bulk mode', async () => {
+      mockGetDefaults.mockResolvedValue({
+        min_speakers: 1,
+        max_speakers: 20,
+        available_source_languages: LANGS,
+      });
+      await open({ bulkMode: true, bulkFiles: [DONE] });
+      await fireEvent.click(boxes()[BOX.transcription]);
+      await fireEvent.click(primary());
+      await waitFor(() => expect(document.querySelector('#modal-min-speakers')).not.toBeNull());
+      expect(select()).toBeNull();
+    });
+  });
+
   it("surfaces the server's reason and stays open when the request is refused", async () => {
     mockAxios.post.mockRejectedValue({
       response: { status: 409, data: { detail: 'media missing' } },

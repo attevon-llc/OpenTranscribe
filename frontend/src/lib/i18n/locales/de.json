@@ -1350,6 +1350,10 @@
   "reprocess.stageRediarizeDisabled": "Erfordert Zeitstempel auf Wortebene. Transkribieren Sie diese Datei zuerst neu.",
   "reprocess.llmNotAvailable": "LLM-Anbieter ist nicht konfiguriert. Konfigurieren Sie in den Admin-Einstellungen.",
   "reprocess.speakerSettings": "Sprechereinstellungen",
+  "reprocess.language": "Transkriptionssprache",
+  "reprocess.languageDefault": "Standard: {{language}}",
+  "reprocess.languageHint": "Wählen Sie die gesprochene Sprache, falls die automatische Erkennung falsch liegt. Gilt nur für diesen Durchlauf.",
+  "reprocess.languageMismatchHint": "Die erkannte Sprache passte nicht zum Tag der Audiospur. Wählen Sie die tatsächlich gesprochene Sprache, um korrekt zu transkribieren.",
   "reprocess.v4InfoTitle": "v4 Sprechererkennung",
   "reprocess.v4PathTranscription": "Vollständige Neutranskription",
   "reprocess.v4PathTranscriptionDesc": "Neuer Transkriptionstext + v4-Sprecher-Embeddings. Beste Genauigkeit, ersetzt aber alle Daten.",
@@ -6894,5 +6898,6 @@
   "audioTracks.selectHint": "Transkript, Sprechererkennung und Wiedergabe-Audio verwenden diese Spur.",
   "audioTracks.mismatchTitle": "Sprache weicht vom Tag der Audiospur ab",
   "audioTracks.mismatchBody": "Die Audiospur dieser Aufnahme ist als {{tagged}} gekennzeichnet, die erkannte Sprache ist jedoch {{detected}}. Wenn Sie eine andere Sprache erwartet haben, können Sie die Datei mit einer anderen Audiospur erneut verarbeiten.",
-  "audioTracks.chooseAnother": "Andere Spur wählen"
+  "audioTracks.chooseAnother": "Andere Spur oder Sprache wählen",
+  "audioTracks.chooseLanguage": "Sprache wählen"
 }

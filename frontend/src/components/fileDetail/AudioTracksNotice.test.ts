@@ -43,7 +43,7 @@ describe('AudioTracksNotice', () => {
     expect(container.querySelector('[data-testid="audio-language-mismatch"]')).toBeNull();
   });
 
-  it('names both languages in the notice and offers another track', async () => {
+  it('names both languages in the notice and offers another track or language', async () => {
     const chosen = vi.fn();
     render(AudioTracksNotice, {
       props: {
@@ -59,11 +59,11 @@ describe('AudioTracksNotice', () => {
     const note = screen.getByRole('note');
     expect(note.textContent).toContain('tagged Portuguese');
     expect(note.textContent).toContain('detected as English');
-    await fireEvent.click(screen.getByRole('button', { name: 'Choose another track' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose another track or language' }));
     expect(chosen).toHaveBeenCalledOnce();
   });
 
-  it('does not offer re-processing when the viewer cannot, or there is no other track', () => {
+  it('does not offer re-processing when the viewer cannot', () => {
     render(AudioTracksNotice, {
       streams: STREAMS,
       mismatch: true,
@@ -74,7 +74,7 @@ describe('AudioTracksNotice', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('shows the notice alone for a single-track file whose tag disagrees', () => {
+  it('offers the language alone for a single-track file whose tag disagrees', () => {
     const { container } = render(AudioTracksNotice, {
       streams: [STREAMS[1]],
       mismatch: true,
@@ -83,6 +83,7 @@ describe('AudioTracksNotice', () => {
     });
     expect(container.querySelector('.track')).toBeNull();
     expect(screen.getByRole('note')).toBeTruthy();
-    expect(screen.queryByRole('button')).toBeNull();
+    // No other track to pick, but the language can still be forced.
+    expect(screen.getByRole('button', { name: 'Choose a language' })).toBeTruthy();
   });
 });

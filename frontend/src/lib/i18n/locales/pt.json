@@ -2963,6 +2963,10 @@
   "reprocess.stageRediarizeDisabled": "Requer marcações temporais por palavra. Re-transcreva este arquivo primeiro.",
   "reprocess.llmNotAvailable": "O provedor LLM não está configurado. Configure nas Configurações de administração.",
   "reprocess.speakerSettings": "Configurações de falantes",
+  "reprocess.language": "Idioma da transcrição",
+  "reprocess.languageDefault": "Padrão: {{language}}",
+  "reprocess.languageHint": "Escolha o idioma falado se a detecção automática errar. Vale apenas para esta execução.",
+  "reprocess.languageMismatchHint": "O idioma detectado não correspondia à etiqueta da faixa de áudio. Escolha o idioma realmente falado para transcrever corretamente.",
   "reprocess.v4InfoTitle": "Detecção de falantes v4",
   "reprocess.v4PathTranscription": "Re-transcrição completa",
   "reprocess.v4PathTranscriptionDesc": "Novo texto de transcrição + embeddings de falantes v4. Melhor precisão mas substitui todos os dados.",
@@ -6989,5 +6993,6 @@
   "audioTracks.selectHint": "A transcrição, a detecção de locutores e o áudio de reprodução usam esta faixa.",
   "audioTracks.mismatchTitle": "O idioma difere da etiqueta da faixa de áudio",
   "audioTracks.mismatchBody": "A faixa de áudio desta gravação está etiquetada como {{tagged}}, mas a fala foi detectada como {{detected}}. Se você esperava outro idioma, pode reprocessar o arquivo com outra faixa de áudio.",
-  "audioTracks.chooseAnother": "Escolher outra faixa"
+  "audioTracks.chooseAnother": "Escolher outra faixa ou idioma",
+  "audioTracks.chooseLanguage": "Escolher um idioma"
 }

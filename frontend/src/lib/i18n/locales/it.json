@@ -2992,6 +2992,10 @@
   "reprocess.stageRediarizeDisabled": "Richiede timestamp a livello di parola. Ritrascrivi prima questo file.",
   "reprocess.llmNotAvailable": "Il provider LLM non è configurato. Configuralo nelle Impostazioni amministratore.",
   "reprocess.speakerSettings": "Impostazioni parlante",
+  "reprocess.language": "Lingua della trascrizione",
+  "reprocess.languageDefault": "Predefinita: {{language}}",
+  "reprocess.languageHint": "Scegli la lingua parlata se il rilevamento automatico sbaglia. Vale solo per questa esecuzione.",
+  "reprocess.languageMismatchHint": "La lingua rilevata non corrispondeva all’etichetta della traccia audio. Scegli la lingua effettivamente parlata per trascrivere correttamente.",
   "reprocess.v4InfoTitle": "Rilevamento parlante v4",
   "reprocess.v4PathTranscription": "Ritrascrizione completa",
   "reprocess.v4PathTranscriptionDesc": "Nuovo testo di trascrizione + embedding parlante v4. Migliore accuratezza ma sostituisce tutti i dati.",
@@ -6989,5 +6993,6 @@
   "audioTracks.selectHint": "La trascrizione, il rilevamento dei parlanti e l’audio di riproduzione usano questa traccia.",
   "audioTracks.mismatchTitle": "La lingua differisce dall’etichetta della traccia audio",
   "audioTracks.mismatchBody": "La traccia audio di questa registrazione è etichettata come {{tagged}}, ma il parlato è stato rilevato come {{detected}}. Se ti aspettavi un’altra lingua, puoi rielaborare il file con un’altra traccia audio.",
-  "audioTracks.chooseAnother": "Scegli un’altra traccia"
+  "audioTracks.chooseAnother": "Scegli un’altra traccia o lingua",
+  "audioTracks.chooseLanguage": "Scegli una lingua"
 }

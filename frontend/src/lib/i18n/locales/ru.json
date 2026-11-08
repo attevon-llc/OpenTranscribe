@@ -3042,6 +3042,10 @@
   "reprocess.stageRediarizeDisabled": "Нужны временные метки слов. Сначала транскрибируйте этот файл повторно.",
   "reprocess.llmNotAvailable": "Провайдер LLM не настроен. Настройте его в настройках администратора.",
   "reprocess.speakerSettings": "Настройки спикеров",
+  "reprocess.language": "Язык транскрипции",
+  "reprocess.languageDefault": "По умолчанию: {{language}}",
+  "reprocess.languageHint": "Выберите язык речи, если автоопределение ошибается. Действует только для этого запуска.",
+  "reprocess.languageMismatchHint": "Определённый язык не совпал с меткой аудиодорожки. Выберите язык, на котором действительно говорят, чтобы расшифровка была верной.",
   "reprocess.v4InfoTitle": "Определение спикеров v4",
   "reprocess.v4PathTranscription": "Полное повторное транскрибирование",
   "reprocess.v4PathTranscriptionDesc": "Новый текст расшифровки и эмбеддинги спикеров v4. Максимальная точность, но все данные заменяются.",
@@ -7084,5 +7088,6 @@
   "audioTracks.selectHint": "Расшифровка, определение говорящих и звук воспроизведения используют эту дорожку.",
   "audioTracks.mismatchTitle": "Язык не совпадает с тегом аудиодорожки",
   "audioTracks.mismatchBody": "Аудиодорожка этой записи помечена как {{tagged}}, но речь определена как {{detected}}. Если вы ожидали другой язык, можно повторно обработать файл с другой аудиодорожкой.",
-  "audioTracks.chooseAnother": "Выбрать другую дорожку"
+  "audioTracks.chooseAnother": "Выбрать другую дорожку или язык",
+  "audioTracks.chooseLanguage": "Выбрать язык"
 }

@@ -116,6 +116,25 @@ describe('RTL (plan row 44)', () => {
   });
 });
 
+describe('control bar direction matches the file page player in right-to-left languages', () => {
+  const ruleFor = (css: string, selector: string) =>
+    css.match(new RegExp(`${selector.replace(/[.()]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+
+  it('the file page player keeps the bar left to right (the reference rule)', () => {
+    const css = readFileSync(resolve(__dirname, 'player.css'), 'utf8');
+    expect(ruleFor(css, '.media-player .controls-row:dir(rtl)')).toMatch(
+      /flex-direction:\s*row-reverse/
+    );
+  });
+
+  it('the mini player bar applies the same rule, so its controls do not mirror', () => {
+    const source = readFileSync(COMPONENT_FILE, 'utf8');
+    expect(ruleFor(source, '.mini-player :global(.mini-row:dir(rtl))')).toMatch(
+      /flex-direction:\s*row-reverse/
+    );
+  });
+});
+
 describe('keyboard: scoped to the player (plan rows 30-31)', () => {
   it('binds every shortcut to the player container, never the page', async () => {
     setElementFullscreen(true);

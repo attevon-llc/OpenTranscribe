@@ -493,6 +493,12 @@
     flex-wrap: nowrap;
   }
 
+  /* The control bar keeps its order in RTL, exactly like the file page's player (player.css
+     `.controls-row:dir(rtl)`); only menus and chevrons mirror. */
+  .mini-player :global(.mini-row:dir(rtl)) {
+    flex-direction: row-reverse;
+  }
+
   .mini-spacer {
     flex: 1;
   }

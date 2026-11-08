@@ -38,6 +38,8 @@ export interface ReprocessFile {
   audio_streams?: AudioStream[] | null;
   /** The track currently chosen for transcription; null/absent = the first. */
   audio_stream_index?: number | null;
+  /** The server's verdict that the detected language and the track's tag disagree (#1263). */
+  audio_language_mismatch?: boolean;
 }
 
 /**
@@ -215,6 +217,8 @@ export interface ReprocessRequestInput {
   /** The audio track picked in a single-file re-run of a multi-track file (#1263). */
   audioStreamIndex?: number | null;
   audioStreams?: AudioStream[] | null;
+  /** A language forced for this run (#1263); null keeps the saved setting. */
+  language?: string | null;
 }
 
 /** The request body shared by the single-file and bulk endpoints. */
@@ -240,7 +244,24 @@ export function buildReprocessBody(input: ReprocessRequestInput): Record<string,
   if (input.stages.includes('transcription') || input.stages.includes('rediarize')) {
     Object.assign(body, audioTrackBodyField(input.audioStreamIndex ?? null, input.audioStreams));
   }
+  // The server answers 422 for a language on a run that does not transcribe.
+  if (input.language && input.stages.includes('transcription')) {
+    body.language = input.language;
+  }
   return body;
+}
+
+/** The languages a re-run can force, auto-detect first and the rest by name. */
+export function languageChoices(
+  languages: Record<string, string> | null | undefined
+): [string, string][] {
+  if (!languages) return [];
+  const entries = Object.entries(languages);
+  const auto = entries.filter(([code]) => code === 'auto');
+  const rest = entries
+    .filter(([code]) => code !== 'auto')
+    .sort(([, a], [, b]) => a.localeCompare(b));
+  return [...auto, ...rest];
 }
 
 /** How many files of a bulk reprocess started and how many did not. */

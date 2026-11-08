@@ -2864,6 +2864,10 @@
   "reprocess.stageRediarizeDisabled": "単語レベルのタイムスタンプが必要です。先にこのファイルを再文字起こししてください。",
   "reprocess.llmNotAvailable": "LLMプロバイダーが設定されていません。管理設定で設定してください。",
   "reprocess.speakerSettings": "話者設定",
+  "reprocess.language": "文字起こしの言語",
+  "reprocess.languageDefault": "既定：{{language}}",
+  "reprocess.languageHint": "自動検出が誤る場合は、話されている言語を選択してください。今回の実行にのみ適用されます。",
+  "reprocess.languageMismatchHint": "検出された言語が音声トラックのタグと一致しませんでした。正しく文字起こしするには、実際に話されている言語を選択してください。",
   "reprocess.v4InfoTitle": "v4 話者検出",
   "reprocess.v4PathTranscription": "完全な再文字起こし",
   "reprocess.v4PathTranscriptionDesc": "新しい文字起こしテキスト + v4話者埋め込み。最高精度ですが全データが置き換えられます。",
@@ -6800,5 +6804,6 @@
   "audioTracks.selectHint": "文字起こし、話者検出、再生音声はすべてこのトラックを使用します。",
   "audioTracks.mismatchTitle": "言語が音声トラックのタグと異なります",
   "audioTracks.mismatchBody": "この録音の音声トラックには {{tagged}} のタグが付いていますが、音声は {{detected}} と検出されました。別の言語を想定していた場合は、別の音声トラックで再処理できます。",
-  "audioTracks.chooseAnother": "別のトラックを選択"
+  "audioTracks.chooseAnother": "別のトラックまたは言語を選択",
+  "audioTracks.chooseLanguage": "言語を選択"
 }

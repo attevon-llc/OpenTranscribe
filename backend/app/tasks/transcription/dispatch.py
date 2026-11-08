@@ -272,7 +272,9 @@ def dispatch_transcription_pipeline(
         max_speakers: Max speakers for diarization (falls back to settings).
         num_speakers: Fixed speaker count (falls back to settings).
         downstream_tasks: Optional list of post-transcription stages to run.
-        source_language: Override source language (None = auto-detect).
+        source_language: Language forced for this run (an ISO code, or ``auto``); ``None``
+            = the user's saved language setting. Stored on the file with the rest of the
+            request, so a re-run replays it.
         translate_to_english: Override translation setting.
         disable_diarization: The per-file "skip speaker detection" (``None`` = not asked).
         whisper_model: Optional per-task Whisper model override (local ASR only); a
@@ -314,8 +316,10 @@ def dispatch_transcription_pipeline(
             max_speakers=max_speakers,
             num_speakers=num_speakers,
             disable_diarization=disable_diarization,
+            source_language=source_language,
         )
         whisper_model = options.whisper_model
+        source_language = options.source_language
         min_speakers = options.min_speakers
         max_speakers = options.max_speakers
         num_speakers = options.num_speakers

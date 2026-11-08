@@ -3,7 +3,8 @@
 
   For a multi-track file it lists the tracks and marks the one that was transcribed. When the
   detected language disagrees with that track's language tag it adds a calm, non-blocking
-  notice offering to re-process with another track. A single-track file renders nothing.
+  notice offering to re-process with another track or a forced language (the re-process
+  dialog offers both). A single-track file renders nothing.
 -->
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
@@ -58,9 +59,9 @@
         <p class="mismatch-body">
           {$t('audioTracks.mismatchBody', { tagged: taggedName, detected: detectedName })}
         </p>
-        {#if tracks.length && canReprocess}
+        {#if canReprocess}
           <button type="button" class="mismatch-action" on:click={() => dispatch('chooseTrack')}>
-            {$t('audioTracks.chooseAnother')}
+            {tracks.length ? $t('audioTracks.chooseAnother') : $t('audioTracks.chooseLanguage')}
           </button>
         {/if}
       </div>

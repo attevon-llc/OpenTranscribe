@@ -13,6 +13,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 
+from app.core.languages import WHISPER_LANGUAGES
 from app.core.local_whisper_catalog import LOCAL_WHISPER_MODEL_IDS
 
 # The catalog is the one list of local Whisper models (#1246).
@@ -71,6 +72,17 @@ class ReprocessRequest(BaseModel):
             "not have is rejected with 422."
         ),
     )
+    language: str | None = Field(
+        None,
+        description=(
+            "Force the transcription language for this run: an ISO 639 code from the "
+            "supported Whisper list, or `auto` to detect. None keeps the user's saved "
+            "language setting. Only meaningful when the transcription stage runs (a full "
+            "reprocess, or stages containing 'transcription'); an unknown code or any other "
+            "stage selection is rejected with 422."
+        ),
+        examples=["fr", "auto"],
+    )
     whisper_model: str | None = Field(
         None,
         description="Whisper model to use for reprocessing. "
@@ -100,6 +112,30 @@ class ReprocessRequest(BaseModel):
                 f"Unknown Whisper model '{v}'. Valid models: {sorted(VALID_LOCAL_WHISPER_MODELS)}"
             )
         return v or None
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str | None) -> str | None:
+        """Validate that language is a supported Whisper language code (or ``auto``)."""
+        if v is None:
+            return v
+        v = v.strip().lower()
+        if v not in WHISPER_LANGUAGES:
+            raise ValueError(
+                f"Unknown language '{v}'. Use 'auto' or one of the codes in "
+                "available_source_languages."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_language_stage(self) -> "ReprocessRequest":
+        """A forced language only changes a run that transcribes."""
+        if self.language is not None and self.stages and "transcription" not in self.stages:
+            raise ValueError(
+                "language only applies when the 'transcription' stage is reprocessed; "
+                "other stages work from the existing transcript"
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_disable_diarization_stage(self) -> "ReprocessRequest":

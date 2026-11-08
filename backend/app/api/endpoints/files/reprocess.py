@@ -153,6 +153,7 @@ def _reprocess_selected_stages(
     whisper_model: str | None,
     disable_diarization: bool,
     user_id: int,
+    source_language: str | None = None,
 ) -> None:
     """Clear and re-dispatch the selected stages, after every refusal has passed."""
     file_id = media_file.id
@@ -179,6 +180,7 @@ def _reprocess_selected_stages(
         whisper_model=whisper_model,
         disable_diarization=disable_diarization,
         owner_id=int(media_file.user_id),
+        source_language=source_language,
     )
 
     logger.info(
@@ -198,6 +200,7 @@ def process_file_reprocess(
     whisper_model: str | None = None,
     disable_diarization: bool = False,
     audio_stream_index: int | None = None,
+    source_language: str | None = None,
     *,
     organization_id: OrgScope = UNSCOPED,
     bypass: PlatformBypass = PlatformBypass.none(),
@@ -216,6 +219,7 @@ def process_file_reprocess(
         whisper_model: Optional Whisper model override for this transcription.
         disable_diarization: Skip diarization for the transcription run. The request model
             rejects it for stage selections that do not transcribe.
+        source_language: Language forced for the transcription run (``None`` = saved setting).
         organization_id: Active org id, None for personal, or UNSCOPED (legacy).
         bypass: The request's platform bypass (``ctx.bypass``), decided on the file's tenant.
 
@@ -330,6 +334,7 @@ def process_file_reprocess(
                 whisper_model=whisper_model,
                 disable_diarization=disable_diarization,
                 user_id=current_user.id,
+                source_language=source_language,
             )
         else:
             # Full reprocess (backward compatible)
@@ -348,6 +353,7 @@ def process_file_reprocess(
                 user_id=current_user.id,
                 db=db,
                 disable_diarization=disable_diarization,
+                source_language=source_language,
             )
 
             logger.info(

@@ -221,6 +221,7 @@ def _run_cloud_asr_pipeline(
     provider: ASRProvider | None = None,
     *,
     plan: PipelinePlan,
+    source_language: str | None = None,
 ) -> dict:
     """
     Run the cloud ASR transcription pipeline for a non-local provider.
@@ -236,6 +237,7 @@ def _run_cloud_asr_pipeline(
         plan: The run's pipeline plan. ``inline_asr`` asks the vendor for speakers,
             ``parallel_cloud`` runs the plan's cloud detector beside it; anything else
             (off, or a post stage that detects speakers after this) asks for text only.
+        source_language: Language forced for this run; ``None`` = the user's saved setting.
 
     Returns:
         Result dict with 'segments' and 'language' keys matching the WhisperX format
@@ -284,7 +286,8 @@ def _run_cloud_asr_pipeline(
     speaker_range = resolve_speaker_range(user_settings, min_speakers, max_speakers, num_speakers)
 
     config = ASRConfig(
-        language=user_lang_settings["source_language"],
+        # A language forced for this run beats the user's saved one (issue #1263).
+        language=source_language or user_lang_settings["source_language"],
         min_speakers=speaker_range.min_speakers,
         max_speakers=speaker_range.max_speakers,
         num_speakers=speaker_range.num_speakers,

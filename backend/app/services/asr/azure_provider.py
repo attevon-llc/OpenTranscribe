@@ -38,6 +38,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .base import ASRProvider
+from .locales import to_locale
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
@@ -121,7 +122,7 @@ class AzureASRProvider(ASRProvider):
             progress_callback(0.1, "Connecting to Azure Speech…")
 
         speech_cfg = sdk.SpeechConfig(subscription=self._api_key, region=self._region)
-        lang = config.language if config.language != "auto" else "en-US"
+        lang = to_locale(config.language) if config.language != "auto" else "en-US"
         speech_cfg.speech_recognition_language = lang
         speech_cfg.output_format = sdk.OutputFormat.Detailed
 

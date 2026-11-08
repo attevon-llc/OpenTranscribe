@@ -591,6 +591,7 @@ def transcribe_gpu_task(self: Any, preprocess_context: dict) -> dict:
                             preprocess_context.get("num_speakers"),
                             provider=provider,
                             plan=plan,
+                            source_language=preprocess_context.get("source_language"),
                         )
                 else:
                     result = _run_transcription_pipeline(

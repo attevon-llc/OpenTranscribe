@@ -39,8 +39,10 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 - `AudioTracksNotice.svelte` — the audio-track panel (#1263): lists the container's tracks
   (`file.audio_streams`) with the transcribed one marked, and a calm, non-blocking notice when the
   server flags `audio_language_mismatch` (detected language vs the track's tag), with a **Choose
-  another track** action that opens the reprocess wizard. Renders nothing for a single-track file
-  without a mismatch. The picker itself is `$components/AudioTrackSelect.svelte`, shown on the
+  another track or language** action (**Choose a language** with no other track) that opens the
+  reprocess wizard, where `$components/ForcedLanguageSelect.svelte` forces the transcription
+  language (#1263; `language` in the reprocess body, highlighted on a mismatch). Renders nothing for
+  a single-track file without a mismatch. The picker itself is `$components/AudioTrackSelect.svelte`, shown on the
   wizard's settings step; labels come from `$lib/fileDetail/audioTracks`.
 - `ProcessingSection.svelte` — the collapsible "Processing" section rendered right after
   `MetadataDisplay` (#1229): how the file was processed, one row per step, via the shared

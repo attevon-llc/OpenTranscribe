@@ -9,6 +9,7 @@
   import BaseModal from './ui/BaseModal.svelte';
   import PerFileModelSelect from './PerFileModelSelect.svelte';
   import AudioTrackSelect from './AudioTrackSelect.svelte';
+  import ForcedLanguageSelect from './ForcedLanguageSelect.svelte';
   import { ASRSettingsApi } from '$lib/api/asrSettings';
   import { reprocessFile, reprocessFiles } from '$lib/api/reprocess';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
@@ -66,6 +67,9 @@
 
   // Audio track of a multi-track file (#1263); single-file mode only.
   let selectedAudioTrack: number | null = null;
+
+  // Language forced for this run (#1263); single-file mode only, null = the saved setting.
+  let selectedLanguage: string | null = null;
 
   // Model selection for reprocessing
   let selectedReprocessModel: string | null = null;
@@ -144,7 +148,8 @@
         model: selectedReprocessModel,
         modelChoiceEnabled,
         audioStreamIndex: bulkMode ? null : selectedAudioTrack,
-        audioStreams: bulkMode ? null : file?.audio_streams
+        audioStreams: bulkMode ? null : file?.audio_streams,
+        language: bulkMode ? null : selectedLanguage
       });
 
       if (bulkMode) {
@@ -223,6 +228,7 @@
   $: if (showModal) {
     resetState();
     selectedReprocessModel = null;
+    selectedLanguage = null;
     selectedAudioTrack = file?.audio_stream_index ?? file?.audio_streams?.[0]?.index ?? null;
     void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
@@ -398,6 +404,15 @@
 
                 {#if !bulkMode && (selectedStages.has('transcription') || selectedStages.has('rediarize'))}
                   <AudioTrackSelect streams={file?.audio_streams} bind:value={selectedAudioTrack} />
+                {/if}
+
+                {#if !bulkMode && selectedStages.has('transcription')}
+                  <ForcedLanguageSelect
+                    languages={transcriptionSystemDefaults?.available_source_languages}
+                    savedLanguage={transcriptionSettings?.source_language}
+                    highlight={file?.audio_language_mismatch === true}
+                    bind:value={selectedLanguage}
+                  />
                 {/if}
 
                 {#if showSpeakerSettings}

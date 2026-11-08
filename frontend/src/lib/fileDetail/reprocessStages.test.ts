@@ -6,6 +6,7 @@ import {
 } from '$lib/api/transcriptionSettings';
 import {
   buildReprocessBody,
+  languageChoices,
   buildStageGroups,
   countBulkResults,
   isReprocessValid,
@@ -222,5 +223,41 @@ describe('countBulkResults', () => {
       failed: 1,
     });
     expect(countBulkResults([])).toEqual({ successful: 0, failed: 0 });
+  });
+});
+
+describe('forced language (#1263)', () => {
+  const base = {
+    showSpeakerSettings: false,
+    settings: null,
+    systemDefaults: null,
+    minSpeakers: null,
+    maxSpeakers: null,
+    numSpeakers: null,
+    model: null,
+    modelChoiceEnabled: true,
+  };
+  it('is sent with the transcription stage only', () => {
+    expect(buildReprocessBody({ ...base, stages: ['transcription'], language: 'fr' })).toEqual({
+      stages: ['transcription'],
+      language: 'fr',
+    });
+    // The server answers 422 for a language on a run that does not transcribe.
+    expect(buildReprocessBody({ ...base, stages: ['rediarize'], language: 'fr' })).toEqual({
+      stages: ['rediarize'],
+    });
+  });
+  it('is omitted when unset', () => {
+    expect(buildReprocessBody({ ...base, stages: ['transcription'], language: null })).toEqual({
+      stages: ['transcription'],
+    });
+  });
+  it('lists auto-detect first and the rest by name', () => {
+    expect(languageChoices({ fr: 'French', auto: 'Auto-detect', de: 'German' })).toEqual([
+      ['auto', 'Auto-detect'],
+      ['fr', 'French'],
+      ['de', 'German'],
+    ]);
+    expect(languageChoices(null)).toEqual([]);
   });
 });

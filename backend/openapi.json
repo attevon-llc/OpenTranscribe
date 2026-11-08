@@ -16903,6 +16903,22 @@
             "description": "Skip speaker diarization for this run. Only meaningful when the transcription stage runs (a full reprocess, or stages containing 'transcription'); any other stage selection is rejected with 422.",
             "title": "Disable Diarization"
           },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Force the transcription language for this run: an ISO 639 code from the supported Whisper list, or `auto` to detect. None keeps the user's saved language setting. Only meaningful when the transcription stage runs (a full reprocess, or stages containing 'transcription'); an unknown code or any other stage selection is rejected with 422.",
+            "examples": [
+              "fr",
+              "auto"
+            ],
+            "title": "Language"
+          },
           "max_speakers": {
             "anyOf": [
               {

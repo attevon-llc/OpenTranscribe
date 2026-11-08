@@ -57,7 +57,7 @@ Moved intact from `backend/app/tasks/CLAUDE.md` ("Key files"). The session-lifet
   WeSpeaker vectors). `get_voiceprint_extractor()` is the seam the Rust implementation
   (#1231) replaces.
 - `transcription/requested_options.py` — the per-file request (Whisper model, speaker range,
-  "skip diarization") stored on `media_file.requested_*` by every fresh dispatch and replayed by
+  "skip diarization", a forced source language #1263) stored on `media_file.requested_*` by every fresh dispatch and replayed by
   `dispatch_transcription_pipeline(..., reuse_requested_options=True)` — which retry, recovery and
   the download hop of a URL import pass. A fresh request overwrites the stored one even with
   `None`. Speaker-range precedence is decided once, in `user_settings.resolve_speaker_range`

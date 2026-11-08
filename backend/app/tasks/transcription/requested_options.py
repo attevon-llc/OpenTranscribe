@@ -28,6 +28,8 @@ class DispatchOptions:
     #: never turned into a source here, which is what ``disable_diarization=False`` once did
     #: (it became ``provider`` and silently dropped a ``local`` or ``pyannote`` choice).
     skip_diarization: bool
+    #: A language forced for this run (an ISO code or ``auto``); ``None`` = the user's setting.
+    source_language: str | None = None
 
 
 def store_requested_options(
@@ -38,6 +40,7 @@ def store_requested_options(
     max_speakers: int | None,
     num_speakers: int | None,
     disable_diarization: bool | None,
+    source_language: str | None = None,
 ) -> None:
     """Record a fresh request on the row, overwriting an earlier one (``None`` included).
 
@@ -49,6 +52,7 @@ def store_requested_options(
     media_file.requested_max_speakers = max_speakers
     media_file.requested_num_speakers = num_speakers
     media_file.requested_disable_diarization = disable_diarization
+    media_file.requested_source_language = source_language
 
 
 def resolve_dispatch_options(
@@ -60,6 +64,7 @@ def resolve_dispatch_options(
     max_speakers: int | None,
     num_speakers: int | None,
     disable_diarization: bool | None,
+    source_language: str | None = None,
 ) -> DispatchOptions:
     """Merge a dispatch's arguments with the file's stored request, and store the result.
 
@@ -85,6 +90,8 @@ def resolve_dispatch_options(
             num_speakers = media_file.requested_num_speakers
         if requested_off is None:
             requested_off = media_file.requested_disable_diarization
+        if source_language is None:
+            source_language = media_file.requested_source_language
 
     store_requested_options(
         media_file,
@@ -93,6 +100,7 @@ def resolve_dispatch_options(
         max_speakers=max_speakers,
         num_speakers=num_speakers,
         disable_diarization=requested_off,
+        source_language=source_language,
     )
 
     # Not only a request but a fact: a file that already ran with diarization off re-runs so.
@@ -101,7 +109,9 @@ def resolve_dispatch_options(
         and disable_diarization is None
         and bool(media_file.diarization_disabled)
     )
-    return DispatchOptions(whisper_model, min_speakers, max_speakers, num_speakers, skip)
+    return DispatchOptions(
+        whisper_model, min_speakers, max_speakers, num_speakers, skip, source_language
+    )
 
 
 def apply_requested_options(media_file: MediaFile, options: dict | None) -> None:

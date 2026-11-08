@@ -311,6 +311,8 @@ class MediaFile(Base):
     requested_max_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     requested_num_speakers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     requested_disable_diarization: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # v470 (issue #1263): the language forced for one run; NULL = the user's saved setting.
+    requested_source_language: Mapped[str | None] = mapped_column(Text, nullable=True)
     diarization_model: Mapped[str | None] = mapped_column(
         String, nullable=True
     )  # e.g., "pyannote/speaker-diarization-3.1"
@@ -472,6 +474,11 @@ class MediaFile(Base):
         CheckConstraint(
             "audio_stream_index IS NULL OR audio_stream_index >= 0",
             name="ck_media_file_audio_stream_index",
+        ),
+        CheckConstraint(
+            "requested_source_language IS NULL "
+            "OR requested_source_language ~ '^(auto|[a-z]{2,3})$'",
+            name="ck_media_file_requested_source_language",
         ),
         CheckConstraint(
             "(deleted_at IS NULL AND purge_after IS NULL AND trash_origin IS NULL "

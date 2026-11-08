@@ -2864,6 +2864,10 @@
   "reprocess.stageRediarizeDisabled": "需要词级时间戳。请先重新转录此文件。",
   "reprocess.llmNotAvailable": "LLM提供商未配置。请在管理设置中配置。",
   "reprocess.speakerSettings": "说话人设置",
+  "reprocess.language": "转录语言",
+  "reprocess.languageDefault": "默认：{{language}}",
+  "reprocess.languageHint": "如果自动检测有误，请选择实际使用的语言。仅对本次运行生效。",
+  "reprocess.languageMismatchHint": "检测到的语言与音轨标签不一致。请选择实际使用的语言以获得正确转录。",
   "reprocess.v4InfoTitle": "v4 说话人检测",
   "reprocess.v4PathTranscription": "完整重新转录",
   "reprocess.v4PathTranscriptionDesc": "新转录文本 + v4说话人嵌入向量。最佳精度但替换所有数据。",
@@ -6800,5 +6804,6 @@
   "audioTracks.selectHint": "转写、说话人检测和播放音频都使用此音轨。",
   "audioTracks.mismatchTitle": "语言与音轨标签不一致",
   "audioTracks.mismatchBody": "此录音的音轨标注为 {{tagged}}，但检测到的语音为 {{detected}}。如果您期望的是其他语言，可以使用另一条音轨重新处理。",
-  "audioTracks.chooseAnother": "选择其他音轨"
+  "audioTracks.chooseAnother": "选择其他音轨或语言",
+  "audioTracks.chooseLanguage": "选择语言"
 }

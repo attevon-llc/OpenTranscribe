@@ -15,6 +15,7 @@ import time
 from collections.abc import Callable
 
 from .base import ASRProvider
+from .locales import to_locale
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
@@ -119,7 +120,7 @@ class GoogleASRProvider(ASRProvider):
                 max_speaker_count=config.max_speakers,
             )
 
-        lang = config.language if config.language != "auto" else "en-US"
+        lang = to_locale(config.language) if config.language != "auto" else "en-US"
         recognition_cfg = speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             language_code=lang,

@@ -147,14 +147,28 @@ file an audio-only preview of that track in place of the picture; choosing the f
 brings the original back. A single-track file shows no picker and behaves as before.
 
 If the language detected in the speech differs from the language the chosen track is tagged with,
-a quiet notice on the file's page says so and offers **Choose another track**. The tag is only what
+a quiet notice on the file's page says so and offers **Choose another track or language** (**Choose a language** on a single-track file). The tag is only what
 the person who made the file wrote down, so no action is needed when the transcript reads
 correctly. A track with no language tag never triggers the notice. Files transcribed before this
 version show their tracks the next time they are processed.
 
+#### Forcing the transcription language
+
+If auto-detection picks the wrong language, or the track's tag is wrong, you can name the language
+yourself. Open the file's page, click **Reprocess**, pick **Transcription & Diarization**, and choose
+the language under **Transcription language** on the settings step. The first option, **Default**,
+keeps your saved language setting (Settings > Transcription), which may itself be auto-detect;
+**Auto-detect** forces detection for this run even if you saved a language. The field is offered
+for a single file only, and is highlighted when the language notice above is showing. The choice
+applies to that run and is remembered with the file, so an automatic retry or a recovery of a stuck
+file uses it too; a later reprocess that leaves **Default** selected clears it. It works with the
+local engine and with every cloud ASR provider.
+
 Through the API, `GET /api/files/{uuid}` returns `audio_streams` (each with `index`, `codec`,
 `channels`, `language`, `title`, `default`) and `audio_stream_index`, and `POST
-/api/files/{uuid}/reprocess` accepts `audio_stream_index`. An index the file does not have is
+/api/files/{uuid}/reprocess` accepts `audio_stream_index` and `language` (an ISO code from the
+list at `GET /api/user-settings/transcription/system-defaults`, or `auto`; 422 for an unknown code or
+when the stages do not include `transcription`). An index the file does not have is
 answered with 422 and nothing is changed. A new upload can name the track in the `prepare`
 request, but an upload cannot be checked against tracks it has not shown yet, so a wrong index
 fails that run rather than the request.

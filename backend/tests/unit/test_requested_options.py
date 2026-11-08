@@ -202,3 +202,23 @@ def test_the_recovery_service_retry_the_spa_uses_replays_the_files_request(
 @contextlib.contextmanager
 def _yield_session(db):
     yield db
+
+
+def test_a_forced_language_is_stored_and_replayed_by_a_re_run(stages, make_file, db_session):
+    """Issue #1263: a retry or stuck-file recovery must not fall back to the saved language."""
+    row = make_file()
+    dispatch_module.dispatch_transcription_pipeline(str(row.uuid), source_language="fr")
+    db_session.refresh(row)
+    assert row.requested_source_language == "fr"
+    assert stages[0]["source_language"] == "fr"
+
+    dispatch_module.dispatch_transcription_pipeline(str(row.uuid), reuse_requested_options=True)
+    assert stages[1]["source_language"] == "fr"
+
+
+def test_a_fresh_request_without_a_language_clears_the_stored_one(stages, make_file, db_session):
+    row = make_file(requested_source_language="fr")
+    dispatch_module.dispatch_transcription_pipeline(str(row.uuid))
+    db_session.refresh(row)
+    assert row.requested_source_language is None
+    assert stages[0]["source_language"] is None

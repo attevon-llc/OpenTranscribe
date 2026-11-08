@@ -20,6 +20,7 @@ import json
 import logging
 import time
 from typing import Any
+from uuid import uuid4
 
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE
@@ -27,22 +28,28 @@ from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS
 from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v3
 from app.core.embedding_models import get_speaker_index_v4
-from app.core.pipeline_constants import FILES_PER_BATCH_TASK
 from app.core.queues import CPUPriority
 from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
+from app.tasks.embedding_consistency_run import LOCK_TTL as _LOCK_TTL
+from app.tasks.embedding_consistency_run import ORCHESTRATOR_MAX_HOLD
+from app.tasks.embedding_consistency_run import REDIS_LOCK_KEY as _REDIS_LOCK_KEY
+from app.tasks.embedding_consistency_run import deferred_failed_files
+from app.tasks.embedding_consistency_run import forget_failed_files
+from app.tasks.embedding_consistency_run import plan_repair_batches
+from app.tasks.embedding_consistency_run import release_run_lease
+from app.tasks.embedding_consistency_run import run_lease
 from app.tasks.opensearch_integrity_task import _exceeds_delete_ratio
 from app.tasks.opensearch_integrity_task import _speaker_uuids_present
+from app.utils.redis_lease import LeaseHeartbeat
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
 
-_REDIS_LOCK_KEY = "embedding_consistency_running"
 _REDIS_LAST_RUN_KEY = "embedding_consistency_last_run"
 _REDIS_PROGRESS_KEY = "embedding_consistency_progress"
 _REDIS_BATCH_IDS_KEY = "embedding_consistency:batch_task_ids"
-_LOCK_TTL = 7200  # 2 hours — must outlast the longest possible repair run
 
 #: Speaker rows read per keyset page by the detection scans. Each page runs in its own
 #: short session, so memory is bounded by the page (plus the result set the comparison
@@ -353,6 +360,29 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
     }
 
 
+def _defer_failed_files(r: Any, grouped: dict[str, list[str]], manual: bool) -> int:
+    """Drop recently failed files from a scheduled run; a manual run retries them all.
+
+    Returns:
+        How many files were left out.
+    """
+    if manual:
+        forget_failed_files(r)
+        return 0
+    deferred = deferred_failed_files(r) & grouped.keys()
+    for file_uuid in deferred:
+        del grouped[file_uuid]
+    return len(deferred)
+
+
+def _nothing_to_dispatch(total_missing: int, deferred: int) -> dict[str, Any]:
+    """The result of a check that found gaps but has no file to queue."""
+    if deferred:
+        logger.info("Embedding consistency: %d recently failed files deferred", deferred)
+        return {"status": "deferred", "missing": total_missing, "deferred_files": deferred}
+    return {"status": "no_repairable", "missing": total_missing}
+
+
 def _select_voiceprints_to_remove(
     os_all: set[str], pg_with_segments: set[str], all_pg: set[str]
 ) -> tuple[set[str], set[str]]:
@@ -412,19 +442,36 @@ def speaker_embedding_consistency_check_task(
         user_id: Admin user ID for WebSocket notifications (default 1 for beat schedule).
     """
     r = get_redis()
+    run_id = str(self.request.id or uuid4())
 
-    # Guard against concurrent runs
-    if not r.set(_REDIS_LOCK_KEY, "1", nx=True, ex=_LOCK_TTL):
+    # Guard against concurrent runs. The lease is held by THIS run's id; the batches it
+    # dispatches renew it, and the one that completes the run releases it.
+    lease = run_lease(r, run_id)
+    if not lease.acquire(blocking=False, token=run_id):
         logger.info("Embedding consistency check already running, skipping")
         return {"status": "already_running"}
 
+    heartbeat = LeaseHeartbeat(
+        lease, ttl=_LOCK_TTL, max_hold=ORCHESTRATOR_MAX_HOLD, name=_REDIS_LOCK_KEY
+    ).start()
+    result: dict[str, Any] | None = None
+    try:
+        result = _check_and_dispatch(r, run_id, manual, user_id)
+        return result
+    finally:
+        heartbeat.stop()
+        if result is None or result.get("status") != "repairing":
+            release_run_lease(lease)
+
+
+def _check_and_dispatch(r: Any, run_id: str, manual: bool, user_id: int) -> dict[str, Any]:
+    """Detect gaps and dispatch repair batches, under the run lease the caller holds."""
     # Don't run if a migration, reindex, or related heavy task is in progress.
     # Check both the migration progress service AND Redis keys that indicate
     # active batch work (the progress service only tracks the orchestrator).
     from app.services.migration_progress_service import migration_progress
 
     if migration_progress.is_running():
-        r.delete(_REDIS_LOCK_KEY)
         logger.info("Migration in progress, skipping consistency check")
         return {"status": "skipped", "reason": "migration_running"}
 
@@ -432,7 +479,6 @@ def speaker_embedding_consistency_check_task(
     skip_patterns = ["task_progress:embedding_migration*", "reindex_lock:*"]
     for pattern in skip_patterns:
         for _key in r.scan_iter(match=pattern):
-            r.delete(_REDIS_LOCK_KEY)
             reason = "embedding_migration_running" if "embedding" in pattern else "reindex_running"
             logger.info("%s in progress, skipping consistency check", reason)
             return {"status": "skipped", "reason": reason}
@@ -455,7 +501,6 @@ def speaker_embedding_consistency_check_task(
         main_index = get_speaker_index()
         os_main = _get_opensearch_speaker_uuids(main_index)
         if os_main is None:
-            r.delete(_REDIS_LOCK_KEY)
             logger.error("Cannot query main speaker index — skipping consistency check")
             return {"status": "skipped", "reason": "opensearch_query_failed"}
         missing_v3, skipped_v3 = _split_by_voiceprint_policy(pg_uuids - os_main, pg_speakers)
@@ -470,7 +515,6 @@ def speaker_embedding_consistency_check_task(
         if v4_exists:
             _os_v4_result = _get_opensearch_speaker_uuids(v4_index)
             if _os_v4_result is None:
-                r.delete(_REDIS_LOCK_KEY)
                 logger.error("Cannot query OpenSearch v4 index — skipping consistency check")
                 return {"status": "skipped", "reason": "opensearch_query_failed"}
             os_v4 = _os_v4_result
@@ -504,7 +548,6 @@ def speaker_embedding_consistency_check_task(
 
         if total_missing == 0:
             # Healthy — no gaps
-            r.delete(_REDIS_LOCK_KEY)
             duration = round(time.time() - start_time, 1)
             last_run = {
                 "timestamp": time.time(),
@@ -538,7 +581,6 @@ def speaker_embedding_consistency_check_task(
 
         if total_missing == 0:
             # All missing speakers are unrepairable — nothing to fix
-            r.delete(_REDIS_LOCK_KEY)
             duration = round(time.time() - start_time, 1)
             last_run = {
                 "timestamp": time.time(),
@@ -577,12 +619,15 @@ def speaker_embedding_consistency_check_task(
         all_missing = missing_v3 | missing_v4
         grouped = _group_by_file(all_missing, pg_speakers)
 
+        deferred = _defer_failed_files(r, grouped, manual)
         if not grouped:
-            r.delete(_REDIS_LOCK_KEY)
-            return {"status": "no_repairable", "missing": total_missing}
+            return _nothing_to_dispatch(total_missing, deferred)
 
-        file_uuids = list(grouped.keys())
-        total_files = len(file_uuids)
+        # Each batch names only its own files' speakers (bounded message size).
+        batches = plan_repair_batches(grouped, missing_v3, missing_v4 if v4_exists else set())
+        # A file split across batches (more speakers than one batch may name) is prepared
+        # once per batch, and every batch counts it, so the total counts batch entries.
+        total_files = sum(len(b.file_uuids) for b in batches)
 
         # Initialize ProgressTracker for ETA + queue status integration
         from app.services.progress_tracker import ProgressTracker
@@ -604,11 +649,14 @@ def speaker_embedding_consistency_check_task(
             "unrepairable": len(unrepairable),
             "skipped_by_policy": skipped_by_policy,
             "failed_files": [],
+            "failed_count": 0,
+            "deferred_files": deferred,
             "repaired": 0,
             "skipped": 0,
             "running": True,
             "start_time": time.time(),
             "user_id": user_id,
+            "run_id": run_id,
         }
         r.set(_REDIS_PROGRESS_KEY, json.dumps(progress_data), ex=_LOCK_TTL)
 
@@ -620,22 +668,18 @@ def speaker_embedding_consistency_check_task(
             speaker_embedding_consistency_repair_batch_task,
         )
 
-        batches = [
-            file_uuids[i : i + FILES_PER_BATCH_TASK]
-            for i in range(0, len(file_uuids), FILES_PER_BATCH_TASK)
-        ]
-
         batch_task_ids = []
         for batch_idx, batch in enumerate(batches):
             result = speaker_embedding_consistency_repair_batch_task.apply_async(
                 kwargs={
-                    "file_uuids": batch,
+                    "file_uuids": batch.file_uuids,
                     "batch_index": batch_idx,
                     "total_batches": len(batches),
                     "total_files": total_files,
-                    "missing_v3_uuids": list(missing_v3),
-                    "missing_v4_uuids": list(missing_v4) if v4_exists else [],
+                    "missing_v3_uuids": batch.missing_v3_uuids,
+                    "missing_v4_uuids": batch.missing_v4_uuids,
                     "v4_exists": v4_exists,
+                    "run_id": run_id,
                 },
                 priority=GPUPriority.ADMIN_MIGRATION,
             )
@@ -651,12 +695,12 @@ def speaker_embedding_consistency_check_task(
             "v3_missing": len(missing_v3),
             "v4_missing": len(missing_v4),
             "skipped_by_policy": skipped_by_policy,
+            "deferred_files": deferred,
             "batches": len(batches),
         }
 
     except Exception as e:
         logger.error("Embedding consistency check failed: %s", e, exc_info=True)
-        r.delete(_REDIS_LOCK_KEY)
         send_ws_event(
             user_id,
             NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_COMPLETE,

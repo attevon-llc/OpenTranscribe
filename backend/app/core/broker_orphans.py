@@ -241,13 +241,33 @@ def transcription_stage_queues() -> list[str]:
     return sorted(queues)
 
 
-def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set[str]:
+#: Most messages one read of the stage queues will fetch and parse. Past it the read
+#: concludes nothing (``None``): a run that waits there cannot be ruled out, so no run is
+#: reported lost. Kept well above any real transcription backlog.
+QUEUE_SCAN_MAX_ENTRIES = 20_000
+#: Most bytes (Redis's ``MEMORY USAGE`` estimate of the lists) one read will fetch. The
+#: stage queues are shared with other GPU/CPU work, so their lists can hold messages of any
+#: size: this read once pulled a ~15 GB backlog of oversized repair messages into the
+#: worker every 60 s (#1337 load test).
+QUEUE_SCAN_MAX_BYTES = 64 * 1024 * 1024
+
+
+def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set[str] | None:
     """Runs with a stage message WAITING on a queue list (not delivered to any worker).
 
     A cold shutdown hands a running stage back to the head of its queue; until a worker
     takes it again it is in neither ``unacked`` nor held by a lease, so it must be read from
-    the lists themselves. Only the queues a transcription stage can sit on are read, in one
-    pipelined round trip over their priority lists.
+    the lists themselves. Only the queues a transcription stage can sit on are read.
+
+    The lists are measured before a single message is fetched: ``LLEN`` (what kombu's own
+    ``Channel._size`` uses for queue depth) and ``MEMORY USAGE`` (Redis's sampled estimate
+    of a key's size, O(samples): https://redis.io/docs/latest/commands/memory-usage/), both
+    pipelined. Over ``QUEUE_SCAN_MAX_ENTRIES`` or ``QUEUE_SCAN_MAX_BYTES`` the read returns
+    ``None`` -- the same "cannot tell" every caller already handles for an unreadable broker
+    -- instead of copying the whole backlog into this process.
+
+    Returns:
+        The queued run ids, or ``None`` when the lists are too large to read.
     """
     from kombu.transport.redis import Channel
 
@@ -257,12 +277,30 @@ def read_queued_run_ids(client: Any, queues: Iterable[str] | None = None) -> set
         for queue in (transcription_stage_queues() if queues is None else queues)
         for priority in priority_steps
     ]
+    sizes = client.pipeline(transaction=False)
+    for key in keys:
+        sizes.llen(key)
+        sizes.memory_usage(key)
+    measured = sizes.execute()
+    # A missing key has length 0 and no memory usage (nil).
+    entries = sum(int(n or 0) for n in measured[0::2])
+    footprint = sum(int(n or 0) for n in measured[1::2])
+    if entries > QUEUE_SCAN_MAX_ENTRIES or footprint > QUEUE_SCAN_MAX_BYTES:
+        logger.warning(
+            "Not reading the stage queues: %d messages, ~%d MB (limits %d, %d MB); "
+            "no run is judged lost until they shrink",
+            entries,
+            footprint // (1024 * 1024),
+            QUEUE_SCAN_MAX_ENTRIES,
+            QUEUE_SCAN_MAX_BYTES // (1024 * 1024),
+        )
+        return None
     pipe = client.pipeline(transaction=False)
     for key in keys:
         pipe.lrange(key, 0, -1)
     run_ids: set[str] = set()
-    for entries in pipe.execute():
-        for raw in entries or []:
+    for listed in pipe.execute():
+        for raw in listed or []:
             run_id = queued_run_id(raw)
             if run_id:
                 run_ids.add(run_id)
@@ -646,11 +684,17 @@ def reclaim_orphaned_deliveries(
 
         # A run whose stage message waits on a queue list (a cold shutdown puts the running
         # stage back at the head) is not lost either: it is first in line, not gone.
+        queued_late = read_queued_run_ids(client)
+        if queued_early is None or queued_late is None:
+            # The lists were too large to read, so a run waiting there cannot be ruled out:
+            # judge none lost this sweep rather than re-dispatch one that is first in line.
+            summary["queues_unread"] = 1
+            return summary
         in_broker = (
             {d.run_id for d in deliveries if d.run_id}
             | {d.run_id for d in read_unacked(client) if d.run_id}
             | queued_early
-            | read_queued_run_ids(client)
+            | queued_late
         )
         summary["lost_runs"] = recover_lost_runs(exclude=in_broker)
         return summary

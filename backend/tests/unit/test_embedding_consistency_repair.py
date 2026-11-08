@@ -338,6 +338,7 @@ def test_update_repair_progress_propagates_non_lock_conflict_exceptions_immediat
         "running": True,
         "total_files": 10,
         "user_id": 9,
+        "run_id": "run-1",
     }
     fake_redis = _NonLockConflictExplodingRedis(initial)
 
@@ -352,7 +353,9 @@ def test_update_repair_progress_propagates_non_lock_conflict_exceptions_immediat
         ),
         pytest.raises(json.JSONDecodeError),
     ):
-        _update_repair_progress(total_files=10, success=True, repaired_count=5, user_id=9)
+        _update_repair_progress(
+            total_files=10, run_id="run-1", success=True, repaired_count=5, user_id=9
+        )
 
     # Raised on the very first attempt -- no retrying of a non-lock-conflict exception.
     assert fake_redis.pipeline_attempts == 1
@@ -369,6 +372,7 @@ def test_update_repair_progress_retries_on_genuine_watch_error():
         "running": True,
         "total_files": 10,
         "user_id": 9,
+        "run_id": "run-1",
     }
     # Fails on the first 2 pipeline attempts with a genuine WatchError, succeeds on the 3rd.
     fake_redis = _WatchErrorThenSucceedsRedis(initial, fail_count=2)
@@ -391,7 +395,9 @@ def test_update_repair_progress_retries_on_genuine_watch_error():
             _fake_emit,
         ),
     ):
-        result = _update_repair_progress(total_files=10, success=True, repaired_count=5, user_id=9)
+        result = _update_repair_progress(
+            total_files=10, run_id="run-1", success=True, repaired_count=5, user_id=9
+        )
 
     # Retried through the WatchError attempts before succeeding on the 3rd.
     assert fake_redis.pipeline_attempts == 3
@@ -484,22 +490,18 @@ def test_run_repair_phase_attributes_write_counts_to_the_correct_file():
 # ---------------------------------------------------------------------------
 
 
-class _SimpleRedis:
-    def __init__(self, store: dict[str, str]) -> None:
-        self.store = store
+@pytest.mark.xdist_group("local_model_redis")
+def test_check_repair_completion_falls_back_to_the_passed_user_id_when_progress_lacks_it(
+    local_model_redis,
+):
+    from app.tasks.embedding_consistency_run import run_lease
 
-    def get(self, key: str) -> str | None:
-        return self.store.get(key)
-
-    def set(self, key: str, value: str, ex: int | None = None) -> None:
-        self.store[key] = value
-
-    def delete(self, key: str) -> None:
-        self.store.pop(key, None)
-
-
-def test_check_repair_completion_falls_back_to_the_passed_user_id_when_progress_lacks_it():
+    run_id = "completion-run"
+    lease = run_lease(local_model_redis, run_id)
+    local_model_redis.delete(_PROGRESS_KEY, "embedding_consistency_last_run")
+    assert lease.acquire(blocking=False, token=run_id)
     progress = {
+        "run_id": run_id,
         "processed_files": 5,
         "total_files": 5,
         "repaired": 4,
@@ -508,7 +510,7 @@ def test_check_repair_completion_falls_back_to_the_passed_user_id_when_progress_
         "start_time": 0.0,
         # deliberately no "user_id" key
     }
-    fake_redis = _SimpleRedis({_PROGRESS_KEY: json.dumps(progress)})
+    local_model_redis.set(_PROGRESS_KEY, json.dumps(progress))
     ws_calls: list[tuple[int, str, dict[str, Any]]] = []
 
     def _fake_send_ws_event(user_id: int, notification_type: str, data: dict[str, Any]) -> bool:
@@ -518,7 +520,7 @@ def test_check_repair_completion_falls_back_to_the_passed_user_id_when_progress_
     with (
         patch(
             "app.tasks.embedding_consistency_repair.get_redis",
-            return_value=fake_redis,
+            return_value=local_model_redis,
         ),
         patch(
             "app.services.progress_tracker.ProgressTracker",
@@ -531,8 +533,10 @@ def test_check_repair_completion_falls_back_to_the_passed_user_id_when_progress_
     ):
         # 1 is the real caller's own default (speaker_embedding_consistency_repair_batch_task
         # L352: notify_user_id = 1 unless a user_id was already found in this same key).
-        _check_repair_completion(total_files=5, user_id=1)
+        _check_repair_completion(total_files=5, run_id=run_id, user_id=1)
+    local_model_redis.delete("embedding_consistency_last_run")
 
+    assert not local_model_redis.exists("embedding_consistency_running")
     assert len(ws_calls) == 1
     assert ws_calls[0][0] == 1
     assert _FakeProgressTracker.instances[-1]["user_id"] == 1

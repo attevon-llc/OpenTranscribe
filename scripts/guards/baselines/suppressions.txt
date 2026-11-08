@@ -198,7 +198,6 @@ noqa::backend/tests/unit/test_diarizer_engine_selection.py	2	suppression: reason
 noqa::backend/tests/unit/test_diarizer_status_resolver.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_directory_sync.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_earnings21_cpwer.py	3	suppression: reason to be added
-noqa::backend/tests/unit/test_embedding_consistency_policy.py	2	suppression: reason to be added
 noqa::backend/tests/unit/test_external_session_absolute_timeout.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_external_token_auth.py	1	suppression: reason to be added
 noqa::backend/tests/unit/test_file_erasure_plane_verification.py	3	suppression: reason to be added

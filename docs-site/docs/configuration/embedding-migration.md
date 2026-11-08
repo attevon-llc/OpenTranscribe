@@ -75,7 +75,9 @@ Key functions implementing this architecture: `swap_speaker_alias()`, `get_activ
 
 The system includes automatic repair for speaker embedding inconsistencies:
 - Detects mismatches between database speaker records and OpenSearch embeddings
-- Runs periodic consistency checks with a distributed lock (2-hour TTL)
+- Runs every 10 minutes under a run lease: the check renews it while it detects and dispatches, each repair batch renews it per file, and only the batch that finishes the run releases it, so a running repair is never restarted. A run that stops renewing (crashed or stopped) loses the lease after 2 hours
+- Each repair batch carries only its own files' speakers (at most 25 files and 400 speakers), so a large library cannot fill Redis with repair messages
+- Files that failed to repair are left out of scheduled checks for 24 hours; a manual Repair retries them
 - Repairs orphaned, missing, or stale embeddings automatically
 - Can be triggered manually via the Admin UI (Settings → Data & Storage → Speaker Embedding System)
 

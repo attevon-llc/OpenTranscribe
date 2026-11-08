@@ -1709,6 +1709,7 @@
   "notifications.job.notConfirmed": "마지막 단계를 확인할 수 없습니다",
   "notifications.job.stale": "한동안 업데이트가 없습니다",
   "notifications.job.failedTask": "{{task}} 실패",
+  "notifications.job.failedTasks": "실패: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: 확인 필요",
   "notifications.job.announceReady": "{{filename}}: 전사 준비 완료",
   "notifications.job.task.search_indexing": "검색 색인",

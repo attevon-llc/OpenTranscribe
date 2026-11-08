@@ -1680,6 +1680,7 @@
   "notifications.job.notConfirmed": "无法确认最后步骤",
   "notifications.job.stale": "已有一段时间没有更新",
   "notifications.job.failedTask": "{{task}} 失败",
+  "notifications.job.failedTasks": "失败：{{tasks}}",
   "notifications.job.announceAttention": "{{filename}}：需要处理",
   "notifications.job.announceReady": "{{filename}}：转录已就绪",
   "notifications.job.task.search_indexing": "搜索索引",

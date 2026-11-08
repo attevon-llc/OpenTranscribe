@@ -1724,6 +1724,7 @@
   "notifications.job.notConfirmed": "Не удалось подтвердить завершающие шаги",
   "notifications.job.stale": "Давно нет обновлений",
   "notifications.job.failedTask": "Сбой: {{task}}",
+  "notifications.job.failedTasks": "Сбои: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: требует внимания",
   "notifications.job.announceReady": "{{filename}}: расшифровка готова",
   "notifications.job.task.search_indexing": "Индексирование для поиска",

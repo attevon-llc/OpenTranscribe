@@ -1680,6 +1680,7 @@
   "notifications.job.notConfirmed": "最終ステップを確認できませんでした",
   "notifications.job.stale": "しばらく更新がありません",
   "notifications.job.failedTask": "{{task}} が失敗しました",
+  "notifications.job.failedTasks": "失敗: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: 対応が必要です",
   "notifications.job.announceReady": "{{filename}}: 文字起こしの準備ができました",
   "notifications.job.task.search_indexing": "検索インデックス作成",

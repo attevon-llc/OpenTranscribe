@@ -258,9 +258,25 @@ describe('skipped and failed tasks', () => {
   it('a failed task surfaces "needs attention" once nothing else is running', () => {
     const m = model([pp({ ...FINISHING_DONE, search_indexing: 'failed' }), txDone()], false);
     expect(m.state).toBe('attention');
-    expect(m.failure).toEqual({ task: 'search_indexing', message: '' });
+    expect(m.failures).toEqual([{ task: 'search_indexing', message: '' }]);
     expect(tiers(m)).toContainEqual(['finishing', 'failed']);
     expect(m.percent).toBeLessThan(100);
+  });
+
+  it('lists EVERY failed task, not just the first', () => {
+    const m = model(
+      [
+        pp({ ...FINISHING_DONE, search_indexing: 'failed', speaker_clustering: 'failed' }),
+        txDone(),
+      ],
+      false
+    );
+    expect(m.state).toBe('attention');
+    expect(m.failures.map((f) => f.task).sort()).toEqual(['search_indexing', 'speaker_clustering']);
+  });
+
+  it('a failed task keeps a run key so progress can be held per run', () => {
+    expect(model([txDone({ startedAt: NOW - 300 * S })], false).run).toBe(NOW - 300 * S);
   });
 
   it('a failure while other tasks still run keeps "Finishing up" with the failed chip', () => {
@@ -273,7 +289,7 @@ describe('skipped and failed tasks', () => {
     );
     expect(m.state).toBe('finishing');
     expect(chips(m)).toContainEqual(['search_indexing', 'failed']);
-    expect(m.failure).toBeUndefined();
+    expect(m.failures).toEqual([]);
   });
 
   it('carries the failed summary message from its own record', () => {
@@ -289,7 +305,7 @@ describe('skipped and failed tasks', () => {
       true
     );
     expect(m.state).toBe('attention');
-    expect(m.failure).toEqual({ task: 'summary', message: 'Provider returned 500' });
+    expect(m.failures).toEqual([{ task: 'summary', message: 'Provider returned 500' }]);
   });
 });
 
@@ -450,7 +466,9 @@ describe('transcription steps and durations', () => {
     const m = model([tx], true);
 
     expect(m.state).toBe('attention');
-    expect(m.failure).toEqual({ task: 'transcription', message: 'Diarization ran out of memory' });
+    expect(m.failures).toEqual([
+      { task: 'transcription', message: 'Diarization ran out of memory' },
+    ]);
     // Nothing after a failed transcription will run, so no later tier waits.
     expect(tiers(m)).toEqual([['main', 'failed']]);
     expect(chips(m)).toEqual([

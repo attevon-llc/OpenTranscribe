@@ -1734,6 +1734,7 @@
   "notifications.job.notConfirmed": "تعذّر تأكيد الخطوات الأخيرة",
   "notifications.job.stale": "لا توجد تحديثات منذ فترة",
   "notifications.job.failedTask": "فشل: {{task}}",
+  "notifications.job.failedTasks": "فشلت: {{tasks}}",
   "notifications.job.announceAttention": "{{filename}}: يحتاج إلى انتباه",
   "notifications.job.announceReady": "{{filename}}: التفريغ النصي جاهز",
   "notifications.job.task.search_indexing": "فهرسة البحث",

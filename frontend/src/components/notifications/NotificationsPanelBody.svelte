@@ -4,6 +4,7 @@
   import { buildJobModel, type ProcessingJobModel } from '$lib/notifications/processingJob';
   import { countUnreadItems, groupPanelItems } from '$lib/notifications/jobGrouping';
   import { reconcileJobs } from '$lib/notifications/reconcile';
+  import { withMonotonicProgress } from '$lib/notifications/progressFloor';
   import { websocketStore } from '$stores/websocket';
   import { showNotificationsPanel } from '$stores/notificationsPanel';
   import { isLLMAvailable } from '$stores/llmStatus';
@@ -41,7 +42,12 @@
   $: jobModels = new Map<string, ProcessingJobModel>(
     items.flatMap((item) =>
       item.kind === 'job'
-        ? [[item.key, buildJobModel(item, { llmAvailable: $isLLMAvailable, now })] as const]
+        ? [
+            [
+              item.key,
+              withMonotonicProgress(buildJobModel(item, { llmAvailable: $isLLMAvailable, now })),
+            ] as const,
+          ]
         : []
     )
   );

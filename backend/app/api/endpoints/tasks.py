@@ -14,6 +14,7 @@ same applies to the nested ``BackgroundTasks`` callables: they call the synchron
 
 import logging
 import math
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter
@@ -21,7 +22,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
-from sqlalchemy import Row
 from sqlalchemy import true
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,9 @@ from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.request_context import RequestContext
 from app.services.task_filtering_service import TaskFilteringService
+from app.services.task_list_query import TaskListFilters
+from app.services.task_list_query import list_task_page
+from app.services.task_list_query import visible_files_query
 from app.utils.db_helpers import owned_in_tenant
 from app.utils.uuid_parse import parse_uuid_or_none
 
@@ -65,41 +68,6 @@ def _visible_in_tenant(
         tenant = org_scope_pred(MediaFile.organization_id, organization_id)
         return true() if tenant is None else tenant
     return owned_in_tenant(MediaFile, user_id=current_user.id, organization_id=organization_id)
-
-
-def _get_user_media_files(
-    db: Session,
-    current_user: User,
-    organization_id: OrgScope = UNSCOPED,
-    bypass: PlatformBypass = PlatformBypass.none(),
-) -> list[Row]:
-    """Get media files based on user permissions.
-
-    Projects only the columns needed for task list display, avoiding
-    loading large JSONB columns (summary_data, metadata_raw, waveform_data).
-    """
-    columns = [
-        MediaFile.id,
-        MediaFile.uuid,
-        MediaFile.filename,
-        MediaFile.file_size,
-        MediaFile.content_type,
-        MediaFile.duration,
-        MediaFile.language,
-        MediaFile.status,
-        MediaFile.upload_time,
-        MediaFile.completed_at,
-        MediaFile.media_format,
-        MediaFile.codec,
-        MediaFile.active_task_id,
-        MediaFile.last_error_message,
-    ]
-    query = db.query(*columns).filter(_visible_in_tenant(current_user, organization_id, bypass))
-    # A quarantined file must 404 everywhere under `files/`, so it must not surface
-    # in the task list either — the two are the same "does this file exist for you"
-    # question. Admin "see all" keeps every row (review needs the quarantined ones).
-    query = exclude_unavailable(query, include_quarantined=unavailable_list_exempt(bypass))
-    return query.all()
 
 
 def _latest_task_by_file(
@@ -136,7 +104,7 @@ def _latest_task_by_file(
         .filter(_visible_in_tenant(current_user, organization_id, bypass))
         .order_by(TaskModel.media_file_id, TaskModel.created_at)
     )
-    # Same quarantine exclusion as `_get_user_media_files` — this query is joined
+    # Same quarantine exclusion as `visible_files_query` — this query is joined
     # through `MediaFile` independently, so it needs its own copy of the filter.
     query = exclude_unavailable(query, include_quarantined=unavailable_list_exempt(bypass))
     if file_id is not None:
@@ -151,6 +119,22 @@ def _latest_task_by_file(
             # Rows arrive in created_at order, so a later row is the newer one.
             best[row.media_file_id] = row
     return best
+
+
+def _task_of_row(row: Any) -> Any | None:
+    """The joined task columns of a ``list_task_page`` row, shaped like a task row, or None."""
+    if row.t_id is None:
+        return None
+    return SimpleNamespace(
+        id=row.t_id,
+        task_type=row.t_task_type,
+        status=row.t_status,
+        progress=row.t_progress,
+        error_message=row.t_error_message,
+        created_at=row.t_created_at,
+        updated_at=row.t_updated_at,
+        completed_at=row.t_completed_at,
+    )
 
 
 def _map_file_status_to_task_status(file_status: FileStatus) -> str:
@@ -309,37 +293,34 @@ def list_tasks(
     """
     current_user = ctx.user
     try:
-        # Get media files based on user permissions
-        media_files = _get_user_media_files(db, current_user, ctx.org_id, ctx.bypass)
-
-        # Convert media files to task dictionaries, pairing each with its real
-        # task row so status/progress/task_type filters act on recorded values.
-        tasks_by_file = _latest_task_by_file(
-            db, current_user, organization_id=ctx.org_id, bypass=ctx.bypass
+        base = visible_files_query(
+            db,
+            _visible_in_tenant(current_user, ctx.org_id, ctx.bypass),
+            include_quarantined=unavailable_list_exempt(ctx.bypass),
         )
-        tasks = [
-            _create_task_dict_from_media_file(file, current_user, tasks_by_file.get(file.id))
-            for file in media_files
-        ]
-
-        # Apply server-side filtering
-        filtered_tasks = TaskFilteringService.filter_tasks_by_criteria(
-            tasks=tasks,
-            status=status,
-            task_type=task_type,
-            age_filter=age_filter,
-            date_from=date_from,
-            date_to=date_to,
+        rows, total = list_task_page(
+            db,
+            base,
+            filters=TaskListFilters(
+                status=status,
+                task_type=task_type,
+                age_filter=age_filter,
+                date_from=date_from,
+                date_to=date_to,
+            ),
+            page=page,
+            page_size=page_size,
         )
-
-        # Pagination
-        total = len(filtered_tasks)
         total_pages = max(1, math.ceil(total / page_size))
-        offset = (page - 1) * page_size
-        page_items = filtered_tasks[offset : offset + page_size]
 
-        # Convert to Task schema objects
-        items = [Task(**task_dict) for task_dict in page_items]
+        # Only the page's rows become dictionaries; the display fields are added to them.
+        page_dicts = [
+            _create_task_dict_from_media_file(row, current_user, _task_of_row(row)) for row in rows
+        ]
+        items = [
+            Task(**task_dict)
+            for task_dict in TaskFilteringService.filter_tasks_by_criteria(tasks=page_dicts)
+        ]
 
         return PaginatedTaskResponse(
             items=items,
@@ -421,7 +402,7 @@ def _get_media_file_by_id(
         _visible_in_tenant(current_user, organization_id, bypass),
     )
     # A quarantined file must 404 on this surface too — see the matching
-    # exclusion on `_get_user_media_files`/`_latest_task_by_file` above.
+    # exclusion on `visible_files_query`/`_latest_task_by_file` above.
     media_file = exclude_unavailable(
         query, include_quarantined=unavailable_list_exempt(bypass)
     ).first()

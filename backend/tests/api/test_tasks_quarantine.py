@@ -1,7 +1,7 @@
 """A quarantined file's task rows must not surface on the task-list surfaces (#817).
 
 ``GET /api/tasks`` and ``GET /api/tasks/{task_id}`` build their response straight
-from ``MediaFile`` rows (``_get_user_media_files`` / ``_latest_task_by_file`` /
+from ``MediaFile`` rows (``visible_files_query`` / ``_latest_task_by_file`` /
 ``_get_media_file_by_id``) rather than through ``get_file_by_uuid_with_permission``
 — the chokepoint that makes a taken-down file 404 on every ``files/`` read surface
 — so none of the three had ever learned about ``is_quarantined``. A takedown left

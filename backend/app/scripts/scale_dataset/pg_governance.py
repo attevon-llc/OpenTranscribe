@@ -8,9 +8,11 @@ cannot trip.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import Integer
 from sqlalchemy import literal_column
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.expression import ColumnClause
@@ -29,6 +31,7 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerMatch
 from app.scripts.scale_dataset.pg_synthetic import Shape
+from app.scripts.scale_dataset.pg_synthetic import _bump_sequence
 from app.scripts.scale_dataset.pg_synthetic import _fill
 from app.scripts.scale_dataset.pg_synthetic import _h
 from app.scripts.scale_dataset.pg_synthetic import _max_id
@@ -289,4 +292,20 @@ def seed_all(conn: Connection, shape: Shape, seed: str, password_hash: str) -> d
     )
     counts = seed_dataset(conn, shape, seed, password_hash)
     counts.update(seed_governance(conn, shape, seed, bases))
+    bump_id_sequences(conn, counts)
     return counts
+
+
+def bump_id_sequences(conn: Connection, tables: Iterable[str]) -> None:
+    """Move every seeded table's id sequence past its rows.
+
+    The seed writes explicit ids, which leaves a serial sequence where it was; the app's next
+    INSERT (a collection, comment or chat created during a load test) would then collide.
+    Tables without a serial ``id`` (composite-key links, string task ids) are skipped.
+    """
+    from app.db.base import Base
+
+    for name in tables:
+        table = Base.metadata.tables[name]
+        if "id" in table.c and isinstance(table.c.id.type, Integer):
+            _bump_sequence(conn, table)

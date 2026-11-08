@@ -108,6 +108,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The scale seed (`scripts/seed-query-review.sh`) now moves every seeded table's id sequence past the rows it wrote. Before, organizations, holds, collections, clusters and chats kept their sequence at 1, so the first collection, share or chat created on a seeded stack failed with a duplicate key.
 - Live notifications are no longer lost when someone connects or disconnects while a notification is being sent to everyone: the send could fail with "dictionary changed size during iteration", after which the server dropped its notification feed and missed whatever was published while it reconnected. A browser tab closing mid-send also no longer causes the user's next tab to be skipped.
 - Opening a live-updates connection no longer runs its sign-in check (a database query and token verification) on the server's event loop, so many browsers reconnecting at once, for example after a restart, no longer stall every other request.
 - A chat reply no longer holds a database connection while the model is writing it. Each streaming answer kept one pooled connection, idle in a transaction, until the reply finished, so enough concurrent chats could exhaust the server's connection pool and slow every other user's requests.

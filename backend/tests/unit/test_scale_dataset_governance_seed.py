@@ -166,6 +166,34 @@ def test_holds_use_both_authorities_and_perf3_is_an_org_admin(db_session):
     assert cited == 4  # the assistant rows (even g) of 9 messages
 
 
+def test_the_app_can_insert_after_the_seed_in_every_seeded_table(db_session):
+    """Explicit-id inserts leave the id sequence behind; the next app INSERT must not collide.
+
+    The load test creates collections, comments and chats on a seeded stack, so a sequence
+    still at 1 turns every such request into a duplicate-key 500.
+    """
+    from app.db.base import Base
+
+    counts, _ = _seed(db_session)
+    conn = db_session.connection()
+    behind = []
+    for name in counts:
+        if "id" not in Base.metadata.tables[name].c:  # composite-key link tables
+            continue
+        seq = conn.execute(
+            text("SELECT pg_get_serial_sequence(:t, 'id')"), {"t": f'"{name}"'}
+        ).scalar_one_or_none()
+        if seq is None:  # a non-serial id (task ids are strings)
+            continue
+        top = conn.execute(text(f'SELECT max(id) FROM "{name}"')).scalar_one()
+        last = conn.execute(text(f"SELECT last_value FROM {seq}")).scalar_one()
+        if top is not None and last < top:
+            behind.append(f"{name}: sequence {last} < max(id) {top}")
+
+    assert not behind, behind
+    assert "collection" in counts and "chat_conversation" in counts  # the checked tables ran
+
+
 def test_two_seeds_generate_identical_governance_rows(db_session):
     first_counts, first = _seed(db_session)
     db_session.rollback()

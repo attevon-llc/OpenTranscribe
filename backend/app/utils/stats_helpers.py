@@ -15,6 +15,8 @@ from typing import Any
 
 from sqlalchemy import extract
 from sqlalchemy import func
+from sqlalchemy import select
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
@@ -48,6 +50,51 @@ def format_bytes(byte_count: float) -> str:
             return f"{byte_count:.2f} {unit}"
         byte_count /= 1024
     return f"{byte_count:.2f} TB"
+
+
+# Below this many rows an exact count is cheap, so the dashboard keeps showing exact numbers on
+# small installs; above it a full count of a 10M-row table costs ~700 ms per poll.
+EXACT_COUNT_BELOW = 100_000
+
+
+def table_row_counts(
+    db: Session, *models: Any, exact_below: int = EXACT_COUNT_BELOW
+) -> list[tuple[int, bool]]:
+    """Row counts of the models' tables, estimated from planner statistics when large.
+
+    ``pg_class.reltuples`` is the planner's own row estimate, refreshed by autovacuum and
+    ``ANALYZE`` (https://www.postgresql.org/docs/17/catalog-pg-class.html); reading it is a
+    primary-key lookup instead of a scan. It is ``-1`` before the first vacuum/analyze, and a
+    count below ``exact_below`` is cheap, so both of those fall back to ``count(*)``, run for
+    all the small tables in ONE statement. ``to_regclass`` resolves each name through
+    ``search_path`` exactly like the application's own queries do.
+
+    Returns:
+        ``(count, is_estimate)`` per model, in argument order.
+    """
+    names = [m.__tablename__ for m in models]
+    rows = db.execute(
+        text(
+            "SELECT n, (SELECT reltuples::bigint FROM pg_class WHERE oid = to_regclass(n)) "
+            "FROM unnest(CAST(:names AS text[])) AS n"
+        ),
+        {"names": names},
+    ).all()
+    by_name: dict[str, int | None] = {row[0]: row[1] for row in rows}
+    estimates = [by_name.get(n) for n in names]
+    result: list[tuple[int, bool]] = [(0, False)] * len(models)
+    exact: list[int] = []
+    for i, estimate in enumerate(estimates):
+        if estimate is not None and estimate >= exact_below:
+            result[i] = (int(estimate), True)
+        else:
+            exact.append(i)
+    if exact:
+        # Scalar subqueries, not bare counts: two FROM tables in one SELECT would cross-join.
+        row = db.query(*(select(func.count(models[i].id)).scalar_subquery() for i in exact)).one()
+        for i, n in zip(exact, row, strict=True):
+            result[i] = (int(n or 0), False)
+    return result
 
 
 def get_user_stats(db: Session, *, include_breakdown: bool = False) -> dict[str, Any]:
@@ -132,9 +179,11 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
 
     row = db.query(*columns).first()  # type: ignore[call-overload]
 
-    # Separate queries for related table counts (cheap — indexes exist)
-    total_segments = db.query(func.count(TranscriptSegment.id)).scalar() or 0
-    total_speakers = db.query(func.count(Speaker.id)).scalar() or 0
+    # Segment and speaker tables reach millions of rows: an exact count is a ~700 ms scan per
+    # poll (#1337 A1), so large tables report the planner's estimate and say so.
+    (total_segments, segments_estimated), (total_speakers, speakers_estimated) = table_row_counts(
+        db, TranscriptSegment, Speaker
+    )
 
     result: dict[str, Any] = {
         "total": row.total if row else 0,
@@ -145,6 +194,8 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
         "trashed_bytes": int(row.trashed_bytes) if row and row.trashed_bytes else 0,
         "segments": total_segments,
         "speakers": total_speakers,
+        "segments_estimated": segments_estimated,
+        "speakers_estimated": speakers_estimated,
     }
 
     if include_status_breakdown and row:
@@ -158,35 +209,48 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
     return result
 
 
-def get_task_stats(db: Session) -> dict[str, Any]:
-    """Get task statistics in a single query.
-
-    Uses SQL conditional aggregation for status counts and SQL AVG for
-    processing time instead of loading all completed Task objects into Python.
-
-    Args:
-        db: Database session
-
-    Returns:
-        Dictionary with task statistics
-    """
-    row = db.query(
+def _task_aggregate_row(db: Session) -> Any:
+    """One statement over ``task`` for both the status counts and the transcription timing."""
+    transcribed = (
+        Task.task_type == "transcription",
+        Task.status == TASK_STATUS_COMPLETED,
+        Task.completed_at.isnot(None),
+        Task.created_at.isnot(None),
+    )
+    elapsed = extract("epoch", Task.completed_at - Task.created_at)
+    return db.query(
         func.count().label("total"),
         func.count().filter(Task.status == TASK_STATUS_PENDING).label("pending"),
         func.count().filter(Task.status == TASK_STATUS_IN_PROGRESS).label("running"),
         func.count().filter(Task.status == TASK_STATUS_COMPLETED).label("completed"),
         func.count().filter(Task.status == TASK_STATUS_FAILED).label("failed"),
-        func.avg(extract("epoch", Task.completed_at - Task.created_at))
+        func.avg(elapsed)
         .filter(
             Task.status == TASK_STATUS_COMPLETED,
             Task.completed_at.isnot(None),
             Task.created_at.isnot(None),
         )
         .label("avg_processing_time"),
+        func.count().filter(*transcribed).label("timing_files"),
+        func.avg(elapsed).filter(*transcribed).label("avg_secs"),
+        func.min(elapsed).filter(*transcribed).label("min_secs"),
+        func.max(elapsed).filter(*transcribed).label("max_secs"),
     ).first()
 
+
+def get_task_and_timing_stats(db: Session) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Task status counts and per-file timing from a single scan of ``task``.
+
+    ``/system/stats`` used to run these as two statements over the same table (#1337 A2).
+
+    Returns:
+        ``(task_stats, file_timing_stats)``.
+    """
+    row = _task_aggregate_row(db)
+
+    task_stats: dict[str, Any]
     if not row or row.total == 0:
-        return {
+        task_stats = {
             "total": 0,
             "pending": 0,
             "running": 0,
@@ -195,18 +259,34 @@ def get_task_stats(db: Session) -> dict[str, Any]:
             "success_rate": 0,
             "avg_processing_time": 0,
         }
+    else:
+        task_stats = {
+            "total": row.total,
+            "pending": row.pending,
+            "running": row.running,
+            "completed": row.completed,
+            "failed": row.failed,
+            "success_rate": round((row.completed / row.total) * 100, 2),
+            "avg_processing_time": round(float(row.avg_processing_time or 0), 2),
+        }
 
-    success_rate = round((row.completed / row.total) * 100, 2) if row.total > 0 else 0
+    timing: dict[str, Any]
+    if not row or not row.timing_files:
+        timing = {"files": 0, "avg_secs": 0, "min_secs": 0, "max_secs": 0, "avg_mins": 0}
+    else:
+        timing = {
+            "files": row.timing_files,
+            "avg_secs": round(float(row.avg_secs or 0)),
+            "min_secs": round(float(row.min_secs or 0)),
+            "max_secs": round(float(row.max_secs or 0)),
+            "avg_mins": round(float(row.avg_secs or 0) / 60, 1),
+        }
+    return task_stats, timing
 
-    return {
-        "total": row.total,
-        "pending": row.pending,
-        "running": row.running,
-        "completed": row.completed,
-        "failed": row.failed,
-        "success_rate": success_rate,
-        "avg_processing_time": round(float(row.avg_processing_time or 0), 2),
-    }
+
+def get_task_stats(db: Session) -> dict[str, Any]:
+    """Task status counts, success rate and average processing time (admin dashboard)."""
+    return get_task_and_timing_stats(db)[0]
 
 
 def get_recent_tasks(db: Session, limit: int = 10) -> list[dict[str, Any]]:
@@ -263,84 +343,8 @@ def get_recent_tasks(db: Session, limit: int = 10) -> list[dict[str, Any]]:
     return result
 
 
-def get_throughput_stats(db: Session) -> dict[str, Any]:
-    """Get processing throughput using rolling 1h and 3h windows.
-
-    Ported from scripts/bulk-processing-cheatsheet.sh bulk-throughput.
-
-    Args:
-        db: Database session
-
-    Returns:
-        Dictionary with completion counts and files/hour rates
-    """
-    now = datetime.now(UTC)
-    one_hour_ago = now - timedelta(hours=1)
-    three_hours_ago = now - timedelta(hours=3)
-
-    row = (
-        db.query(
-            func.count().label("total_completed"),
-            func.count().filter(MediaFile.completed_at > one_hour_ago).label("last_1h"),
-            func.count().filter(MediaFile.completed_at > three_hours_ago).label("last_3h"),
-        )
-        .filter(
-            MediaFile.status == "completed",
-            MediaFile.completed_at.isnot(None),
-        )
-        .first()
-    )
-
-    if not row:
-        return {
-            "total_completed": 0,
-            "last_1h": 0,
-            "last_3h": 0,
-            "rate_1h": 0,
-            "rate_3h": 0,
-        }
-
-    return {
-        "total_completed": row.total_completed,
-        "last_1h": row.last_1h,
-        "last_3h": row.last_3h,
-        "rate_1h": row.last_1h,
-        "rate_3h": round(row.last_3h / 3.0, 1) if row.last_3h else 0,
-    }
-
-
-def get_processing_eta(db: Session) -> dict[str, Any]:
-    """Calculate ETA for remaining files based on 3h rolling throughput.
-
-    Ported from scripts/bulk-processing-cheatsheet.sh bulk-eta.
-
-    Args:
-        db: Database session
-
-    Returns:
-        Dictionary with remaining count, files/hour, hours remaining, est completion
-    """
-    three_hours_ago = datetime.now(UTC) - timedelta(hours=3)
-
-    completed_3h = (
-        db.query(func.count())
-        .filter(
-            MediaFile.status == "completed",
-            MediaFile.completed_at.isnot(None),
-            MediaFile.completed_at > three_hours_ago,
-        )
-        .scalar()
-    ) or 0
-
-    remaining = (
-        db.query(func.count())
-        .filter(
-            MediaFile.file_size > 0,
-            MediaFile.status.in_(["pending", "processing"]),
-        )
-        .scalar()
-    ) or 0
-
+def eta_from_counts(completed_3h: int, remaining: int) -> dict[str, Any]:
+    """ETA for ``remaining`` files at the last three hours' completion rate (pure arithmetic)."""
     files_per_hour = round(completed_3h / 3.0, 1) if completed_3h > 0 else 0
     hours_remaining = round(remaining / files_per_hour, 1) if files_per_hour > 0 else None
     est_completion = None
@@ -355,43 +359,42 @@ def get_processing_eta(db: Session) -> dict[str, Any]:
     }
 
 
-def get_file_timing_stats(db: Session) -> dict[str, Any]:
-    """Get per-file processing timing from the task table.
+def get_throughput_and_eta(db: Session) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Rolling 1h/3h completion throughput and the remaining-work ETA in ONE ``media_file`` scan.
 
-    Ported from scripts/bulk-processing-cheatsheet.sh bulk-file-timing.
-
-    Args:
-        db: Database session
+    Ported from scripts/bulk-processing-cheatsheet.sh bulk-throughput / bulk-eta. The three-hour
+    completed count is the same number for both, so they share it (#1337 A2: three statements
+    became one).
 
     Returns:
-        Dictionary with avg/min/max processing seconds for transcription tasks
+        ``(throughput, eta)``.
     """
-    row = (
-        db.query(
-            func.count().label("files"),
-            func.avg(extract("epoch", Task.completed_at - Task.created_at)).label("avg_secs"),
-            func.min(extract("epoch", Task.completed_at - Task.created_at)).label("min_secs"),
-            func.max(extract("epoch", Task.completed_at - Task.created_at)).label("max_secs"),
-        )
-        .filter(
-            Task.task_type == "transcription",
-            Task.status == TASK_STATUS_COMPLETED,
-            Task.completed_at.isnot(None),
-            Task.created_at.isnot(None),
-        )
-        .first()
-    )
+    now = datetime.now(UTC)
+    one_hour_ago = now - timedelta(hours=1)
+    three_hours_ago = now - timedelta(hours=3)
+    done = (MediaFile.status == "completed", MediaFile.completed_at.isnot(None))
 
-    if not row or not row.files:
-        return {"files": 0, "avg_secs": 0, "min_secs": 0, "max_secs": 0, "avg_mins": 0}
+    row = db.query(
+        func.count().filter(*done).label("total_completed"),
+        func.count().filter(*done, MediaFile.completed_at > one_hour_ago).label("last_1h"),
+        func.count().filter(*done, MediaFile.completed_at > three_hours_ago).label("last_3h"),
+        func.count()
+        .filter(MediaFile.file_size > 0, MediaFile.status.in_(["pending", "processing"]))
+        .label("remaining"),
+    ).first()
 
-    return {
-        "files": row.files,
-        "avg_secs": round(float(row.avg_secs or 0)),
-        "min_secs": round(float(row.min_secs or 0)),
-        "max_secs": round(float(row.max_secs or 0)),
-        "avg_mins": round(float(row.avg_secs or 0) / 60, 1),
+    if not row:
+        throughput = {"total_completed": 0, "last_1h": 0, "last_3h": 0, "rate_1h": 0, "rate_3h": 0}
+        return throughput, eta_from_counts(0, 0)
+
+    throughput = {
+        "total_completed": row.total_completed,
+        "last_1h": row.last_1h,
+        "last_3h": row.last_3h,
+        "rate_1h": row.last_1h,
+        "rate_3h": round(row.last_3h / 3.0, 1) if row.last_3h else 0,
     }
+    return throughput, eta_from_counts(row.last_3h, row.remaining)
 
 
 def get_queue_depths() -> dict[str, int]:

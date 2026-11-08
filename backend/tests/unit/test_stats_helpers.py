@@ -42,7 +42,7 @@ teardown; ``TestTableShadowing`` is the guard that the shadowing is really in
 effect, since a shadow that silently failed to apply would turn every exact
 assertion below into an assertion about live dev data.
 
-``get_processing_eta``'s division-based ``files_per_hour``/``hours_remaining`` is
+``eta_from_counts``'s division-based ``files_per_hour``/``hours_remaining`` is
 additionally covered with a tiny hand-built fake session (not ``unittest.mock`` —
 a two-method stand-in for the exact ``db.query(func.count()).filter(...).scalar()``
 chain the function calls), because those branches are pure arithmetic and deserve
@@ -67,16 +67,17 @@ from app.models.media import Task
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
+from app.utils.stats_helpers import eta_from_counts
 from app.utils.stats_helpers import format_bytes
 from app.utils.stats_helpers import get_file_stats
-from app.utils.stats_helpers import get_file_timing_stats
 from app.utils.stats_helpers import get_models_info
-from app.utils.stats_helpers import get_processing_eta
 from app.utils.stats_helpers import get_queue_depths
 from app.utils.stats_helpers import get_recent_tasks
+from app.utils.stats_helpers import get_task_and_timing_stats
 from app.utils.stats_helpers import get_task_stats
-from app.utils.stats_helpers import get_throughput_stats
+from app.utils.stats_helpers import get_throughput_and_eta
 from app.utils.stats_helpers import get_user_stats
+from app.utils.stats_helpers import table_row_counts
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
@@ -346,6 +347,8 @@ class TestGetFileStats:
             "trashed_bytes": 0,
             "segments": 0,
             "speakers": 0,
+            "segments_estimated": False,
+            "speakers_estimated": False,
         }
 
         _make_media_file(db_session, normal_user.id, file_size=1000, duration=10.5)
@@ -360,6 +363,8 @@ class TestGetFileStats:
             "trashed_bytes": 0,
             "segments": 0,
             "speakers": 0,
+            "segments_estimated": False,
+            "speakers_estimated": False,
         }
 
     def test_trashed_files_stay_in_the_totals_and_are_counted_apart(
@@ -640,7 +645,7 @@ class TestGetFileTimingStats:
             completed_at=None,
         )
 
-        result = get_file_timing_stats(db_session)
+        result = get_task_and_timing_stats(db_session)[1]
 
         assert result["files"] == 3
         assert result["avg_secs"] == 120
@@ -649,7 +654,7 @@ class TestGetFileTimingStats:
         assert result["avg_mins"] == 2.0
 
     def test_empty_reports_zeros(self, db_session, isolated_task_table):
-        result = get_file_timing_stats(db_session)
+        result = get_task_and_timing_stats(db_session)[1]
 
         assert result == {"files": 0, "avg_secs": 0, "min_secs": 0, "max_secs": 0, "avg_mins": 0}
 
@@ -673,7 +678,7 @@ class TestGetThroughputStats:
         # neither window
         _make_media_file(db_session, normal_user.id, completed_at=now - timedelta(hours=4))
 
-        assert get_throughput_stats(db_session) == {
+        assert get_throughput_and_eta(db_session)[0] == {
             "total_completed": 4,
             "last_1h": 2,
             "last_3h": 3,
@@ -690,7 +695,7 @@ class TestGetThroughputStats:
         pending.completed_at = now  # a completed_at with the "wrong" status must not count
         db_session.commit()
 
-        assert get_throughput_stats(db_session) == {
+        assert get_throughput_and_eta(db_session)[0] == {
             "total_completed": 0,
             "last_1h": 0,
             "last_3h": 0,
@@ -720,42 +725,18 @@ class TestGetProcessingEta:
         _make_media_file(db_session, normal_user.id, status="pending", file_size=0)
         _make_media_file(db_session, normal_user.id, status="completed", file_size=100)
 
-        result = get_processing_eta(db_session)
+        result = get_throughput_and_eta(db_session)[1]
 
         assert result["remaining"] == 7  # 4 pending + 3 processing, all with file_size > 0
         assert result["files_per_hour"] == 1.0  # 3 completed in the 3h window / 3.0
         assert result["hours_remaining"] == 7.0  # 7 / 1.0
         assert result["est_completion"] is not None
 
-    # -- fake-session branch tests: exact arithmetic, independent of any database --
-
-    class _FakeEtaQuery:
-        def __init__(self, value: int) -> None:
-            self._value = value
-
-        def filter(self, *_args, **_kwargs):
-            return self
-
-        def scalar(self):
-            return self._value
-
-    class _FakeEtaSession:
-        """Stands in for the exact ``db.query(func.count()).filter(...).scalar()``
-        chain ``get_processing_eta`` calls, twice, in order: completed_3h then
-        remaining. Not ``unittest.mock`` — a two-method fake mirroring the real
-        interface, same style as ``test_audio_segment_utils.py``'s ``_fake_subprocess``.
-        """
-
-        def __init__(self, values: list[int]) -> None:
-            self._values = list(values)
-
-        def query(self, *_args, **_kwargs):
-            return TestGetProcessingEta._FakeEtaQuery(self._values.pop(0))
+    # -- pure arithmetic branches: exact results, independent of any database --
 
     def test_zero_recent_throughput_yields_no_eta(self):
-        fake_db = self._FakeEtaSession([0, 12])  # completed_3h=0, remaining=12
 
-        result = get_processing_eta(fake_db)  # type: ignore[arg-type]  # duck-typed fake, see _FakeEtaSession's docstring
+        result = eta_from_counts(0, 12)  # completed_3h=0, remaining=12
 
         assert result == {
             "remaining": 12,
@@ -765,10 +746,9 @@ class TestGetProcessingEta:
         }
 
     def test_positive_throughput_computes_hours_remaining_and_est_completion(self):
-        fake_db = self._FakeEtaSession([9, 18])  # completed_3h=9 -> files_per_hour = 3.0
 
         before = datetime.now(UTC)
-        result = get_processing_eta(fake_db)  # type: ignore[arg-type]  # duck-typed fake, see _FakeEtaSession's docstring
+        result = eta_from_counts(9, 18)  # completed_3h=9 -> files_per_hour = 3.0
         after = datetime.now(UTC)
 
         assert result["remaining"] == 18
@@ -780,9 +760,8 @@ class TestGetProcessingEta:
         assert before + timedelta(hours=5.99) <= completion <= after + timedelta(hours=6.01)
 
     def test_zero_remaining_with_throughput_still_reports_zero_hours(self):
-        fake_db = self._FakeEtaSession([6, 0])  # completed_3h=6 -> files_per_hour=2.0, remaining=0
 
-        result = get_processing_eta(fake_db)  # type: ignore[arg-type]  # duck-typed fake, see _FakeEtaSession's docstring
+        result = eta_from_counts(6, 0)  # completed_3h=6 -> files_per_hour=2.0, remaining=0
 
         assert result["remaining"] == 0
         assert result["files_per_hour"] == 2.0
@@ -1043,3 +1022,89 @@ class TestFormatBytes:
         from app.utils import gpu_stats
 
         assert gpu_stats.format_bytes is format_bytes
+
+
+# ---------------------------------------------------------------------------
+# table_row_counts / consolidated statements (issue #1337 A1, A2)
+# ---------------------------------------------------------------------------
+
+
+class TestTableRowCounts:
+    def test_small_tables_are_counted_exactly(self, db_session, normal_user, isolated_file_tables):
+        for _ in range(3):
+            _make_media_file(db_session, normal_user.id)
+
+        assert table_row_counts(db_session, MediaFile)[0] == (3, False)
+
+    def test_a_large_table_reports_the_planner_estimate_and_says_so(
+        self, db_session, normal_user, isolated_file_tables
+    ):
+        for _ in range(3):
+            _make_media_file(db_session, normal_user.id)
+        db_session.execute(text("ANALYZE media_file"))
+
+        # exact_below=1 makes a 3-row table "large": the estimate (reltuples) must be used.
+        count, estimated = table_row_counts(db_session, MediaFile, exact_below=1)[0]
+
+        assert (count, estimated) == (3, True)
+
+    def test_a_never_analyzed_table_falls_back_to_the_exact_count(
+        self, db_session, normal_user, isolated_file_tables
+    ):
+        # reltuples is -1 before the first vacuum/analyze; that must not be reported as a count.
+        _make_media_file(db_session, normal_user.id)
+
+        assert table_row_counts(db_session, MediaFile, exact_below=0)[0] == (1, False)
+
+    def test_two_small_tables_are_counted_independently(
+        self, db_session, normal_user, isolated_file_tables
+    ):
+        # A cross join of the two counts would multiply them (2 files x 3 speakers = 6).
+        for _ in range(2):
+            media_file = _make_media_file(db_session, normal_user.id)
+        for i in range(3):
+            db_session.add(
+                Speaker(
+                    uuid=uuid_pkg.uuid4(),
+                    name=f"S{i}",
+                    user_id=normal_user.id,
+                    media_file_id=media_file.id,
+                )
+            )
+        db_session.commit()
+
+        assert table_row_counts(db_session, MediaFile, Speaker) == [(2, False), (3, False)]
+
+    def test_the_large_path_issues_no_count_scan(
+        self, db_session, normal_user, isolated_file_tables
+    ):
+        from tests.query_budget import count_statements
+
+        _make_media_file(db_session, normal_user.id)
+        db_session.execute(text("ANALYZE media_file"))
+
+        with count_statements(db_session.connection()) as log:
+            table_row_counts(db_session, MediaFile, exact_below=1)[0]
+
+        assert not log.matching(r"count\("), log.describe()
+        assert log.count == 1
+
+
+class TestConsolidatedStatements:
+    def test_task_status_counts_and_timing_come_from_one_statement(
+        self, db_session, isolated_task_table
+    ):
+        from tests.query_budget import count_statements
+
+        with count_statements(db_session.connection()) as log:
+            get_task_and_timing_stats(db_session)
+
+        assert log.count == 1, log.describe()
+
+    def test_throughput_and_eta_come_from_one_statement(self, db_session, isolated_file_tables):
+        from tests.query_budget import count_statements
+
+        with count_statements(db_session.connection()) as log:
+            get_throughput_and_eta(db_session)
+
+        assert log.count == 1, log.describe()

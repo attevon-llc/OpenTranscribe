@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import platform
 from typing import Any
@@ -65,7 +64,7 @@ def _validate_user_deletion(user: User, current_user: User) -> None:
 
 
 @router.get("/stats", response_model=dict[str, Any])
-async def get_admin_stats(
+def get_admin_stats(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_admin_user)
 ) -> dict[str, Any]:
     """Report application and host statistics for the admin dashboard.
@@ -81,6 +80,11 @@ async def get_admin_stats(
       used to substitute a bare dict, so the key's type depended on whether
       psutil raised.
 
+    - ``transcripts.total_segments`` and ``speakers.total`` are planner estimates (from
+      ``pg_class.reltuples``) once the table holds 100,000 rows or more, because an exact count
+      of a 10-million-row table costs about 700 ms per call; ``total_segments_is_estimate`` and
+      ``total_is_estimate`` say which. Smaller tables report exact counts.
+
     Returns:
         Nested user/file/transcript/speaker/model/system/task statistics.
 
@@ -92,8 +96,9 @@ async def get_admin_stats(
     logger.info("Admin stats requested")
 
     try:
-        # System statistics — offload sync psutil calls to a thread to avoid
-        # blocking the async event loop.
+        # System statistics. This handler is a plain `def`, so FastAPI runs it in its
+        # threadpool and the blocking psutil and database calls below never stall the event
+        # loop (https://fastapi.tiangolo.com/async/#in-a-hurry).
         def _collect_system_stats() -> dict[str, Any]:
             return {
                 "cpu": get_cpu_usage(),
@@ -104,7 +109,7 @@ async def get_admin_stats(
             }
 
         try:
-            system_stats = await asyncio.to_thread(_collect_system_stats)
+            system_stats = _collect_system_stats()
         except Exception as e:
             logger.exception(f"Error getting system stats: {e}")
             system_stats = {
@@ -160,21 +165,14 @@ async def get_admin_stats(
         from app.transcription.diar_sidecar_status import sidecar_diagnostics
 
         # Single resolver, shared with /system/stats (app/utils/stats_helpers.py) — issue
-        # #672's second half. This used to be a hand-rolled, UNVALIDATED copy of the
-        # diarizer_backend resolution (via engine_settings._resolve_setting) with its own
-        # description table; it disagreed with the other panel's answer on a bad config
-        # value, and both of them reported the CONFIGURED backend rather than the one
-        # actually serving. describe_diarizer_status() does a bounded (<=5s, TTL-cached)
-        # network probe when the configured backend is "native", so it is offloaded to a
-        # thread — this handler is `async def` and a probe run inline would stall every
-        # other in-flight request on this worker's event loop for the same 5s.
-        diarizer_status = await asyncio.to_thread(describe_diarizer_status)
-        # issue #656 Step 9: a live, deployment-wide "can it serve right now" probe — same
-        # asyncio.to_thread offload as above and for the same reason (a synchronous 5s probe
-        # inline would block this worker's whole event loop). Kept even when the configured
-        # backend is "pyannote" so an admin can see whether the sidecar has come back before
-        # switching to it.
-        sidecar_info = await asyncio.to_thread(sidecar_diagnostics)
+        # #672's second half. describe_diarizer_status() does a bounded (<=5s, TTL-cached)
+        # network probe when the configured backend is "native"; that is fine here because
+        # this handler runs in the threadpool, not on the event loop.
+        diarizer_status = describe_diarizer_status()
+        # issue #656 Step 9: a live, deployment-wide "can it serve right now" probe. Kept even
+        # when the configured backend is "pyannote" so an admin can see whether the sidecar has
+        # come back before switching to it.
+        sidecar_info = sidecar_diagnostics()
 
         models_info = {
             "whisper": {
@@ -219,9 +217,13 @@ async def get_admin_stats(
                 "trashed_files": file_stats["trashed_files"],
                 "trashed_bytes": file_stats["trashed_bytes"],
             },
-            "transcripts": {"total_segments": total_segments},
+            "transcripts": {
+                "total_segments": total_segments,
+                "total_segments_is_estimate": file_stats["segments_estimated"],
+            },
             "speakers": {
                 "total": total_speakers,
+                "total_is_estimate": file_stats["speakers_estimated"],
                 "avg_per_file": round(total_speakers / total_files, 2) if total_files > 0 else 0,
             },
             "models": models_info,

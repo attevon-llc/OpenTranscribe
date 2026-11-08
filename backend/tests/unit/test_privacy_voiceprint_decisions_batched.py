@@ -211,6 +211,53 @@ def test_a_hook_refusing_one_file_still_hides_that_files_speakers(db_session):
     assert view.voiceprints(allowed_file.id) == Decision(True)
 
 
+def test_off_scopes_match_personal_and_organization_files_exactly(db_session):
+    """The off-scope predicate, grouped per organization, with a NULL (personal) organization.
+
+    ``(user, NULL) IN (...)`` is NULL in SQL, so a personal scope must be matched with
+    ``organization_id IS NULL``; and a scope that is off in one organization must not hide the
+    same owner's files in another organization or in personal scope.
+    """
+    from sqlalchemy import select
+
+    from app.models.speaker import Speaker
+
+    user_off, org_member, on_user = (_user(db_session, n) for n in ("u_off", "member", "on"))
+    org_off, org_on = make_org(db_session, voiceprints=False), make_org(db_session)
+    set_user_switch(db_session, user_off, "voiceprints", False)
+    files = {
+        "user_off_personal": file_in(db_session, user_off, None),
+        "user_off_in_org": file_in(db_session, user_off, org_on),
+        "member_in_off_org": file_in(db_session, org_member, org_off),
+        "member_personal": file_in(db_session, org_member, None),
+        "member_in_on_org": file_in(db_session, org_member, org_on),
+        "on_personal": file_in(db_session, on_user, None),
+    }
+    speakers = {}
+    for name, media in files.items():
+        speaker = Speaker(
+            uuid=uuid_pkg.uuid4(),
+            user_id=media.user_id,
+            organization_id=media.organization_id,
+            media_file_id=media.id,
+            name="SPEAKER_00",
+            identity_source="voiceprint_link",
+        )
+        db_session.add(speaker)
+        db_session.flush()
+        speakers[speaker.id] = name
+
+    _name_hidden, link_hidden = machine_identity_clauses(
+        PrivacyView(db_session), select(Speaker.media_file_id).where(Speaker.id.in_(speakers))
+    )
+    hidden = {
+        speakers[sid]
+        for (sid,) in db_session.query(Speaker.id).filter(Speaker.id.in_(speakers), link_hidden)
+    }
+
+    assert hidden == {"user_off_personal", "user_off_in_org", "member_in_off_org"}
+
+
 # --- the endpoint budget ---------------------------------------------------------------------
 
 

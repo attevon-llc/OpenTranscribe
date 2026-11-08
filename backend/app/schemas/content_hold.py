@@ -105,3 +105,28 @@ class HoldOut(BaseModel):
 class HoldList(BaseModel):
     holds: list[HoldOut]
     total: int
+
+
+FileAvailability = Literal["available", "trashed", "quarantined"]
+
+
+class AdminFileHit(BaseModel):
+    """One file an administrator's hold or takedown picker may offer."""
+
+    uuid: UUID
+    title: str | None = None
+    filename: str
+    upload_time: datetime | None = None
+    #: The owner's name, or their address when they have none.
+    owner: str
+    #: The file's organization, on the platform search only (``None`` for a personal file).
+    organization_name: str | None = None
+    #: ``available``, ``trashed`` or ``quarantined``: a hold still reaches the last two.
+    availability: FileAvailability
+    #: Who holds it already, never why and never the hold uuids.
+    hold: HoldSummary
+
+
+class AdminFileSearchResult(BaseModel):
+    files: list[AdminFileHit]
+    total: int

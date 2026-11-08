@@ -18,10 +18,15 @@
    * recorded here first (once, before the loop, so a failure takes nothing down), or an
    * explicit "no notice (operator action)". With a notice, the admin can also email the
    * owners once per owner afterwards instead of once per file.
+   *
+   * `chooseFiles` (Settings > Quarantine) replaces the fixed selection with a search-and-select
+   * picker (`FileSearchPicker`, platform scope: every tenant's files), so an administrator never
+   * has to find a file's ID; the rest of the form is the same one the gallery opens.
    */
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import BaseModal from '$components/ui/BaseModal.svelte';
+  import FileSearchPicker from '$components/ui/FileSearchPicker.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
   import { AdminApi } from '$lib/api/admin';
   import { mediaRevocationIncomplete } from '$lib/takedownRevocation';
@@ -31,9 +36,15 @@
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
   import type { MediaFile } from '$lib/types/media';
+  import type { AdminFileHit } from '$lib/api/fileSearch';
+
+  /** What a takedown needs of a file: the gallery passes rows, the picker search hits. */
+  type QuarantineTarget = Pick<MediaFile, 'uuid' | 'filename' | 'title'> | AdminFileHit;
 
   export let isOpen = false;
-  export let files: MediaFile[] = [];
+  export let files: QuarantineTarget[] = [];
+  /** Let the administrator search for and select the files here (Settings), instead of a fixed selection. */
+  export let chooseFiles = false;
 
   const dispatch = createEventDispatcher<{ close: void; quarantined: { uuids: string[] } }>();
 
@@ -57,7 +68,12 @@
   $: canSubmit =
     reasonTrimmed.length > 0 && files.length > 0 && !submitting && isBasisValid(basis);
 
+  // The picker's own selection; mirrored into `files`, which the submit loop reads.
+  let pickedFiles: AdminFileHit[] = [];
+  $: if (chooseFiles) files = pickedFiles;
+
   function resetForm() {
+    if (chooseFiles) pickedFiles = [];
     reason = '';
     legalHold = true;
     basis = emptyBasis();
@@ -124,7 +140,7 @@
         if (mediaRevocationIncomplete(result)) unrevokedCount += 1;
       } catch (err) {
         failedCount += 1;
-        // eslint-disable-next-line no-console -- one failed file must not read as a failed batch
+        // One failed file must not read as a failed batch: log it and carry on.
         console.error(`Quarantine failed for ${file.uuid}:`, getErrorMessage(err));
       }
     }
@@ -156,19 +172,29 @@
 
 <BaseModal {isOpen} title={$t('gallery.quarantine.title')} onClose={handleClose} size="md">
   <div class="quarantine-modal-body">
-    <div class="file-list">
-      <p class="file-list-label">
-        {$t('gallery.quarantine.filesLabel', { count: displayNames.length })}
-      </p>
-      <ul>
-        {#each previewNames as name (name)}
-          <li>{name}</li>
-        {/each}
-        {#if extraCount > 0}
-          <li class="more">{$t('gallery.quarantine.moreFiles', { count: extraCount })}</li>
-        {/if}
-      </ul>
-    </div>
+    {#if chooseFiles}
+      <FileSearchPicker
+        scope="platform"
+        bind:selected={pickedFiles}
+        label={$t('gallery.quarantine.pickFilesLabel')}
+        help={$t('gallery.quarantine.pickFilesHelp')}
+        disabled={submitting}
+      />
+    {:else}
+      <div class="file-list">
+        <p class="file-list-label">
+          {$t('gallery.quarantine.filesLabel', { count: displayNames.length })}
+        </p>
+        <ul>
+          {#each previewNames as name (name)}
+            <li>{name}</li>
+          {/each}
+          {#if extraCount > 0}
+            <li class="more">{$t('gallery.quarantine.moreFiles', { count: extraCount })}</li>
+          {/if}
+        </ul>
+      </div>
+    {/if}
 
     <label class="field" for="quarantine-reason">
       {$t('gallery.quarantine.reasonLabel')}
@@ -233,7 +259,7 @@
 
   .file-list ul {
     margin: 0;
-    padding-left: 1.25rem;
+    padding-inline-start: 1.25rem;
     font-size: 0.8125rem;
     color: var(--text-secondary, var(--text-color));
     max-height: 120px;
@@ -315,14 +341,14 @@
     padding: 0.5rem 1rem;
     border: none;
     border-radius: 6px;
-    background: #dc2626;
-    color: white;
+    background: var(--error-solid);
+    color: var(--text-on-solid);
     cursor: pointer;
     font-size: 0.875rem;
   }
 
   .btn-destructive:hover:not(:disabled) {
-    background: #b91c1c;
+    background: var(--error-solid-hover);
   }
 
   .btn-destructive:disabled,

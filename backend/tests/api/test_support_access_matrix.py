@@ -539,6 +539,8 @@ def test_an_org_grant_widens_lists_only_inside_its_tenant(
 AUDITED_CALLS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("/api/admin/files/quarantined", {}),
     ("/api/admin/holds", {}),
+    # The hold/takedown picker: "sa_" matches every support-world file, the other tenant's too.
+    ("/api/admin/holds/files/search", {"q": "sa_"}),
     ("/api/admin/settings/retention-config/preview", {"retention_days": 1}),
     ("/api/admin/takedown-notices", {}),
     ("/api/admin/takedown-notices/export", {}),

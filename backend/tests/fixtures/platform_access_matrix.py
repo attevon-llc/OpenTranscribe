@@ -198,6 +198,7 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
 AUDITED_ROUTES = (
     "GET /api/admin/files/quarantined",
     "GET /api/admin/holds",
+    "GET /api/admin/holds/files/search",
     "GET /api/admin/holds/{hold_uuid}",
     "GET /api/admin/settings/retention-config/preview",
     "GET /api/admin/takedown-notices",

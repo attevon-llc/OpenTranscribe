@@ -6,8 +6,9 @@ The legal-hold UI shared by Settings, the gallery and the file page
 ## Key files
 
 - `PlaceHoldDialog.svelte` — the ONE "Place legal hold" dialog. `fileUuids` fixes the target
-  (gallery selection, file page); `null` lets the person pick a collection or paste file ids
-  (Settings). `placer` (`'organization' | 'platform'`) picks the API through
+  (gallery selection); `null` (Settings) opens on "Specific files" with `ui/FileSearchPicker`
+  (search by title or file name, select, chips) or a collection. **Never ask for a file ID**:
+  the paste-IDs textarea was removed on owner feedback (2026-11-08) as too developer-like. `placer` (`'organization' | 'platform'`) picks the API through
   `holdsApiFor` (`$lib/legalHold/holdsApi`): `/org-admin/holds` or `/admin/holds`. Never add a
   second place form.
 - `HoldExplainer.svelte` — "What does a legal hold do?" (`ExpandableSection`) plus an
@@ -18,7 +19,6 @@ The legal-hold UI shared by Settings, the gallery and the file page
 - `FrozenNote.svelte` — the visible reason printed beside a control a hold disabled. Pass a fixed
   `id` and set the disabled control's `aria-describedby` to it: a disabled button's tooltip is
   often never shown, so the tooltip alone does not count (the comment-form fix of 410ca7bce).
-- `FilePlaceHoldAction.svelte` — the file header's "Place legal hold" button and dialog.
 - `FrozenContextTestHost.svelte` — test double only (renders a child under the frozen context).
 
 ## Rules

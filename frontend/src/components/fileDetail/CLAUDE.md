@@ -46,8 +46,12 @@ Presentational children extracted from the file-detail route `src/routes/files/[
 
 - **Legal hold (Lane D):** the page calls `provideFileFrozen()` and sets it from `file.hold.held`;
   `FileActionButtons` (summary generate, reprocess) and `RedactionControls` (rescan) read
-  `fileFrozen()` and render disabled with a `legal-hold/FrozenNote`. The banner, copy-ID and
-  place-hold action are in `FileHeader`. See `components/legal-hold/CLAUDE.md`.
+  `fileFrozen()` and render disabled with a `legal-hold/FrozenNote`. `FileHeader` renders the
+  held-file banner BELOW the title row and nothing hold- or ID-related in it: no hold pill, no
+  Copy file ID, no Place legal hold (owner feedback 2026-11-08: they read as the title's state).
+  Holds are placed from the gallery Organize menu or Settings; the file ID, for support and
+  takedown disputes, is a row in `MetadataDisplay` (File details). See
+  `components/legal-hold/CLAUDE.md`.
 
 ## Conventions / patterns
 

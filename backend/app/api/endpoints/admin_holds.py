@@ -14,6 +14,11 @@ answers 403 (``/admin`` prefix). A platform hold may name any tenant's file or c
 missing one is a 404. Only platform holds are reachable here: an organization's hold is a 404 to
 read and to release, and this screen never shows one.
 
+``GET /admin/holds/files/search`` is the picker behind "Place a hold" and "Quarantine files": a
+title or file-name search over EVERY tenant's files, the trash and takedowns included, because a
+platform hold and a takedown may name any of them. It returns names, owners and organizations
+(never content), so each response is a cross-tenant metadata read and audited as one.
+
 The reason and matter reference are returned to instance administrators only. They are never in
 an audit event (``record_hold_change`` stages ids and counts), a socket message or a file
 response, and no caught exception text is ever put in a response.
@@ -33,18 +38,24 @@ from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_admin_user
+from app.auth.rate_limit import get_search_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ADMIN_HOLD_RATE_LIMIT
+from app.core.tenancy import UNSCOPED
 from app.db.base import get_db
 from app.models.content_hold import AUTHORITY_PLATFORM
 from app.models.content_hold import ContentHold
 from app.models.user import User
+from app.schemas.content_hold import AdminFileSearchResult
 from app.schemas.content_hold import HoldCreate
 from app.schemas.content_hold import HoldList
 from app.schemas.content_hold import HoldOut
 from app.schemas.content_hold import HoldRelease
 from app.services import content_hold_service as holds
+from app.services.admin_file_search import ADMIN_FILE_SEARCH_MAX
+from app.services.admin_file_search import admin_file_search_result
+from app.services.admin_file_search import search_files_for_admin
 from app.services.content_hold_queries import list_platform_holds
 from app.services.content_hold_records import account_labels
 from app.services.content_hold_records import collection_by_uuid
@@ -105,6 +116,30 @@ def list_admin_holds(
         organization_ids=tenants_of(db, rows),
     )
     return HoldList(holds=_serialize(db, rows), total=total)
+
+
+@router.get("/files/search", response_model=AdminFileSearchResult)
+@limiter.limit(get_search_rate_limit(), key_func=user_or_ip_key)
+def search_admin_hold_files(
+    request: Request,
+    q: str = Query(..., min_length=1, max_length=200, description="Part of a title or file name"),
+    limit: int = Query(20, ge=1, le=ADMIN_FILE_SEARCH_MAX),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin_user),
+) -> Any:
+    """Files of any tenant whose title or file name contains ``q``, for the hold and takedown pickers."""
+    matches, total = search_files_for_admin(
+        db, search=q.strip(), organization_id=UNSCOPED, limit=limit, offset=offset
+    )
+    audit_metadata_access(
+        db,
+        current_user,
+        route="/api/admin/holds/files/search",
+        count=len(matches),
+        organization_ids=(m.file.organization_id for m in matches),
+    )
+    return admin_file_search_result(matches, total, with_organization=True)
 
 
 @router.get("/{hold_uuid}", response_model=HoldOut)

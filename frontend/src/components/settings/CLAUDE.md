@@ -313,13 +313,16 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   content. Beside a modal-level title, wrap `<h3 class="section-title">` and the tip in `.section-title-row`
   (Organization Context does). Do not re-add a bottom/top `.info-box` card to a panel; the remaining ones
   (OIDC, SAML, SCIM token, Group mappings, Audio extraction) are candidates to convert the same way.
+- **`QuarantinePanel`** (operator scope only) has **Quarantine files**: the gallery's
+  `gallery/QuarantineModal` with `chooseFiles`, a `ui/FileSearchPicker` in place of the fixed
+  selection. Organization scope does not offer it, matching the gallery's admin-only Quarantine.
 - **`LegalHoldsPanel` (issue #1276, legal-hold plan Lane D)** is ONE panel for two lazy sections
   sharing the `legalHolds` loader: `org-holds` (`scope="organization"`, org admins, shown only on
   `orgAdminCapOn(capState, 'org.legal_hold')`) and `platform-holds` (`scope="platform"`, instance
   admins, Administration group, `/admin/holds`, no takedown; holds placed WITH a takedown stay on
   Quarantine). It lists and releases holds and places them through the shared
-  `legal-hold/PlaceHoldDialog`; the server decides what a hold may name and what stays held after
-  a release. The reason is shown in this panel and nowhere else. The "Legal hold" pill on a file
+  `legal-hold/PlaceHoldDialog`, which finds files with `ui/FileSearchPicker` (never pasted IDs);
+  the server decides what a hold may name and what stays held after a release. The reason is shown in this panel and nowhere else. The "Legal hold" pill on a file
   header, a gallery card and a collection card is `ui/HoldBadge.svelte` over the server's `hold`
   field (who holds it, never why), and a refusal is translated by `getErrorMessage` from
   `held_by` (`HOLD_REFUSAL_KEYS` in `lib/i18n/keyMaps.ts`). See `components/legal-hold/CLAUDE.md`.

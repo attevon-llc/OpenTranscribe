@@ -347,8 +347,15 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("GET", "/api/admin/takedown-notices/{notice_uuid}"): _READ,
     ("GET", "/api/admin/holds"): _READ,
     ("GET", "/api/admin/holds/{hold_uuid}"): _READ,
+    ("GET", "/api/admin/holds/files/search"): (
+        "a read: the hold and takedown picker's file search; it writes the cross-tenant "
+        "metadata-access event (platform_bypass.audit_metadata_access), not a compliance one"
+    ),
     ("GET", "/api/org-admin/holds"): _READ,
     ("GET", "/api/org-admin/holds/{hold_uuid}"): _READ,
+    ("GET", "/api/org-admin/holds/files/search"): (
+        "a read: the hold picker's search over the organization's own files"
+    ),
     ("GET", "/api/org-admin/policy"): _READ,
     ("GET", "/api/org-admin/support-access"): _READ,
     ("GET", "/api/org-admin/support-access/{grant_uuid}/uses"): _READ,

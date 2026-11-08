@@ -4,8 +4,10 @@
   import { formatDate, formatDuration } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
   import { t, locale } from '$stores/locale';
-  import axiosInstance from '../lib/axios';
+  import axiosInstance from '$lib/axios';
   import ProvenanceField from './ProvenanceField.svelte';
+  import CopyButton from '$components/ui/CopyButton.svelte';
+  import { toastStore } from '$stores/toast';
 
   export let file: MediaFileDetail | null = null;
   export let showMetadata: boolean = false;
@@ -216,6 +218,24 @@
             {/if}
           </span>
         </div>
+
+        <!-- The reference a support ticket, a takedown dispute or the audit log filter asks
+             for. Kept here, in the collapsed details, not beside the title. -->
+        {#if file?.uuid}
+          <div class="metadata-item file-id-item">
+            <span class="metadata-label">{$t('metadata.fileId')}:</span>
+            <span class="file-id-row">
+              <code class="file-id" dir="ltr">{file.uuid}</code>
+              <CopyButton
+                text={String(file.uuid)}
+                label={$t('fileDetail.copyId')}
+                copiedLabel={$t('fileDetail.copyIdDone')}
+                iconOnly
+                on:copied={() => toastStore.success($t('fileDetail.copyIdDone'))}
+              />
+            </span>
+          </div>
+        {/if}
       </div>
     </div>
   </div>
@@ -297,6 +317,24 @@
     font-size: 14px;
     color: var(--text-primary);
     font-weight: 500;
+  }
+
+  .file-id-item {
+    grid-column: 1 / -1;
+  }
+
+  .file-id-row {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .file-id {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
   }
 
   .status-completed {

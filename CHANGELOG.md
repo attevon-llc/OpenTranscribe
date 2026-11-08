@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Administrators choose the files for a legal hold (Settings > Legal holds) by typing part of a title or file name and selecting them from a list, shown as removable chips, instead of pasting one file ID per line. Settings > Quarantine gains **Quarantine files**, the gallery's takedown form with the same picker. The picker searches every file a hold may name, not just the administrator's own gallery: an organization administrator searches every file of the organization (any member's, in the trash or quarantined too) through `GET /api/org-admin/holds/files/search`, and an instance administrator every tenant's through `GET /api/admin/holds/files/search`, which shows each file's organization and is audited as a cross-tenant metadata read. Both are admin-only (403 for anyone else), rate-limited like search and capped at 50 results a page. The held-file banner on the file page is styled as information rather than a warning.
 - Contribution docs and the pull request template state plainly that outside code contributions are not accepted for now; issues and pull requests are welcome as suggestions and bug reports, and a contributor agreement will follow later.
 
 - The declared copyright holder and package author is "OpenTranscribe" everywhere (`pyproject.toml` files, image author labels), matching `NOTICE`, the docs footer and `frontend/package.json`.
@@ -131,6 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The file page header no longer carries **Copy file ID**, **Place legal hold** or the **Legal hold** pill beside the title; they read as the title's own state. The banner below the title still says the file is held, holds are placed from the gallery or Settings, and the file ID moved to the collapsed **File details** section, with a copy button, for support tickets, takedown disputes and the audit log filter.
 - The gallery's "force delete processing files" prompt. A file still being processed is moved to the trash like any other (#1101).
 - `scripts/test-in-worktree.sh` (added in 0.6.1) is removed, together with its test. `./scripts/run-backend-tests.sh --throwaway-db` does the same job from any worktree and is the only throwaway-database runner.
 - The Plyr media player library. Both players now run on Video.js 10, so `plyr` and four packages only it needed (`loadjs`, `rangetouch`, `url-polyfill`, `custom-event-polyfill`) leave the frontend dependencies and the licence inventory, along with the Plyr icon sprite and placeholder video and the script step that downloaded them. A test keeps `plyr` from being imported again (#1327).

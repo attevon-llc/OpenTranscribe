@@ -10,6 +10,11 @@ edition the admin is the operator, so every hold here is an operator hold (``/ap
    edit refused with ``409 FILE_UNDER_LEGAL_HOLD``, and a new comment still accepted.
 4. Release the hold from Settings > Legal holds; the badge and banner are gone.
 
+A second test covers the administrator screens (owner feedback 2026-11-08): the file page's
+title area carries no Copy file ID or Place legal hold control (the ID sits in File details), a
+hold is placed from Settings > Legal holds and a takedown from Settings > Quarantine by
+searching for the file by name and selecting it, never by typing its ID.
+
 **Dev-data safety.** The file is created and deleted by ``owned_media_factory`` (its comment goes
 with it). The hold is released in a ``finally`` through the API if the UI release did not run,
 because a held file cannot be deleted. The released hold record itself stays, by design: a hold
@@ -19,6 +24,7 @@ matter reference carry a uuid suffix so a run can be told apart.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import cast
 
@@ -180,4 +186,93 @@ def test_admin_places_and_releases_a_hold_from_the_ui(
         expect(page.get_by_role("button", name="Edit display name")).to_be_enabled(timeout=15000)
         expect(page.locator('[data-testid="held-file-banner"]')).to_have_count(0)
     finally:
+        _release_if_active(backend_url, admin_token, hold_uuid)
+
+
+def _pick_file(page: Page, field_name: str, filename: str) -> None:
+    """Search the shared file picker by name and select the file (the list is portaled to body)."""
+    page.get_by_role("combobox", name=field_name).fill(filename)
+    option = page.get_by_role("option", name=re.compile(re.escape(filename)))
+    expect(option).to_be_visible(timeout=15000)
+    option.click()
+    expect(page.locator('[data-testid="file-search-picker-chips"]')).to_contain_text(filename)
+
+
+def test_admin_screens_hold_and_quarantine_files_found_by_name(
+    gallery_page: Page,
+    base_url: str,
+    backend_url: str,
+    admin_token: str,
+    owned_media_factory,
+) -> None:
+    page = gallery_page
+    media = owned_media_factory(admin_token)
+    file_uuid, filename = str(media["uuid"]), str(media["filename"])
+    suffix = uuid.uuid4().hex[:8]
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    hold_uuid: str | None = None
+    quarantined = False
+
+    try:
+        # File page: the title area shows the file only; the ID is in File details.
+        page.goto(f"{base_url}/files/{file_uuid}")
+        header = page.locator(".file-header")
+        expect(header.locator("h1")).to_be_visible(timeout=15000)
+        expect(header.get_by_role("button", name="Copy file ID")).to_have_count(0)
+        expect(header.get_by_role("button", name=re.compile("legal hold", re.I))).to_have_count(0)
+        expect(header).not_to_contain_text(file_uuid)
+        page.get_by_role("button", name="File Details").click()
+        expect(page.get_by_text(file_uuid, exact=True)).to_be_visible(timeout=10000)
+
+        # Settings > Legal holds: search by name, select, place. No ID field anywhere.
+        open_settings_section(page, "Legal holds")
+        page.get_by_role("button", name="Place a hold").click()
+        dialog = page.locator('[data-testid="place-hold-dialog"]')
+        expect(dialog).to_be_visible(timeout=10000)
+        expect(dialog.get_by_role("radio", name="Specific files")).to_be_checked()
+        expect(dialog).not_to_contain_text("file ID")
+        _pick_file(page, "Files to hold", filename)
+        page.locator('[data-testid="place-hold-reason"]').fill(
+            f"e2e hold by name {suffix}: preservation notice"
+        )
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and r.url.endswith("/api/admin/holds")
+        ) as placed:
+            page.locator('[data-testid="place-hold-submit"]').click()
+        assert placed.value.status == 201, placed.value.text()[:300]
+        hold_uuid = str(placed.value.json()["uuid"])
+        held = [f["uuid"] for f in _hold(backend_url, admin_token, hold_uuid)["files"]]
+        assert held == [file_uuid], held
+        _release_if_active(backend_url, admin_token, hold_uuid)
+
+        # Settings > Quarantine: the gallery's takedown form, with the same picker.
+        # Still in Settings: switch sections from the sidebar.
+        page.locator(".settings-sidebar .nav-item", has_text="Quarantine").first.click()
+        page.locator('[data-testid="quarantine-choose-files"]').click()
+        modal = page.get_by_role("dialog", name="Quarantine files")
+        expect(modal).to_be_visible(timeout=10000)
+        _pick_file(page, "Files to quarantine", filename)
+        modal.get_by_placeholder(re.compile("DMCA notice reference")).fill(f"e2e takedown {suffix}")
+        modal.locator('input[type="radio"][value="operator"]').check()
+        modal.locator("#quarantine-operator-reason").fill(f"e2e operator action {suffix}")
+        # No hold here: the hold path is covered above and a held file needs its own release.
+        modal.get_by_role("checkbox", name=re.compile("Place a legal hold")).uncheck()
+        with page.expect_response(
+            lambda r: (
+                r.request.method == "POST" and r.url.endswith(f"/files/{file_uuid}/quarantine")
+            )
+        ) as taken_down:
+            modal.get_by_role("button", name="Quarantine 1 file").click()
+        assert taken_down.value.status == 200, taken_down.value.text()[:300]
+        quarantined = True
+        expect(page.locator(".quarantine-table")).to_contain_text(filename, timeout=15000)
+    finally:
+        if quarantined:
+            released = requests.post(
+                f"{backend_url}/api/admin/files/{file_uuid}/release",
+                headers=headers,
+                json={"clear_legal_hold": True},
+                timeout=30,
+            )
+            assert released.status_code == 200, released.text[:300]
         _release_if_active(backend_url, admin_token, hold_uuid)

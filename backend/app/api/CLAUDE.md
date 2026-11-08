@@ -83,6 +83,12 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
 - **Owner-scoped listings go through `PermissionService.get_accessible_file_ids_subquery`** —
   it already covers owned files plus collections shared directly and via groups, and applies the
   org tenant gate. Never write a second sharing rule beside it.
+- **Administrators' file pickers are NOT owner-scoped listings.** `GET /admin/holds/files/search`
+  (every tenant, `get_current_admin_user`, audited with `audit_metadata_access`) and
+  `GET /org-admin/holds/files/search` (`require_org_admin` + `org.legal_hold`, the organization's
+  files) reach exactly what the hold routes may name, trash and takedowns included. Both call
+  `services/admin_file_search.search_files_for_admin`, whose text match
+  (`title_or_filename_matches`) is the same predicate the gallery's `apply_search_filter` uses.
 
 ## Endpoints with no frontend caller — deliberate API surface
 

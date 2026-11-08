@@ -2,8 +2,8 @@
   PlaceHoldDialog.svelte - the ONE "Place legal hold" dialog (legal-hold plan, Lane D).
 
   Used by the gallery selection, the file page and the Settings holds panel. With `fileUuids`
-  the target is fixed (the selection, or the one file on the page); without it the person
-  chooses a collection or pastes file IDs. `placer` picks the API: an organization
+  the target is fixed (the gallery selection); without it the person searches for files by
+  title or file name and selects them (`FileSearchPicker`), or chooses a collection. `placer` picks the API: an organization
   administrator's `/org-admin/holds` or the operator's `/admin/holds`
   (`holdAuthorityForCaller`). The server decides everything that matters; this keeps "Place"
   disabled until the input is one the server accepts and shows the answer.
@@ -12,6 +12,7 @@
   import { createEventDispatcher } from 'svelte';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import HoldExplainer from '$components/legal-hold/HoldExplainer.svelte';
+  import FileSearchPicker from '$components/ui/FileSearchPicker.svelte';
   import { CollectionsApi } from '$lib/api/collections';
   import type { OrgHold } from '$lib/api/orgAdmin';
   import {
@@ -24,23 +25,22 @@
   } from '$lib/legalHold/authority';
   import { holdsApiFor } from '$lib/legalHold/holdsApi';
   import type { Collection } from '$lib/types/collection';
+  import type { AdminFileHit } from '$lib/api/fileSearch';
   import { getErrorMessage } from '$lib/utils/apiError';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
 
-  const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
   export let isOpen = false;
   export let placer: HoldPlacer = 'platform';
-  /** A fixed target (the gallery selection, the file on the page). `null` lets the person choose. */
+  /** A fixed target (the gallery selection). `null` lets the person choose. */
   export let fileUuids: string[] | null = null;
   /** The file's name when exactly one fixed file is held, shown instead of a count. */
   export let fileLabel = '';
 
   const dispatch = createEventDispatcher<{ close: void; placed: { hold: OrgHold; fileUuids: string[] } }>();
 
-  let scope: 'file' | 'collection' = 'collection';
-  let fileIdsText = '';
+  let scope: 'file' | 'collection' = 'file';
+  let pickedFiles: AdminFileHit[] = [];
   let collectionUuid = '';
   let collections: Collection[] = [];
   let reason = '';
@@ -57,18 +57,12 @@
   }
 
   $: chooser = fileUuids === null;
-  $: pastedIds = fileIdsText
-    .split(/\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  $: pastedValid =
-    pastedIds.length > 0 &&
-    pastedIds.length <= HOLD_MAX_FILES &&
-    pastedIds.every((id) => UUID_PATTERN.test(id));
+  $: pickedUuids = pickedFiles.map((f) => f.uuid);
+  $: pickedValid = pickedUuids.length > 0 && pickedUuids.length <= HOLD_MAX_FILES;
   $: tooMany = !chooser && (fileUuids?.length ?? 0) > HOLD_MAX_FILES;
   $: targetValid = chooser
     ? scope === 'file'
-      ? pastedValid
+      ? pickedValid
       : collectionUuid !== ''
     : (fileUuids?.length ?? 0) > 0 && !tooMany;
   $: reasonLength = reason.trim().length;
@@ -77,8 +71,8 @@
   $: reasonHelpKey = placer === 'organization' ? 'holds.reasonHelp' : 'holds.platform.reasonHelp';
 
   async function reset() {
-    scope = 'collection';
-    fileIdsText = '';
+    scope = 'file';
+    pickedFiles = [];
     collectionUuid = '';
     reason = '';
     matterRef = '';
@@ -101,7 +95,7 @@
     saving = true;
     const target = chooser
       ? scope === 'file'
-        ? { scope: 'file' as const, file_uuids: pastedIds }
+        ? { scope: 'file' as const, file_uuids: pickedUuids }
         : { scope: 'collection' as const, collection_uuid: collectionUuid }
       : { scope: 'file' as const, file_uuids: fileUuids ?? [] };
     try {
@@ -128,12 +122,12 @@
       <fieldset class="scope">
         <legend>{$t('holds.scopeLabel')}</legend>
         <label>
-          <input type="radio" bind:group={scope} value="collection" />
-          {$t('holds.scopeCollection')}
-        </label>
-        <label>
           <input type="radio" bind:group={scope} value="file" />
           {$t('holds.scopeFiles')}
+        </label>
+        <label>
+          <input type="radio" bind:group={scope} value="collection" />
+          {$t('holds.scopeCollection')}
         </label>
       </fieldset>
 
@@ -148,21 +142,14 @@
           </select>
         </label>
       {:else}
-        <label class="field">
-          <span>{$t('holds.filesLabel')}</span>
-          <textarea
-            rows="4"
-            dir="ltr"
-            spellcheck="false"
-            bind:value={fileIdsText}
-            aria-invalid={fileIdsText.trim() !== '' && !pastedValid}
-          ></textarea>
-          <small class:error={fileIdsText.trim() !== '' && !pastedValid}>
-            {fileIdsText.trim() !== '' && !pastedValid
-              ? $t('holds.invalidFileIds', { max: HOLD_MAX_FILES })
-              : $t('holds.filesHelp')}
-          </small>
-        </label>
+        <FileSearchPicker
+          scope={placer}
+          bind:selected={pickedFiles}
+          max={HOLD_MAX_FILES}
+          label={$t('holds.pickFilesLabel')}
+          help={$t('holds.pickFilesHelp', { max: HOLD_MAX_FILES })}
+          disabled={saving}
+        />
       {/if}
     {:else}
       <p class="target" data-testid="place-hold-target">

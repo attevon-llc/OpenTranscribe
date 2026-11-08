@@ -16,7 +16,7 @@ import logging
 import uuid
 
 from app.core.constants import TASK_SECRET_HANDOFF_TTL_SECONDS
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 from app.utils.encryption import decrypt_value
 from app.utils.encryption import encrypt_value
 
@@ -55,7 +55,7 @@ def stash_task_secret(
     if token is None:
         raise TaskSecretUnavailableError("Could not protect the credentials for this request")
     try:
-        get_redis().setex(_key(ref), ttl or TASK_SECRET_HANDOFF_TTL_SECONDS, token)
+        get_request_redis().setex(_key(ref), ttl or TASK_SECRET_HANDOFF_TTL_SECONDS, token)
     except Exception as exc:
         raise TaskSecretUnavailableError(
             "Could not store the credentials for this request"
@@ -70,7 +70,7 @@ def fetch_task_secret(ref: str, *, context: str) -> dict[str, str]:
         TaskSecretUnavailableError: With a message that never contains secret material.
     """
     try:
-        token = get_redis().get(_key(ref))
+        token = get_request_redis().get(_key(ref))
     except Exception as exc:
         raise TaskSecretUnavailableError("The credential store is unavailable") from exc
     if not token:
@@ -96,7 +96,7 @@ def discard_task_secret(ref: str | None) -> None:
     if not ref:
         return
     try:
-        get_redis().delete(_key(ref))
+        get_request_redis().delete(_key(ref))
     except Exception:
         logger.warning("Could not discard a task credential entry; it will expire by TTL")
 

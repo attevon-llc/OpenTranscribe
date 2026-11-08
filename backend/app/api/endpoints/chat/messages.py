@@ -37,6 +37,7 @@ from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
+from app.core.config import settings
 from app.core.constants import LLM_CONTEXT_WINDOW_MAX
 from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.tenant_limits import resolve_allowed_models
@@ -232,6 +233,15 @@ def _prepare_turn(
         raise HTTPException(
             status_code=429,
             detail="Too many chats streaming at once. Wait for one to finish.",
+            headers={"Retry-After": "5"},
+        )
+    # The deployment-wide cap, across every API process: the per-user one alone lets
+    # enough users together open more replies than the model can serve.
+    if not limits.acquire_global_stream_slot(slot_id, settings.CHAT_MAX_CONCURRENT_STREAMS_GLOBAL):
+        limits.release_stream_slot(ctx.user.id, slot_id)
+        raise HTTPException(
+            status_code=429,
+            detail="Chat is answering as many questions as it can right now. Try again shortly.",
             headers={"Retry-After": "5"},
         )
 
@@ -506,9 +516,14 @@ def regenerate(
     ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
     # The question is re-sent as a fresh turn, so retire the original too.
     last_user.status = STATUS_SUPERSEDED
+    # Read before the commit: expire_on_commit would make `ctx.user.id` a lazy reload that
+    # reopens a transaction on the request's session, held until the reply finishes.
+    user_id = ctx.user.id
     db.commit()
-
-    return _streaming_response(kwargs, ctx.user.id)
+    # Release the pooled connection now, as send_message does: FastAPI closes the
+    # session only after the stream has been SENT.
+    db.close()
+    return _streaming_response(kwargs, user_id)
 
 
 class MessageEdit(BaseModel):
@@ -569,9 +584,12 @@ def edit_message(
         ChatMessage.id >= target.id,
         ChatMessage.id <= boundary,
     ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
+    # Read before the commit and release the connection after it, for the reasons in
+    # regenerate().
+    user_id = ctx.user.id
     db.commit()
-
-    return _streaming_response(kwargs, ctx.user.id)
+    db.close()
+    return _streaming_response(kwargs, user_id)
 
 
 @router.post("/messages/{message_uuid}/cancel")

@@ -430,7 +430,9 @@ async def logout(
         failed.append("session")
 
     if user_id is not None or failed:
-        audit_logger.log(
+        # Off the event loop: the audit write indexes into OpenSearch synchronously.
+        await run_in_threadpool(
+            audit_logger.log,
             event_type=AuditEventType.AUTH_LOGOUT,
             outcome=AuditOutcome.FAILURE
             if (failed or federated_ok is False)
@@ -503,7 +505,8 @@ async def logout_all_sessions(
         pending = await run_in_threadpool(_revoke_all_and_commit, db, user_id)
     except Exception as exc:
         logger.error("Logout from all sessions not completed for user %s", user_id)
-        audit_logger.log(
+        await run_in_threadpool(
+            audit_logger.log,
             event_type=AuditEventType.AUTH_LOGOUT_ALL,
             outcome=AuditOutcome.FAILURE,
             user_id=user_id,
@@ -519,10 +522,12 @@ async def logout_all_sessions(
         ) from exc
 
     count = pending.count
-    pending.record_audit()
+    # The audit writes index into OpenSearch synchronously, so they run off the event loop.
+    await run_in_threadpool(pending.record_audit)
     await _end_federated_session(db, user_id)
 
-    audit_logger.log_logout(
+    await run_in_threadpool(
+        audit_logger.log_logout,
         user_id=user_id,
         username=username,
         source_ip=client_ip,

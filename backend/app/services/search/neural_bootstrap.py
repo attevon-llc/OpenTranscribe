@@ -318,9 +318,9 @@ def bootstrap_status() -> dict[str, Any]:
     last_error: str | None = None
     retry_at: str | None = None
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        r = get_redis()
+        r = get_request_redis()
         raw_attempts = r.get(_ATTEMPTS_KEY)
         attempts = int(raw_attempts) if raw_attempts else 0
         raw_error = r.get(_LAST_ERROR_KEY)
@@ -369,9 +369,9 @@ def run_bootstrap_tick() -> dict[str, Any]:
     now = time.time()
     redis_client = None
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        redis_client = get_redis()
+        redis_client = get_request_redis()
     except Exception as e:
         logger.warning(f"Neural bootstrap: Redis unavailable ({e}); attempting bootstrap anyway")
 
@@ -449,9 +449,9 @@ def _record_failure(redis_client: Any, error_text: str, next_at: float) -> None:
 def _clear_attempt_state(redis_client: Any = None) -> None:
     try:
         if redis_client is None:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            redis_client = get_redis()
+            redis_client = get_request_redis()
         redis_client.delete(_ATTEMPTS_KEY, _NEXT_AT_KEY, _LAST_ERROR_KEY)
     except Exception as e:
         logger.warning(f"Neural bootstrap: could not clear attempt state ({e})")

@@ -38,9 +38,9 @@ def _key(source_id: int) -> str:
 
 def _client() -> Any | None:
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        return get_redis()
+        return get_request_redis()
     except Exception as e:  # noqa: BLE001 - status is best-effort
         logger.debug("FS-event status store unavailable: %s", e)
         return None

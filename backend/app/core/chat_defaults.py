@@ -107,6 +107,11 @@ DEFAULT_CHAT_MAP_TIER_SUMMARIES = False  # chat.rag.map_tier_summaries
 # A provider that accepts the request but never emits a first token would
 # otherwise hold the stream open until the read timeout.
 DEFAULT_CHAT_FIRST_TOKEN_TIMEOUT_S = 90
+# How often a streaming reply looks for a Stop sent over another connection. It is a
+# Redis read, and a fast model emits hundreds of tokens a second: checking on every
+# token put that many blocking round trips on the turn. Half a second is well under
+# the time a person takes to notice the answer stopped.
+CHAT_CANCEL_POLL_INTERVAL_S = 0.5
 
 # Per-user preferences (UserSetting keys `chat.system_prompt`,
 # `chat.use_context_default`, `chat.default_search_mode`).

@@ -103,7 +103,7 @@ services:
     #
     # Only `app/` is served by this process; migrations, tests and fixtures are not. Editing
     # them no longer restarts it. `backend/app/**` still hot-reloads exactly as before.
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --reload-dir app --limit-concurrency ${UVICORN_LIMIT_CONCURRENCY:-512}
     environment:
       <<: *dev-environment
       # Dev-only security-limit relaxation. The e2e suite performs hundreds of

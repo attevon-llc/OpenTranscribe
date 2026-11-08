@@ -65,7 +65,7 @@ class _FailingLLM:
         self.response_tokens = 4000
         self._event = LLMStreamEvent(type="error", message=message, transient=transient)
 
-    def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
+    async def chat_completion_stream(self, messages, cancel_event=None, **_kwargs):
         yield self._event
 
     def estimate_tokens(self, text: str) -> int:

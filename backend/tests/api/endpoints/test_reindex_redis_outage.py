@@ -28,7 +28,7 @@ class _EmptyRedis:
 
 @pytest.fixture
 def standin_redis():
-    with patch("app.core.redis.get_redis", return_value=_EmptyRedis()):
+    with patch("app.core.redis.get_request_redis", return_value=_EmptyRedis()):
         yield
 
 
@@ -38,7 +38,7 @@ _REDIS_DOWN_TEXT = "redis-secret-host.internal:6379 connection refused"
 @pytest.fixture
 def unreachable_redis():
     """Every ``get_redis()`` call raises, as during a Redis outage."""
-    with patch("app.core.redis.get_redis", side_effect=ConnectionError(_REDIS_DOWN_TEXT)):
+    with patch("app.core.redis.get_request_redis", side_effect=ConnectionError(_REDIS_DOWN_TEXT)):
         yield
 
 
@@ -99,7 +99,7 @@ class _LockReadFailsRedis:
 
 def test_stop_is_503_when_the_lock_reader_itself_hits_a_redis_error(client, admin_token_headers):
     """Fan-out read succeeds; ``reindex_lock`` GET raises a real redis error and converts it."""
-    with patch("app.core.redis.get_redis", return_value=_LockReadFailsRedis()):
+    with patch("app.core.redis.get_request_redis", return_value=_LockReadFailsRedis()):
         response = client.post(REINDEX_STOP, headers=admin_token_headers)
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE

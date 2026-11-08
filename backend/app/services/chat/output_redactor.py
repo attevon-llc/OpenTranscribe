@@ -117,11 +117,11 @@ class OutputRedactor:
     rendered).
 
     Usage — ``buffer`` is cheap string work and safe on the event loop, ``mask``
-    runs detectors and must go through a threadpool::
+    runs detectors and must go through a worker thread (chat's limiter)::
 
         if redactor.active:
             span = redactor.buffer(delta)
-            text = await run_in_threadpool(redactor.mask, span) if span else ""
+            text = await run_in_chat_thread(redactor.mask, span) if span else ""
         else:
             text = delta
     """

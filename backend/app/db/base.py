@@ -26,6 +26,7 @@ engine = create_engine(
     pool_recycle=3600,  # Recycle connections after 1 hour
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_timeout=settings.DB_POOL_TIMEOUT_SECONDS,
 )
 
 # Observability: attach per-statement timing + per-request query-count listeners

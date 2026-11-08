@@ -56,12 +56,12 @@ def _claim_or_existing_job(
     user_id: int, file_id: int, body: TranscriptDocumentExportRequest
 ) -> tuple[str, str | None, bool]:
     """``(job_id, guard_key, is_new)``: a double click gets the SAME job, never a second render."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     job_id = new_bulk_job_id(user_id)
     guard_key = document_export_guard_key(user_id, file_id, _options_sha(body))
     try:
-        redis = get_redis()
+        redis = get_request_redis()
         if redis.set(guard_key, job_id, nx=True, ex=DOCUMENT_EXPORT_GUARD_TTL_S):
             return job_id, guard_key, True
         existing = redis.get(guard_key)

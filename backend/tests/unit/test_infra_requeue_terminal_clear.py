@@ -243,7 +243,7 @@ class TestTheBudgetSurvivesEverythingElse:
 
         media_file, _ = _requeued_run(db_session, normal_user)
 
-        with patch("app.core.redis.get_redis", lambda: BrokenRedis()):
+        with patch("app.core.redis.get_request_redis", lambda: BrokenRedis()):
             update_media_file_status(db_session, media_file.id, FileStatus.ERROR)
 
         db_session.expire_all()

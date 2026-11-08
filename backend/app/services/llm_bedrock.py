@@ -14,11 +14,12 @@ Claude-only deployments that need same-day Anthropic API parity (Batches, Files,
 fast mode), the Anthropic-operated Mantle client is the alternative — it is not
 used here because it would not cover the non-Claude models.
 
-**Why this fits the existing architecture unchanged.** ``chat_completion_stream``
-is a *synchronous* ``Iterator[LLMStreamEvent]``; the chat service drives it with
-``iterate_in_threadpool`` and cancels via a ``threading.Event``
-(``services/chat/service.py``). boto3's ``EventStream`` is a synchronous iterator
-cancelled the same way, so it drops in without ``aioboto3`` or any async plumbing.
+**How it fits the async stream.** ``chat_completion_stream`` is asynchronous (the HTTP
+providers stream through ``httpx``). boto3's ``EventStream`` is a synchronous iterator,
+so ``LLMService`` drives it one event per hop on chat's thread limiter
+(``core.threadpool.iterate_in_chat_thread``) and cancels it via the same
+``threading.Event``; no thread is held between events. ``aioboto3`` would remove even
+those hops, at the cost of a second AWS SDK.
 
 **Credentials.** A configuration may carry its own AWS key pair (write-only, stored
 encrypted, handed in as a ``BedrockConnection``); without one boto3's standard chain

@@ -21,6 +21,7 @@ from app.services.llm_service import LLMConfig
 from app.services.llm_service import LLMProvider
 from app.services.llm_service import LLMService
 from app.services.llm_stream import LLMStreamEvent
+from tests.llm_stream_helpers import drain
 
 
 def _body(prompt: int, completion: int) -> dict[str, Any]:
@@ -42,7 +43,7 @@ class _Service(LLMService):
     def _send_llm_request(self, *_a: Any, **_k: Any) -> Any:
         return self.bodies.pop(0)
 
-    def _chat_completion_stream_untracked(self, messages, cancel_event=None, **kwargs):
+    async def _chat_completion_stream_untracked(self, messages, cancel_event=None, **kwargs):
         yield LLMStreamEvent(type="delta", text="The answer.")
         yield LLMStreamEvent(type="usage", prompt_tokens=400, completion_tokens=60)
         yield LLMStreamEvent(type="done", finish_reason="stop")
@@ -95,7 +96,7 @@ def test_panel_total_equals_the_counter_for_planner_rewrite_and_answer(
 
     svc.chat_completion(ask, max_tokens=100)  # planner
     svc.chat_completion(ask, max_tokens=100)  # query rewrite
-    list(svc.chat_completion_stream(ask))  # the answer
+    drain(svc.chat_completion_stream(ask))  # the answer
     record_chat_usage(  # what the turn's message-complete hook records for the answer
         ChatCompletionContext(
             conversation_uuid="c",

@@ -29,7 +29,7 @@ class _FakeRedis:
 
 
 def _read(monkeypatch: pytest.MonkeyPatch, hashes: dict) -> dict:
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: _FakeRedis(hashes))
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: _FakeRedis(hashes))
     result = engine_settings.get_engine_metrics(current_user=MagicMock())
     assert isinstance(result, dict)
     return result

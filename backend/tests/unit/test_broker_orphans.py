@@ -149,7 +149,7 @@ def test_a_retry_held_for_its_eta_is_not_an_orphan(fake_redis):
 def test_nothing_is_orphaned_when_the_lease_store_is_unreadable(monkeypatch):
     from tests.unit._fake_liveness_redis import BrokenRedis
 
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: BrokenRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: BrokenRedis())
     now = time.time()
     entry = parse_unacked("t", _preprocess("run-x"), now - 3600)
 

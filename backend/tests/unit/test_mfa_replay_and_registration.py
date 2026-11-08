@@ -41,7 +41,7 @@ def fake_redis(monkeypatch):
     fake = _FakeRedis()
     import app.core.redis as redis_module
 
-    monkeypatch.setattr(redis_module, "get_redis", lambda: fake)
+    monkeypatch.setattr(redis_module, "get_request_redis", lambda: fake)
     return fake
 
 
@@ -89,7 +89,7 @@ def test_redis_failure_fails_open_by_default(monkeypatch):
     def boom():
         raise ConnectionError("redis down")
 
-    monkeypatch.setattr(redis_module, "get_redis", boom)
+    monkeypatch.setattr(redis_module, "get_request_redis", boom)
     assert MFAService._consume_totp_code(1, "123456") is True
 
 
@@ -102,7 +102,7 @@ def test_redis_failure_fails_closed_when_required(monkeypatch):
     def boom():
         raise ConnectionError("redis down")
 
-    monkeypatch.setattr(redis_module, "get_redis", boom)
+    monkeypatch.setattr(redis_module, "get_request_redis", boom)
     assert MFAService._consume_totp_code(1, "123456") is False
 
 

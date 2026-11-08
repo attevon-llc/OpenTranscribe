@@ -480,7 +480,12 @@ def test_capture_queue_depth_writes_json_depths_and_in_flight_count(
     heads = [None] * len(llens)
     pipe.execute.return_value = [*llens, *heads, {}, []]
 
-    with patch("app.core.redis.get_redis", return_value=client):
+    # The depths are read through celery_metrics (request-path client), the timing
+    # hash written through benchmark_timing's own (worker) client: one fake for both.
+    with (
+        patch("app.core.redis.get_redis", return_value=client),
+        patch("app.core.redis.get_request_redis", return_value=client),
+    ):
         benchmark_timing.capture_queue_depth("task-1")
 
     calls = pipe.hset.call_args_list

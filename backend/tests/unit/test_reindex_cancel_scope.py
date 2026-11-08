@@ -72,7 +72,7 @@ def fake_redis():
     """
     fake = _StandInRedis()
     with (
-        patch("app.core.redis.get_redis", return_value=fake),
+        patch("app.core.redis.get_request_redis", return_value=fake),
         patch("app.tasks.reindex_task.get_redis", return_value=fake),
         patch("app.tasks.reindex_run_state.get_redis", return_value=fake),
     ):

@@ -950,21 +950,35 @@ Database initialization is handled entirely by Alembic migrations on backend sta
 ```bash
 DB_POOL_SIZE=20          # API process SQLAlchemy pool
 DB_MAX_OVERFLOW=40       # extra connections above the pool under load
-API_THREADPOOL_SIZE=0    # 0 = match DB_POOL_SIZE + DB_MAX_OVERFLOW (never below 40)
+API_THREADPOOL_SIZE=0    # 0 = derived, see below
+DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
+UVICORN_LIMIT_CONCURRENCY=512    # open connections per API process before 503 (0 = none)
+CHAT_THREADPOOL_SIZE=0           # chat's own worker threads; 0 = a quarter of the DB pool, min 4
 ```
+
+A chat reply streams from the model with no thread held (the provider stream is asynchronous).
+Chat's blocking steps (retrieval, masking, saving the answer, a Bedrock stream) run on their own
+`CHAT_THREADPOOL_SIZE` threads, so however many chats are open they never take the threads the
+rest of the API runs on.
 
 The API runs synchronous handlers, synchronous dependencies and `run_in_threadpool` calls on
 one thread pool. A request holds its pooled database connection from authentication until the
 response is sent, including while it waits for a thread for its next step. With `C` connections
 (`DB_POOL_SIZE + DB_MAX_OVERFLOW`) and `T` threads, a burst of `C + T` or more concurrent requests
 can leave every connection with a request waiting for a thread and every thread with a request
-waiting for a connection, until the pool timeout (30 s) fails the waiters.
+waiting for a connection, until the pool timeout (`DB_POOL_TIMEOUT_SECONDS`) fails the waiters.
 
-The default therefore sizes the thread pool to the pool capacity, so one API process handles up
-to twice its pool capacity of concurrent requests (120 with the defaults) without reaching that
-state. To serve more, raise the pool (and `PG_MAX_CONNECTIONS`, which must stay above the sum of
-every service's pool) or run more API processes; setting `API_THREADPOOL_SIZE` below the pool
-capacity logs a warning at startup.
+The sizing rule is `UVICORN_LIMIT_CONCURRENCY < C + T`. uvicorn answers 503 once that many
+connections are open, so no more requests than that can be in flight and the stall above cannot
+happen: overload is refused instead. uvicorn counts every open connection, WebSockets and SSE
+streams included, so the limit is sized for the sockets one process should hold (512) rather than
+just under `C + T`, and the default thread count follows it:
+`max(40, C, UVICORN_LIMIT_CONCURRENCY - C + 1)`, 453 with the defaults. Threads are created only
+when there is work for them. To hold more open connections, raise `UVICORN_LIMIT_CONCURRENCY`
+(threads follow) or run more API processes; for more concurrent database work, raise the pool
+(and `PG_MAX_CONNECTIONS`, which must stay above the sum of every service's pool). Setting
+`API_THREADPOOL_SIZE` below the pool capacity, or so low that the limit is not below `C + T`,
+logs a warning at startup.
 
 Hooks registered by a deployment (for example an upload-limits resolver) run on this thread
 pool, never on the event loop, but they run while the request holds a connection: keep them

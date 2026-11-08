@@ -457,6 +457,7 @@ def _cached_outcome_frame(cached: bytes | str, requester_id: int) -> str:
 @router.get("/bulk-export-stream", dependencies=[Depends(refuse_under_support_grant)])
 def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream
 ) -> StreamingResponse:
     """Server-Sent Events stream for an async bulk export.
@@ -468,108 +469,105 @@ def bulk_export_stream(
 
     The job id is signed for the user who prepared it; anyone else gets 404.
     """
-    if not bulk_job_owned_by(job, current_user.id):
+    requester_id = current_user.id
+    # Authentication opened a transaction on the request's session, and FastAPI closes it
+    # only after the response is SENT, i.e. when the export finishes. Nothing below
+    # touches the database, so give the pooled connection back now.
+    db.close()
+    if not bulk_job_owned_by(job, requester_id):
         raise HTTPException(status_code=404, detail="Export job not found")
 
     import asyncio
     import contextlib
     import json as _json
 
-    import redis.asyncio as aioredis
     from redis.exceptions import RedisError
     from redis.exceptions import TimeoutError as RedisTimeoutError
 
-    from app.core.config import settings
+    from app.core.redis import get_async_redis
     from app.services.download_events import bulk_export_channel
 
     async def event_stream() -> AsyncIterator[str]:
         # The whole generator is iterated ON the event loop, so every Redis call in it
         # must be async. The result-cache read used to go through the synchronous
-        # ``get_redis()`` singleton, stalling every other request for the round trip
+        # ``get_request_redis()`` singleton, stalling every other request for the round trip
         # (issue #320); it now shares the async client already used for the pub/sub.
-        client = aioredis.from_url(
-            settings.REDIS_URL, health_check_interval=30, socket_keepalive=True
-        )
+        client = get_async_redis()
 
         async def ready_frame() -> str | None:
             """SSE frame if the worker already cached an outcome (result or error), else None."""
             cached = await client.get(f"bulk_export_result:{job}")
             if not cached:
                 return None
-            return await asyncio.to_thread(_cached_outcome_frame, cached, current_user.id)
+            return await asyncio.to_thread(_cached_outcome_frame, cached, requester_id)
 
+        # 1. Already finished? deliver immediately (covers reconnects after completion).
+        frame = await ready_frame()
+        if frame:
+            yield frame
+            return
+
+        pubsub = client.pubsub()
+        await pubsub.subscribe(bulk_export_channel(job))
         try:
-            # 1. Already finished? deliver immediately (covers reconnects after completion).
+            # 2. RE-CHECK after subscribing (issue #334, mirroring #284 A1.22).
+            #
+            # A single check-then-subscribe has a lost-wakeup race: a worker that
+            # finishes in the gap writes the result key and publishes to an empty
+            # channel, and this stream then waits on `get_message` forever for an
+            # event that already happened — the export appears to hang while the
+            # ZIP sits ready in object storage. Re-reading after subscribing means
+            # the completion is either buffered on the subscription or visible to
+            # this second read; it cannot fall between them.
             frame = await ready_frame()
             if frame:
                 yield frame
                 return
 
-            pubsub = client.pubsub()
-            await pubsub.subscribe(bulk_export_channel(job))
-            try:
-                # 2. RE-CHECK after subscribing (issue #334, mirroring #284 A1.22).
-                #
-                # A single check-then-subscribe has a lost-wakeup race: a worker that
-                # finishes in the gap writes the result key and publishes to an empty
-                # channel, and this stream then waits on `get_message` forever for an
-                # event that already happened — the export appears to hang while the
-                # ZIP sits ready in object storage. Re-reading after subscribing means
-                # the completion is either buffered on the subscription or visible to
-                # this second read; it cannot fall between them.
-                frame = await ready_frame()
-                if frame:
-                    yield frame
+            yield sse("progress", {"message": "Preparing export…", "progress": 0})
+            while True:
+                try:
+                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+                except (TimeoutError, RedisTimeoutError):
+                    yield ": keepalive\n\n"
+                    continue
+                except RedisError as e:
+                    logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
+                    yield sse(
+                        "error",
+                        {
+                            "code": "connection_interrupted",
+                            "message": "Connection interrupted.",
+                        },
+                    )
                     return
-
-                yield sse("progress", {"message": "Preparing export…", "progress": 0})
-                while True:
-                    try:
-                        msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
-                    except (TimeoutError, RedisTimeoutError):
-                        yield ": keepalive\n\n"
-                        continue
-                    except RedisError as e:
-                        logger.warning(f"Bulk export SSE pubsub error for job {job}: {e}")
-                        yield sse(
-                            "error",
-                            {
-                                "code": "connection_interrupted",
-                                "message": "Connection interrupted.",
-                            },
-                        )
-                        return
-                    if msg is None:
-                        yield ": keepalive\n\n"
-                        continue
-                    try:
-                        data = _json.loads(msg["data"])
-                    except Exception:
-                        logger.debug("Skipping malformed bulk export event payload")
-                        continue
-                    status = data.get("status")
-                    if status == "completed" and data.get("url"):
-                        yield sse("ready", data)
-                        return
-                    if status == "error":
-                        # `data`'s "message" is worker-published free text (issue #611's
-                        # class of concern) unless it carries a known `reason`; "code" stays a
-                        # fixed literal slug so the SSE contract guard
-                        # (test_chat_sse_contract.py) can pin it structurally.
-                        yield _export_error_frame(data)
-                        return
-                    yield sse("progress", data)
-            finally:
-                # Only reached once subscribed — unsubscribing an unsubscribed pubsub
-                # would open a connection just to tear it down.
-                with contextlib.suppress(Exception):
-                    await pubsub.unsubscribe(bulk_export_channel(job))
-                    await pubsub.close()
-        except asyncio.CancelledError:
-            raise
+                if msg is None:
+                    yield ": keepalive\n\n"
+                    continue
+                try:
+                    data = _json.loads(msg["data"])
+                except Exception:
+                    logger.debug("Skipping malformed bulk export event payload")
+                    continue
+                status = data.get("status")
+                if status == "completed" and data.get("url"):
+                    yield sse("ready", data)
+                    return
+                if status == "error":
+                    # `data`'s "message" is worker-published free text (issue #611's
+                    # class of concern) unless it carries a known `reason`; "code" stays a
+                    # fixed literal slug so the SSE contract guard
+                    # (test_chat_sse_contract.py) can pin it structurally.
+                    yield _export_error_frame(data)
+                    return
+                yield sse("progress", data)
         finally:
+            # Only reached once subscribed — unsubscribing an unsubscribed pubsub
+            # would open a connection just to tear it down.
+            # Returns the pub/sub connection to the shared pool; the client stays open.
             with contextlib.suppress(Exception):
-                await client.close()
+                await pubsub.unsubscribe(bulk_export_channel(job))
+                await pubsub.close()
 
     return StreamingResponse(
         event_stream(),

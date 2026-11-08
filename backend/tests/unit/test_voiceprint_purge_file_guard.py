@@ -201,7 +201,7 @@ def test_the_all_protected_abort_is_readable_from_the_status_record(
     monkeypatch.setattr(purge, "targets_still_enabled", lambda *a, **k: [])
     monkeypatch.setattr("app.tasks.privacy_purge_task.session_scope", scope)
     monkeypatch.setattr(
-        "app.core.redis.get_redis",
+        "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
             set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
         ),
@@ -228,7 +228,7 @@ def test_the_status_endpoint_exposes_the_abort_reason(
             {"user_id": 1, "counts": {}, "reason": "files_protected"}
         )
     }
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: SimpleNamespace(get=store.get))
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: SimpleNamespace(get=store.get))
 
     body = client.get(f"/api/privacy/purge/{task_id}", headers=user_token_headers).json()
 

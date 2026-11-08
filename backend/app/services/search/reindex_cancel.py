@@ -53,11 +53,11 @@ running the fan-out, and deleting the record would take the only handle ``stop``
 has on those coordinators with it. A record left over from a finished run is
 harmless for the same reason the flags are: the ids in it name nothing.
 
-⚠️ Every function here imports ``get_redis`` inside its body rather than at module
+⚠️ Every function here imports ``get_request_redis`` inside its body rather than at module
 scope. That is the same pattern ``search.py``'s ``_check_reindex_task_active``
 uses and for the same reason: a module-level ``from app.core.redis import
-get_redis`` binds the name at import time, and a test that patches
-``app.core.redis.get_redis`` would then be pointing at a client nothing here
+get_request_redis`` binds the name at import time, and a test that patches
+``app.core.redis.get_request_redis`` would then be pointing at a client nothing here
 consults.
 """
 
@@ -90,7 +90,7 @@ LEGACY_CANCEL_VALUE = "1"
 
 
 def _decode(value: object) -> str | None:
-    """Redis returns bytes (``get_redis()`` sets no ``decode_responses``)."""
+    """Redis returns bytes (``get_request_redis()`` sets no ``decode_responses``)."""
     if value is None:
         return None
     if isinstance(value, bytes):
@@ -105,10 +105,10 @@ def cancel_target(user_id: int) -> str | None:
         The stored value — a task id, ``LEGACY_CANCEL_VALUE``, or ``None`` when
         no cancellation is pending.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        return _decode(get_redis().get(CANCEL_KEY.format(user_id=user_id)))
+        return _decode(get_request_redis().get(CANCEL_KEY.format(user_id=user_id)))
     except Exception as e:
         # Fails OPEN, deliberately and as it always has: an unreachable Redis
         # reads as "no cancellation" so a reindex keeps working rather than
@@ -148,10 +148,10 @@ def cancel_requested(user_id: int, run_id: str | None = None) -> bool:
 
 def clear_cancel(user_id: int) -> None:
     """Drop this owner's cancellation flag."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().delete(CANCEL_KEY.format(user_id=user_id))
+        get_request_redis().delete(CANCEL_KEY.format(user_id=user_id))
     except Exception as e:
         logger.warning(f"Could not clear the reindex cancellation flag: {e}")
 
@@ -193,12 +193,12 @@ def record_fanout(triggered_by: int, task_ids: dict[int, str]) -> None:
         task_ids: ``{owner id: coordinator task id}``, as returned by
             ``dispatch_reindex_for_every_owner``.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     if not task_ids:
         return
     try:
-        get_redis().setex(
+        get_request_redis().setex(
             FANOUT_KEY.format(admin_id=triggered_by),
             FANOUT_TTL_SECONDS,
             json.dumps({str(uid): tid for uid, tid in task_ids.items()}),
@@ -221,9 +221,9 @@ def read_fanout(triggered_by: int) -> dict[int, str]:
     Returns:
         ``{owner id: coordinator task id}``, empty when no run is recorded.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
-    raw = _decode(get_redis().get(FANOUT_KEY.format(admin_id=triggered_by)))
+    raw = _decode(get_request_redis().get(FANOUT_KEY.format(admin_id=triggered_by)))
     if not raw:
         return {}
     try:
@@ -236,10 +236,10 @@ def read_fanout(triggered_by: int) -> dict[int, str]:
 
 def clear_fanout(triggered_by: int) -> None:
     """Forget this admin's fan-out record, once it has been cancelled."""
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
     try:
-        get_redis().delete(FANOUT_KEY.format(admin_id=triggered_by))
+        get_request_redis().delete(FANOUT_KEY.format(admin_id=triggered_by))
     except Exception as e:
         logger.warning(f"Could not clear the reindex fan-out record: {e}")
 
@@ -257,9 +257,9 @@ def request_cancel(targets: dict[int, str]) -> list[int]:
     Returns:
         The owner ids flagged, in ascending order.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
-    redis_client = get_redis()
+    redis_client = get_request_redis()
     for user_id, run_id in sorted(targets.items()):
         redis_client.setex(CANCEL_KEY.format(user_id=user_id), CANCEL_TTL_SECONDS, run_id)
     return sorted(targets)

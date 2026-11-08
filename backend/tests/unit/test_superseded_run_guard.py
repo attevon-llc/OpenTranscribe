@@ -260,7 +260,7 @@ def test_a_running_stage_replaces_its_queued_marker_with_a_heartbeat(fake_redis)
 def test_a_run_with_no_markers_is_dead_and_an_unreadable_broker_is_unknown(monkeypatch, fake_redis):
     assert probe_runs(["gone"])["gone"].state == RunState.DEAD
 
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: BrokenRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: BrokenRedis())
 
     assert probe_runs(["gone"])["gone"].state == RunState.UNKNOWN
 

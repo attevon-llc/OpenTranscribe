@@ -201,7 +201,7 @@ def dispatch(monkeypatch) -> dict[str, Any]:
         def delay(**kwargs):
             state["calls"].append(kwargs)
 
-    monkeypatch.setattr(core_redis, "get_redis", lambda: state["redis"])
+    monkeypatch.setattr(core_redis, "get_request_redis", lambda: state["redis"])
     monkeypatch.setattr(media_download, "prepare_media_download_task", _Task)
     return state
 
@@ -222,7 +222,7 @@ def test_a_lost_dedup_guard_still_dispatches(dispatch, monkeypatch):
     def _down():
         raise ConnectionError("redis down")
 
-    monkeypatch.setattr(core_redis, "get_redis", _down)
+    monkeypatch.setattr(core_redis, "get_request_redis", _down)
     media_delivery._ensure_prepare_enqueued(_file(), 7, "audio_mp3")
     assert dispatch["calls"] == [
         {"file_id": 4242, "user_id": 7, "mode": "audio_mp3", "variant": ""}

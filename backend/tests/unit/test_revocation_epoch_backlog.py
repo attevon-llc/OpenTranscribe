@@ -46,7 +46,7 @@ class _Clock:
 
 @pytest.fixture(autouse=True)
 def _no_fanout(monkeypatch):
-    monkeypatch.setattr(websocket_notify, "get_redis", lambda: _DownStore())
+    monkeypatch.setattr(websocket_notify, "get_request_redis", lambda: _DownStore())
 
 
 @pytest.fixture

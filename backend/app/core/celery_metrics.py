@@ -100,7 +100,7 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
     """Per-queue counts for every declared queue, in ONE round trip to the broker.
 
     Args:
-        client: A redis client. Defaults to :func:`app.core.redis.get_redis` —
+        client: A redis client. Defaults to :func:`app.core.redis.get_request_redis` —
             the BROKER (db 0), never ``celery_app.backend.client`` (the result
             backend, which coincides with the broker only because both default
             to ``REDIS_URL``; a deployment pointing ``CELERY_RESULT_BACKEND``
@@ -126,10 +126,10 @@ def queue_snapshot(client: Any = None) -> dict[str, dict[str, int]]:
 
         from app.core.broker_orphans import classify
         from app.core.broker_orphans import parse_unacked
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
         sep = Channel.sep
-        redis_client = client if client is not None else get_redis()
+        redis_client = client if client is not None else get_request_redis()
 
         keys = [
             name if priority == 0 else f"{name}{sep}{priority}"

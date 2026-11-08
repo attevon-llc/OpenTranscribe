@@ -163,9 +163,9 @@ def report(
         now = time.time() if at is None else at
         started = now if state is PostProcessingState.STARTED else started_at
         try:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            get_redis().eval(
+            get_request_redis().eval(
                 _REPORT_LUA,
                 1,
                 _KEY.format(file_id=ref.id),
@@ -203,9 +203,9 @@ def report_plan(
         for task, state in decisions.items():
             args += [task.value, state.value]
         try:
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            get_redis().eval(_PLAN_LUA, 1, _KEY.format(file_id=ref.id), *args)
+            get_request_redis().eval(_PLAN_LUA, 1, _KEY.format(file_id=ref.id), *args)
         except Exception as exc:  # noqa: BLE001 — the frame still goes out
             logger.debug("post-processing status: Redis plan write failed (%s)", exc)
         tasks = {t.value: {"state": s.value, "at": run_at} for t, s in decisions.items()}
@@ -221,9 +221,9 @@ def read_status(file_id: int) -> dict[str, Any]:
     ``run_at`` is None when no run is known (nothing reported, or the entry expired); the
     caller must then say it does not know, not that the file is finished.
     """
-    from app.core.redis import get_redis
+    from app.core.redis import get_request_redis
 
-    raw = cast("dict[bytes, bytes]", get_redis().hgetall(_KEY.format(file_id=file_id)))
+    raw = cast("dict[bytes, bytes]", get_request_redis().hgetall(_KEY.format(file_id=file_id)))
     fields = {k.decode(): v.decode() for k, v in raw.items()}
     run_at = float(fields[_RUN_FIELD]) if _RUN_FIELD in fields else None
     valid = {t.value for t in PostProcessingTask}

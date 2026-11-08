@@ -23,10 +23,9 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import redis.asyncio as redis
-
 from app.core.config import settings
 from app.core.constants import VIDEO_CHUNK_SIZE
+from app.core.redis import get_async_redis
 from app.db.session_utils import session_scope
 from app.services.audio_extraction import AudioExtractionMixin
 from app.services.media_revocation_cache import legacy_audio_keys
@@ -122,7 +121,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 logger.debug(f"download_progress notification suppressed for file {file_id}")
                 return
 
-            redis_client = redis.from_url(settings.REDIS_URL)
+            redis_client = get_async_redis()
             notification_data = {
                 "user_id": user_id,
                 "type": "download_progress",
@@ -134,7 +133,6 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 },
             }
             await redis_client.publish("websocket_notifications", json.dumps(notification_data))
-            await redis_client.close()
             logger.info(
                 f"Sent download progress update: user={user_id}, file={file_id}, status={status}"
             )

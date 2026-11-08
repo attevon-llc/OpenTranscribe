@@ -152,7 +152,7 @@ def test_a_timed_out_registration_is_recovered_on_the_next_tick(
             "app.services.search.pipelines.ensure_neural_ingest_pipeline",
             side_effect=_fake_ensure_pipeline,
         ),
-        patch("app.core.redis.get_redis", return_value=fake_redis),
+        patch("app.core.redis.get_request_redis", return_value=fake_redis),
         patch("app.services.search.neural_bootstrap.neural_search_ready", side_effect=_fake_ready),
     ):
         tick_1 = nb.run_bootstrap_tick()
@@ -198,7 +198,7 @@ def test_a_healthy_deployment_pays_only_the_probe():
 def test_repeated_failure_backs_off_and_never_stops(fake_redis):
     with (
         patch("app.services.search.neural_bootstrap.neural_search_ready", return_value=False),
-        patch("app.core.redis.get_redis", return_value=fake_redis),
+        patch("app.core.redis.get_request_redis", return_value=fake_redis),
         patch(
             "app.services.search.neural_bootstrap.ensure_neural_search_bootstrap",
             return_value=nb.BootstrapResult(
@@ -235,7 +235,7 @@ def test_repeated_failure_backs_off_and_never_stops(fake_redis):
 
 def test_recovery_clears_the_backoff(fake_redis):
     with (
-        patch("app.core.redis.get_redis", return_value=fake_redis),
+        patch("app.core.redis.get_request_redis", return_value=fake_redis),
         patch("app.services.search.neural_bootstrap.neural_search_ready", return_value=False),
         patch(
             "app.services.search.neural_bootstrap.ensure_neural_search_bootstrap",
@@ -251,7 +251,7 @@ def test_recovery_clears_the_backoff(fake_redis):
     assert int(fake_redis.get(nb._ATTEMPTS_KEY)) == 3
 
     with (
-        patch("app.core.redis.get_redis", return_value=fake_redis),
+        patch("app.core.redis.get_request_redis", return_value=fake_redis),
         patch("app.services.search.neural_bootstrap.neural_search_ready", return_value=True),
     ):
         tick = nb.run_bootstrap_tick()
@@ -275,7 +275,7 @@ def test_a_redis_outage_fails_open():
         return nb.BootstrapResult(state="ok", stage=None, detail=None, model_id="m1")
 
     with (
-        patch("app.core.redis.get_redis", side_effect=ConnectionError("down")),
+        patch("app.core.redis.get_request_redis", side_effect=ConnectionError("down")),
         patch("app.services.search.neural_bootstrap.neural_search_ready", return_value=False),
         patch(
             "app.services.search.neural_bootstrap.ensure_neural_search_bootstrap",

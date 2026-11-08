@@ -66,7 +66,7 @@ from app.models.media import MediaFile
 from app.models.media import Task
 
 _CANCELLATION = "app.tasks.transcription.cancellation"
-_GET_REDIS = "app.core.redis.get_redis"
+_GET_REDIS = "app.core.redis.get_request_redis"
 
 
 class _StandInRedis:

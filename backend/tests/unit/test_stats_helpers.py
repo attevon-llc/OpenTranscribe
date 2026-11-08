@@ -842,7 +842,7 @@ class TestGetQueueDepths:
     def test_reports_pending_per_queue_and_a_total(self, monkeypatch):
         llen_map = {q: i for i, q in enumerate(CeleryQueues.ALL, start=1)}
         fake = _FakeQueueDepthsRedis(llen_map=llen_map)
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
         result = get_queue_depths()
 
@@ -856,7 +856,7 @@ class TestGetQueueDepths:
 
         key = f"{CeleryQueues.GPU}{Channel.sep}7"
         fake = _FakeQueueDepthsRedis(llen_map={key: 4})
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
         result = get_queue_depths()
 
@@ -870,7 +870,7 @@ class TestGetQueueDepths:
 
         unacked = [json.dumps([{}, CeleryQueues.GPU, CeleryQueues.GPU])]
         fake = _FakeQueueDepthsRedis(llen_map={CeleryQueues.GPU: 2}, unacked_values=unacked)
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
         result = get_queue_depths()
 
@@ -878,7 +878,7 @@ class TestGetQueueDepths:
 
     def test_a_broker_error_falls_back_to_all_zero(self, monkeypatch):
         fake = _FakeQueueDepthsRedis(broken=True)
-        monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+        monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
         result = get_queue_depths()
 

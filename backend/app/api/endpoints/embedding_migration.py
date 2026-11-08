@@ -325,9 +325,9 @@ def stop_migration(
         # Revoke any in-flight batch tasks
         try:
             from app.core.celery import celery_app
-            from app.core.redis import get_redis
+            from app.core.redis import get_request_redis
 
-            r = get_redis()
+            r = get_request_redis()
             raw = r.get("embedding_migration:batch_task_ids")
             if raw:
                 import json

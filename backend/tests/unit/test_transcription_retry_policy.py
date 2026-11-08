@@ -378,7 +378,7 @@ def test_recovery_concludes_nothing_when_the_lease_store_is_unreadable(
 ):
     from tests.unit._fake_liveness_redis import BrokenRedis
 
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: BrokenRedis())
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: BrokenRedis())
     media_file, run = _stuck_dead_run(db_session, normal_user)
 
     assert TaskRecoveryService(config=CONFIG).recover_stuck_task(db_session, run) is False

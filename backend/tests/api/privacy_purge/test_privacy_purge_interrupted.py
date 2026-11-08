@@ -45,7 +45,7 @@ class WorkerLost(BaseException):
 def status_record(monkeypatch) -> dict[str, str]:
     store: dict[str, str] = {}
     monkeypatch.setattr(
-        "app.core.redis.get_redis",
+        "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
             set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
         ),

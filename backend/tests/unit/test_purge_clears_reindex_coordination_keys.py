@@ -54,7 +54,7 @@ def test_purge_deletes_the_sweep_and_debounce_keys(
             "search_index_sweep:other",
         }
     )
-    monkeypatch.setattr("app.core.redis.get_redis", lambda: fake)
+    monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
     assert fcs._purge_external_copies(_plan(uuid)) == []
     assert fake.keys == {"search_index_sweep:other"}, "only this file's keys may be removed"
 
@@ -65,6 +65,6 @@ def test_an_unreachable_redis_does_not_fail_the_purge(
     def boom() -> Any:
         raise ConnectionError("redis down")
 
-    monkeypatch.setattr("app.core.redis.get_redis", boom)
+    monkeypatch.setattr("app.core.redis.get_request_redis", boom)
     # The keys expire on their own TTL; an outage must not turn a finished delete into a failure.
     assert fcs._purge_external_copies(_plan("u-1")) == []

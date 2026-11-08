@@ -190,6 +190,8 @@ async def upload_media_file(
         skip_summary_header = request.headers.get("X-Skip-Summary", "")
         skip_summary = is_truthy(skip_summary_header)
 
+    # Read before the upload: it commits and closes the session, detaching ``current_user``.
+    user_id = int(current_user.id)
     # Process the file upload (whisper_model is read from the DB record set during prepare)
     db_file = await process_file_upload(
         file,
@@ -208,7 +210,7 @@ async def upload_media_file(
     try:
         from app.services.redis_cache_service import redis_cache
 
-        redis_cache.invalidate_user_files(current_user.id)
+        redis_cache.invalidate_user_files(user_id)
     except Exception as e:
         logger.debug(f"Cache invalidation failed (non-critical): {e}")
 

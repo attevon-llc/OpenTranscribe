@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth import get_current_active_superuser
 from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.tasks.combined_speaker_analysis_task import combined_migration_progress
@@ -107,7 +107,7 @@ def stop_combined_migration(
         # Revoke pending batch tasks
         revoked_count = 0
         try:
-            r = get_redis()
+            r = get_request_redis()
             batch_ids_raw = r.get("combined_speaker_migration:batch_task_ids")
             if batch_ids_raw:
                 batch_ids = json.loads(batch_ids_raw)

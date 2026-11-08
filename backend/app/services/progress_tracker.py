@@ -13,7 +13,7 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import field
 
-from app.core.redis import get_redis
+from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
 
@@ -230,7 +230,7 @@ class ProgressTracker:
     ) -> None:
         """Write state to Redis with optional force (bypass rate limit)."""
         try:
-            r = get_redis()
+            r = get_request_redis()
             r.set(self._key, json.dumps(state.to_dict()), ex=ttl)
             self._last_write_time = time.time()
         except Exception as e:
@@ -240,7 +240,7 @@ class ProgressTracker:
     def get_state(cls, task_type: str, user_id: int) -> ProgressState | None:
         """Read current state from Redis."""
         try:
-            r = get_redis()
+            r = get_request_redis()
             raw = r.get(f"{_KEY_PREFIX}:{task_type}:{user_id}")
             if raw:
                 return ProgressState.from_dict(json.loads(raw))
@@ -256,7 +256,7 @@ class ProgressTracker:
         """
         results: list[dict] = []
         try:
-            r = get_redis()
+            r = get_request_redis()
             pattern = f"{_KEY_PREFIX}:*:{user_id}"
             for key in r.scan_iter(match=pattern, count=100):
                 raw = r.get(key)
@@ -288,7 +288,7 @@ def emit_progress_notification(
         return  # Throttled
 
     try:
-        r = get_redis()
+        r = get_request_redis()
         data: dict = {
             "progress": round(processed / tracker.total, 4) if tracker.total > 0 else 0,
             "message": state.message,

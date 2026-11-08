@@ -47,9 +47,10 @@ class _FakeLLM:
         self.events = events
         self.calls: list[dict[str, Any]] = []
 
-    def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
+    async def chat_completion_stream(self, messages, cancel_event=None, **kwargs):
         self.calls.append({"messages": messages, "cancel_event": cancel_event, "kwargs": kwargs})
-        yield from self.events
+        for _event in self.events:
+            yield _event
 
     def estimate_tokens(self, text: str) -> int:
         return len(text) // 4

@@ -181,3 +181,39 @@ def test_the_batch_is_bounded(db_session, normal_user):
     ids = {f.id for f in files}
     got = vr.due_file_ids(db_session, cutoff, limit=2, has_voiceprints=lambda _d, i: i in ids)
     assert len(got) == 2 and set(got) <= ids
+
+
+def test_purged_files_do_not_starve_newer_due_files(db_session, normal_user):
+    """A purge keeps speaker rows, so purged files stay candidates; the sweep must still converge.
+
+    Ten files whose voiceprints are already gone sit ahead (older) of three that still have
+    them, and the candidate page (limit x factor = 8) is smaller than the purged backlog.
+    Reading only the oldest page returned nothing forever; walking the pages finds all three.
+    """
+    cutoff = vr.cutoff_for(24, _NOW)
+    purged = [
+        _file(db_session, normal_user, uploaded=datetime(2000, 1, d, tzinfo=UTC))
+        for d in range(1, 11)
+    ]
+    live = [
+        _file(db_session, normal_user, uploaded=datetime(2001, 1, d, tzinfo=UTC))
+        for d in range(1, 4)
+    ]
+    for f in purged + live:
+        _speaker(db_session, normal_user, f)
+    still_indexed = {f.id for f in live}
+    purged_ids = {f.id for f in purged}
+
+    remaining = set(still_indexed)
+    for _tick in range(4):  # each tick purges what it selects, like the real sweep
+        snapshot = frozenset(remaining)
+
+        def indexed(_db, file_id: int, live: frozenset[int] = snapshot) -> bool:
+            return file_id in live
+
+        got = vr.due_file_ids(db_session, cutoff, limit=2, has_voiceprints=indexed)
+        assert set(got) <= still_indexed and not set(got) & purged_ids
+        if not got:
+            break
+        remaining -= set(got)
+    assert remaining == set()  # converged: every indexed file was eventually selected

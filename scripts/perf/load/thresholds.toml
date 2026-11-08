@@ -1,0 +1,30 @@
+# Pass/fail limits that scripts/perf/load/summarize.py applies to a run directory.
+# Times are milliseconds (Locust's unit, also for the stream, socket and pipeline rows).
+# Change a limit here, in review, never on the command line of one run.
+
+[overall]
+max_error_rate = 0.005   # failed requests / all requests, every kind
+min_requests = 20        # a row with fewer requests is reported but not judged on percentiles
+
+[read]                   # GET requests, per endpoint
+p95_ms = 1000
+p99_ms = 3000
+
+[write]                  # POST / PUT / PATCH / DELETE, per endpoint (login included)
+p95_ms = 2000
+p99_ms = 5000
+
+[stream]                 # SSE rows: a chat answer read to its end
+first_token_p95_ms = 5000
+p95_ms = 60000           # mock-slow holds a stream for most of a minute by design
+
+[socket]                 # WS rows: connect and the echo round trip
+p95_ms = 1000
+
+[pipeline]               # PIPELINE rows: upload -> "completed", end to end
+p95_ms = 600000
+
+[sampler]                # samples.csv from sampler.py
+max_idle_in_transaction = 0      # connections idle in a transaction for over 1 s, any sample
+max_pool_saturated_share = 0.05  # share of samples with db_pool_checked_out >= db_pool_capacity
+max_memory_growth_share = 0.25   # per container: last sample vs first (the soak's leak check)

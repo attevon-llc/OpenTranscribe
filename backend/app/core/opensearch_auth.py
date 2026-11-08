@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.core.threadpool import api_threadpool_size
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,10 @@ def opensearch_connection_kwargs(**overrides: Any) -> dict[str, Any]:
     # least one half is actually configured.
     if settings.OPENSEARCH_USER or settings.OPENSEARCH_PASSWORD:
         kwargs["http_auth"] = (settings.OPENSEARCH_USER, settings.OPENSEARCH_PASSWORD)
+    # One pooled connection per API worker thread. The transport's default is 10, so with
+    # the threadpool's 60 threads searching at once 50 of them would open and discard a
+    # connection per request instead of reusing one.
+    kwargs["pool_maxsize"] = api_threadpool_size()
     kwargs.update(overrides)
 
     if is_sigv4():

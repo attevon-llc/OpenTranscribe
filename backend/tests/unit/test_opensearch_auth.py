@@ -16,6 +16,7 @@ import pytest
 
 from app.core import opensearch_auth
 from app.core.config import settings
+from app.core.threadpool import api_threadpool_size
 
 
 @pytest.fixture
@@ -64,6 +65,8 @@ def test_basic_kwargs_match_the_previous_inline_client(basic_auth):
         "use_ssl": False,
         "verify_certs": False,
         "ssl_show_warn": False,
+        # The one deliberate addition (audit L3): a pool sized to the API's threads.
+        "pool_maxsize": api_threadpool_size(),
     }
 
 

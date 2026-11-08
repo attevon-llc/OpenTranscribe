@@ -206,7 +206,7 @@ def test_writes_clean_up_after_themselves(run):
         assert by_route[made] == count, (made, by_route[made], undone, count)
     # every segment edit and every speaker reassignment is followed by its restore
     assert labels["segments.update restore"] == labels["segments.update"] > 0
-    assert labels["segments.speaker restore"] == labels["segments.speaker"] > 0
+    assert labels["segments.speaker"] > 0
 
 
 def test_an_upload_is_purged_only_after_the_pipeline_finished_it(run):
@@ -314,3 +314,64 @@ def test_the_target_must_be_a_fresh_stack(load, tmp_path, offset, host, expected
 def test_no_fresh_name_is_refused(load):
     with pytest.raises(load["scenario"].NotIsolatedError, match="--fresh NAME is required"):
         load["scenario"].resolve_target("", None)
+
+
+# --- M2 tool bugs T4, T6, T8 and the unfiltered speaker list (#1174) -------------------------
+
+
+def test_a_204_from_topic_suggestions_is_not_a_failure(load):
+    # T4: the endpoint answers 204 when it has nothing; the stub raises on any unexpected status
+    run = stub.run_personas(
+        load["locustfile"],
+        rounds=3,
+        personas=("Viewer",),
+        statuses={r"/api/files/[^/]+/suggestions": 204},
+    )
+
+    assert any(c.url.endswith("/suggestions") for c in run.client.calls)
+
+
+def test_the_speaker_merge_is_the_restore_and_names_the_original(run):
+    # T6: moving the segment back first deleted the temp speaker, so the merge 404ed
+    calls = [c for c in run.client.calls if c.persona == "Editor"]
+    names = [c.name for c in calls]
+    merges = [c for c in calls if _route_key(c) == "speakers.merge"]
+
+    assert merges
+    assert "segments.speaker restore" not in names
+    assert all(c.url.endswith("/merge/spk-1") for c in merges)
+    first_move = names.index("segments.speaker")
+    assert names.index("speakers.merge", first_move) > first_move
+
+
+def test_the_viewer_drives_the_unfiltered_paged_speaker_list(run):
+    # M2 #14
+    paged = [c for c in run.client.calls if c.name == "speakers.list paged unfiltered"]
+
+    assert paged
+    assert paged[0].params == {"skip": 0, "limit": 100}
+
+
+def test_the_listener_ending_its_own_run_is_not_a_dropped_socket(load, run):
+    # T8: Locust closing the socket at run end raised a read error counted as `WS dropped`
+    listener = load["ws_listener"].WebSocketListener.__new__(load["ws_listener"].WebSocketListener)
+    fired: list[tuple] = []
+    listener._fire = lambda kind, name, *a, **k: fired.append((kind, name))
+    listener.pending = {}
+
+    class Closed:
+        def recv(self):
+            raise stub.SocketError("closed")
+
+        def close(self):
+            pass
+
+    listener.ws = Closed()
+    listener._stopping = True
+    listener._receive_once()
+    assert fired == []
+
+    listener.ws = Closed()
+    listener._stopping = False
+    listener._receive_once()
+    assert fired == [("WS", "dropped")]

@@ -228,7 +228,11 @@ _BODIES: list[tuple[str, str, Any]] = [
 class RecordingClient:
     """Answers like the API would, and records every call with the persona and task making it."""
 
-    def __init__(self, capabilities: dict[str, bool]) -> None:
+    def __init__(
+        self, capabilities: dict[str, bool], statuses: dict[str, int] | None = None
+    ) -> None:
+        # path regex -> status the API answers with instead of 200 (e.g. a 204 "nothing to do")
+        self.statuses = statuses or {}
         self.cookiejar = _Jar()
         self.calls: list[Call] = []
         self.persona = ""
@@ -263,7 +267,8 @@ class RecordingClient:
             self.cookiejar[:] = [_Cookie("csrf_token", "token"), _Cookie("access_token", "jwt")]
         elif method != "GET":
             assert kwargs["headers"].get("X-CSRF-Token") == "token", f"{method} {url} lacks CSRF"
-        return _Response(200, self._body(method, url))
+        status = next((st for pat, st in self.statuses.items() if re.fullmatch(pat, url)), 200)
+        return _Response(status, self._body(method, url))
 
     def iter_lines(self, url: str, method: str = "GET", **kwargs: Any) -> Iterator[str]:
         self.request(method, url, **kwargs)
@@ -339,10 +344,11 @@ def run_personas(
     exclude_tags: frozenset[str] = frozenset(),
     capabilities: dict[str, bool] | None = None,
     personas: tuple[str, ...] | None = None,
+    statuses: dict[str, int] | None = None,
 ) -> Run:
     """Start every persona, run each of its tasks ``rounds`` times, then stop it."""
     caps = {cap: True for cap in ORG_CAPABILITIES} if capabilities is None else capabilities
-    run = Run(RecordingClient(caps))
+    run = Run(RecordingClient(caps, statuses))
     StubGevent.spawned.clear()
     StubWebsocket.sockets.clear()
 

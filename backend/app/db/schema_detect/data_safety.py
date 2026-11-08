@@ -36,6 +36,7 @@ class DataSafetyFacts:
     has_content_hold_authority: bool
     has_organization_owner: bool
     has_media_file_audio_streams: bool
+    has_requested_source_language: bool
 
 
 def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
@@ -75,6 +76,11 @@ def probe(conn: Connection, tables: list[str]) -> DataSafetyFacts:
             "SELECT EXISTS(SELECT 1 FROM pg_constraint "
             "WHERE conname = 'ck_media_file_audio_stream_index')"
         ),
+        # v470: the language forced for one run (issue #1263). Keyed on its CHECK.
+        has_requested_source_language=_check_exists(
+            "SELECT EXISTS(SELECT 1 FROM pg_constraint "
+            "WHERE conname = 'ck_media_file_requested_source_language')"
+        ),
     )
 
 
@@ -102,7 +108,12 @@ def matches_v469(f: SchemaFacts) -> bool:
     return matches_v468(f) and f.data_safety.has_media_file_audio_streams
 
 
+def matches_v470(f: SchemaFacts) -> bool:
+    return matches_v469(f) and f.data_safety.has_requested_source_language
+
+
 ARMS: tuple[Arm, ...] = (
+    (matches_v470, "v470_add_requested_source_language"),
     (matches_v469, "v469_add_media_file_audio_streams"),
     (matches_v468, "v468_add_organization_owner"),
     (matches_v467, "v467_add_content_hold_authority"),

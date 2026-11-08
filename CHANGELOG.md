@@ -106,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Opening a live-updates connection no longer runs its sign-in check (a database query and token verification) on the server's event loop, so many browsers reconnecting at once, for example after a restart, no longer stall every other request.
 - A chat reply no longer holds a database connection while the model is writing it. Each streaming answer kept one pooled connection, idle in a transaction, until the reply finished, so enough concurrent chats could exhaust the server's connection pool and slow every other user's requests.
 - Checking whether an AI provider is available (`GET /api/llm/status`, which every open browser tab polls, and `GET /api/files/{uuid}/summary-status`) no longer keeps a database connection and an open transaction for the duration of the outbound health check (up to 3 s per call). The database reads now finish and the connection is returned first, and they no longer run on the server's event loop.
 - A Celery worker child no longer ends its parent's database connection when it starts: the child now drops the connection pool it inherits without closing the shared sockets (`engine.dispose(close=False)`, as the SQLAlchemy documentation prescribes for forked processes). Before, every child start or respawn terminated the worker's own session.

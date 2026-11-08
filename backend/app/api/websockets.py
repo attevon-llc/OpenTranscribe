@@ -13,6 +13,7 @@ from fastapi import WebSocketDisconnect
 from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth.lifecycle_gates import admitted_on_optional_auth
 from app.auth.roles import ELEVATED_ROLES
@@ -527,6 +528,25 @@ def _origin_is_allowed(websocket: WebSocket) -> bool:
     return normalized in allowed or normalized == _request_origin(websocket)
 
 
+def _authenticate_in_session(token: str, websocket: WebSocket) -> User | None:
+    """Verify ``token`` in a short-lived session; return the user detached, or None.
+
+    Synchronous on purpose and always called through ``run_in_threadpool``: the pool
+    checkout (which waits up to the pool timeout when the pool is busy), the user query and
+    the token verification would otherwise run on the event loop that every other request
+    and socket in the process shares, and a reconnect storm would stall all of them.
+    """
+    with session_scope() as db:
+        user = _try_authenticate_token(token, db, websocket)
+        # session_scope() commits on exit, which expires every attribute on `user`
+        # (SQLAlchemy's default expire_on_commit); the caller reads loaded columns after
+        # the session is gone. Expunge BEFORE the block exits/commits so they stay
+        # readable on the detached instance; after the commit would be too late.
+        if user is not None:
+            db.expunge(user)
+        return user
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint with first-message authentication.
@@ -581,16 +601,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     token = websocket.cookies.get("access_token")
     auth_token = token
     if token:
-        with session_scope() as db:
-            user = _try_authenticate_token(token, db, websocket)
-            # session_scope() commits on exit, which expires every attribute on `user`
-            # (SQLAlchemy's default expire_on_commit) — the only attribute touched after
-            # this block is user.id, which must survive the session closing. Expunge
-            # BEFORE the block exits/commits so the already-loaded columns stay readable
-            # on the now-detached instance; expunging after commit would be too late,
-            # since expiry already happened.
-            if user is not None:
-                db.expunge(user)
+        user = await run_in_threadpool(_authenticate_in_session, token, websocket)
 
     # 2. If no cookie auth, wait for first-message authentication
     if not user:
@@ -601,10 +612,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await websocket.close(code=4001, reason="Authentication required")
                 return
             auth_token = data["token"]
-            with session_scope() as db:
-                user = _try_authenticate_token(auth_token, db, websocket)
-                if user is not None:
-                    db.expunge(user)
+            user = await run_in_threadpool(_authenticate_in_session, auth_token, websocket)
             if not user:
                 await websocket.close(code=4003, reason="Invalid token")
                 return

@@ -18,6 +18,9 @@ A worker that dies after pass 1's relational commit leaves that row behind. ``pr
 ``purge_pending.REVERIFY_GRACE_SECONDS``, audits the result, and fails a purge whose final pass
 never ended with ``reason: interrupted``: the purge completes its centroid work or reports
 incomplete, never done. That row, not a blind replay, is this task's recovery from worker loss.
+One re-verify runs at a time (the ``privacy_purge_reverify`` lease, fail closed): the beat tick and
+an administrator's on-demand run would otherwise both take the same rows, deleting and auditing
+each purge twice and failing it as interrupted twice.
 
 Because a purge is irreversible and the layer can be switched back on between the request and the
 run, the task re-checks that the targets are still off before touching anything and aborts if not
@@ -44,6 +47,7 @@ from app.services.privacy.measure import GroupedCounts
 from app.services.privacy.measure import merge_grouped
 from app.services.privacy.purge_file_guard import PROTECTION_COUNT_KEYS
 from app.services.privacy.purge_file_guard import guard_files_scope
+from app.utils.task_lock import task_lock_manager
 from app.utils.task_utils import TASK_STATUS_COMPLETED
 from app.utils.task_utils import TASK_STATUS_FAILED
 from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
@@ -54,6 +58,11 @@ logger = logging.getLogger(__name__)
 TASK_NAME = "privacy.purge_voiceprints"
 REVERIFY_TASK_NAME = "privacy.purge_reverify"
 TASK_TYPE = "privacy_purge"
+#: The lease that keeps re-verify runs from overlapping (``utils/task_lock``; fails closed: an
+#: outstanding row simply waits for the next tick).
+REVERIFY_LOCK_KEY = "privacy_purge_reverify"
+#: Longest the lease is renewed for: one run handles ``purge_pending.REVERIFY_BATCH`` rows.
+REVERIFY_LOCK_TIMEOUT_SECONDS = 1800
 
 
 def _set_status(task_id: str, status: str, *, completed: bool = False) -> None:
@@ -231,13 +240,23 @@ def privacy_purge_reverify_task(grace_seconds: float | None = None) -> dict[str,
 
     Args:
         grace_seconds: Override of ``purge_pending.REVERIFY_GRACE_SECONDS`` (the beat passes none).
+
+    Returns:
+        The ``purge_pending.reverify`` counts plus ``skipped`` (1 when another run held the
+        lease, or Redis could not grant it, and nothing was done).
     """
-    summary = purge_pending.reverify(
-        SessionLocal,
-        grace_seconds=purge_pending.REVERIFY_GRACE_SECONDS
-        if grace_seconds is None
-        else grace_seconds,
-    )
+    with task_lock_manager.acquire_lock(
+        REVERIFY_LOCK_KEY, timeout=REVERIFY_LOCK_TIMEOUT_SECONDS
+    ) as acquired:
+        if not acquired:
+            logger.info("privacy purge re-verify: another run holds the lease; skipping")
+            return {"rows": 0, "finished": 0, "remaining": 0, "interrupted": 0, "skipped": 1}
+        summary = purge_pending.reverify(
+            SessionLocal,
+            grace_seconds=purge_pending.REVERIFY_GRACE_SECONDS
+            if grace_seconds is None
+            else grace_seconds,
+        )
     if summary["rows"]:
         logger.info("privacy purge re-verify: %s", summary)
-    return summary
+    return {**summary, "skipped": 0}

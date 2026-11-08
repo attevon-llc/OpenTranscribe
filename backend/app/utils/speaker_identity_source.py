@@ -82,7 +82,9 @@ MACHINE_IDENTITY_SOURCES: frozenset[str] = frozenset({VOICEPRINT, VOICEPRINT_LIN
 
 #: ``system_settings`` key under which ``v449`` records how many existing rows its backfill
 #: recognised as voiceprint-made (owner decision Q1: the count is quoted by the upgrade note).
-#: Value: JSON ``{"revision": ..., "stamped": <int>, "recorded_at": <timestamp>}``.
+#: Value: JSON ``{"revision": ..., "stamped": <int>, "shape_left_unmarked": <int>,
+#: "recorded_at": <timestamp>}``. ``python -m app.scripts.reverify_identity_sources`` re-measures
+#: both against the current data (issue #1334).
 BACKFILL_RECORD_SETTING_KEY = "privacy.identity_source_backfill"
 
 #: Key of the attribution notes in a row's ``InstanceState.info`` (consumed at flush).

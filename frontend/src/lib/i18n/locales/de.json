@@ -4197,6 +4197,7 @@
   "orgAudit.event.voiceprintsPurged": "Gespeicherte Stimmabdrücke gelöscht",
   "orgAudit.event.genderPurged": "Abgeleitete Geschlechtsdaten gelöscht",
   "orgAudit.event.labelsResynced": "Sprecherbezeichnungen im Suchindex neu aufgebaut, nachdem ein Stimmabdruck-Schalter geändert wurde",
+  "orgAudit.event.identitySourceReverified": "Die beim Upgrade auf 0.6.0 als stimmabdruckbasiert markierten Sprechernamen erneut geprüft",
   "orgAudit.event.erasureScheduled": "Datenlöschung geplant",
   "orgAudit.event.erasureCancelled": "Geplante Datenlöschung abgebrochen",
   "orgAudit.event.erasureStarted": "Geplante Datenlöschung gestartet",

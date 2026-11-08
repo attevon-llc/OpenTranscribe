@@ -30,11 +30,18 @@ from app.models.speaker import SpeakerCluster
 from app.services.privacy import purge
 from app.tasks.privacy_purge_task import privacy_purge_task
 from tests.fixtures.privacy_purge import ME_PURGE
+from tests.fixtures.privacy_purge import REVERIFY_LEASE_KEY
 from tests.fixtures.privacy_purge import purge_via_api
 from tests.fixtures.privacy_purge import seed
 from tests.fixtures.privacy_purge import turn_off
 
 VOICEPRINTS_ONLY = {"targets": ["voiceprints"], "confirm": "PURGE"}
+
+# Every test here runs the re-verify, which takes its lease on a real (throwaway) Redis.
+pytestmark = [
+    pytest.mark.usefixtures("reverify_lease"),
+    pytest.mark.xdist_group("local_model_redis"),
+]
 
 
 class WorkerLost(BaseException):
@@ -228,7 +235,7 @@ def test_a_store_still_failing_keeps_the_row_and_counts_the_attempt(
     monkeypatch.setattr(opensearch, "delete_by_query", down)
     summary = _reverify(grace_seconds=0)
 
-    assert summary == {"rows": 1, "finished": 0, "remaining": 1, "interrupted": 0}
+    assert summary == {"rows": 1, "finished": 0, "remaining": 1, "interrupted": 0, "skipped": 0}
     assert document in opensearch.ids()
     row = _row(gov, task_id)
     assert row is not None and row.reverify_attempts == 1 and row.last_reverify_at is not None
@@ -249,7 +256,7 @@ def test_a_finished_purge_keeps_its_status_and_its_row_goes_with_the_document(
 
     summary = _reverify(grace_seconds=0)
 
-    assert summary == {"rows": 1, "finished": 1, "remaining": 0, "interrupted": 0}
+    assert summary == {"rows": 1, "finished": 1, "remaining": 0, "interrupted": 0, "skipped": 0}
     assert document not in opensearch.ids()
     assert _row(gov, task_id) is None
     assert gov.db.get(Task, task_id).status == "failed", "the purge as it ran stays on record"
@@ -257,3 +264,36 @@ def test_a_finished_purge_keeps_its_status_and_its_row_goes_with_the_document(
     assert event["outcome"].value == "success" and "reason" not in event["details"]
     assert event["details"]["counts"]["opensearch"] == {"cluster_docs_deleted": 1}
     assert event["organization_id"] == gov.org.id
+
+
+@pytest.mark.usefixtures("in_process_task", "status_record")
+def test_a_reverify_that_overlaps_a_running_one_takes_nothing(
+    gov, opensearch, events, reverify_lease
+):
+    """The beat tick and an administrator's run must not both take the same purge.
+
+    Two runs over one row both deleted, both audited and both failed the purge as interrupted.
+    The second run now finds the lease held and leaves the row to the run that holds it.
+    """
+    task_id, document = _pending_purge(gov, opensearch, task_status="in_progress", age_seconds=7200)
+    reverify_lease.set(REVERIFY_LEASE_KEY, "another-run", ex=60)
+
+    assert _reverify(grace_seconds=0) == {
+        "rows": 0,
+        "finished": 0,
+        "remaining": 0,
+        "interrupted": 0,
+        "skipped": 1,
+    }
+    assert document in opensearch.ids()
+    assert _row(gov, task_id) is not None
+    assert gov.db.get(Task, task_id).status == "in_progress"
+    assert not [e for e in events if e["details"].get("phase") == "reverify"]
+
+    reverify_lease.delete(REVERIFY_LEASE_KEY)
+    import app.tasks.privacy_purge_task as task_module
+
+    assert task_module.REVERIFY_LOCK_KEY == REVERIFY_LEASE_KEY, "the test holds the real lease"
+    assert _reverify(grace_seconds=0)["interrupted"] == 1
+    assert document not in opensearch.ids()
+    assert len([e for e in events if e["details"].get("phase") == "reverify"]) == 1

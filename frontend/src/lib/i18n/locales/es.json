@@ -4257,6 +4257,7 @@
   "orgAudit.event.voiceprintsPurged": "Eliminó las huellas de voz almacenadas",
   "orgAudit.event.genderPurged": "Eliminó los datos de género inferido",
   "orgAudit.event.labelsResynced": "Reconstruyó las etiquetas de hablante del índice de búsqueda tras cambiar un interruptor de huellas de voz",
+  "orgAudit.event.identitySourceReverified": "Volvió a verificar los nombres de hablante que la actualización a 0.6.0 marcó como creados por huellas de voz",
   "orgAudit.event.erasureScheduled": "Programó un borrado de datos",
   "orgAudit.event.erasureCancelled": "Canceló un borrado de datos programado",
   "orgAudit.event.erasureStarted": "Inició un borrado de datos programado",

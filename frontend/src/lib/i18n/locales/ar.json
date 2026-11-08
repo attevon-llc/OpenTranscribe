@@ -4475,6 +4475,7 @@
   "orgAudit.event.voiceprintsPurged": "حذف البصمات الصوتية المخزّنة",
   "orgAudit.event.genderPurged": "حذف بيانات الجنس المستنتَج",
   "orgAudit.event.labelsResynced": "أعاد بناء تسميات المتحدثين في فهرس البحث بعد تغيير مفتاح البصمات الصوتية",
+  "orgAudit.event.identitySourceReverified": "أعاد التحقق من أسماء المتحدثين التي وسمها تحديث 0.6.0 بأنها من إنشاء البصمات الصوتية",
   "orgAudit.event.erasureScheduled": "جدولة محو البيانات",
   "orgAudit.event.erasureCancelled": "إلغاء محو بيانات مجدول",
   "orgAudit.event.erasureStarted": "بدء محو بيانات مجدول",

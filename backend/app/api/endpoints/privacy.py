@@ -341,9 +341,9 @@ def reverify_pending_purges(
 ) -> PurgeReverifyAccepted:
     """Finish the centroid work of purges a dead worker left (super_admin), without waiting for the beat.
 
-    Runs the same ``privacy.purge_reverify`` the schedule runs hourly: deletes and measures the
-    centroid documents recorded in ``privacy_purge_pending`` for purges older than the cutoff,
-    and fails a purge whose final pass never ended (``reason: interrupted``). Each purge it
+    Runs the same ``privacy.purge_reverify`` the schedule runs every 15 minutes (never two at
+    once): deletes and measures the centroid documents recorded in ``privacy_purge_pending`` for
+    purges older than the cutoff, and fails a purge whose final pass never ended (``reason: interrupted``). Each purge it
     touches is audited under its own task id. Safe to repeat.
     """
     cutoff = (body or PurgeReverifyRequest()).older_than_seconds

@@ -4175,6 +4175,7 @@
   "orgAudit.event.voiceprintsPurged": "저장된 음성 지문을 삭제했음",
   "orgAudit.event.genderPurged": "추정된 성별 데이터를 삭제했음",
   "orgAudit.event.labelsResynced": "음성 지문 설정이 변경된 후 검색 색인의 화자 레이블을 다시 만들었음",
+  "orgAudit.event.identitySourceReverified": "0.6.0 업그레이드에서 음성 지문으로 만들어졌다고 표시된 화자 이름을 다시 확인했음",
   "orgAudit.event.erasureScheduled": "데이터 삭제를 예약했음",
   "orgAudit.event.erasureCancelled": "예약된 데이터 삭제를 취소했음",
   "orgAudit.event.erasureStarted": "예약된 데이터 삭제를 시작했음",

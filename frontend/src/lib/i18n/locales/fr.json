@@ -4257,6 +4257,7 @@
   "orgAudit.event.voiceprintsPurged": "A supprimé les empreintes vocales stockées",
   "orgAudit.event.genderPurged": "A supprimé les données de genre déduit",
   "orgAudit.event.labelsResynced": "A reconstruit les étiquettes de locuteur de l'index de recherche après la modification d'un réglage d'empreintes vocales",
+  "orgAudit.event.identitySourceReverified": "A revérifié les noms de locuteur que la mise à niveau 0.6.0 avait marqués comme issus d'empreintes vocales",
   "orgAudit.event.erasureScheduled": "A planifié un effacement de données",
   "orgAudit.event.erasureCancelled": "A annulé un effacement de données planifié",
   "orgAudit.event.erasureStarted": "A lancé un effacement de données planifié",

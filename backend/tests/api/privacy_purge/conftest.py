@@ -22,6 +22,7 @@ from app.services.privacy.policy import clear_write_backstop_cache
 from app.tasks import privacy_purge_task as task_module
 from app.tasks.privacy_purge_task import privacy_purge_task
 from tests.fixtures.fake_speaker_index import FakeOpenSearch
+from tests.fixtures.privacy_purge import REVERIFY_LEASE_KEY
 
 # --------------------------------------------------------------------------- #
 # Stand-ins
@@ -107,3 +108,17 @@ def _capabilities():
     yield
     reset_capability_resolver()
     clear_write_backstop_cache()
+
+
+@pytest.fixture()
+def reverify_lease(local_model_redis, monkeypatch):
+    """The re-verify's lease on a throwaway Redis (``fixtures/throwaway_redis``), never the stack's.
+
+    Returns the client, so a test can hold the lease the way an overlapping run would.
+    """
+    from app.utils import task_lock
+
+    monkeypatch.setattr(task_lock, "get_request_redis", lambda: local_model_redis)
+    local_model_redis.delete(REVERIFY_LEASE_KEY)
+    yield local_model_redis
+    local_model_redis.delete(REVERIFY_LEASE_KEY)

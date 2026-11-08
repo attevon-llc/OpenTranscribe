@@ -4235,6 +4235,7 @@
   "orgAudit.event.voiceprintsPurged": "Opgeslagen stemafdrukken verwijderd",
   "orgAudit.event.genderPurged": "Afgeleide geslachtsgegevens verwijderd",
   "orgAudit.event.labelsResynced": "Sprekerlabels in de zoekindex opnieuw opgebouwd nadat een stemafdruk-instelling is gewijzigd",
+  "orgAudit.event.identitySourceReverified": "De sprekernamen die de upgrade naar 0.6.0 als door stemafdrukken gemaakt markeerde, opnieuw gecontroleerd",
   "orgAudit.event.erasureScheduled": "Gegevenswissing gepland",
   "orgAudit.event.erasureCancelled": "Geplande gegevenswissing geannuleerd",
   "orgAudit.event.erasureStarted": "Geplande gegevenswissing gestart",

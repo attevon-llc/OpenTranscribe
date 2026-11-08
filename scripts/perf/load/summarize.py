@@ -166,36 +166,82 @@ def sampler_section(samples: list[dict[str, str]], limits: dict[str, Any], v: Ve
             f'| {source} | {name} | {min(values):.1f} | {statistics.fmean(values):.1f} | '
             f'{max(values):.1f} | {values[-1]:.1f} | {verdict} |'
         )
-    lines += ['', pool_saturation(series, lim, v)]
+    lines += ['', *pool_saturation(series, samples, lim, v)]
     return lines
 
 
-def pool_saturation(
-    series: dict[tuple[str, str], list[tuple[float, float]]], lim: dict[str, Any], v: Verdict
-) -> str:
-    """Share of samples where every pool connection was checked out (requests were queueing)."""
-    used: dict[float, float] = defaultdict(float)
+def sweep_coverage(
+    samples: list[dict[str, str]], series: dict[tuple[str, str], list[tuple[float, float]]]
+) -> dict[str, float]:
+    """Per source, the share of sampler sweeps (distinct timestamps, ``error`` rows included)
+    that produced a value. A source that failed every sweep has coverage 0, not "no data"."""
+    sweeps = {s['ts'] for s in samples if s.get('ts')}
+    if not sweeps:
+        return {}
+    seen: dict[str, set[float]] = defaultdict(set)
+    for (source, _name), points in series.items():
+        seen[source].update(ts for ts, _ in points)
+    return {source: len(stamps) / len(sweeps) for source, stamps in seen.items()}
+
+
+def _paired(
+    series: dict[tuple[str, str], list[tuple[float, float]]], source: str, used: str, cap: str
+) -> tuple[dict[float, float], dict[float, float]]:
+    """Sum per timestamp of the ``used`` and ``cap`` series of one source."""
+    got: dict[float, float] = defaultdict(float)
     capacity: dict[float, float] = defaultdict(float)
-    for (source, name), points in series.items():
-        if source != 'pool':
+    for (src, name), points in series.items():
+        if src != source:
             continue
-        if name.startswith('db_pool_checked_out'):
-            target = used
-        elif name.startswith('db_pool_capacity'):
-            target = capacity
-        else:
-            continue
-        for ts, value in points:
+        target = got if name.startswith(used) else capacity if name.startswith(cap) else None
+        for ts, value in points if target is not None else ():
             target[ts] += value
+    return got, capacity
+
+
+def pool_saturation(
+    series: dict[tuple[str, str], list[tuple[float, float]]],
+    samples: list[dict[str, str]],
+    lim: dict[str, Any],
+    v: Verdict,
+) -> list[str]:
+    """Pool saturation judged from ``pg_stat_activity`` (the API's own connections), with a
+    coverage rule so a run that sampled almost nothing cannot pass.
+
+    The ``/metrics`` gauges are shown for comparison only: they are served by the API, so when
+    the pool is saturated they are the samples that go missing (M2 run 05: 2 of 111 samples,
+    reported "0.0% saturated").
+    """
+    coverage = sweep_coverage(samples, series)
+    floor = lim['min_sample_coverage']
+    lines = []
+    for source in ('pgapi', 'pg'):
+        got = coverage.get(source, 0.0)
+        verdict = v.check(
+            got >= floor,
+            f'sampler coverage for {source!r} is {got:.0%} of sweeps (limit {floor:.0%})',
+        )
+        lines.append(f'Sampler coverage `{source}`: {got:.0%} of sweeps ({verdict}).')
+    used, capacity = _paired(series, 'pgapi', 'connections', 'capacity')
     stamps = [ts for ts in capacity if capacity[ts] > 0]
-    if not stamps:
-        return 'Pool saturation: no `db_pool_capacity` samples.'
-    share = sum(1 for ts in stamps if used[ts] >= capacity[ts]) / len(stamps)
-    verdict = v.check(
-        share <= lim['max_pool_saturated_share'],
-        f'the DB pool was saturated in {share:.0%} of samples',
-    )
-    return f'Pool saturation: {share:.1%} of {len(stamps)} samples had every connection checked out ({verdict}).'
+    if stamps:
+        share = sum(1 for ts in stamps if used[ts] >= capacity[ts]) / len(stamps)
+        verdict = v.check(
+            share <= lim['max_pool_saturated_share'],
+            f'the API held its whole DB pool in {share:.0%} of pg_stat_activity samples',
+        )
+        lines.append(
+            f'Pool saturation (pg_stat_activity): {share:.1%} of {len(stamps)} samples had the '
+            f'API at pool capacity ({verdict}).'
+        )
+    m_used, m_cap = _paired(series, 'pool', 'db_pool_checked_out', 'db_pool_capacity')
+    m_stamps = [ts for ts in m_cap if m_cap[ts] > 0]
+    if m_stamps:
+        m_share = sum(1 for ts in m_stamps if m_used[ts] >= m_cap[ts]) / len(m_stamps)
+        lines.append(
+            f'Pool saturation (/metrics, informational): {m_share:.1%} of {len(m_stamps)} samples.'
+        )
+    return lines
 
 
 def summarize(run_dir: Path, limits: dict[str, Any]) -> tuple[str, Verdict]:

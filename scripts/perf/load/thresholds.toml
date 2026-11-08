@@ -26,5 +26,6 @@ p95_ms = 600000
 
 [sampler]                # samples.csv from sampler.py
 max_idle_in_transaction = 0      # connections idle in a transaction for over 1 s, any sample
-max_pool_saturated_share = 0.05  # share of samples with db_pool_checked_out >= db_pool_capacity
+max_pool_saturated_share = 0.05  # share of samples with the API's pg_stat_activity connections >= pool capacity
+min_sample_coverage = 0.8        # share of sampler sweeps that must yield pg and pg_stat_activity API rows
 max_memory_growth_share = 0.25   # per container: last sample vs first (the soak's leak check)

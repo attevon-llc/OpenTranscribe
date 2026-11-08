@@ -17,6 +17,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from fixtures.sigint import assert_signal_is_caught
+from fixtures.sigint import with_default_sigint
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 LEG = REPO_ROOT / "scripts" / "pki" / "run-pki-e2e-leg.sh"
@@ -63,7 +65,7 @@ def fake_repo(tmp_path: Path) -> Path:
 def _run(root: Path, *args: str, **env: str) -> subprocess.Popen[str]:
     full = {**os.environ, "PATH": f"{root / 'stubs'}:{os.environ['PATH']}", **env}
     return subprocess.Popen(
-        ["bash", str(root / "scripts" / "pki" / LEG.name), "--yes", *args],
+        with_default_sigint(["bash", str(root / "scripts" / "pki" / LEG.name), "--yes", *args]),
         env=full,
         text=True,
         stdout=subprocess.PIPE,
@@ -112,6 +114,7 @@ def test_interrupt_during_pytest_stops_the_stack(fake_repo: Path, sig: int, code
                 break
         else:
             pytest.fail("stub pytest never started:\n" + "".join(seen))
+        assert_signal_is_caught(proc.pid, sig)
         proc.send_signal(sig)
         # bash runs its trap only once the foreground stub returns, so the stub is released
         # AFTER the signal is pending: the interrupt cannot lose a race with a finished stub.

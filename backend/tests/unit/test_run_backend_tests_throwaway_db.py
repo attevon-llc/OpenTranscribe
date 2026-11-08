@@ -23,6 +23,8 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from fixtures.sigint import assert_signal_is_caught
+from fixtures.sigint import with_default_sigint
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STOCK_PORTS = (5173, 5176, 5178, 5180)
@@ -120,7 +122,7 @@ def _start(root: Path, *args: str, **env: str) -> subprocess.Popen[str]:
     }
     full.pop("OT_TEST_PYTHON", None)
     return subprocess.Popen(  # noqa: S603 - fixed argv; bash from PATH, script under tmp_path
-        ["bash", str(root / "scripts" / "run-backend-tests.sh"), *args],
+        with_default_sigint(["bash", str(root / "scripts" / "run-backend-tests.sh"), *args]),
         env=full,
         cwd=root,
         text=True,
@@ -381,6 +383,7 @@ def test_interrupt_tears_down_exactly_once(fake_repo: Path, sig: int, code: int)
                 break
         else:
             pytest.fail("stub pytest never started:\n" + "".join(seen))
+        assert_signal_is_caught(proc.pid, sig)
         proc.send_signal(sig)
         # bash runs its trap only once the foreground stub returns, so the stub is released
         # AFTER the signal is pending: the interrupt cannot lose a race with a finished stub.

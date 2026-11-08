@@ -353,8 +353,9 @@ the real fork test). `scripts/audit-tests.py tests`: 0 open findings.
 
 ## 4. The concurrent-user load test
 
-Files: `scripts/perf/load/locustfile.py`, `scripts/perf/load/scenario.py` (route table and target
-guard, no Locust import), `scripts/perf/load/requirements.txt` (Locust 2.47.0 and its dependencies,
+Files: `scripts/perf/load/locustfile.py`, `scripts/perf/load/scenario.py` (target guard and
+identities, no Locust import), `routes.py` (route table, coverage map, seed needs), the persona
+modules, `profiles.py`, `sampler.py`, `summarize.py`, `thresholds.toml`, `run.sh`, `scripts/perf/load/requirements.txt` (Locust 2.47.0 and its dependencies,
 exact pins, own venv), `scripts/perf/load/README.md` (the runbook), the "Concurrent users" section
 of `docs-site/docs/developer-guide/performance-testing.md`, and the smoke test
 `backend/tests/unit/test_load_scenario_routes.py`.
@@ -371,20 +372,27 @@ format" (`--csv`, `--csv-full-history`).
   remote mode.
 - **Identities.** The scale seed (`backend/app/scripts/scale_dataset`, `perf-N@loadtest.invalid`,
   password `loadtest-password`): one `Administrator` (perf-1) and one `HeavyOwner` (perf-2) user
-  each, the rest `OrdinaryUser`s spread over perf-3..perf-<seeded users>. Login uses the SPA's
-  own cookie flow and sends `X-CSRF-Token` on writes.
-- **Mix** (weights; think time 3-10 s): gallery page 1 (10), later pages (4), a filtered gallery
-  (search / tag / speaker / sort, 6), the filter panel (`metadata-filters`, `owners`, tags,
-  collections, 2), open a file with transcript and comments (6), search (3), the speakers page
-  (2), the task list (2), and the `write`-tagged comment (create, then delete) and upload (prepare,
-  delete, purge, never complete, so no transcription reaches the GPU workers) at 1 each. Admins
-  also open the statistics pages.
+  each, perf-3 the organization admin, and perf-4..perf-<seeded users> split into one block
+  per persona (`scenario.pool_bounds`). Login uses the SPA's own cookie flow and sends
+  `X-CSRF-Token` on writes.
+- **Mix.** Eight personas (`personas_read.py`, `personas_write.py`, `ws_listener.py`), each
+  with its own block of seeded identities: viewers (gallery and every filter, file pages,
+  exports, waveform, media links, search, speakers, settings), editors (every write undone in
+  the same task), chat users against the mock LLM (SSE time to first token and to the end),
+  the administrator, the organization administrator (capability-gated), WebSocket listeners
+  (echo round trip on `/api/ws`), and pipeline uploaders (real recordings to "completed").
+  `routes.py` maps every OpenAPI tag group to the personas that call it or the reason it is
+  excluded. Load shapes are named profiles (`profiles.py`: smoke, steady, ramp, spike, soak,
+  pipeline); `sampler.py` records Postgres, pool, queue, container and GPU state every 5 s and
+  `summarize.py` writes a pass/fail report against `thresholds.toml`. Earlier version of this
+  bullet: gallery, file, search, speakers and task pages with an occasional comment or upload.
 - **Failures are labelled by cause** (`rate limited (429)`, `session lost (401)`, `HTTP <code>`,
   `no response`) so a rate limiter or a lost session is never read as slowness.
 - **What the smoke test does not prove.** It imports the locustfile against a stand-in for
   `locust` (the real package must not load in the backend test process). The real import was
-  checked by hand: `locust -f scripts/perf/load/locustfile.py --list` lists the three user
-  classes with the pinned Locust 2.47.0, and `--fresh nope` exits 2.
+  checked by hand: `locust -f scripts/perf/load/locustfile.py --list` lists the eight personas
+  with the pinned Locust 2.47.0, `--fresh nope` exits 2, and an unknown `--load-profile` is
+  refused by the argument parser. (`--profile` is Locust's own option, hence `--load-profile`.)
 - **Not run.** The lead runs it on the `perf1337` stack after the other #1337 lanes merge. The
   exact commands are in the README.
 

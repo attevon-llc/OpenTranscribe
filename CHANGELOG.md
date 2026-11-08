@@ -64,6 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The load-test runbook (`scripts/perf/load/README.md`, and Concurrent users in the Scale and query performance testing page) now gives one command per profile, the seed flags the personas need, the personas and what each covers, and what a run directory holds. Chat turns are limited to 20 a minute per client address in the code, so the runbook runs a fixed number of chat users.
 - Frontend dependency updates: axios 1.21, i18next-browser-languagedetector 8.2.3, katex 0.19.1, `@types/node` 26.6.6, and `package.json` now requires the SvelteKit 3.1.1 and adapter-static 4.0.1 the lockfile already resolved (#1349, #1321).
 - Production image bases move to `denoland/deno:bin-2.9.8` and `emscripten/emsdk:6.0.13` (#1298, #1142).
 - Backend dependency updates (#1350, #1351): all but six of the 53 proposed bumps, including SQLAlchemy 2.0.55, Starlette 1.10, boto3 1.43.121, openai 3.41, the cloud ASR SDKs, pypdf 6.21.4, ruff 0.17.3 and mypy 2.4.1. `huggingface-hub`, `transformers`, `typer`, `thinc`, `torchcodec` and `cuda-bindings` stay where they are because their pins are coupled to each other and to torch, and `click` moves to 8.5.1 so the CPU and CI requirements files resolve to the same version as the image. The licence inventory is regenerated.

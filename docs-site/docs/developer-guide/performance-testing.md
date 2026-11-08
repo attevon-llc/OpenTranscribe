@@ -142,9 +142,9 @@ compile the statement and assert plan node types (`Anti Join` present, no `SubPl
 
 The steps above measure what one request costs at data scale. A concurrent-user run measures what
 many requests at once do to each other: the database pool, the API's worker threads, the event
-loop, Redis and WebSocket fan-out. The scenario is `scripts/perf/load/locustfile.py`
-([Locust](https://docs.locust.io/en/stable/)); the full runbook, with every command and the
-sampling loops, is `scripts/perf/load/README.md`, and the audit it checks is
+loop, Redis, the Celery queues, the GPU workers and WebSocket fan-out. The scenario is
+`scripts/perf/load/` ([Locust](https://docs.locust.io/en/stable/)); the full runbook, with one
+command per profile, is `scripts/perf/load/README.md`, and the audit it checks is
 `docs/design/concurrency_foundations_plan.md`.
 
 It uses the same isolated stack and seed as above, and refuses anything else: `--fresh NAME` is
@@ -154,43 +154,47 @@ Locust lives in its own venv (it patches the standard library with gevent when i
 ```bash
 python3 -m venv ~/ot-cleanup-work/concurrency/locust-venv
 ~/ot-cleanup-work/concurrency/locust-venv/bin/pip install -r scripts/perf/load/requirements.txt
-LOCUST=~/ot-cleanup-work/concurrency/locust-venv/bin/locust
-$LOCUST -f scripts/perf/load/locustfile.py --list
+export LOCUST=~/ot-cleanup-work/concurrency/locust-venv/bin/locust
 ```
 
 Start the stack with the per-IP development limits raised (hundreds of simulated users share one
-client IP), restore the snapshot and `ANALYZE`, then run each size on a quiet host:
+client IP) and the mock LLM, seed it with cached waveforms, restore the snapshot and `ANALYZE`,
+then run a profile on a quiet host:
 
 ```bash
 export DEV_RATE_LIMIT_AUTH_PER_MINUTE=100000 DEV_RATE_LIMIT_DIRECTORY_PER_MINUTE=100000 \
        DEV_RATE_LIMIT_AUTH_METHODS_PER_MINUTE=100000 DEV_RATE_LIMIT_SEARCH_PER_MINUTE=100000
-./opentr.sh start dev --fresh perf1337 --port-offset 300
-$LOCUST -f scripts/perf/load/locustfile.py --fresh perf1337 --headless --users 100 \
-    --spawn-rate 2 --run-time 15m --csv "$RUN/locust" --csv-full-history --html "$RUN/report.html"
-# then --users 500 (20m) and --users 1000 (25m)
+./opentr.sh start dev --fresh perf1337 --port-offset 300 --with-mock-llm
+./scripts/seed-query-review.sh --fresh perf1337 --waveform-pm 1000
+scripts/perf/load/run.sh --fresh perf1337 --profile ramp      # or smoke, steady, spike, soak, pipeline
 ```
 
-Simulated people log in as the seeded `perf-N` identities and browse the gallery and its filters,
-open files, search, open the speakers and tasks pages, and occasionally comment or start an upload
-(each write cleans up after itself; an upload is never completed, so nothing reaches the GPU
-workers). Exclude writes with `--exclude-tags write`.
+Simulated people sign in as the seeded `perf-N` identities and act as one of eight personas:
+viewers (gallery and every filter, file pages, transcript paging, exports, waveform and media
+links, search, speakers, settings), editors (comments, tags, collections, segment and speaker
+edits, hide, reprocess, uploads), chat users (streams against the mock LLM), the administrator,
+the organization administrator, browser tabs holding the live socket, and, for the `pipeline`
+profile only, uploaders that follow a real recording through the GPU workers to "completed".
+Every write cleans up after itself. `--mix read-only` excludes every write.
 
-Record, per run:
+Profiles (`scripts/perf/load/profiles.py`, a Locust `LoadTestShape`): `smoke` (a few people for
+a minute), `steady` (N held), `ramp` (100, 250, 500, 1,000, each held), `spike` (0 to N to 0),
+`soak` (moderate load for 90 minutes) and `pipeline` (N concurrent real uploads, end-to-end time
+and queue depth).
 
-| What | Where |
-|---|---|
-| p50 / p95 / p99 and count per endpoint | `locust_stats.csv` |
-| Error rate by cause (`rate limited (429)`, `session lost (401)`, `HTTP 5xx`, `no response`) | `locust_failures.csv` |
-| Latency over time | `locust_stats_history.csv` |
-| Postgres connections in use, idle in transaction | `pg_stat_activity`, sampled every 5 s |
-| API pool use and waits | `db_pool_checked_out` against `db_pool_capacity` from the backend's `/metrics`; `QueuePool limit` lines in the backend log |
-| In-flight requests | `http_requests_in_flight` from `/metrics` |
-| CPU and memory per container | `docker stats`, filtered by the stack's compose project label |
+Each run directory holds Locust's per-endpoint percentiles, failures by cause and percentile
+history, the sampler's 5-second CSV (`pg_stat_activity` states including idle in transaction,
+`db_pool_*`, Celery queue depths, CPU and memory of the stack's containers, the project GPUs'
+memory and utilisation), and `summary.md`, a report with a pass/fail verdict against
+`scripts/perf/load/thresholds.toml` (for example p95 under 1 s for reads, error rate under 0.5%).
 
 Compare runs only on the same snapshot, settings and host load. A p95 that climbs while Postgres is
 idle and `db_pool_checked_out` sits at capacity is pool or thread saturation, not slow SQL; a p95
 that climbs with the backend container at one full core is the single API process.
 
-`backend/tests/unit/test_load_scenario_routes.py` runs every task of the scenario against a
-recording client and checks each request against `backend/openapi.json`, so a renamed route fails
-the test suite instead of turning into a run of 404s.
+`backend/tests/unit/test_load_scenario_routes.py` runs every persona against a recording client:
+each request must be a route in `backend/openapi.json` with its required parameters, every API
+group must be covered by a persona or excluded with a reason, and every write must be undone.
+`test_load_profiles.py` steps through the profiles, `test_load_seed_needs.py` checks the seed
+gives each persona the data it uses, and `test_load_sampler_summary.py` covers the sampler and
+the verdict.

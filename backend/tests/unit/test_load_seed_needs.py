@@ -88,3 +88,9 @@ def test_a_seed_without_comments_or_waveforms_starves_the_viewer(db_session, loa
     unmet = unmet_needs(db_session.connection(), load["scenario"], load["routes"])
 
     assert unmet == ["Viewer: comments on own files", "Viewer: cached waveforms on own files"]
+
+
+def test_the_runbook_seeds_with_the_flags_the_needs_assume(load):
+    readme = (stub.LOAD_DIR / "README.md").read_text()
+
+    assert "--waveform-pm 1000" in readme

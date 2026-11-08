@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any
 
 from sqlalchemy import Table
@@ -41,6 +42,21 @@ from app.models.user import User
 SEED_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 EMAIL_DOMAIN = "loadtest.invalid"
 _ANCHOR = "timestamptz '2026-01-01 00:00:00+00'"  # fixed, so reruns are byte-identical
+
+
+@dataclass
+class ClaimLedger:
+    """Id ranges a seed claimed, per table name: ``[(first_id, last_id), ...]`` inclusive.
+
+    A claimed range is exclusively the seed's (the sequence is moved past it before any row is
+    written), so selecting by these ranges returns exactly the seeded rows however many other
+    writers commit to the same table meanwhile.
+    """
+
+    ranges: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
+
+    def record(self, table: str, base: int, rows: int) -> None:
+        self.ranges.setdefault(table, []).append((base + 1, base + rows))
 
 
 @dataclass(frozen=True)
@@ -170,7 +186,7 @@ def _fill(conn: Connection, table: Table, n: int, cols: dict[str, ColumnClause[A
     return n
 
 
-def _claim_ids(conn: Connection, table: Table, rows: int) -> int:
+def _claim_ids(conn: Connection, table: Table, rows: int, ledger: ClaimLedger | None = None) -> int:
     """Reserve ``rows`` ids from the table's sequence and return the base (new id = base + g).
 
     Taking the base from ``max(id)`` alone is only safe on a database nobody else is writing
@@ -184,7 +200,10 @@ def _claim_ids(conn: Connection, table: Table, rows: int) -> int:
     last = func.coalesce(func.pg_sequence_last_value(cast(seq, REGCLASS)), 0)
     top = select(func.coalesce(func.max(table.c.id), 0)).scalar_subquery()
     claimed = conn.execute(select(func.setval(seq, func.greatest(top, last) + rows))).scalar_one()
-    return int(claimed) - rows
+    base = int(claimed) - rows
+    if ledger is not None:
+        ledger.record(table.name, base, rows)
+    return base
 
 
 def _bump_sequence(conn: Connection, table: Table) -> None:
@@ -205,13 +224,15 @@ def _file_user_id(shape: Shape, seed: str, base_user: int, f: str) -> str:
     )
 
 
-def claim_core_bases(conn: Connection, shape: Shape) -> tuple[int, int, int]:
+def claim_core_bases(
+    conn: Connection, shape: Shape, ledger: ClaimLedger | None = None
+) -> tuple[int, int, int]:
     """Claimed id bases for users, media files and speakers (see :func:`_claim_ids`)."""
     n = shape.max_rows()
     return (
-        _claim_ids(conn, _table(User), n),
-        _claim_ids(conn, _table(MediaFile), n),
-        _claim_ids(conn, _table(Speaker), n),
+        _claim_ids(conn, _table(User), n, ledger),
+        _claim_ids(conn, _table(MediaFile), n, ledger),
+        _claim_ids(conn, _table(Speaker), n, ledger),
     )
 
 
@@ -221,12 +242,14 @@ def seed_dataset(
     seed: str,
     password_hash: str,
     bases: tuple[int, int, int] | None = None,
+    ledger: ClaimLedger | None = None,
 ) -> dict[str, int]:
     """Insert the whole dataset on ``conn`` and return rows written per table.
 
     The caller owns the transaction and ``ANALYZE`` (a tiny test seed rolls back; the CLI commits
     and analyzes). User 1 is the admin, user 2 the heavy user, the rest ordinary. ``bases`` is
-    the already-claimed ``(user, file, speaker)`` id bases when the caller needs them first.
+    the already-claimed ``(user, file, speaker)`` id bases when the caller needs them first;
+    ``ledger`` (when given) collects every id range this seed claims.
     """
     seed = _check_seed(seed)
     counts: dict[str, int] = {}
@@ -235,12 +258,12 @@ def seed_dataset(
 
     n = shape.max_rows()
     if bases is None:
-        bases = claim_core_bases(conn, shape)
+        bases = claim_core_bases(conn, shape, ledger)
     base_user, base_file, base_spk = bases
-    base_prof = _claim_ids(conn, t_prof, n)
-    base_tag = _claim_ids(conn, _table(Tag), n)
-    base_seg = _claim_ids(conn, _table(TranscriptSegment), n)
-    base_ft = _claim_ids(conn, _table(FileTag), n)
+    base_prof = _claim_ids(conn, t_prof, n, ledger)
+    base_tag = _claim_ids(conn, _table(Tag), n, ledger)
+    base_seg = _claim_ids(conn, _table(TranscriptSegment), n, ledger)
+    base_ft = _claim_ids(conn, _table(FileTag), n, ledger)
 
     g: ColumnClause[Any] = literal_column("g")
     counts["user"] = _fill(

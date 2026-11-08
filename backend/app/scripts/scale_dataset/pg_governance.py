@@ -29,6 +29,7 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerMatch
 from app.scripts.scale_dataset.pg_activity import seed_activity
+from app.scripts.scale_dataset.pg_synthetic import ClaimLedger
 from app.scripts.scale_dataset.pg_synthetic import Shape
 from app.scripts.scale_dataset.pg_synthetic import _claim_ids
 from app.scripts.scale_dataset.pg_synthetic import _fill
@@ -278,11 +279,17 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
     return counts
 
 
-def seed_all(conn: Connection, shape: Shape, seed: str, password_hash: str) -> dict[str, int]:
+def seed_all(
+    conn: Connection,
+    shape: Shape,
+    seed: str,
+    password_hash: str,
+    ledger: ClaimLedger | None = None,
+) -> dict[str, int]:
     """The whole dataset: core tables, governance tables, then the load test's activity rows."""
-    claimed = claim_core_bases(conn, shape)
+    claimed = claim_core_bases(conn, shape, ledger)
     bases = Bases(user=claimed[0], file=claimed[1], speaker=claimed[2])
-    counts = seed_dataset(conn, shape, seed, password_hash, claimed)
+    counts = seed_dataset(conn, shape, seed, password_hash, claimed, ledger)
     counts.update(seed_governance(conn, shape, seed, bases))
-    counts.update(seed_activity(conn, shape, seed, bases.user, bases.file))
+    counts.update(seed_activity(conn, shape, seed, bases.user, bases.file, ledger))
     return counts

@@ -294,6 +294,38 @@ invalidation: it bounds how stale an answer can be, it does not make it correct.
 cache keys on a corpus version so a change makes old entries unreachable instead of waiting out
 the TTL. Do not add another without naming what invalidates it.
 
+**Never cache across requests a value downstream of a policy that can change underneath it**
+(issue #920). In this codebase that is three planes:
+
+- **redaction config** (`resolve_effective_config`): a value masked for one caller is not what
+  another should see, and an admin tightening the policy must take effect at once;
+- **quarantine / takedown state** (`file_availability.available_pred`, `takedown_service`): a
+  cached hit re-serves a file an admin just removed (#818 reopened);
+- **permission / share scope** (`get_accessible_file_ids_subquery`): a revoked recipient must
+  not keep reading from a cache.
+
+The privacy policy (`services/privacy/policy.py`) belongs with these: its layers hide
+voiceprint and gender data, and its only cross-request cache is the documented few-second
+write backstop.
+
+**Request-scoped memos are safe**: the scope is one request or one task step, so nothing
+outlives the write that would invalidate it. Examples: `PrivacyView` (one batched policy read
+per request) and resolving `resolve_effective_config` once per request. Cache freely where the
+value does not depend on policy: pure computation, process-lifetime configuration, model and
+tokenizer handles, static lookups, and keys that are a fingerprint provably covering every input.
+
+**Every cross-request cache states three things** in its docstring: (1) its invalidation
+signal; (2) what makes that signal complete (every write that changes the answer emits it);
+(3) **where in the write path the signal is emitted**. The third is not optional.
+`update_file_access_index` is asynchronous, so bumping the chat corpus version at the share
+revocation *endpoints* would invalidate while the ACL rewrite is still in flight. The next
+query would miss, re-read the not-yet-rewritten index, and re-cache the revoked content for a
+fresh TTL. A correct signal emitted before the write it describes makes things worse, not
+better. The bump therefore sits after the rewrite's `update_by_query` loop. Each new cache also
+needs a test showing the invalidating event really invalidates (not just that a hit returns),
+and no cache goes on a redaction, quarantine or share-scope path without a tested invalidation
+covering all three.
+
 - The search response cache (`services/search/search_cache.py`) was **removed** (concurrency
   audit L8): its key used the one global corpus version, so any write anywhere emptied it, and its
   invalidation was not provable (Redis down fell back to TTL-only; a summary regeneration bumped

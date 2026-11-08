@@ -121,7 +121,7 @@ def test_the_overlay_ships_with_a_release():
 def test_opentr_adds_lite_whenever_the_demo_is_requested(lite, demo, expected):
     script = (
         f"source {REPO_ROOT}/scripts/lib/lite-demo-overlay.sh; COMPOSE_FILES=''; "
-        f"LITE_FLAG='{lite}' DEMO_FLAG='{demo}'; add_lite_and_demo_overlays >/dev/null; "
+        f"add_lite_and_demo_overlays '{lite}' '{demo}' >/dev/null; "
         'echo "$COMPOSE_FILES"'
     )
     out = subprocess.run(

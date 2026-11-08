@@ -2874,7 +2874,7 @@ start_app() {
     echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
-  add_lite_and_demo_overlays
+  add_lite_and_demo_overlays "$LITE_FLAG" "$DEMO_FLAG"
 
   add_nginx_overlay
 
@@ -3255,6 +3255,7 @@ reset_and_init() {
   WITH_MONITORING_FLAG=""
   WITH_BACKUP_FLAG=""
   LITE_FLAG=""
+  DEMO_FLAG=""
   CPU_FLAG=""
   NO_NAS_FLAG=""
   FRESH_FLAG=""
@@ -3561,7 +3562,7 @@ reset_and_init() {
     echo "🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set; workers run without owner credentials)"
   fi
 
-  add_lite_and_demo_overlays
+  add_lite_and_demo_overlays "$LITE_FLAG" "$DEMO_FLAG"
 
   add_nginx_overlay
 

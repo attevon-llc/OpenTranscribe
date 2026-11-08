@@ -472,7 +472,7 @@ def diarizer_require_sidecar() -> bool:
             )
             if setting and setting.value is not None:
                 raw = str(setting.value)
-    except Exception:  # nosec B110
+    except Exception:
         # DB not available (e.g. during testing, worker startup race) — fall back to env.
         logger.debug("Could not read engine.diarizer_require_sidecar from DB, using env var")
     return is_truthy(str(raw))

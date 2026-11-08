@@ -97,5 +97,4 @@ noqa::scripts/build_probe_question_set.py	1	suppression: reason to be added
 noqa::scripts/mps-speaker-compare.py	4	suppression: reason to be added
 noqa::scripts/profile-mps-ops.py	4	suppression: reason to be added
 noqa::scripts/update-a11y-baseline.py	3	suppression: reason to be added
-nosec::backend/alembic/versions/v386_add_tag_share.py	1	suppression: reason to be added
 type-ignore::backend/tests/unit/test_config_env_clamps.py	1	suppression: reason to be added

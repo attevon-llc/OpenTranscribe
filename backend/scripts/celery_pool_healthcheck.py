@@ -136,7 +136,7 @@ def check_pool_has_live_processes(worker_name: str) -> tuple[bool, str]:
             # is resolved via PATH deliberately — same convention as every other
             # subprocess call in this codebase that shells out to a tool
             # installed into the image's venv rather than an absolute path.
-            [  # noqa: S607  # nosec B607
+            [  # noqa: S607
                 "celery",
                 "-A",
                 "app.core.celery",

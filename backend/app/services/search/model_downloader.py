@@ -269,7 +269,7 @@ def check_internet_connectivity(timeout: float = 5.0) -> bool:
     """
     test_url = "https://artifacts.opensearch.org"
     try:
-        req = urllib.request.Request(test_url, method="HEAD")  # nosec B310
+        req = urllib.request.Request(test_url, method="HEAD")
         urllib.request.urlopen(req, timeout=timeout)  # noqa: S310  # nosec B310
         return True
     except urllib.error.HTTPError:

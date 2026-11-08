@@ -47,7 +47,7 @@ _INDEXES = [
 def upgrade():
     """Add missing FK indexes."""
     for idx_name, table, columns in _INDEXES:
-        op.execute(  # nosec B608
+        op.execute(
             f"""
             DO $$
             BEGIN

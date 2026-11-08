@@ -155,7 +155,7 @@ _AUTH_TYPE_SWAP_TEMPLATE = """
         CHECK (auth_type IN ({types}));
 """
 
-AUTH_TYPE_SWAP_SQL = _AUTH_TYPE_SWAP_TEMPLATE.format(types=VALID_AUTH_TYPES_SQL)  # nosec B608
+AUTH_TYPE_SWAP_SQL = _AUTH_TYPE_SWAP_TEMPLATE.format(types=VALID_AUTH_TYPES_SQL)
 
 #: Every CHECK on ``user.auth_type`` that must be gone or replaced. Module-level so
 #: the consistency test can assert there is exactly ONE left afterwards — the shape

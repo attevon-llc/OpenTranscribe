@@ -154,7 +154,7 @@ def proxy_login(request: Request, response: Response, db: Session = Depends(get_
         content={
             "access_token": access_token,
             # OAuth 2.0 token type, not a credential.
-            "token_type": "bearer",  # nosec B105
+            "token_type": "bearer",
             "refresh_token": refresh_token,
             "expires_in": settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         }

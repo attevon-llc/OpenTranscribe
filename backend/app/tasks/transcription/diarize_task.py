@@ -200,7 +200,7 @@ def diarize_gpu_task(self: Any, transcript_data: dict, preprocess_context: dict)
                 wav_path = getattr(locals().get("transcript"), "local_wav_path", "")
                 if wav_path:
                     cleanup_shared_volume_wav(wav_path)
-            except Exception as _cleanup_err:  # nosec B110 - cleanup must not mask the outcome
+            except Exception as _cleanup_err:  # cleanup must not mask the outcome
                 logger.debug("WAV cleanup on diarize cancel skipped: %s", _cleanup_err)
             return finish_cancelled(ctx, task_id, file_uuid, cancelled, stage="GPU diarization")
         except TranscriptionAbortedError as abort:
@@ -226,7 +226,7 @@ def diarize_gpu_task(self: Any, transcript_data: dict, preprocess_context: dict)
                     from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
 
                     cleanup_shared_volume_wav(transcript.local_wav_path)
-            except Exception as _cleanup_err:  # nosec B110
+            except Exception as _cleanup_err:
                 logger.debug("WAV cleanup on diarize error skipped: %s", _cleanup_err)
             outcome = _handle_transcription_failure(ctx, task_id, str(e), "gpu_processing_error")
             if is_cancelled(outcome):

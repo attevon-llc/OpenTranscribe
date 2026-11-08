@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 #: Detail returned when an email-matched link is refused. Byte-identical to the 401
 #: the OIDC callback returns for an unusable token, so a refusal cannot be used to
 #: probe which addresses already exist (see ``auth/account_linking.py``).
-LINK_REFUSED_DETAIL = "Invalid access token"  # nosec B105
+LINK_REFUSED_DETAIL = "Invalid access token"
 
 
 def _synthesize_placeholder_email(username: str, subject: str) -> str:

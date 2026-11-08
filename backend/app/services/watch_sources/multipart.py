@@ -123,7 +123,7 @@ def _probe_stream_signature(path: str) -> tuple[str, str] | None:
     """Return ``(video_codec_or_'', audio_codec_or_'')`` via ffprobe, or None."""
     try:
         out = subprocess.run(  # noqa: S603 # nosec B603
-            [  # noqa: S607 # nosec B607
+            [  # noqa: S607
                 "ffprobe",
                 "-v",
                 "error",

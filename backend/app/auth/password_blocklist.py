@@ -65,11 +65,7 @@ def normalize_for_comparison(value: str) -> str:
 
 def _sha1_hex(value: str) -> str:
     # SHA-1 is the Pwned Passwords identifier format, not a security use of the hash.
-    return (
-        hashlib.sha1(value.encode("utf-8"), usedforsecurity=False)  # nosec B324
-        .hexdigest()
-        .upper()
-    )
+    return hashlib.sha1(value.encode("utf-8"), usedforsecurity=False).hexdigest().upper()
 
 
 def _candidate_forms(password: str) -> set[str]:

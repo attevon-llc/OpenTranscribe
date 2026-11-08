@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- System statistics sizes, the GPU name and the success rate read left-to-right inside Arabic labels ("12.00 GB", not "GB 12.00").
 - File details and the Settings file status show the file age, processing time and status in the interface language, formatted from the raw timestamps and status codes, instead of the server's English "2 hours ago" and "Completed".
 - The Collections panel no longer prints "No collections yet" straight under the computed "Legal hold" entry: the empty state now sits under a "Your collections" subheading (translated in all 12 languages).
 - The legal hold explainer's info tip now sits beside the "What does a legal hold do?" toggle text, not at the far edge of the banner, panel and dialog.

@@ -319,7 +319,7 @@
           <h4>{$t('settings.statistics.memoryUsage')}</h4>
           <div class="stat-value">{stats.system?.memory?.percent || '0%'}</div>
           <div class="stat-detail-compact">
-            {stats.system?.memory?.used || $t('common.unknown')} / {stats.system?.memory?.total || $t('common.unknown')}
+            <bdi dir="ltr">{stats.system?.memory?.used || $t('common.unknown')} / {stats.system?.memory?.total || $t('common.unknown')}</bdi>
           </div>
           <div class="progress-bar">
             <div class="progress-fill" style="width: {parseFloat(stats.system?.memory?.percent) || 0}%"></div>
@@ -332,9 +332,9 @@
           <h4>{$t('settings.statistics.diskUsage')}</h4>
           <div class="stat-value">{stats.system?.disk?.percent || '0%'}</div>
           <div class="stat-detail">
-            <span>{$t('settings.statistics.total')}: {stats.system?.disk?.total || $t('common.unknown')}</span>
-            <span>{$t('settings.statistics.used')}: {stats.system?.disk?.used || $t('common.unknown')}</span>
-            <span>{$t('settings.statistics.free')}: {stats.system?.disk?.free || $t('common.unknown')}</span>
+            <span>{$t('settings.statistics.total')}: <bdi dir="ltr">{stats.system?.disk?.total || $t('common.unknown')}</bdi></span>
+            <span>{$t('settings.statistics.used')}: <bdi dir="ltr">{stats.system?.disk?.used || $t('common.unknown')}</bdi></span>
+            <span>{$t('settings.statistics.free')}: <bdi dir="ltr">{stats.system?.disk?.free || $t('common.unknown')}</bdi></span>
           </div>
         </div>
         <div class="progress-bar">
@@ -358,15 +358,15 @@
             </h4>
             <div class="stat-value">{activeGpu.memory_percent || '0%'}</div>
             <div class="stat-detail">
-              <span>{$t('settings.statistics.gpu')}: {activeGpu.name || $t('common.unknown')}</span>
-              <span>{$t('settings.statistics.total')}: {activeGpu.memory_total || $t('common.unknown')}</span>
-              <span>{$t('settings.statistics.used')}: {activeGpu.memory_used || $t('common.unknown')}</span>
-              <span>{$t('settings.statistics.free')}: {activeGpu.memory_free || $t('common.unknown')}</span>
+              <span>{$t('settings.statistics.gpu')}: <bdi dir="ltr">{activeGpu.name || $t('common.unknown')}</bdi></span>
+              <span>{$t('settings.statistics.total')}: <bdi dir="ltr">{activeGpu.memory_total || $t('common.unknown')}</bdi></span>
+              <span>{$t('settings.statistics.used')}: <bdi dir="ltr">{activeGpu.memory_used || $t('common.unknown')}</bdi></span>
+              <span>{$t('settings.statistics.free')}: <bdi dir="ltr">{activeGpu.memory_free || $t('common.unknown')}</bdi></span>
               {#if activeGpu.utilization_percent && activeGpu.utilization_percent !== 'N/A'}
-                <span>{$t('settings.statistics.gpuUtilization')}: {activeGpu.utilization_percent}</span>
+                <span>{$t('settings.statistics.gpuUtilization')}: <bdi dir="ltr">{activeGpu.utilization_percent}</bdi></span>
               {/if}
               {#if activeGpu.temperature_celsius !== null && activeGpu.temperature_celsius !== undefined}
-                <span>{$t('settings.statistics.gpuTemperature')}: {activeGpu.temperature_celsius}°C</span>
+                <span>{$t('settings.statistics.gpuTemperature')}: <bdi dir="ltr">{activeGpu.temperature_celsius}°C</bdi></span>
               {/if}
             </div>
           </div>

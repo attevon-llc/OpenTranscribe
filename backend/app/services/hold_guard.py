@@ -37,9 +37,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import ColumnElement
+from sqlalchemy import CompoundSelect
+from sqlalchemy import ScalarSelect
 from sqlalchemy import Select
 from sqlalchemy import and_
 from sqlalchemy import exists
+from sqlalchemy import func
 from sqlalchemy import or_
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -209,9 +212,23 @@ def unheld_file_ids() -> Select[tuple[int]]:
     return select(MediaFile.id).where(not_held_pred())
 
 
-def held_file_ids() -> Select[tuple[int]]:
-    """``SELECT id`` of the held files, for ``<file column>.in_(...)``."""
-    return select(MediaFile.id).where(held_pred())
+def held_file_ids() -> CompoundSelect[tuple[int]]:
+    """``SELECT id`` of the held files, for ``<file column>.in_(...)``.
+
+    A UNION of the two authorities (platform flag, unreleased hold row) rather than
+    ``select(id).where(held_pred())``: an EXISTS under an OR cannot become a join and runs as a
+    per-row SubPlan, while ``col IN (UNION ...)`` is a hashed semi-join (issue #1337, G8).
+    Same set as ``held_pred()``.
+    """
+    return (
+        select(MediaFile.id)
+        .where(MediaFile.legal_hold.is_(True))
+        .union(
+            select(ContentHoldFile.media_file_id)
+            .join(ContentHold, ContentHold.id == ContentHoldFile.hold_id)
+            .where(ContentHold.released_at.is_(None))
+        )
+    )
 
 
 def hold_states(db: Session, file_ids: Iterable[int]) -> dict[int, HoldState]:
@@ -353,3 +370,17 @@ def assert_content_mutable(db: Session, file_ids: Iterable[int]) -> None:
     so the in-flight nuance of :func:`frozen_states` is for background work only.
     """
     assert_not_held(db, file_ids)
+
+
+def held_count_in(scope: ColumnElement[bool]) -> ScalarSelect[int]:
+    """Scalar ``count`` of the held files satisfying ``scope``, uncorrelated.
+
+    For a facet that reports the held count beside other aggregates over the same scope: a
+    semi-join through :func:`held_file_ids`, so no EXISTS runs per scoped row (#1337 G8).
+    """
+    return (
+        select(func.count(MediaFile.id))
+        .where(scope, MediaFile.id.in_(held_file_ids()))
+        .correlate(None)
+        .scalar_subquery()
+    )

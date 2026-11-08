@@ -25,7 +25,8 @@ from app.models.user import User
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
 from app.services.hidden_media_service import hidden_mode_pred
-from app.services.hold_guard import held_pred
+from app.services.hold_guard import held_count_in
+from app.services.hold_guard import held_file_ids
 from app.services.hold_guard import not_held_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.search.availability_field import exclude_unavailable_clause
@@ -469,7 +470,7 @@ def apply_hold_filter(query: Query, held: bool | None) -> Query:
     """
     if held is None:
         return query
-    return query.filter(held_pred() if held else not_held_pred())
+    return query.filter(MediaFile.id.in_(held_file_ids()) if held else not_held_pred())
 
 
 def get_accessible_owners(
@@ -707,8 +708,9 @@ def get_metadata_filters(
             func.max(cast(height_text, Integer)),
             func.min(MediaFile.file_size),
             func.max(MediaFile.file_size),
-            # The computed "Legal hold" tag's count, over the same scoped set (no extra scan).
-            func.count(MediaFile.id).filter(held_pred()),
+            # The computed "Legal hold" tag's count over the same scoped set. An uncorrelated
+            # semi-join, not an EXISTS inside the aggregate (a per-row SubPlan, #1337 G8).
+            held_count_in(file_filter),
         )
         .filter(file_filter)
         .first()

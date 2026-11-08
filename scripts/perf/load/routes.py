@@ -318,8 +318,8 @@ SEED_NEEDS: dict[str, tuple[str, list[tuple[str, str]]]] = {
         'admin',
         [
             (
-                'the admin account',
-                "SELECT count(*) FROM \"user\" WHERE email = 'perf-1@loadtest.invalid' AND role = 'admin'",
+                'the super admin account (audit logs are super-admin only)',
+                "SELECT count(*) FROM \"user\" WHERE email = 'perf-1@loadtest.invalid' AND role = 'super_admin'",
             ),
             (
                 'legal holds',

@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", default="perf1337", help="seed id, stored on every file")
     parser.add_argument("--fresh", metavar="NAME", help="a ./opentr.sh --fresh deployment")
     parser.add_argument(
+        "--activity-only",
+        action="store_true",
+        help="add only comments, per-user tags and waveforms to a database that already holds "
+        "the seed (a restored snapshot); existing rows are untouched",
+    )
+    parser.add_argument(
         "--throwaway-db", action="store_true", help="a run-backend-tests throwaway DB"
     )
     for f in fields(pg.Shape):
@@ -48,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     inj_env.bootstrap()  # before anything imports app.core.config
     from app.scripts.scale_dataset import pg_synthetic as pg
+    from app.scripts.scale_dataset.pg_governance import seed_activity_only
     from app.scripts.scale_dataset.pg_governance import seed_all
 
     args = build_parser().parse_args(argv)
@@ -64,7 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(settings.DATABASE_URL)
     started = time.monotonic()
     with engine.begin() as conn:
-        counts = seed_all(conn, shape, args.seed, get_password_hash("loadtest-password"))
+        if args.activity_only:
+            counts = seed_activity_only(conn, shape, args.seed)
+        else:
+            counts = seed_all(conn, shape, args.seed, get_password_hash("loadtest-password"))
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
         for table in pg.ANALYZE_TABLES:
             conn.execute(text(f'ANALYZE "{table}"'))

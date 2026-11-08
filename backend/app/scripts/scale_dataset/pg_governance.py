@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import literal_column
+from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.sql.expression import ColumnClause
 
@@ -29,6 +30,8 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerMatch
 from app.scripts.scale_dataset.pg_activity import seed_activity
+from app.scripts.scale_dataset.pg_synthetic import EMAIL_DOMAIN
+from app.scripts.scale_dataset.pg_synthetic import SEEDED_TABLES
 from app.scripts.scale_dataset.pg_synthetic import ClaimLedger
 from app.scripts.scale_dataset.pg_synthetic import Shape
 from app.scripts.scale_dataset.pg_synthetic import _claim_ids
@@ -37,6 +40,7 @@ from app.scripts.scale_dataset.pg_synthetic import _h
 from app.scripts.scale_dataset.pg_synthetic import _table
 from app.scripts.scale_dataset.pg_synthetic import _uuid
 from app.scripts.scale_dataset.pg_synthetic import claim_core_bases
+from app.scripts.scale_dataset.pg_synthetic import realign_sequences
 from app.scripts.scale_dataset.pg_synthetic import seed_dataset
 
 _ANCHOR = "timestamptz '2026-01-01 00:00:00+00'"
@@ -270,7 +274,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
             "content": _lit("'loadtest message ' || g::text"),
             "citations": _lit(
                 f"CASE WHEN g % 2 = 0 THEN jsonb_build_array("
-                f"jsonb_build_object('file_uuid', {cited}, 'start', 0)) END"
+                f"jsonb_build_object('id', 1, 'file_uuid', {cited}, 'start_time', 0)) END"
             ),
             "status": _lit("'complete'"),
             "created_at": _lit(f"{_ANCHOR} - ((g % 365) || ' days')::interval"),
@@ -292,4 +296,38 @@ def seed_all(
     counts = seed_dataset(conn, shape, seed, password_hash, claimed, ledger)
     counts.update(seed_governance(conn, shape, seed, bases))
     counts.update(seed_activity(conn, shape, seed, bases.user, bases.file, ledger))
+    realign_sequences(conn, SEEDED_TABLES)
+    return counts
+
+
+def seed_activity_only(
+    conn: Connection, shape: Shape, seed: str, ledger: ClaimLedger | None = None
+) -> dict[str, int]:
+    """Add only the load test's activity rows to a database that already holds the seed.
+
+    The users and files exist (a restored snapshot), so ``seed_all`` would trip the unique
+    email. The id bases are read back from the seeded rows: the first seeded user is
+    ``perf-1`` and the first seeded file is the lowest id owned by a seeded user.
+    """
+    base_user = conn.execute(
+        text('SELECT id - 1 FROM "user" WHERE email = :email'),
+        {"email": f"perf-1@{EMAIL_DOMAIN}"},
+    ).scalar_one_or_none()
+    if base_user is None:
+        raise ValueError("no seeded users in this database; run the full seed first")
+    base_file = conn.execute(
+        text(
+            'SELECT min(m.id) - 1 FROM media_file m JOIN "user" u ON u.id = m.user_id '
+            "WHERE u.email LIKE :pattern"
+        ),
+        {"pattern": f"perf-%@{EMAIL_DOMAIN}"},
+    ).scalar_one()
+    present = conn.execute(
+        text("SELECT count(*) FROM comment WHERE text LIKE 'loadtest comment %'")
+    ).scalar_one()
+    if present:
+        return {}
+    counts = seed_activity(conn, shape, seed, base_user, base_file, ledger)
+    # An older snapshot left sequences behind max(id) (M2 T3); repair them while it is open.
+    realign_sequences(conn, SEEDED_TABLES)
     return counts

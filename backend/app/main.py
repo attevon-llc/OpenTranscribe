@@ -17,6 +17,7 @@ from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIASGIMiddleware
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -364,6 +365,11 @@ app.add_middleware(AuditMiddleware)
 
 # CSRF protection for cookie-based authentication (C2 security hardening)
 app.add_middleware(CSRFMiddleware)
+
+# Public demo only (#628): slowapi applies the limiter's default (per-client-IP) limit to
+# every undecorated route through this middleware; decorated routes keep their own.
+if settings.DEMO_MODE:
+    app.add_middleware(SlowAPIASGIMiddleware)
 
 # Observability MUST be the LAST add_middleware call so it runs OUTERMOST.
 # Starlette semantics (verified 0.48.0): add_middleware does

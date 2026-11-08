@@ -117,6 +117,17 @@ def user_or_ip_key(request: Request) -> str:
     return resolve_client_ip(request)
 
 
+def demo_default_limits() -> list[str]:
+    """Every-route per-client-IP ceiling on the public demo (#628); none elsewhere.
+
+    slowapi applies default limits to undecorated routes only through its middleware, which
+    ``app/main.py`` installs on the demo alone. Decorated routes keep their own limits.
+    """
+    if not settings.DEMO_MODE:
+        return []
+    return [f"{settings.DEMO_RATE_LIMIT_PER_MINUTE}/minute"]
+
+
 def _create_limiter() -> Limiter:
     """
     Create and configure the rate limiter instance.
@@ -145,7 +156,8 @@ def _create_limiter() -> Limiter:
     kwargs = {
         "key_func": _get_key_func(),
         "enabled": settings.RATE_LIMIT_ENABLED,
-        "default_limits": [],  # No default limits; applied per-endpoint
+        # None outside the public demo: limits are per-endpoint (see demo_default_limits).
+        "default_limits": demo_default_limits(),
         "headers_enabled": True,  # Add rate limit headers to responses
         "strategy": "fixed-window",  # Simple fixed window strategy
         # Without this, a dead storage raises out of the limiter instead of degrading;

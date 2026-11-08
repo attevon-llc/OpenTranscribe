@@ -49650,16 +49650,35 @@
             }
           },
           {
-            "description": "for_filter only: page size",
+            "description": "Page size. for_filter: default 200. Full list without file_uuid: default 1000 (max 500 with for_filter, 5000 otherwise). A file_uuid listing is not paged.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 200,
-              "description": "for_filter only: page size",
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
+              "anyOf": [
+                {
+                  "maximum": 5000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. for_filter: default 200. Full list without file_uuid: default 1000 (max 500 with for_filter, 5000 otherwise). A file_uuid listing is not paged.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Full list without file_uuid: rows to skip",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Full list without file_uuid: rows to skip",
+              "minimum": 0,
+              "title": "Skip",
               "type": "integer"
             }
           },
@@ -55397,7 +55416,7 @@
     },
     "/api/watch-sources/email-configs/{config_uuid}/test": {
       "post": {
-        "description": "Send a live test message through one email config (super_admin only).\n\nConsumed by the admin Settings UI's \"Test\" button and by ops verifying a mailer\nafter a credential rotation. Talks to the real SMTP / Graph / Exchange endpoint,\nso it is slow and has an external side effect.\n\nThe outcome is persisted onto the config (``last_tested_at``, ``test_status``,\n``test_message``) so the UI can show the last known state without re-testing.\nA failure is reported as ``success=false`` in a 200 body, not an error status —\na failed connection is a successful *test*.",
+        "description": "Test the connection and login of one email config (super_admin only).\n\nConsumed by the admin Settings UI's \"Test\" button and by ops verifying a mailer\nafter a credential rotation. Connects and authenticates against the real SMTP /\nGraph / Exchange endpoint (no message is sent), so it is slow and reaches an\nexternal service; a successful test proves reachability and credentials, not\nthat a message is accepted for delivery.\n\nThe outcome is persisted onto the config (``last_tested_at``, ``test_status``,\n``test_message``) so the UI can show the last known state without re-testing.\nA failure is reported as ``success=false`` in a 200 body, not an error status —\na failed connection is a successful *test*.",
         "operationId": "test_email_config_api_watch_sources_email_configs__config_uuid__test_post",
         "parameters": [
           {

@@ -50,6 +50,21 @@ def _filter_speakers_query(query: Any, verified_only: bool, file_id: int | None)
     return query
 
 
+def _speaker_number_order() -> list[Any]:
+    """SQL form of :func:`_sort_speakers` (SPEAKER_nn first by number, others after) so a
+    page is cut in the database; ``id`` makes the order total, which paging needs."""
+    from sqlalchemy import Integer
+    from sqlalchemy import case
+    from sqlalchemy import cast
+    from sqlalchemy import func
+
+    number = case(
+        (Speaker.name.op("~")(r"^SPEAKER_\d+$"), cast(func.substr(Speaker.name, 9), Integer)),
+        else_=999,
+    )
+    return [number, Speaker.id]
+
+
 def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
     """Sort speakers by SPEAKER_XX numbering for consistent ordering."""
 

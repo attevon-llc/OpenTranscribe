@@ -89,22 +89,26 @@ def _sort_and_page(
     # Get the sort field (default to upload_time if invalid)
     sort_field = sort_field_mapping.get(sort_by, MediaFile.upload_time)
 
-    # Get total count BEFORE sorting/pagination.
-    # Use with_entities + func.count to avoid the subquery wrapper that
-    # .count() generates — produces a flat SELECT count(media_file.id) …
-    # instead of SELECT count(*) FROM (SELECT … ORDER BY …).
-    total_count = (filtered_query.with_entities(sa_func.count(MediaFile.id)).scalar()) or 0
-
-    # Apply sort order (only for the data query, not the count)
+    # Apply sort order. ``id`` is the tie-breaker: without it rows with equal sort keys
+    # (every file of one size, a NULL ``completed_at``) may come back in a different order for
+    # each page, so paging repeats or skips rows (#1337 G3).
     if sort_order.lower() == "asc":
-        filtered_query = filtered_query.order_by(sort_field.asc())
+        filtered_query = filtered_query.order_by(sort_field.asc(), MediaFile.id.asc())
     else:
-        filtered_query = filtered_query.order_by(sort_field.desc())
+        filtered_query = filtered_query.order_by(sort_field.desc(), MediaFile.id.desc())
 
-    # Apply pagination
     offset = (page - 1) * page_size
-    paginated_query = filtered_query.offset(offset).limit(page_size)
-    result = paginated_query.all()
+    result = filtered_query.offset(offset).limit(page_size).all()
+
+    # A page that came back short already tells the total: skip the second run of every filter
+    # and scope subquery (#1337 G2). Only a full page needs the count.
+    if len(result) < page_size and (result or page == 1):
+        return offset + len(result), result
+
+    # Flat SELECT count(media_file.id) ..., not the subquery wrapper that .count() generates.
+    total_count = (
+        filtered_query.order_by(None).with_entities(sa_func.count(MediaFile.id)).scalar()
+    ) or 0
     return total_count, result
 
 
@@ -115,6 +119,7 @@ def _format_list_page(db: Session, result: list[MediaFile], ctx: RequestContext)
     # One privacy view for the page: the speaker chips ask the voiceprint policy per FILE
     # scope, and a page of files spans a handful of scopes, not one per speaker (#1280).
     privacy = PrivacyView(db)
+    privacy.preload_files(f.id for f in result)  # one statement for the page, not one per file
     hidden_ids = hidden_file_ids_among(db, current_user.id, (f.id for f in result))
     holds = list_hold_summaries(db, (f.id for f in result))
 

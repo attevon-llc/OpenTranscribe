@@ -94,11 +94,29 @@ def _to_doc(item: SeedItem, bundle_version: str):
     )
 
 
+def _name_speakers(db, media_file_id: int, names: dict[str, str]) -> None:
+    """Give the injected speakers the bundle's names, recorded as a person's.
+
+    The bundle's curator typed these names, so they are ``human`` (a voiceprint purge or
+    switching voiceprints off must never hide them); no account in this database is the
+    curator's, so no user is recorded.
+    """
+    from app.models.speaker import Speaker
+    from app.utils.speaker_identity_detail import ORIGIN_TYPED
+    from app.utils.speaker_identity_source import record_human_identity
+
+    for speaker in db.query(Speaker).filter(
+        Speaker.media_file_id == media_file_id, Speaker.name.in_(names)
+    ):
+        speaker.display_name = names[speaker.name]
+        speaker.verified = True
+        record_human_identity(speaker, user_id=None, origin=ORIGIN_TYPED)
+
+
 def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> None:
     """Rows, then the media upload with no session open, then a short write and the tasks."""
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
-    from app.models.speaker import Speaker
     from app.scripts.corpus_injection import injector
     from app.services import minio_service
 
@@ -111,10 +129,7 @@ def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> None:
             tool_version="demo_seed",
             force=True,
         )
-        for label, display in item.speaker_names().items():
-            db.query(Speaker).filter(
-                Speaker.media_file_id == record.media_file_id, Speaker.name == label
-            ).update({"display_name": display, "verified": True})
+        _name_speakers(db, record.media_file_id, item.speaker_names())
         media_file = db.get(MediaFile, record.media_file_id)
         if media_file is None:
             raise RuntimeError(f"{item.id}: the injected media row vanished before upload")

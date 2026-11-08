@@ -12,10 +12,10 @@
 # Install (image): pip install --user -r requirements-test.txt  — see Dockerfile.test.
 # Install (venv):  covered by requirements-dev.txt.
 
-pytest==9.1.1
+pytest==9.2.0
 # Reads the text back out of generated PDFs (BSD-3-Clause) for the document-export suites.
-pypdf==6.21.2
-pytest-asyncio==1.4.0  # For testing async code
+pypdf==6.21.4
+pytest-asyncio==1.4.1.post1  # For testing async code
 pytest-xdist==3.8.0  # Parallel execution — pyproject addopts uses "-n auto"
 # REQUIRED, not optional: pyproject addopts passes --timeout, so a missing plugin is a
 # collection error, not a silently skipped feature. The suite serialises DDL tests behind a

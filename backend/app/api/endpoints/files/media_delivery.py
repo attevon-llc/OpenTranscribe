@@ -339,6 +339,13 @@ def download_stream(
         dedup=False,
         bypass=ctx.bypass,
     )
+    # FastAPI closes the request's session only after the response is SENT, which for
+    # this stream is when the download finishes. Load the row (the audit write above may
+    # have committed and expired it), detach it so the generator's reads never reopen a
+    # transaction, and give the pooled connection back now.
+    db.refresh(db_file)
+    db.expunge(db_file)
+    db.close()
 
     def sse(event: str, payload: dict) -> str:
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"

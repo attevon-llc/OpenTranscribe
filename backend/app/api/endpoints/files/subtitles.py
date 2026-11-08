@@ -457,6 +457,7 @@ def _cached_outcome_frame(cached: bytes | str, requester_id: int) -> str:
 @router.get("/bulk-export-stream", dependencies=[Depends(refuse_under_support_grant)])
 def bulk_export_stream(
     job: str = Query(..., description="Job id returned by /bulk-export/prepare"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),  # cookie-auth gates the stream
 ) -> StreamingResponse:
     """Server-Sent Events stream for an async bulk export.
@@ -468,7 +469,12 @@ def bulk_export_stream(
 
     The job id is signed for the user who prepared it; anyone else gets 404.
     """
-    if not bulk_job_owned_by(job, current_user.id):
+    requester_id = current_user.id
+    # Authentication opened a transaction on the request's session, and FastAPI closes it
+    # only after the response is SENT, i.e. when the export finishes. Nothing below
+    # touches the database, so give the pooled connection back now.
+    db.close()
+    if not bulk_job_owned_by(job, requester_id):
         raise HTTPException(status_code=404, detail="Export job not found")
 
     import asyncio
@@ -496,7 +502,7 @@ def bulk_export_stream(
             cached = await client.get(f"bulk_export_result:{job}")
             if not cached:
                 return None
-            return await asyncio.to_thread(_cached_outcome_frame, cached, current_user.id)
+            return await asyncio.to_thread(_cached_outcome_frame, cached, requester_id)
 
         try:
             # 1. Already finished? deliver immediately (covers reconnects after completion).

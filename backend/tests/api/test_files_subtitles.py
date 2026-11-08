@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from unittest.mock import MagicMock
 
 from fastapi import status
 
@@ -370,7 +371,11 @@ def test_bulk_export_stream_recovers_a_completion_during_subscribe(monkeypatch):
 
     owner = User(id=334)
     job = subtitles.new_bulk_job_id(owner.id)
-    response = subtitles.bulk_export_stream(job=job, current_user=owner)
+    request_session = MagicMock()
+    response = subtitles.bulk_export_stream(job=job, db=request_session, current_user=owner)
+    # Audit H4: the request's session must be released before the stream starts, or it
+    # stays idle in a transaction until the export finishes.
+    request_session.close.assert_called_once_with()
     frame = asyncio.run(_first_frame(response))
 
     assert frame.startswith("event: ready"), (

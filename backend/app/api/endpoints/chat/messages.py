@@ -506,9 +506,14 @@ def regenerate(
     ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
     # The question is re-sent as a fresh turn, so retire the original too.
     last_user.status = STATUS_SUPERSEDED
+    # Read before the commit: expire_on_commit would make `ctx.user.id` a lazy reload that
+    # reopens a transaction on the request's session, held until the reply finishes.
+    user_id = ctx.user.id
     db.commit()
-
-    return _streaming_response(kwargs, ctx.user.id)
+    # Release the pooled connection now, as send_message does: FastAPI closes the
+    # session only after the stream has been SENT.
+    db.close()
+    return _streaming_response(kwargs, user_id)
 
 
 class MessageEdit(BaseModel):
@@ -569,9 +574,12 @@ def edit_message(
         ChatMessage.id >= target.id,
         ChatMessage.id <= boundary,
     ).update({ChatMessage.status: STATUS_SUPERSEDED}, synchronize_session=False)
+    # Read before the commit and release the connection after it, for the reasons in
+    # regenerate().
+    user_id = ctx.user.id
     db.commit()
-
-    return _streaming_response(kwargs, ctx.user.id)
+    db.close()
+    return _streaming_response(kwargs, user_id)
 
 
 @router.post("/messages/{message_uuid}/cancel")

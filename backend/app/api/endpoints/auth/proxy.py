@@ -131,6 +131,7 @@ def proxy_login(request: Request, response: Response, db: Session = Depends(get_
         data={"sub": str(user.uuid), "role": user.role},
         expires_delta=timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    record_successful_login(user)
     refresh_token, _row = token_service.create_refresh_token(
         db=db,
         user_id=user.id,
@@ -147,7 +148,6 @@ def proxy_login(request: Request, response: Response, db: Session = Depends(get_
         user_agent=user_agent,
         auth_method="proxy",
     )
-    record_successful_login(db, user)
     logger.info("Proxy authentication successful for %s", user.email)
 
     result = JSONResponse(

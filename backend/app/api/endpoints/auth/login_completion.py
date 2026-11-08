@@ -39,7 +39,7 @@ from app.models.user_mfa import UserMFA
 logger = logging.getLogger(__name__)
 
 
-def record_successful_login(db: Session, user: User) -> None:
+def record_successful_login(user: User) -> None:
     """Stamp ``last_login_at`` for a caller that has just been given a session.
 
     **Every successful authentication path must call this** — local/LDAP login,
@@ -50,17 +50,15 @@ def record_successful_login(db: Session, user: User) -> None:
     Stamped where a full session is issued rather than where the first factor
     passes: an MFA challenge that is never answered is not a login.
 
+    **Call it just before ``create_refresh_token``**, whose commit writes the stamp:
+    the session and its stamp land together or not at all. A separate commit after the
+    mint could fail on its own (a pool timeout under load), and then either cost the
+    caller a session that already existed or leave a session with no stamp.
+
     Args:
-        db: Database session
         user: The authenticated user row
     """
-    try:
-        user.last_login_at = datetime.now(UTC)
-        db.commit()
-    except Exception:
-        # Bookkeeping must never cost the caller the session they just earned.
-        logger.exception("Could not stamp last_login_at for user_id=%s", getattr(user, "id", None))
-        db.rollback()
+    user.last_login_at = datetime.now(UTC)
 
 
 def _apply_password_expiry(
@@ -251,7 +249,10 @@ def _generate_login_tokens(
 
     access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
 
-    # Generate refresh token (FedRAMP AC-12)
+    # Stamp last_login_at with the session it records (FedRAMP AC-2(3)).
+    record_successful_login(user)
+
+    # Generate refresh token (FedRAMP AC-12); its commit writes the stamp.
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
         user_id=user.id,
@@ -260,9 +261,6 @@ def _generate_login_tokens(
         user_agent=user_agent,
         ip_address=client_ip,
     )
-
-    # Stamp last_login_at now that a full session exists (FedRAMP AC-2(3)).
-    record_successful_login(db, user)
 
     # Log successful login
     audit_logger.log_login_success(

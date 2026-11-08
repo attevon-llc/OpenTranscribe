@@ -161,7 +161,7 @@ def pki_login(request: Request, response: Response, db: Session = Depends(get_db
     # Every successful auth path stamps last_login_at. It was written by NOTHING,
     # so the admin user list showed null forever and every inactive-account
     # control (FedRAMP AC-2(3)) had no data to work from.
-    record_successful_login(db, user)
+    record_successful_login(user)
 
     logger.info(f"PKI authentication successful for user: {pki_data['subject_dn']}")
 

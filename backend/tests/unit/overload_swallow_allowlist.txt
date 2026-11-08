@@ -4,11 +4,8 @@
 # which fails on an unlisted finding, a stale entry and an entry with no reason.
 #
 # The authentication path (dependencies, lifecycle gates, approval, revocation fallback,
-# refresh-token verification, external-token JIT sync) re-raises and is NOT listed here.
-
-# Login and session mint: owned by scale lane E (scale_foundations_plan.md 5.6), which maps
-# infrastructure errors on the login path to 503.
-app/api/endpoints/auth/login_completion.py::record_successful_login  # lane E (login); rolls back the best-effort login bookkeeping, login still completes
+# refresh-token verification, external-token JIT sync, password and LDAP login, session
+# mint) re-raises and is NOT listed here.
 
 # WebSocket handshake: owned by scale lane F (plan section 6, M2 #8).
 app/api/websockets.py::_try_authenticate_token  # lane F: handshake auth failure on pool exhaustion is its finding (M2 #8)

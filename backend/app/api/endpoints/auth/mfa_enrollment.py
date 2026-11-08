@@ -84,6 +84,10 @@ def issue_session_response(
     token_data = {"sub": user_uuid_str, "role": user_role, "type": TOKEN_TYPE_ACCESS}
     access_token = direct_create_token(data=token_data, expires_delta=access_token_expires)
 
+    # Every successful auth path stamps last_login_at. This function is the single
+    # post-MFA session-issue point, so it covers /mfa/verify AND the forced
+    # enrolment completion at /mfa/verify-setup. The mint below commits it.
+    record_successful_login(user)
     refresh_token, _ = token_service.create_refresh_token(
         db=db,
         user_id=user.id,
@@ -108,11 +112,6 @@ def issue_session_response(
     from app.auth.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token, request)
-
-    # Every successful auth path stamps last_login_at. This function is the single
-    # post-MFA session-issue point, so it covers /mfa/verify AND the forced
-    # enrolment completion at /mfa/verify-setup.
-    record_successful_login(db, user)
     return response
 
 

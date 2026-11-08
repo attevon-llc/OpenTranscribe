@@ -331,7 +331,10 @@ request never aged out for an active user: their concurrency degraded 2 → 1 �
 with no recovery. An upgraded deployment still holds the old string key, and
 every sorted-set command against it raises WRONGTYPE — swallowed by the
 fail-open handler, silently disabling the cap — so `_drop_legacy_counter`
-retires it on first contact.
+retires it on first contact. The prune-count-add and the hourly INCR-EXPIRE are each one
+Lua script (as separate commands, simultaneous requests overshot the cap), and a live
+stream re-stamps its slot (`refresh_stream_slot`, from the streaming response) so the
+age prune never frees a reply that runs past `_ACTIVE_TTL_SECONDS`.
 
 **Release from `stream_reply`'s shielded `finally`, via the `on_teardown` hook —
 not from the wrapping generator.** Starlette tears the wrapper down on client

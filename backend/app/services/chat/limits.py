@@ -18,6 +18,7 @@ import time
 import uuid
 
 from redis import Redis
+from redis.exceptions import RedisError
 
 from app.core import redis as redis_core
 
@@ -41,6 +42,30 @@ _CANCEL_KEY = "chat:cancel:{message_uuid}"
 # nothing legitimate is pruned.
 _ACTIVE_TTL_SECONDS = 300
 _CANCEL_TTL_SECONDS = 600
+#: How often a live stream re-stamps its slot. Well inside _ACTIVE_TTL_SECONDS, so a
+#: stream that runs longer than the leak window is never pruned while it is alive.
+SLOT_REFRESH_INTERVAL_SECONDS = 60
+
+# Each check-and-update below is ONE server-side script (Redis runs a script atomically).
+# As separate commands, two concurrent requests could both read a count under the cap and
+# both add a slot, and a crash between INCR and EXPIRE left a counter with no expiry.
+_HOURLY_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return count
+"""
+_ACQUIRE_SCRIPT = """
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[2]) then return 0 end
+redis.call('ZADD', KEYS[1], ARGV[3], ARGV[4])
+redis.call('EXPIRE', KEYS[1], ARGV[5])
+return 1
+"""
+_REFRESH_SCRIPT = """
+local updated = redis.call('ZADD', KEYS[1], 'XX', 'CH', ARGV[1], ARGV[2])
+if updated == 1 then redis.call('EXPIRE', KEYS[1], ARGV[3]) end
+return updated
+"""
 
 
 def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
@@ -61,9 +86,7 @@ def check_hourly_limit(user_id: int, limit: int) -> tuple[bool, int]:
 
     try:
         client = redis_core.get_redis()
-        count = client.incr(key)
-        if count == 1:
-            client.expire(key, 3600)
+        count = client.eval(_HOURLY_SCRIPT, 1, key, 3600)
         if int(count) > limit:
             logger.info("Chat hourly limit hit for user %s (%s/%s)", user_id, count, limit)
             return False, retry_after
@@ -112,23 +135,48 @@ def acquire_stream_slot(
         # leaving the concurrency cap silently disabled until the stale key
         # happened to expire. Retire it once, on first contact.
         _drop_legacy_counter(client, key)
-        # Drop slots older than the leak window before counting.
-        client.zremrangebyscore(key, "-inf", now - _ACTIVE_TTL_SECONDS)
-        if int(client.zcard(key)) >= max_concurrent:
+        # Prune slots older than the leak window, count, and add, as one script. The
+        # whole-key expiry is only a backstop for a user who never returns; the
+        # per-member prune is what bounds a leak.
+        admitted = client.eval(
+            _ACQUIRE_SCRIPT,
+            1,
+            key,
+            now - _ACTIVE_TTL_SECONDS,
+            max_concurrent,
+            now,
+            slot,
+            _ACTIVE_TTL_SECONDS * 2,
+        )
+        if not int(admitted):
             logger.info(
                 "Chat concurrency cap hit for user %s (max %s)",
                 user_id,
                 max_concurrent,
             )
             return None
-        client.zadd(key, {slot: now})
-        # Whole-key expiry is only a backstop for a user who never returns; the
-        # per-member prune above is what actually bounds a leak.
-        client.expire(key, _ACTIVE_TTL_SECONDS * 2)
         return slot
     except Exception as exc:  # noqa: BLE001 — fail open
         logger.warning(f"Chat concurrency guard unavailable (allowing): {exc}")
         return slot
+
+
+def refresh_stream_slot(user_id: int, slot_id: str | None) -> None:
+    """Re-stamp a live stream's slot so the leak prune never takes it.
+
+    Updates only a slot that still exists (``ZADD XX``): a slot already released or
+    pruned stays gone. Call at most every ``SLOT_REFRESH_INTERVAL_SECONDS``.
+    """
+    if not slot_id:
+        return
+    key = _ACTIVE_KEY.format(user_id=user_id)
+    try:
+        redis_core.get_redis().eval(
+            _REFRESH_SCRIPT, 1, key, time.time(), slot_id, _ACTIVE_TTL_SECONDS * 2
+        )
+    except RedisError as exc:
+        # A missed refresh only shortens the slot's lease; the stream itself carries on.
+        logger.debug(f"Could not refresh chat stream slot: {exc}")
 
 
 def release_stream_slot(user_id: int, slot_id: str | None = None) -> None:

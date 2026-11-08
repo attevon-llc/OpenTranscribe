@@ -1,6 +1,6 @@
 # search — snippets are masked, and the tags make that non-obvious (#86)
 
-Moved intact from `backend/app/services/search/CLAUDE.md`. Read before touching highlight/snippet building or the search response cache key.
+Moved intact from `backend/app/services/search/CLAUDE.md`. Read before touching highlight/snippet building.
 
 ## Snippets are masked, and the tags make that non-obvious (#86)
 
@@ -43,35 +43,14 @@ empty set and got **every snippet on every page verbatim**. Four things about th
   `pii`-masking user, against a 305-1372 ms baseline search. A `profanity`-only user pays
   **2.6-13.5 ms** (the detector gate is on the *categories*, not on `enabled`) and a
   redaction-disabled user pays nothing — and PII masking is opt-in twice over, since redaction
-  is opt-out and `pii` is not in `DEFAULT_REDACTION_CATEGORIES`. Masking is applied before the
-  per-user response cache (`SEARCH_CACHE_TTL_SECONDS`, 300 s), so a repeat query pays zero.
+  is opt-out and `pii` is not in `DEFAULT_REDACTION_CATEGORIES`. There is no response cache
+  (removed, concurrency audit L8), so a repeat query pays the masking again.
   Withholding the previews instead (as the fail-closed branch does) was rejected: that branch
   exists for when we *cannot* mask, not when masking is merely slow, and a search UI with no
   previews is the feature removed rather than a trade.
-  - **FIXED: the response cache keys on the redaction policy.** It used to key only on
-    `user_id`, so for up to `SEARCH_CACHE_TTL_SECONDS` after a user enabled masking, queries
-    they had already run still returned the previously cached unmasked snippets — the same
-    class of leak `redaction/export_policy.py` argues in general (a cached artifact must name
-    the policy it was rendered under). `HybridSearchService.search` now resolves the config
-    via `_resolve_redaction_config_for_cache` **before** the cache lookup — not inside
-    `_redact_snippets`, which used to run only after a cache miss — and folds
-    `_redaction_policy_fingerprint(cfg)` into `_make_cache_key` as `redaction_policy`. The
-    fingerprint covers only the fields that can move `mask_snippets`'s output on this surface
-    (`enabled_categories & MASKABLE_CATEGORIES`, `pii_entities`, `custom_words`, `allowlist`)
-    — `toxicity_threshold` and `style` are excluded because neither can change a rendered
-    snippet here: `toxicity` has no maskable spans on this path, and `mask_snippets` always
-    forces `style="label"` regardless of the user's own preference. An unresolvable config
-    gets its own fixed `"unresolvable"` bucket so it can never collide with a real policy's
-    fingerprint. `cfg` is resolved exactly ONCE per request and passed into `_redact_snippets`
-    (now a required third parameter) rather than re-resolved there, so the config that decided
-    the cache key is provably the config that did the masking.
-  - The first masked search in a fresh API process pays the **~7-10 s Presidio build** unless
-    `redaction/warmup.py` already ran, and that warm-up's gate is evaluated at startup — so a
-    user who enables redaction on a process that started with it off pays it once. Measured
-    end to end through the API: 14.7 s on the first such query, 1.2 s on the next.
-
-Two rules the implementation depends on, both easy to undo by accident:
-
+  - **Historical: the response cache keyed on the redaction policy** (#86-adjacent). It once
+    keyed only on `user_id` and served pages masked under an old policy; the cache is gone now
+    (concurrency audit L8), and `_redact_snippets` resolves the policy per request.
 - **The config session closes BEFORE any detector runs.** A ~1 s Presidio pass inside an open
   transaction holds `ACCESS SHARE` for its duration and queues every `ALTER TABLE` behind it —
   exactly what `scripts/audit-session-lifetime.py` exists to catch, and what hangs an Alembic

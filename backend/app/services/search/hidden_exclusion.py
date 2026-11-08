@@ -10,7 +10,6 @@ facet query of the caller instead carries one ``must_not terms file_uuid`` claus
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from typing import Any
 
@@ -20,11 +19,3 @@ def exclude_files_clauses(file_uuids: Sequence[str] | None) -> list[dict[str, An
     if not file_uuids:
         return []
     return [{"bool": {"must_not": {"terms": {"file_uuid": list(file_uuids)}}}}]
-
-
-def exclusion_fingerprint(file_uuids: Sequence[str] | None) -> str | None:
-    """A short stable key of the excluded set, for the process-local response cache."""
-    if not file_uuids:
-        return None
-    joined = "\n".join(sorted(str(u) for u in file_uuids))
-    return hashlib.sha256(joined.encode()).hexdigest()[:32]

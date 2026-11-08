@@ -51,7 +51,6 @@ import re
 
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.config import MASKABLE_CATEGORIES
-from app.services.search.search_cache import _resolve_redaction_config_for_cache
 from app.services.search.search_types import SearchResponse
 
 logger = logging.getLogger(__name__)
@@ -242,8 +241,7 @@ class _NotGiven:
 
     (already-resolved) `None`: `None` means "resolution was attempted and
     failed" (fail closed), while this type means "the caller did not resolve it
-    at all, do it here" — the original self-resolving contract, kept for any
-    caller of `_redact_snippets` other than `search()`'s own cache-key flow. A
+    at all, do it here" (what ``search()`` does). A
     dedicated class (rather than a bare `object()`) so the parameter's type
     hint can name it explicitly instead of widening to `Any`.
     """
@@ -261,6 +259,33 @@ _NOT_GIVEN = _NotGiven()
 #: preview is a fail-closed choice: an unmasked one is a policy bypass, and the
 #: result itself (title, timestamps, ranking) is unaffected.
 WITHHELD_SNIPPET = "[redacted — masking unavailable]"
+
+
+def _resolve_redaction_config(
+    user_id: int, organization_id: int | None = None
+) -> EffectiveRedactionConfig | None:
+    """Resolve the requesting user's redaction policy in its own short session.
+
+    Args:
+        user_id: The requesting user (matches ``_redact_snippets``'s subject).
+        organization_id: The requester's active tenant scope, threaded into
+            ``resolve_effective_config`` so a registered per-org redaction
+            floor (issue #982/#987) is actually consulted (#988).
+
+    Returns:
+        The effective config, or ``None`` when it could not be resolved at all
+        (DB unreachable, etc.) — never raises; ``_redact_snippets`` then withholds
+        the snippets rather than breaking the search request.
+    """
+    from app.db.session_utils import session_scope
+    from app.services.redaction.config import resolve_effective_config
+
+    try:
+        with session_scope() as db:
+            return resolve_effective_config(db, user_id, organization_id=organization_id)
+    except Exception:  # noqa: BLE001 — a config read must not break search
+        logger.exception("Redaction config unavailable for search snippet masking")
+        return None
 
 
 def _withhold_snippets(occurrences: list) -> None:
@@ -289,13 +314,10 @@ def _redact_snippets(
     batching and the detector gate are all its problem. This method owns two
     decisions:
 
-    - **Where the session ends.** ``cfg`` is resolved by the CALLER
-      (``search()``, via ``_resolve_redaction_config_for_cache`` — it needs
-      the same value to build the cache key, so resolving it a second time
-      here would both duplicate a DB round trip and open a window for the
-      two resolutions to disagree). That session already closed before this
-      method runs, so a ~1 s Presidio pass never holds ``ACCESS SHARE`` open
-      — the defect ``scripts/audit-session-lifetime.py`` exists to catch.
+    - **Where the session ends.** ``cfg`` is resolved in its own short session
+      (:func:`_resolve_redaction_config`), closed before any masking runs, so a
+      ~1 s Presidio pass never holds ``ACCESS SHARE`` open — the defect
+      ``scripts/audit-session-lifetime.py`` exists to catch.
     - **Failing CLOSED, once.** Neither an unresolvable config (``cfg is
       None``) nor an unavailable detector may render an unmasked preview, so
       both withhold the page's snippet text. Results, counts and ranking are
@@ -308,18 +330,13 @@ def _redact_snippets(
         result: The response whose snippets get masked in place.
         user_id: The requesting user (kept for the log line's subject; the
             actual policy is ``cfg`, already resolved for this user).
-        cfg: The pre-resolved effective config, or ``None`` when it could
-            not be resolved at all. Omitting the argument entirely
-            (``_NOT_GIVEN``, the default) resolves it here instead — kept
-            for callers outside ``search()``'s own cache-key flow, so this
-            method's original resolve-it-yourself contract still holds for
-            anyone driving it directly.
-        organization_id: Only consulted on that same self-resolve fallback
-            path (#988) — ``search()`` passes its own already-resolved
-            ``cfg`` instead and never reaches this branch.
+        cfg: A pre-resolved effective config, or ``None`` when it could not
+            be resolved at all. Omitted (``_NOT_GIVEN``, the default, which is
+            what ``search()`` does) it is resolved here for this request.
+        organization_id: The requester's tenant, for that resolution (#988).
     """
     if isinstance(cfg, _NotGiven):
-        cfg = _resolve_redaction_config_for_cache(user_id, organization_id=organization_id)
+        cfg = _resolve_redaction_config(user_id, organization_id=organization_id)
 
     occurrences = [
         occ

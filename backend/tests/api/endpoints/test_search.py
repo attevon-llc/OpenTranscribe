@@ -316,8 +316,9 @@ class TestQuarantinedHitsAreDropped:
     def test_repeated_searches_do_not_compound_the_quarantine_decrement(
         self, client, user_token_headers, normal_user, db_session, monkeypatch
     ):
-        """Regression: ``HybridSearchService.search()`` hands back a process-local
-        cache hit BY REFERENCE (``search_cache._get_cached_response``).
+        """Regression: ``HybridSearchService.search()`` used to hand back a
+        process-local cache hit BY REFERENCE (that cache is gone, audit L8; the
+        no-mutation rule stays).
         If the takedown gate mutates that shared object in place instead of
         returning a copy, a file released after the first request stays hidden
         from every later request against the same cache entry — the object's

@@ -118,8 +118,7 @@ class TranscriptionConfig:
         ``usedforsecurity=False`` is required and not merely tidy: without it this call
         RAISES on a host whose OpenSSL enforces FIPS, and every transcription task
         fails at model load. Declaring it to the runtime also satisfies the linters,
-        so the suppression comments this line used to carry are gone (matches
-        ``services/search/search_cache.py``).
+        so the suppression comments this line used to carry are gone.
         """
         key = f"{self.model_name}:{self.compute_type}:{self.device}:{self.device_index}"
         return hashlib.md5(key.encode(), usedforsecurity=False).hexdigest()[:12]

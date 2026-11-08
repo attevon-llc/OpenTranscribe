@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Search no longer keeps a per-process cache of result pages. Its entries were emptied by any new transcript anywhere on the server, so it rarely helped, and it had repeatedly served stale or wrongly masked pages; every search now reflects the index and your redaction settings as they are. An identical repeat search runs again rather than being served from memory.
 - The load-test runbook (`scripts/perf/load/README.md`, and Concurrent users in the Scale and query performance testing page) now gives one command per profile, the seed flags the personas need, the personas and what each covers, and what a run directory holds. Chat turns are limited to 20 a minute per client address in the code, so the runbook runs a fixed number of chat users.
 - Transcription queues now share fairly between users: a user's first 5 queued or running transcriptions keep the normal priority and each one after that is queued one step lower, so another user's file no longer waits behind someone's entire bulk upload. Administrators set the limit in Settings, File status, Recovery, Fair sharing between users (default 5, 0 restores strict first-come order); see Performance Tuning, Fair sharing between users.
 - Frontend dependency updates: axios 1.21, i18next-browser-languagedetector 8.2.3, katex 0.19.1, `@types/node` 26.6.6, and `package.json` now requires the SvelteKit 3.1.1 and adapter-static 4.0.1 the lockfile already resolved (#1349, #1321).

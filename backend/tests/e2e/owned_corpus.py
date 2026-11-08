@@ -146,10 +146,9 @@ CHUNKS_INDEXED_TIMEOUT_S = 120.0
 def _wait_for_chunks_indexed(file_uuid: str, timeout: float = CHUNKS_INDEXED_TIMEOUT_S) -> int:
     """Poll OpenSearch directly until *file_uuid* has transcript chunks.
 
-    Deliberately NOT ``GET /api/search``: the app caches search responses for
-    ``SEARCH_CACHE_TTL_SECONDS`` (300 s) keyed on query/user/page, so polling it
-    would pin a "nothing indexed yet" answer for five minutes — well past this
-    timeout. Same reasoning, and the same shape, as
+    Deliberately NOT ``GET /api/search``: OpenSearch is what converges, and the
+    search route once cached a "nothing indexed yet" answer for five minutes (that
+    cache was removed, concurrency audit L8). Same shape as
     ``tests/fixtures/search_corpus_stack.py::_wait_for_indexed``.
 
     Returns:

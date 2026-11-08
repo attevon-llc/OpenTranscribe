@@ -96,8 +96,8 @@ def _attach_visible_collections(
 ) -> None:
     """Add ``collections`` (``uuid`` + ``name``) to each hit, for the whole page in one batch.
 
-    Per caller, after the (possibly shared, cached) search response was copied into
-    ``hits``, so one user's collections never reach another user's cached page.
+    Per caller, after the search response was copied into ``hits``, so one user's
+    collections never reach another user's page.
     """
     by_file = collections_on_files(
         db,
@@ -214,16 +214,12 @@ def _drop_quarantined_search_hits(
     redaction surface for takedowns.
 
     Returns a shallow COPY of ``response`` with the quarantined hits dropped and
-    totals decremented — it must never mutate the object passed in. ``search()``
-    can hand back a process-local cache hit BY REFERENCE
-    (``hybrid_search_service._get_cached_response``), so mutating that object in
-    place would mutate the shared cached entry itself: every later request
-    against the same cache key — including an admin's, who must see the
-    untrimmed page — would then see whatever this pass last left behind, and a
-    file released after being cached would stay hidden until the cache entry's
-    TTL naturally expires rather than reappearing on the next request. Callers
-    must use the returned value; the input is left exactly as ``search()``
-    produced it.
+    totals decremented — it must never mutate the object passed in. This mattered
+    most while ``search()`` could hand back a process-local cache hit by reference
+    (that cache is gone, concurrency audit L8), where an in-place trim mutated the
+    shared entry for every later request; it stays a rule because the caller owns
+    the response. Callers must use the returned value; the input is left exactly
+    as ``search()`` produced it.
     """
     hits = getattr(response, "results", None) or []
     if not hits:
@@ -283,16 +279,15 @@ def _summary_search_payload(
     defect class (one builder, not two).
 
     ⚠️ Deliberately UNCACHED — do not "finish the job" by adding a response
-    cache here the way the transcript leg has one (issue #822's plan named this
-    as a possible follow-up and it was rejected). A cached page is a cached
+    cache here (issue #822's plan named this as a possible follow-up and it was
+    rejected; the transcript leg's own response cache was later removed too,
+    concurrency audit L8). A cached page is a cached
     verdict: this payload's shape already depends on the caller's redaction
     policy AND on quarantine state, and re-serving a page for
-    `SEARCH_CACHE_TTL_SECONDS` after a file is quarantined would reopen #818 —
-    a taken-down summary still readable, from cache, for the whole TTL. The
-    transcript-search cache can afford this because that leg re-checks
-    quarantine per request too (`_drop_quarantined_search_hits`); a summary
-    cache would need the identical re-check on every read, which is exactly the
-    round trip a cache exists to avoid. Not worth it for a corpus this small
+    its TTL after a file is quarantined would reopen #818 — a taken-down summary
+    still readable, from cache, for the whole TTL. A summary cache would need a
+    per-read quarantine re-check (as `_drop_quarantined_search_hits` does for the
+    transcript leg), which is exactly the round trip a cache exists to avoid. Not worth it for a corpus this small
     (one JSONB blob per file, per `search_summaries`' own docstring).
 
     **The same argument covers ACCESS, not only takedown.** Both authorities on
@@ -304,9 +299,9 @@ def _summary_search_payload(
     re-checked by. Both authorities are time-varying by design, and neither is a
     property of the query text a key would be built from.
 
-    ⚠️ **And the obvious key does not close it.** The transcript leg folds
-    `hybrid_search_service._search_corpus_version()` into `_make_cache_key`, so
-    reusing that counter here is the natural move — and it genuinely does cover
+    ⚠️ **And the obvious key does not close it.** Keying on the chat corpus
+    version (`chat.retrieval_cache.corpus_version`, what the removed transcript
+    cache used) is the natural move — and it genuinely does cover
     the takedown case (`takedown_service.quarantine_file`/`release_file` both
     call `bump_corpus_version`). It is now bumped by exactly FOUR things, and
     those are all of them: chunk-plane indexing writes
@@ -318,7 +313,7 @@ def _summary_search_payload(
     dispatches through). A **summary regeneration** (`tasks/summarization.py`,
     which rewrites the very `media_file.summary_data` this leg reads) still
     bumps nothing. So a corpus-version-keyed cache would still keep serving the
-    pre-regeneration summary for the rest of `SEARCH_CACHE_TTL_SECONDS` — while
+    pre-regeneration summary for the rest of its TTL — while
     *reading* as though it were invalidated — even though the share-revocation
     half of this concern is now closed. Verify that call-site list before
     reconsidering (`rg 'bump_corpus_version\(\)' backend/app`); a cache here

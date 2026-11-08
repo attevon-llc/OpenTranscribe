@@ -78,13 +78,9 @@ def search_corpus_user():
 def _wait_for_indexed(file_uuids: list[str], timeout: float = 60.0) -> None:
     """Poll OpenSearch directly (not ``/api/search``) until every file has chunks.
 
-    Deliberately bypasses the app's search response cache
-    (``SEARCH_CACHE_TTL_SECONDS`` = 300s, ``hybrid_search_service.py``): polling
-    ``GET /api/search`` with the same query/user/page params repeatedly would hit
-    that cache and could pin a "not yet fully indexed" 4-of-6 result for five
-    minutes, well past this function's own timeout — the exact self-inflicted
-    flake this fixture exists to avoid. Reading OpenSearch directly checks the
-    thing that's actually converging.
+    Reading OpenSearch directly checks the thing that is actually converging. (It
+    also once dodged the app's search response cache, which pinned a "not yet fully
+    indexed" page for five minutes; that cache was removed, concurrency audit L8.)
     """
     from app.core.config import settings
     from app.services.opensearch_service import get_opensearch_client

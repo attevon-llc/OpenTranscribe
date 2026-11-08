@@ -88,8 +88,6 @@ SEARCH_MAX_SEMANTIC_SNIPPETS_PER_FILE = 2  # Display limit for card view (deprec
 # SEARCH_HYBRID_MIN_SCORE lives in config.Settings (env-tunable, default 0.005) —
 # services/search/result_processing.py reads settings.SEARCH_HYBRID_MIN_SCORE. A same-named
 # constant here was dead and shadowed the real value when tuning.
-SEARCH_CACHE_TTL_SECONDS = 300
-SEARCH_CACHE_MAX_SIZE = 256
 
 # Org-collection read route for search (#1275, governance plan D-3): a chunk is readable by a
 # caller when its ``collection_ids`` names an organization collection they may see. The ids

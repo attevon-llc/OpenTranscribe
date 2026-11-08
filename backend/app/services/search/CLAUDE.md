@@ -276,7 +276,7 @@ it cannot be sent, and it cannot reach the kNN reads. The Postgres post-filter
 
 ## Fusion is selectable per request (#363, #403 Stage 5 plumbing)
 
-The fusion strategy id is threaded down to four attach sites and never re-read from settings; `_verified_pipelines` is a set so one strategy cannot certify another; the response cache keys on the resolved pipeline id. **MEASURED: RRF stays** (ten arms, zero both-corpus wins; #363 closed). Detail: `backend/app/services/search/notes/fusion.md`.
+The fusion strategy id is threaded down to four attach sites and never re-read from settings; `_verified_pipelines` is a set so one strategy cannot certify another; there is no search response cache (removed, concurrency audit L8), so no page can be replayed across strategies. **MEASURED: RRF stays** (ten arms, zero both-corpus wins; #363 closed). Detail: `backend/app/services/search/notes/fusion.md`.
 ## Which models are offered, and why those (#504)
 
 The offered-model list, its selection criteria and the measured multilingual result (#453): `backend/app/services/search/notes/embedding-models.md`.

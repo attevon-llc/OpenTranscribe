@@ -34,6 +34,11 @@ class CapacitySettings(BaseSettings):
     # so Celery workers, the migrate step and scripts are unaffected; the backend service's
     # compose environment sets 30000. A statement past it is answered 503.
     DB_STATEMENT_TIMEOUT_MS: int = 0
+    # Seconds of database work one HTTP request may do: past it, its next statement is
+    # refused and the request answered 503 (app/db/request_deadline.py). Below the 60 s
+    # most clients give up at; uploads, SSE streams and /metrics are exempt
+    # (app/middleware/request_deadline.py). 0 = off.
+    REQUEST_DEADLINE_SECONDS: float = 55.0
     # Open connections (including WebSockets and SSE streams) one uvicorn process
     # accepts before answering 503. uvicorn reads the same variable itself
     # (--limit-concurrency); the app reads it to size the threadpool so that

@@ -46,6 +46,7 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.demo_readonly import DemoReadOnlyMiddleware
 from app.middleware.observability import ObservabilityMiddleware
+from app.middleware.request_deadline import RequestDeadlineMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
 from app.services.hold_guard import HoldRefusedError
@@ -290,6 +291,10 @@ app = FastAPI(
     # Increase default timeout to 1 hour for large file uploads
     default_timeout=3600,
 )
+
+# Request deadline (app/db/request_deadline.py). Added FIRST, so it is the innermost
+# middleware and the deadline covers only the app's own work. Pure ASGI: no child task.
+app.add_middleware(RequestDeadlineMiddleware)
 
 # Upload size limits enforced while the body streams (issue #999). Added BEFORE CORS so
 # it runs INSIDE it (see the ordering note at ObservabilityMiddleware): its early 413

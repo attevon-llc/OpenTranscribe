@@ -953,6 +953,7 @@ DB_MAX_OVERFLOW=40       # extra connections above the pool under load
 API_THREADPOOL_SIZE=0    # 0 = derived, see below
 DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
 DB_STATEMENT_TIMEOUT_MS=30000    # Postgres statement_timeout, API process only (0 = off)
+REQUEST_DEADLINE_SECONDS=55      # database work one request may do before 503 (0 = off)
 UVICORN_LIMIT_CONCURRENCY=512    # open connections per API process before 503 (0 = none)
 CHAT_THREADPOOL_SIZE=0           # chat's own worker threads; 0 = a quarter of the DB pool, min 4
 ```
@@ -986,6 +987,13 @@ connections, set per session when each connection opens (PostgreSQL advises agai
 server-wide). `docker-compose.yml` sets it to 30000 on the backend service only; its coded default
 is 0, so Celery workers, which run long statements by design, have none. A statement that runs
 past it is cancelled and the request is answered 503.
+
+`REQUEST_DEADLINE_SECONDS` bounds a whole request rather than one statement: once a request has
+run that long, its next database query is refused and the request is answered 503, so work a
+client has already abandoned stops holding a connection. The default, 55 s, is under the 60 s most
+clients wait. It is not a cancellation (a request computing in Python without querying runs on),
+and file uploads, chat replies, streaming downloads and exports, and `/metrics` are exempt
+(`backend/app/middleware/request_deadline.py` lists them with the reason for each).
 
 Hooks registered by a deployment (for example an upload-limits resolver) run on this thread
 pool, never on the event loop, but they run while the request holds a connection: keep them

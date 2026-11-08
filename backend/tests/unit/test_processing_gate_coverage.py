@@ -49,6 +49,10 @@ DISPATCHERS = frozenset(
     }
 )
 TASK_CALL_ATTRS = frozenset({"delay", "apply_async", "s", "si", "signature"})
+# Calls that run a function handed to them as an argument: ``await run_in_threadpool(_f, db)``
+# is a call to ``_f`` the graph would otherwise never see, so an async route that off-loads
+# its checks or its dispatch would read as neither gated nor starting anything.
+OFFLOAD_CALLS = frozenset({"run_in_threadpool", "run_sync", "to_thread", "run_in_executor"})
 PROCESSING_QUEUES = frozenset({"nlp", "redaction", "download"})
 # GET is excluded on purpose: a read never answers 403 for a missing acceptance. A GET that
 # lazily queues work (redaction detection on first open) is covered by that task's own gate.
@@ -142,6 +146,8 @@ class _FunctionFacts:
                 name = _call_name(sub)
                 if name:
                     self.calls.add(name)
+                if name in OFFLOAD_CALLS:
+                    self.calls.update(a.id for a in sub.args if isinstance(a, ast.Name))
                 target = _task_call_target(sub)
                 if target:
                     self.task_targets.add(target)
@@ -345,14 +351,49 @@ async def handler(db):
 """
 
 
+_FIRE_OFFLOADED = """
+@router.post("/w")
+async def handler(db):
+    await run_in_threadpool(_checks, db)
+    await run_in_threadpool(_start, db)
+
+def _checks(db):
+    refuse_if_frozen(db, 1)
+
+def _start(db):
+    summarize_transcript_task.delay("u")
+"""
+
+_CLEAN_OFFLOADED = """
+@router.post("/v")
+async def handler(db):
+    await run_in_threadpool(_checks, db)
+    return await to_thread.run_sync(_start, db)
+
+def _checks(db):
+    require_processing_allowed_for_file(db, 1)
+
+def _start(db):
+    summarize_transcript_task.delay("u")
+"""
+
+
 @pytest.mark.parametrize(
     "source, expected",
     [
         (_FIRE, ["m.py::handler"]),
         (_FIRE_DISPATCH, ["m.py::handler"]),
+        (_FIRE_OFFLOADED, ["m.py::handler"]),
         (_CLEAN, []),
+        (_CLEAN_OFFLOADED, []),
     ],
-    ids=["helper-task-call", "direct-dispatch", "gated-and-unrelated"],
+    ids=[
+        "helper-task-call",
+        "direct-dispatch",
+        "offloaded-start-without-gate",
+        "gated-and-unrelated",
+        "offloaded-gate-and-start",
+    ],
 )
 def test_selftest_route_detector(source, expected):
     facts = collect({"m.py": source})

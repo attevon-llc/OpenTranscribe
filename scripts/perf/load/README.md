@@ -65,7 +65,11 @@ identical data (`docs-site/docs/developer-guide/performance-testing.md`, section
 ./scripts/seed-query-review.sh --fresh perf1337 --waveform-pm 1000 --files 2000 --users 100 --segments-per-file 20
 ```
 
-Identities: `perf-1` admin, `perf-2` heavy owner (20,000 files), `perf-3` the first
+To add the activity rows to a database that already holds the seed (a restored snapshot), use
+`--activity-only`; it leaves every existing row alone and realigns the id sequences. To build a new
+snapshot with its sha256: `scripts/perf/load/tools/build_snapshot.sh perf1337 ~/seed.dump`.
+
+Identities: `perf-1` super admin (the audit-log page is super-admin only), `perf-2` heavy owner (20,000 files), `perf-3` the first
 organization's admin, then `perf-4` .. `perf-<users>` split into blocks so personas never share a
 person: viewers 55%, editors 15%, chat users 10%, socket listeners 10%, pipeline uploaders 10%.
 Password `loadtest-password`. Pass the seed's `--users` to Locust as `-- --seeded-users N` when
@@ -75,6 +79,22 @@ A run that hits 429s is measuring the rate limiter; the scenario reports those a
 `rate limited (429)` failures so they are never mistaken for slowness. Chat turns are limited to
 20 a minute **per client address** in the code (not configurable), so the chat users are a fixed
 count (`--chat-users`, default 8, 1 in smoke) rather than a share of the crowd.
+
+### Seeded files have no media objects (quiet the background repair first)
+
+The seed writes rows only; no MinIO object exists behind a seeded file. Background tasks that
+touch media (embedding repair, thumbnails, redaction backfill) therefore fail on those rows
+forever and can make the stack noisy enough to void a run. They are not skipped by a marker in
+the code (a seeded row is real data to every one of those tasks), so before a measured run:
+
+```bash
+c() { docker ps -q --filter label=com.docker.compose.project=otfresh-NAME --filter label=com.docker.compose.service=$1; }
+# the consistency check and search maintenance skip while any reindex_lock:* key exists
+docker exec "$(c redis)" sh -c 'redis-cli ${REDIS_PASSWORD:+-a "$REDIS_PASSWORD"} --no-auth-warning SET reindex_lock:loadtest-suppress 1 EX 43200'
+```
+
+then wait for the boot-time thumbnail backfill to finish (the cpu worker's CPU falls below
+about 150%) and record `uptime` before each run. Fresh stacks only: never set that key on a live one.
 
 ## Personas and what they cover
 
@@ -138,18 +158,19 @@ python3 scripts/perf/load/summarize.py "$RUN"                                   
 | `locust_stats.csv` | per endpoint (route name + label): count, failures, p50 / p95 / p99. Streams are `SSE` rows (`mock-gpt first token`, `... whole answer`), the socket `WS` rows (`connect`, `echo round trip`, `notification <type>`), the pipeline a `PIPELINE upload->completed` row |
 | `locust_failures.csv` | failures by cause: `rate limited (429)`, `session lost (401)`, `HTTP <code>`, `no response` |
 | `locust_stats_history.csv` | percentiles over time (`--csv-full-history`) |
-| `samples.csv` | every 5 s: `pg_stat_activity` by state, connections idle in a transaction for over 1 s, the oldest transaction, `db_pool_*` and `http_requests_in_flight`, every Celery queue's depth, CPU and memory of each container of this stack (by compose project label), memory and utilisation of the sampled GPUs |
+| `samples.csv` | every 5 s: `pg_stat_activity` by state, connections idle in a transaction for over 1 s, the oldest transaction, the API's own connections against its pool capacity (`pgapi`, from Postgres), `db_pool_*` and `http_requests_in_flight` (from the API, so missing when it is saturated), every Celery queue's depth, CPU and memory of each container of this stack (by compose project label), memory and utilisation of the sampled GPUs |
 | `summary.md` | the report: verdict, per-endpoint table with limits, failures by cause, percentile history, sampler min/mean/max, pool saturation, memory growth |
 | `report.html`, `locust.log`, `sampler.log` | Locust's own report and both logs |
 
 The limits are in `thresholds.toml` (p95 under 1 s for reads, error rate under 0.5%, no
 connection idle in a transaction for over a second, the pool saturated in at most 5% of
-samples, memory growth under 25% across a soak). Change them there, in review.
+samples, at least 80% of sampler sweeps producing data, memory growth under 25% across a soak).
+Change them there, in review.
 
 ## Reading the result
 
-- A p95 that climbs with users while Postgres CPU stays low, and `db_pool_checked_out` sits at
-  capacity, is pool or threadpool saturation, not slow SQL: see the plan's section on pool and
+- A p95 that climbs with users while Postgres CPU stays low, and the API's `pgapi` connections sit
+  at capacity, is pool or threadpool saturation, not slow SQL: see the plan's section on pool and
   threadpool sizing before tuning anything.
 - A climbing p95 with the backend container at 100% of one core is the single API process
   (the plan's top recommendation).
@@ -157,3 +178,18 @@ samples, memory growth under 25% across a soak). Change them there, in review.
 - In a soak, container memory that keeps rising, or connections that keep growing in
   `pg_stat_activity`, is a leak; the summary flags memory growth.
 - Compare runs only on the same snapshot, settings and host load, as the query review does.
+
+## Side tools (`tools/`)
+
+For a repeatable recorded pass (no host paths; each takes the `--fresh` name and an output
+directory):
+
+| Tool | What |
+|---|---|
+| `chain.sh FRESH OUT "NAME\|probe_s\|run.sh args"...` | runs profiles back to back with the probe beside each, `uptime` before and after |
+| `run_profile.sh FRESH OUT NAME args...` | one run, plus `pg_stat_statements` top 40 and the backend log of the run window |
+| `pg_probe.sh FRESH OUT.csv SECONDS` | idle-in-transaction and long-active rows with the client address |
+| `report_table.py RUN...` | one markdown block per run (`BACKEND_IP=<api ip>` attributes the probe rows to the API) |
+| `ramp_stages.py RUN` | per held user level: req/s, error share, p50/p95 |
+| `access_stats.py RUN` | server-side time per route from the backend's access log |
+| `build_snapshot.sh FRESH OUT.dump [--from-snapshot OLD.dump]` | seed or upgrade, `ANALYZE`, `pg_dump`, sha256 |

@@ -122,6 +122,7 @@ const sidebars: SidebarsConfig = {
         'operations/upgrading-to-0-7-0',
         'operations/monitoring',
         'operations/performance-tuning',
+        'operations/scaling-and-sizing',
         'operations/prompt-engineering',
         'operations/security-hardening',
         'operations/audit-integrity',

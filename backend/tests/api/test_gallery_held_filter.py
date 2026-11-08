@@ -224,7 +224,9 @@ def _statements_during(gov, fn) -> list[str]:
     engine = gov.db.connection().engine
 
     def _record(conn, cursor, statement, parameters, context, executemany):
-        seen.append(statement)
+        # The harness restarts its SAVEPOINT after the first commit; that is not app work.
+        if "SAVEPOINT" not in statement:
+            seen.append(statement)
 
     event.listen(engine, "before_cursor_execute", _record)
     try:

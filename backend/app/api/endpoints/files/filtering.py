@@ -24,8 +24,10 @@ from app.models.tag import Tag
 from app.models.user import User
 from app.services.file_availability import available_pred
 from app.services.file_availability import unavailable_list_exempt
+from app.services.file_owner_queries import distinct_owner_ids
 from app.services.hidden_media_service import hidden_mode_pred
-from app.services.hold_guard import held_pred
+from app.services.hold_guard import held_count_in
+from app.services.hold_guard import held_file_ids
 from app.services.hold_guard import not_held_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.search.availability_field import exclude_unavailable_clause
@@ -124,12 +126,11 @@ def hidden_speaker_name_clause(
     if not speaker:
         return None
     from app.services.privacy.redact_view import PrivacyView
-    from app.services.privacy.redact_view import machine_identity_clauses
+    from app.services.privacy.redact_view import name_hidden_clause_for_names
 
-    name_hidden, _link_hidden = machine_identity_clauses(
-        PrivacyView(db), query.with_entities(MediaFile.id).order_by(None)
+    return name_hidden_clause_for_names(
+        PrivacyView(db), query.with_entities(MediaFile.id).order_by(None), speaker
     )
-    return name_hidden
 
 
 def apply_speaker_filter(
@@ -469,7 +470,7 @@ def apply_hold_filter(query: Query, held: bool | None) -> Query:
     """
     if held is None:
         return query
-    return query.filter(held_pred() if held else not_held_pred())
+    return query.filter(MediaFile.id.in_(held_file_ids()) if held else not_held_pred())
 
 
 def get_accessible_owners(
@@ -531,14 +532,14 @@ def get_accessible_owners(
         )
         file_pred = MediaFile.id.in_(select(accessible_sq))
 
+    # The distinct owner ids first, then the users: joining every accessible file to ``user``
+    # and de-duplicating the joined rows sorted all of them (#1337 G11).
+    owner_ids = distinct_owner_ids(
+        sa.and_(file_pred, available_pred(include_quarantined=unavailable_list_exempt(bypass)))
+    )
     return (
         db.query(User)
-        .join(MediaFile, MediaFile.user_id == User.id)
-        .filter(
-            file_pred,
-            available_pred(include_quarantined=unavailable_list_exempt(bypass)),
-        )
-        .distinct()
+        .filter(User.id.in_(owner_ids))
         .order_by(User.full_name, User.email)
         .limit(OWNER_FACET_LIMIT)
         .all()
@@ -707,8 +708,9 @@ def get_metadata_filters(
             func.max(cast(height_text, Integer)),
             func.min(MediaFile.file_size),
             func.max(MediaFile.file_size),
-            # The computed "Legal hold" tag's count, over the same scoped set (no extra scan).
-            func.count(MediaFile.id).filter(held_pred()),
+            # The computed "Legal hold" tag's count over the same scoped set. An uncorrelated
+            # semi-join, not an EXISTS inside the aggregate (a per-row SubPlan, #1337 G8).
+            held_count_in(file_filter),
         )
         .filter(file_filter)
         .first()

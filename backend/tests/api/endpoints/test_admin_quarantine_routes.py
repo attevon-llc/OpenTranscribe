@@ -276,3 +276,22 @@ def test_include_legal_holds_does_not_drop_still_quarantined_files(
     assert response.status_code == status.HTTP_200_OK
     uuids = [f["uuid"] for f in response.json()["files"]]
     assert str(quarantined_file.uuid) in uuids
+
+
+def test_a_short_quarantine_page_reports_its_total_without_a_count_statement(
+    client, admin_token_headers, quarantined_file, db_session
+):
+    """#1337: a short page is the whole list from its offset, so the count is skipped; a full
+    page (``limit=1``) still counts, and both agree on the total."""
+    from tests.query_budget import count_statements
+
+    url = "/api/admin/files/quarantined"
+    with count_statements(db_session.connection()) as short_log:
+        short = client.get(url, params={"limit": 1000}, headers=admin_token_headers).json()
+    with count_statements(db_session.connection()) as full_log:
+        full = client.get(url, params={"limit": 1}, headers=admin_token_headers).json()
+
+    assert short["total"] == len(short["files"]) >= 1
+    assert short_log.matching(r"count\(media_file\.id\)") == [], short_log.describe()
+    assert full_log.matching(r"count\(media_file\.id\)"), "control: a full page must count"
+    assert full["total"] == short["total"]

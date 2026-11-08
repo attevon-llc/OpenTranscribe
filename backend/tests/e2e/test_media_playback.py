@@ -543,8 +543,23 @@ class TestPlayerLanguageAndAccessibility:
             ignore_https_errors=True,
         )
         page = context.new_page()
+        # A raw context has none of the browser_page fixture's error capture, and a render
+        # failure here shows up only as "container never visible" (the SvelteKit 500 page).
+        thrown: list[str] = []
+        page.on("pageerror", lambda exc: thrown.append(f"pageerror: {exc}"))
+        page.on(
+            "console",
+            lambda msg: (
+                thrown.append(f"console.error: {msg.text}") if msg.type == "error" else None
+            ),
+        )
         try:
-            player = _open_file(page, base_url, owned_video["uuid"])
+            try:
+                player = _open_file(page, base_url, owned_video["uuid"])
+            except AssertionError as exc:
+                raise AssertionError(
+                    f"{exc}\nbrowser errors on the phone viewport: {thrown}"
+                ) from exc
             expect(player.control("fullscreen").first).to_be_visible()
             player.control("play").last.tap()
             player.wait_for("!m.paused", timeout=20_000)

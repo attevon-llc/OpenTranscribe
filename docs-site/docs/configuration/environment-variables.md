@@ -1349,8 +1349,9 @@ actually needs.
 | `REDACTION_WORKER_POOL` | `threads` | Celery pool for the redaction worker |
 | `NLP_CONCURRENCY` | 4 | summarization, speaker ID, topic extraction |
 | `NLP_MAX_TASKS` | 50 | restart the NLP worker after N tasks |
-| `WORKER_DB_POOL_SIZE` | 2 | worker SQLAlchemy pool (workers fork their own engines) |
-| `WORKER_DB_MAX_OVERFLOW` | 3 | worker pool overflow |
+| `WORKER_DB_POOL_SIZE` | 2 | SQLAlchemy pool of each worker PROCESS (a prefork worker's every child has its own) |
+| `WORKER_DB_MAX_OVERFLOW` | 0 | pool overflow of each prefork worker process and of beat |
+| `THREADED_WORKER_DB_MAX_OVERFLOW` | 3 | pool overflow of the threads-pool workers (GPU workers, redaction), whose task threads share one pool |
 
 GPU worker settings are documented separately under **GPU Configuration** above —
 note in particular that `GPU_MAX_TASKS` is **ignored** on the default `threads`

@@ -33,7 +33,7 @@ Line references are to the tree at the commit that adds this file.
 | F6 | WebSocket fan-out iterated live collections across awaits: lost notifications for everyone | Medium | **Fixed** (C5) |
 | F7 | WebSocket handshake authenticated on the event loop | Medium | **Fixed** (C4) |
 | F8 | `/llm/status` (polled by every tab) and `/files/{uuid}/summary-status` held the request transaction across the provider health check | Medium | **Fixed** (C2); caching the result is R5 |
-| F9 | Connection budget is per PROCESS, documented as per container; defaults can reach 270 against `max_connections=200` | Medium | Recommendation R6 |
+| F9 | Connection budget is per PROCESS, documented as per container; defaults can reach 270 against `max_connections=200` | Medium | **Fixed** on `v070/concurrency2`: prefork pools 2 + 0, threads pools 2 + 3, worst case about 165; `tests/unit/test_db_connection_budget.py` (old defaults: 280, 285 with the gpu-scale worker) |
 | F10 | A prefork child's `engine.dispose()` closed the parent's connections | Medium | **Fixed** (C1) |
 | F11 | WebSocket fan-out is sequential with no send timeout (one slow client delays the subscriber for all) | Medium | Recommendation R7 |
 | F12 | Per-IP rate limits on page-load endpoints throttle many users behind one NAT or an untrusted proxy | Medium (config) | Recommendation R8 (documentation) |

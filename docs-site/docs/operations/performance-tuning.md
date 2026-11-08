@@ -206,6 +206,20 @@ OpenTranscribe configures PostgreSQL with tuning parameters optimized for transc
 | `PG_EFFECTIVE_IO_CONCURRENCY` | 200 | Concurrent I/O operations | Already tuned for SSD; use 2 for spinning disks |
 | `PG_MAX_CONNECTIONS` | 200 | Maximum client connections | Increase if connection errors appear |
 
+### Connection budget
+
+Every pool belongs to one process, not one container. The API is one process with a pool of
+`DB_POOL_SIZE + DB_MAX_OVERFLOW` (60). A prefork Celery worker (download, cpu, cloud-asr, nlp,
+embedding) is a main process plus one child per `--concurrency`, and each builds its own pool of
+`WORKER_DB_POOL_SIZE + WORKER_DB_MAX_OVERFLOW` (2 + 0). The threads-pool workers (GPU, redaction)
+are one process whose task threads share `WORKER_DB_POOL_SIZE + THREADED_WORKER_DB_MAX_OVERFLOW`
+(2 + 3). The worst case is the sum over services of pool capacity times processes, about 165
+with the defaults, and it must stay below `PG_MAX_CONNECTIONS` minus the 3 slots PostgreSQL
+reserves for superusers (197 of 200). `backend/tests/unit/test_db_connection_budget.py`
+recomputes it from `docker-compose.yml`. If you raise a worker's concurrency (for example
+`CLOUD_ASR_CONCURRENCY`) or a pool, raise `PG_MAX_CONNECTIONS` with it; each extra prefork child
+costs two connections.
+
 Additional hardcoded tuning (in `docker-compose.yml`):
 
 | Parameter | Value | Purpose |

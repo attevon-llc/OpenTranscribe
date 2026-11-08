@@ -95,6 +95,8 @@ docker-compose.scratch-tmpfs.yml	optional
 # overlay is the only thing there is to run.
 docker-compose.lite.yml	optional
 docker-compose.db-roles.yml	optional
+# Public read-only demo (issue #628): selected by get_compose_files() when DEMO_MODE=true.
+docker-compose.demo.yml	optional
 
 # --- Reverse proxy -------------------------------------------------------------
 nginx/site.conf.template

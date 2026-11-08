@@ -56,6 +56,7 @@ LITE = "docker-compose.lite.yml"
 DB_ROLES = "docker-compose.db-roles.yml"
 
 DIAR_GPU = "docker-compose.diar-native-gpu.yml"
+DEMO = "docker-compose.demo.yml"
 ALL_OVERLAYS = (
     BASE,
     PROD,
@@ -68,6 +69,7 @@ ALL_OVERLAYS = (
     GPU_SPLIT,
     LITE,
     DB_ROLES,
+    DEMO,
 )
 
 

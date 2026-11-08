@@ -20,10 +20,10 @@
  *   window rather than closing it; every browser the app supports has Web Locks.
  */
 
-export const REFRESH_LOCK_NAME = 'opentr-auth-refresh';
-export const REFRESH_CHANNEL_NAME = 'opentr-auth-refresh';
+const REFRESH_LOCK_NAME = 'opentr-auth-refresh';
+const REFRESH_CHANNEL_NAME = 'opentr-auth-refresh';
 /** Upper bound of the fallback's random delay before refreshing, in ms. */
-export const FALLBACK_JITTER_MS = 250;
+const FALLBACK_JITTER_MS = 250;
 
 /** The refresh lock, adapted from `navigator.locks` (lets tests supply a shared fake). */
 export interface LockLike {

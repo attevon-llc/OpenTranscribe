@@ -157,21 +157,15 @@ def test_set_setting_busts_cache(active_cache, monkeypatch):
     assert "engine.x" in active_cache
 
     # Drive set_setting's invalidation without touching the DB.
-    class _FakeQuery:
-        def filter(self, *a, **k):
-            return self
-
-        def first(self):
+    class _FakeResult:
+        def scalar_one(self):
             return type("S", (), {"value": "new"})()
 
     class _FakeDB:
-        def query(self, *a, **k):
-            return _FakeQuery()
+        def execute(self, *a, **k):
+            return _FakeResult()
 
         def commit(self):
-            pass
-
-        def refresh(self, obj):
             pass
 
     # _FakeDB is a structural spy standing in for a Session; cast at the

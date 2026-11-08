@@ -47,6 +47,7 @@ from starlette.types import Send
 
 from app.core.config import settings
 from app.core.constants import MAX_AVATAR_SIZE
+from app.core.exceptions import DomainError
 
 #: Allowance on top of a file ceiling for the multipart envelope: boundaries, part
 #: headers and the small form fields sent alongside the file.
@@ -117,7 +118,7 @@ class _RouteSpecificTooLarge:
         async def translated_receive() -> Message:
             try:
                 return await receive()
-            except HTTPException as exc:
+            except (HTTPException, DomainError) as exc:
                 if exc.status_code == 413:
                     raise _BodyTooLarge(self.detail) from exc
                 raise

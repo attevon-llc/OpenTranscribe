@@ -352,7 +352,7 @@ OFFLOADED_ASYNC_HANDLERS = [
     # for the provider config, and a Redis state write — would otherwise stall every
     # concurrent request rather than one threadpool worker, which is strictly worse
     # than the sync handler it replaced.
-    (auth_oidc, "oidc_login", ("OIDCConfig.from_db", "store_state")),
+    (auth_oidc, "oidc_login", ("_oidc_config_released", "store_state")),
 ]
 
 

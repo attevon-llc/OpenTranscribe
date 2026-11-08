@@ -473,7 +473,8 @@ def test_chat_completion_stream_reports_connection_error_in_band():
     events = _stream(service)
 
     assert events[0].type == "error"
-    assert "refused" in events[0].message
+    assert "ConnectError" in events[0].message
+    assert "refused" not in events[0].message  # exception text stays in the server log
 
 
 def test_chat_completion_stream_honors_cancel_event():

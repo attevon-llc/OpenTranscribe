@@ -211,7 +211,9 @@ class LLMHttpStreamMixin(LLMHost):
                         return
             except httpx.HTTPError as e:
                 logger.error(f"LLM stream interrupted for {provider}: {type(e).__name__}: {e}")
-                yield LLMStreamEvent(type="error", message=f"Stream interrupted: {e}")
+                yield LLMStreamEvent(
+                    type="error", message=f"Stream interrupted: {type(e).__name__}"
+                )
             finally:
                 await response.aclose()
 
@@ -238,7 +240,8 @@ async def _open_stream(
             response = await client.send(request, stream=True)
         except httpx.TransportError as e:
             if last or _cancelled(cancel_event):
-                return LLMStreamEvent(type="error", message=f"Connection error: {e}")
+                logger.error(f"LLM stream connection failed: {type(e).__name__}: {e}")
+                return LLMStreamEvent(type="error", message=f"Connection error: {type(e).__name__}")
             await _sleep(retry_delay(attempt, None))
             continue
         if (

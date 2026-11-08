@@ -8,9 +8,11 @@ sorted set shared by every API process, keyed by the same slot id as the user's 
 
 from __future__ import annotations
 
+import time
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.services.chat import limits
@@ -28,30 +30,48 @@ def _redis(**behaviour) -> MagicMock:
     return client
 
 
-def test_a_slot_below_the_cap_is_recorded_under_the_shared_key():
-    client = _redis(zcard=63)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        assert limits.acquire_global_stream_slot("slot-1", max_concurrent=64) is True
-
-    key, mapping = client.zadd.call_args.args
-    assert key == GLOBAL_KEY
-    assert list(mapping) == ["slot-1"]
-    client.expire.assert_called_once()
+@pytest.fixture
+def real_redis(local_model_redis):
+    local_model_redis.flushdb()
+    with patch("app.core.redis.get_request_redis", return_value=local_model_redis):
+        yield local_model_redis
+    local_model_redis.flushdb()
 
 
-def test_a_slot_at_the_cap_is_refused_and_not_recorded():
-    client = _redis(zcard=64)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        assert limits.acquire_global_stream_slot("slot-1", max_concurrent=64) is False
-    client.zadd.assert_not_called()
+@pytest.mark.xdist_group("local_model_redis")
+def test_a_slot_below_the_cap_is_recorded_under_the_shared_key(real_redis):
+    for i in range(63):
+        real_redis.zadd(GLOBAL_KEY, {f"other-{i}": time.time()})
+
+    assert limits.acquire_global_stream_slot("slot-1", max_concurrent=64) is True
+
+    assert real_redis.zscore(GLOBAL_KEY, "slot-1") is not None
+    assert real_redis.zcard(GLOBAL_KEY) == 64
+    assert real_redis.ttl(GLOBAL_KEY) > 0
 
 
-def test_stale_entries_are_pruned_before_counting():
-    client = _redis(zcard=0)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        limits.acquire_global_stream_slot("slot-1", max_concurrent=64)
-    key, low, _high = client.zremrangebyscore.call_args.args
-    assert (key, low) == (GLOBAL_KEY, "-inf")
+@pytest.mark.xdist_group("local_model_redis")
+def test_a_slot_at_the_cap_is_refused_and_not_recorded(real_redis):
+    for i in range(64):
+        real_redis.zadd(GLOBAL_KEY, {f"other-{i}": time.time()})
+
+    assert limits.acquire_global_stream_slot("slot-1", max_concurrent=64) is False
+
+    assert real_redis.zscore(GLOBAL_KEY, "slot-1") is None
+    assert real_redis.zcard(GLOBAL_KEY) == 64
+
+
+@pytest.mark.xdist_group("local_model_redis")
+def test_stale_entries_are_pruned_before_counting(real_redis):
+    stale = time.time() - 10_000
+    for i in range(64):
+        real_redis.zadd(GLOBAL_KEY, {f"dead-{i}": stale})
+
+    assert limits.acquire_global_stream_slot("slot-1", max_concurrent=64) is True
+
+    assert real_redis.zrange(GLOBAL_KEY, 0, -1) == ["slot-1"] or real_redis.zrange(
+        GLOBAL_KEY, 0, -1
+    ) == [b"slot-1"]
 
 
 def test_a_zero_cap_means_no_cap_and_no_redis_call():

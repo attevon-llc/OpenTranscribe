@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -112,7 +113,9 @@ def test_a_cached_failure_reaches_a_subscriber_that_connects_late(monkeypatch) -
     owner = User(id=1278)
     job = subtitles.new_bulk_job_id(owner.id)
 
-    frame = asyncio.run(_first_frame(subtitles.bulk_export_stream(job=job, current_user=owner)))
+    frame = asyncio.run(
+        _first_frame(subtitles.bulk_export_stream(job=job, db=MagicMock(), current_user=owner))
+    )
 
     assert frame.startswith("event: error\n"), frame
     assert _data(frame)["reason"] == "redaction_pending"

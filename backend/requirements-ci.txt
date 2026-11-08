@@ -20,21 +20,21 @@
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
 fastapi==0.136.3
 uvicorn[standard]==0.54.0
-websockets==17.3
-sqlalchemy==2.0.53
+websockets==17.4
+sqlalchemy==2.0.57
 alembic==1.20.1
-pydantic==2.14.1
-pydantic-settings==2.16.1
+pydantic==2.14.3
+pydantic-settings==2.16.2
 # joserfc replaces python-jose everywhere (#33, #34) — the OIDC ID-token
 # verifier (claims.py) and the app-wide JWT spine (core/security.py,
 # auth/token_service.py, and every endpoint that decodes a token) all use it.
 # Not the authlib package itself — oidc/flow.py stays hand-rolled httpx; see
 # its module docstring for why the Authlib client wasn't worth adopting there.
-joserfc==1.7.7
+joserfc==1.8.0
 # SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml and not
 # hand-rolled XML parsing.
 python3-saml==1.16.0
-python-multipart==0.0.32
+python-multipart==0.0.33
 # DOCX transcript export (issue #1278, services/transcript_document/docx_renderer.py).
 # MIT. Pulls lxml, pinned here because this file does not otherwise declare it.
 python-docx==1.2.0
@@ -43,9 +43,9 @@ python-docx==1.2.0
 # or patched) and its licence ships in the image. uharfbuzz (Apache-2.0, bundles HarfBuzz) does
 # the shaping for Arabic and Indic text. fonttools (MIT) is imported directly for the CJK
 # collection index; fpdf2 requires it too.
-fpdf2==2.8.9
+fpdf2==2.9.0
 uharfbuzz==0.57.0
-fonttools==4.67.0
+fonttools==4.68.0
 lxml==6.1.3
 passlib[bcrypt]==1.7.4
 # See requirements.txt for why this can't go to bcrypt 5.0.0 (passlib incompatibility).
@@ -55,7 +55,7 @@ email-validator==2.3.0
 # Observability (Prometheus metrics + structured JSON logs) — CI imports app.main
 prometheus-client==0.26.0
 python-json-logger==4.2.0
-cachetools==7.2.4
+cachetools==7.2.8
 
 # Asynchronous Tasks
 celery==5.6.3
@@ -91,26 +91,26 @@ numpy==2.4.6
 # the same green-vacuum that let the pandas 3.0 breakage reach production in the first place.
 # Pinned to the version the image resolves so CI reproduces the real condition, not a
 # friendlier one.
-pandas==3.1.0
+pandas==3.1.1
 # See requirements.txt for why 2.11.0 (not a newer torch) is the pinned pair.
 torch==2.11.0
 torchaudio==2.11.0
-ctranslate2==4.8.2
+ctranslate2==4.8.5
 faster-whisper==1.2.1
 # See requirements.txt for why transformers 5.10+ and huggingface-hub 1.x (issue #1002).
-transformers==5.10.4
-huggingface-hub==1.17.0
-onnx==1.22.0
-onnxruntime==1.30.0
+transformers==5.22.1
+huggingface-hub==1.33.0
+onnx==1.23.2
+onnxruntime==1.31.1
 omegaconf==2.4.0
 
 # Supporting libraries
 ffmpeg-python==0.2.0
 global-gender-predictor==0.0.5
-sentencepiece==0.2.2
+sentencepiece==0.2.3
 psutil==7.2.2
 pyexiftool==0.5.6
-yt-dlp[default]==2026.10.21
+yt-dlp[default]==2026.10.26
 
 # Semantic search and NLP
 sentence-transformers==5.7.0
@@ -119,23 +119,23 @@ nltk==3.10.4  # see requirements.txt — pathsec hardening is required, not avoi
 # Cloud ASR provider SDKs (lazily imported)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see requirements.txt for the full
 # explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.9.0
-assemblyai==1.5.4
-google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.2
-speechmatics-batch==0.5.0
-boto3==1.43.94
-openai==3.14.0
+deepgram-sdk==7.17.0
+assemblyai==1.8.2
+google-cloud-speech==2.41.0
+azure-cognitiveservices-speech==1.53.0
+speechmatics-batch==1.1.0
+boto3==1.43.124
+openai==3.46.0
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)
-json-repair==0.64.2
+json-repair==0.64.5
 
 # Diarization metrics (cpWER) — exercised by tests/unit/test_diarization_metrics.py
 meeteval==0.4.3
 
 # Content redaction (wordlist/config tests run in the default suite;
 # model-weight tests carry @pytest.mark.models and skip in CI)
-presidio-analyzer==2.2.364
+presidio-analyzer==2.2.366
 # anonymizer capped at 2.2.362 -- see requirements.txt for the cryptography
 # conflict this avoids (verified ResolutionImpossible).
 presidio-anonymizer==2.2.362
@@ -147,19 +147,19 @@ presidio-anonymizer==2.2.362
 # Transitive via spacy/thinc/blis, so it is pinned here in its own right. Lift once a preshed
 # release loads spaCy models again (re-test with spacy.load("en_core_web_sm")).
 preshed==3.0.13
-gliner==0.2.29
+gliner==0.2.30
 detoxify==0.5.4
 
 # Watch sources
-watchdog==6.0.0
+watchdog==7.1.0
 smbprotocol==1.17.0
-msal==1.38.0
+msal==1.39.0
 
 # Test tooling (mirrors the test section of requirements-dev.txt)
-pytest==9.1.1
+pytest==9.2.0
 # Reads the text back out of generated PDFs (BSD-3-Clause); mirrors requirements-test.txt.
-pypdf==6.21.2
-pytest-asyncio==1.4.0
+pypdf==6.21.4
+pytest-asyncio==1.4.1.post1
 pytest-cov==7.1.0
 pytest-xdist==3.8.0
 pytest-timeout==2.4.0  # pyproject addopts passes --timeout; absence is a collection error
@@ -171,59 +171,59 @@ pytest-base-url==2.1.0  # unit/test_e2e_base_url_precedence.py proves the REAL p
 # one the prod image ships. Versions-move-forward: change them in requirements.txt FIRST and copy
 # here. tests/unit/test_requirements_pinned.py and scripts/check-requirements-resolve.py both
 # fail on drift. typer is capped below 0.26 by huggingface-hub 1.17 (see requirements.txt).
-starlette==1.9.0
-anyio==4.15.1
+starlette==1.10.0
+anyio==4.16.0
 regex==2026.9.29
 fsspec==2026.9.0
-filelock==4.2.4
-protobuf==7.36.1
-typer==0.25.1
+filelock==4.2.9
+protobuf==7.36.2
+typer==0.27.3
 tokenizers==0.22.2
-botocore==1.43.94
-google-api-core==2.37.0
-google-auth==2.58.0
-googleapis-common-protos==1.75.3
-grpcio==1.84.0
-grpcio-status==1.84.0
-httpcore2==2.13.0
-httpx2==2.13.0
+botocore==1.43.124
+google-api-core==2.43.2
+google-auth==2.62.1
+googleapis-common-protos==1.76.0
+grpcio==1.85.1
+grpcio-status==1.85.1
+httpcore2==2.16.0
+httpx2==2.16.0
 multidict==6.9.1
-narwhals==2.27.1  # transitive (plotly/altair family); pinned so the variant resolves the same as requirements.txt
-proto-plus==1.28.4
-wcwidth==0.9.3
-av==18.1.0
-phonenumbers==9.0.41
-spacy==3.8.16
+narwhals==2.28.0  # transitive (plotly/altair family); pinned so the variant resolves the same as requirements.txt
+proto-plus==1.29.0
+wcwidth==0.9.4
+av==19.0.2
+phonenumbers==9.0.42
+spacy==3.8.18
 
 # Second transitive drift sweep (2026-10-28): exactly what requirements.txt pins, for the
 # packages this variant resolves (see the matching block there for the reason each exists).
-billiard==4.3.1  # via celery
+billiard==4.3.2  # via celery
 blis==1.3.4  # via thinc
 brotli==1.2.1  # via yt-dlp[default]
 charset-normalizer==3.5.2  # via requests
 click-repl==0.4.1  # via celery
 confection==1.3.4  # via spacy, thinc, weasel
 cymem==2.0.16  # via preshed, spacy, thinc
-deprecated==3.0.0  # via limits, opentelemetry-api
-dnspython==2.9.0  # via email-validator
-hf-xet==1.7.0  # via huggingface-hub
+deprecated==3.0.1  # via limits, opentelemetry-api
+dnspython==2.9.2  # via email-validator
+hf-xet==1.8.0  # via huggingface-hub
 httptools==0.9.0  # via uvicorn[standard]
 jiter==0.18.0  # via openai
 mako==1.4.3  # via alembic
 markupsafe==3.0.4  # via jinja2, mako
 murmurhash==1.0.16  # via preshed, spacy, thinc
 networkx==3.7  # via torch
-opentelemetry-api==1.45.1  # via opentelemetry-sdk, google-api-core, pyannote.audio
+opentelemetry-api==1.45.2  # via opentelemetry-sdk, google-api-core, pyannote.audio
 pyasn1==0.6.5  # via ldap3, pyasn1-modules
 pycparser==3.12  # via cffi
-pycryptodome==4.2.0  # via minio
+pycryptodome==4.3.0  # via minio
 pycryptodomex==3.24.1  # via yt-dlp[default]
 pyjwt==2.15.1  # via msal
-pytz==2026.5  # via flower
+pytz==2026.6  # via flower
 s3transfer==0.19.3  # via boto3
-smart-open==9.0.0  # via weasel
-srsly==2.5.5  # via spacy, thinc, weasel
-thinc==8.3.14  # via spacy
+smart-open==9.0.2  # via weasel
+srsly==3.0.1  # via spacy, thinc, weasel
+thinc==10.0.0  # via spacy
 tldextract==5.4.0  # via presidio-analyzer
 tornado==6.6  # via flower
 truststore==0.10.5  # via httpx2, httpcore2
@@ -232,6 +232,6 @@ tzlocal==5.4.5  # via celery
 uvloop==0.23.0  # via uvicorn[standard]
 watchfiles==1.3.0  # via uvicorn[standard]
 weasel==1.0.1  # via spacy
-wrapt==2.5.1  # via deprecated, smart-open; pinned to prod's version (2.5.2 drifted the lite/CI resolves, 2026-11-01)
-amqp==5.4.1  # via kombu; pinned to prod's version (5.4.2 drifted the CI resolve, 2026-11-03)
-cython==3.3.0  # via meeteval; pinned to prod's version (3.3.1 drifted the CI resolve, 2026-11-03)
+wrapt==2.5.2  # via deprecated, smart-open; pinned to prod's version (2.5.2 drifted the lite/CI resolves, 2026-11-01)
+amqp==5.4.2  # via kombu; pinned to prod's version (5.4.2 drifted the CI resolve, 2026-11-03)
+cython==3.3.1  # via meeteval; pinned to prod's version (3.3.1 drifted the CI resolve, 2026-11-03)

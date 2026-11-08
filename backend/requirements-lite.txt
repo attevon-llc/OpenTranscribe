@@ -7,16 +7,16 @@ mmh3==5.3.1  # via imohash — see requirements.txt for the version-drift note (
 # scope["route"].path — breaks route-templated metrics labels (see requirements.txt)
 fastapi==0.136.3
 uvicorn[standard]==0.54.0
-websockets==17.3
-sqlalchemy==2.0.53
+websockets==17.4
+sqlalchemy==2.0.57
 alembic==1.20.1
-pydantic==2.14.1
-pydantic-settings==2.16.1
+pydantic==2.14.3
+pydantic-settings==2.16.2
 # joserfc — see requirements.txt for why (#33, #34: replaces python-jose everywhere)
-joserfc==1.7.7
+joserfc==1.8.0
 # SAML 2.0 SP support (#35) — see requirements.txt for why python3-saml.
 python3-saml==1.16.0
-python-multipart==0.0.32
+python-multipart==0.0.33
 # DOCX transcript export (issue #1278, services/transcript_document/docx_renderer.py).
 # MIT. Pulls lxml, pinned here because this file does not otherwise declare it.
 python-docx==1.2.0
@@ -25,16 +25,16 @@ python-docx==1.2.0
 # or patched) and its licence ships in the image. uharfbuzz (Apache-2.0, bundles HarfBuzz) does
 # the shaping for Arabic and Indic text. fonttools (MIT) is imported directly for the CJK
 # collection index; fpdf2 requires it too.
-fpdf2==2.8.9
+fpdf2==2.9.0
 uharfbuzz==0.57.0
-fonttools==4.67.0
+fonttools==4.68.0
 lxml==6.1.3
 passlib[bcrypt]==1.7.4
 # See requirements.txt for why this can't go to bcrypt 5.0.0 (passlib incompatibility).
 bcrypt==4.3.0
 email-validator==2.3.0
 # OIDC JWKS caching (app/auth/oidc/discovery.py) — see requirements.txt for why this version.
-cachetools==7.2.4
+cachetools==7.2.8
 # Sentence tokenization for hybrid search (app/services/search/hybrid_search_service.py) —
 # see requirements.txt for the pathsec-hardening pin rationale (issue #491).
 nltk==3.10.4
@@ -132,9 +132,9 @@ torch==2.11.0+cpu
 # falsifiable check. See native_provision.py.
 torchaudio==2.11.0+cpu
 pyannote.audio==4.0.7
-onnx==1.22.0
+onnx==1.23.2
 onnxscript==0.7.2
-onnxslim==0.1.96
+onnxslim==0.1.99
 onnxconverter-common==1.16.0
 # Plain CPU onnxruntime, NOT the -gpu wheel requirements.txt selects for linux/x86_64.
 # Both install into the same `onnxruntime/` import namespace and whichever lands last
@@ -143,15 +143,15 @@ onnxconverter-common==1.16.0
 # fold step and the gender export), neither guarded by try/except, and
 # native_provision.py passes no --skip-gender, so its absence is a hard failure of
 # provisioning rather than a degraded export.
-onnxruntime==1.30.0
+onnxruntime==1.31.1
 
 # Supporting libraries
 omegaconf==2.4.0
 ffmpeg-python==0.2.0
-sentencepiece==0.2.2
+sentencepiece==0.2.3
 psutil==7.2.2
 pyexiftool==0.5.6
-yt-dlp==2026.10.21
+yt-dlp==2026.10.26
 
 # Semantic search and NLP
 # transformers / huggingface-hub / tokenizers are transitive here (sentence-transformers,
@@ -160,8 +160,8 @@ yt-dlp==2026.10.21
 # model downloader has been run against, while the shipped lite image still held 4.57.6.
 # Pinned to the versions requirements.txt validates, including why hub stops at 1.17
 # (issue #1002, #492).
-transformers==5.10.4
-huggingface-hub==1.17.0
+transformers==5.22.1
+huggingface-hub==1.33.0
 tokenizers==0.22.2
 sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2)
 # Note: nltk is installed as transitive dependency from transformers
@@ -170,21 +170,21 @@ sentence-transformers==5.7.0  # For semantic search embeddings (all-MiniLM-L6-v2
 # Cloud ASR provider SDKs (lazily imported — only needed for configured provider)
 # deepgram-sdk<7.6.0 breaks under websockets>=15 — see backend/requirements.txt for the
 # full explanation. Caught by tests/unit/test_provider_sdk_compat.py.
-deepgram-sdk==7.9.0
-assemblyai==1.5.4
-google-cloud-speech==2.40.0
-azure-cognitiveservices-speech==1.51.2
+deepgram-sdk==7.17.0
+assemblyai==1.8.2
+google-cloud-speech==2.41.0
+azure-cognitiveservices-speech==1.53.0
 # speechmatics-python is deprecated and drops speaker labels — the app uses
 # the async speechmatics-batch client (matches requirements.txt)
-speechmatics-batch==0.5.0
+speechmatics-batch==1.1.0
 # boto3 is NOT a transitive dep of minio-py — must be listed explicitly (Amazon Transcribe)
-boto3==1.43.94
+boto3==1.43.124
 # openai must be listed explicitly — no package in this requirements pulls it in
-openai==3.14.0
+openai==3.46.0
 # requests is pulled in transitively by many packages above, but list explicitly for clarity
 requests==2.34.2
 # See requirements.txt for why — LLM summary JSON repair (llm_service.py)
-json-repair==0.64.2
+json-repair==0.64.5
 
 # Transitive packages pinned to EXACTLY what requirements.txt pins. This file did not pin them,
 # so `pip install -r requirements-lite.txt` resolved the newest release of each (starlette 1.10.0 against the
@@ -192,63 +192,63 @@ json-repair==0.64.2
 # one the prod image ships. Versions-move-forward: change them in requirements.txt FIRST and copy
 # here. tests/unit/test_requirements_pinned.py and scripts/check-requirements-resolve.py both
 # fail on drift. typer is capped below 0.26 by huggingface-hub 1.17 (see requirements.txt).
-starlette==1.9.0
-anyio==4.15.1
+starlette==1.10.0
+anyio==4.16.0
 regex==2026.9.29
 fsspec==2026.9.0
-filelock==4.2.4
-protobuf==7.36.1
-typer==0.25.1
-botocore==1.43.94
-google-api-core==2.37.0
-google-auth==2.58.0
-googleapis-common-protos==1.75.3
-grpcio==1.84.0
-grpcio-status==1.84.0
-httpcore2==2.13.0
-httpx2==2.13.0
+filelock==4.2.9
+protobuf==7.36.2
+typer==0.27.3
+botocore==1.43.124
+google-api-core==2.43.2
+google-auth==2.62.1
+googleapis-common-protos==1.76.0
+grpcio==1.85.1
+grpcio-status==1.85.1
+httpcore2==2.16.0
+httpx2==2.16.0
 multidict==6.9.1
-narwhals==2.27.1  # transitive (plotly/altair family); pinned so the variant resolves the same as requirements.txt
-proto-plus==1.28.4
-wcwidth==0.9.3
+narwhals==2.28.0  # transitive (plotly/altair family); pinned so the variant resolves the same as requirements.txt
+proto-plus==1.29.0
+wcwidth==0.9.4
 # Tracks torch (see requirements.txt); +cpu for the same reason torch is pinned +cpu above.
 # The PyTorch CPU index publishes no +cpu torchcodec for aarch64, so the arm64 lite leg failed
 # `No matching distribution found` and could not be built; there PyPI's plain 0.11.1 is the match.
-torchcodec==0.11.1+cpu; platform_machine != "aarch64"
-torchcodec==0.11.1; platform_machine == "aarch64"
+torchcodec==0.17.0+cpu; platform_machine != "aarch64"
+torchcodec==0.17.0+cpu; platform_machine == "aarch64"
 
 # Second transitive drift sweep (2026-10-28): exactly what requirements.txt pins, for the
 # packages this variant resolves (see the matching block there for the reason each exists).
-billiard==4.3.1  # via celery
+billiard==4.3.2  # via celery
 charset-normalizer==3.5.2  # via requests
 click-repl==0.4.1  # via celery
-deprecated==3.0.0  # via limits, opentelemetry-api
-dnspython==2.9.0  # via email-validator
-hf-xet==1.7.0  # via huggingface-hub
+deprecated==3.0.1  # via limits, opentelemetry-api
+dnspython==2.9.2  # via email-validator
+hf-xet==1.8.0  # via huggingface-hub
 httptools==0.9.0  # via uvicorn[standard]
 jiter==0.18.0  # via openai
 mako==1.4.3  # via alembic
 markupsafe==3.0.4  # via jinja2, mako
 networkx==3.7  # via torch
 onnx-ir==1.1.0  # via onnxscript
-opentelemetry-api==1.45.1  # via opentelemetry-sdk, google-api-core, pyannote.audio
-opentelemetry-sdk==1.45.1  # via opentelemetry-exporter-otlp-proto-*, pyannote.audio
-opentelemetry-proto==1.45.1  # via opentelemetry-exporter-otlp-proto-*
-opentelemetry-semantic-conventions==0.66b1  # via opentelemetry-sdk
-opentelemetry-exporter-otlp==1.45.1  # via pyannote.audio
-opentelemetry-exporter-otlp-common==0.66b1  # via opentelemetry-exporter-otlp-proto-* (new in 1.45; image-only until the venv was re-resolved)
-opentelemetry-exporter-http-transport==0.66b1  # via opentelemetry-exporter-otlp-proto-http (same)
-opentelemetry-exporter-otlp-proto-common==1.45.1  # via opentelemetry-exporter-otlp-proto-grpc, -http
-opentelemetry-exporter-otlp-proto-grpc==1.45.1  # via opentelemetry-exporter-otlp
-opentelemetry-exporter-otlp-proto-http==1.45.1  # via opentelemetry-exporter-otlp
+opentelemetry-api==1.45.2  # via opentelemetry-sdk, google-api-core, pyannote.audio
+opentelemetry-sdk==1.45.2  # via opentelemetry-exporter-otlp-proto-*, pyannote.audio
+opentelemetry-proto==1.45.2  # via opentelemetry-exporter-otlp-proto-*
+opentelemetry-semantic-conventions==0.66b2  # via opentelemetry-sdk
+opentelemetry-exporter-otlp==1.45.2  # via pyannote.audio
+opentelemetry-exporter-otlp-common==0.66b2  # via opentelemetry-exporter-otlp-proto-* (new in 1.45; image-only until the venv was re-resolved)
+opentelemetry-exporter-http-transport==0.66b2  # via opentelemetry-exporter-otlp-proto-http (same)
+opentelemetry-exporter-otlp-proto-common==1.45.2  # via opentelemetry-exporter-otlp-proto-grpc, -http
+opentelemetry-exporter-otlp-proto-grpc==1.45.2  # via opentelemetry-exporter-otlp
+opentelemetry-exporter-otlp-proto-http==1.45.2  # via opentelemetry-exporter-otlp
 pyannote-core==6.1.0  # via pyannote.audio, pyannote.metrics, pyannote.pipeline
 pyannote-metrics==4.2.0  # via pyannote.audio
 pyannote-pipeline==4.1.0  # via pyannote.audio
 pyasn1==0.6.5  # via ldap3, pyasn1-modules
 pycparser==3.12  # via cffi
-pycryptodome==4.2.0  # via minio
+pycryptodome==4.3.0  # via minio
 pyparsing==3.3.3  # via matplotlib
-pytz==2026.5  # via flower
+pytz==2026.6  # via flower
 s3transfer==0.19.3  # via boto3
 tornado==6.6  # via flower
 truststore==0.10.5  # via httpx2, httpcore2
@@ -256,6 +256,6 @@ tzdata==2026.6  # via kombu
 tzlocal==5.4.5  # via celery
 uvloop==0.23.0  # via uvicorn[standard]
 watchfiles==1.3.0  # via uvicorn[standard]
-wrapt==2.5.1  # via deprecated, smart-open; pinned to prod's version (2.5.2 drifted the lite/CI resolves, 2026-11-01)
-amqp==5.4.1  # via kombu; pinned to prod's version (5.4.2 drifted the lite resolve, 2026-11-03)
-pandas==3.1.0  # via pyannote.audio; pinned to prod's version (3.1.1 drifted the lite resolve, 2026-11-04)
+wrapt==2.5.2  # via deprecated, smart-open; pinned to prod's version (2.5.2 drifted the lite/CI resolves, 2026-11-01)
+amqp==5.4.2  # via kombu; pinned to prod's version (5.4.2 drifted the lite resolve, 2026-11-03)
+pandas==3.1.1  # via pyannote.audio; pinned to prod's version (3.1.1 drifted the lite resolve, 2026-11-04)

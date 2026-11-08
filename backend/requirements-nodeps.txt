@@ -10,7 +10,7 @@
 #     Keeps our own version pins (torch, ctranslate2, transformers, ...) in requirements.txt
 #     authoritative instead of letting whisperx's own floors override them.
 #
-#   faster-whisper==1.2.1, gliner==0.2.29
+#   faster-whisper==1.2.1, gliner==0.2.30
 #     Both declare an unconditional `onnxruntime` dependency upstream (no platform marker).
 #     requirements.txt pins `onnxruntime-gpu` (with a matching `onnxruntime` CPU fallback for
 #     non-Linux/non-x86_64 only) — a normal resolve of these two packages installs plain
@@ -21,4 +21,4 @@
 #     ctranslate2, torch) are all pinned explicitly in requirements.txt already.
 whisperx==3.8.6
 faster-whisper==1.2.1
-gliner==0.2.29
+gliner==0.2.30

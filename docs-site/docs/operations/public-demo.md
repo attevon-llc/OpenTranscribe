@@ -28,7 +28,7 @@ Four independent layers, each enough to stop a change on its own:
 Every route of the application is checked against the first layer by an automated test, so a
 new feature is refused on the demo as soon as it is added.
 
-Chat is turned off on the demo: it would call a language model, which costs money and compute.
+Asking new questions in chat is turned off on the demo: it would call a language model, which costs money and compute. Instead the demo user finds a few finished conversations in the chat sidebar, generated once with a real model (see [Pre-generated chat conversations](#pre-generated-chat-conversations)).
 
 ## Set up the host
 
@@ -64,13 +64,66 @@ With `DEMO_MODE=true` in `.env`, `./opentranscribe.sh` adds `docker-compose.demo
 compose files by itself. From a repository checkout, `./opentr.sh start prod --build --demo`
 does the same (`--demo` implies `--lite`).
 
-### Behind a load balancer or CDN
+### Behind Cloudflare on AWS (demo.opentranscribe.app)
 
-The app limits requests per visitor address. Behind the bundled nginx this works out of the
-box. If something else terminates TLS in front of nginx (an AWS load balancer, CloudFront), add
-its address range to `RATE_LIMIT_TRUSTED_PROXIES` in `.env`, for example
-`127.0.0.1/32,172.16.0.0/12,10.0.0.0/16`. Never use a range that covers the whole internet:
-anyone could then pick their own address by sending an `X-Forwarded-For` header.
+The demo runs on a small AWS instance, with DNS and TLS through Cloudflare (proxied, orange
+cloud). Visitors reach Cloudflare, Cloudflare reaches nginx on the instance.
+
+1. **DNS.** In Cloudflare, add an `A` (and `AAAA` if the instance has IPv6) record for
+   `demo` pointing at the instance's Elastic IP, with the proxy status **Proxied**.
+2. **Origin certificate.** In Cloudflare, SSL/TLS, Origin Server, create an Origin CA
+   certificate for `demo.opentranscribe.app`. Save the certificate and key on the instance as
+   `nginx/ssl/server.crt` and `nginx/ssl/server.key` (key mode 600, never committed). The
+   installer picks them up and loads the nginx overlay.
+3. **SSL mode.** In Cloudflare, SSL/TLS, Overview, choose **Full (strict)**, so Cloudflare
+   validates the origin certificate instead of accepting any. (Flexible would send visitor
+   traffic to the instance in clear text.) See
+   [Encryption modes](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/) and
+   [Origin CA certificates](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/).
+4. **Lock the AWS security group** so only Cloudflare can reach the web ports: allow inbound
+   TCP 443 (and 80 only if you want the redirect) from
+   [Cloudflare's published ranges](https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/)
+   (`https://www.cloudflare.com/ips-v4` and `/ips-v6`) and nothing else; keep SSH to your own
+   address. A security group holds 60 rules by default, so put the ranges in a managed prefix
+   list ([AWS: managed prefix lists](https://docs.aws.amazon.com/vpc/latest/userguide/managed-prefix-lists.html))
+   and refer to it from the rule. With the group locked, nobody can bypass Cloudflare's rate
+   limiting and firewall by hitting the instance directly.
+5. **Per-visitor limits.** Cloudflare connects from its own addresses, so without more every
+   visitor would share one rate-limit bucket. `docker-compose.demo-cloudflare.yml` (added
+   automatically when `DEMO_MODE=true` and the nginx overlay is in use) makes nginx follow
+   Cloudflare's guidance in
+   [Restoring original visitor IPs](https://developers.cloudflare.com/support/troubleshooting/restoring-visitor-ips/restoring-original-visitor-ips/):
+   `set_real_ip_from` for each Cloudflare range and `real_ip_header CF-Connecting-IP`, from
+   `nginx/cloudflare-real-ip.conf`
+   ([nginx realip module](https://nginx.org/en/docs/http/ngx_http_realip_module.html)). nginx
+   uses the header only when the connecting peer is a Cloudflare address; from anyone else it
+   is ignored, so it cannot be forged. The backend never reads `CF-Connecting-IP` itself, and
+   `RATE_LIMIT_TRUSTED_PROXIES` stays at its default (nginx only). Do not add Cloudflare's
+   ranges there.
+6. **Keep the ranges current.** The committed file is a pinned snapshot. Refresh it, review
+   the diff and commit:
+
+   ```bash
+   scripts/demo/refresh-cloudflare-ips.sh           # rewrite from Cloudflare's lists
+   scripts/demo/refresh-cloudflare-ips.sh --check   # exit 1 when the snapshot is stale
+   ```
+
+   Run the same lists into the security-group prefix list when they change. Cloudflare rarely
+   changes them, and announces changes on its IP ranges page.
+
+**Live check.** From any machine, `curl -sI https://demo.opentranscribe.app/health` returns 200
+through Cloudflare. Then, from your own address (not Cloudflare):
+`curl -sk --resolve demo.opentranscribe.app:443:<instance ip> https://demo.opentranscribe.app/`
+must time out (the security group refuses it). To prove the header handling, temporarily open
+the group to your address, then send `CF-Connecting-IP: 198.51.100.7` directly: the nginx
+access log must show your own address, not `198.51.100.7`. Through Cloudflare, the log must
+show the visitor's real address (compare with `curl -s https://www.cloudflare.com/cdn-cgi/trace`
+from the same machine). Finally, hit `POST /api/auth/login` with a nonexistent account from two
+different networks until one is limited: the other must still get a normal 401.
+
+Other TLS terminators (an AWS load balancer, CloudFront) are not covered by this overlay: add
+their subnet to `RATE_LIMIT_TRUSTED_PROXIES` in `.env`, never a range covering the whole
+internet, since anyone could then pick their own address with an `X-Forwarded-For` header.
 
 `DEMO_RATE_LIMIT_PER_MINUTE` (default 120) is the per-visitor ceiling on every route.
 
@@ -114,6 +167,7 @@ GPU, and packed into a seed bundle:
 manifest.json
 media/<item>.mp3
 transcripts/<item>.json
+conversations/<id>.json      (optional, see below)
 ```
 
 Each item in `manifest.json` records its source, licence, licence page and attribution. Only
@@ -127,6 +181,35 @@ host:
 ./opentr.sh shell backend
 python -m app.scripts.demo_seed validate --bundle /path/to/bundle
 ```
+
+### Pre-generated chat conversations
+
+The demo cannot answer new questions, so the bundle carries finished conversations. They must
+be real model output produced by the application's own chat pipeline over the seeded
+recordings; the mock LLM is refused. Generate them once, when you build the bundle, on a
+throwaway stack:
+
+1. Seed the bundle's recordings into a `--fresh` stack with `DEMO_MODE=false` and configure a
+   real model for the demo user (vLLM on GPU 2, or GPU 1).
+2. Write the questions in `demo/conversation-prompts.json` (conversation id, title, the bundle
+   item ids it covers, the questions).
+3. Run the generator, which asks each question over the chat API and writes the answers, with
+   their citations, into the bundle:
+
+   ```bash
+   DEMO_USER_PASSWORD=... python3 scripts/demo/generate_demo_conversations.py \
+       --bundle /path/to/bundle --base-url http://localhost:<frontend port> \
+       --email demo@example.com
+   ```
+
+4. Read every answer. Do not edit model text: delete the conversation and regenerate.
+5. `python -m app.scripts.demo_seed validate --bundle /path/to/bundle` checks the structure
+   (alternating question and answer, provider and model recorded, citations inside the
+   conversation's recordings).
+
+The seeder stores each conversation as a finished chat owned by the demo user, with citations
+pointing at the seeded recordings, so the visitor can open and read them; sending a message is
+refused like every other write.
 
 ## Checks before going public
 

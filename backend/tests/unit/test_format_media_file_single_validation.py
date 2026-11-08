@@ -58,7 +58,7 @@ def _reference_two_pass(media_file, speakers=None) -> MediaFileSchema:
     if speakers:
         file_dict["speaker_summary"] = FormattingService.create_speaker_summary(speakers)
 
-    return MediaFileSchema.model_validate(file_dict)  # type: ignore[no-any-return]
+    return MediaFileSchema.model_validate(file_dict)
 
 
 def _make_media_file(**overrides) -> MediaFile:

@@ -410,7 +410,7 @@ def update_speaker_profile(
                     detail="Speaker profile with this name already exists",
                 )
 
-            profile.name = name  # type: ignore[assignment]
+            profile.name = name
             # Collected BEFORE the commit below: these are the names the chunk
             # documents were indexed with, and after the commit Postgres can no
             # longer say what they were (issue #405).
@@ -425,7 +425,7 @@ def update_speaker_profile(
             held_skipped = held_member_count(db, int(profile_id))
 
         if description is not None:
-            profile.description = description  # type: ignore[assignment]
+            profile.description = description
 
         touch_profile_interaction(db, int(profile.id), "human_edit")
         db.commit()
@@ -556,7 +556,7 @@ def delete_speaker_profile(
             impact.cluster_uuids.add(str(cluster.uuid))
             impact.owner_ids.add(int(cluster.user_id))
             if cluster.label == profile_name:
-                cluster.label = None  # type: ignore[assignment]
+                cluster.label = None
 
         # The one unlink rule, shared with a cluster unassign (#1233).
         impact.relabel_speaker_ids |= unlink_from_profile(

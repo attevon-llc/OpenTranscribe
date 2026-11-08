@@ -47,7 +47,7 @@ class TestEncryption:
 
     def test_encryption_empty_key(self):
         """Test encryption with empty/None keys"""
-        assert encrypt_api_key(None) is None  # type: ignore[arg-type]
+        assert encrypt_api_key(None) is None
         assert encrypt_api_key("") is None
         assert encrypt_api_key("   ") is None
 

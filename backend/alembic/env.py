@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
-from alembic import context  # type: ignore[attr-defined]
+from alembic import context
 from app.db.base import Base
 from app.db.migration_connection import install_audit_maintenance_switch
 from app.db.migration_connection import migration_database_url

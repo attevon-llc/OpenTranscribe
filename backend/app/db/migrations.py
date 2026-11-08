@@ -21,7 +21,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import SQLAlchemyError
 
-from alembic import command  # type: ignore[attr-defined]
+from alembic import command
 from app.db.migration_connection import create_migration_engine
 from app.db.migration_connection import migration_database_url
 from app.db.schema_detect.ladder import LADDER

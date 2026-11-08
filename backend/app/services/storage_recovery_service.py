@@ -236,7 +236,7 @@ def fingerprint_object(media_file: MediaFile) -> None:
     try:
         fingerprint = compute_from_minio(str(media_file.storage_path), size=media_file.file_size)
         if fingerprint:
-            media_file.imohash = fingerprint  # type: ignore[assignment]
+            media_file.imohash = fingerprint
     except Exception as exc:  # pragma: no cover - defensive, network path
         logger.debug("imohash compute failed for %s (non-fatal): %s", media_file.storage_path, exc)
 
@@ -539,12 +539,12 @@ def apply_metadata_matches(db: Session, matches: dict[int, dict[str, Any]]) -> i
             continue
         title = rec.get("title")
         if title:
-            row.title = str(title)[:255]  # type: ignore[assignment]
-            row.filename = str(title)[:255]  # type: ignore[assignment]
+            row.title = str(title)[:255]
+            row.filename = str(title)[:255]
         if rec.get("source_url"):
-            row.source_url = str(rec["source_url"])  # type: ignore[assignment]
+            row.source_url = str(rec["source_url"])
         if rec.get("uploader"):
-            row.author = str(rec["uploader"])  # type: ignore[assignment]
+            row.author = str(rec["uploader"])
         updated += 1
     if updated:
         db.commit()

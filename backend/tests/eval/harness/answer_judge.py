@@ -161,7 +161,7 @@ def parse_judgement(raw: str, *, answer: str = "") -> Judgement:
             label = str(payload.get("label", "")).upper()
             if label in LABELS:
                 return Judgement(
-                    label=label,  # type: ignore[arg-type]
+                    label=label,
                     covered=int(payload.get("covered") or 0),
                     total=int(payload.get("total") or 0),
                     why=str(payload.get("why") or "")[:200],

@@ -275,10 +275,10 @@ def update_collection(
         prompt_uuid = update_data.pop("default_prompt_id")
         if prompt_uuid is None:
             # Explicitly clearing the prompt
-            collection.default_summary_prompt_id = None  # type: ignore[assignment]
+            collection.default_summary_prompt_id = None
         else:
             prompt_internal_id = _resolve_prompt_uuid(db, str(prompt_uuid), current_user.id)
-            collection.default_summary_prompt_id = prompt_internal_id  # type: ignore[assignment]
+            collection.default_summary_prompt_id = prompt_internal_id
 
     for field, value in update_data.items():
         setattr(collection, field, value)

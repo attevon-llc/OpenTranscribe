@@ -124,7 +124,7 @@ def get_media_file_by_id(
     if not db_file or is_unavailable(db_file, platform_reached=platform_reached):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 
-    return db_file  # type: ignore[no-any-return]
+    return db_file
 
 
 def _resolve_segment_speaker_name(speaker: Speaker | None) -> str:
@@ -434,8 +434,8 @@ def update_single_transcript_segment(
 
     # Manually construct Pydantic response with all required fields
     return TranscriptSegmentSchema(
-        uuid=segment.uuid,  # type: ignore[arg-type]
-        media_file_id=db_file.uuid,  # type: ignore[arg-type]
+        uuid=segment.uuid,
+        media_file_id=db_file.uuid,
         start_time=float(segment.start_time),
         end_time=float(segment.end_time),
         text=str(segment.text),

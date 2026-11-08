@@ -180,7 +180,7 @@ def test_summarization_releases_the_scope_when_the_provider_fails(
 
     tracker = summarization_env
     media_file, _ = make_transcribed_file(db_session, normal_user, speakers=1)
-    tracker.llm_service._boom = True  # type: ignore[attr-defined]
+    tracker.llm_service._boom = True
 
     result = summ.summarize_transcript_task.apply(args=[str(media_file.uuid)]).get()
 
@@ -459,7 +459,7 @@ def test_topic_extraction_releases_the_scope_when_the_provider_fails(
 
     tracker = topic_extraction_env
     media_file, _ = make_transcribed_file(db_session, normal_user, speakers=1)
-    tracker.llm_service._boom = True  # type: ignore[attr-defined]
+    tracker.llm_service._boom = True
 
     result = tex.extract_topics_task.apply(args=[str(media_file.uuid)]).get()
 

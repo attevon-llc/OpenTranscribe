@@ -713,7 +713,7 @@ class TestFIPSBackupCodeCompatibility:
         from passlib.hash import bcrypt
 
         normalized = code.replace("-", "").replace(" ", "").upper()
-        return bcrypt.using(rounds=4).hash(normalized)  # type: ignore[no-any-return]
+        return bcrypt.using(rounds=4).hash(normalized)
 
     @staticmethod
     def _enable_fips_140_3(monkeypatch) -> None:

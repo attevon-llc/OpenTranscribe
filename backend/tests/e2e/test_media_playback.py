@@ -135,7 +135,7 @@ def browser_page(browser: Any, shared_auth_state: str) -> Iterator[Page]:
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
-    page._console_errors = errors  # type: ignore[attr-defined]
+    page._console_errors = errors
     try:
         yield page
     finally:

@@ -313,7 +313,7 @@ class TestAuditLogging:
         logger = AuditLogger()
 
         # Mock the actual logging
-        with patch.object(logger, "_logger") as mock_log:  # type: ignore[arg-type]
+        with patch.object(logger, "_logger") as mock_log:
             logger.log_login_success(
                 user_id=123,
                 username="test@example.com",

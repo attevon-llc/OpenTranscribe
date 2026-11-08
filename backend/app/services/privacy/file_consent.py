@@ -51,9 +51,9 @@ class ConsentChange:
 
 
 def _stamp(row: MediaFile, state: str, actor_user_id: int | None) -> None:
-    row.voiceprint_consent = state  # type: ignore[assignment]
-    row.voiceprint_consent_at = datetime.now(UTC)  # type: ignore[assignment]
-    row.voiceprint_consent_by_user_id = actor_user_id  # type: ignore[assignment]
+    row.voiceprint_consent = state
+    row.voiceprint_consent_at = datetime.now(UTC)
+    row.voiceprint_consent_by_user_id = actor_user_id
 
 
 def stamp_new_file(row: MediaFile, requested: str | None, actor_user_id: int) -> None:

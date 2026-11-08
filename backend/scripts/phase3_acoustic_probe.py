@@ -48,7 +48,7 @@ def main() -> None:
         return
     print("speakers:", labels, "centroid dim:", np.asarray(centroids[labels[0]]).shape)
 
-    emb = diar._pipeline._embedding  # type: ignore[attr-defined]
+    emb = diar._pipeline._embedding
     sr = int(getattr(emb, "sample_rate", 16000))
     dev = getattr(emb, "device", torch.device("cpu"))
     print("embedding sample_rate:", sr, "device:", dev)

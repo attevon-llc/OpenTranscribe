@@ -64,7 +64,7 @@ def superseded_reason(superseded_by: str) -> str:
     return f"superseded by {superseded_by}"
 
 
-def _newest_completed_after(old: type[Task]):  # type: ignore[no-untyped-def]
+def _newest_completed_after(old: type[Task]):
     """Scalar subquery: id of the newest ``completed`` row of ``old``'s step created after it."""
     newer = aliased(Task)
     return (

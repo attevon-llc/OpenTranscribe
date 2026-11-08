@@ -202,7 +202,7 @@ def _store_metadata_hints_as_suggestions(db: Session, file_id: int, media_file) 
         for speaker in speakers:
             existing: dict[str, Any] = dict(speaker.attribute_confidence or {})
             existing["metadata_hints"] = hints_data
-            speaker.attribute_confidence = existing  # type: ignore[assignment]
+            speaker.attribute_confidence = existing
             flag_modified(speaker, "attribute_confidence")
 
         db.flush()
@@ -249,7 +249,7 @@ def _store_alignment_results(db: Session, file_id: int, cross_refs: list[dict]) 
             existing_conf: dict[str, Any] = dict(spk.attribute_confidence or {})
             existing_conf["alignment"] = ref["alignment"]
             existing_conf["alignment_hint"] = ref["hint_name"]
-            spk.attribute_confidence = existing_conf  # type: ignore[assignment]
+            spk.attribute_confidence = existing_conf
             flag_modified(spk, "attribute_confidence")
 
         db.flush()

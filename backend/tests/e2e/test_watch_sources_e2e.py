@@ -172,7 +172,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):
     fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
     try:
         os.close(fd)
@@ -191,7 +191,7 @@ def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[no-untyped-def]
+def app_page(browser, auth_storage_state: str, base_url: str):
     context = browser.new_context(
         storage_state=auth_storage_state,
         viewport={"width": 1920, "height": 1080},
@@ -200,7 +200,7 @@ def app_page(browser, auth_storage_state: str, base_url: str):  # type: ignore[n
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors  # type: ignore[attr-defined]
+    page._console_errors = errors
     page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page

@@ -500,7 +500,7 @@ class TestResourceManagement:
                     result = service.validate_connection()
                     results.append(result)
                 except Exception as e:
-                    results.append(e)  # type: ignore[arg-type]
+                    results.append(e)
 
             # Should handle all requests without crashing
             assert len(results) == 5
@@ -510,9 +510,9 @@ class TestResourceManagement:
                     # Exceptions are acceptable for failed connections
                     continue
                 # At this point, result must be tuple[bool, str]
-                if not isinstance(result, tuple):  # type: ignore[misc]
+                if not isinstance(result, tuple):
                     continue
-                success, message = result  # type: ignore[misc]
+                success, message = result
                 assert isinstance(success, bool)
                 assert isinstance(message, str)
         finally:

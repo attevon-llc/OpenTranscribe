@@ -108,7 +108,7 @@ class AuthConfigService:
         if not config:
             return None
 
-        value: str | None = config.config_value  # type: ignore[assignment]
+        value: str | None = config.config_value
         if _is_sensitive_row(config) and decrypt and value:
             # Undecryptable means UNSET, never "hand back the ciphertext".
             #
@@ -231,7 +231,7 @@ class AuthConfigService:
                 # Serving it would re-render a control that changes nothing.
                 continue
 
-            value = config.config_value  # type: ignore[assignment]
+            value = config.config_value
 
             # A sensitive value NEVER leaves this function in readable form when
             # the caller did not ask for it decrypted. The masking below used to
@@ -250,7 +250,7 @@ class AuthConfigService:
                 # using this dict as config would have sent it as the secret. The
                 # failure must still be visible (issue #324).
                 try:
-                    decrypted = decrypt_api_key(value)  # type: ignore[call-overload]
+                    decrypted = decrypt_api_key(value)
                 except Exception:
                     logger.exception(
                         "Failed to decrypt sensitive auth config %s; treating it as unset. "
@@ -272,10 +272,10 @@ class AuthConfigService:
 
             # Convert to appropriate type
             data_type = config.data_type or "string"
-            result[config.config_key] = AuthConfigService._convert_value(  # type: ignore[index]
-                value,  # type: ignore[arg-type]
+            result[config.config_key] = AuthConfigService._convert_value(
+                value,
                 data_type,
-                config.config_key,  # type: ignore[arg-type]
+                config.config_key,
             )
 
         return result
@@ -350,11 +350,11 @@ class AuthConfigService:
 
         if config:
             # Update existing
-            config.config_value = encrypted_value  # type: ignore[assignment]
-            config.data_type = data_type  # type: ignore[assignment]
+            config.config_value = encrypted_value
+            config.data_type = data_type
             # Re-derived on every write, not just on create: rows written before
             # the flag was populated would otherwise stay False forever.
-            config.requires_restart = requires_restart  # type: ignore[assignment]
+            config.requires_restart = requires_restart
             # Same for the sensitivity flag: a row created before its key joined
             # SENSITIVE_KEYS kept False while its new value was encrypted, so reads
             # returned the ciphertext as if it were the credential.
@@ -370,11 +370,11 @@ class AuthConfigService:
                     config.category,
                     category,
                 )
-                config.category = category  # type: ignore[assignment]
-            config.updated_by = user_id  # type: ignore[assignment]
-            config.updated_at = datetime.now(UTC)  # type: ignore[assignment]
+                config.category = category
+            config.updated_by = user_id
+            config.updated_at = datetime.now(UTC)
             if description is not None:
-                config.description = description  # type: ignore[assignment]
+                config.description = description
             change_type = "update"
         else:
             # Create new

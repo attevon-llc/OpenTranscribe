@@ -126,7 +126,7 @@ def test_a_bytes_valued_flag_still_matches_its_run(fake_redis):
     Comparing a task id against ``b"run-A"`` is always False, which would silently
     reduce the fix to the per-owner behaviour it replaces.
     """
-    fake_redis.store["reindex_cancel:7"] = b"run-A"  # type: ignore[assignment]
+    fake_redis.store["reindex_cancel:7"] = b"run-A"
 
     assert reindex_cancel.consume_pending_cancel(7, "run-A") is True
 

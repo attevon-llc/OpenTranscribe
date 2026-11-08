@@ -77,7 +77,7 @@ def _shown_while_off(db, user, speaker_id: int) -> str | None:
     _switch_off_for_user(db, user)
     row = _fresh(db, speaker_id)
     redact_speaker_rows(db, [row])
-    return row.display_name  # type: ignore[no-any-return]
+    return row.display_name
 
 
 # --------------------------------------------------------------------------- #

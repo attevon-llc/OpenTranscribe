@@ -121,8 +121,8 @@ def _process_profile_with_no_speakers(
     profile_id: int,
 ) -> bool:
     """Handle case when profile has no speakers assigned."""
-    profile.embedding_count = 0  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
+    profile.embedding_count = 0
+    profile.last_embedding_update = datetime.now(UTC)
     _clear_profile_embedding_from_opensearch(str(profile.uuid))
     return True
 
@@ -135,8 +135,8 @@ def _process_profile_with_embeddings(
     """Process a profile that has valid embeddings."""
     averaged_embedding = _calculate_average_embedding(embeddings)
 
-    profile.embedding_count = len(embeddings)  # type: ignore[assignment]
-    profile.last_embedding_update = datetime.now(UTC)  # type: ignore[assignment]
+    profile.embedding_count = len(embeddings)
+    profile.last_embedding_update = datetime.now(UTC)
 
     stored = _store_profile_embedding_to_opensearch(
         profile_id=profile_id,

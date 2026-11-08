@@ -331,7 +331,7 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
                 to_erase.append(cluster_uuid)
                 db.delete(cluster)
                 continue
-            cluster.member_count = remaining  # type: ignore[assignment]
+            cluster.member_count = remaining
             try:
                 service._update_cluster_centroid(cluster, int(cluster.user_id), strict=True)
             except CentroidRecomputeError as e:

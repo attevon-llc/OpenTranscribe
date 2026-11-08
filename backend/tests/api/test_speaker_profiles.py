@@ -114,7 +114,7 @@ def test_list_profiles_reports_a_presigned_avatar_url(
     from unittest.mock import patch
 
     prof = _make_profile(db_session, normal_user, name="WithAvatar")
-    prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"  # type: ignore[assignment]
+    prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"
     db_session.commit()
 
     with patch(
@@ -135,7 +135,7 @@ def test_list_profiles_survives_an_avatar_url_failure(
     from unittest.mock import patch
 
     prof = _make_profile(db_session, normal_user, name="BrokenAvatar")
-    prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"  # type: ignore[assignment]
+    prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"
     db_session.commit()
 
     with patch("app.services.minio_service.get_file_url", side_effect=RuntimeError("minio down")):

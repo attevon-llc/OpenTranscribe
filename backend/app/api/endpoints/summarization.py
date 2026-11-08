@@ -176,7 +176,7 @@ def _summarize_preconditions(
 
     # Per-file disabled status: manual trigger resets it (explicit user intent)
     if str(media_file.summary_status) == "disabled":
-        media_file.summary_status = "pending"  # type: ignore[assignment]
+        media_file.summary_status = "pending"
         db.commit()
         logger.info(
             f"User manually triggered summary for file {file_id}; "

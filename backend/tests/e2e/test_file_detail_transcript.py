@@ -166,7 +166,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
 
 
 @pytest.fixture(scope="module")
-def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
+def auth_storage_state(browser, base_url: str):
     """Login once and persist browser storage state for reuse across tests."""
     fd, state_file = tempfile.mkstemp(prefix=E2E_STORAGE_STATE_PREFIX, suffix=".json")
     try:
@@ -188,7 +188,7 @@ def auth_storage_state(browser, base_url: str):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture
-def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):  # type: ignore[no-untyped-def]
+def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):
     """A pre-authenticated page on a real file-detail view with a transcript.
 
     Exposes captured console errors on ``page._console_errors``.
@@ -201,7 +201,7 @@ def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, An
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors  # type: ignore[attr-defined]
+    page._console_errors = errors
 
     uuid = transcribed_file["uuid"]
     page.goto(f"{base_url}/files/{uuid}")
@@ -419,7 +419,7 @@ class TestSpeakerRenameRepaint:
 
         new_name = "E2E Repaint Check"
 
-        def _stub_put(route):  # type: ignore[no-untyped-def]
+        def _stub_put(route):
             if route.request.method != "PUT":
                 return route.continue_()
             return route.fulfill(
@@ -507,7 +507,7 @@ class TestTranscriptPagination:
 
     def test_scrolling_loads_and_renders_every_segment(
         self, browser, auth_storage_state: str, paginated_file: dict[str, Any], base_url: str
-    ) -> None:  # type: ignore[no-untyped-def]
+    ) -> None:
         context = browser.new_context(
             storage_state=auth_storage_state,
             viewport={"width": 1920, "height": 1080},
@@ -584,7 +584,7 @@ def _pick_search_word(page: Page) -> str:
     return "the"
 
 
-def _open_transcript_search(page: Page):  # type: ignore[no-untyped-def]
+def _open_transcript_search(page: Page):
     """Open the in-transcript find bar and return its input locator."""
     trigger = page.locator(".search-trigger-button")
     expect(trigger).to_be_visible(timeout=10000)
@@ -662,7 +662,7 @@ def _accept_and_record(page: Page) -> list[str]:
     """
     messages: list[str] = []
 
-    def _handler(dialog) -> None:  # type: ignore[no-untyped-def]
+    def _handler(dialog) -> None:
         messages.append(dialog.message)
         dialog.accept()
 
@@ -702,7 +702,7 @@ class TestUnsavedChangesGuard:
         """The whole point: cancelling must leave the user where they were, edits intact."""
         messages: list[str] = []
 
-        def _decline(dialog) -> None:  # type: ignore[no-untyped-def]
+        def _decline(dialog) -> None:
             messages.append(dialog.message)
             dialog.dismiss()
 

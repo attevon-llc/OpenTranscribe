@@ -462,7 +462,7 @@ def test_warm_up_runs_after_the_wizard_step_and_never_fails_the_stack(tmp_path: 
     assert lib.index("fresh_stack_complete_first_run\n    fresh_stack_warm_frontend") > 0
 
 
-def test_backend_facing_mock_urls_use_the_in_network_port_not_the_host_offset(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_backend_facing_mock_urls_use_the_in_network_port_not_the_host_offset(monkeypatch) -> None:
     """The backend container reaches mock-asr:5198 whatever host port the mock is published on."""
     import importlib
 

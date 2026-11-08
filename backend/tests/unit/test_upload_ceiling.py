@@ -56,7 +56,7 @@ def test_wildly_oversized_upload_is_rejected():
 def test_unknown_size_is_not_rejected_here(size):
     """0/unknown is re-checked at complete against the size MinIO observed."""
     with does_not_raise(f"size={size!r} is unknown, not oversized, so this gate must pass it"):
-        validate_file_size_for_tenant(size, None)  # type: ignore[arg-type]
+        validate_file_size_for_tenant(size, None)
 
 
 def test_tenant_ceiling_tightens_the_global_one(monkeypatch):

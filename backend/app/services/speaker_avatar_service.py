@@ -36,7 +36,7 @@ def swap_avatar_path(db: Session, profile_id: int, new_path: str | None) -> str 
         db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).with_for_update().one()
     )
     previous = str(locked.avatar_path) if locked.avatar_path else None
-    locked.avatar_path = new_path  # type: ignore[assignment]
+    locked.avatar_path = new_path
     touch_profile_interaction(db, profile_id, "human_edit")
     db.commit()
     return previous

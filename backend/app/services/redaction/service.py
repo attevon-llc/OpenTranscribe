@@ -222,7 +222,7 @@ class RedactionService:
         if media is None:
             return {"status": "skipped", "reason": "file_not_found"}
 
-        media.redaction_status = redaction_defaults.REDACTION_STATUS_PROCESSING  # type: ignore[assignment]
+        media.redaction_status = redaction_defaults.REDACTION_STATUS_PROCESSING
         db.commit()
 
         det_cfg = detection_config_for_all()
@@ -369,7 +369,7 @@ class RedactionService:
                 # and dropping them would be strictly worse — but the status makes
                 # clear the result is partial.
                 failed = hard_failures
-                media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+                media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
                 db.commit()
                 logger.error(
                     "Redaction detection for file %s completed with failed detectors %s; "
@@ -394,13 +394,13 @@ class RedactionService:
             # different question from whether it examined one segment.
             if run_llm and not llm_failures:
                 ran.append("llm")
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_DONE  # type: ignore[assignment]
-            media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION  # type: ignore[assignment]
-            media.redaction_coverage = ran  # type: ignore[assignment]
+            media.redaction_status = redaction_defaults.REDACTION_STATUS_DONE
+            media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION
+            media.redaction_coverage = ran
             db.commit()
         except Exception as exc:  # noqa: BLE001
             db.rollback()
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED  # type: ignore[assignment]
+            media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
             db.commit()
             logger.error("Redaction detection failed for file %s: %s", file_id, exc)
             return {"status": "failed", "error": str(exc)}
@@ -481,7 +481,7 @@ class RedactionService:
             det_cfg["language"] = media_file.language
             span_dicts, toxicity = RedactionService.detect_segment_spans(
                 str(segment.text),
-                segment.words,  # type: ignore[arg-type]
+                segment.words,
                 det_cfg,
                 failures=failures,
             )
@@ -511,8 +511,8 @@ class RedactionService:
                 )
                 blocking = sorted(set(failures))
 
-        segment.redactions = span_dicts or None  # type: ignore[assignment]
-        segment.toxicity = toxicity  # type: ignore[assignment]
+        segment.redactions = span_dicts or None
+        segment.toxicity = toxicity
         if blocking:
             return RedactionService._mark_redaction_stale(db, media_file, blocking)
         return "done"
@@ -536,7 +536,7 @@ class RedactionService:
             redaction_defaults.REDACTION_STATUS_PENDING,
             redaction_defaults.REDACTION_STATUS_PROCESSING,
         )
-        media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+        media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         try:
             db.commit()
         except Exception:  # noqa: BLE001
@@ -627,7 +627,7 @@ class RedactionService:
         file_id = media.id  # read now: a rollback expires the object
         try:
             db.rollback()
-            media.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING  # type: ignore[assignment]
+            media.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
             db.commit()
             logger.warning("%s for file %s; scan left pending", why, file_id)
         except SQLAlchemyError:

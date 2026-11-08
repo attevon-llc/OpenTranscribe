@@ -446,9 +446,9 @@ def update_cluster(
             raise HTTPException(status_code=404, detail="Cluster not found")
 
         if data.label is not None:
-            cluster.label = data.label if data.label else None  # type: ignore[assignment]
+            cluster.label = data.label if data.label else None
         if data.description is not None:
-            cluster.description = data.description  # type: ignore[assignment]
+            cluster.description = data.description
 
         db.commit()
         db.refresh(cluster)

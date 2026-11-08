@@ -185,7 +185,7 @@ def _create_task_dict_from_media_file(
     else:
         task_id = f"task_{file.id}"
         task_type = "transcription"
-        task_status = _map_file_status_to_task_status(file_status)  # type: ignore[arg-type]
+        task_status = _map_file_status_to_task_status(file_status)
         progress = 1.0 if file_status == FileStatus.COMPLETED else 0.0
         error_message = (
             getattr(file, "last_error_message", None) if file_status == FileStatus.ERROR else None
@@ -410,7 +410,7 @@ def _get_media_file_by_id(
     if not media_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 
-    return media_file  # type: ignore[no-any-return]
+    return media_file
 
 
 @router.get("/{task_id}", response_model=Task)

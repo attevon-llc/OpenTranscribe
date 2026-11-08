@@ -81,7 +81,7 @@ def lost_frames_page(browser: Any, shared_auth_state: str, base_url: str) -> Any
         "ws": None,
         "held": [],
     }
-    page._lost = state  # type: ignore[attr-defined]
+    page._lost = state
 
     def on_socket(ws: WebSocketRoute) -> None:
         server = ws.connect_to_server()

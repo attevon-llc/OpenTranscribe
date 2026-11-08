@@ -100,8 +100,8 @@ def create_speaker(
     # If display_name is provided, mark as verified. A blank one names no one, so it is not
     # stored: a name is always stored with the record of the person who gave it.
     if speaker.display_name and speaker.display_name.strip():
-        new_speaker.display_name = speaker.display_name  # type: ignore[assignment]
-        new_speaker.verified = True  # type: ignore[assignment]
+        new_speaker.display_name = speaker.display_name
+        new_speaker.verified = True
         record_human_identity(new_speaker, user_id=current_user.id, origin=ORIGIN_CREATED)
 
     db.add(new_speaker)
@@ -201,7 +201,7 @@ def _apply_verification_on_display_name(
     user had just finished with (issue #603 follow-up regression).
     """
     if speaker_update.display_name is not None and speaker_update.display_name.strip():
-        speaker.verified = True  # type: ignore[assignment]
+        speaker.verified = True
         clear_suggestion(speaker, user_id=user_id)
 
 

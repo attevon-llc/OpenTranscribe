@@ -55,7 +55,7 @@ class TestNormalizeSpeakerLabel:
         # speaker_id is typed str, but Python doesn't enforce that at
         # runtime -- a caller reading an untyped dict can still pass None,
         # which is exactly the fallback path this test exists to cover.
-        assert normalize_speaker_label(None) == "SPEAKER_00"  # type: ignore[arg-type]
+        assert normalize_speaker_label(None) == "SPEAKER_00"
 
     def test_already_prefixed_label_unchanged(self):
         assert normalize_speaker_label("SPEAKER_01") == "SPEAKER_01"

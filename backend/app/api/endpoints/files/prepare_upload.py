@@ -100,7 +100,7 @@ def get_or_create_upload_batch(
         raise HTTPException(status_code=409, detail="Upload batch id is already in use")
     if inserted is not None:
         logger.info(f"Created upload batch {batch_uuid} for user {user_id}")
-    return batch  # type: ignore[return-value, no-any-return]
+    return batch
 
 
 def increment_upload_batch_file_count(db: Session, batch_id: int) -> None:
@@ -260,20 +260,20 @@ def create_prepared_record(
     from app.utils.filename import get_safe_storage_filename
 
     storage_path = get_safe_storage_filename(request.filename, current_user.id, db_file.id)
-    db_file.storage_path = storage_path  # type: ignore[assignment]
+    db_file.storage_path = storage_path
 
     # Store the user's requested whisper model (if any, and if the deployment lets them pick)
     if requested_whisper_model:
-        db_file.requested_whisper_model = requested_whisper_model  # type: ignore[assignment]
+        db_file.requested_whisper_model = requested_whisper_model
 
     # The rest of the per-file request. /complete (or the legacy upload) reads these back
     # for anything it does not repeat, and a retry replays them.
-    db_file.requested_min_speakers = request.min_speakers  # type: ignore[assignment]
-    db_file.requested_max_speakers = request.max_speakers  # type: ignore[assignment]
-    db_file.requested_num_speakers = request.num_speakers  # type: ignore[assignment]
-    db_file.requested_disable_diarization = True if request.disable_diarization else None  # type: ignore[assignment]
+    db_file.requested_min_speakers = request.min_speakers
+    db_file.requested_max_speakers = request.max_speakers
+    db_file.requested_num_speakers = request.num_speakers
+    db_file.requested_disable_diarization = True if request.disable_diarization else None
     # The track to transcribe in a multi-track file (issue #1263); None = the first.
-    db_file.audio_stream_index = request.audio_stream_index  # type: ignore[assignment]
+    db_file.audio_stream_index = request.audio_stream_index
 
     # The uploader's stated voiceprint consent (issue #1356), recorded with the row and who said it.
     file_consent.stamp_new_file(db_file, request.voiceprint_consent, int(current_user.id))
@@ -282,7 +282,7 @@ def create_prepared_record(
 
     # If this is extracted audio, store the video metadata in metadata_important
     if request.extracted_from_video:
-        db_file.metadata_important = request.extracted_from_video  # type: ignore[assignment]
+        db_file.metadata_important = request.extracted_from_video
         db.commit()
         logger.info(f"Stored extracted video metadata for {request.filename}")
 
@@ -291,8 +291,8 @@ def create_prepared_record(
         batch = get_or_create_upload_batch(
             db, request.upload_batch_id, current_user.id, source="multi_upload"
         )
-        db_file.upload_batch_id = batch.id  # type: ignore[assignment]
-        increment_upload_batch_file_count(db, batch.id)  # type: ignore[arg-type]
+        db_file.upload_batch_id = batch.id
+        increment_upload_batch_file_count(db, batch.id)
         db.flush()
         logger.info(f"Linked file {db_file.id} to upload batch {request.upload_batch_id}")
 

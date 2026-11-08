@@ -113,32 +113,32 @@ def _update_media_file_with_download_data(
             artifact cache lookups across different source URLs pointing
             at the same content.
     """
-    media_file.filename = media_info.get("title", original_filename)[:255]  # type: ignore[assignment]
-    media_file.storage_path = storage_path  # type: ignore[assignment]
-    media_file.file_size = file_size  # type: ignore[assignment]
-    media_file.content_type = technical_metadata.get("content_type", "video/mp4")  # type: ignore[assignment]
-    media_file.duration = technical_metadata.get("duration") or media_info.get("duration")  # type: ignore[assignment]
-    media_file.status = FileStatus.PENDING  # type: ignore[assignment]
-    media_file.thumbnail_path = thumbnail_path  # type: ignore[assignment]
+    media_file.filename = media_info.get("title", original_filename)[:255]
+    media_file.storage_path = storage_path
+    media_file.file_size = file_size
+    media_file.content_type = technical_metadata.get("content_type", "video/mp4")
+    media_file.duration = technical_metadata.get("duration") or media_info.get("duration")
+    media_file.status = FileStatus.PENDING
+    media_file.thumbnail_path = thumbnail_path
     if imohash_value:
-        media_file.imohash = imohash_value  # type: ignore[assignment]
+        media_file.imohash = imohash_value
 
     # Media-specific metadata
-    media_file.title = media_info.get("title")  # type: ignore[assignment]
-    media_file.author = media_info.get("uploader")  # type: ignore[assignment]
-    media_file.description = media_info.get("description")  # type: ignore[assignment]
-    media_file.source_url = source_url  # type: ignore[assignment]
-    media_file.metadata_raw = media_metadata  # type: ignore[assignment]
-    media_file.metadata_important = media_metadata  # type: ignore[assignment]
+    media_file.title = media_info.get("title")
+    media_file.author = media_info.get("uploader")
+    media_file.description = media_info.get("description")
+    media_file.source_url = source_url
+    media_file.metadata_raw = media_metadata
+    media_file.metadata_important = media_metadata
 
     # Technical metadata from extraction
-    media_file.media_format = technical_metadata.get("format")  # type: ignore[assignment]
-    media_file.codec = technical_metadata.get("video_codec")  # type: ignore[assignment]
-    media_file.frame_rate = technical_metadata.get("frame_rate")  # type: ignore[assignment]
-    media_file.resolution_width = technical_metadata.get("width")  # type: ignore[assignment]
-    media_file.resolution_height = technical_metadata.get("height")  # type: ignore[assignment]
-    media_file.audio_channels = technical_metadata.get("audio_channels")  # type: ignore[assignment]
-    media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")  # type: ignore[assignment]
+    media_file.media_format = technical_metadata.get("format")
+    media_file.codec = technical_metadata.get("video_codec")
+    media_file.frame_rate = technical_metadata.get("frame_rate")
+    media_file.resolution_width = technical_metadata.get("width")
+    media_file.resolution_height = technical_metadata.get("height")
+    media_file.audio_channels = technical_metadata.get("audio_channels")
+    media_file.audio_sample_rate = technical_metadata.get("audio_sample_rate")
 
 
 class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):

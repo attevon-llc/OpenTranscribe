@@ -290,7 +290,7 @@ def test_offered_citation_refs_skips_malformed_entries() -> None:
             {"id": 1, "file_uuid": "a"},
             {"id": 2},  # no file_uuid
             {"file_uuid": "b"},  # no id
-            "not-a-dict",  # type: ignore[list-item]
+            "not-a-dict",
         ]
     )
     assert refs == [{"id": 1, "file_uuid": "a"}]

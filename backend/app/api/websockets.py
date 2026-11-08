@@ -541,7 +541,7 @@ def _try_authenticate_token(
         user = db.query(User).filter(User.uuid == user_identifier).first()
         if user is None or not user.is_active or not admitted_on_optional_auth(user, websocket, db):
             return None
-        return user  # type: ignore[no-any-return]
+        return user
     except Exception as e:
         logger.error(f"WebSocket token authentication error: {str(e)}")
         return None

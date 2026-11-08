@@ -169,11 +169,11 @@ def test_beat_due_logic() -> None:
         # Capture which sources scan_all dispatches without running real scans.
         dispatched: list[int] = []
         orig = scan_single.delay
-        scan_single.delay = lambda sid: dispatched.append(sid)  # type: ignore[assignment]
+        scan_single.delay = lambda sid: dispatched.append(sid)
         try:
             scan_all.run()
         finally:
-            scan_single.delay = orig  # type: ignore[assignment]
+            scan_single.delay = orig
 
         ok = due_id in dispatched and not_due_id not in dispatched
         record(

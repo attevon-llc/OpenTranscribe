@@ -190,6 +190,7 @@ def _get_unique_speakers_for_filter(
     Named entries always sort ahead of unlabeled ones.
     """
     from sqlalchemy import and_
+    from sqlalchemy import exists
     from sqlalchemy import func
     from sqlalchemy import not_
     from sqlalchemy import select
@@ -225,8 +226,7 @@ def _get_unique_speakers_for_filter(
     base_filter = [] if include_unnamed else [has_human_name]
     base_filter.append(Speaker.media_file_id.in_(scope_files))
 
-    unavailable_ids = select(MediaFile.id).where(unavailable_pred())
-    base_filter.append(~Speaker.media_file_id.in_(unavailable_ids))
+    base_filter.append(~exists().where(MediaFile.id == Speaker.media_file_id, unavailable_pred()))
 
     if q and q.strip():
         # Search the offered label, not display_name alone — otherwise typing

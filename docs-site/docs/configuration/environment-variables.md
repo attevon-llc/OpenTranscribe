@@ -952,6 +952,7 @@ DB_POOL_SIZE=20          # API process SQLAlchemy pool
 DB_MAX_OVERFLOW=40       # extra connections above the pool under load
 API_THREADPOOL_SIZE=0    # 0 = derived, see below
 DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
+DB_STATEMENT_TIMEOUT_MS=30000    # Postgres statement_timeout, API process only (0 = off)
 UVICORN_LIMIT_CONCURRENCY=512    # open connections per API process before 503 (0 = none)
 CHAT_THREADPOOL_SIZE=0           # chat's own worker threads; 0 = a quarter of the DB pool, min 4
 ```
@@ -979,6 +980,12 @@ when there is work for them. To hold more open connections, raise `UVICORN_LIMIT
 (and `PG_MAX_CONNECTIONS`, which must stay above the sum of every service's pool). Setting
 `API_THREADPOOL_SIZE` below the pool capacity, or so low that the limit is not below `C + T`,
 logs a warning at startup.
+
+`DB_STATEMENT_TIMEOUT_MS` is a Postgres `statement_timeout` for the API process's own
+connections, set per session when each connection opens (PostgreSQL advises against setting it
+server-wide). `docker-compose.yml` sets it to 30000 on the backend service only; its coded default
+is 0, so Celery workers, which run long statements by design, have none. A statement that runs
+past it is cancelled and the request is answered 503.
 
 Hooks registered by a deployment (for example an upload-limits resolver) run on this thread
 pool, never on the event loop, but they run while the request holds a connection: keep them

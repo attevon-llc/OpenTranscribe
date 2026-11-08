@@ -8,6 +8,7 @@ instantiated on its own. The sizing rule that ties them together is in
 ``app/core/threadpool.py``.
 """
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -28,6 +29,11 @@ class CapacitySettings(BaseSettings):
     # default is 30). A burst that exhausts the pool then answers an error quickly
     # instead of piling up requests that each hold a thread for half a minute.
     DB_POOL_TIMEOUT_SECONDS: float = 10.0
+    # Postgres statement_timeout for every connection of THIS process's pool, in ms
+    # (app/db/migration_connection.install_statement_timeout). 0 = off, the coded default,
+    # so Celery workers, the migrate step and scripts are unaffected; the backend service's
+    # compose environment sets 30000. A statement past it is answered 503.
+    DB_STATEMENT_TIMEOUT_MS: int = 0
     # Open connections (including WebSockets and SSE streams) one uvicorn process
     # accepts before answering 503. uvicorn reads the same variable itself
     # (--limit-concurrency); the app reads it to size the threadpool so that
@@ -50,3 +56,9 @@ class CapacitySettings(BaseSettings):
     # the per-user cap in Settings -> Chat. A new message past it is refused with 429
     # and a Retry-After. 0 = no global cap.
     CHAT_MAX_CONCURRENT_STREAMS_GLOBAL: int = 64
+
+    @field_validator("DB_STATEMENT_TIMEOUT_MS")
+    @classmethod
+    def _floor_statement_timeout(cls, v: int) -> int:
+        """A negative value means off, like 0 (the env var bypasses any default clamp)."""
+        return max(v, 0)

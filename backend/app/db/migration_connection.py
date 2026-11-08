@@ -71,6 +71,29 @@ def install_idle_in_transaction_timeout(engine: Engine, timeout_ms: int) -> Engi
     return engine
 
 
+def install_statement_timeout(engine: Engine, timeout_ms: int) -> Engine:
+    """Apply ``statement_timeout`` to every connection ``engine`` opens.
+
+    The per-session bound PostgreSQL recommends over a server-wide one ("Setting
+    statement_timeout in postgresql.conf is not recommended because it would affect all
+    sessions", runtime-config-client.html#GUC-STATEMENT-TIMEOUT). Installed with the same
+    pool ``connect`` ``SET`` as :func:`install_idle_in_transaction_timeout`, for the same
+    reason (proxies reject libpq ``options``). A statement past it is cancelled with
+    SQLSTATE 57014 ``query_canceled``, which the API answers 503
+    (``app.core.db_overload``). ``timeout_ms`` is coerced to ``int``; 0 or less installs
+    nothing, which is the coded default, so Celery workers, the migrate step and scripts
+    keep the server default (off). A route that legitimately needs longer uses
+    ``SET LOCAL statement_timeout`` inside its own transaction and says why.
+    """
+    if int(timeout_ms) > 0:
+        event.listen(
+            engine,
+            "connect",
+            SessionSet(f"SET statement_timeout = {int(timeout_ms)}"),
+        )
+    return engine
+
+
 def install_audit_maintenance_switch(engine: Engine) -> Engine:
     """Turn the audit maintenance switch on for every DBAPI connection ``engine`` opens.
 

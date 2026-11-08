@@ -125,40 +125,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Report-only by design: this step's job is to produce the SARIF the next
-      # step uploads. Gating here would trade the Security tab for a red X.
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+      - name: Trivy report and gate
+        uses: ./.github/actions/trivy-report-gate
         with:
           image-ref: opentranscribe-backend:${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-backend-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-
-      - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
-        if: always()
-        with:
-          sarif_file: 'trivy-backend-results.sarif'
-          category: 'trivy-backend'
-
-      # THE GATE. Prints everything CRITICAL..MEDIUM for the human reading the
-      # log, and fails only on CRITICAL with a published fix.
-      - name: Run Trivy vulnerability scanner (table output)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
-        with:
-          image-ref: opentranscribe-backend:${{ github.sha }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-
-      - name: Fail on fixable CRITICAL CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
-        with:
-          image-ref: opentranscribe-backend:${{ github.sha }}
-          format: 'table'
-          severity: 'CRITICAL'
-          ignore-unfixed: true
-          exit-code: '1'
+          name: backend
 
       # FATAL only: Dockle's WARN tier flags things like a missing HEALTHCHECK,
       # which is a compose concern here. FATAL is "runs as root" / "credentials
@@ -221,36 +192,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+      - name: Trivy report and gate
+        uses: ./.github/actions/trivy-report-gate
         with:
           image-ref: opentranscribe-frontend:${{ github.sha }}
-          format: 'sarif'
-          output: 'trivy-frontend-results.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-
-      - name: Upload Trivy results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
-        if: always()
-        with:
-          sarif_file: 'trivy-frontend-results.sarif'
-          category: 'trivy-frontend'
-
-      - name: Run Trivy vulnerability scanner (table output)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
-        with:
-          image-ref: opentranscribe-frontend:${{ github.sha }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH,MEDIUM'
-
-      - name: Fail on fixable CRITICAL CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
-        with:
-          image-ref: opentranscribe-frontend:${{ github.sha }}
-          format: 'table'
-          severity: 'CRITICAL'
-          ignore-unfixed: true
-          exit-code: '1'
+          name: frontend
 
       - name: Run Dockle
         uses: erzz/dockle-action@e8a7c41f36f1236ca3282b298d425ffbfdb2e922  # v1.4.1
@@ -412,11 +358,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
-        with:
-          node-version-file: frontend/.nvmrc
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+        uses: ./.github/actions/setup-frontend-node
 
       - name: npm audit (frontend)
         working-directory: frontend
@@ -432,9 +374,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
-        with:
-          python-version: '3.13'
+        uses: ./.github/actions/setup-backend-python
 
       # Exact versions: an unpinned install is flagged by Scorecard and is a moving supply-chain input.
       - name: Install pip-audit

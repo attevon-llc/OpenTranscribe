@@ -365,7 +365,7 @@ repos:
         language: python
         additional_dependencies: ['zizmor==1.31.1']
         pass_filenames: false
-        files: ^\.github/(workflows/.*\.ya?ml|zizmor\.yml)$
+        files: ^\.github/((workflows|actions)/.*\.ya?ml|zizmor\.yml)$
       # Runs ruff itself, so it needs ruff importable by the interpreter that runs it, and the
       # guard refuses any version but the one pinned in backend/requirements-dev.txt.
       # language: python gives it its own env with exactly that pin (the pre-commit CI job

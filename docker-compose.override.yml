@@ -263,6 +263,9 @@ services:
       - "${FRONTEND_PORT:-5173}:5173"  # Dev Vite server port
     environment:
       - NODE_ENV=development  # Development mode
+      # Vite's documented debug switch (vite.dev/guide/troubleshooting): OT_VITE_DEBUG='vite:*'
+      # logs module transforms and dependency re-optimisation. Empty (the default) logs nothing extra.
+      - DEBUG=${OT_VITE_DEBUG:-}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:5173"]
       interval: 10s

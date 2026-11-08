@@ -27,11 +27,11 @@ from app.core.constants import NOTIFICATION_TYPE_EMBEDDING_CONSISTENCY_PROGRESS
 from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v3
 from app.core.embedding_models import get_speaker_index_v4
-from app.core.pipeline_constants import FILES_PER_BATCH_TASK
 from app.core.queues import CPUPriority
 from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
+from app.tasks.embedding_consistency_run import plan_repair_batches
 from app.tasks.opensearch_integrity_task import _exceeds_delete_ratio
 from app.tasks.opensearch_integrity_task import _speaker_uuids_present
 from app.utils.websocket_notify import send_ws_event
@@ -581,8 +581,11 @@ def speaker_embedding_consistency_check_task(
             r.delete(_REDIS_LOCK_KEY)
             return {"status": "no_repairable", "missing": total_missing}
 
-        file_uuids = list(grouped.keys())
-        total_files = len(file_uuids)
+        # Each batch names only its own files' speakers (bounded message size).
+        batches = plan_repair_batches(grouped, missing_v3, missing_v4 if v4_exists else set())
+        # A file split across batches (more speakers than one batch may name) is prepared
+        # once per batch, and every batch counts it, so the total counts batch entries.
+        total_files = sum(len(b.file_uuids) for b in batches)
 
         # Initialize ProgressTracker for ETA + queue status integration
         from app.services.progress_tracker import ProgressTracker
@@ -620,21 +623,16 @@ def speaker_embedding_consistency_check_task(
             speaker_embedding_consistency_repair_batch_task,
         )
 
-        batches = [
-            file_uuids[i : i + FILES_PER_BATCH_TASK]
-            for i in range(0, len(file_uuids), FILES_PER_BATCH_TASK)
-        ]
-
         batch_task_ids = []
         for batch_idx, batch in enumerate(batches):
             result = speaker_embedding_consistency_repair_batch_task.apply_async(
                 kwargs={
-                    "file_uuids": batch,
+                    "file_uuids": batch.file_uuids,
                     "batch_index": batch_idx,
                     "total_batches": len(batches),
                     "total_files": total_files,
-                    "missing_v3_uuids": list(missing_v3),
-                    "missing_v4_uuids": list(missing_v4) if v4_exists else [],
+                    "missing_v3_uuids": batch.missing_v3_uuids,
+                    "missing_v4_uuids": batch.missing_v4_uuids,
                     "v4_exists": v4_exists,
                 },
                 priority=GPUPriority.ADMIN_MIGRATION,

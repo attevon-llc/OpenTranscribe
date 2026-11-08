@@ -5,7 +5,6 @@ import { clearUserState } from '$lib/session/clearUserState';
 import { isCloudEdition } from '$lib/edition';
 import { loadCapabilities } from '$stores/capabilities';
 import { probeSessionWithRetry, SESSION_PROBE_TIMEOUT_MS } from '$lib/auth/sessionProbe';
-import { refreshSession } from '$lib/auth/sessionRefresh';
 import { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
 import {
   asAuthError,
@@ -324,6 +323,8 @@ export async function initAuth() {
       // Access token expired but a refresh cookie is present — restore the
       // session silently instead of bouncing the user to the login page.
       // Every open tab restores at once after a browser restart; refresh in turn.
+      // Imported here, not statically: only a restore needs it, and first load is budgeted.
+      const { refreshSession } = await import('$lib/auth/sessionRefresh');
       await refreshSession({ timeoutMs: SESSION_PROBE_TIMEOUT_MS });
       const userData = await fetchUserInfo();
       if (userData) {

@@ -528,7 +528,7 @@
    * stricter of the two and the one #972 found failing. Hence the lighter greens/blues
    * than the plain-surface figures in the light block's comment would suggest. */
   --color-success-text: #6ee7b7;
-  --color-error-text: #f87171;
+  --color-error-text: #fca5a5;
   --color-info-text: #93c5fd;
   --text-on-tint: var(--text-secondary);
   --color-info-bg: rgba(96, 165, 250, 0.15);

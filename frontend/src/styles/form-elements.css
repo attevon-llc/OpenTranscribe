@@ -480,14 +480,14 @@ button:disabled {
 
 /* Danger / destructive buttons — red, stays red on hover (darker shade) */
 .btn-danger {
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--error-solid);
+  color: var(--text-on-solid);
   border: none;
   box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
 }
 .btn-danger:hover:not(:disabled) {
-  background-color: #dc2626;
-  color: white;
+  background-color: var(--error-solid-hover);
+  color: var(--text-on-solid);
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
 }
@@ -497,14 +497,14 @@ button:disabled {
 
 /* Warning buttons — amber, stays amber on hover */
 .btn-warning {
-  background-color: #f59e0b;
-  color: white;
+  background-color: var(--warning-solid);
+  color: var(--text-on-warning);
   border: none;
   box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
 }
 .btn-warning:hover:not(:disabled) {
-  background-color: #d97706;
-  color: white;
+  background-color: var(--warning-solid-hover);
+  color: var(--text-on-warning);
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(245, 158, 11, 0.3);
 }
@@ -566,13 +566,13 @@ button:disabled {
 }
 
 .modal-delete-button {
-  background-color: #ef4444;
-  color: white;
+  background-color: var(--error-solid);
+  color: var(--text-on-solid);
   border: none;
   box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);
 }
 .modal-delete-button:hover:not(:disabled) {
-  background-color: #dc2626;
+  background-color: var(--error-solid-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(239, 68, 68, 0.25);
 }
@@ -581,13 +581,13 @@ button:disabled {
 }
 
 .modal-warning-button {
-  background-color: #f59e0b;
-  color: white;
+  background-color: var(--warning-solid);
+  color: var(--text-on-warning);
   border: none;
   box-shadow: 0 2px 4px rgba(245, 158, 11, 0.2);
 }
 .modal-warning-button:hover:not(:disabled) {
-  background-color: #d97706;
+  background-color: var(--warning-solid-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(245, 158, 11, 0.25);
 }

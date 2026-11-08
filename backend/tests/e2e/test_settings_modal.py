@@ -21,8 +21,10 @@ Run (visible on XRDP):
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -47,12 +49,20 @@ TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: 
 # must match the *rendered* English label, not the section id — the `download`
 # section is labelled "URL Import Quality" (settings.download.title), and an
 # entry reading "Download" matched nothing while the >= 3 floor hid it (#861).
+_EN_LOCALE = Path(__file__).resolve().parents[3] / "frontend/src/lib/i18n/locales/en.json"
+_EN_STRINGS: dict[str, str] = json.loads(_EN_LOCALE.read_text(encoding="utf-8"))
+# Derived from the app's own English strings so a renamed section title cannot
+# silently turn into a nav item that matches nothing (the label drift behind #861
+# and the "Recording Settings" -> "Microphone Recording" rename).
 SECTIONS_TO_SWITCH = [
-    ("Profile & Security", "Profile"),
-    ("Transcription", "Transcription"),
-    ("Speaker Identification", "Speaker Identification"),
-    ("Recording Settings", "Recording"),
-    ("URL Import Quality", "URL Import Quality"),
+    (_EN_STRINGS[key], _EN_STRINGS[key])
+    for key in (
+        "settings.profile.title",
+        "settings.transcription.title",
+        "settings.speakerIdentification.title",
+        "settings.recording.title",
+        "settings.download.title",
+    )
 ]
 
 # Pre-existing, non-regression console noise (see test_file_detail_transcript).
@@ -204,7 +214,9 @@ class TestSettingsModal:
             app_page.wait_for_timeout(300)
             switched += 1
 
-        assert switched >= 5, f"Expected to switch through all 5 settings sections, did {switched}"
+        assert switched >= len(SECTIONS_TO_SWITCH), (
+            f"Expected to switch through all {len(SECTIONS_TO_SWITCH)} settings sections, did {switched}"
+        )
 
         unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
         assert not unexpected, f"Unexpected console errors while switching sections: {unexpected}"

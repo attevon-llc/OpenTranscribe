@@ -16,3 +16,14 @@ rules:
       # run), the check job checks out that run's commit with read-only permissions and no
       # persisted credentials, and the alert job checks out nothing.
       - docs-live-check.yml:16
+  self-repository:
+    ignore:
+      # zizmor wants `uses: $/.github/actions/...` for the local composite actions, but the
+      # newest actionlint (v1.7.12, pinned in .pre-commit-config.yaml) rejects `$/` as an invalid
+      # action format. The two lint hooks cannot both pass on any spelling; `./` is the form
+      # GitHub documents and every runner supports. Drop this entry when actionlint accepts `$/`
+      # and switch the workflows over.
+      - dependency-review.yml
+      - deploy-docs.yml
+      - pre-commit.yml
+      - security-scan.yml

@@ -1,0 +1,49 @@
+name: Trivy image report and gate
+description: >-
+  Scan a built image with Trivy: SARIF to the Security tab (report-only), a CRITICAL..MEDIUM
+  table for the log, then fail on CRITICAL with a published fix. The calling job needs
+  `security-events: write` for the SARIF upload; this action requests no permissions itself.
+inputs:
+  image-ref:
+    description: Image to scan (must already be loaded into the local daemon).
+    required: true
+  name:
+    description: Short component name, used for the SARIF file and the Security tab category.
+    required: true
+runs:
+  using: composite
+  steps:
+    # Report-only by design: this step's job is to produce the SARIF the next
+    # step uploads. Gating here would trade the Security tab for a red X.
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+      with:
+        image-ref: ${{ inputs.image-ref }}
+        format: 'sarif'
+        output: 'trivy-${{ inputs.name }}-results.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+
+    - name: Upload Trivy results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370  # v4.39.1
+      if: always()
+      with:
+        sarif_file: 'trivy-${{ inputs.name }}-results.sarif'
+        category: 'trivy-${{ inputs.name }}'
+
+    # THE GATE. Prints everything CRITICAL..MEDIUM for the human reading the
+    # log, and fails only on CRITICAL with a published fix.
+    - name: Run Trivy vulnerability scanner (table output)
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+      with:
+        image-ref: ${{ inputs.image-ref }}
+        format: 'table'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+
+    - name: Fail on fixable CRITICAL CVEs (Trivy)
+      uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+      with:
+        image-ref: ${{ inputs.image-ref }}
+        format: 'table'
+        severity: 'CRITICAL'
+        ignore-unfixed: true
+        exit-code: '1'

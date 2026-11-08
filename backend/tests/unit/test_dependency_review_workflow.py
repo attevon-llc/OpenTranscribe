@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 REPO = Path(__file__).resolve().parents[3]
+SETUP_PYTHON_ACTION = REPO / ".github" / "actions" / "setup-backend-python" / "action.yml"
 DEFAULT_PATH = REPO / ".github" / "workflows" / "dependency-review.yml"
 WORKFLOW_PATH = Path(os.environ.get("DEPENDENCY_REVIEW_WORKFLOW_PATH", str(DEFAULT_PATH)))
 
@@ -145,6 +146,8 @@ def test_every_uses_is_sha_pinned_with_a_version_comment() -> None:
     assert refs
     for line in refs:
         value = line.split(":", 1)[1].split("#", 1)[0].strip()
+        if value.startswith("./.github/actions/"):
+            continue  # this repository's composite action; its own pins are tested in test_workflows_pinned
         assert _PIN_RE.match(value), line
         assert _VERSION_COMMENT_RE.search(line), line
 
@@ -160,8 +163,10 @@ def test_diff_job_checks_out_full_history_on_python_313() -> None:
     steps = _steps(_load(), "dependency-diff")
     checkout = next(s for s in steps if _uses(s, "actions/checkout"))
     assert checkout["with"]["fetch-depth"] == 0
-    python = next(s for s in steps if _uses(s, "actions/setup-python"))
-    assert python["with"]["python-version"] == "3.13"
+    python = next(s for s in steps if s.get("uses") == "./.github/actions/setup-backend-python")
+    assert "python-version" not in python.get("with", {})
+    action = yaml.safe_load(SETUP_PYTHON_ACTION.read_text())
+    assert action["inputs"]["python-version"]["default"] == "3.13"
 
 
 @pytest.mark.parametrize("job,name", sorted(ARTIFACTS.items()))

@@ -1,0 +1,26 @@
+name: Set up Node.js project
+description: >-
+  actions/setup-node using the project's .nvmrc and npm cache keyed on its package-lock.json,
+  with an optional `npm ci`. Run actions/checkout first (a local action is read from disk).
+inputs:
+  directory:
+    description: Project directory holding .nvmrc and package-lock.json (frontend or docs-site).
+    default: frontend
+  install:
+    description: Run `npm ci` in the directory after setup ('true' or 'false').
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+      with:
+        node-version-file: ${{ inputs.directory }}/.nvmrc
+        cache: 'npm'
+        cache-dependency-path: ${{ inputs.directory }}/package-lock.json
+
+    - name: Install npm dependencies
+      if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.directory }}
+      run: npm ci

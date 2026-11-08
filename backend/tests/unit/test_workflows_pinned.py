@@ -25,6 +25,7 @@ import pytest
 import yaml
 
 WORKFLOWS_DIR = Path(__file__).resolve().parents[3] / ".github" / "workflows"
+ACTIONS_DIR = WORKFLOWS_DIR.parent / "actions"
 
 FENCED: dict[str, str] = {
     "docker-publish.yml": "retired stub owned by the release workstream; its top-level "
@@ -126,6 +127,27 @@ def violations(path: Path) -> list[str]:
     return found
 
 
+def action_violations(path: Path) -> list[str]:
+    """Pin violations for one composite action.yml (no permissions: a composite has none)."""
+    text = path.read_text()
+    found, line_refs = _line_violations(path, text)
+    doc = yaml.safe_load(text)
+    steps = doc.get("runs", {}).get("steps") if isinstance(doc, dict) else None
+    parsed = [
+        s["uses"] for s in steps or [] if isinstance(s, dict) and isinstance(s.get("uses"), str)
+    ]
+    if len(parsed) != line_refs:
+        found.append(f"{path.parent.name}: {len(parsed)} parsed uses vs {line_refs} line by line")
+    for ref in parsed:
+        if not _is_exempt(ref) and not _PINNED_RE.match(ref):
+            found.append(f"{path.parent.name}: parsed uses not pinned to a 40-hex commit: {ref}")
+    return found
+
+
+def action_files(directory: Path) -> list[Path]:
+    return sorted([*directory.glob("*/action.yml"), *directory.glob("*/action.yaml")])
+
+
 def workflow_files(directory: Path) -> list[Path]:
     return sorted([*directory.glob("*.yml"), *directory.glob("*.yaml")])
 
@@ -149,6 +171,27 @@ def check_directory(directory: Path, fenced: dict[str, str]) -> list[str]:
 def test_repository_workflows_are_pinned_and_least_privilege() -> None:
     assert workflow_files(WORKFLOWS_DIR), "no workflows found: the test would pass vacuously"
     assert check_directory(WORKFLOWS_DIR, FENCED) == []
+
+
+def test_composite_actions_are_pinned() -> None:
+    files = action_files(ACTIONS_DIR)
+    assert files, "no composite actions found: the test would pass vacuously"
+    assert [v for f in files for v in action_violations(f)] == []
+
+
+def test_action_detector_flags_unpinned_and_uncommented_uses(tmp_path: Path) -> None:
+    good = (
+        "name: x\nruns:\n  using: composite\n  steps:\n"
+        "    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1\n"
+    )
+    path = tmp_path / "a" / "action.yml"
+    path.parent.mkdir()
+    path.write_text(good)
+    assert action_violations(path) == []
+    path.write_text(good.replace("3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1", "v7"))
+    assert any("not pinned" in f for f in action_violations(path))
+    path.write_text(good.replace("  # v7.0.1", ""))
+    assert any("no '# vX.Y.Z' comment" in f for f in action_violations(path))
 
 
 @pytest.mark.parametrize("name", sorted(FENCED))

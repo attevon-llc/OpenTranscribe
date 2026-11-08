@@ -160,7 +160,7 @@ already using `emmake make -j` (all available cores).
 - **Production images**: `frontend/Dockerfile.prod` compiles the same FFmpeg configuration as its own
   early build stage (kept in sync by hand with `ffmpeg-wasm-build/Dockerfile` — see the comment
   at the top of each file). ⚠️ The two pin different emsdk base images today: `Dockerfile.prod`
-  uses `emscripten/emsdk:6.0.9`, the standalone `ffmpeg-wasm-build/Dockerfile` still uses
+  uses `emscripten/emsdk:6.0.13`, the standalone `ffmpeg-wasm-build/Dockerfile` still uses
   `3.1.40`, and the sizes and timings on this page were measured on `3.1.40` only and `COPY`s the output into the image before `npm run build` runs.
   **No CDN fetch happens anywhere in the production build.**
 - Verified end to end for both paths: the dev container serves `/ffmpeg/ffmpeg-core.{js,wasm}`

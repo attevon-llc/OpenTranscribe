@@ -40,7 +40,7 @@ repos:
   # `files:` pattern gets both. Do NOT "unify" them by deleting a config — that reformats a
   # thousand files to settle a question nobody asked.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.7
+    rev: v0.17.3
     hooks:
       - id: ruff
         args: [--fix, --show-fixes]
@@ -64,22 +64,22 @@ repos:
   # To bump a package, change it in backend/requirements*.txt AND here in the same commit.
   # scripts/mypy-hook-negative-control.sh proves the hook still rejects deliberately mistyped code.
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.4.0
+    rev: v2.4.1
     hooks:
       - id: mypy
         files: ^backend/
         additional_dependencies:
           - types-passlib==1.7.7.20260211
-          - types-python-dateutil==2.9.0.20261021
+          - types-python-dateutil==2.9.0.20261029
           - types-PyYAML==6.0.12.20260906
           - aiohttp==3.14.5
           - alembic==1.20.1
           - anyio==4.15.1
-          - assemblyai==1.5.4
-          - cachetools==7.2.4
+          - assemblyai==1.8.2
+          - cachetools==7.2.7
           - certifi==2026.10.23
           - cryptography==50.0.2
-          - deepgram-sdk==7.9.0
+          - deepgram-sdk==7.16.0
           - fastapi==0.136.3
           - httpx==0.28.1
           - huggingface-hub==1.17.0
@@ -88,23 +88,23 @@ repos:
           - limits==5.8.0
           - minio==7.2.20
           - numpy==2.4.6
-          - openai==3.14.0
+          - openai==3.41.0
           - opensearch-py==3.2.0
           - packaging==26.3
           - pillow==13.0.0
-          - playwright==1.63.0
+          - playwright==1.64.1
           - prometheus-client==0.26.0
           - pydantic==2.14.1
-          - pydantic-settings==2.16.1
+          - pydantic-settings==2.16.2
           - pyotp==2.10.0
-          - pytest==9.1.1
+          - pytest==9.2.0
           - python-dotenv==1.2.4
           - python-json-logger==4.2.0
           - redis==8.1.0
           - requests==2.34.2
           - slowapi==0.1.10
-          - sqlalchemy==2.0.53
-          - starlette==1.9.0
+          - sqlalchemy==2.0.55
+          - starlette==1.10.0
           - urllib3==2.8.0
           - uvicorn==0.54.0
           - watchdog==6.0.0
@@ -112,7 +112,7 @@ repos:
           # #1278): without them every docx / pdf call degrades to Any in the hook's isolated env.
           - python-docx==1.2.0
           - fpdf2==2.8.9
-          - fonttools==4.67.0
+          - fonttools==4.68.0
           - pypdf==6.21.4
         args: [--ignore-missing-imports, --check-untyped-defs]
 
@@ -365,7 +365,7 @@ repos:
         language: python
         additional_dependencies: ['zizmor==1.31.1']
         pass_filenames: false
-        files: ^\.github/(workflows/.*\.ya?ml|zizmor\.yml)$
+        files: ^\.github/((workflows|actions)/.*\.ya?ml|zizmor\.yml)$
       # Runs ruff itself, so it needs ruff importable by the interpreter that runs it, and the
       # guard refuses any version but the one pinned in backend/requirements-dev.txt.
       # language: python gives it its own env with exactly that pin (the pre-commit CI job
@@ -374,7 +374,7 @@ repos:
         name: complexity and broad-except ratchet (baselined, ignores noqa)
         entry: python scripts/guards/check_ruff_ratchet.py
         language: python
-        additional_dependencies: ['ruff==0.16.7']
+        additional_dependencies: ['ruff==0.17.3']
         pass_filenames: false
         files: ^((backend/app|backend/alembic|scripts)/.*\.py|scripts/guards/.*)$
       # Runs vulture itself and refuses any version but the one pinned in

@@ -1,0 +1,22 @@
+name: Set up backend Python
+description: >-
+  actions/setup-python at the version the backend images use, with optional pip caching. Run actions/checkout first (a local action is read from disk).
+inputs:
+  python-version:
+    description: Python version. 3.13 matches the images; a different minor can resolve differently.
+    default: '3.13'
+  cache:
+    description: setup-python cache backend ('pip' or empty for none).
+    default: ''
+  cache-dependency-path:
+    description: Dependency file(s) the pip cache key is hashed from (only used with cache).
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: ${{ inputs.cache }}
+        cache-dependency-path: ${{ inputs.cache-dependency-path }}

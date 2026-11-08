@@ -10,6 +10,7 @@ from .endpoints import admin_approvals
 from .endpoints import admin_audit_content_access
 from .endpoints import admin_audit_integrity
 from .endpoints import admin_audit_logs
+from .endpoints import admin_email_readiness
 from .endpoints import admin_group_mappings
 from .endpoints import admin_hf_token
 from .endpoints import admin_holds
@@ -339,6 +340,14 @@ include_router_with_consistency(
     auth_email_delivery.router,
     prefix="/admin/auth-config",
     tags=["auth-config"],
+    capability="auth.config_ui",
+)
+# Status read for plain admins who invite users; outside the super_admin auth-config
+# namespace on purpose. Same capability: it reports on the auth-mail surface.
+include_router_with_consistency(
+    admin_email_readiness.router,
+    prefix="/admin/email",
+    tags=["admin"],
     capability="auth.config_ui",
 )
 # Which directory group becomes which in-app group — and which one hands out

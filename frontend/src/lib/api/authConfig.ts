@@ -250,7 +250,7 @@ export interface AuthMailDesignation {
 }
 
 /**
- * What any admin may learn about auth mail (`GET /admin/auth-config/email/readiness`):
+ * What any admin may learn about auth mail (`GET /admin/email/readiness`):
  * two booleans, nothing about which provider or config carries it. The richer fields
  * are present only when the super_admin designation route answered.
  */
@@ -315,7 +315,7 @@ export class AuthConfigApi {
 
   /** The two-boolean readiness any admin may read (no config identity). */
   static async getAuthMailReadinessSummary(): Promise<AuthMailReadiness> {
-    const response = await axiosInstance.get('/admin/auth-config/email/readiness');
+    const response = await axiosInstance.get('/admin/email/readiness');
     return response.data;
   }
 

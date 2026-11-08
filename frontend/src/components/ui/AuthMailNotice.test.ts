@@ -188,7 +188,7 @@ describe('AuthMailNotice for a plain admin (issue #1265)', () => {
     render(AuthMailNotice, { props: { context: 'invite' } });
 
     expect(await screen.findByTestId('auth-mail-notice')).toBeInTheDocument();
-    expect(get).toHaveBeenCalledWith('/admin/auth-config/email/readiness');
+    expect(get).toHaveBeenCalledWith('/admin/email/readiness');
   });
 
   it('stays silent when the readiness route says mail is deliverable', async () => {

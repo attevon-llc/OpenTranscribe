@@ -41,6 +41,19 @@ class _Redis:
         return iter(())
 
 
+class _Lease:
+    """The run lease as the task uses it (redis-py ``Lock``); the sweep, not Redis, is under test."""
+
+    def acquire(self, blocking=False, token=None):  # noqa: ANN001 — redis-py shape
+        return True
+
+    def reacquire(self) -> bool:
+        return True
+
+    def release(self) -> None:
+        return None
+
+
 def _run(
     *,
     os_uuids: set[str],
@@ -54,6 +67,7 @@ def _run(
     client.indices.exists.return_value = False
     with (
         patch.object(task_mod, "get_redis", return_value=_Redis()),
+        patch.object(task_mod, "run_lease", return_value=_Lease()),
         patch("app.services.migration_progress_service.migration_progress") as progress,
         patch.object(
             task_mod,

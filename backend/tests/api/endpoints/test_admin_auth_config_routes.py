@@ -292,7 +292,7 @@ def test_migrate_writes_the_missing_key_then_migrates_nothing_on_a_re_run(
     assert second.json()["migrated_count"] == 0
 
 
-READINESS = f"{BASE}/email/readiness"
+READINESS = "/api/admin/email/readiness"
 
 #: What a plain admin may learn about auth mail. Anything else is deployment mail
 #: infrastructure (config name/UUID/provider, env SMTP) and stays super_admin-only.

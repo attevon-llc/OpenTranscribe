@@ -57097,7 +57097,7 @@
     },
     "/health": {
       "get": {
-        "description": "Health check endpoint",
+        "description": "Liveness: touches no dependency and no thread, so it answers while every thread is busy.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -57118,9 +57118,32 @@
         "summary": "Health Check"
       }
     },
+    "/health/live": {
+      "get": {
+        "description": "Kubernetes-named alias of ``/health``.",
+        "operationId": "live_check_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Live Check Health Live Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Live Check"
+      }
+    },
     "/health/ready": {
       "get": {
-        "description": "Readiness probe for load balancers / orchestrators.\n\nProbes the critical dependencies (PostgreSQL, Redis) and the degraded-but-\nserviceable ones (OpenSearch, MinIO). A failed CRITICAL dependency returns\n503; OpenSearch/MinIO failures are reported but do not fail readiness, since\nqueued transcription survives a brief search/storage outage. Plain ``def``\nso Starlette threadpools the short, synchronous probes.\n\nProbed several times a minute, so it must stay cheap and bounded (issue #1000):\nRedis, OpenSearch and object storage each get ``DEPENDENCY_PROBE_TIMEOUT_SECONDS``\nvia probe-only clients, and the Alembic head is parsed once per process.",
+        "description": "Readiness: 503 only when a critical dependency (PostgreSQL, Redis, schema) is down.\n\nOpenSearch and MinIO failures are reported, not fatal. Pool saturation (``db_pool``) is\nreported, never critical.",
         "operationId": "readiness_check_health_ready_get",
         "responses": {
           "200": {

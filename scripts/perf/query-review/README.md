@@ -28,4 +28,12 @@ reasoning. All artifacts go to `~/ot-cleanup-work/1337/perf/<run-id>/`, never `/
 `queries/<id>.sql` ids match plan section 3; `<id>.after.sql` is the rewritten form. Present:
 C1-C3, G7, G8, G13 (+after), T1, T3, P3, K4, V13, A2, S1, T4, V7, P8, P9. The rest are added during the baseline from
 `auto_explain.log` literals (plan 4.3 step 5). V13 and A2 filter on `completed_at`, which the
-seed leaves NULL: set realistic values inside the same rolled-back transaction first.
+seed leaves NULL: `queries/setup/<id>.sql` is run by `explain.sh` inside the same rolled-back
+transaction before the replay, so no manual step is needed.
+
+`drive.py` writes `calls.csv` row by row (a crash keeps what ran), records a client timeout as
+status 599 (`--timeout`, default 900 s), logs the profile/speaker lookups as `lookup.*` rows and
+caps an endpoint slower than `--slow-ms` at `--slow-repeat` calls. `summarise` pairs each call
+with its own access-log line (per identity and variant), so statement counts are not shared
+across `/api/files` variants. Enable the extensions with the UNQUOTED
+`ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements, auto_explain;` (plan 4.1).

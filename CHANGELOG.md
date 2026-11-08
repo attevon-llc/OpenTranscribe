@@ -95,6 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The query-review measurement tools (`scripts/perf/query-review/`) no longer lose a run: the documented `shared_preload_libraries` command is unquoted (the quoted form crash-looped Postgres), the driver uses `/api/openapi.json`, streams its rows and records timeouts instead of crashing, the summary attributes statement counts per call, and `explain.sh` applies a rolled-back `queries/setup/<id>.sql` so A2 and V13 see realistic `completed_at` values (#1337).
 - The gallery's grid and list showed upload dates in English ("Nov 07, 2026") in every language; they now use the interface language's date format.
 - The speakers page said "1 speakers have no match" when one speaker was waiting in Review; the message now uses each language's plural forms.
 - In right-to-left languages the player's speed menu and the floating preview's speed button showed rates as "×1" and "×0.5"; they now read "1×" and "0.5×".

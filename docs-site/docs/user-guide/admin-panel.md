@@ -653,6 +653,8 @@ When you click **Check**, the system reports:
 
 Click **Repair** to re-extract missing embeddings. The system processes each file with missing speakers, extracts new embeddings from the audio, and indexes them. Progress is tracked in real time with a progress bar and ETA. You can **Stop** a running repair at any time.
 
+The same check also runs on its own every 10 minutes. A file whose repair fails (for example, unreadable audio) is skipped by those scheduled checks for 24 hours so it does not keep the GPU busy; clicking **Repair** retries every file, including those. The repair result shows how many files failed and lists up to 50 of them.
+
 ## Embedding Migration (v3 to v4)
 
 Below it, **Embedding Migration** manages the upgrade from v3 speaker embeddings (512-dim pyannote) to v4 (256-dim WeSpeaker).

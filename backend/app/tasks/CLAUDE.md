@@ -126,6 +126,16 @@ indexing → WebSocket notification.
 
 ## Conventions / patterns
 
+- **A fan-out message carries its own ids, never the run's whole set** (#1337 load test:
+  ~4,000 messages of ~117 MB, Redis at 52 GB). The embedding-consistency repair's batches name
+  only their own files' speakers (`embedding_consistency_run.plan_repair_batches`, ≤25 files,
+  ≤400 speakers). `tests/unit/test_fanout_dispatch_payload_guard.py` fails on any dispatch loop
+  that passes a collection built outside the loop. A multi-task run flag is a **run-scoped
+  lease** (`embedding_consistency_run.run_lease`, token = run id, `redis_lease.adopt_lease_lock`
+  in later tasks): renewed by the orchestrator's heartbeat and by each batch, released only by
+  the batch completing THAT run; a batch of a superseded run stands down. Same rule as
+  `reindex_run_state._release_reindex_lock`.
+
 - **A stage that completes a processing step records it, in its own write session** (#1229):
   `services/file_provenance.record_stage(db, file_id, "<step>", **facts)` (or one of its
   `record_*` wrappers). Current call sites: `transcription/storage.update_media_file_transcription_status`

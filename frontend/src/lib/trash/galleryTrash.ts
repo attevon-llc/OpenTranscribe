@@ -1,4 +1,5 @@
-import { getTrashRetentionDays, restoreFiles, type BulkFileResult } from '$lib/api/trash';
+import type { BulkFileResult } from '$lib/api/bulkActions';
+import { getTrashRetentionDays, restoreFiles } from '$lib/api/trash';
 
 /**
  * The gallery's "delete" (issue #1101): the selection moves to the trash, the confirmation says

@@ -37,9 +37,10 @@ per-process cache and returns the id to attach.
   single "the pipeline is verified" bool let the first strategy a process saw certify every
   later one, so arm B would attach an id nobody created and OpenSearch would run the query
   **unfused** — a plausible number, not an error.
-- **The search response cache keys on the resolved pipeline id.** Without it arm B replays arm
-  A's page for `SEARCH_CACHE_TTL_SECONDS`. Same rule as `redaction/export_policy.py`: a cached
-  artifact must name the policy it was rendered under.
+- **There is no search response cache any more** (concurrency audit L8). While there was, its
+  key had to name the resolved pipeline id or arm B replayed arm A's page. Should one return, the
+  same rule as `redaction/export_policy.py` holds: a cached artifact names the policy it was
+  rendered under.
 - **The self-heal now compares the whole processor block**, not just `rank_constant`.
   OpenSearch echoes a pipeline body back verbatim (no defaults injected), so the comparison is
   exact. A hand-written test stand-in that omits a field therefore reads as drift.

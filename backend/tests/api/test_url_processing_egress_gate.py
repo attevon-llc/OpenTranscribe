@@ -58,7 +58,13 @@ def gate(monkeypatch):
         return _real_getaddrinfo(host, port, *args, **kwargs)
 
     monkeypatch.setattr(MediaDownloadService, "extract_video_info", _extract)
-    monkeypatch.setattr(url_video_import.process_youtube_url_task, "delay", _record(tasks))
+    # Published with apply_async so it can carry the download fairness priority.
+    url_record = _record(tasks)
+    monkeypatch.setattr(
+        url_video_import.process_youtube_url_task,
+        "apply_async",
+        lambda kwargs=None, **_options: url_record(**kwargs),
+    )
     monkeypatch.setattr(url_processing.process_youtube_playlist_task, "delay", _record(playlists))
     monkeypatch.setattr(url_validation.socket, "getaddrinfo", _getaddrinfo)
     return SimpleNamespace(extracted=extracted, tasks=tasks, playlists=playlists, dns=dns)

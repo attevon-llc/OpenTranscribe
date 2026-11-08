@@ -937,6 +937,7 @@ TASK_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
         "tasks/speaker_attribute_task.py::detect_speaker_attributes_task",
     ),
     "tasks/speaker_attribute_migration_task.py::migrate_speaker_attributes_task": (
+        "tasks/speaker_attribute_migration_task.py::_orchestrate_attributes",
         "tasks/speaker_attribute_migration_task.py::_reset_all_speaker_attributes",
     ),
     "tasks/speaker_attribute_migration_task.py::detect_speaker_attributes_batch_task": (

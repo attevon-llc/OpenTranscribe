@@ -24,6 +24,7 @@ from app.core.embedding_models import get_speaker_index
 from app.core.embedding_models import get_speaker_index_v4
 from app.core.queues import CPUPriority
 from app.core.redis import get_redis
+from app.utils.task_lock import task_lock_manager
 from app.utils.websocket_notify import send_ws_event
 
 logger = logging.getLogger(__name__)
@@ -479,13 +480,19 @@ def opensearch_orphan_cleanup_task(
     Returns:
         Per-index cleanup stats.
     """
+    # Guard against concurrent runs with a renewed lease: two passes deleting orphans
+    # at once is exactly what this lock prevents, and the old fixed 900 s TTL let a
+    # second pass start under a slow first one.
+    with task_lock_manager.acquire_lock(_REDIS_LOCK_KEY, timeout=6 * 3600) as acquired:
+        if not acquired:
+            logger.info("Orphan cleanup already running (or lock unavailable), skipping")
+            return {"status": "already_running"}
+        return _run_locked_orphan_cleanup(user_id=user_id, force=force)
+
+
+def _run_locked_orphan_cleanup(*, user_id: int | None, force: bool) -> dict[str, Any]:
+    """The cleanup pass itself; the caller holds the integrity lock."""
     r = get_redis()
-
-    # Guard against concurrent runs
-    if not r.set(_REDIS_LOCK_KEY, "1", nx=True, ex=900):
-        logger.info("Orphan cleanup already running, skipping")
-        return {"status": "already_running"}
-
     start_time = time.time()
     try:
         results = run_orphan_cleanup(dry_run=False, force=force, user_id=user_id)
@@ -519,8 +526,6 @@ def opensearch_orphan_cleanup_task(
             {"status": "error", "error": str(e)},
         )
         return {"error": str(e)}
-    finally:
-        r.delete(_REDIS_LOCK_KEY)
 
 
 def get_integrity_status() -> dict[str, Any]:

@@ -65,28 +65,6 @@ def test_the_filter_builder_excludes_the_given_files():
     assert _excluded(_build_filters(1, None, None, None, None)) == set(), "control"
 
 
-def test_the_response_cache_key_names_the_hidden_set(monkeypatch):
-    """A page cached for one hide set must not be served after a hide or an unhide."""
-    from app.services.search import hybrid_search_service as hss
-
-    keys: list[str] = []
-    monkeypatch.setattr(hss, "get_opensearch_client", lambda: object())
-    monkeypatch.setattr(hss, "_resolve_redaction_config_for_cache", lambda *_a, **_k: None)
-    monkeypatch.setattr(hss, "_redaction_policy_fingerprint", lambda _cfg: "p")
-    monkeypatch.setattr(hss, "_search_corpus_version", lambda: "v")
-
-    def _cached(key):
-        keys.append(key)
-        return SimpleNamespace(results=[])
-
-    monkeypatch.setattr(hss, "_get_cached_response", _cached)
-    service = HybridSearchService()
-    service.search(query="q", user_id=1)
-    service.search(query="q", user_id=1, exclude_file_uuids=["x"])
-    service.search(query="q", user_id=1, exclude_file_uuids=["y"])
-    assert len(set(keys)) == 3
-
-
 # --- the routes -------------------------------------------------------------------------------
 
 

@@ -70,7 +70,7 @@ def _file_from_dict(d: dict) -> RemoteFileInfo:
 def scan_all(self: Any) -> dict:
     """Dispatch a scan for every enabled source that is due. Runs every minute."""
     summary = {"dispatched": 0, "skipped_not_due": 0}
-    with task_lock_manager.acquire_lock("watch_source:scan_all", timeout=55) as acquired:
+    with task_lock_manager.acquire_lock("watch_source:scan_all", timeout=3600) as acquired:
         if not acquired:
             return {"skipped": True, "reason": "scan_all already running"}
 

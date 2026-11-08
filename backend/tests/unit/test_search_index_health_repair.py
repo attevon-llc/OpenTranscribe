@@ -30,7 +30,6 @@ import pytest
 from opensearchpy.exceptions import TransportError
 
 BACKEND = Path(__file__).resolve().parents[2]
-MAINTENANCE_PY = BACKEND / "app" / "startup" / "maintenance.py"
 
 ANN_METHOD = {
     "engine": "lucene",
@@ -492,19 +491,6 @@ def test_the_maintenance_task_declines_when_the_lock_is_held(monkeypatch):
 
     assert result["skipped"] is True
     assert ran == [], "the body must not run while another pass holds the lock"
-
-
-def test_the_maintenance_lock_key_is_cleared_on_startup():
-    """The stale-key sweep must name the key the task actually takes.
-
-    Renaming the lock without renaming this entry leaves a dead pattern behind and
-    a real orphaned lock uncleared for its full TTL.
-    """
-    from app.tasks.search_maintenance_task import MAINTENANCE_LOCK_KEY
-
-    source = MAINTENANCE_PY.read_text()
-    assert f'"{MAINTENANCE_LOCK_KEY}"' in source
-    assert '"search_maintenance_lock"' not in source, "the old key name must be gone"
 
 
 def test_the_structural_index_calls_are_taken_under_a_lock():

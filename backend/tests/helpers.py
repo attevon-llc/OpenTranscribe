@@ -234,3 +234,30 @@ def set_youtube_policy(monkeypatch, **fields):
 
     policy = replace(youtube_policy.DEFAULT_POLICY, **fields)
     monkeypatch.setattr(youtube_policy, "current_youtube_policy", lambda: policy)
+
+
+class StoreBackedTaskLocks:
+    """A ``task_lock_manager`` stand-in whose locks live in a dict-backed fake Redis store.
+
+    For suites that drive a task against an in-process fake Redis: the real manager takes a
+    redis-py ``Lock`` (Lua scripts), which no dict fake can run. Same contract as
+    ``TaskLockManager.acquire_lock``: NX on entry, yields whether it holds the key, and
+    releases only a lock it took.
+    """
+
+    def __init__(self, store: dict[str, Any]) -> None:
+        self.store = store
+
+    @contextlib.contextmanager
+    def acquire_lock(self, lock_key: str, timeout: int = 300, blocking_timeout: int = 0):
+        if lock_key in self.store:
+            yield False
+            return
+        self.store[lock_key] = "held"
+        try:
+            yield True
+        finally:
+            self.store.pop(lock_key, None)
+
+    def is_locked(self, lock_key: str) -> bool:
+        return lock_key in self.store

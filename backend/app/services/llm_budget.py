@@ -280,6 +280,11 @@ _ADJUST_SQL = text(
 def _ensure_counter(
     db: Session, scope: str, user_id: int | None, period: str, now: datetime
 ) -> None:
+    """Create the period's counter, seeded from the usage already recorded in it.
+
+    The seed is a SUM over the period's ``usage_event`` rows, so it runs only when
+    :func:`_take_seeded` found no counter row, never on every call.
+    """
     start, end = period_bounds(scope, now)
     db.execute(
         _ENSURE_SQL,
@@ -314,6 +319,33 @@ def _take(
 def _used(db: Session, scope: str, user_id: int | None, period: str) -> int:
     row = db.execute(_USED_SQL, {"scope": scope, "subject": user_id or 0, "period": period}).first()
     return 0 if row is None else int(row[0])
+
+
+def _take_seeded(
+    db: Session,
+    scope: str,
+    user_id: int | None,
+    period: str,
+    amount: int,
+    limit: int,
+    now: datetime,
+) -> int | None:
+    """:func:`_take`, creating the counter first only if it does not exist yet.
+
+    The conditional UPDATE runs first, so a call against an existing counter is one
+    indexed statement. Zero rows means either "over the limit" or "no counter yet"; only
+    the second seeds (the month-wide SUM) and retries. Correct under Read Committed: two
+    first calls racing both reach the ``INSERT ... ON CONFLICT DO NOTHING``, the loser
+    waits on the winner's row and inserts nothing, and each retry's UPDATE takes a fresh
+    snapshot and re-checks the limit against the committed total.
+    """
+    taken = _take(db, scope, user_id, period, amount, limit)
+    if taken is not None:
+        return taken
+    if db.execute(_USED_SQL, {"scope": scope, "subject": user_id or 0, "period": period}).first():
+        return None
+    _ensure_counter(db, scope, user_id, period, now)
+    return _take(db, scope, user_id, period, amount, limit)
 
 
 def _retry_after(scope: str, now: datetime) -> int:
@@ -378,18 +410,17 @@ def reserve(
         user_limit = limits.user_daily_tokens if subject else 0
         try:
             refused: tuple[Scope, int, int] | None = None
-            if subject:
-                _ensure_counter(db, SCOPE_USER_DAY, subject, day, now)
-                if _take(db, SCOPE_USER_DAY, subject, day, amount, user_limit) is None:
-                    refused = (
-                        SCOPE_USER_DAY,
-                        user_limit,
-                        _used(db, SCOPE_USER_DAY, subject, day),
-                    )
+            if (
+                subject
+                and _take_seeded(db, SCOPE_USER_DAY, subject, day, amount, user_limit, now) is None
+            ):
+                refused = (SCOPE_USER_DAY, user_limit, _used(db, SCOPE_USER_DAY, subject, day))
             if refused is None:
-                _ensure_counter(db, SCOPE_INSTANCE_MONTH, None, month, now)
                 inst_limit = limits.instance_monthly_tokens
-                if _take(db, SCOPE_INSTANCE_MONTH, None, month, amount, inst_limit) is None:
+                if (
+                    _take_seeded(db, SCOPE_INSTANCE_MONTH, None, month, amount, inst_limit, now)
+                    is None
+                ):
                     refused = (
                         SCOPE_INSTANCE_MONTH,
                         inst_limit,

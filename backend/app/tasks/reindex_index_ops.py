@@ -76,12 +76,9 @@ def _refresh_index_and_clear_cache() -> None:
 
     Issue #666: this used to also call ``hybrid_search_service.clear_search_cache()``,
     a process-local dict clear that ran in whichever worker executed this
-    coordinator — never the API process that actually serves cached search
-    responses, so it was a no-op where it mattered. The response cache is now
-    invalidated by its own ``corpus_version`` cache-key field
-    (``hybrid_search_service._search_corpus_version``), which
-    ``index_transcript_chunks`` already bumps for every file this reindex
-    processes — no explicit clear needed, cross-process, for free.
+    coordinator — never the API process that actually served cached search
+    responses, so it was a no-op where it mattered. That response cache has since
+    been removed (concurrency audit L8), so there is nothing to clear.
     """
     try:
         from app.services.opensearch_service import opensearch_client

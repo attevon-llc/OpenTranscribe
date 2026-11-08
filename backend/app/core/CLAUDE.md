@@ -286,16 +286,14 @@ should import `app.api` or `app.services` at module scope.
 ## Caching rule
 
 **Cache only where invalidation is provable; where it is not, say why.** A TTL alone is not an
-invalidation: it bounds how stale an answer can be, it does not make it correct. Both existing
-caches key on a corpus version so a change makes old entries unreachable instead of waiting out
-the TTL. Do not add a third without naming what invalidates it.
+invalidation: it bounds how stale an answer can be, it does not make it correct. The existing
+cache keys on a corpus version so a change makes old entries unreachable instead of waiting out
+the TTL. Do not add another without naming what invalidates it.
 
-- `services/search/search_cache.py` (process-local, TTL `SEARCH_CACHE_TTL_SECONDS`, LRU): the
-  key folds in `_search_corpus_version()` (`:40`, used at `hybrid_search_service.py:223`; it reuses the chat counter) and the
-  requester's redaction-policy fingerprint (`_redaction_policy_fingerprint`, `:115`). It is
-  invalidated by any `bump_corpus_version()` call, and by a redaction-policy change through the key.
-  Not provable: when Redis is unreachable the version reads `"0"` (`:73`), so the cache falls back
-  to TTL-only.
+- The search response cache (`services/search/search_cache.py`) was **removed** (concurrency
+  audit L8): its key used the one global corpus version, so any write anywhere emptied it, and its
+  invalidation was not provable (Redis down fell back to TTL-only; a summary regeneration bumped
+  nothing). The reasoning is in `hybrid_search_service.py`'s module docstring.
 - `services/chat/retrieval_cache.py` (Redis, key `chat:corpus:version`): `corpus_version()` (`:45`)
   is in every key; `bump_corpus_version()` (`:75`) is the only invalidation. Callers: chunk
   indexing/deletion (`search/indexing_service.py:269`, `search/indexing/chunk_plane.py:75`), the ACL

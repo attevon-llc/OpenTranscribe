@@ -40,6 +40,7 @@ from app.tasks import speaker_attribute_migration_task as migration
 from app.tasks import speaker_attribute_task as sat
 from app.tasks import speaker_identification_task as sid
 from app.tasks.transcription.speaker_processor import apply_sidecar_gender_for_user
+from tests.helpers import StoreBackedTaskLocks
 
 SIDECAR = {"SPEAKER_00": {"label": "female", "confidence": 0.9}}
 USER_KEY = constants.PRIVACY_USER_GENDER_DETECTION_KEY
@@ -436,7 +437,9 @@ class _FakeRedis:
 
 def _run_orchestrator(db_session, monkeypatch, *, force: bool, user) -> tuple[dict, list]:
     dispatched: list[list[str]] = []
-    monkeypatch.setattr(migration.attribute_migration_progress, "_redis_client", _FakeRedis())
+    fake_redis = _FakeRedis()
+    monkeypatch.setattr(migration.attribute_migration_progress, "_redis_client", fake_redis)
+    monkeypatch.setattr(migration, "task_lock_manager", StoreBackedTaskLocks(fake_redis.store))
     monkeypatch.setattr(migration, "session_scope", lambda: _real_scope(db_session))
     monkeypatch.setattr(migration_admin_notify, "send_ws_event", lambda *a, **kw: None)
 

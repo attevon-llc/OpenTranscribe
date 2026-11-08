@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from sqlalchemy import and_
+from sqlalchemy import exists
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Query
@@ -181,6 +182,15 @@ def get_file_with_transcript_count(
     )
 
     return file_obj, segment_count or 0
+
+
+def file_has_transcript(db: Session, file_id: int) -> bool:
+    """Whether the file has at least one transcript segment, as one ``EXISTS``.
+
+    Not ``bool(media_file.transcript_segments)``: that lazy-loads every column of every
+    segment to answer a yes/no question (concurrency audit L7).
+    """
+    return bool(db.query(exists().where(TranscriptSegment.media_file_id == file_id)).scalar())
 
 
 def get_user_speakers(db: Session, user_id: int) -> list[Speaker]:

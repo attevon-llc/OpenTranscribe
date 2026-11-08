@@ -248,11 +248,8 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
     reset_neural_pipeline_state()
     ensure_neural_ingest_pipeline(model_id)
 
-    # 3. Cached infra-state flags, then the index mapping. The response cache
-    #    itself is invalidated by its own corpus-version cache key (issue #666)
-    #    as soon as the reindex below starts bumping it per file — no explicit
-    #    clear needed, and a clear here ran in the wrong process anyway (see
-    #    `hybrid_search_service._search_corpus_version`).
+    # 3. Cached infra-state flags, then the index mapping. There is no search
+    #    response cache to clear (removed, concurrency audit L8).
     reset_neural_search_state()
     # The search response's provenance advisory is TTL-cached (#437); a model
     # switch is exactly the event that invalidates it, so drop it here rather than

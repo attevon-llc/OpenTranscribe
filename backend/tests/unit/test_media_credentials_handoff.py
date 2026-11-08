@@ -128,11 +128,11 @@ def test_dispatch_passes_only_a_reference_to_the_broker(
     mf = _make_media_file(db_session, normal_user)
     sent: list[dict[str, Any]] = []
 
-    def _capture(*a, **kw):
-        sent.append({"args": a, "kwargs": kw})
+    def _capture(kwargs=None, **options):
+        sent.append({"kwargs": kwargs, "options": options})
         return SimpleNamespace(id="t1")
 
-    monkeypatch.setattr(process_youtube_url_task, "delay", _capture)
+    monkeypatch.setattr(process_youtube_url_task, "apply_async", _capture)
     _dispatch_url_video_task(
         db_session,
         mf,
@@ -158,7 +158,7 @@ def test_failed_dispatch_does_not_leave_the_secret_behind(
     def _boom(*_a, **_kw):
         raise RuntimeError("broker down")
 
-    monkeypatch.setattr(process_youtube_url_task, "delay", _boom)
+    monkeypatch.setattr(process_youtube_url_task, "apply_async", _boom)
     with pytest.raises(HTTPException):
         _dispatch_url_video_task(
             db_session, mf, "https://m.example.com/x", normal_user.id, media_password=SECRET

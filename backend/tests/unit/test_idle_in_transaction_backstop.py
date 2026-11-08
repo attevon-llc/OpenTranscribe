@@ -20,7 +20,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import create_engine
 
-from app.core.config import DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
+from app.core.settings_concurrency import DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
 from app.db.base import connect_args as app_connect_args
 from app.db.base import engine as app_engine
 from app.db.migration_connection import SessionSet

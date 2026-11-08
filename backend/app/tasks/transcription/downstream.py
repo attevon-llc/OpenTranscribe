@@ -22,6 +22,8 @@ def _dispatch_automatic_summary(
     still dispatched (it records ``not_configured`` for the file page) but reported
     SKIPPED, since no summary will be produced.
     """
+    from app.core.queues import NLPPriority
+    from app.services.dispatch_priority import nlp_priority
     from app.tasks.summarization import send_summary_notification
     from app.tasks.summarization import summarize_transcript_task
     from app.utils.summary_settings import get_summary_disable_reason
@@ -31,6 +33,9 @@ def _dispatch_automatic_summary(
         if not media_file:
             logger.warning(f"File {file_uuid} not found for summary dispatch")
             return PostProcessingState.SKIPPED
+        # Automatic work, behind anything a person asked for, and one step further back
+        # for an owner past their fair share of queued transcriptions (audit M11).
+        priority = nlp_priority(db, int(media_file.user_id), base=NLPPriority.AUTO_PIPELINE)
 
         if str(media_file.summary_status) == "disabled":
             logger.info(f"Summary disabled for file {file_id} (per-file flag)")
@@ -62,9 +67,9 @@ def _dispatch_automatic_summary(
             )
             return PostProcessingState.SKIPPED
 
-    summary_task = summarize_transcript_task.delay(
-        file_uuid=file_uuid,
-        prompt_uuid=collection_prompt_uuid,
+    summary_task = summarize_transcript_task.apply_async(
+        kwargs={"file_uuid": file_uuid, "prompt_uuid": collection_prompt_uuid},
+        priority=priority,
     )
     logger.info(f"Automatic summarization task {summary_task.id} started for file {file_id}")
     return PostProcessingState.QUEUED if llm_configured else PostProcessingState.SKIPPED

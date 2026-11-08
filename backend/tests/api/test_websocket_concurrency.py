@@ -130,6 +130,16 @@ class _Peer:
 _EVENT = {"type": "cache_invalidate", "data": {}}
 
 
+def _deliver(manager: ws_module.ConnectionManager, fan_out: Callable[[], Any]) -> None:
+    """Run one fan-out and wait for its queued frames to be written (M7: it only enqueues)."""
+
+    async def _main() -> None:
+        await fan_out()
+        await manager.flush()
+
+    asyncio.run(_main())
+
+
 def test_a_broadcast_survives_sockets_joining_and_leaving_mid_fan_out():
     manager = ws_module.ConnectionManager()
     first, leaver, newcomer = _Peer(), _Peer(), _Peer()
@@ -142,7 +152,7 @@ def test_a_broadcast_survives_sockets_joining_and_leaving_mid_fan_out():
     manager.connect(first.socket, 1)
     manager.connect(leaver.socket, 2)
 
-    asyncio.run(manager.broadcast(_EVENT))
+    _deliver(manager, lambda: manager.broadcast(_EVENT))
 
     assert first.received == [_EVENT]
     # Snapshot of the users registered when the fan-out started: a user who joined
@@ -161,7 +171,7 @@ def test_a_broadcast_survives_a_user_connecting_mid_fan_out():
     manager.connect(first.socket, 1)
     manager.connect(second.socket, 2)
 
-    asyncio.run(manager.broadcast(_EVENT))
+    _deliver(manager, lambda: manager.broadcast(_EVENT))
 
     assert first.received == [_EVENT]
     assert second.received == [_EVENT]
@@ -174,7 +184,7 @@ def test_a_personal_message_reaches_every_tab_when_one_closes_mid_send():
     for peer in (closing, second, third):
         manager.connect(peer.socket, 7)
 
-    asyncio.run(manager.send_personal_message(7, _EVENT))
+    _deliver(manager, lambda: manager.send_personal_message(7, _EVENT))
 
     # Removing a tab from the user's live list while iterating it skipped the NEXT tab.
     assert second.received == [_EVENT]
@@ -216,17 +226,24 @@ class _TimedPeer(_Peer):
         self.arrived_at.append(asyncio.get_running_loop().time())
 
 
-def _timed(coro_factory: Callable[[], Any]) -> tuple[float, float]:
-    """Run one fan-out; return ``(start, elapsed)`` on the loop clock.
+def _timed(
+    manager: ws_module.ConnectionManager, coro_factory: Callable[[], Any]
+) -> tuple[float, float]:
+    """Run one fan-out until its frames are written; return ``(start, elapsed)``.
 
-    Bounded by ``wait_for`` so the old sequential, timeout-free fan-out fails the test
-    instead of hanging the run.
+    Bounded by ``wait_for`` so a fan-out that waits on a stalled socket forever fails the
+    test instead of hanging the run.
     """
 
     async def _main() -> tuple[float, float]:
         loop = asyncio.get_running_loop()
         start = loop.time()
-        await asyncio.wait_for(coro_factory(), timeout=_SEND_TIMEOUT_S * 6)
+
+        async def _fan_out_and_flush() -> None:
+            await coro_factory()
+            await manager.flush()
+
+        await asyncio.wait_for(_fan_out_and_flush(), timeout=_SEND_TIMEOUT_S * 6)
         return start, loop.time() - start
 
     return asyncio.run(_main())
@@ -244,7 +261,7 @@ def test_a_stalled_client_does_not_delay_a_broadcast_to_the_others(short_send_ti
     manager.connect(stalled.socket, 1)
     manager.connect(fast.socket, 2)
 
-    start, elapsed = _timed(lambda: manager.broadcast(_EVENT))
+    start, elapsed = _timed(manager, lambda: manager.broadcast(_EVENT))
 
     assert fast.received == [_EVENT]
     # Delivered while the stalled send was still pending, not after it gave up.
@@ -262,7 +279,7 @@ def test_a_stalled_tab_does_not_delay_the_same_users_other_tab(short_send_timeou
     manager.connect(stalled.socket, 7)
     manager.connect(fast.socket, 7)
 
-    start, _elapsed = _timed(lambda: manager.send_personal_message(7, _EVENT))
+    start, _elapsed = _timed(manager, lambda: manager.send_personal_message(7, _EVENT))
 
     assert fast.received == [_EVENT]
     assert fast.arrived_at[0] - start < _SEND_TIMEOUT_S / 2, fast.arrived_at
@@ -275,10 +292,10 @@ def test_a_dropped_socket_is_not_written_to_again(short_send_timeout):
     stalled, fast = _StalledPeer(), _TimedPeer()
     manager.connect(stalled.socket, 1)
     manager.connect(fast.socket, 2)
-    _timed(lambda: manager.broadcast(_EVENT))
+    _timed(manager, lambda: manager.broadcast(_EVENT))
     attempts = stalled.attempts
 
-    _start, elapsed = _timed(lambda: manager.broadcast(_EVENT))
+    _start, elapsed = _timed(manager, lambda: manager.broadcast(_EVENT))
 
     assert fast.received == [_EVENT, _EVENT]
     assert stalled.attempts == attempts

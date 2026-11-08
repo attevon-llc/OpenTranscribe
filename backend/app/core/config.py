@@ -24,6 +24,7 @@ from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
 from app.core.settings_capacity import CapacitySettings
+from app.core.settings_concurrency import ConcurrencySettings
 from app.core.settings_deployment import DeploymentSettings
 from app.core.settings_proxy_auth import ProxyAuthSettings
 from app.core.settings_request_limits import RequestLimitSettings
@@ -31,11 +32,6 @@ from app.utils.cpu_budget import parse_thread_count_setting
 
 _config_logger = logging.getLogger(__name__)
 
-
-#: Shipped default for :attr:`Settings.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS`.
-#: A module constant rather than a literal in the field so a test can pin the
-#: DEFAULT independently of whatever an operator set in the running environment.
-DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS = 300_000
 
 #: Shipped default for :attr:`Settings.CACHE_BUCKET_NAME` — the historical hardcoded
 #: value, so an existing deployment that sets nothing keeps the bucket it already has.
@@ -104,7 +100,13 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
     return search_filter.replace("{username_attr}", username_attr)
 
 
-class Settings(ProxyAuthSettings, DeploymentSettings, RequestLimitSettings, CapacitySettings):
+class Settings(
+    ProxyAuthSettings,
+    DeploymentSettings,
+    RequestLimitSettings,
+    CapacitySettings,
+    ConcurrencySettings,
+):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
@@ -684,24 +686,6 @@ class Settings(ProxyAuthSettings, DeploymentSettings, RequestLimitSettings, Capa
     # segment-refresh per bulk batch. The interval is restored afterwards so
     # normal search latency is unaffected. Tuned for 6+ hour transcripts.
     SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = 500
-
-    # Server-side backstop for the "transaction held open across slow work"
-    # bug class (issue #440). Postgres terminates a backend that has an OPEN
-    # transaction and is running NO query for this long. It cannot interrupt a
-    # slow *query* — only an idle one — so a legitimately long-running statement
-    # is never affected; the only thing it kills is a connection sitting on
-    # ACCESS SHARE locks and pinning the VACUUM horizon while the process does
-    # something else (HTTP call, model inference, file I/O).
-    #
-    # This is defence in depth, NOT the fix: the 35 real leaks were fixed in the
-    # code and `scripts/audit-session-lifetime.py` keeps the idiom from
-    # returning. 5 minutes is ~10x the slowest legitimate transaction here and
-    # ~1/10 of the 48-minute leak that motivated it. Set to 0 to disable.
-    #
-    # Applies to the shared app engine only. `db/migrations.py` builds its own
-    # engines, so a long `ALTER TABLE` and the advisory-lock holder are outside
-    # this timeout by construction.
-    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: int = DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
 
     @field_validator(
         "DB_POOL_SIZE",

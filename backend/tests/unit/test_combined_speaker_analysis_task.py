@@ -44,6 +44,7 @@ from app.tasks import combined_speaker_analysis_task as cst
 from app.tasks import embedding_migration_v4_writer as emv4
 from app.tasks import speaker_attribute_migration_task as sat
 from app.tasks.migration_pipeline import PreparedFile
+from tests.helpers import StoreBackedTaskLocks
 
 # --------------------------------------------------------------------------------------
 # Fixtures / helpers
@@ -192,6 +193,8 @@ def _install_fake_redis(monkeypatch) -> FakeRedis:
     fake = FakeRedis()
     monkeypatch.setattr(cst, "get_redis", lambda: fake)
     monkeypatch.setattr(cst.combined_migration_progress, "_redis_client", fake)
+    # The orchestrator lock is a task_lock lease; keep it in the same store.
+    monkeypatch.setattr(cst, "task_lock_manager", StoreBackedTaskLocks(fake.store))
     return fake
 
 

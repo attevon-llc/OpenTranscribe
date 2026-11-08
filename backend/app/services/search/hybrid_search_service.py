@@ -4,9 +4,28 @@
 modules (``collapsed_search``, ``split_bm25``, ``two_phase_search``,
 ``summary_plane_search``, ``suggestions``) and the request pieces in ``filters``,
 ``query_building``, ``collapse_bodies``, ``result_processing`` and ``highlighting``, with
-``search_cache``, ``search_infra`` and ``search_types`` beside
+``search_infra`` and ``search_types`` beside
 them. This module keeps the orchestration, the neural-availability probe and the
 corpus-wide match count.
+
+No response cache (concurrency audit L8). There used to be a process-local page cache here
+(``search_cache.py``, 5 min TTL, 256 entries) keyed on the query, the user and a global
+"corpus version" that every chunk-index write, share change, takedown and rename bumps.
+From where that version is bumped (reasoned, not measured: no live stack was available for a
+hit-rate count), it could not pay for itself: on a deployment that is
+ingesting at all, any user's transcription completing invalidates every user's cached pages
+(the version is global, not per tenant), each API replica held its own copy, and page 2 or a
+changed filter is a different key anyway, so the only hits were an identical repeat by the same
+user on the same process inside a quiet window. Against that it carried four correctness bugs in
+its life (#666 a clear that ran in the wrong process, #86 a key without the redaction policy,
+#760 a key without the selected sources, and a cached page handed out by reference that the
+quarantine trim must never mutate), it fell back to
+TTL-only whenever Redis was unreachable, and a summary regeneration bumps nothing, so it could
+serve a stale summary. A per-tenant version was considered and rejected: a page spans a user's
+own files, files shared to them by other users and groups, and organization files, so the
+invalidation would have to know every tenant an ACL, share or takedown touches; getting that
+wrong is a cross-tenant leak. The cost of dropping it is that an identical repeat search runs
+again (for a user whose policy masks PII, the 0.8-2.1 s Presidio pass too).
 """
 
 import logging
@@ -32,15 +51,7 @@ from app.services.search import summary_plane_search
 from app.services.search import two_phase_search
 from app.services.search.filters import _collect_filters_applied
 from app.services.search.fusion import FusionConfig
-from app.services.search.fusion import search_pipeline_id
-from app.services.search.hidden_exclusion import exclusion_fingerprint
 from app.services.search.query_building import _parse_query_operators
-from app.services.search.search_cache import _get_cached_response
-from app.services.search.search_cache import _make_cache_key
-from app.services.search.search_cache import _redaction_policy_fingerprint
-from app.services.search.search_cache import _resolve_redaction_config_for_cache
-from app.services.search.search_cache import _search_corpus_version
-from app.services.search.search_cache import _set_cached_response
 from app.services.search.search_infra import _ensure_infrastructure
 from app.services.search.search_types import SearchCountUnavailableError
 from app.services.search.search_types import SearchResponse
@@ -158,9 +169,7 @@ class HybridSearchService:
             query: Search query text.
             user_id: Current user ID for filtering.
             fusion: Hybrid fusion strategy for **this request** (#363). None uses
-                the configured default. The resolved pipeline id is part of the
-                response cache key, so two strategies cannot serve each other's
-                cached page.
+                the configured default.
             organization_id: Active org id (None = personal). Adds the tenant gate
                 so cross-org transcript content never surfaces.
             page: Page number (1-indexed).
@@ -173,9 +182,9 @@ class HybridSearchService:
             sort_order: Sort direction - asc or desc.
             title_filter: Optional filename/title substring filter.
             exclude_file_uuids: The caller's hidden files (issue #1102), dropped
-                before ranking. Its fingerprint is part of the cache key.
+                before ranking.
             include_quarantined: The quarantine review exemption
-                (``file_availability.unavailable_list_exempt``). Part of the cache key.
+                (``file_availability.unavailable_list_exempt``).
 
         Returns:
             SearchResponse with grouped results.
@@ -187,56 +196,6 @@ class HybridSearchService:
 
         start_time = time.time()
         page_size = min(page_size, SEARCH_MAX_PAGE_SIZE)
-
-        # Redaction policy resolved BEFORE the cache lookup, not after (#86-
-        # adjacent fix): the response this method is about to cache gets masked
-        # under this policy, so the cache key must name it. Resolving it only at
-        # `_redact_snippets` time — the pre-fix behaviour — meant a policy change
-        # (a user flips masking, or the admin floor changes) took up to
-        # `SEARCH_CACHE_TTL_SECONDS` to take effect on a repeated query, and two
-        # policies could collide on one key if `user_id` were ever reused for a
-        # tenant-shared cache in the future.
-        redaction_cfg = _resolve_redaction_config_for_cache(
-            user_id, organization_id=organization_id
-        )
-        policy_fingerprint = _redaction_policy_fingerprint(redaction_cfg)
-
-        # Check cache
-        cache_key = _make_cache_key(
-            query=query,
-            user_id=user_id,
-            page=page,
-            page_size=page_size,
-            speakers=speakers,
-            tags=tags,
-            date_from=date_from,
-            date_to=date_to,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            search_mode=search_mode,
-            file_type=file_type,
-            collection_id=collection_id,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_file_size=min_file_size,
-            max_file_size=max_file_size,
-            language=language,
-            title_filter=title_filter,
-            organization_id=organization_id,
-            file_uuid=file_uuid,
-            fusion_pipeline=search_pipeline_id(fusion),
-            redaction_policy=policy_fingerprint,
-            corpus_version=_search_corpus_version(),
-            # Issue #760: a cached page must name the sources it was built
-            # for, or toggling a pill re-serves the previous page for
-            # SEARCH_CACHE_TTL_SECONDS.
-            sources=sorted(sources) if sources is not None else None,
-            hidden_files=exclusion_fingerprint(exclude_file_uuids),
-            include_quarantined=include_quarantined,
-        )
-        cached = _get_cached_response(cache_key)
-        if cached:
-            return cached
 
         pipeline_id = _ensure_infrastructure(fusion)
 
@@ -314,22 +273,10 @@ class HybridSearchService:
         )
 
         # Read-time content redaction of snippets, for whichever of PII / profanity /
-        # custom words this user's policy masks. Applied before caching so the
-        # cache (keyed on user_id AND the policy fingerprint above) holds the
-        # masked version. `redaction_cfg` is the SAME resolution used for the
-        # cache key above — passed through rather than re-resolved, so the
-        # config that decided the key is provably the config that did the
-        # masking (one DB round trip, not two, and no window for the two to
-        # silently disagree).
-        self._redact_snippets(result, user_id, redaction_cfg)
-
-        # Cache the response — but NOT if it fell back to BM25-only due to
-        # a transient error, so the next request retries hybrid properly.
-        if not result._fell_back_to_bm25:
-            _set_cached_response(cache_key, result)
-        else:
-            logger.info("Skipping cache for BM25-fallback response (query='%s')", query)
-
+        # custom words this user's policy masks. No response cache sits after this
+        # (concurrency audit L8, see the module docstring), so every page is masked
+        # under the policy in force for this request.
+        self._redact_snippets(result, user_id, organization_id=organization_id)
         return result
 
     def _check_neural_search_available(self) -> bool:

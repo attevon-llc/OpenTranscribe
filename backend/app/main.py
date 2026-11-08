@@ -232,11 +232,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning(f"Derived-cache retention/reclaim setup failed (non-fatal): {e}")
 
-    # Clear stale migration state from Redis (orphaned by unclean shutdown).
-    #
-    # Elected, because this deletes ALL task_progress:* keys and every coordination
-    # lock. Unelected, the second replica to boot wipes progress and locks belonging to
-    # work the first replica is actively coordinating (issue #284 A1.3).
+    # Clear stale reindex cancel requests (locks and progress now expire on their own;
+    # see _clear_stale_task_state). Still elected: a replica booting later must not
+    # drop a cancel request a user made after the first replica came up.
     try:
         from app.utils.boot_once import run_once_per_boot
 

@@ -25,7 +25,7 @@ import time in this test process, so a real regression could only be observed by
 
 from __future__ import annotations
 
-from app.core.config import DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
+from app.core.settings_concurrency import DEFAULT_DB_IDLE_IN_TRANSACTION_TIMEOUT_MS
 
 _PRINT_FIELD_TEMPLATE = "from app.core.config import Settings; print(Settings().{field})"
 

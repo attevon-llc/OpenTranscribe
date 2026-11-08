@@ -45,6 +45,7 @@ from app.services.request_context import RequestContext
 from app.services.topic_extraction_service import TopicExtractionService
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.tasks.topic_extraction import extract_topics_task
+from app.utils.db_helpers import file_has_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def batch_extract_topics(
                 organization_id=ctx.org_id,
                 min_permission="editor",
             )
-            if media_file.transcript_segments:
+            if file_has_transcript(db, int(media_file.id)):
                 verified_uuids.append(file_uuid)
                 verified_ids[file_uuid] = int(media_file.id)
             else:
@@ -437,7 +438,7 @@ def extract_topics(
     require_processing_allowed_for_file(db, media_file)
 
     # Check if file has transcript
-    if not media_file.transcript_segments:
+    if not file_has_transcript(db, int(media_file.id)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="File has no transcript. Complete transcription first.",

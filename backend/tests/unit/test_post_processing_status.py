@@ -491,7 +491,7 @@ class TestDownstreamDecisions:
         for target in (
             "app.tasks.analytics.analyze_transcript_task.delay",
             "app.tasks.topic_extraction.extract_topics_task.delay",
-            "app.tasks.summarization.summarize_transcript_task.delay",
+            "app.tasks.summarization.summarize_transcript_task.apply_async",
         ):
             monkeypatch.setattr(target, lambda *a, **k: SimpleNamespace(id="x"))
         return downstream

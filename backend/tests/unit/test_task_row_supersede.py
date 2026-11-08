@@ -452,8 +452,14 @@ def _session_of(db):
     yield db
 
 
+@contextmanager
+def _lock_held(*_args, **_kwargs):
+    yield True
+
+
 def _run_health_check(db_session, sweep) -> list[str]:
     from app.tasks import recovery
+    from app.utils import task_lock
 
     order: list[str] = []
 
@@ -470,6 +476,8 @@ def _run_health_check(db_session, sweep) -> list[str]:
         patch.object(recovery, "resolve_superseded_task_rows", swept),
         patch.object(recovery.task_detection_service, "identify_stuck_tasks", stuck),
         patch.object(recovery, "_check_opensearch_health", lambda summary: None),
+        # The suite has no Redis, and the health check's lock fails closed without one.
+        patch.object(task_lock.task_lock_manager, "acquire_lock", _lock_held),
     ):
         recovery.periodic_health_check_task()
     return order

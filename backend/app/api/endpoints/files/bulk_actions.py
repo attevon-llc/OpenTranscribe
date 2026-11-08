@@ -60,10 +60,17 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+#: Most files one bulk-action request may name. The list is processed synchronously inside
+#: the request, holding an API thread and a database connection throughout, so it is capped
+#: like the other bulk file schemas (``MAX_FILES_PER_HOLD``, watch-source imports). The SPA
+#: sends a larger selection in batches of this size (``frontend/src/lib/api/bulkActions.ts``).
+BULK_ACTION_MAX_FILES = 500
+
+
 class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
-    file_uuids: list[str]
+    file_uuids: list[str] = Field(max_length=BULK_ACTION_MAX_FILES)
     # delete (moves to the trash) | restore | purge (delete forever, from the trash) | retry
     # | cancel | recover | reprocess | summarize | redact | identify_speakers | add_tag
     # | remove_tag | hide | unhide
@@ -118,8 +125,13 @@ def _process_single_file_action(
     is_org_admin: bool = False,
     ctx: RequestContext | None = None,
     http_request: Request | None = None,
+    bulk: bool = False,
 ) -> BulkActionResult:
-    """Process a single file action, returning the result."""
+    """Process a single file action, returning the result.
+
+    ``bulk`` is True when the request names more than one file: NLP work it starts goes
+    in behind single requests (``services/dispatch_priority.py``).
+    """
     if action == "delete":
         # Delete resolves the file under its own rule (services/delete_permissions),
         # not the "editor" pre-check below: an editor share must NOT pass, and an
@@ -188,12 +200,14 @@ def _process_single_file_action(
             disable_diarization,
             user_id=current_user.id,
         ),
-        "summarize": lambda: _handle_summarize_action(db, file_uuid, file_id, current_user.id),
+        "summarize": lambda: _handle_summarize_action(
+            db, file_uuid, file_id, current_user.id, bulk=bulk
+        ),
         "redact": lambda: _redact_if_enabled(
             db, db_file, file_uuid, file_id, current_user, bypass, organization_id
         ),
         "identify_speakers": lambda: _handle_identify_speakers_action(
-            db, file_uuid, file_id, current_user.id
+            db, file_uuid, file_id, current_user.id, bulk=bulk
         ),
         "add_tag": lambda: _apply_batch_tag(
             db, file_uuid, file_id, tag, add=True, user_id=current_user.id, bypass=bypass
@@ -268,6 +282,7 @@ def bulk_file_action(
                     is_org_admin=ctx.is_org_admin,
                     ctx=ctx,
                     http_request=http_request,
+                    bulk=len(request.file_uuids) > 1,
                 )
                 results.append(result)
             except RedactionNotEnabledError:

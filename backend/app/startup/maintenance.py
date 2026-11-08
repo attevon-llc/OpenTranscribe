@@ -181,98 +181,32 @@ def _setup_minio() -> None:
 
 
 def _clear_stale_task_state() -> None:
-    """Clear ALL stale task state from Redis on startup.
+    """Clear Redis state that cannot outlive the process that asked for it.
 
-    Any task state from the previous process lifetime is stale — the
-    Celery workers that were processing it are gone. Clear everything so
-    the UI starts clean and tasks can be re-triggered.
+    This used to delete every task lock, run flag and ``task_progress:*`` key on the
+    assumption that "the Celery workers that were processing it are gone". They are not:
+    this runs in the **API** process, which restarts on its own (deploy, crash,
+    ``--reload`` in dev) while workers keep running, so it deleted live workers' locks and
+    progress (concurrency audit M4; the reindex coordination keys were the first casualty,
+    see git history). Every one of those keys now recovers on its own instead:
 
-    This covers:
-    - Migration orchestrator state and locks
-    - Reindex coordination state and locks
-    - Auto-labeling locks
-    - Data integrity / embedding consistency locks
-    - Search maintenance locks
-    - All progress tracker keys (task_progress:*)
+    * task locks are leases the holder renews (``app/utils/task_lock.py``,
+      ``TASK_LOCK_LEASE_SECONDS``): a dead holder's lock expires within one lease;
+    * multi-task run flags (``auto_label_lock:*``, ``embedding_consistency_running``) and
+      progress/status keys carry a TTL their running tasks renew on every write, and have
+      a Stop control that clears them.
+
+    What remains is ``reindex_cancel:*``: a user's cancel request is meaningless after a
+    restart, and clearing it can only let a reindex run, never delete anything.
     """
     from app.core.redis import get_redis
 
     r = get_redis()
-
-    # All migration progress services and their associated keys
-    prefixes = [
-        "speaker_attr_migration",
-        "combined_speaker_migration",
-        "embedding_migration",
-    ]
-
-    cleared = []
-    for prefix in prefixes:
-        suffixes = [
-            ":status",
-            ":batch_task_ids",
-            ":orchestrator_lock",
-            ":completed",
-            ":lock",
-        ]
-        deleted_any = False
-        for suffix in suffixes:
-            key = f"{prefix}{suffix}"
-            if r.delete(key):
-                deleted_any = True
-        if deleted_any:
-            cleared.append(prefix)
-
-    # Clear ALL progress tracker keys — any running task is dead after restart
-    for key in r.scan_iter(match="task_progress:*"):
-        r.delete(key)
-        cleared.append(str(key))
-
-    # Clear stale task locks and coordination state.
-    # Every Redis-based lock used by any task must be listed here
-    # so that a restart never gets blocked by an orphaned lock.
-    #
-    # ⚠️ NOT the reindex coordination keys — `reindex_lock:*`, `reindex_state:*`
-    # and `reindex_uuids:*` were in this list and had to come out. This runs in
-    # the **API** process, which restarts on its own (deploy, crash, `--reload`
-    # in dev) while the Celery workers that own those keys keep running. Wiping
-    # them mid-reindex is not a no-op: the next `search_index_maintenance` sees
-    # no lock, dispatches a second coordinator, that coordinator recreates the
-    # shared state with its own tiny `worker_count`, the in-flight batch workers
-    # increment into it, completion fires early with an almost-empty
-    # "files I indexed" set — and the post-reindex orphan sweep deletes
-    # everything not in it. Measured on an isolated stack: 432 files / 208k
-    # chunks reduced to 252 files / 111k chunks by one backend reload during a
-    # reindex. `reindex_lock` carries `ex=3600` and the state keys carry a TTL,
-    # so a genuinely dead coordinator unblocks itself; a live one no longer gets
-    # its coordination state deleted out from under it.
-    # `reindex_cancel:*` stays — it is a user request, meaningless after a
-    # restart, and clearing it can only cause a reindex to run, never to delete.
-    stale_patterns = [
-        # Reindex coordination
-        "reindex_cancel:*",
-        # Auto-labeling
-        "auto_label_lock:*",
-        "auto_label_progress:*",
-        # Search and data integrity (TaskLockManager-based, like system.health_check)
-        "search_index_maintenance",
-        "data_integrity_running",
-        # Embedding tasks
-        "normalize_embeddings_lock",
-        "embedding_consistency_running",
-        "embedding_consistency_progress:*",
-        # Speaker clustering (TaskLockManager-based)
-        "recluster_speakers_user_*",
-        # Health check (TaskLockManager-based)
-        "system.health_check",
-    ]
-    for pattern in stale_patterns:
-        for key in r.scan_iter(match=pattern):
-            r.delete(key)
-            cleared.append(str(key))
-
+    cleared = 0
+    for key in r.scan_iter(match="reindex_cancel:*"):
+        cleared += int(r.delete(key))
     if cleared:
-        logger.info("Cleared %d stale task keys on startup", len(cleared))
+        logger.info("Cleared %d stale reindex cancel request(s) on startup", cleared)
 
 
 async def _run_startup_recovery() -> None:
@@ -410,73 +344,40 @@ async def _run_imohash_recompute() -> None:
 
 
 async def _run_one_time_embedding_normalization() -> None:
-    """One-time migration: normalize legacy embeddings for users upgrading.
+    """Dispatch the one-time embedding normalization to a worker until it has completed.
 
-    Checks a DB flag first — if already done, returns immediately.
-    After successful normalization, sets the flag so it never runs again.
+    It used to run ``normalize_speaker_embeddings_task.apply()`` here: a full scroll over
+    the speaker indices inline in the API lifespan, on the event loop every request shares,
+    on every replica (concurrency audit M12). It also set the "done" flag from the result,
+    so an ``already_running`` skip or an OpenSearch outage (both ``normalized: 0``) marked
+    the migration done without it having run. Now the API only checks the flag and
+    publishes, elected so one replica does it, and the task sets the flag after a clean run.
     """
     try:
         await asyncio.sleep(60)
-
-        from app.db.base import SessionLocal
-        from app.models.system_settings import SystemSettings
-
-        db = SessionLocal()
-        try:
-            flag = (
-                db.query(SystemSettings)
-                .filter(SystemSettings.key == "embedding_normalization_done")
-                .first()
-            )
-            if flag and flag.value == "true":
-                logger.info("Embedding normalization already completed — skipping")
-                return
-        finally:
-            db.close()
-
-        from app.tasks.speaker_embedding_migration import normalize_speaker_embeddings_task
-
-        result = normalize_speaker_embeddings_task.apply(throw=False)
-        if result and result.result and result.result.get("normalized", 0) == 0:
-            # All vectors already normalized — set flag
-            db = SessionLocal()
-            try:
-                setting = (
-                    db.query(SystemSettings)
-                    .filter(SystemSettings.key == "embedding_normalization_done")
-                    .first()
-                )
-                if not setting:
-                    setting = SystemSettings(
-                        key="embedding_normalization_done",
-                        value="true",
-                        description="One-time embedding L2 normalization migration completed",
-                    )
-                    db.add(setting)
-                else:
-                    setting.value = "true"
-                db.commit()
-                logger.info("Embedding normalization flag set — will not run again")
-            finally:
-                db.close()
-        elif result and result.result:
-            stats = result.result
-            logger.info(
-                "Embedding normalization migrated %d vectors (checked %d)",
-                stats.get("normalized", 0),
-                stats.get("total_found", 0),
-            )
-            # Set flag after successful migration
-            db = SessionLocal()
-            try:
-                setting = SystemSettings(
-                    key="embedding_normalization_done",
-                    value="true",
-                    description="One-time embedding L2 normalization migration completed",
-                )
-                db.merge(setting)
-                db.commit()
-            finally:
-                db.close()
+        await run_in_threadpool(_dispatch_embedding_normalization)
     except Exception as e:
-        logger.error(f"Embedding normalization migration error: {e}")
+        logger.error(f"Embedding normalization dispatch error: {e}")
+
+
+def _dispatch_embedding_normalization() -> None:
+    """Blocking half of the startup step (DB read, Redis election, broker publish)."""
+    from app.db.base import SessionLocal
+    from app.models.system_settings import SystemSettings
+    from app.tasks.speaker_embedding_migration import NORMALIZATION_DONE_KEY
+    from app.tasks.speaker_embedding_migration import normalize_speaker_embeddings_task
+    from app.utils.boot_once import run_once_per_boot
+
+    db = SessionLocal()
+    try:
+        flag = db.query(SystemSettings).filter(SystemSettings.key == NORMALIZATION_DONE_KEY).first()
+        done = flag is not None and flag.value == "true"
+    finally:
+        db.close()
+    if done:
+        logger.info("Embedding normalization already completed — skipping")
+        return
+    if not run_once_per_boot("embedding_normalization"):
+        return
+    result = normalize_speaker_embeddings_task.delay()
+    logger.info("Embedding normalization dispatched to a worker: %s", getattr(result, "id", None))

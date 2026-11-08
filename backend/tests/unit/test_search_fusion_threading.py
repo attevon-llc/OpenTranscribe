@@ -29,7 +29,6 @@ import pytest
 
 from app.services.search import chunk_retrieval
 from app.services.search import hybrid_search_service as hss
-from app.services.search import search_cache
 from app.services.search import search_infra
 from app.services.search.fusion import NORMALIZATION
 from app.services.search.fusion import RRF
@@ -67,10 +66,8 @@ class _Recorder:
 def _clean_pipeline_state():
     """No verified-pipeline id survives into or out of a test in this module."""
     reset_search_infrastructure_state()
-    search_cache._search_cache.clear()
     yield
     reset_search_infrastructure_state()
-    search_cache._search_cache.clear()
 
 
 @pytest.fixture
@@ -160,12 +157,13 @@ class TestSearchUiAttachSites:
         assert seen == ["transcript-hybrid-search"]
 
 
-class TestResponseCacheKeysOnTheStrategy:
-    def test_two_strategies_do_not_serve_each_others_cached_page(self, recorder, monkeypatch):
-        """Without the strategy in the key, arm B would replay arm A's page.
+class TestEverySearchRunsTheRequestedStrategy:
+    def test_a_repeated_search_runs_again_with_its_own_strategy(self, recorder, monkeypatch):
+        """No response cache (concurrency audit L8): every call reaches the search body.
 
-        The middle call is the control: it proves the cache is really caching, so
-        the third call missing means the key changed and not that caching is off.
+        Two strategies therefore cannot serve each other's page, and a repeat of the same
+        query reflects the index as it is now rather than a page cached before a reindex,
+        a share change or a summary regeneration.
         """
         calls: list[str] = []
 
@@ -177,14 +175,14 @@ class TestResponseCacheKeysOnTheStrategy:
         service = hss.HybridSearchService()
 
         service.search("budget", user_id=7, fusion=_RRF60)
-        assert len(calls) == 1
-
         service.search("budget", user_id=7, fusion=_RRF60)
-        assert len(calls) == 1, "the cache did not serve the repeat; the control is broken"
-
         service.search("budget", user_id=7, fusion=_NORM)
-        assert len(calls) == 2
-        assert calls == [search_pipeline_id(_RRF60), search_pipeline_id(_NORM)]
+
+        assert calls == [
+            search_pipeline_id(_RRF60),
+            search_pipeline_id(_RRF60),
+            search_pipeline_id(_NORM),
+        ]
 
 
 class TestChatAttachSites:

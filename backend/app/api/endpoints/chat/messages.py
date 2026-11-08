@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 import uuid as uuid_pkg
 from datetime import UTC
 from datetime import datetime
@@ -28,6 +29,7 @@ from pydantic import Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
@@ -434,8 +436,15 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
     kwargs["on_teardown"] = _release_once
 
     async def guarded():
+        # A stream may outlive the slot's leak window (a long reasoning answer); re-stamp
+        # it while it is alive so the prune in acquire_stream_slot never frees it early.
+        # Keepalive frames arrive during long silences, so this runs throughout.
+        next_refresh = time.monotonic() + limits.SLOT_REFRESH_INTERVAL_SECONDS
         try:
             async for frame in ChatService.stream_reply(**kwargs):
+                if time.monotonic() >= next_refresh:
+                    next_refresh = time.monotonic() + limits.SLOT_REFRESH_INTERVAL_SECONDS
+                    await run_in_threadpool(limits.refresh_stream_slot, user_id, slot_id)
                 yield frame
         except Exception:  # noqa: BLE001 — the stream is already open
             logger.exception("Chat stream generator failed")

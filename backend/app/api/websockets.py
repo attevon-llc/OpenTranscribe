@@ -21,6 +21,8 @@ from app.auth.roles import ELEVATED_ROLES
 from app.auth.token_service import token_service
 from app.core.capabilities import capability_enabled
 from app.db.session_utils import session_scope
+from app.services import ws_admission
+from app.utils.client_ip import resolve_client_ip
 from app.utils.websocket_notify import SESSION_REVOKED_EVENT
 
 from ..core.config import settings
@@ -90,6 +92,18 @@ def _socket_auth(user_uuid: str | None, claims: dict[str, Any] | None) -> Socket
 WS_SEND_TIMEOUT_S = 5.0
 
 
+@dataclass
+class _Outbox:
+    """One socket's bounded queue of frames and the task that writes them, in order."""
+
+    queue: asyncio.Queue[str]
+    writer: asyncio.Task[None] | None = None
+
+
+def _new_send_queue() -> asyncio.Queue[str]:
+    return asyncio.Queue(maxsize=max(1, settings.WS_SEND_QUEUE_SIZE))
+
+
 async def _close_quietly(websocket: WebSocket) -> None:
     """Close a stalled socket without waiting on it: the close frame can stall too."""
     with contextlib.suppress(Exception):
@@ -106,6 +120,16 @@ class ConnectionManager:
         self.admin_connections: set[WebSocket] = set()
         # socket -> who authenticated it and with which token, for the revocation closes.
         self.socket_owners: dict[WebSocket, SocketAuth] = {}
+        # socket -> its bounded send queue and writer task (see _fan_out).
+        self.outboxes: dict[WebSocket, _Outbox] = {}
+        # Close tasks for dropped sockets; referenced so they are not garbage collected.
+        self._closers: set[asyncio.Task[None]] = set()
+
+    def open_sockets(self, user_id: int | None = None) -> int:
+        """Sockets open in this process, or for ``user_id`` only."""
+        if user_id is not None:
+            return len(self.active_connections.get(user_id, []))
+        return len(self.socket_owners)
 
     def connect(
         self,
@@ -127,6 +151,7 @@ class ConnectionManager:
         if host_telemetry:
             self.admin_connections.add(websocket)
         self.socket_owners[websocket] = _socket_auth(user_uuid, claims)
+        self.outboxes[websocket] = _Outbox(_new_send_queue())
         logger.info(f"User {user_id} connected. Total connections: {len(self.active_connections)}")
 
     async def drain(self, code: int = 1001) -> int:
@@ -150,6 +175,9 @@ class ConnectionManager:
         import contextlib
 
         sockets = [ws for conns in self.active_connections.values() for ws in conns]
+        for box in self.outboxes.values():
+            self._retire(box)
+        self.outboxes.clear()
         for ws in sockets:
             # A socket already torn down by the peer raises here; that is a successful
             # drain, not a failure.
@@ -202,6 +230,9 @@ class ConnectionManager:
         # still runs this when its receive loop ends.
         self.admin_connections.discard(websocket)
         self.socket_owners.pop(websocket, None)
+        box = self.outboxes.pop(websocket, None)
+        if box is not None:
+            self._retire(box)
         sockets = self.active_connections.get(user_id)
         if sockets is not None and websocket in sockets:
             sockets.remove(websocket)
@@ -240,45 +271,69 @@ class ConnectionManager:
         return None
 
     async def _fan_out(self, targets: Sequence[tuple[WebSocket, int | None]], payload: str) -> None:
-        """Send ``payload`` to every target at once, each send bounded by ``WS_SEND_TIMEOUT_S``.
+        """Queue ``payload`` for every target and return without waiting for any send.
 
-        One subscriber task delivers every notification for the process, so a sequential
-        fan-out let one client whose TCP window was full hold up every other user until its
-        write drained. The sends now run concurrently in a ``TaskGroup`` (Python docs: it
-        cancels the siblings when a task fails, ``gather`` does not; each send here handles
-        its own errors, so none fails) with ``asyncio.timeout`` around each. A socket that
-        times out is dropped from the bookkeeping and closed, so the next event does not wait
-        on it again; the client reconnects. A socket that left after the snapshot was taken
-        is skipped.
+        One subscriber task delivers every notification for the process. Awaiting the sends
+        (even concurrently, each bounded by ``WS_SEND_TIMEOUT_S``) held that task for as
+        long as the slowest client took, so one stalled tab delayed every later
+        notification for everyone and let Redis's pub/sub output buffer fill (concurrency
+        audit M7). Each socket now has a bounded queue (``WS_SEND_QUEUE_SIZE``) drained in
+        order by its own writer task, so the subscriber only enqueues. A socket whose queue
+        is full, or whose send exceeds ``WS_SEND_TIMEOUT_S``, is dropped and closed; the
+        client reconnects. A socket that left after the snapshot was taken is skipped.
         """
-        stalled: list[tuple[WebSocket, int | None]] = []
+        for websocket, user_id in targets:
+            box = self.outboxes.get(websocket)
+            if box is None or websocket not in self.socket_owners:
+                continue
+            if box.writer is None or box.writer.done():
+                # A writer only ends when its socket is dropped (and the box removed) or
+                # its event loop stopped; start a fresh queue on the running loop with it.
+                box.queue = _new_send_queue()
+                box.writer = asyncio.create_task(self._write(websocket, user_id, box))
+            try:
+                box.queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                self._drop(websocket, user_id, "its send queue is full")
 
-        async def _send(websocket: WebSocket, user_id: int | None) -> None:
-            if websocket not in self.socket_owners:
-                return
+    async def _write(self, websocket: WebSocket, user_id: int | None, box: _Outbox) -> None:
+        """Send one socket's queued frames in order until it is dropped or disconnects."""
+        while True:
+            payload = await box.queue.get()
             try:
                 async with asyncio.timeout(WS_SEND_TIMEOUT_S):
                     await websocket.send_text(payload)
             except TimeoutError:
-                stalled.append((websocket, user_id))
+                self._drop(websocket, user_id, f"a send took longer than {WS_SEND_TIMEOUT_S} s")
+                return
             except Exception as e:
                 logger.error(f"Error sending WebSocket message to user {user_id}: {e}")
+            finally:
+                box.queue.task_done()
 
+    def _drop(self, websocket: WebSocket, user_id: int | None, why: str) -> None:
+        logger.warning("Dropping a WebSocket of user %s: %s", user_id, why)
+        self._forget(websocket, user_id)
+        closer = asyncio.create_task(_close_quietly(websocket))
+        self._closers.add(closer)
+        closer.add_done_callback(self._closers.discard)
+
+    @staticmethod
+    def _retire(box: _Outbox) -> None:
+        """Discard a removed socket's unsent frames and stop its writer."""
+        while not box.queue.empty():
+            box.queue.get_nowait()
+            box.queue.task_done()
+        if box.writer is not None and box.writer is not asyncio.current_task():
+            box.writer.cancel()
+
+    async def flush(self) -> None:
+        """Wait until every queued frame is sent or its socket dropped, and drops closed."""
         async with asyncio.TaskGroup() as group:
-            for websocket, user_id in targets:
-                group.create_task(_send(websocket, user_id))
-
-        for websocket, user_id in stalled:
-            logger.warning(
-                "Dropping a WebSocket of user %s: a send took longer than %.1f s",
-                user_id,
-                WS_SEND_TIMEOUT_S,
-            )
-            self._forget(websocket, user_id)
-        if stalled:
-            async with asyncio.TaskGroup() as group:
-                for websocket, _ in stalled:
-                    group.create_task(_close_quietly(websocket))
+            for box in list(self.outboxes.values()):
+                group.create_task(box.queue.join())
+        if self._closers:
+            await asyncio.wait(set(self._closers))
 
     def _forget(self, websocket: WebSocket, user_id: int | None) -> None:
         if user_id is None:
@@ -673,6 +728,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     # Initialize Redis subscriber if not already running
     setup_redis()
 
+    # Admission limits, still before accept(): a refused handshake never holds a socket.
+    if not ws_admission.process_has_room(manager.open_sockets()):
+        logger.warning("Refused a WebSocket handshake: this process is at its socket limit")
+        await websocket.close(code=ws_admission.TRY_AGAIN_LATER_CLOSE, reason="Server busy")
+        return
+    if not await ws_admission.handshake_allowed(redis_client, resolve_client_ip(websocket)):
+        logger.warning("Refused a WebSocket handshake: per-IP handshake rate limit reached")
+        await websocket.close(
+            code=ws_admission.TRY_AGAIN_LATER_CLOSE, reason="Too many connections"
+        )
+        return
+
     # Accept the connection, then authenticate
     await websocket.accept()
 
@@ -708,6 +775,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             with contextlib.suppress(Exception):
                 await websocket.close(code=4003, reason="Authentication error")
             return
+
+    if not ws_admission.user_has_room(manager.open_sockets(user.id)):
+        logger.warning("Refused a WebSocket for user %s: per-user socket limit reached", user.id)
+        await websocket.close(
+            code=ws_admission.TRY_AGAIN_LATER_CLOSE, reason="Too many connections"
+        )
+        return
 
     # Register the authenticated connection
     manager.connect(

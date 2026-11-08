@@ -6,6 +6,7 @@
  * that cannot run (media missing, no local speaker detection) with a 409 carrying the reason.
  */
 import axiosInstance from '$lib/axios';
+import { postBulkAction } from '$lib/api/bulkActions';
 
 export interface BulkReprocessResult {
   success: boolean;
@@ -24,10 +25,9 @@ export async function reprocessFiles(
   fileUuids: string[],
   body: Record<string, unknown>
 ): Promise<BulkReprocessResult[]> {
-  const response = await axiosInstance.post('/files/management/bulk-action', {
+  return postBulkAction<BulkReprocessResult>({
     ...body,
     file_uuids: fileUuids,
     action: 'reprocess',
   });
-  return response.data;
 }

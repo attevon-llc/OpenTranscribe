@@ -12,6 +12,8 @@ import time
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
+
 from app.services.chat import limits
 from tests.helpers import does_not_raise
 
@@ -31,60 +33,69 @@ def _redis(**behaviour) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_first_message_of_the_hour_sets_an_expiry():
+# The check-and-update steps are one Redis script each (concurrency audit L2), so their
+# behaviour is asserted against a real Redis (``local_model_redis``); a mock would only
+# record that ``eval`` was called. Concurrency is in ``test_chat_limits_atomic.py``.
+
+
+@pytest.fixture
+def real_redis(local_model_redis):
+    local_model_redis.flushdb()
+    with patch("app.core.redis.get_request_redis", return_value=local_model_redis):
+        yield local_model_redis
+    local_model_redis.flushdb()
+
+
+@pytest.mark.xdist_group("local_model_redis")
+def test_first_message_of_the_hour_sets_an_expiry(real_redis):
     """Without the EXPIRE the counter would never reset and lock the user out."""
-    client = _redis(incr=1)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        allowed, retry_after = limits.check_hourly_limit(user_id=1, limit=120)
+    allowed, retry_after = limits.check_hourly_limit(user_id=1, limit=120)
 
     assert allowed is True
     assert retry_after == 0
-    client.expire.assert_called_once()
-    assert client.expire.call_args[0][1] == 3600
+    (key,) = real_redis.keys("rl:chat:msg:1:*")
+    assert 0 < real_redis.ttl(key) <= 3600
 
 
-def test_subsequent_messages_do_not_reset_the_window():
-    client = _redis(incr=7)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        assert limits.check_hourly_limit(user_id=1, limit=120)[0] is True
-    client.expire.assert_not_called()
+@pytest.mark.xdist_group("local_model_redis")
+def test_subsequent_messages_do_not_reset_the_window(real_redis):
+    limits.check_hourly_limit(user_id=1, limit=120)
+    (key,) = real_redis.keys("rl:chat:msg:1:*")
+    real_redis.expire(key, 1000)  # stands in for time having passed in the window
+
+    assert limits.check_hourly_limit(user_id=1, limit=120)[0] is True
+    assert real_redis.ttl(key) <= 1000
 
 
-def test_message_at_the_limit_is_allowed():
-    client = _redis(incr=120)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        assert limits.check_hourly_limit(user_id=1, limit=120)[0] is True
+@pytest.mark.xdist_group("local_model_redis")
+def test_message_at_the_limit_is_allowed_and_past_it_refused(real_redis):
+    verdicts = [limits.check_hourly_limit(user_id=1, limit=3) for _ in range(4)]
 
-
-def test_message_past_the_limit_is_refused_with_a_retry_after():
-    client = _redis(incr=121)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        allowed, retry_after = limits.check_hourly_limit(user_id=1, limit=120)
-
-    assert allowed is False
+    assert [allowed for allowed, _ in verdicts] == [True, True, True, False]
     # Retry-After points at the next window boundary, never zero or negative.
-    assert 0 < retry_after <= 3600
+    assert 0 < verdicts[-1][1] <= 3600
 
 
 def test_hourly_limit_fails_open_when_redis_is_down():
     """A limiter outage must not stop people using the product."""
-    client = _redis(incr=ConnectionError("redis down"))
+    client = _redis(eval=ConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         allowed, retry_after = limits.check_hourly_limit(user_id=1, limit=120)
 
     assert allowed is True
     assert retry_after == 0
+    client.eval.assert_called_once()
 
 
-def test_hourly_limit_keys_are_per_user_and_per_hour():
-    client = _redis(incr=1)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        limits.check_hourly_limit(user_id=1, limit=10)
-        limits.check_hourly_limit(user_id=2, limit=10)
+@pytest.mark.xdist_group("local_model_redis")
+def test_hourly_limit_keys_are_per_user_and_per_hour(real_redis):
+    limits.check_hourly_limit(user_id=1, limit=10)
+    limits.check_hourly_limit(user_id=2, limit=10)
 
-    key_one, key_two = (call[0][0] for call in client.incr.call_args_list)
-    assert key_one != key_two
-    assert ":1:" in key_one and ":2:" in key_two
+    keys = sorted(k.decode() for k in real_redis.keys("rl:chat:msg:*"))
+    assert len(keys) == 2
+    assert ":1:" in keys[0] and ":2:" in keys[1]
+    assert keys[0].rsplit(":", 1)[1] == str(int(time.time()) // 3600)
 
 
 # ---------------------------------------------------------------------------
@@ -92,17 +103,17 @@ def test_hourly_limit_keys_are_per_user_and_per_hour():
 # ---------------------------------------------------------------------------
 
 
-def test_slot_is_granted_below_the_cap():
-    client = _redis(zcard=0)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        slot = limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+@pytest.mark.xdist_group("local_model_redis")
+def test_slot_is_granted_below_the_cap(real_redis):
+    slot = limits.acquire_stream_slot(user_id=1, max_concurrent=2)
     assert slot, "a slot below the cap must be granted and return its id"
-    client.zadd.assert_called_once()
+    assert real_redis.zscore("chat:active:1", slot) is not None
     # A leak guard TTL is mandatory: a dead process must not hold a slot forever.
-    client.expire.assert_called_once()
+    assert real_redis.ttl("chat:active:1") > 0
 
 
-def test_stale_slots_are_pruned_before_counting():
+@pytest.mark.xdist_group("local_model_redis")
+def test_stale_slots_are_pruned_before_counting(real_redis):
     """THE leak fix.
 
     The old implementation was one counter whose TTL was refreshed on every
@@ -111,33 +122,36 @@ def test_stale_slots_are_pruned_before_counting():
     no recovery short of deleting the key by hand. Pruning by age on each
     acquire is what bounds that.
     """
-    client = _redis(zcard=0)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        limits.acquire_stream_slot(user_id=1, max_concurrent=2)
-    client.zremrangebyscore.assert_called_once()
-    key, low, high = client.zremrangebyscore.call_args[0]
-    assert low == "-inf"
-    assert high < time.time(), "the prune cutoff must be in the past"
+    leaked = time.time() - limits._ACTIVE_TTL_SECONDS - 1
+    real_redis.zadd("chat:active:1", {"leaked-a": leaked, "leaked-b": leaked})
+
+    slot = limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+
+    assert slot
+    assert real_redis.zscore("chat:active:1", "leaked-a") is None
 
 
-def test_slot_below_the_cap_is_granted_with_one_already_held():
-    client = _redis(zcard=1)
-    with patch("app.core.redis.get_request_redis", return_value=client):
+@pytest.mark.xdist_group("local_model_redis")
+def test_slot_below_the_cap_is_granted_with_one_already_held(real_redis):
+    assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+    assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+
+
+@pytest.mark.xdist_group("local_model_redis")
+def test_slot_at_the_cap_is_refused(real_redis):
+    for _ in range(2):
         assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
 
-
-def test_slot_at_the_cap_is_refused():
-    client = _redis(zcard=2)
-    with patch("app.core.redis.get_request_redis", return_value=client):
-        assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is None
-    client.zadd.assert_not_called(), "a refused attempt must not take a slot"
+    assert limits.acquire_stream_slot(user_id=1, max_concurrent=2) is None
+    assert real_redis.zcard("chat:active:1") == 2, "a refused attempt must not take a slot"
 
 
 def test_slot_acquisition_fails_open():
     """Chat must not go down because Redis did."""
-    client = _redis(zcard=ConnectionError("redis down"))
+    client = _redis(type="zset", eval=ConnectionError("redis down"))
     with patch("app.core.redis.get_request_redis", return_value=client):
         assert limits.acquire_stream_slot(user_id=1, max_concurrent=2)
+    client.eval.assert_called_once()
 
 
 def test_release_removes_only_its_own_slot():

@@ -4257,6 +4257,7 @@
   "orgAudit.event.voiceprintsPurged": "Excluiu as impressões vocais armazenadas",
   "orgAudit.event.genderPurged": "Excluiu os dados de gênero inferido",
   "orgAudit.event.labelsResynced": "Reconstruiu os rótulos de falante no índice de pesquisa após a alteração de uma opção de impressões vocais",
+  "orgAudit.event.identitySourceReverified": "Verificou novamente os nomes de falante que a atualização para 0.6.0 marcou como criados por impressões vocais",
   "orgAudit.event.erasureScheduled": "Agendou uma eliminação de dados",
   "orgAudit.event.erasureCancelled": "Cancelou uma eliminação de dados agendada",
   "orgAudit.event.erasureStarted": "Iniciou uma eliminação de dados agendada",

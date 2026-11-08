@@ -127,6 +127,12 @@ class AuditEventType(StrEnum):
     # old and the new state and where the change came from (``upload`` / ``owner``); never a
     # file name. The state is the uploader's recorded claim, not verified consent.
     PRIVACY_FILE_CONSENT_CHANGE = "privacy.file_consent.change"
+    # The speaker-provenance re-verify ran (issue #1334, ``python -m
+    # app.scripts.reverify_identity_sources``): it re-tested the voice-made stamps the v449
+    # upgrade wrote and, when applied, cleared the unfounded ones. ``details.phase`` is
+    # ``dry_run`` or ``applied``; ``details`` hold the scope, the counts, the v449 record and the
+    # uuids of the speakers cleared: never a name.
+    PRIVACY_IDENTITY_REVERIFY = "privacy.identity_source.reverify"
 
     # An audit-log export, by a platform admin or an organization admin (issue #1277):
     # ``details`` holds the format, the row count and whether it was truncated, never the rows.

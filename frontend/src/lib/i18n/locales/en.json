@@ -4235,6 +4235,7 @@
   "orgAudit.event.voiceprintsPurged": "Deleted stored voiceprints",
   "orgAudit.event.genderPurged": "Deleted inferred gender data",
   "orgAudit.event.labelsResynced": "Rebuilt search speaker labels after a voiceprint switch changed",
+  "orgAudit.event.identitySourceReverified": "Re-verified the speaker names the 0.6.0 upgrade marked as voiceprint-made",
   "orgAudit.event.erasureScheduled": "Scheduled a data erasure",
   "orgAudit.event.erasureCancelled": "Cancelled a scheduled data erasure",
   "orgAudit.event.erasureStarted": "Started a scheduled data erasure",

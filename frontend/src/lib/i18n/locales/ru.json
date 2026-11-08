@@ -4355,6 +4355,7 @@
   "orgAudit.event.voiceprintsPurged": "Удаление сохранённых голосовых отпечатков",
   "orgAudit.event.genderPurged": "Удаление данных об определённом поле",
   "orgAudit.event.labelsResynced": "Перестроение поисковых меток спикеров после смены режима голосовых отпечатков",
+  "orgAudit.event.identitySourceReverified": "Повторная проверка имён спикеров, которые обновление до 0.6.0 отметило как созданные по голосовым отпечаткам",
   "orgAudit.event.erasureScheduled": "Планирование удаления данных",
   "orgAudit.event.erasureCancelled": "Отмена запланированного удаления данных",
   "orgAudit.event.erasureStarted": "Запуск запланированного удаления данных",

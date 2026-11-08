@@ -378,6 +378,62 @@ it once after upgrading, from a backend container:
 `python -m app.scripts.sweep_orphan_voiceprints --apply` to delete. If the database cannot be
 read, the sweep stops without deleting anything.
 
+## Re-check the speaker names the 0.6.0 upgrade marked as voiceprint-made
+
+The 0.6.0 upgrade (migration `v449`) marked an existing speaker name as made by a voiceprint
+only when the database held positive evidence (see
+[Which existing speaker names count as voiceprint-made](upgrading-to-0-6-0.md#which-existing-speaker-names-count-as-voiceprint-made)).
+One kind of name a person chose can still carry that mark, and a voiceprint purge clears a
+marked name for good. 0.7.0 adds a command that re-checks every mark the upgrade left, against
+the data as it is now. Run it from a backend container before you purge voiceprints on an install
+that predates 0.6.0:
+
+```bash
+# Dry run (the default): report only
+python -m app.scripts.reverify_identity_sources
+# Only one organization, or one user
+python -m app.scripts.reverify_identity_sources --organization-id 3
+python -m app.scripts.reverify_identity_sources --user-id 42
+# Return the marks whose evidence no longer holds to "unknown" (read as a person's)
+python -m app.scripts.reverify_identity_sources --apply
+# Return EVERY mark the upgrade made to "unknown"
+python -m app.scripts.reverify_identity_sources --apply --include-evidenced
+```
+
+It prints a JSON report. In `counts`:
+
+| Field | Meaning |
+|---|---|
+| `backfill_stamped` | Names that still carry the upgrade's mark. Any later rename, confirmation or match replaced the mark, so these are the names nobody has touched since |
+| `evidence_holds` / `evidence_lost` | Of those, the ones whose evidence still holds today, and the ones it no longer holds for (for example, the earlier recording the match relied on was deleted). The speaker ids of each are listed |
+| `shape_left_unmarked` | Unmarked names that look like an automatic match but were never proven (the upgrade left them as a person's). Reported, never marked |
+| `shape_left_unmarked_with_evidence` | Of those, the ones that would pass the evidence test today. Also reported only: marking on less than proof is how a person's name gets purged |
+| `summaries_to_review` | Recordings with a stored summary and a speaker name a voiceprint wrote. Their file ids are listed in `summary_file_uuids`; see below |
+| `cleared` | Names returned to unknown by this run (0 for a dry run) |
+
+`recorded` repeats what the upgrade itself recorded in `privacy.identity_source_backfill`, which
+the command never changes.
+
+`--apply` changes only the mark: the name, the profile link and the verified tick stay as they
+are. A name returned to unknown is shown while voiceprints are off and is never cleared by a
+purge, the same as any name a person typed. Each one gets an entry in the speaker's identity
+history (origin `identity_reverify`), and its recording is queued for a search reindex so the name
+becomes searchable again. Use `--include-evidenced` if you would rather keep every name from
+before 0.6.0 than let a purge clear one that might have been a person's.
+
+Every run, dry or not, writes a `privacy.identity_source.reverify` audit event with the scope, the
+counts and the ids of the speakers it changed (never a name). An organization-scoped run is
+stamped with the organization, so its administrators see it too. Exit status 3 means the names
+were changed but some recordings could not be queued for a reindex (listed in
+`reindex_failed_file_uuids`); while voiceprints are off their search results still hide the name
+until those recordings are re-indexed (a library reindex from the admin search settings does it).
+
+**Summaries.** A summary a language model wrote is stored as written, so it can contain a name a
+voiceprint supplied. Switching voiceprints off masks that name in search and chat, not in the
+stored text, and nothing rewrites it. `summary_file_uuids` lists the recordings where this can
+apply. To remove the name from a stored summary, turn voiceprints off and regenerate that
+recording's summary.
+
 ## Deleting a file now moves it to the trash
 
 **Check this if...** you delete files through the API or a script, rely on a delete freeing

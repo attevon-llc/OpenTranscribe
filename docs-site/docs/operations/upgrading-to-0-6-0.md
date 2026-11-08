@@ -355,7 +355,9 @@ still has the shape is **not** necessarily one nobody has renamed.
   assignment of the same profile, or a row `v439` stamped from data older than the suggestion
   column. Such a name is hidden while voiceprints are off, and a **purge
   clears it for good**. Turning the switch back on shows a hidden name again; a purge cannot be
-  undone. Check the counts below before you purge on an install that predates 0.6.0.
+  undone. Check the counts below before you purge on an install that predates 0.6.0. From 0.7.0,
+  `python -m app.scripts.reverify_identity_sources` re-checks these marks and can return them to
+  unknown: see [Upgrading to 0.7.0](upgrading-to-0-7-0.md#re-check-the-speaker-names-the-060-upgrade-marked-as-voiceprint-made).
 
 **How many rows were marked, and how many were left alone** is recorded when the migration runs, in
 the upgrade log and in the database, so you can read it back at any time:

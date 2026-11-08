@@ -4137,6 +4137,7 @@
   "orgAudit.event.voiceprintsPurged": "删除了已存储的声纹",
   "orgAudit.event.genderPurged": "删除了推断的性别数据",
   "orgAudit.event.labelsResynced": "在声纹开关更改后重建了搜索索引中的说话人标签",
+  "orgAudit.event.identitySourceReverified": "重新核查了 0.6.0 升级标记为由声纹生成的说话人名称",
   "orgAudit.event.erasureScheduled": "安排了数据删除",
   "orgAudit.event.erasureCancelled": "取消了已安排的数据删除",
   "orgAudit.event.erasureStarted": "开始了已安排的数据删除",

@@ -4137,6 +4137,7 @@
   "orgAudit.event.voiceprintsPurged": "保存済みの声紋を削除した",
   "orgAudit.event.genderPurged": "推定された性別データを削除した",
   "orgAudit.event.labelsResynced": "声紋の設定変更後に、検索インデックスの話者ラベルを再構築した",
+  "orgAudit.event.identitySourceReverified": "0.6.0 へのアップグレードで声紋由来と記録された話者名を再検証した",
   "orgAudit.event.erasureScheduled": "データ消去を予約した",
   "orgAudit.event.erasureCancelled": "予約済みのデータ消去を取り消した",
   "orgAudit.event.erasureStarted": "予約済みのデータ消去を開始した",

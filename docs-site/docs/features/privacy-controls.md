@@ -240,7 +240,10 @@ a profile) forgets the record with it.
 kept; what was there before is overwritten. A complete, append-only history of who changed which
 name and when is tracked in issue #1336 (v0.7.0), and a review of the queries these columns need
 at scale in #1337. Identities that existed before 0.6.0 have no time or person; the identities
-the upgrade recognised as voiceprint-made carry `{"origin": "v449_backfill"}`.
+the upgrade recognised as voiceprint-made carry `{"origin": "v449_backfill"}`. An administrator
+can re-check those marks against today's data, and return the unfounded ones (or all of them) to
+unknown, with `python -m app.scripts.reverify_identity_sources`; see
+[Upgrading to 0.7.0](../operations/upgrading-to-0-7-0.md#re-check-the-speaker-names-the-060-upgrade-marked-as-voiceprint-made).
 
 **Not covered.** Summaries, topic suggestions and other text a language model wrote earlier can
 contain a name that a voiceprint supplied. That text is model output, not a label, so switching
@@ -275,7 +278,9 @@ Summaries and topics that a language model generated earlier are stored as writt
 name a person whom a voiceprint identified. Their copy in the search index and in chat is masked
 while voiceprints are off, but the stored text is not rewritten. To remove the name from the stored
 text, regenerate the summary after turning voiceprints off. Only the full name recorded on the
-speaker is masked, not a first name on its own.
+speaker is masked, not a first name on its own. The re-check command above lists the recordings
+with a stored summary and a voiceprint-made speaker name (`summary_file_uuids`), so an
+administrator knows which summaries to regenerate.
 
 ### Where inferred gender is withheld
 
@@ -668,6 +673,7 @@ voiceprints" and "Deleted inferred gender data".
 | `privacy.voiceprints.purge`, `privacy.gender.purge` | One event per target for each phase of a purge: requested, each pass completed, aborted or failed. The completed passes carry the `purge_scope`, the exact counts per store and the residual check (see [Read a purge back from the audit log](#purging-stored-data)). Counts and ids only; stamped with the organization when there is one |
 | `privacy.file_consent.change` | A recording's voice identification state changed (file id, old and new state, `via`). Never a file name |
 | `privacy.labels.resync` | A voiceprint switch changed and the speaker labels in the search index are being rebuilt. Written when the rebuild is requested and again when it finishes. `details` hold the switch, its previous and new value, the scope, and the counts of files selected, queued, already pending and failed. An unfinished rebuild is marked incomplete and retried by the periodic search maintenance. Never names a person or a file |
+| `privacy.identity_source.reverify` | The speaker-name re-check (`python -m app.scripts.reverify_identity_sources`) ran: it re-tested the voiceprint marks the 0.6.0 upgrade wrote and, when applied, returned the unfounded ones to unknown. `details` hold `phase` (`dry_run` or `applied`), the scope, the counts, the upgrade's own record and the ids of the speakers changed. Stamped with the organization for an organization-scoped run. Never names a person |
 
 ## Data inventory
 

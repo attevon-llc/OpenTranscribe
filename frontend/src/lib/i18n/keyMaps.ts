@@ -326,6 +326,7 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'privacy.voiceprints.purge': 'orgAudit.event.voiceprintsPurged',
   'privacy.gender.purge': 'orgAudit.event.genderPurged',
   'privacy.labels.resync': 'orgAudit.event.labelsResynced',
+  'privacy.identity_source.reverify': 'orgAudit.event.identitySourceReverified',
   'gdpr.erasure.scheduled': 'orgAudit.event.erasureScheduled',
   'gdpr.erasure.cancelled': 'orgAudit.event.erasureCancelled',
   'gdpr.erasure.execution_started': 'orgAudit.event.erasureStarted',

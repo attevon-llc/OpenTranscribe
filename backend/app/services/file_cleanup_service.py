@@ -330,7 +330,9 @@ def _clear_reindex_coordination_keys(file_uuid: str) -> None:
         logger.debug(f"purge {file_uuid}: reindex coordination keys not cleared: {err}")
 
 
-def purge_media_file(db: Session, file: MediaFile) -> dict:
+def purge_media_file(
+    db: Session, file: MediaFile, *, defer_citation_scrub: list[str] | None = None
+) -> dict:
     """Canonical destroy for a MediaFile and ALL associated data.
 
     Single source of truth shared by every delete path — interactive single/force
@@ -347,6 +349,10 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
        (``speaker_cleanup``): a cluster the CASCADE emptied is deleted with its centroid,
        any other cluster and every such profile has its embedding recomputed from the
        remaining members, and an aggregate that cannot be rebuilt is erased.
+
+    ``defer_citation_scrub``: a batch caller passes a shared list; the file's UUID is
+    appended after the row delete instead of scrubbing per file, and the caller makes
+    one :func:`scrub_deferred_citations` call for the whole batch.
 
     SpeakerProfile records are intentionally preserved; their embeddings no longer
     average in the deleted file's voices.
@@ -422,10 +428,13 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
 
         # Phase 3 — write. The citation scrub rides the row delete's transaction, so a
         # failed delete never leaves the history scrubbed for a file that still exists.
-        scrub_chat_citations(db, [file_uuid])
+        if defer_citation_scrub is None:
+            scrub_chat_citations(db, [file_uuid])
         db.delete(file)
         db.commit()
         logger.info(f"purge_media_file: deleted file {file_uuid} from database")
+        if defer_citation_scrub is not None:
+            defer_citation_scrub.append(file_uuid)
 
         try:
             from app.services.redis_cache_service import redis_cache
@@ -457,6 +466,25 @@ def purge_media_file(db: Session, file: MediaFile) -> dict:
         }
 
 
-def auto_delete_media_file(db: Session, file: MediaFile) -> dict:
+def auto_delete_media_file(
+    db: Session, file: MediaFile, *, defer_citation_scrub: list[str] | None = None
+) -> dict:
     """Backwards-compatible alias for the canonical :func:`purge_media_file`."""
-    return purge_media_file(db, file)
+    return purge_media_file(db, file, defer_citation_scrub=defer_citation_scrub)
+
+
+def scrub_deferred_citations(file_uuids: list[str]) -> int:
+    """Run the one set-based citation scrub for a whole purge batch, in its own session.
+
+    Callers that purge many files pass a shared list as ``defer_citation_scrub`` and call
+    this once afterwards (in a ``finally``), so the ``chat_message`` scan happens once per
+    batch instead of once per destroyed file (issue #1337, V7). The window this opens
+    is a process kill between the last row delete and this call; the per-file path closed
+    it by scrubbing inside the delete's transaction.
+    """
+    if not file_uuids:
+        return 0
+    from app.db.session_utils import session_scope
+
+    with session_scope() as db:
+        return scrub_chat_citations(db, file_uuids)

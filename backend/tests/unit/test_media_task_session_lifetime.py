@@ -158,7 +158,7 @@ def test_cleanup_expired_files_purges_each_file_in_its_own_session(
 
     purged: list[int] = []
 
-    def _purge(db, media_file):
+    def _purge(db, media_file, **_kw):
         # MinIO object deletes + four OpenSearch deletes, per file.
         tracker.observe("auto_delete_media_file")
         purged.append(int(media_file.id))

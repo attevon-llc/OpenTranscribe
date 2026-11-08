@@ -96,8 +96,13 @@ def _record_purge(audit: dict[str, Any]) -> None:
         logger.error("trash purge: could not record file.purge for %s", audit, exc_info=True)
 
 
-def purge_one(file_id: int, *, trigger: str) -> tuple[str, list[dict[str, Any]]]:
-    """Phase 2 for one file: ``("purged" | "skipped" | "failed", residual_errors)``."""
+def purge_one(
+    file_id: int, *, trigger: str, defer_citation_scrub: list[str] | None = None
+) -> tuple[str, list[dict[str, Any]]]:
+    """Phase 2 for one file: ``("purged" | "skipped" | "failed", residual_errors)``.
+
+    ``defer_citation_scrub`` is forwarded to ``purge_media_file`` so a batch can scrub once.
+    """
     from sqlalchemy.orm import selectinload
 
     from app.services.file_cleanup_service import purge_media_file
@@ -130,7 +135,7 @@ def purge_one(file_id: int, *, trigger: str) -> tuple[str, list[dict[str, Any]]]
             "tenant_scope": TENANT_SCOPE_ORG if org_id is not None else TENANT_SCOPE_PERSONAL,
             "details": details,
         }
-        result = purge_media_file(db, media_file)
+        result = purge_media_file(db, media_file, defer_citation_scrub=defer_citation_scrub)
     if not result.get("deleted"):
         logger.error("trash purge: file %s not purged: %s", file_id, result.get("error"))
         return "failed", []
@@ -149,9 +154,25 @@ def purge_due(
     trigger = "due" if file_ids is None else "requested"
     candidates = select_due(limit, file_ids)
     summary.selected = len(candidates)
+    from app.services.file_cleanup_service import scrub_deferred_citations
+
+    destroyed: list[str] = []
+    try:
+        _purge_candidates(candidates, trigger, summary, destroyed)
+    finally:
+        scrub_deferred_citations(destroyed)
+    return summary
+
+
+def _purge_candidates(
+    candidates: Sequence[tuple[int, str]],
+    trigger: str,
+    summary: PurgeSummary,
+    destroyed: list[str],
+) -> None:
     for file_id, file_uuid in candidates:
         try:
-            outcome, residual = purge_one(file_id, trigger=trigger)
+            outcome, residual = purge_one(file_id, trigger=trigger, defer_citation_scrub=destroyed)
         except Exception:  # noqa: BLE001 - one bad file must not stop the pass
             logger.exception("trash purge: failed on file %s (%s)", file_id, file_uuid)
             summary.failed += 1
@@ -163,7 +184,6 @@ def purge_due(
             summary.skipped += 1
         else:
             summary.failed += 1
-    return summary
 
 
 __all__ = ["PurgeSummary", "purge_due", "purge_one", "select_due"]

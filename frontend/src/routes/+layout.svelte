@@ -39,7 +39,6 @@
   // Import components
   import Navbar from "../components/Navbar.svelte";
   import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
-  import DemoBanner from "$components/demo/DemoBanner.svelte";
   import { demoMode, loadDemoAttributions } from "$stores/demo";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
@@ -58,6 +57,7 @@
   let shellShown = false;
   let FirstRunWizard: Component<any> | null = null;
   let ErasureRequestBanner: Component<any> | null = null;
+  let DemoBanner: Component | null = null;
   let QuotaExceededModal: Component<any> | null = null;
   let LegalGateModal: Component<any> | null = null;
   let IdleTimeoutDialog: Component<any> | null = null;
@@ -107,6 +107,12 @@
       (m) => (ErasureRequestBanner = m.default)
     );
   }
+  // Lazy: only a public demo deployment ever shows it (#628).
+  function loadDemoBanner() {
+    if (DemoBanner) return;
+    void import("$components/demo/DemoBanner.svelte").then((m) => (DemoBanner = m.default));
+  }
+  $: if ($demoMode) loadDemoBanner();
   $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && !QuotaExceededModal) {
     void import("$lib/cloud/components/QuotaExceededModal.svelte").then((m) => (QuotaExceededModal = m.default));
   }
@@ -320,7 +326,7 @@
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
       {#if $supportSession.active}<SupportAccessBanner />{/if}
-      {#if $demoMode}<DemoBanner />{/if}
+      {#if $demoMode && DemoBanner}<svelte:component this={DemoBanner} />{/if}
       {#if ErasureRequestBanner}<svelte:component this={ErasureRequestBanner} />{/if}
       <NotificationsPanel />
       <UploadManager />

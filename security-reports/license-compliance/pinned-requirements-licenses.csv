@@ -32,7 +32,7 @@ npm,frontend,@sveltejs/acorn-typescript,1.0.13,MIT,lockfile,OK,no
 npm,frontend,@svta/cml-error-codes,0.1.2,Apache-2.0,lockfile,OK,no
 npm,frontend,@svta/cml-utils,1.7.0,Apache-2.0,lockfile,OK,no
 npm,frontend,@types/estree,1.0.9,MIT,lockfile,OK,no
-npm,frontend,@types/node,26.6.5,MIT,lockfile,OK,no
+npm,frontend,@types/node,26.6.6,MIT,lockfile,OK,no
 npm,frontend,@types/trusted-types,2.0.7,MIT,lockfile,OK,no
 npm,frontend,@typescript-eslint/types,8.72.1,MIT,lockfile,OK,no
 npm,frontend,@videojs/core,10.3.0,Apache-2.0,lockfile,OK,no
@@ -47,7 +47,7 @@ npm,frontend,acorn,8.19.0,MIT,lockfile,OK,no
 npm,frontend,agent-base,6.0.2,MIT,lockfile,OK,no
 npm,frontend,aria-query,5.3.1,Apache-2.0,lockfile,OK,no
 npm,frontend,asynckit,0.4.0,MIT,lockfile,OK,no
-npm,frontend,axios,1.20.0,MIT,lockfile,OK,no
+npm,frontend,axios,1.21.0,MIT,lockfile,OK,no
 npm,frontend,axobject-query,4.1.0,Apache-2.0,lockfile,OK,no
 npm,frontend,call-bind-apply-helpers,1.0.2,MIT,lockfile,OK,no
 npm,frontend,clsx,2.1.1,MIT,lockfile,OK,no
@@ -81,10 +81,10 @@ npm,frontend,hasown,2.0.4,MIT,lockfile,OK,no
 npm,frontend,highlight.js,11.12.0,BSD-3-Clause,lockfile,OK,no
 npm,frontend,https-proxy-agent,5.0.1,MIT,lockfile,OK,no
 npm,frontend,i18next,25.10.10,MIT,lockfile,OK,no
-npm,frontend,i18next-browser-languagedetector,8.2.1,MIT,lockfile,OK,no
+npm,frontend,i18next-browser-languagedetector,8.3.0,MIT,lockfile,OK,no
 npm,frontend,is-reference,3.0.3,MIT,lockfile,OK,no
 npm,frontend,jiti,2.7.0,MIT,lockfile,OK,no
-npm,frontend,katex,0.19.0,MIT,lockfile,OK,no
+npm,frontend,katex,0.19.1,MIT,lockfile,OK,no
 npm,frontend,lightningcss,1.33.0,MPL-2.0,lockfile,REVIEW,no
 npm,frontend,lightningcss-android-arm64,1.33.0,MPL-2.0,lockfile,REVIEW,no
 npm,frontend,lightningcss-darwin-arm64,1.33.0,MPL-2.0,lockfile,REVIEW,no
@@ -135,7 +135,7 @@ pip,backend-python,PyJWT,2.15.1,MIT,license_expression,OK,no
 pip,backend-python,PyOTP,2.10.0,MIT,license_expression,OK,no
 pip,backend-python,PyYAML,6.0.3,MIT,license,OK,no
 pip,backend-python,Pygments,2.21.0,BSD-2-Clause,license_expression,OK,no
-pip,backend-python,SQLAlchemy,2.0.53,MIT,license,OK,no
+pip,backend-python,SQLAlchemy,2.0.55,MIT,license,OK,no
 pip,backend-python,aiofiles,25.1.0,Apache-2.0,license,OK,no
 pip,backend-python,aiohappyeyeballs,2.7.1,PSF-2.0,license,OK,no
 pip,backend-python,aiohttp,3.14.5,Apache-2.0 AND MIT,license_expression,OK,no
@@ -147,25 +147,24 @@ pip,backend-python,annotated-types,0.8.0,MIT,license_expression,OK,no
 pip,backend-python,anyio,4.15.1,MIT,license_expression,OK,no
 pip,backend-python,argon2-cffi,25.1.0,MIT,license_expression,OK,no
 pip,backend-python,argon2-cffi-bindings,26.1.0,MIT,license_expression,OK,no
-pip,backend-python,assemblyai,1.5.4,MIT License,license,OK,no
+pip,backend-python,assemblyai,1.8.2,MIT License,license,OK,no
 pip,backend-python,asteroid-filterbanks,0.4.0,MIT,license,OK,no
 pip,backend-python,attrs,26.1.0,MIT,license_expression,OK,no
-pip,backend-python,av,18.1.0,BSD-3-Clause,license_expression,OK,no
-pip,backend-python,azure-cognitiveservices-speech,1.51.2,Other/Proprietary License,classifier,PROPRIETARY-REVIEW,no
+pip,backend-python,av,19.0.2,BSD-3-Clause,license_expression,OK,no
+pip,backend-python,azure-cognitiveservices-speech,1.53.0,Other/Proprietary License,classifier,PROPRIETARY-REVIEW,no
 pip,backend-python,azure-core,1.41.0,MIT,license_expression,OK,no
 pip,backend-python,bcrypt,4.3.0,Apache-2.0,license,OK,no
 pip,backend-python,billiard,4.3.1,BSD,license,OK,no
 pip,backend-python,blis,1.3.4,BSD,license,OK,no
-pip,backend-python,boto3,1.43.94,Apache-2.0,license,OK,no
-pip,backend-python,botocore,1.43.94,Apache-2.0,license,OK,no
+pip,backend-python,boto3,1.43.121,Apache-2.0,license,OK,no
+pip,backend-python,botocore,1.43.121,Apache-2.0,license,OK,no
 pip,backend-python,brotli,1.2.1,MIT,license,OK,no
-pip,backend-python,cachetools,7.2.4,MIT,license_expression,OK,no
+pip,backend-python,cachetools,7.2.7,MIT,license_expression,OK,no
 pip,backend-python,catalogue,2.0.10,MIT,license,OK,no
 pip,backend-python,celery,5.6.3,BSD-3-Clause,license,OK,no
 pip,backend-python,certifi,2026.10.23,MPL-2.0,license,REVIEW,no
 pip,backend-python,cffi,2.1.1,MIT-0,license_expression,OK,no
 pip,backend-python,charset-normalizer,3.5.2,MIT,license,OK,no
-pip,backend-python,click,8.5.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,click,8.5.1,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,click-didyoumean,0.3.1,MIT,license,OK,no
 pip,backend-python,click-plugins,1.1.1.2,BSD,classifier,OK,no
@@ -177,13 +176,13 @@ pip,backend-python,colorlog,6.12.0,MIT License,license,OK,no
 pip,backend-python,confection,1.3.4,MIT,license,OK,no
 pip,backend-python,contourpy,1.4.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,cryptography,50.0.2,Apache-2.0 OR BSD-3-Clause,license_expression,OK,no
-pip,backend-python,ctranslate2,4.8.2,MIT,license,OK,no
+pip,backend-python,ctranslate2,4.8.4,MIT,license,OK,no
 pip,backend-python,cuda-bindings,12.9.10,Apache-2.0,license_expression,OK,no
-pip,backend-python,cuda-pathfinder,1.8.1,Apache-2.0,license_expression,OK,no
+pip,backend-python,cuda-pathfinder,1.8.4,Apache-2.0,license_expression,OK,no
 pip,backend-python,cuda-toolkit,12.8.1,UNKNOWN,missing,UNKNOWN,yes
 pip,backend-python,cycler,0.12.1,BSD,classifier,OK,no
 pip,backend-python,cymem,2.0.16,MIT,license,OK,no
-pip,backend-python,deepgram-sdk,7.9.0,MIT,license,OK,no
+pip,backend-python,deepgram-sdk,7.16.0,MIT,license,OK,no
 pip,backend-python,defusedxml,0.7.1,PSF-2.0,classifier,OK,no
 pip,backend-python,detoxify,0.5.4,Apache-2.0,classifier,OK,no
 pip,backend-python,dnspython,2.9.0,ISC,license_expression,OK,no
@@ -196,27 +195,27 @@ pip,backend-python,ffmpeg-python,0.2.0,Apache-2.0,classifier,OK,no
 pip,backend-python,filelock,4.2.4,MIT,license_expression,OK,no
 pip,backend-python,flatbuffers,25.12.19,Apache 2.0,license,OK,no
 pip,backend-python,flower,2.2.0,BSD,license,OK,no
-pip,backend-python,fonttools,4.67.0,MIT,license,OK,no
+pip,backend-python,fonttools,4.68.0,MIT,license,OK,no
 pip,backend-python,fpdf2,2.8.9,LGPL-3.0-only,license_expression,REVIEW,no
 pip,backend-python,frozenlist,1.8.0,Apache-2.0,license,OK,no
 pip,backend-python,fsspec,2026.9.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,future,1.0.0,MIT,license,OK,no
 pip,backend-python,gliner,0.2.29,Apache-2.0,license,OK,no
 pip,backend-python,global_gender_predictor,0.0.5,MIT,classifier,OK,no
-pip,backend-python,google-api-core,2.37.0,Apache 2.0,license,OK,no
-pip,backend-python,google-auth,2.58.0,Apache 2.0,license,OK,no
-pip,backend-python,google-cloud-speech,2.40.0,Apache-2.0,license,OK,no
-pip,backend-python,googleapis-common-protos,1.75.3,Apache-2.0,license_expression,OK,no
+pip,backend-python,google-api-core,2.43.1,Apache 2.0,license,OK,no
+pip,backend-python,google-auth,2.62.0,Apache 2.0,license,OK,no
+pip,backend-python,google-cloud-speech,2.41.0,Apache-2.0,license,OK,no
+pip,backend-python,googleapis-common-protos,1.76.0,Apache-2.0,license_expression,OK,no
 pip,backend-python,greenlet,3.5.6,MIT AND PSF-2.0,license_expression,OK,no
-pip,backend-python,grpcio,1.84.0,Apache-2.0,license_expression,OK,no
-pip,backend-python,grpcio-status,1.84.0,Apache-2.0,license_expression,OK,no
+pip,backend-python,grpcio,1.85.0,Apache-2.0,license_expression,OK,no
+pip,backend-python,grpcio-status,1.85.0,Apache-2.0,license_expression,OK,no
 pip,backend-python,h11,0.16.0,MIT,license,OK,no
-pip,backend-python,hf-xet,1.7.0,Apache-2.0,license_expression,OK,no
+pip,backend-python,hf-xet,1.7.1,Apache-2.0,license_expression,OK,no
 pip,backend-python,httpcore,1.0.9,BSD-3-Clause,license_expression,OK,no
-pip,backend-python,httpcore2,2.13.0,BSD-3-Clause,license_expression,OK,no
+pip,backend-python,httpcore2,2.16.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,httptools,0.9.0,MIT,license_expression,OK,no
 pip,backend-python,httpx,0.28.1,BSD-3-Clause,license,OK,no
-pip,backend-python,httpx2,2.13.0,BSD-3-Clause,license_expression,OK,no
+pip,backend-python,httpx2,2.16.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,huggingface_hub,1.17.0,Apache-2.0,license,OK,no
 pip,backend-python,humanize,4.16.0,MIT,license_expression,OK,no
 pip,backend-python,idna,3.20,BSD-3-Clause,license_expression,OK,no
@@ -244,11 +243,11 @@ pip,backend-python,minio,7.2.20,Apache-2.0,license,OK,no
 pip,backend-python,ml_dtypes,0.6.0,Apache-2.0,license_expression,OK,no
 pip,backend-python,mmh3,5.3.1,MIT,classifier,OK,no
 pip,backend-python,mpmath,1.3.0,BSD,license,OK,no
-pip,backend-python,msal,1.38.0,MIT,license,OK,no
+pip,backend-python,msal,1.39.0,MIT,license,OK,no
 pip,backend-python,multidict,6.9.1,Apache License 2.0,license,OK,no
 pip,backend-python,murmurhash,1.0.16,MIT,license,OK,no
 pip,backend-python,mutagen,1.48.1,GPL-2.0-or-later,license_expression,BLOCKER,yes
-pip,backend-python,narwhals,2.27.1,MIT,license_expression,OK,no
+pip,backend-python,narwhals,2.28.0,MIT,license_expression,OK,no
 pip,backend-python,networkx,3.7,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,nltk,3.10.4,"Apache License, Version 2.0",license,OK,no
 pip,backend-python,numpy,2.4.6,BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0,license_expression,OK,no
@@ -268,14 +267,14 @@ pip,backend-python,nvidia-nvjitlink-cu12,12.8.93,NVIDIA Proprietary Software,lic
 pip,backend-python,nvidia-nvshmem-cu12,3.4.5,LicenseRef-NVIDIA-Proprietary,license_expression,PROPRIETARY-REVIEW,no
 pip,backend-python,nvidia-nvtx-cu12,12.8.90,Apache 2.0,license,OK,no
 pip,backend-python,omegaconf,2.4.0,BSD,classifier,OK,no
-pip,backend-python,onnx,1.22.0,Apache-2.0,license_expression,OK,no
+pip,backend-python,onnx,1.23.2,Apache-2.0,license_expression,OK,no
 pip,backend-python,onnx-ir,1.1.0,Apache-2.0,license_expression,OK,no
 pip,backend-python,onnxconverter-common,1.16.0,MIT,classifier,OK,no
-pip,backend-python,onnxruntime,1.30.0,MIT License,license,OK,no
-pip,backend-python,onnxruntime-gpu,1.30.0,MIT License,license,OK,no
+pip,backend-python,onnxruntime,1.31.1,MIT License,license,OK,no
+pip,backend-python,onnxruntime-gpu,1.31.1,MIT License,license,OK,no
 pip,backend-python,onnxscript,0.7.2,MIT,classifier,OK,no
-pip,backend-python,onnxslim,0.1.96,MIT,license_expression,OK,no
-pip,backend-python,openai,3.14.0,Apache-2.0,license_expression,OK,no
+pip,backend-python,onnxslim,0.1.98,MIT,license_expression,OK,no
+pip,backend-python,openai,3.41.0,Apache-2.0,license_expression,OK,no
 pip,backend-python,opensearch-protobufs,1.2.0,Apache-2.0,license,OK,no
 pip,backend-python,opensearch-py,3.2.0,Apache-2.0,license,OK,no
 pip,backend-python,opentelemetry-api,1.45.1,Apache-2.0,license_expression,OK,no
@@ -292,17 +291,17 @@ pip,backend-python,optuna,5.0.0,MIT,classifier,OK,no
 pip,backend-python,packaging,26.3,Apache-2.0 OR BSD-2-Clause,license_expression,OK,no
 pip,backend-python,pandas,3.1.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,passlib,1.7.4,BSD,license,OK,no
-pip,backend-python,phonenumbers,9.0.41,Apache-2.0,license_expression,OK,no
+pip,backend-python,phonenumbers,9.0.42,Apache-2.0,license_expression,OK,no
 pip,backend-python,pillow,13.0.0,MIT-CMU,license_expression,OK,no
 pip,backend-python,preshed,3.0.13,MIT,license,OK,no
-pip,backend-python,presidio_analyzer,2.2.364,MIT,license_expression,OK,no
+pip,backend-python,presidio_analyzer,2.2.366,MIT,license_expression,OK,no
 pip,backend-python,presidio_anonymizer,2.2.362,MIT,license_expression,OK,no
 pip,backend-python,primePy,1.3,MIT,classifier,OK,no
 pip,backend-python,prometheus_client,0.26.0,Apache-2.0 AND BSD-2-Clause,license_expression,OK,no
 pip,backend-python,prompt_toolkit,3.0.53,BSD,classifier,OK,no
 pip,backend-python,propcache,0.5.4,Apache-2.0,license,OK,no
-pip,backend-python,proto-plus,1.28.4,Apache 2.0,license,OK,no
-pip,backend-python,protobuf,7.36.1,3-Clause BSD License,license,OK,no
+pip,backend-python,proto-plus,1.29.0,Apache 2.0,license,OK,no
+pip,backend-python,protobuf,7.36.2,3-Clause BSD License,license,OK,no
 pip,backend-python,psutil,7.2.2,BSD-3-Clause,license,OK,no
 pip,backend-python,psycopg2,2.9.13,LGPL-2.1-or-later,classifier,REVIEW,no
 pip,backend-python,pyannote-audio,4.0.5.dev18+ge3924b4fc,UNKNOWN,missing,UNKNOWN,yes
@@ -318,7 +317,7 @@ pip,backend-python,pycparser,3.12,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,pycryptodome,4.2.0,BSD-2-Clause AND Unlicense AND MIT,license_expression,OK,no
 pip,backend-python,pycryptodomex,3.24.1,BSD OR Public Domain,classifier,OK,no
 pip,backend-python,pydantic,2.14.1,MIT,license_expression,OK,no
-pip,backend-python,pydantic-settings,2.16.1,MIT,license_expression,OK,no
+pip,backend-python,pydantic-settings,2.16.2,MIT,license_expression,OK,no
 pip,backend-python,pydantic_core,2.50.1,MIT,license_expression,OK,no
 pip,backend-python,pyparsing,3.3.3,MIT,license_expression,OK,no
 pip,backend-python,pyspnego,0.12.4,MIT,license_expression,OK,no
@@ -330,7 +329,7 @@ pip,backend-python,python-multipart,0.0.32,Apache-2.0,license_expression,OK,no
 pip,backend-python,python3-saml,1.16.0,MIT,license,OK,no
 pip,backend-python,pytorch-lightning,2.6.6,Apache-2.0,license,OK,no
 pip,backend-python,pytorch-metric-learning,2.9.0,MIT,classifier,OK,no
-pip,backend-python,pytz,2026.5,MIT,license,OK,no
+pip,backend-python,pytz,2026.6,MIT,license,OK,no
 pip,backend-python,qrcode,8.2,BSD,license,OK,no
 pip,backend-python,redis,8.1.0,MIT,license_expression,OK,no
 pip,backend-python,regex,2026.9.29,Apache-2.0 AND CNRI-Python,license_expression,OK,no
@@ -351,12 +350,12 @@ pip,backend-python,smart_open,9.0.0,MIT,classifier,OK,no
 pip,backend-python,smbprotocol,1.17.0,MIT,license_expression,OK,no
 pip,backend-python,sniffio,1.3.1,MIT OR Apache-2.0,license,OK,no
 pip,backend-python,sortedcontainers,2.4.0,Apache 2.0,license,OK,no
-pip,backend-python,spacy,3.8.16,MIT,license,OK,no
+pip,backend-python,spacy,3.8.18,MIT,license,OK,no
 pip,backend-python,spacy-legacy,3.0.12,MIT,license,OK,no
 pip,backend-python,spacy-loggers,1.0.5,MIT,license,OK,no
-pip,backend-python,speechmatics-batch,0.5.0,MIT,license_expression,OK,no
+pip,backend-python,speechmatics-batch,1.1.0,MIT,license_expression,OK,no
 pip,backend-python,srsly,2.5.5,MIT,license,OK,no
-pip,backend-python,starlette,1.9.0,BSD-3-Clause,license_expression,OK,no
+pip,backend-python,starlette,1.10.0,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,sympy,1.14.0,BSD,license,OK,no
 pip,backend-python,thinc,8.3.14,MIT,license,OK,no
 pip,backend-python,threadpoolctl,3.8.0,BSD-3-Clause,license_expression,OK,no
@@ -390,12 +389,12 @@ pip,backend-python,vine,5.1.0,BSD,license,OK,no
 pip,backend-python,wasabi,1.1.3,MIT,license,OK,no
 pip,backend-python,watchdog,6.0.0,Apache-2.0,license,OK,no
 pip,backend-python,watchfiles,1.3.0,MIT,license,OK,no
-pip,backend-python,wcwidth,0.9.3,MIT,classifier,OK,no
+pip,backend-python,wcwidth,0.9.4,MIT,classifier,OK,no
 pip,backend-python,weasel,1.0.1,MIT,license,OK,no
 pip,backend-python,websockets,17.3,BSD-3-Clause,license_expression,OK,no
 pip,backend-python,whisperx,3.8.6,BSD-2-Clause,license,OK,no
 pip,backend-python,wrapt,2.5.1,BSD-2-Clause,license_expression,OK,no
 pip,backend-python,xmlsec,1.3.18,MIT,license_expression,OK,no
 pip,backend-python,yarl,1.25.1,Apache-2.0,license,OK,no
-pip,backend-python,yt-dlp,2026.10.21,Unlicense,license_expression,OK,no
+pip,backend-python,yt-dlp,2026.10.26,Unlicense,license_expression,OK,no
 pip,backend-python,yt-dlp-ejs,0.8.0,Unlicense AND MIT AND ISC,license_expression,OK,no

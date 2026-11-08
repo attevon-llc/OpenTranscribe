@@ -33,7 +33,7 @@ import _baseline
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINES = REPO_ROOT / 'scripts' / 'guards' / 'baselines'
 TARGETS = ('backend/app', 'scripts', 'backend/alembic')
-PINNED_RUFF = '0.16.7'
+PINNED_RUFF = '0.17.3'
 MAX_COMPLEXITY = 15
 _SCORE = re.compile(r'`(?P<name>[^`]+)` is too complex \((?P<score>\d+) >')
 

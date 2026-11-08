@@ -133,7 +133,7 @@ def _apply_pre_download_jitter() -> None:
     import random
     import time
 
-    jitter_seconds = random.uniform(  # noqa: S311  # nosec B311
+    jitter_seconds = random.uniform(  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
         settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MIN_SECONDS,
         settings.YOUTUBE_PRE_DOWNLOAD_JITTER_MAX_SECONDS,
     )

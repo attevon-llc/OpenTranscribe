@@ -31,7 +31,7 @@ BACKEND = REPO_ROOT / 'backend'
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
-from app.scripts.corpus_injection.env import bootstrap  # noqa: E402
+from app.scripts.corpus_injection.env import bootstrap  # noqa: E402 - importable only after the sys.path insert above
 
 logger = logging.getLogger('benchmark_router')
 

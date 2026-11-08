@@ -11,7 +11,7 @@ import enum
 # status-detail API pins it as a characterization (test_files_management.py) and
 # the redaction-guard / on-demand-analytics `str(status)` comparisons would
 # silently change behavior. Convert deliberately in its own change, not a codemod.
-class FileStatus(str, enum.Enum):  # noqa: UP042
+class FileStatus(str, enum.Enum):  # noqa: UP042 - str() format is load-bearing, see comment above
     """Processing status for media files."""
 
     PENDING = "pending"

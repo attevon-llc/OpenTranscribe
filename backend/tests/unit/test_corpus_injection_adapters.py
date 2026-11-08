@@ -356,7 +356,7 @@ def _count_ami_segments(meeting_id: str) -> int:
     base = NAS_ROOT / "ami" / "ami_public_manual_1.6.2" / "segments"
     total = 0
     for path in sorted(base.glob(f"{meeting_id}.*.segments.xml")):
-        root = ET.parse(path).getroot()  # noqa: S314  # nosec B314 — local corpus fixture
+        root = ET.parse(path).getroot()  # noqa: S314 - local corpus fixture  # nosec B314
         total += sum(1 for el in root if el.tag.endswith("segment"))
     return total
 

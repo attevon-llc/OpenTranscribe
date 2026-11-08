@@ -540,7 +540,7 @@ class _MidJobFailureHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"{}")
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 
@@ -715,7 +715,7 @@ class _SaturatedSidecarHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b'{"exclusive_segments": [], "segments": []}')
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 

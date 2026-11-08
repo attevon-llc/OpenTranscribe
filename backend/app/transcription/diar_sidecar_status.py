@@ -128,7 +128,7 @@ def sidecar_healthy(base_url: str | None = None) -> bool:
 def _sidecar_healthy_uncached(url: str) -> bool:
     """The live ``/healthz`` probe. Always call :func:`sidecar_healthy` instead."""
     try:
-        with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
+        with urllib.request.urlopen(  # noqa: S310 - internal service  # nosec B310
             f"{url}/healthz", timeout=_PROBE_TIMEOUT_S
         ) as resp:
             return bool(resp.status == 200)
@@ -159,7 +159,7 @@ def sidecar_status(base_url: str | None = None) -> dict:
         if hit is not None and time.monotonic() - hit[0] < _READY_CACHE_TTL_S:
             return hit[1]
     try:
-        with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
+        with urllib.request.urlopen(  # noqa: S310 - internal service  # nosec B310
             f"{url}/healthz", timeout=5
         ) as resp:
             body = json.loads(resp.read())
@@ -256,7 +256,7 @@ def _sidecar_ready_uncached(url: str) -> bool:
     only so the TTL cache above has something to wrap without duplicating the probe logic.
     """
     try:
-        with urllib.request.urlopen(  # noqa: S310  # nosec B310 — internal service
+        with urllib.request.urlopen(  # noqa: S310 - internal service  # nosec B310
             f"{url}/readyz", timeout=5
         ) as resp:
             return bool(resp.status == 200)

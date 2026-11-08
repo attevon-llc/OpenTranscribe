@@ -94,7 +94,7 @@ def _read_words_by_id(path: Path) -> dict[int, _TimedElement]:
     resolving an ``nite:id`` range — the position of an id in that filtered list no longer
     matches its numeric suffix once anything upstream was skipped or merged.
     """
-    root = ET.parse(path).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+    root = ET.parse(path).getroot()  # noqa: S314 - see module note on XML trust  # nosec B314
     out: dict[int, _TimedElement] = {}
     for el in root:
         raw_id = el.get(_NITE_ID_ATTR)
@@ -160,7 +160,7 @@ def _read_channel_turns(segments_path: Path, words_path: Path, speaker: str) -> 
     non-verbal-only and correctly contribute nothing to the index.
     """
     words_by_id = _read_words_by_id(words_path)
-    root = ET.parse(segments_path).getroot()  # noqa: S314  # nosec B314 — see module note
+    root = ET.parse(segments_path).getroot()  # noqa: S314 - see module note  # nosec B314
     turns: list[Turn] = []
     for segment in root:
         if segment.tag.rsplit("}", 1)[-1] != "segment":
@@ -274,7 +274,7 @@ class AMIDistractorAdapter(CorpusAdapter):
         )
 
     def meeting_ids(self) -> list[str]:
-        root = ET.parse(self._meetings_xml).getroot()  # noqa: S314  # nosec B314 — see nxt.py
+        root = ET.parse(self._meetings_xml).getroot()  # noqa: S314 - see nxt.py  # nosec B314
         all_ids = {m.get("observation") for m in root if m.get("observation")}
         distractors = all_ids - self._qmsum_product_ids
         return sorted(m for m in distractors if m)

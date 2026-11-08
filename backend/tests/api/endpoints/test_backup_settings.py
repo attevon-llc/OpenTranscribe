@@ -34,7 +34,7 @@ from datetime import timedelta
 import pytest
 from fastapi import status
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.models.system_settings import SystemSettings
 from app.services import backup_config
 from app.services import system_settings_service as sss
@@ -108,10 +108,10 @@ def test_get_returns_coded_defaults_and_no_secret_field(
     body = response.json()
     assert "s3_secret_key" not in body
     assert body["s3_secret_key_set"] is False
-    assert body["schedule"] == C.DEFAULT_BACKUP_SCHEDULE
-    assert body["destination"] == C.DEFAULT_BACKUP_DESTINATION
-    assert body["destination_type"] == C.DEFAULT_BACKUP_DESTINATION_TYPE
-    assert body["destination_status"]["destination"] == C.DEFAULT_BACKUP_DESTINATION
+    assert body["schedule"] == constants.DEFAULT_BACKUP_SCHEDULE
+    assert body["destination"] == constants.DEFAULT_BACKUP_DESTINATION
+    assert body["destination_type"] == constants.DEFAULT_BACKUP_DESTINATION_TYPE
+    assert body["destination_status"]["destination"] == constants.DEFAULT_BACKUP_DESTINATION
     assert body["s3_status"] is None
 
 

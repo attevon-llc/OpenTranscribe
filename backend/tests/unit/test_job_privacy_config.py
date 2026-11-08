@@ -162,16 +162,15 @@ def _flags(captured) -> tuple[bool, bool]:
 
 def _run(builder: str, ctx, builders):
     context = {"pipeline_plan": plan_context()}
-    if builder == "monolithic":
-        call = lambda: pipelines._run_transcription_pipeline(  # noqa: E731
-            ctx, "/scratch/a.wav", None, None, None, enable_diarization=True
-        )
-    elif builder == "engine":
-        call = lambda: pipelines._run_engine_pipeline(ctx, "/scratch/a.wav", context)  # noqa: E731
-    else:
-        call = lambda: pipelines._run_transcribe_only_stage(ctx, "/scratch/a.wav", context)  # noqa: E731
     with pytest.raises(_StopError):
-        call()
+        if builder == "monolithic":
+            pipelines._run_transcription_pipeline(
+                ctx, "/scratch/a.wav", None, None, None, enable_diarization=True
+            )
+        elif builder == "engine":
+            pipelines._run_engine_pipeline(ctx, "/scratch/a.wav", context)
+        else:
+            pipelines._run_transcribe_only_stage(ctx, "/scratch/a.wav", context)
     return builders
 
 

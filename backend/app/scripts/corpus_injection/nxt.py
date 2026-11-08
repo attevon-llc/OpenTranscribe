@@ -83,7 +83,7 @@ def parse_nxt(path: Path) -> ET.Element:
     The only place in the corpus tooling that touches the stdlib XML parser, so the
     trust note in the module docstring covers every reader (gold summaries included).
     """
-    return ET.parse(path).getroot()  # noqa: S314  # nosec B314 — see module note on XML trust
+    return ET.parse(path).getroot()  # noqa: S314 - see module note on XML trust  # nosec B314
 
 
 def read_meeting_channels(meetings_xml: Path) -> dict[str, dict[str, dict[str, str]]]:

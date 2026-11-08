@@ -122,8 +122,8 @@ def generate_stitched_filename(base_name: str, extension: str) -> str:
 def _probe_stream_signature(path: str) -> tuple[str, str] | None:
     """Return ``(video_codec_or_'', audio_codec_or_'')`` via ffprobe, or None."""
     try:
-        out = subprocess.run(  # noqa: S603 # nosec B603
-            [  # noqa: S607
+        out = subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
+            [  # noqa: S607 - tool resolved from PATH inside the image
                 "ffprobe",
                 "-v",
                 "error",
@@ -199,7 +199,7 @@ def stitch_files(local_paths: list[str], output_path: str) -> bool:
             cmd += ["-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac"]
         cmd.append(output_path)
 
-        subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)  # noqa: S603 # nosec B603
+        subprocess.run(cmd, capture_output=True, text=True, timeout=3600, check=True)  # noqa: S603 - argv list, no shell  # nosec B603
         ok = os.path.exists(output_path) and os.path.getsize(output_path) > 0
         if not ok:
             logger.error("Stitched output missing or empty: %s", output_path)

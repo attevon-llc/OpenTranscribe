@@ -2,6 +2,7 @@
 """Compare stock vs optimized speaker diarization output on MPS."""
 
 import os
+import subprocess
 import sys
 import warnings
 
@@ -10,8 +11,8 @@ os.environ['PYANNOTE_METRICS_ENABLED'] = 'false'
 
 # E402 on the block below: warnings.filterwarnings() and PYANNOTE_METRICS_ENABLED
 # must be in place BEFORE torch / pyannote import, or the setting is read too late.
-import torch  # noqa: E402
-import torchaudio  # noqa: E402
+import torch  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
+import torchaudio  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 
 token = os.environ.get('HUGGINGFACE_TOKEN') or os.environ.get('HF_TOKEN')
 if not token:
@@ -28,7 +29,7 @@ duration = waveform.shape[1] / 16000
 
 # E402 on the block below: warnings.filterwarnings() and PYANNOTE_METRICS_ENABLED
 # must be in place BEFORE torch / pyannote import, or the setting is read too late.
-from pyannote.audio import Pipeline  # noqa: E402
+from pyannote.audio import Pipeline  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 
 pipeline = Pipeline.from_pretrained('pyannote/speaker-diarization-community-1', token=token)
 pipeline = pipeline.to(torch.device('mps'))
@@ -61,10 +62,6 @@ for spk in labels_opt:
 # Now install stock and run
 print()
 print('Installing STOCK pyannote-audio...')
-# E402: deliberately imported here — this is the point in the script where it swaps the
-# installed pyannote-audio, and the import reads as part of that step.
-import subprocess  # noqa: E402
-
 subprocess.run(
     [
         sys.executable,

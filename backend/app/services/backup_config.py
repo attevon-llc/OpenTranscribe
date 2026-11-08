@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.services import system_settings_service as sss
 from app.services.backup_cron import is_valid_cron
 from app.services.scheduled_job_settings import bool_value
@@ -30,7 +30,7 @@ KEY_RETENTION_DAILY = "backup.retention_daily"
 KEY_RETENTION_WEEKLY = "backup.retention_weekly"
 KEY_RETENTION_MONTHLY = "backup.retention_monthly"
 KEY_ENCRYPT = "backup.encrypt"
-KEY_PASSPHRASE_FILE = "backup.passphrase_file"  # noqa: S105  # nosec B105 - settings key name, not a secret
+KEY_PASSPHRASE_FILE = "backup.passphrase_file"  # noqa: S105 - settings key name, not a secret  # nosec B105
 KEY_INCLUDE_OPENSEARCH = "backup.include_opensearch"
 KEY_LAST_RUN_AT = "backup.last_run_at"
 KEY_LAST_RESULT = "backup.last_result"
@@ -48,7 +48,7 @@ KEY_S3_REGION = "backup.s3_region"
 KEY_S3_BUCKET = "backup.s3_bucket"
 KEY_S3_PREFIX = "backup.s3_prefix"
 KEY_S3_ACCESS_KEY_ID = "backup.s3_access_key_id"
-KEY_S3_SECRET_KEY = "backup.s3_secret_key"  # noqa: S105  # nosec B105 - settings key name, not a secret
+KEY_S3_SECRET_KEY = "backup.s3_secret_key"  # noqa: S105 - settings key name, not a secret  # nosec B105
 
 DEST_LOCAL = "local"
 DEST_S3 = "s3"
@@ -87,31 +87,35 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
 
         last_result = json_value(vals, KEY_LAST_RESULT)
         return {
-            "enabled": bool_value(vals, KEY_ENABLED, C.DEFAULT_BACKUP_ENABLED),
-            "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_BACKUP_SCHEDULE,
-            "destination": vals.get(KEY_DESTINATION) or C.DEFAULT_BACKUP_DESTINATION,
+            "enabled": bool_value(vals, KEY_ENABLED, constants.DEFAULT_BACKUP_ENABLED),
+            "schedule": vals.get(KEY_SCHEDULE) or constants.DEFAULT_BACKUP_SCHEDULE,
+            "destination": vals.get(KEY_DESTINATION) or constants.DEFAULT_BACKUP_DESTINATION,
             "retention_daily": int_value(
-                vals, KEY_RETENTION_DAILY, C.DEFAULT_BACKUP_RETENTION_DAILY
+                vals, KEY_RETENTION_DAILY, constants.DEFAULT_BACKUP_RETENTION_DAILY
             ),
             "retention_weekly": int_value(
-                vals, KEY_RETENTION_WEEKLY, C.DEFAULT_BACKUP_RETENTION_WEEKLY
+                vals, KEY_RETENTION_WEEKLY, constants.DEFAULT_BACKUP_RETENTION_WEEKLY
             ),
             "retention_monthly": int_value(
-                vals, KEY_RETENTION_MONTHLY, C.DEFAULT_BACKUP_RETENTION_MONTHLY
+                vals, KEY_RETENTION_MONTHLY, constants.DEFAULT_BACKUP_RETENTION_MONTHLY
             ),
-            "encrypt": bool_value(vals, KEY_ENCRYPT, C.DEFAULT_BACKUP_ENCRYPT),
-            "passphrase_file": vals.get(KEY_PASSPHRASE_FILE) or C.DEFAULT_BACKUP_PASSPHRASE_FILE,
+            "encrypt": bool_value(vals, KEY_ENCRYPT, constants.DEFAULT_BACKUP_ENCRYPT),
+            "passphrase_file": vals.get(KEY_PASSPHRASE_FILE)
+            or constants.DEFAULT_BACKUP_PASSPHRASE_FILE,
             "include_opensearch": bool_value(
-                vals, KEY_INCLUDE_OPENSEARCH, C.DEFAULT_BACKUP_INCLUDE_OPENSEARCH
+                vals, KEY_INCLUDE_OPENSEARCH, constants.DEFAULT_BACKUP_INCLUDE_OPENSEARCH
             ),
             "last_run_at": vals.get(KEY_LAST_RUN_AT),
             "last_result": last_result,
-            "destination_type": vals.get(KEY_DESTINATION_TYPE) or C.DEFAULT_BACKUP_DESTINATION_TYPE,
-            "s3_endpoint_url": vals.get(KEY_S3_ENDPOINT_URL) or C.DEFAULT_BACKUP_S3_ENDPOINT_URL,
-            "s3_region": vals.get(KEY_S3_REGION) or C.DEFAULT_BACKUP_S3_REGION,
-            "s3_bucket": vals.get(KEY_S3_BUCKET) or C.DEFAULT_BACKUP_S3_BUCKET,
-            "s3_prefix": vals.get(KEY_S3_PREFIX) or C.DEFAULT_BACKUP_S3_PREFIX,
-            "s3_access_key_id": vals.get(KEY_S3_ACCESS_KEY_ID) or C.DEFAULT_BACKUP_S3_ACCESS_KEY_ID,
+            "destination_type": vals.get(KEY_DESTINATION_TYPE)
+            or constants.DEFAULT_BACKUP_DESTINATION_TYPE,
+            "s3_endpoint_url": vals.get(KEY_S3_ENDPOINT_URL)
+            or constants.DEFAULT_BACKUP_S3_ENDPOINT_URL,
+            "s3_region": vals.get(KEY_S3_REGION) or constants.DEFAULT_BACKUP_S3_REGION,
+            "s3_bucket": vals.get(KEY_S3_BUCKET) or constants.DEFAULT_BACKUP_S3_BUCKET,
+            "s3_prefix": vals.get(KEY_S3_PREFIX) or constants.DEFAULT_BACKUP_S3_PREFIX,
+            "s3_access_key_id": vals.get(KEY_S3_ACCESS_KEY_ID)
+            or constants.DEFAULT_BACKUP_S3_ACCESS_KEY_ID,
             # NEVER expose the secret — only whether one is configured.
             "s3_secret_key_set": bool(vals.get(KEY_S3_SECRET_KEY)),
         }

@@ -41,7 +41,7 @@ class FakeS3Client:
         self._contents[key] = data
         self.uploaded.append((bucket, key))
 
-    def delete_object(self, Bucket, Key):  # noqa: N803
+    def delete_object(self, Bucket, Key):  # noqa: N803 - boto3 kwarg name
         self.objects.pop(Key, None)
         self._contents.pop(Key, None)
         self.deleted.append(Key)

@@ -215,7 +215,7 @@ def _run_all(args: argparse.Namespace) -> dict[str, Any]:
             baseline: list[float] | None = None
             for threads in thread_values:
                 load_before = os.getloadavg()
-                proc = subprocess.run(  # noqa: S603  # nosec B603 - argv is sys.executable plus literals
+                proc = subprocess.run(  # noqa: S603 - argv is sys.executable plus literals  # nosec B603
                     _worker_command(args, threads, conc),
                     capture_output=True,
                     text=True,

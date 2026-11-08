@@ -374,7 +374,7 @@ def detect_speaker_attributes_task(self: Any, file_uuid: str, user_id: int) -> d
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "error", "reason": "no_inference_slot"}
         _update_attr_task(task_id, "pending", progress=0.1)
-        raise self.retry(countdown=random.uniform(*_SLOT_WAIT_COUNTDOWN_RANGE)) from None  # noqa: S311  # nosec B311
+        raise self.retry(countdown=random.uniform(*_SLOT_WAIT_COUNTDOWN_RANGE)) from None  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
     finally:
         if _guard is not None:
             with contextlib.suppress(Exception):  # lock expires via TTL anyway

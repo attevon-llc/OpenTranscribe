@@ -219,7 +219,7 @@ def _run_gpu_task_with_cloud_pipeline_raising(preprocess_context, error: Excepti
         mock_scope.return_value.__enter__.return_value = MagicMock()
         # download_temp_audio is patched to a no-op above, so this string is never used
         # as a real filesystem path — only returned by the mocked TemporaryDirectory.
-        mock_tmpdir.return_value.__enter__.return_value = "/tmp/fake"  # noqa: S108
+        mock_tmpdir.return_value.__enter__.return_value = "/tmp/fake"  # noqa: S108 - a stand-in path string; nothing is created there
         try:
             task.__wrapped__(preprocess_context)
         except _RetrySentinelError as sentinel:

@@ -85,7 +85,6 @@ import requests
 from _visual_capture import login
 from _visual_capture import make_context as _make_context
 from _visual_capture import stabilize as _stabilize
-from _visual_diff import CHANNEL_NOISE_THRESHOLD  # noqa: F401
 from _visual_diff import DIFF_TOLERANCE
 from _visual_diff import diff_fraction as _diff_fraction
 from conftest import complete_first_run_wizard

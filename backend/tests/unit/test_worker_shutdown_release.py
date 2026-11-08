@@ -283,7 +283,7 @@ class TestCelerySignalWiring:
         pytest.importorskip("celery")
         import celery.signals as signals
 
-        from app.core import celery as celery_module  # noqa: F401
+        from app.core import celery as celery_module  # noqa: F401 - importing connects the worker signals
 
         return signals
 

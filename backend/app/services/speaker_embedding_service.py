@@ -304,7 +304,7 @@ class SpeakerEmbeddingService:
                 "quiet",
                 "-",
             ]
-            proc = subprocess.run(cmd, capture_output=True, timeout=120)  # noqa: S603  # nosec B603
+            proc = subprocess.run(cmd, capture_output=True, timeout=120)  # noqa: S603 - argv list, no shell  # nosec B603
             if proc.returncode == 0 and len(proc.stdout) > 0:
                 audio = np.frombuffer(proc.stdout, dtype=np.float32)
                 waveform = torch.from_numpy(audio).unsqueeze(0)  # [1, samples]

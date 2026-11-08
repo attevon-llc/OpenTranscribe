@@ -160,7 +160,7 @@ def _get_hash_algorithm_for_sig_oid(sig_alg_oid: ObjectIdentifier) -> hashes.Has
         SignatureAlgorithmOID.ECDSA_WITH_SHA384: hashes.SHA384(),
         SignatureAlgorithmOID.RSA_WITH_SHA512: hashes.SHA512(),
         SignatureAlgorithmOID.ECDSA_WITH_SHA512: hashes.SHA512(),
-        SignatureAlgorithmOID.RSA_WITH_SHA1: hashes.SHA1(),  # noqa: S303 # nosec B303 - required for legacy OCSP
+        SignatureAlgorithmOID.RSA_WITH_SHA1: hashes.SHA1(),  # noqa: S303 - required for legacy OCSP  # nosec B303
     }
 
     return sig_oid_to_hash.get(sig_alg_oid)

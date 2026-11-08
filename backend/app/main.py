@@ -25,6 +25,10 @@ from starlette.responses import JSONResponse
 from starlette.responses import Response
 
 from app.api.endpoints.alertmanager_webhook import router as alertmanager_webhook_router
+from app.api.endpoints.metrics import router as metrics_router
+from app.api.endpoints.scim import router as scim_router
+from app.api.endpoints.scim.errors import SCIMError
+from app.api.endpoints.scim.errors import scim_error_handler
 from app.api.health import router as health_router
 from app.api.hold_refusal import hold_refused_handler
 from app.api.overload_response import handle_db_overload
@@ -428,7 +432,6 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)  # typ
 
 # Prometheus scrape endpoint, mounted at ROOT (no API_PREFIX) next to /health.
 # Unauthenticated by design — nginx denies it and the host port is LAN-only.
-from app.api.endpoints.metrics import router as metrics_router  # noqa: E402
 
 app.include_router(metrics_router)
 
@@ -442,9 +445,6 @@ app.include_router(alertmanager_webhook_router)
 # fixes the base path, and every IdP connector appends "/Users" to whatever base URL
 # it is given. Its errors must be SCIM Error resources, not FastAPI's {"detail": ...},
 # or an administrator reading their connector log sees an opaque status code.
-from app.api.endpoints.scim import router as scim_router  # noqa: E402
-from app.api.endpoints.scim.errors import SCIMError  # noqa: E402
-from app.api.endpoints.scim.errors import scim_error_handler  # noqa: E402
 
 app.include_router(scim_router)
 app.add_exception_handler(SCIMError, scim_error_handler)
@@ -458,4 +458,4 @@ if __name__ == "__main__":
     import uvicorn
 
     # Binding to 0.0.0.0 is required for Docker containers
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)  # noqa: S104 # nosec B104
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)  # noqa: S104 - dev-only __main__ runner inside the container  # nosec B104

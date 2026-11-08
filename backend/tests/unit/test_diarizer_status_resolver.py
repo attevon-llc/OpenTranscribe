@@ -70,7 +70,7 @@ def _make_handler(readyz: int):
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
             pass  # silence request logging in test output
 
     return _Handler

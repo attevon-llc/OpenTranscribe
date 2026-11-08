@@ -59,7 +59,7 @@ from app.utils.websocket_notify import publish_session_revocation
 logger = logging.getLogger(__name__)
 
 # Redis key prefix for revoked tokens (not a password)
-REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
+REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 - a Redis key prefix, not a credential  # nosec B105
 
 #: Per-user revocation epoch. Access tokens are stateless — nothing durable
 #: records their JTIs — so revoking "all of a user's tokens" could only ever

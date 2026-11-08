@@ -40,7 +40,7 @@ class _FakeIngest:
             raise NotFoundError(404, f"pipeline {id} not found", {})
         return {id: self.live}
 
-    def put_pipeline(self, id: str, body: dict[str, Any]) -> None:  # noqa: A002
+    def put_pipeline(self, id: str, body: dict[str, Any]) -> None:  # noqa: A002 - stdlib / client signature
         self.puts.append(body)
         self.live = body
 

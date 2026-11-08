@@ -136,7 +136,7 @@ def test_detect_and_mask(seeded_file):
 
         # PII (only if Presidio available in this env).
         try:
-            import presidio_analyzer  # noqa: F401
+            import presidio_analyzer  # noqa: F401 - import-availability probe
 
             from app.services.redaction.detectors import pii_presidio
 

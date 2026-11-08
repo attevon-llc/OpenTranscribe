@@ -345,7 +345,7 @@ class _LlenCallVisitor(ast.NodeVisitor):
     # Why the N815 suppression below: `visit_AsyncFunctionDef` is dispatched by name from
     # ast.NodeVisitor.visit() and MUST match the AST node class name exactly
     # (mixedCase) -- no restructuring removes that requirement.
-    visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815
+    visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
 
     def visit_Call(self, node):
         func = node.func

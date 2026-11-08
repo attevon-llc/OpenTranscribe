@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 def watchdog_available() -> bool:
     """True when the watchdog package can be imported in this image."""
     try:
-        import watchdog.observers  # noqa: F401
+        import watchdog.observers  # noqa: F401 - import-availability probe
     except Exception as e:  # missing/broken dep must not raise
         logger.debug("watchdog is not available: %s", e)
         return False

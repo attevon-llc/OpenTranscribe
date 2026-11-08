@@ -49,7 +49,10 @@ def _yield_session(db):
 @pytest.fixture
 def own_sessions(db_session):
     """Route the modules' own ``session_scope()`` onto the test's savepoint session."""
-    scope = lambda: _yield_session(db_session)  # noqa: E731
+
+    def scope():
+        return _yield_session(db_session)
+
     with (
         patch("app.tasks.transcription.cancellation.session_scope", scope),
         patch("app.tasks.transcription.pipeline_error.session_scope", scope),
@@ -260,7 +263,9 @@ class TestTheGaugeIgnoresTerminalFiles:
         from app.core import celery_metrics
         from app.core.metrics import transcription_files_infra_requeued
 
-        scope = lambda: _yield_session(db_session)  # noqa: E731
+        def scope():
+            return _yield_session(db_session)
+
         monkeypatch.setattr("app.db.session_utils.session_scope", scope)
         monkeypatch.setenv("TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD", "3")
 

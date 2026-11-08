@@ -92,7 +92,7 @@ def run_pg_dump(
     env = dict(os.environ)
     cmd = ["pg_dump", f"--format={PG_DUMP_FORMAT}", "--no-owner", "--no-acl", "--dbname", url]
     logger.info("Running pg_dump → %s", dest_path)
-    subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell; url carries credentials, not user input
+    subprocess.run(  # noqa: S603 - fixed argv, no shell; url carries credentials, not user input  # nosec B603
         cmd,
         stdout=dest_path.open("wb"),
         stderr=subprocess.PIPE,
@@ -118,7 +118,7 @@ def run_pg_dump(
         str(gpg_path),
         str(dest_path),
     ]
-    subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell
+    subprocess.run(  # noqa: S603 - fixed argv, no shell  # nosec B603
         gpg_cmd,
         input=passphrase.encode("utf-8"),
         stderr=subprocess.PIPE,

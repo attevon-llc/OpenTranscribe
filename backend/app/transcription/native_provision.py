@@ -284,7 +284,7 @@ def ensure_native_models(  # one branch per distinct operator outcome
     had_marker = read_marker(target) is not None
     started = time.perf_counter()
     try:
-        completed = subprocess.run(  # noqa: S603  # nosec B603 - fixed argv, no shell
+        completed = subprocess.run(  # noqa: S603 - fixed argv, no shell  # nosec B603
             argv,
             capture_output=True,
             text=True,

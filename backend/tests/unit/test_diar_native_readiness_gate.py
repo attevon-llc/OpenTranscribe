@@ -102,7 +102,7 @@ def _make_handler(readyz: int | None, health_body: dict):
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
             pass
 
     return _Handler
@@ -249,7 +249,7 @@ def _make_embed_handler(health_body: dict, embed_requests: list[dict]):
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
             pass
 
     return _Handler

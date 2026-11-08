@@ -42,7 +42,7 @@ _INTERPOLATION = re.compile(r"\$\{[^}]*\}")
 #: (`/var/lib/postgresql/data`, `/usr/share/opensearch/data`, `/data`, ...) all
 #: fall outside both prefixes — they are owned by their own image's entrypoint,
 #: not `appuser`, and are correctly out of scope.
-_PIPELINE_SCRATCH_PREFIXES = ("/scratch/", "/tmp/")  # noqa: S108  # nosec B108
+_PIPELINE_SCRATCH_PREFIXES = ("/scratch/", "/tmp/")  # noqa: S108 - path prefixes the test matches against; nothing is created  # nosec B108
 
 
 def _compose_services(path: Path) -> dict[str, dict]:
@@ -160,7 +160,7 @@ def test_a_brand_new_unreserved_scratch_volume_is_caught() -> None:
     """
     service = {"volumes": ["some-brand-new-volume:/tmp/some-brand-new-path"]}
     targets = _named_volume_mount_targets(service, named_volumes={"some-brand-new-volume"})
-    assert targets == {"/tmp/some-brand-new-path"}  # noqa: S108  # nosec B108
+    assert targets == {"/tmp/some-brand-new-path"}  # noqa: S108 - an expected path string; nothing is created  # nosec B108
 
 
 @pytest.mark.parametrize("dockerfile", [DOCKERFILE_PROD, DOCKERFILE_LITE], ids=lambda p: p.name)

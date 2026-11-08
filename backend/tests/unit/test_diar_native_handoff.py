@@ -180,7 +180,7 @@ class _Counting422ThenOKHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 
@@ -362,7 +362,7 @@ class _429Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"{}")
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass
 
 
@@ -651,7 +651,7 @@ def _make_counting_readyz_handler(state: dict):
                 self.send_response(404)
                 self.end_headers()
 
-        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
             pass
 
     return _Handler
@@ -879,5 +879,5 @@ class _HealthzAndReadyzHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - stdlib / client signature
         pass

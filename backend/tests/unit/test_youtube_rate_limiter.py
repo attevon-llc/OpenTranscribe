@@ -196,7 +196,7 @@ class TestSlidingWindowAgainstRealRedis:
         # in the shared dev-stack Redis.
         import random
 
-        user_id = -random.randint(10**6, 2**31 - 1)  # noqa: S311  # nosec B311 - test id, not a secret
+        user_id = -random.randint(10**6, 2**31 - 1)  # noqa: S311 - test id, not a secret  # nosec B311
 
         yield limiter, user_id
 

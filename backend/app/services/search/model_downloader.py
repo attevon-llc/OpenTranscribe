@@ -143,7 +143,7 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
                 percent = (downloaded / total_size) * 100
                 logger.info(f"  Downloading: {percent:.1f}% ({downloaded / (1024 * 1024):.1f} MB)")
 
-        urllib.request.urlretrieve(url, model_path, reporthook=progress_hook)  # noqa: S310  # nosec B310
+        urllib.request.urlretrieve(url, model_path, reporthook=progress_hook)  # noqa: S310 - https URL built from the fixed artifacts.opensearch.org catalog  # nosec B310
 
         # Verify download
         if model_path.exists() and model_path.stat().st_size > 0:
@@ -191,7 +191,7 @@ def _fetch_model_config(config_url: str, config_path: Path) -> bool:
     if config_path.exists() and config_path.stat().st_size > 0:
         return True
     try:
-        urllib.request.urlretrieve(config_url, config_path)  # noqa: S310  # nosec B310
+        urllib.request.urlretrieve(config_url, config_path)  # noqa: S310 - https URL built from the fixed artifacts.opensearch.org catalog  # nosec B310
         return config_path.exists() and config_path.stat().st_size > 0
     except Exception as e:
         logger.warning(
@@ -270,7 +270,7 @@ def check_internet_connectivity(timeout: float = 5.0) -> bool:
     test_url = "https://artifacts.opensearch.org"
     try:
         req = urllib.request.Request(test_url, method="HEAD")
-        urllib.request.urlopen(req, timeout=timeout)  # noqa: S310  # nosec B310
+        urllib.request.urlopen(req, timeout=timeout)  # noqa: S310 - fixed https probe URL  # nosec B310
         return True
     except urllib.error.HTTPError:
         # An HTTP error response (even 4xx/5xx) still means DNS resolved, the TCP

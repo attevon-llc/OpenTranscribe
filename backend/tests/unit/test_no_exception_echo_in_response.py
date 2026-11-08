@@ -353,7 +353,7 @@ class _TaintWalker(ast.NodeVisitor):
     # Why the N815 suppression below: dispatched by name from ast.NodeVisitor.generic_visit
     # ("visit_" + node.__class__.__name__); ast.AsyncFunctionDef is itself
     # mixedCase in the stdlib ast module, so a snake_case alias is never called.
-    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815
+    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])
@@ -461,7 +461,7 @@ class _ContainerTaintWalker(ast.NodeVisitor):
 
     # Why the N815 suppression below: dispatched by name from ast.NodeVisitor.generic_visit, exactly as in
     # _TaintWalker above — a snake_case alias would never be called.
-    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815
+    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815 - ast.NodeVisitor dispatches visit_<NodeClass> by name
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])

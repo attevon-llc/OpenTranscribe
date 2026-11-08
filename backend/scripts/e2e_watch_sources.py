@@ -60,7 +60,7 @@ def _admin_id(db) -> int:
 
 def _gen_speech(dest: Path, text: str = FOX, seconds: int = 5) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(  # noqa: S603 # nosec B603
+    subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
         [
             "/usr/bin/ffmpeg",
             "-y",
@@ -83,7 +83,7 @@ def _gen_speech(dest: Path, text: str = FOX, seconds: int = 5) -> None:
 
 def _gen_tone(dest: Path, freq: int = 440, seconds: int = 3) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run(  # noqa: S603 # nosec B603
+    subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
         [
             "/usr/bin/ffmpeg",
             "-y",

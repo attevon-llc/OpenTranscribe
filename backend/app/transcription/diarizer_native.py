@@ -179,7 +179,7 @@ def post_json(url: str, payload: dict, timeout: float) -> dict:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 — internal service
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - internal service  # nosec B310
         return cast(dict, json.loads(resp.read()))
 
 

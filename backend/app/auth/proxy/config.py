@@ -34,7 +34,7 @@ DEFAULT_GROUPS_SEPARATOR = ","
 #: the point: privilege over HTTP is opt-in here, not the default it is elsewhere.
 DEFAULT_ROLE_HEADER = ""
 #: Header carrying the shared secret, when one is configured.
-SHARED_SECRET_HEADER = "X-OpenTranscribe-Proxy-Secret"  # noqa: S105 # nosec B105
+SHARED_SECRET_HEADER = "X-OpenTranscribe-Proxy-Secret"  # noqa: S105 - a header name, not a credential  # nosec B105
 
 
 @dataclass(frozen=True)

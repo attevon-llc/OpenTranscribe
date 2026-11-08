@@ -85,7 +85,7 @@ def _run_transcribe_gpu_task_raising(preprocess_context, error: Exception):
         patch.object(type(task.request), "retries", 0, create=True),
     ):
         mock_scope.return_value.__enter__.return_value = MagicMock()
-        mock_tmpdir.return_value.__enter__.return_value = "/tmp/fake"  # noqa: S108
+        mock_tmpdir.return_value.__enter__.return_value = "/tmp/fake"  # noqa: S108 - a stand-in path string; nothing is created there
         try:
             task.__wrapped__(preprocess_context)
         except _RetrySentinelError as sentinel:
@@ -136,7 +136,7 @@ class _FakeTranscript:
     # Annotated because an empty literal gives mypy nothing to infer from; the real
     # RawTranscriptResult carries a str-keyed config snapshot.
     config_snapshot: dict[str, object] = {}
-    local_wav_path = "/tmp/fake.wav"  # noqa: S108
+    local_wav_path = "/tmp/fake.wav"  # noqa: S108 - a stand-in path string; nothing is created there
 
 
 class _RaisingEngine:

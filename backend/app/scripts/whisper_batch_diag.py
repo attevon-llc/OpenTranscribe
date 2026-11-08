@@ -253,7 +253,7 @@ def main() -> None:
         default="int8_float16",
         help="CTranslate2 compute type (default: int8_float16)",
     )
-    parser.add_argument("--output", default="/tmp/whisper_batch_results.csv", help="Output CSV")  # noqa: S108  # nosec B108
+    parser.add_argument("--output", default="/tmp/whisper_batch_results.csv", help="Output CSV")  # noqa: S108 - default scratch path for a diagnostic tool  # nosec B108
     args = parser.parse_args()
 
     audio_path = Path(args.audio)

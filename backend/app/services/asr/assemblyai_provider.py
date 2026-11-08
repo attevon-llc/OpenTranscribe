@@ -48,7 +48,7 @@ class AssemblyAIProvider(ASRProvider):
         """Test connectivity with a lightweight list-transcripts call (limit=1)."""
         start = time.time()
         try:
-            import assemblyai as aai  # noqa: F401
+            import assemblyai as aai  # noqa: F401 - import-availability probe
         except ImportError:
             return False, "assemblyai not installed. Run: pip install 'assemblyai>=0.30.0'", 0.0
         try:

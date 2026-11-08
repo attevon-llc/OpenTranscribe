@@ -139,7 +139,7 @@ def test_turn_index_agrees_with_a_linear_scan():
     import random
 
     # Seeded, for reproducible test data — not a security context.
-    rng = random.Random(20260812)  # noqa: S311
+    rng = random.Random(20260812)  # noqa: S311 - jitter / test randomness, not crypto
     turns = []
     clock = 0.0
     for index in range(400):

@@ -81,7 +81,7 @@ async def fetch_range(client: httpx.AsyncClient, prefix: str, base_url: str) -> 
         try:
             response = await client.get(f"{base_url}/{prefix}", headers={"Add-Padding": "false"})
         except httpx.HTTPError as exc:
-            delay = min(60.0, 2.0**attempt) + random.random()  # noqa: S311  # nosec B311
+            delay = min(60.0, 2.0**attempt) + random.random()  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
             logger.warning(
                 "range %s attempt %d failed (%s); retry in %.0fs", prefix, attempt, exc, delay
             )
@@ -93,7 +93,7 @@ async def fetch_range(client: httpx.AsyncClient, prefix: str, base_url: str) -> 
             retry_after = response.headers.get("Retry-After", "")
             delay = float(retry_after) if retry_after.isdigit() else min(60.0, 2.0**attempt)
             logger.warning("range %s HTTP %d; retry in %.0fs", prefix, response.status_code, delay)
-            await asyncio.sleep(delay + random.random())  # noqa: S311  # nosec B311
+            await asyncio.sleep(delay + random.random())  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
             continue
         response.raise_for_status()
     raise RuntimeError(f"range {prefix}: gave up after {MAX_ATTEMPTS} attempts")

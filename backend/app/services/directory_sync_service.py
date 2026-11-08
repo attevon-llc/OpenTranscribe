@@ -62,7 +62,7 @@ from app.auth.ldap_probe import LdapProbe
 from app.auth.ldap_probe import ldap_directory_session
 from app.auth.ldap_probe import probe_ldap_user
 from app.auth.roles import ROLE_SUPER_ADMIN
-from app.core import constants as C  # noqa: N812
+from app.core import constants
 from app.core.auth_types import AUTH_TYPE_LDAP
 from app.models.group import MAPPING_SOURCE_LDAP
 from app.models.user import User
@@ -121,11 +121,11 @@ def get_settings(db: Session | None = None) -> dict[str, Any]:
         last_result = json_value(vals, KEY_LAST_RESULT)
 
         return {
-            "enabled": bool_value(vals, KEY_ENABLED, C.DEFAULT_DIRECTORY_SYNC_ENABLED),
-            "schedule": vals.get(KEY_SCHEDULE) or C.DEFAULT_DIRECTORY_SYNC_SCHEDULE,
-            "dry_run": bool_value(vals, KEY_DRY_RUN, C.DEFAULT_DIRECTORY_SYNC_DRY_RUN),
+            "enabled": bool_value(vals, KEY_ENABLED, constants.DEFAULT_DIRECTORY_SYNC_ENABLED),
+            "schedule": vals.get(KEY_SCHEDULE) or constants.DEFAULT_DIRECTORY_SYNC_SCHEDULE,
+            "dry_run": bool_value(vals, KEY_DRY_RUN, constants.DEFAULT_DIRECTORY_SYNC_DRY_RUN),
             "max_disables_per_run": int_value(
-                vals, KEY_MAX_DISABLES, C.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
+                vals, KEY_MAX_DISABLES, constants.DEFAULT_DIRECTORY_SYNC_MAX_DISABLES_PER_RUN
             ),
             "last_run_at": vals.get(KEY_LAST_RUN_AT),
             "last_result": last_result,

@@ -29,6 +29,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.enums import FileStatus  # re-exported for backward compat
+from app.core.infra_requeue_reset import register as _register_infra_requeue_reset
 from app.db.base import Base
 from app.utils.uuid7 import uuid7
 
@@ -747,6 +748,4 @@ class Analytics(Base):
 
 # Issue #1162: clear a file's infrastructure-requeue count on every terminal status write.
 # Registered here so every process that can write a MediaFile status has it.
-from app.core.infra_requeue_reset import register as _register_infra_requeue_reset  # noqa: E402
-
 _register_infra_requeue_reset()

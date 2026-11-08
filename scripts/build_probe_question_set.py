@@ -282,7 +282,7 @@ def load_qmsum(glob_pattern: str) -> dict[str, dict[str, Any]]:
         mid = Path(path).stem
         if mid in by_id:  # the same meeting appears under all/ and its split dir
             continue
-        by_id[mid] = json.load(open(path))  # noqa: SIM115
+        by_id[mid] = json.loads(Path(path).read_text())
     return by_id
 
 

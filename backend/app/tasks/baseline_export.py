@@ -13,7 +13,7 @@ from app.utils.transcript_comparison import export_baseline
 
 logger = logging.getLogger(__name__)
 
-BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108  # nosec B108
+BENCHMARKS_DIR = os.environ.get("BENCHMARKS_DIR", "/tmp/benchmarks")  # noqa: S108 - default scratch path for a diagnostic tool  # nosec B108
 
 
 @celery_app.task(name="export_transcript_baseline", priority=UtilityPriority.DEV_TOOLS)

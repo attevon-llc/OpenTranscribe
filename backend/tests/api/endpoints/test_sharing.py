@@ -79,7 +79,7 @@ def _get_system_prompt(db):
     """Return an existing active system default prompt (seeded in the live DB)."""
     return (
         db.query(SummaryPrompt)
-        .filter(SummaryPrompt.is_system_default == True, SummaryPrompt.is_active == True)  # noqa: E712
+        .filter(SummaryPrompt.is_system_default.is_(True), SummaryPrompt.is_active.is_(True))
         .first()
     )
 

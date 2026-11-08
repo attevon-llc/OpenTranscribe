@@ -59,7 +59,7 @@ def calculate_playlist_delays(video_count: int) -> list[int]:
 
         # Add jitter: -20% to +50% of base delay
         jitter_range = int(base_delay * 0.7)
-        jitter = random.randint(-jitter_range // 3, jitter_range)  # noqa: S311  # nosec B311
+        jitter = random.randint(-jitter_range // 3, jitter_range)  # noqa: S311 - jitter / test randomness, not crypto  # nosec B311
 
         delay = max(min_delay, base_delay + jitter)
         cumulative += delay

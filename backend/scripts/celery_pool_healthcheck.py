@@ -130,13 +130,13 @@ def check_pool_has_live_processes(worker_name: str) -> tuple[bool, str]:
         worker_name: Full Celery node name, e.g. ``cpu-processor@somehost``.
     """
     try:
-        proc = subprocess.run(  # noqa: S603  # nosec B603
+        proc = subprocess.run(  # noqa: S603 - argv list, no shell  # nosec B603
             # Fixed argv, no shell; `worker_name` is a Docker healthcheck's own
             # `$$HOSTNAME`-derived node name, not external/user input. `celery`
             # is resolved via PATH deliberately — same convention as every other
             # subprocess call in this codebase that shells out to a tool
             # installed into the image's venv rather than an absolute path.
-            [  # noqa: S607
+            [  # noqa: S607 - tool resolved from PATH inside the image
                 "celery",
                 "-A",
                 "app.core.celery",

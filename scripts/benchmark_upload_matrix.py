@@ -37,16 +37,16 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SCRIPT_DIR))
 # E402: the two imports below resolve only after the sys.path.insert above.
-from benchmark_concurrent_uploads import (  # noqa: E402
+from benchmark_concurrent_uploads import (  # noqa: E402 - importable only after the sys.path insert above
     _db_query,
     fetch_timing_rows,
 )
-from e2e_bench.backend_api import (  # noqa: E402
+from e2e_bench.backend_api import (  # noqa: E402 - importable only after the sys.path insert above
     get_auth_token,
     poll_task_completion,
     upload_file_via_api,
 )
-from e2e_bench.config import DEFAULT_BACKEND_URL  # noqa: E402
+from e2e_bench.config import DEFAULT_BACKEND_URL  # noqa: E402 - importable only after the sys.path insert above
 
 
 def resolve_task_id_from_db(file_uuid: str) -> str:

@@ -112,7 +112,6 @@ def _non_ann() -> dict[str, Any]:
 def healthy_cluster(monkeypatch) -> _RecordingOpenSearch:
     """A cluster where every index answers, wired into both modules that read it."""
     from app.services.opensearch_service import client as os_client
-    from app.services.opensearch_service import repair  # noqa: F401
     from app.services.search import index_health as health
 
     fake = _RecordingOpenSearch(

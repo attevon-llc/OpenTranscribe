@@ -11,9 +11,9 @@ os.environ['PYANNOTE_METRICS_ENABLED'] = 'false'
 
 # E402 on the block below: warnings.filterwarnings() and PYANNOTE_METRICS_ENABLED
 # must be in place BEFORE torch / pyannote import, or the setting is read too late.
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-import torchaudio  # noqa: E402
+import numpy as np  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
+import torch  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
+import torchaudio  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 
 token = os.environ.get('HUGGINGFACE_TOKEN') or os.environ.get('HF_TOKEN')
 if not token:
@@ -115,7 +115,7 @@ print('5. MPS vs CPU FFT (fbank) performance')
 print('=' * 50)
 # E402 on the block below: warnings.filterwarnings() and PYANNOTE_METRICS_ENABLED
 # must be in place BEFORE torch / pyannote import, or the setting is read too late.
-from pyannote.audio import Pipeline  # noqa: E402
+from pyannote.audio import Pipeline  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 
 pipeline = Pipeline.from_pretrained('pyannote/speaker-diarization-community-1', token=token)
 pipeline = pipeline.to(device)

@@ -55,7 +55,7 @@ class SpeechmaticsProvider(ASRProvider):
         """Test credentials with a lightweight list-jobs call (limit=1)."""
         start = time.time()
         try:
-            import speechmatics.batch  # noqa: F401
+            import speechmatics.batch  # noqa: F401 - import-availability probe
         except ImportError:
             return (
                 False,

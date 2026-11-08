@@ -211,7 +211,7 @@ Lite mode is also useful for development and CI environments where a GPU is not 
 
 During the one-line installation, you'll be prompted:
 ```
-Do you want to set up HTTPS with self-signed certificates? (y/N)
+Do you want to set up HTTPS with a certificate made on this server? (y/N)
 ```
 
 If you answer **yes**, the installer will:
@@ -246,11 +246,12 @@ Add to `/etc/hosts` (Linux/Mac) or `C:\Windows\System32\drivers\etc\hosts` (Wind
 192.168.1.100  opentranscribe.local
 ```
 
-### Trust the Certificate
+### Trust the CA
 
-Self-signed certificates require trusting on each client device:
-- **Copy** `nginx/ssl/server.crt` to client devices
+The installer creates a local certificate authority and signs the server certificate with it. Trust the CA once on each client device:
+- **Copy** `nginx/ssl/ca.crt` (not `server.crt`) to client devices
 - **Import** into browser/system certificate store
+- Keep `nginx/ssl/ca.key` on the server only
 
 See [Install for a small business](../docs-site/docs/installation/small-business-lan.md) for detailed platform-specific instructions.
 

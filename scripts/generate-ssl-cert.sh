@@ -1,5 +1,5 @@
 #!/bin/bash
-# generate-ssl-cert.sh - Generate self-signed SSL certificates for OpenTranscribe
+# generate-ssl-cert.sh - Generate a local CA and a server certificate for OpenTranscribe
 #
 # This script creates SSL certificates for HTTPS access, enabling:
 # - Browser microphone recording (required for HTTPS)
@@ -19,7 +19,12 @@
 #   # Auto-detect local IP addresses
 #   ./scripts/generate-ssl-cert.sh opentranscribe.local --auto-ip
 #
-# After generation, you'll need to trust the certificate on client devices.
+# A local certificate authority (nginx/ssl/ca.crt + ca.key) is created once and reused on
+# every later run. The server certificate (server.crt) is issued from it, so each device
+# trusts ca.crt ONCE and the server certificate can be reissued (new IP, expiry) without
+# touching any device again. Only ca.crt ever leaves this machine; ca.key must not.
+#
+# After generation, install nginx/ssl/ca.crt on client devices.
 # See the output instructions or docs-site/docs/installation/small-business-lan.md.
 
 set -e
@@ -35,7 +40,9 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SSL_DIR="$PROJECT_ROOT/nginx/ssl"
-CERT_DAYS=3650  # 10 years for self-signed
+CA_DAYS=3650    # the CA is installed on devices by hand, so it is long-lived
+# Apple (iOS/macOS) rejects TLS server certificates valid for more than 825 days.
+CERT_DAYS=825
 KEY_SIZE=2048
 
 # Parse arguments
@@ -162,114 +169,113 @@ echo -e "${BLUE}Generating SSL certificate...${NC}"
 echo -e "Subject Alternative Names: $SAN_ENTRIES"
 echo ""
 
-# Create OpenSSL configuration file
-OPENSSL_CNF=$(mktemp)
-cat > "$OPENSSL_CNF" << EOF
-[req]
-default_bits = $KEY_SIZE
-prompt = no
-default_md = sha256
-distinguished_name = dn
-x509_extensions = v3_req
+# Umask first: every private key below is created owner-only, not chmod-ed afterwards.
+umask 077
 
-[dn]
-C = US
-ST = Local
-L = Local
-O = OpenTranscribe
-OU = Self-Signed
-CN = $HOSTNAME
+CA_KEY="$SSL_DIR/ca.key"
+CA_CRT="$SSL_DIR/ca.crt"
 
-[v3_req]
-basicConstraints = critical, CA:TRUE
-keyUsage = critical, digitalSignature, keyEncipherment, keyCertSign
+# Reuse the existing CA when it is usable (pair matches, not about to expire), so devices that
+# already trust it keep working. Otherwise make a new one and say that devices need it again.
+ca_usable() {
+    [ -f "$CA_KEY" ] && [ -f "$CA_CRT" ] || return 1
+    openssl x509 -in "$CA_CRT" -noout -checkend $((60 * 60 * 24 * 30)) >/dev/null 2>&1 || return 1
+    local from_cert from_key
+    from_cert=$(openssl x509 -in "$CA_CRT" -noout -pubkey 2>/dev/null) || return 1
+    from_key=$(openssl pkey -in "$CA_KEY" -pubout 2>/dev/null) || return 1
+    [ -n "$from_cert" ] && [ "$from_cert" = "$from_key" ]
+}
+
+if ca_usable; then
+    echo -e "${GREEN}Reusing the existing local CA: $CA_CRT${NC}"
+else
+    if [ -f "$CA_CRT" ] || [ -f "$CA_KEY" ]; then
+        echo -e "${YELLOW}The existing CA is expired, expiring, or its key does not match.${NC}"
+        echo -e "${YELLOW}A new CA is being created: install the new ca.crt on every device.${NC}"
+    fi
+    echo -e "${BLUE}Creating the local CA...${NC}"
+    openssl req -x509 -nodes -newkey rsa:4096 -sha256 -days "$CA_DAYS" \
+        -keyout "$CA_KEY" -out "$CA_CRT" \
+        -subj "/O=OpenTranscribe/CN=OpenTranscribe Local CA" \
+        -addext "basicConstraints=critical,CA:TRUE" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -addext "subjectKeyIdentifier=hash" \
+        2>/dev/null
+fi
+chmod 600 "$CA_KEY"
+chmod 644 "$CA_CRT"
+
+# Leaf certificate: request, then sign with the CA using explicit extensions.
+LEAF_CSR=$(mktemp)
+LEAF_EXT=$(mktemp)
+trap 'rm -f "$LEAF_CSR" "$LEAF_EXT"' EXIT
+cat > "$LEAF_EXT" << EOF
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
 extendedKeyUsage = serverAuth
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid
 subjectAltName = $SAN_ENTRIES
 EOF
 
-# Generate private key and certificate
-openssl req -x509 -nodes -days $CERT_DAYS -newkey rsa:$KEY_SIZE \
+openssl req -new -nodes -newkey rsa:$KEY_SIZE \
     -keyout "$SSL_DIR/server.key" \
-    -out "$SSL_DIR/server.crt" \
-    -config "$OPENSSL_CNF" \
+    -out "$LEAF_CSR" \
+    -subj "/O=OpenTranscribe/CN=$HOSTNAME" \
     2>/dev/null
 
-# Clean up temp file
-rm -f "$OPENSSL_CNF"
+# 8 random bytes keep the serial positive and unique without a serial file next to the CA.
+openssl x509 -req -sha256 -days "$CERT_DAYS" \
+    -in "$LEAF_CSR" \
+    -CA "$CA_CRT" -CAkey "$CA_KEY" \
+    -set_serial "0x$(openssl rand -hex 8)" \
+    -extfile "$LEAF_EXT" \
+    -out "$SSL_DIR/server.crt" \
+    2>/dev/null
 
-# Set permissions
 chmod 600 "$SSL_DIR/server.key"
 chmod 644 "$SSL_DIR/server.crt"
 
 echo -e "${GREEN}SSL certificate generated successfully!${NC}"
 echo ""
 echo -e "${BLUE}Files created:${NC}"
-echo -e "  Certificate: ${GREEN}$SSL_DIR/server.crt${NC}"
-echo -e "  Private Key: ${GREEN}$SSL_DIR/server.key${NC}"
+echo -e "  CA certificate (install on devices): ${GREEN}$CA_CRT${NC}"
+echo -e "  CA private key (keep on this server): ${GREEN}$CA_KEY${NC}"
+echo -e "  Server certificate: ${GREEN}$SSL_DIR/server.crt${NC}"
+echo -e "  Server private key: ${GREEN}$SSL_DIR/server.key${NC}"
 echo ""
 
-# Show certificate info
 echo -e "${BLUE}Certificate Details:${NC}"
 openssl x509 -in "$SSL_DIR/server.crt" -noout -subject -dates -ext subjectAltName 2>/dev/null | head -20
 echo ""
 
-# Instructions for trusting the certificate
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}NEXT STEPS - Trust the Certificate${NC}"
+echo -e "${BLUE}NEXT STEPS - Trust the CA on each device${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-echo -e "${YELLOW}To avoid browser security warnings, you need to trust this certificate${NC}"
-echo -e "${YELLOW}on each device that will access OpenTranscribe.${NC}"
+echo -e "${YELLOW}Install $CA_CRT (the CA, not server.crt) on each device that will use${NC}"
+echo -e "${YELLOW}OpenTranscribe. Do this once: a renewed server certificate needs nothing more.${NC}"
+echo -e "${YELLOW}Never copy ca.key off this server. Anyone holding it can make certificates${NC}"
+echo -e "${YELLOW}that your devices will trust.${NC}"
 echo ""
-echo -e "${GREEN}Option 1: Add to .env and start with NGINX${NC}"
-echo "  1. Add to your .env file:"
-echo "     NGINX_SERVER_NAME=$HOSTNAME"
-echo ""
-echo "  2. Start OpenTranscribe:"
-echo "     ./opentranscribe.sh start"
-echo ""
+echo -e "${GREEN}Start with NGINX${NC}"
+echo "  1. Add to your .env file:  NGINX_SERVER_NAME=$HOSTNAME"
+echo "  2. ./opentranscribe.sh start"
 echo "  3. Access at: https://$HOSTNAME"
 echo ""
-echo -e "${GREEN}Option 2: Trust certificate on client devices${NC}"
+echo -e "  ${BLUE}Windows:${NC}  double-click ca.crt > Install Certificate > Local Machine >"
+echo "            'Trusted Root Certification Authorities'; restart the browser"
+echo -e "  ${BLUE}macOS:${NC}    open ca.crt in Keychain Access > double-click it > Trust >"
+echo "            'Always Trust'"
+echo -e "  ${BLUE}Linux Chrome/Chromium:${NC}  chrome://settings/certificates > Authorities > Import ca.crt"
+echo -e "  ${BLUE}Linux Firefox:${NC}  about:preferences#privacy > View Certificates > Authorities > Import ca.crt"
+echo -e "  ${BLUE}iOS:${NC}      AirDrop ca.crt > install the profile (Settings > General > VPN & Device"
+echo "            Management) > then Settings > General > About > Certificate Trust Settings"
+echo "            > enable full trust for 'OpenTranscribe Local CA'"
+echo -e "  ${BLUE}Android:${NC}  Settings > Security > Encryption & credentials > Install a certificate >"
+echo "            CA certificate > select ca.crt"
 echo ""
-echo -e "  ${BLUE}Windows:${NC}"
-echo "    1. Double-click $SSL_DIR/server.crt"
-echo "    2. Click 'Install Certificate' → 'Local Machine'"
-echo "    3. Select 'Place all certificates in: Trusted Root Certification Authorities'"
-echo "    4. Complete the wizard and restart browser"
-echo ""
-echo -e "  ${BLUE}macOS:${NC}"
-echo "    1. Double-click $SSL_DIR/server.crt to open in Keychain Access"
-echo "    2. Find the certificate, double-click it"
-echo "    3. Expand 'Trust' → Set 'When using this certificate' to 'Always Trust'"
-echo "    4. Close and enter password to confirm"
-echo ""
-echo -e "  ${BLUE}Linux (Chrome/Chromium):${NC}"
-echo "    1. Go to chrome://settings/certificates"
-echo "    2. Click 'Authorities' tab → 'Import'"
-echo "    3. Select $SSL_DIR/server.crt"
-echo "    4. Check 'Trust this certificate for identifying websites'"
-echo ""
-echo -e "  ${BLUE}Linux (Firefox):${NC}"
-echo "    1. Go to about:preferences#privacy"
-echo "    2. Scroll to 'Certificates' → 'View Certificates'"
-echo "    3. Click 'Authorities' tab → 'Import'"
-echo "    4. Select $SSL_DIR/server.crt and trust for websites"
-echo ""
-echo -e "  ${BLUE}iOS:${NC}"
-echo "    1. Email or AirDrop the .crt file to your device"
-echo "    2. Open it → 'Profile Downloaded' appears"
-echo "    3. Settings → General → VPN & Device Management → Install profile"
-echo "    4. Settings → General → About → Certificate Trust Settings"
-echo "    5. Enable trust for the OpenTranscribe certificate"
-echo ""
-echo -e "  ${BLUE}Android:${NC}"
-echo "    1. Copy server.crt to device or download via browser"
-echo "    2. Settings → Security → Encryption & credentials"
-echo "    3. Install a certificate → CA certificate"
-echo "    4. Select the .crt file"
-echo ""
-echo -e "${GREEN}Option 3: DNS Setup (Recommended for homelab)${NC}"
+echo -e "${GREEN}DNS (recommended for homelab)${NC}"
 echo "  Add to your router's DNS or /etc/hosts on each device:"
 echo "  ${IP_ADDRESSES[0]}  $HOSTNAME"
 echo ""

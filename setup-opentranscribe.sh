@@ -1711,10 +1711,10 @@ configure_https_settings() {
     echo "  • Secure access from your local network"
     echo "  • Production/homelab deployments"
     echo ""
-    echo "Without HTTPS:"
-    echo "  • Microphone recording only works on localhost"
-    echo "  • Other devices on your network can't use recording"
-    echo "  • Sign-in passwords and transcripts cross your network unencrypted"
+    echo "If you skip HTTPS:"
+    echo "  • Sign-in passwords and transcripts travel across your network as plain text; anyone on it can read them"
+    echo "  • The microphone works only in a browser on this computer, not on phones or other computers"
+    echo "  • Sign-in can also fail on other devices (browsers refuse the session cookie over plain HTTP)"
     echo ""
 
     # On re-run where user previously said No, add context to avoid nagging
@@ -1723,7 +1723,7 @@ configure_https_settings() {
         echo ""
     fi
 
-    read -p "Do you want to set up HTTPS with self-signed certificates? (y/N) " -n 1 -r </dev/tty
+    read -p "Do you want to set up HTTPS with a certificate made on this server? (y/N) " -n 1 -r </dev/tty
     echo
     echo
 
@@ -2328,15 +2328,15 @@ display_summary() {
     if [[ -n "$NGINX_SERVER_NAME" && "$SSL_CONFIGURED" == "true" ]]; then
         local _lan_ip
         _lan_ip="$(ot_detect_lan_ip)"
-        echo -e "${YELLOW}🔒 SSL Certificate — Browser Trust Required${NC}"
-        echo "   Before your first visit, trust the self-signed certificate:"
+        echo -e "${YELLOW}🔒 HTTPS is set up. Trust the CA once on each device (browsers warn until you do):${NC}"
+        echo "   Install this file on each device (the CA, not server.crt): $PROJECT_DIR/nginx/ssl/ca.crt"
         echo ""
         echo "   Chrome/Chromium:  chrome://settings/certificates → Authorities → Import"
         echo "   Firefox:          about:preferences#privacy → Certificates → View → Authorities → Import"
+        echo "   Phones and other systems: docs.opentranscribe.app/docs/installation/small-business-lan"
+        echo "   Keep nginx/ssl/ca.key on this server only; it can sign certificates your devices trust."
         echo ""
-        echo "   Certificate file: $PROJECT_DIR/nginx/ssl/server.crt"
-        echo ""
-        echo "   Or add to /etc/hosts / router DNS:"
+        echo "   Then add to /etc/hosts / router DNS:"
         echo "   ${_lan_ip:-<server-ip>}  $NGINX_SERVER_NAME"
         echo ""
         echo "   The certificate also covers this machine's IP addresses, so"

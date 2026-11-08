@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- LAN HTTPS install: the installer now creates a local certificate authority once (`nginx/ssl/ca.crt`, key `ca.key` with mode 600) and signs the server certificate with it (825 days, with the hostname and addresses as alternative names). Install `ca.crt` on each device once; the server certificate can then be renewed or reissued for a new address without touching any device, and re-running the installer reuses the CA. The install docs and installer messages say to trust `ca.crt`, not `server.crt` (#1264).
+- The installer's HTTPS prompts now say in plain words what skipping HTTPS exposes (passwords and transcripts readable on your network, no microphone on other devices) and what to do to trust the certificate once HTTPS is set up (#1264).
 - Administrators can place a legal hold from the gallery selection or from a file's page, using one dialog that asks for a reason and an optional matter reference.
 - Instance administrators have a new Settings > Legal holds section to hold files or a whole collection without taking them down, and to release holds.
 - Held files show a Legal hold badge in the gallery, and a Legal hold filter and collection list them automatically; both appear only while something is held and cannot be edited or deleted.

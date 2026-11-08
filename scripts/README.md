@@ -979,7 +979,7 @@ detail, rationale and destructive-operation notes are in [scripts/CLAUDE.md](CLA
 | `speaker-profiles-backup.sh` | `backup`, `restore`, `list` of speaker profiles (PostgreSQL + OpenSearch). |
 | `voiceprint-backup.py` | Export / import / verify the OpenSearch voiceprint indices (used by `./opentr.sh backup`/`restore`). |
 | `fix-shared-volume-perms.sh` | Repairs ownership of the pipeline's shared named volumes; idempotent. |
-| `generate-ssl-cert.sh` | Self-signed certificates for HTTPS access (needed for browser microphone recording). |
+| `generate-ssl-cert.sh` | Local CA and server certificate for HTTPS access (needed for browser microphone recording). |
 | `download-password-blocklist.sh` | Builds the breached-password list under `<model_cache_dir>/password-blocklist/`. |
 | `diagnose-file-integrity.sh` | Diagnostic for files stuck or inconsistent in the database. |
 | `bulk-processing-cheatsheet.sh` | Cheatsheet of commands for monitoring large batch imports. |

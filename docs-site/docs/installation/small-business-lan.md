@@ -6,11 +6,12 @@ sidebar_position: 3
 
 This page gets OpenTranscribe running on one server so everyone in the office can open it from
 their own computer or phone, sign in, upload recordings, see live progress and record from the
-microphone. It uses a self-signed certificate, so no public domain name is needed.
+microphone. It uses a certificate authority (CA) that the installer creates on the server, so no public domain
+name is needed.
 
 :::info What has been checked
 The certificate, the nginx redirect and the installer prompts on this page are covered by automated
-tests (`backend/tests/unit/test_lan_*.py`). Trusting the certificate on a phone or tablet
+tests (`backend/tests/unit/test_lan_*.py`). Trusting the CA on a phone or tablet
 (iOS and Android) and recording from a real phone microphone have **not** yet been confirmed on real
 devices; the steps for those follow the vendors' documented flows. If one of them does not work for
 you, please open an issue with the device, browser and version.
@@ -37,8 +38,8 @@ visitors to HTTPS. Three things depend on that:
 
 ## Step 1: turn on HTTPS
 
-If you are installing now, answer **y** to "Do you want to set up HTTPS with self-signed
-certificates?" and accept the suggested hostname (`opentranscribe.local`) or enter your own.
+If you are installing now, answer **y** to "Do you want to set up HTTPS with a certificate
+made on this server?" and accept the suggested hostname (`opentranscribe.local`) or enter your own.
 
 If OpenTranscribe is already installed:
 
@@ -49,7 +50,8 @@ cd opentranscribe
 
 Both do the same thing:
 
-- generate `nginx/ssl/server.crt` and `nginx/ssl/server.key`. The certificate names the hostname,
+- create a local CA once (`nginx/ssl/ca.crt` and `nginx/ssl/ca.key`) and sign the server
+  certificate with it (`nginx/ssl/server.crt` and `nginx/ssl/server.key`). The server certificate names the hostname,
   `localhost`, and every IPv4 address the server has, so it is valid for `https://<hostname>` and
   for `https://<server-ip>`;
 - write `NGINX_SERVER_NAME=<hostname>` into `.env`.
@@ -86,10 +88,12 @@ Pick one:
   `.local` resolve by themselves on macOS, iOS and most Linux systems but not reliably on Windows or
   Android, so use the IP address or a router DNS entry for those.
 
-## Step 4: trust the certificate on each device
+## Step 4: trust the CA on each device
 
-A self-signed certificate shows a browser warning until the device is told to trust it. Copy
-`nginx/ssl/server.crt` from the server to the device and import it:
+A browser shows a warning until the device trusts the CA that signed the server certificate. Copy
+`nginx/ssl/ca.crt` (the CA, **not** `server.crt`) from the server to each device and import it. You
+do this once per device: when the server certificate is renewed or the server's address changes,
+the CA stays the same and devices need nothing more. Re-running the installer reuses the existing CA.
 
 ### Windows
 
@@ -107,26 +111,29 @@ A self-signed certificate shows a browser warning until the device is told to tr
 ### Linux (Chrome or Chromium)
 
 1. Open `chrome://settings/certificates` and choose the **Authorities** tab, then **Import**.
-2. Select `server.crt` and tick **Trust this certificate for identifying websites**.
+2. Select `ca.crt` and tick **Trust this certificate for identifying websites**.
 
 ### Linux (Firefox)
 
 1. Open `about:preferences#privacy` and scroll to **Certificates**, then **View Certificates**.
-2. In the **Authorities** tab choose **Import**, select `server.crt` and tick **Trust this CA to identify websites**.
+2. In the **Authorities** tab choose **Import**, select `ca.crt` and tick **Trust this CA to identify websites**.
 
 ### iOS
 
-1. AirDrop or email `server.crt` to the device and open it; a "Profile Downloaded" message appears.
+1. AirDrop or email `ca.crt` to the device and open it; a "Profile Downloaded" message appears.
 2. In **Settings**, **General**, **VPN & Device Management**, install the profile.
-3. In **Settings**, **General**, **About**, **Certificate Trust Settings**, enable full trust for the certificate.
+3. In **Settings**, **General**, **About**, **Certificate Trust Settings**, enable full trust for "OpenTranscribe Local CA". The second step is easy to miss: without it the CA is installed but not trusted.
 
 ### Android
 
-1. Copy `server.crt` to the device.
+1. Copy `ca.crt` to the device.
 2. In **Settings**, **Security**, **Encryption & credentials**, choose **Install a certificate**, then **CA certificate**.
 
-The imported certificate is trusted for every site on that device, so only import a certificate you
-generated yourself, and keep `nginx/ssl/server.key` private.
+A trusted CA can vouch for any website on that device, so only import a CA you generated yourself.
+Keep `nginx/ssl/ca.key` on the server and never copy it to a device or share it: anyone holding it
+can create certificates your devices will accept. The server certificate is valid for 825 days (the
+longest Apple devices accept); renew it before then by running `./opentranscribe.sh setup-ssl`
+again. The CA itself is valid for 10 years.
 
 ## Step 5: use it
 
@@ -151,11 +158,9 @@ that HTTPS port, not to 443.
 
 ## If the server's address changes
 
-The certificate lists the server's addresses at the time it was generated. After an address
-change, run `./opentranscribe.sh setup-ssl` again, answer **y** to overwriting the certificate,
-restart, and import the new `server.crt` on each device. Browsers remember that the site is
-HTTPS-only for a year, so a device that still holds the old certificate shows an error without a
-"proceed anyway" option until the new certificate is imported.
+The server certificate lists the server's addresses at the time it was generated. After an address
+change, run `./opentranscribe.sh setup-ssl` again, answer **y** to issuing a new server certificate,
+and restart. Devices that already trust the CA need nothing more.
 
 ## Troubleshooting
 
@@ -166,7 +171,7 @@ a plain-HTTP address. Use the `https://` address from Step 5. The sign-in page t
 certificate trusted.
 
 **The browser says the connection is not private.** The certificate is not trusted on that device
-(Step 4), or you opened an address the certificate does not cover (for example a new IP). Check what it
+(Step 4: is `ca.crt` installed and trusted?), or you opened an address the certificate does not cover (for example a new IP). Check what it
 covers with `openssl x509 -in nginx/ssl/server.crt -noout -ext subjectAltName`.
 
 **Visiting `http://` goes to a page that will not load.** In versions before 0.6.0 the redirect always

@@ -148,7 +148,10 @@ def init_worker_process(**kwargs):
 
     from app.db.base import engine
 
-    engine.dispose()
+    # close=False: the inherited connections share their sockets with the parent, and
+    # closing one here sends the server a Terminate that ends the PARENT's session.
+    # SQLAlchemy docs, "Using Connection Pools with Multiprocessing or os.fork()".
+    engine.dispose(close=False)
 
     _cap_torch_threads_to_cpu_quota()
 

@@ -109,12 +109,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     ensure_nltk_data_private()
 
-    # Migrations run on startup for self-host (a single container owns the DB). On
-    # an orchestrated deploy a dedicated migrate Job owns them instead, and every API
-    # replica racing Alembic is exactly what RUN_MIGRATIONS_ON_STARTUP=false prevents
-    # (issue #284 A1.4). When gated off we do NOT silently trust the DB: readiness
-    # asserts the schema is at head and fails 503 otherwise, so a replica started
-    # against an un-migrated database never takes traffic.
+    # Migrations run here only in single-container mode (RUN_MIGRATIONS_ON_STARTUP=true,
+    # the default, and the dev stack). Wherever the one-shot migrate step runs
+    # (`python -m app.startup.migrate`: the compose `migrate` service, a Kubernetes Job) the
+    # API is started with it false, so N replicas never race Alembic (issue #284 A1.4).
+    # When gated off we do NOT silently trust the DB: readiness asserts the schema is at
+    # head and fails 503 otherwise, so a replica started against an un-migrated database
+    # never takes traffic. A wedged lock holder now fails this path too, after
+    # MIGRATION_LOCK_TIMEOUT_S, instead of hanging the process.
     if settings.RUN_MIGRATIONS_ON_STARTUP:
         from app.db.migrations import run_migrations
 
@@ -125,8 +127,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise SystemExit(1) from e
     else:
         logger.info(
-            "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; a migrate job is "
-            "expected to own them. Readiness will verify the schema is at head."
+            "RUN_MIGRATIONS_ON_STARTUP=false — skipping migrations; the migrate step "
+            "(python -m app.startup.migrate) owns them. Readiness will verify the schema is at head."
         )
 
     _enforce_database_role_or_exit()
@@ -154,18 +156,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     _log_password_blocklist_status()
 
-    # Seed initial data (admin user, default tags, system prompts)
-    try:
-        from app.db.base import SessionLocal
-        from app.initial_data import init_db
+    # Seed initial data (admin user, default tags, system prompts). The migrate step
+    # (`python -m app.startup.migrate`) seeds too; here it runs inline when this process owns
+    # migrations, and is elected otherwise, which still covers a migrate job that only runs
+    # `alembic upgrade head`. init_db is idempotent and tolerates a concurrent insert.
+    from app.startup.migrate import seed_initial_data
+    from app.utils.boot_once import run_once_per_boot
 
-        db = SessionLocal()
-        try:
-            init_db(db)
-        finally:
-            db.close()
-    except Exception as e:
-        logger.warning(f"Initial data seeding failed (non-fatal): {e}")
+    if settings.RUN_MIGRATIONS_ON_STARTUP or run_once_per_boot("seed_initial_data"):
+        seed_initial_data()
 
     # Check OpenSearch index health (auto-repair corrupted shards from unclean shutdowns).
     #

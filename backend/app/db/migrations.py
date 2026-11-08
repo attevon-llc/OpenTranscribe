@@ -393,6 +393,123 @@ def _await_database_available(budget_s: float | None = None) -> None:
             probe.dispose()
 
 
+#: Session-level advisory lock key every migration runner serialises on. Changing it would
+#: let an old and a new image migrate at the same time during a rolling upgrade.
+MIGRATION_LOCK_KEY = 42
+
+#: Default bound on the advisory-lock wait. The longest measured upgrade chain is 2-5 min
+#: (a populated v0.3.x database on a cold disk), so 15 min only fails a holder that is wedged.
+DEFAULT_MIGRATION_LOCK_TIMEOUT_S = 900.0
+
+#: Gap between ``pg_try_advisory_lock`` attempts, and between progress log lines.
+_LOCK_POLL_S = 2.0
+_LOCK_PROGRESS_LOG_S = 30.0
+
+
+class MigrationLockTimeoutError(RuntimeError):
+    """Another session held the migration lock for longer than ``MIGRATION_LOCK_TIMEOUT_S``."""
+
+
+def _migration_lock_timeout_s() -> float:
+    """``MIGRATION_LOCK_TIMEOUT_S``, read at call time; ``0`` (or less) waits forever."""
+    from app.core.env import env_float
+
+    return env_float("MIGRATION_LOCK_TIMEOUT_S", DEFAULT_MIGRATION_LOCK_TIMEOUT_S)
+
+
+def _describe_lock_holder(conn: Connection) -> str:
+    """Name the session holding the migration lock, for the log line an operator acts on."""
+    row = conn.execute(
+        text(
+            "SELECT a.pid, a.application_name, a.client_addr::text, a.state, "
+            "       now() - a.backend_start AS connected_for, now() - a.state_change AS in_state "
+            "FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid "
+            "WHERE l.locktype = 'advisory' AND l.granted "
+            "  AND l.classid = 0 AND l.objid = :key AND l.objsubid = 1 "
+            "LIMIT 1"
+        ),
+        {"key": MIGRATION_LOCK_KEY},
+    ).first()
+    conn.commit()
+    if row is None:
+        return "holder not visible (released, or this role cannot see it)"
+    pid, app, addr, state, connected_for, in_state = row
+    return (
+        f"pid={pid} application={app or '?'} client={addr or 'local'} state={state} "
+        f"connected_for={connected_for} in_state_for={in_state}"
+    )
+
+
+def _acquire_migration_lock(conn: Connection, timeout_s: float | None = None) -> None:
+    """Take the session-level migration lock on *conn*, waiting at most *timeout_s*.
+
+    ``pg_advisory_lock`` waits with no bound, so one wedged holder used to hang every
+    replica behind it forever. This polls ``pg_try_advisory_lock`` instead (PostgreSQL docs:
+    it returns false "without waiting"), logs who holds the lock and how long we have
+    waited, and raises :class:`MigrationLockTimeoutError` at the deadline so the process fails
+    loudly. ``lock_timeout`` is not used: a poll loop logs progress and behaves the same
+    behind any connection pooler. A crashed holder needs no handling here — session locks
+    are released when its connection ends.
+
+    Args:
+        conn: The dedicated connection that must keep holding the lock (session scope).
+        timeout_s: Seconds to wait; ``None`` reads ``MIGRATION_LOCK_TIMEOUT_S``; ``<= 0``
+            waits forever.
+
+    Raises:
+        MigrationLockTimeoutError: The lock was still held by another session at the deadline.
+    """
+    budget = _migration_lock_timeout_s() if timeout_s is None else timeout_s
+    started = time.monotonic()
+    next_progress = started + _LOCK_PROGRESS_LOG_S
+    attempt = 0
+    while True:
+        attempt += 1
+        got = bool(
+            conn.execute(
+                text("SELECT pg_try_advisory_lock(:key)"), {"key": MIGRATION_LOCK_KEY}
+            ).scalar()
+        )
+        conn.commit()
+        if got:
+            if attempt > 1:
+                logger.info(
+                    "Acquired migration advisory lock after waiting %.1fs",
+                    time.monotonic() - started,
+                )
+            else:
+                logger.info("Acquired migration advisory lock")
+            return
+
+        now = time.monotonic()
+        waited = now - started
+        if attempt == 1:
+            limit = f"up to {budget:.0f}s" if budget > 0 else "with no limit"
+            logger.info(
+                "Another session is migrating (%s); waiting %s for the migration lock "
+                "(MIGRATION_LOCK_TIMEOUT_S).",
+                _describe_lock_holder(conn),
+                limit,
+            )
+        elif now >= next_progress:
+            logger.info("Still waiting for the migration lock after %.0fs", waited)
+            next_progress = now + _LOCK_PROGRESS_LOG_S
+
+        if budget > 0 and waited >= budget:
+            holder = _describe_lock_holder(conn)
+            logger.critical(
+                "Gave up waiting for the migration lock after %.0fs. Holder: %s. If that "
+                "session is not a migration in progress, end it with "
+                "pg_terminate_backend(<pid>) and re-run the migrate step.",
+                waited,
+                holder,
+            )
+            raise MigrationLockTimeoutError(
+                f"migration lock {MIGRATION_LOCK_KEY} still held after {waited:.0f}s ({holder})"
+            )
+        time.sleep(_LOCK_POLL_S)
+
+
 def run_migrations() -> None:
     """Run database migrations on startup.
 
@@ -402,7 +519,11 @@ def run_migrations() -> None:
     3. Already tracked: Apply any pending migrations
 
     Uses a PostgreSQL advisory lock to prevent concurrent migration runs
-    when multiple backend instances start simultaneously.
+    when multiple backend instances start simultaneously. The wait for that lock is bounded
+    by ``MIGRATION_LOCK_TIMEOUT_S`` (see :func:`_acquire_migration_lock`).
+
+    Raises:
+        MigrationLockTimeoutError: Another session held the lock past the bound.
     """
 
     logger.info("Checking database migrations...")
@@ -425,9 +546,12 @@ def run_migrations() -> None:
     # free pooled connections before Alembic opens its own) cannot close this one.
     lock_engine = create_engine(migration_database_url())
     lock_conn = lock_engine.connect()
-    lock_conn.execute(text("SELECT pg_advisory_lock(42)"))
-    lock_conn.commit()
-    logger.info("Acquired migration advisory lock")
+    try:
+        _acquire_migration_lock(lock_conn)
+    except BaseException:
+        lock_conn.close()
+        lock_engine.dispose()
+        raise
 
     try:
         # Ensure alembic_version column is wide enough for long revision IDs
@@ -495,7 +619,7 @@ def run_migrations() -> None:
         # Release from the SAME session that took it — advisory locks are
         # session-scoped, so unlocking from anywhere else does nothing.
         try:
-            lock_conn.execute(text("SELECT pg_advisory_unlock(42)"))
+            lock_conn.execute(text(f"SELECT pg_advisory_unlock({MIGRATION_LOCK_KEY})"))
             lock_conn.commit()
             logger.info("Released migration advisory lock")
         except Exception as exc:  # noqa: BLE001 - closing the session releases it anyway

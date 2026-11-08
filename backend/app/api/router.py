@@ -52,6 +52,7 @@ from .endpoints import media_mirror_settings
 from .endpoints import media_private_hosts
 from .endpoints import org_admin
 from .endpoints import org_admin_audit
+from .endpoints import org_admin_content_transfer
 from .endpoints import org_admin_erasure
 from .endpoints import org_admin_holds
 from .endpoints import org_admin_ownership
@@ -272,6 +273,14 @@ include_router_with_consistency(
 # Hand the organization to another administrator (v468): owner only, refused under a grant.
 include_router_with_consistency(
     org_admin_ownership.router,
+    prefix="/org-admin",
+    tags=["org-admin"],
+    capability="organizations",
+    refuse_under_grant=True,
+)
+# Hand a member's organization content to an administrator (issue #1104): org admin only.
+include_router_with_consistency(
+    org_admin_content_transfer.router,
     prefix="/org-admin",
     tags=["org-admin"],
     capability="organizations",

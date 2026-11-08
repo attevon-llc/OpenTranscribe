@@ -219,6 +219,9 @@ _NOT_YET_VERIFIED: dict[str, str] = {
     # Handing the organization to another administrator is API-only, like requesting an erasure:
     # a rare, deliberate act of the owner that the plan does not put behind a button.
     "/api/org-admin/ownership/transfer": _NO_ADMIN_PANEL_REASON,
+    # issue #1104: handing a departing member's organization content to an admin is an API-only
+    # act (account deletion does it automatically); the plan puts no button on it.
+    "/api/org-admin/members/{user_uuid}/transfer-content": _NO_ADMIN_PANEL_REASON,
     "/api/org-admin/gdpr/erasures/{ledger_uuid}/receipts": _NO_ADMIN_PANEL_REASON,
     # issue #576: /admin/files/{file_uuid}/quarantine, /release and /files/quarantined
     # now have a caller (AdminApi.quarantineFile / releaseFile / listQuarantinedFiles),

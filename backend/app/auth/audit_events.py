@@ -79,6 +79,10 @@ class AuditEventType(StrEnum):
     # The organization's owner changed (v468): handed to another admin, or named by the operator.
     # ``details`` holds the previous and new owner's uuids and who acted: never a name.
     ORG_OWNER_CHANGE = "org.owner.change"
+    # A departing member's organization content was handed to an administrator (issue #1104).
+    # ``details`` holds per-kind counts, the files skipped because a hold covers them and who
+    # acted: never a title or a name.
+    ORG_CONTENT_TRANSFER = "org.content.transfer"
     ADMIN_SETTINGS_CHANGE = "admin.settings.change"
 
     # Abuse / DMCA / safe-harbor takedown events

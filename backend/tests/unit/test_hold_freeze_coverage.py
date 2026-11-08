@@ -890,6 +890,10 @@ ROUTE_NOT_FILE_CONTENT: dict[str, str] = {
     _r("org_admin_ownership.py::transfer_ownership"): (
         "hands the organization's owner role to another admin: writes the organization row only"
     ),
+    _r("org_admin_content_transfer.py::transfer_member_content"): (
+        "re-owns rows and never their content; held files are excluded by "
+        "hold_guard.not_held_pred inside org_content_transfer, not merely refused"
+    ),
     _r("self_erasure.py::cancel_erasure"): _ERASURE_CONTROL,
 }
 

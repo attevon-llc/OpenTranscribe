@@ -26,6 +26,7 @@ def _sent(sock):
 
 async def _dispatch(payload: dict):
     await ws._dispatch_notification({"type": "message", "data": json.dumps(payload)})
+    await ws.manager.flush()  # the fan-out only enqueues; wait for the writes
 
 
 @pytest.mark.asyncio

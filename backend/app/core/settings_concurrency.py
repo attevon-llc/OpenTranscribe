@@ -47,3 +47,14 @@ class ConcurrencySettings(BaseSettings):
     # third of this, so a live run keeps its lock indefinitely and a crashed one frees
     # it within this many seconds. Lower = faster recovery, more renewal traffic.
     TASK_LOCK_LEASE_SECONDS: int = 60
+
+    # WebSocket admission (app/services/ws_admission.py). The /ws route accepts before it
+    # authenticates, so these bound what one client can hold open. 0 disables a limit.
+    # Handshakes per client IP per minute, counted in Redis across every API process.
+    WS_HANDSHAKES_PER_IP_PER_MINUTE: int = 60
+    # Open sockets per user in one API process (each browser tab holds one).
+    WS_MAX_SOCKETS_PER_USER: int = 20
+    # Open sockets in one API process.
+    WS_MAX_SOCKETS_PER_PROCESS: int = 2000
+    # Frames queued for one socket before it is treated as too slow and dropped.
+    WS_SEND_QUEUE_SIZE: int = 100

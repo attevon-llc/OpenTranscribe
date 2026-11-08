@@ -90,7 +90,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   `services/admin_file_search.search_files_for_admin`, whose text match
   (`title_or_filename_matches`) is the same predicate the gallery's `apply_search_filter` uses.
 
-- **Auth-mail readiness for plain admins** (`GET /admin/auth-config/email/readiness`, `get_current_admin_user`) returns ONLY `deliverable` and `verification_required` (`AuthMailReadinessResponse` is a field allowlist). Never add the config name/UUID/provider/env-SMTP flag to it: those stay on the super_admin `/email/designation`. `test_admin_auth_config_routes.py` pins both the 403 on the designation and the absence of secrets here.
+- **Auth-mail readiness for plain admins** (`GET /admin/email/readiness`, `get_current_admin_user`) returns ONLY `deliverable` and `verification_required` (`AuthMailReadinessResponse` is a field allowlist). Never add the config name/UUID/provider/env-SMTP flag to it: those stay on the super_admin `/email/designation`. `test_admin_auth_config_routes.py` pins both the 403 on the designation and the absence of secrets here.
 
 ## Endpoints with no frontend caller — deliberate API surface
 

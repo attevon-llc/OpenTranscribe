@@ -151,6 +151,12 @@ PLATFORM_OP_RULES: tuple[tuple[str, str, str], ...] = (
         "deployment configuration and credentials; no tenant content",
     ),
     (
+        r"^\w+ /api/admin/email/readiness",
+        "platform-ops",
+        "two booleans (deliverable, verification_required) through an explicit field "
+        "allowlist; no mail configuration identity, credentials or tenant content (issue #1265)",
+    ),
+    (
         r"^\w+ /api/admin/privacy-policy",
         "settings",
         "the deployment's voiceprint and gender switches and their purge (issue #1280); returns "

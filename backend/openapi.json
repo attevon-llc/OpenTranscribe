@@ -27268,33 +27268,6 @@
         ]
       }
     },
-    "/api/admin/auth-config/email/readiness": {
-      "get": {
-        "description": "Whether auth mail can be delivered, for admins who invite users (admin+).\n\nA plain admin can invite users but cannot read the designation (super_admin),\nso the invite form had no way to warn that the invitation will not be sent.\nThis returns only ``deliverable`` and ``verification_required``; the config\nname, UUID, provider and env-SMTP flag never leave the super_admin route.",
-        "operationId": "get_auth_mail_readiness_api_admin_auth_config_email_readiness_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthMailReadinessResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ],
-        "summary": "Get Auth Mail Readiness",
-        "tags": [
-          "auth-config"
-        ]
-      }
-    },
     "/api/admin/auth-config/migrate": {
       "post": {
         "description": "One-time migration from .env to database.\n\nMigrates authentication configuration from environment variables to\nthe database. Only migrates values that don't already exist in the\ndatabase. This is typically run once during initial setup or upgrade.\n\nReturns:\n    Success message with count of migrated settings",
@@ -28331,6 +28304,33 @@
         "summary": "Get Directory Sync Status",
         "tags": [
           "directory-sync"
+        ]
+      }
+    },
+    "/api/admin/email/readiness": {
+      "get": {
+        "description": "Whether auth mail can be delivered, for admins who invite users (admin+).\n\nReturns only ``deliverable`` and ``verification_required``; the config name,\nUUID, provider and env-SMTP flag never leave the super_admin designation route.",
+        "operationId": "get_auth_mail_readiness_api_admin_email_readiness_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthMailReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Auth Mail Readiness",
+        "tags": [
+          "admin"
         ]
       }
     },

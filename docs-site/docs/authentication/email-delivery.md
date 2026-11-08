@@ -44,7 +44,7 @@ to make it say otherwise.
   open the tab to find out.
 - The **Invite user** form shows the same notice before you send, to any admin. A plain admin
   cannot read which email configuration is designated (that stays super admin), so the form asks
-  a narrower route, `GET /api/admin/auth-config/email/readiness`, which answers only two yes/no
+  a narrower route, `GET /api/admin/email/readiness`, which answers only two yes/no
   facts: whether auth mail can be delivered, and whether sign-in depends on it.
 - The first-run wizard's final step lists whether authentication email is configured.
 

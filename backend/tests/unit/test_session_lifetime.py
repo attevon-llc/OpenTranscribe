@@ -75,6 +75,10 @@ class _EmptyExecuteResult:
     def fetchall(self):
         return []
 
+    def first(self):
+        # The rotation's conditional claim: report that it matched the presented row.
+        return (1,)
+
 
 class _FakeDB:
     """Minimal ``Session`` stand-in that records what was added."""

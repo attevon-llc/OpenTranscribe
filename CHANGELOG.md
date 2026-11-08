@@ -240,6 +240,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A refresh token can now be used only once, even when two requests present it at the same moment. If a token that was already used is presented again, the session it belongs to is ended (recorded as `auth.token.reuse` in the audit log) and that browser has to sign in again; other sessions are not affected.
 - Request bodies are now size-limited everywhere. The API refuses a JSON or form body larger than `MAX_REQUEST_BODY_BYTES` (default 1 MiB) with `413` before the request is processed; the media upload and speaker-avatar routes keep their own limits. The bundled nginx configurations allow 10m on the API and keep 15G only for the upload locations (`/api/files`, `/s3/`, `/minio/`).
 - Password reset and email verification requests now take the same path whether or not the address has an account: the request looks the account up and queues a background task, and the mail is built and sent there. Invitations and account-change notices are sent from the same background tasks, with retries on temporary mail-server or network errors. An invitation is now refused up front (503) when no mail transport is configured, instead of being created and then failing.
 - Text from people (watch-source names, invitation senders, security-notice text) is now escaped wherever it is placed into an HTML email.

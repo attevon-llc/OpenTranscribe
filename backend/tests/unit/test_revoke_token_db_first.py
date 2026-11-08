@@ -110,34 +110,3 @@ class TestRotationWhenTheOldTokenCannotBeRetired:
         )
 
         assert service.verify_refresh_token(db_session, old_token) == (None, None)
-
-    def test_the_new_token_is_withdrawn_when_the_old_one_cannot_be_revoked(
-        self, service, db_session, normal_user, monkeypatch
-    ):
-        old_token, old_row = _issue(service, db_session, normal_user)
-        original = service.revoke_token
-        calls: list[str] = []
-
-        def _revoke(db, jti, expires_at=None):
-            calls.append(jti)
-            if len(calls) == 1:
-                raise token_service_module.RevocationError("could not record revocation")
-            return original(db, jti, expires_at)
-
-        monkeypatch.setattr(service, "revoke_token", _revoke)
-
-        with pytest.raises(token_service_module.RevocationError):
-            service.rotate_refresh_token(
-                db=db_session,
-                old_token=old_token,
-                old_token_record=old_row,
-                user_id=normal_user.id,
-                user_uuid=str(normal_user.uuid),
-                role="user",
-            )
-
-        db_session.expire_all()
-        rows = db_session.query(RefreshToken).filter(RefreshToken.user_id == normal_user.id).all()
-        successors = [r for r in rows if r.jti != old_row.jti]
-        assert len(successors) == 1
-        assert successors[0].revoked_at is not None

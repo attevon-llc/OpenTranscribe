@@ -318,12 +318,6 @@ class TokenService(RefreshTokenOps):
         Raises:
             RevocationError: If the revocation could not be recorded.
         """
-        if expires_at:
-            ttl_seconds = max(1, int((expires_at - datetime.now(UTC)).total_seconds()))
-        else:
-            # Default to refresh token expiry if no expiration provided
-            ttl_seconds = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-
         try:
             refresh_token = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
             owner_id = None
@@ -339,11 +333,32 @@ class TokenService(RefreshTokenOps):
                 logger.debug("Rollback after failed revocation also failed", exc_info=True)
             raise RevocationError("revocation could not be recorded") from exc
 
+        self._publish_revocation(jti, expires_at, owner_id, durable=refresh_token is not None)
+
+    def _publish_revocation(
+        self, jti: str, expires_at: datetime | None, owner_id: int | None, *, durable: bool
+    ) -> None:
+        """Cache a recorded revocation and audit it.
+
+        Shared by :meth:`revoke_token` and the refresh-token rotation, which records its
+        revocation with a conditional UPDATE of its own. ``durable`` says the row holds
+        the revocation: a cache failure is then logged and metered, not raised. Without
+        a row (an access token) the cache write IS the record, and its failure raises.
+
+        Raises:
+            RevocationError: The cache write failed and nothing durable exists.
+        """
+        if expires_at:
+            ttl_seconds = max(1, int((expires_at - datetime.now(UTC)).total_seconds()))
+        else:
+            # Default to refresh token expiry if no expiration provided
+            ttl_seconds = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+
         try:
             self.store.set(f"{REVOKED_TOKEN_PREFIX}{jti}", "revoked", ex=ttl_seconds)
         except Exception as exc:
             record_degradation("token_revocation", "database")
-            if refresh_token is None:
+            if not durable:
                 logger.critical(
                     "Could not record revocation for token (jti=%s...): cache unreachable "
                     "and no database record exists.",
@@ -359,7 +374,7 @@ class TokenService(RefreshTokenOps):
         logger.info(f"Revoked token (jti={jti[:8]}..., ttl={ttl_seconds}s)")
 
         # Single choke point for every revocation path (logout, logout-all,
-        # admin termination, password reset, federated SAML/OIDC logout) —
+        # admin termination, password reset, federated SAML/OIDC logout, rotation) —
         # covering it here means none of those call sites has to remember to.
         audit_logger.log(
             event_type=AuditEventType.AUTH_TOKEN_REVOKE,

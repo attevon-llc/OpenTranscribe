@@ -53,6 +53,9 @@ class AuditEventType(StrEnum):
     AUTH_TOKEN_REFRESH = "auth.token.refresh"  # noqa: S105 # nosec B105
     AUTH_TOKEN_REVOKE = "auth.token.revoke"  # noqa: S105 # nosec B105
     AUTH_TOKEN_VERIFY = "auth.token.verify"  # noqa: S105 # nosec B105
+    #: A refresh token that was already rotated came back; its session was revoked
+    #: (RFC 9700 section 4.14.2 reuse detection).
+    AUTH_TOKEN_REUSE = "auth.token.reuse"  # noqa: S105 - audit event name, not a credential  # nosec B105
 
     # Session events
     AUTH_SESSION_CREATED = "auth.session.created"

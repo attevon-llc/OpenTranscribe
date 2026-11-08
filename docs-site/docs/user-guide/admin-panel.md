@@ -312,7 +312,7 @@ section; changing a credential or a privilege revokes sessions automatically.
 | **MFA** | `auth.mfa.setup`, `auth.mfa.verify`, `auth.mfa.disable`, `auth.mfa.backup_used` |
 | **Password** | `auth.password.change`, `auth.password.reset_request`, `auth.password.reset_complete`, `auth.password.expired` |
 | **Account lifecycle** | `auth.account.lockout`, `auth.account.unlock`, `auth.account.disabled`, `auth.account.expired` |
-| **Tokens** | `auth.token.refresh`, `auth.token.revoke`, `auth.token.verify` |
+| **Tokens** | `auth.token.refresh`, `auth.token.revoke`, `auth.token.reuse` (a refresh token that was already used came back, and its session was ended), `auth.token.verify` |
 | **Sessions** | `auth.session.created`, `auth.session.expired`, `auth.session.terminated`, `auth.session.limit_exceeded` |
 | **Banner** | `auth.banner.acknowledged` |
 | **Admin** | `admin.user.create`, `admin.user.update`, `admin.user.delete`, `admin.role.change`, `admin.settings.change` |

@@ -34,6 +34,7 @@ from app.auth.oidc import OIDCConfig
 from app.auth.oidc import call_federated_logout
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.refresh_tokens import RefreshTokenReplayError
 from app.auth.revocation_error import RevocationError
 from app.auth.token_service import token_service
 from app.core.auth_types import AUTH_TYPE_OIDC
@@ -98,6 +99,7 @@ def refresh_access_token(
 
     if not payload or not refresh_token_record:
         logger.warning("Token refresh failed: invalid or revoked refresh token")
+        _revoke_family_on_reuse(db, refresh_token_value)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
@@ -151,6 +153,15 @@ def refresh_access_token(
             user_agent=user_agent,
             ip_address=client_ip,
         )
+    except RefreshTokenReplayError as exc:
+        # Another request spent this token between verification and the claim.
+        logger.warning("Token refresh refused: the refresh token was already rotated")
+        _revoke_family_on_reuse(db, refresh_token_value)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
     except RevocationError as exc:
         # The client still holds its previous refresh token and can retry.
         logger.error("Token refresh not completed: rotation could not be recorded")
@@ -183,6 +194,20 @@ def refresh_access_token(
 
     set_auth_cookies(response, access_token, new_refresh_token, request)
     return response
+
+
+def _revoke_family_on_reuse(db: Session, token: str) -> None:
+    """Reuse detection for a refused refresh token (RFC 9700 §4.14.2).
+
+    The request is answered 401 either way; a failure to record the family revocation
+    is logged, not surfaced, because the refusal itself already stands.
+    """
+    if not token:
+        return
+    try:
+        token_service.revoke_reused_token_family(db, token)
+    except RevocationError:
+        logger.error("Refresh token reuse detected but the session could not be revoked")
 
 
 def _verified_claims(token: str | None) -> dict | None:

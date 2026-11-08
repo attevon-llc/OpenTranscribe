@@ -1,0 +1,14 @@
+{
+  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Edit items to match the shipped bundle's item ids; a question is asked in its own conversation, followed by its follow-ups.",
+  "conversations": [
+    {
+      "id": "what-was-decided",
+      "title": "What was decided, and who owns what?",
+      "items": ["REPLACE-WITH-A-BUNDLE-ITEM-ID"],
+      "questions": [
+        "What decisions were made in this recording?",
+        "Who is responsible for each follow-up, and by when?"
+      ]
+    }
+  ]
+}

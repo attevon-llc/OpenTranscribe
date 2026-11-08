@@ -33,6 +33,8 @@ from app.core.demo_info import DEMO_LICENSE_KEY
 from app.scripts.demo_seed.bundle import BundleError
 from app.scripts.demo_seed.bundle import SeedItem
 from app.scripts.demo_seed.bundle import load_bundle
+from app.scripts.demo_seed.conversations import SeedConversation
+from app.scripts.demo_seed.conversations import load_conversations
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -114,8 +116,11 @@ def _name_speakers(db, media_file_id: int, names: dict[str, str]) -> None:
         record_human_identity(speaker, user_id=None, origin=ORIGIN_TYPED)
 
 
-def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> None:
-    """Rows, then the media upload with no session open, then a short write and the tasks."""
+def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> str:
+    """Rows, then the media upload with no session open, then a short write and the tasks.
+
+    Returns the seeded file's UUID, which conversations cite.
+    """
     from app.db.base import SessionLocal
     from app.models.media import MediaFile
     from app.scripts.corpus_injection import injector
@@ -135,6 +140,7 @@ def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> None:
         if media_file is None:
             raise RuntimeError(f"{item.id}: the injected media row vanished before upload")
         storage_path = media_file.storage_path
+        file_uuid = str(media_file.uuid)
         # The licence the item was published under, in a key the product may read (the
         # injector's own ``rag_eval`` block is the evaluation harness's, not the product's);
         # `GET /auth/demo/attributions` serves it so CC BY credit shows wherever the file is.
@@ -162,6 +168,56 @@ def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> None:
     injector.dispatch_indexing(record, user_id, mode="eager")
     with SessionLocal() as db:
         injector.dispatch_redaction(db, record, user_id, mode="eager")
+    return file_uuid
+
+
+def _seed_conversations(
+    db, user_id: int, conversations: list[SeedConversation], uuid_by_item: dict[str, str]
+) -> None:
+    """Store each conversation as finished, with the citations pointing at the seeded files."""
+    from datetime import timedelta
+
+    from app.models.chat import ChatConversation
+    from app.models.chat import ChatMessage
+
+    now = datetime.now(UTC)
+    for n, conv in enumerate(conversations):
+        stamp = now - timedelta(minutes=n)
+        row = ChatConversation(
+            user_id=user_id,
+            title=conv.title,
+            context={"file_uuids": [uuid_by_item[i] for i in conv.item_ids]},
+            last_message_at=stamp,
+        )
+        db.add(row)
+        db.flush()
+        for msg in conv.messages:
+            citations = [
+                {
+                    "id": k + 1,
+                    "kind": c.get("kind", "chunk"),
+                    "file_uuid": uuid_by_item[c["item_id"]],
+                    "title": c.get("title", ""),
+                    "chunk_index": c.get("chunk_index", 0),
+                    "start_time": c.get("start_time", 0.0),
+                    "end_time": c.get("end_time"),
+                    "speaker": c.get("speaker"),
+                    "snippet": c.get("snippet", ""),
+                }
+                for k, c in enumerate(msg.get("citations") or [])
+            ]
+            db.add(
+                ChatMessage(
+                    conversation_id=row.id,
+                    role=msg["role"],
+                    content=msg["content"],
+                    reasoning_content=msg.get("reasoning_content"),
+                    citations=citations or None,
+                    provider=msg.get("provider"),
+                    model=msg.get("model"),
+                    status="complete",
+                )
+            )
 
 
 def _pending_redactions(db) -> int:
@@ -188,9 +244,15 @@ def _import(bundle: Path) -> int:
     with SessionLocal() as db:
         user_id = _ensure_demo_user(db, email, password)
         db.commit()
+    conversations = load_conversations(bundle, {i.id for i in items})
+    uuid_by_item: dict[str, str] = {}
     for item in items:
-        _seed_item(item, version, user_id)
+        uuid_by_item[item.id] = _seed_item(item, version, user_id)
         print(f"seeded {item.id} ({item.license})")
+    with SessionLocal() as db:
+        _seed_conversations(db, user_id, conversations, uuid_by_item)
+        db.commit()
+    print(f"seeded {len(conversations)} conversation(s)")
     with SessionLocal() as db:
         pending = _pending_redactions(db)
     if pending:
@@ -209,7 +271,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "validate":
             version, items = load_bundle(args.bundle)
-            print(f"bundle {version}: {len(items)} item(s), all licences allowed")
+            conversations = load_conversations(args.bundle, {i.id for i in items})
+            print(
+                f"bundle {version}: {len(items)} item(s), all licences allowed, "
+                f"{len(conversations)} conversation(s)"
+            )
             return EXIT_OK
         return _import(args.bundle)
     except BundleError as exc:

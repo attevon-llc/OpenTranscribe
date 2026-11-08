@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A developer-guide page, Scale and query performance testing, describes how to seed a large synthetic dataset on an isolated stack, drive the endpoints, replay and compare hot queries before and after a change, and add a statement-count regression check; `scripts/CLAUDE.md` lists the exact commands (#1337).
 - Administrators can place a legal hold from the gallery selection or from a file's page, using one dialog that asks for a reason and an optional matter reference.
 - Instance administrators have a new Settings > Legal holds section to hold files or a whole collection without taking them down, and to release holds.
 - Held files show a Legal hold badge in the gallery, and a Legal hold filter and collection list them automatically; both appear only while something is held and cannot be edited or deleted.

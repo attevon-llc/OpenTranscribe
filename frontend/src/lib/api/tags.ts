@@ -8,6 +8,7 @@
  * the server owns all of it.
  */
 import axiosInstance from '$lib/axios';
+import { postBulkAction } from '$lib/api/bulkActions';
 import type {
   BulkTagAction,
   BulkTagActionResult,
@@ -147,10 +148,5 @@ export async function bulkTagFiles(
   action: BulkTagAction,
   tagName: string
 ): Promise<BulkTagActionResult[]> {
-  const response = await axiosInstance.post('/files/management/bulk-action', {
-    file_uuids: fileUuids,
-    action,
-    tag_name: tagName,
-  });
-  return response.data;
+  return postBulkAction<BulkTagActionResult>({ file_uuids: fileUuids, action, tag_name: tagName });
 }

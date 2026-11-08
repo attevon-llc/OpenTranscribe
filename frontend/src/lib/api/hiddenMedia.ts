@@ -1,4 +1,5 @@
 import axiosInstance from '$lib/axios';
+import { postBulkAction } from '$lib/api/bulkActions';
 
 /**
  * Per-user hide of media files (issue #1102).
@@ -31,10 +32,9 @@ export class HiddenMediaApi {
 
   /** Hide or unhide many files; one result per file (a refusal is that file's result). */
   static async setHiddenMany(uuids: string[], hidden: boolean): Promise<HiddenBulkResult[]> {
-    const response = await axiosInstance.post('/files/management/bulk-action', {
+    return postBulkAction<HiddenBulkResult>({
       file_uuids: uuids,
       action: hidden ? 'hide' : 'unhide',
     });
-    return response.data;
   }
 }

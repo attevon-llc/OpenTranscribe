@@ -84,6 +84,7 @@
 
 
   import axiosInstance from '$lib/axios';
+  import { postBulkAction, type BulkFileResult } from '$lib/api/bulkActions';
   import { apiCache } from '$lib/apiCache';
 
   // Import components
@@ -682,11 +683,10 @@
     }
 
     try {
-      const response = await axiosInstance.post('/files/management/bulk-action', {
+      const results = await postBulkAction<BulkFileResult>({
         file_uuids: completed.map(f => f.uuid),
         action: 'summarize'
       });
-      const results = response.data;
       const successful = results.filter((r: any) => r.success);
       const failed = results.filter((r: any) => !r.success);
 
@@ -721,11 +721,10 @@
     }
 
     try {
-      const response = await axiosInstance.post('/files/management/bulk-action', {
+      const results = await postBulkAction<BulkFileResult>({
         file_uuids: completed.map(f => f.uuid),
         action: 'redact'
       });
-      const results = response.data;
       const successful = results.filter((r: any) => r.success);
       const failed = results.filter((r: any) => !r.success);
 
@@ -753,11 +752,10 @@
     }
 
     try {
-      const response = await axiosInstance.post('/files/management/bulk-action', {
+      const results = await postBulkAction<BulkFileResult>({
         file_uuids: failedFiles.map(f => f.uuid),
         action: 'retry'
       });
-      const results = response.data;
       const successful = results.filter((r: any) => r.success);
       const failed = results.filter((r: any) => !r.success);
 
@@ -840,12 +838,11 @@
     try {
       // One request for the whole selection, like every other bulk action here. This was
       // N serial round trips with no progress indication.
-      const response = await axiosInstance.post('/files/management/bulk-action', {
+      const results = await postBulkAction<BulkFileResult>({
         file_uuids: completed.map(f => f.uuid),
         action: 'identify_speakers'
       });
 
-      const results = response.data || [];
       const successCount = results.filter((r: { success: boolean }) => r.success).length;
       const failCount = results.length - successCount;
 
@@ -879,11 +876,10 @@
     }
 
     try {
-      const response = await axiosInstance.post('/files/management/bulk-action', {
+      const results = await postBulkAction<BulkFileResult>({
         file_uuids: processing.map(f => f.uuid),
         action: 'cancel'
       });
-      const results = response.data;
       const successful = results.filter((r: any) => r.success);
       const failed = results.filter((r: any) => !r.success);
 

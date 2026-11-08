@@ -60,10 +60,17 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+#: Most files one bulk-action request may name. The list is processed synchronously inside
+#: the request, holding an API thread and a database connection throughout, so it is capped
+#: like the other bulk file schemas (``MAX_FILES_PER_HOLD``, watch-source imports). The SPA
+#: sends a larger selection in batches of this size (``frontend/src/lib/api/bulkActions.ts``).
+BULK_ACTION_MAX_FILES = 500
+
+
 class BulkActionRequest(BaseModel):
     """Request for bulk file operations."""
 
-    file_uuids: list[str]
+    file_uuids: list[str] = Field(max_length=BULK_ACTION_MAX_FILES)
     # delete (moves to the trash) | restore | purge (delete forever, from the trash) | retry
     # | cancel | recover | reprocess | summarize | redact | identify_speakers | add_tag
     # | remove_tag | hide | unhide

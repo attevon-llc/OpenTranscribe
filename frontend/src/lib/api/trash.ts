@@ -1,4 +1,5 @@
 import axiosInstance from '$lib/axios';
+import { postBulkAction, type BulkFileResult } from '$lib/api/bulkActions';
 
 /**
  * The trash (issue #1101). Mirrors `backend/app/schemas/trash.py`.
@@ -41,13 +42,6 @@ export interface TrashPurgeQueued {
 }
 
 /** One file's outcome in a bulk action; a refusal is that file's result, never the batch's. */
-export interface BulkFileResult {
-  file_uuid: string;
-  success: boolean;
-  message: string;
-  error?: string | null;
-}
-
 export const TRASH_PAGE_SIZE = 50;
 
 export async function listTrash(page = 1, pageSize = TRASH_PAGE_SIZE): Promise<TrashPage> {
@@ -80,11 +74,7 @@ async function bulkAction(
   fileUuids: string[],
   action: 'delete' | 'restore'
 ): Promise<BulkFileResult[]> {
-  const res = await axiosInstance.post<BulkFileResult[]>('/files/management/bulk-action', {
-    file_uuids: fileUuids,
-    action,
-  });
-  return res.data;
+  return postBulkAction<BulkFileResult>({ file_uuids: fileUuids, action });
 }
 
 /** Move files to the trash. Held or forbidden files come back as per-file refusals. */

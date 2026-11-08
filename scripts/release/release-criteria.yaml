@@ -659,6 +659,18 @@ stages:
         description: gh release create succeeded (with the derived --latest / --latest=false)
         severity: blocking
 
+      - id: demo-upgraded
+        description: >-
+          The public demo (issue #628) reports it now runs this release. The demo host pulls
+          whatever GitHub marks "Latest" on a timer, so this is checked AFTER the release is
+          created, polling demo-status.json (DEMO_STATUS_CMD or DEMO_STATUS_FILE, see
+          scripts/release/demo-status-lib.sh) until DEMO_UPGRADE_WAIT_SECONDS. Blocking, so a
+          demo that is configured but did not reach this tag (rolled back, still on the old
+          tag, or its record unreadable) fails the stage; with no demo configured, or a
+          backport that is not marked "Latest" (the demo never follows it), it is recorded
+          not-measured and waived, never as a pass.
+        severity: blocking
+
       # ─── Release assets (issue #781) ───────────────────────────────────
       # The old code attached assets with a bare existence glob over
       # dist/*.tar.gz, dist/*.zip and security-reports/*-sbom.json. Two

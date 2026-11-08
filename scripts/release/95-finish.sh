@@ -372,6 +372,56 @@ record github-release-created pass
 echo -e "${GREEN}released $VERSION${NC}" >&2
 [[ ${#assets[@]} -gt 0 ]] && echo "  assets: ${assets[*]}" >&2
 
+# The public demo pulls GitHub's "Latest" on a timer, so it can only be checked now that the
+# release exists. Reaching this line means the release IS published: a failure below reports
+# the demo, it cannot un-publish anything.
+# --- BEGIN demo-upgraded ---
+# (extracted verbatim and driven against stub record/fail_out by
+#  backend/tests/unit/test_release_demo_upgraded.py — keep the markers)
+# shellcheck source=scripts/release/demo-status-lib.sh
+source "$SCRIPT_DIR/demo-status-lib.sh"
+if ! demo_status_configured; then
+    record demo-upgraded not-measured \
+        "no demo configured (set DEMO_STATUS_CMD or DEMO_STATUS_FILE to check one)" "" waived
+elif [[ "$latest_flag" != "--latest" ]]; then
+    record demo-upgraded not-measured \
+        "$VERSION is not marked Latest, which is all the demo follows" "" waived
+else
+    demo_wait="${DEMO_UPGRADE_WAIT_SECONDS:-2400}"
+    demo_poll="${DEMO_UPGRADE_POLL_SECONDS:-30}"
+    demo_deadline=$((SECONDS + demo_wait))
+    demo_verdict=unreadable
+    while :; do
+        if demo_record="$(demo_status_fetch 2>/dev/null)"; then
+            demo_verdict="$(demo_status_verdict "$VERSION" <<<"$demo_record")"
+        else
+            demo_verdict=unreadable
+        fi
+        [[ "$demo_verdict" == upgraded || "$demo_verdict" == failed ]] && break
+        (( SECONDS >= demo_deadline )) && break
+        sleep "$demo_poll"
+    done
+    case "$demo_verdict" in
+        upgraded) record demo-upgraded pass ;;
+        failed)
+            record demo-upgraded fail "the demo tried $VERSION and rolled back" \
+                "read the demo host's journal for opentranscribe-demo-upgrade.service"
+            echo -e "${RED}$VERSION is published, but the demo did not upgrade to it${NC}" >&2
+            fail_out 1 '"read the demo host journal; fix; the demo will not retry a rolled-back tag on its own"' ;;
+        pending)
+            record demo-upgraded fail "the demo had not reached $VERSION after ${demo_wait}s" \
+                "check the demo host's opentranscribe-demo-upgrade.timer"
+            echo -e "${RED}$VERSION is published, but the demo has not upgraded to it${NC}" >&2
+            fail_out 1 '"check the demo host upgrade timer"' ;;
+        *)
+            record demo-upgraded not-measured "the demo's status could not be read" \
+                "check DEMO_STATUS_CMD / DEMO_STATUS_FILE"
+            echo -e "${RED}$VERSION is published, but the demo's status could not be read${NC}" >&2
+            fail_out 1 '"check DEMO_STATUS_CMD / DEMO_STATUS_FILE"' ;;
+    esac
+fi
+# --- END demo-upgraded ---
+
 # Both halves of the contract, on the only path where every criterion was reached.
 criteria_assert_all_checked
 

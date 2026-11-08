@@ -4275,6 +4275,7 @@
   "orgErasures.cancelFailed": "Não foi possível cancelar a eliminação.",
   "orgErasures.loadError": "Não foi possível carregar as eliminações agendadas.",
   "orgAudit.event.ownerChange": "Alterou o proprietário da organização",
+  "orgAudit.event.contentTransfer": "Transferiu o conteúdo da organização de um membro para um administrador",
   "holds.navLabel": "Retenções legais",
   "holds.title": "Retenções legais",
   "holds.description": "Uma retenção legal impede, enquanto estiver em vigor, que os arquivos sejam excluídos, removidos pela política de retenção, apagados junto com uma conta ou regenerados por um reprocessamento. Você pode reter arquivos específicos ou uma coleção inteira, incluindo arquivos adicionados depois. O motivo só é visível para os administradores da sua organização. Enquanto estiver em vigor, o conteúdo do arquivo fica preservado como estava: ainda pode ser lido, pesquisado, reproduzido, exportado, baixado e comentado, mas não editado.",

@@ -4215,6 +4215,7 @@
   "orgErasures.cancelFailed": "Die Löschung konnte nicht abgebrochen werden.",
   "orgErasures.loadError": "Die geplanten Löschungen konnten nicht geladen werden.",
   "orgAudit.event.ownerChange": "Hat den Eigentümer der Organisation geändert",
+  "orgAudit.event.contentTransfer": "Hat die Organisationsinhalte eines Mitglieds an einen Administrator übergeben",
   "holds.navLabel": "Aufbewahrungssperren",
   "holds.title": "Aufbewahrungssperren",
   "holds.description": "Eine Aufbewahrungssperre verhindert, solange sie gilt, dass Dateien gelöscht, durch die Aufbewahrungsfrist entfernt, mit einem Konto gelöscht oder durch eine Neuverarbeitung neu erzeugt werden. Sie können bestimmte Dateien oder eine ganze Sammlung sperren, auch Dateien, die ihr später hinzugefügt werden. Der Grund ist nur für die Administratoren Ihrer Organisation sichtbar. Solange sie gilt, bleibt der Inhalt der Datei unverändert erhalten: Sie kann weiterhin gelesen, durchsucht, abgespielt, exportiert, heruntergeladen und kommentiert, aber nicht bearbeitet werden.",

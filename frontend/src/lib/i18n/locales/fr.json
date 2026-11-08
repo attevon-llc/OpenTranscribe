@@ -4275,6 +4275,7 @@
   "orgErasures.cancelFailed": "L'effacement n'a pas pu être annulé.",
   "orgErasures.loadError": "Les effacements planifiés n'ont pas pu être chargés.",
   "orgAudit.event.ownerChange": "A changé le propriétaire de l'organisation",
+  "orgAudit.event.contentTransfer": "A transféré les contenus d'organisation d'un membre à un administrateur",
   "holds.navLabel": "Conservations légales",
   "holds.title": "Conservations légales",
   "holds.description": "Une conservation légale empêche, tant qu'elle est en vigueur, que des fichiers soient supprimés, purgés par la rétention, effacés avec un compte ou régénérés par un retraitement. Vous pouvez conserver des fichiers précis ou une collection entière, y compris les fichiers qui y seront ajoutés plus tard. Le motif n'est visible que des administrateurs de votre organisation. Tant qu'elle est en vigueur, le contenu du fichier est figé tel quel : il peut toujours être lu, recherché, écouté, exporté, téléchargé et commenté, mais pas modifié.",

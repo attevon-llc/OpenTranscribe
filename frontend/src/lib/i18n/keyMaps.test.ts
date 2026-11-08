@@ -100,6 +100,9 @@ describe('keyFor / labelFor', () => {
 describe('ORG_AUDIT_EVENT_KEYS: owner change (#1105)', () => {
   it('labels the organization owner change', () => {
     expect(keyMaps.ORG_AUDIT_EVENT_KEYS['org.owner.change']).toBe('orgAudit.event.ownerChange');
+    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['org.content.transfer']).toBe(
+      'orgAudit.event.contentTransfer'
+    );
   });
 });
 

@@ -330,6 +330,7 @@ export const ORG_AUDIT_EVENT_KEYS: Record<string, string> = {
   'gdpr.erasure.cancelled': 'orgAudit.event.erasureCancelled',
   'gdpr.erasure.execution_started': 'orgAudit.event.erasureStarted',
   'org.owner.change': 'orgAudit.event.ownerChange',
+  'org.content.transfer': 'orgAudit.event.contentTransfer',
 };
 
 /** What a legal hold on a file or collection says to the person it stopped (issue #1276). */

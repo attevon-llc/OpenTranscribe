@@ -4155,6 +4155,7 @@
   "orgErasures.cancelFailed": "无法取消删除。",
   "orgErasures.loadError": "无法加载已安排的删除。",
   "orgAudit.event.ownerChange": "更改了组织的所有者",
+  "orgAudit.event.contentTransfer": "将成员的组织内容移交给了管理员",
   "holds.navLabel": "法律保留",
   "holds.title": "法律保留",
   "holds.description": "法律保留生效期间，文件不能被删除、被保留期限清理、随账户一起删除，也不能通过重新处理重新生成。您可以保留指定文件或整个合集，包括之后添加到合集中的文件。原因仅对贵组织的管理员可见。保留生效期间，文件内容保持原样：仍可阅读、搜索、播放、导出、下载和添加评论，但不能编辑。",

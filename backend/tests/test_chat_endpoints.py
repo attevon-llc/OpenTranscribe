@@ -1011,3 +1011,56 @@ def test_disabling_the_capability_hides_the_whole_router(client, auth_headers):
         reset_capability_resolver()
 
     assert client.get("/api/chat/conversations", headers=auth_headers).status_code == 200
+
+
+def test_send_releases_the_request_transaction_before_the_reply_streams(
+    client, auth_headers, stub_llm, db_session
+):
+    """The request session must not hold a pooled connection while the model writes.
+
+    FastAPI closes a ``Depends(get_db)`` session only after the response is SENT, and for a
+    streaming reply that is when the model finishes. ``_prepare_turn`` re-opens the request
+    transaction after its commit (``refresh``, the reasoning lookup), so without an explicit
+    release every in-flight chat pinned one pool connection, idle in a transaction, for the
+    whole generation: enough concurrent chats exhaust the API's pool for every other user.
+    """
+    from app.db.base import get_db
+    from app.main import app
+    from tests.unit._session_lifetime_trackers import TrackedRequestSession
+
+    conversation = _create(client, auth_headers)
+    tracker = TrackedRequestSession(db_session)
+
+    def _tracked_db():
+        yield tracker
+
+    previous = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = _tracked_db
+    original_stream = stub_llm.chat_completion_stream
+
+    def _observed_stream(messages, cancel_event=None, **kwargs):
+        tracker.observe("provider_stream")
+        yield from original_stream(messages, cancel_event=cancel_event, **kwargs)
+
+    stub_llm.chat_completion_stream = _observed_stream
+    try:
+        with client.stream(
+            "POST",
+            f"/api/chat/conversations/{conversation['uuid']}/messages",
+            json={"content": "What did the team decide?"},
+            headers=auth_headers,
+        ) as stream:
+            assert stream.status_code == 200
+            body = b"".join(stream.iter_bytes()).decode()
+    finally:
+        app.dependency_overrides[get_db] = previous
+
+    assert tracker.observations, "the provider was never called"
+    assert tracker.seen["provider_stream"] is False, tracker.observations
+    # The turn still completed and persisted through the stream's own session.
+    events_seen = [event for event, _ in _read_sse(SimpleNamespace(text=body))]
+    assert events_seen[-1] == "done"
+    messages = client.get(
+        f"/api/chat/conversations/{conversation['uuid']}/messages", headers=auth_headers
+    ).json()["messages"]
+    assert [m["role"] for m in messages] == ["user", "assistant"]

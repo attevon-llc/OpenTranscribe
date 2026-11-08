@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "لغة الواجهة",
   "settings.language.hint": "تُطبَّق التغييرات فورًا",
   "settings.language.changed": "تم تغيير اللغة بنجاح",
+  "settings.language.machineTranslated": "ترجمة آلية",
   "settings.profile.title": "الملف الشخصي والأمان",
   "settings.profile.description": "إدارة معلومات حسابك وكلمة المرور والمصادقة متعددة العوامل",
   "settings.profile.accountInfo": "معلومات الحساب",

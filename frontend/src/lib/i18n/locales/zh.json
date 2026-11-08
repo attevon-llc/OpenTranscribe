@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "界面语言",
   "settings.language.hint": "更改立即生效",
   "settings.language.changed": "语言更改成功",
+  "settings.language.machineTranslated": "机器翻译",
   "settings.profile.title": "个人资料与安全",
   "settings.profile.description": "管理您的账户信息、密码和多因素认证",
   "settings.profile.accountInfo": "账户信息",

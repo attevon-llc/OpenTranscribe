@@ -68,6 +68,7 @@
   "settings.language.selectLabel": "Interfacetaal",
   "settings.language.hint": "Wijzigingen worden direct toegepast",
   "settings.language.changed": "Taal succesvol gewijzigd",
+  "settings.language.machineTranslated": "machinaal vertaald",
   "settings.profile.title": "Profiel & beveiliging",
   "settings.profile.description": "Beheer uw accountgegevens, wachtwoord en meerfactorauthenticatie",
   "settings.profile.accountInfo": "Accountgegevens",

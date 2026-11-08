@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The interface language picker (Settings > Language) marks every non-English language as machine-translated, in the reader's own language; the translations have no human review.
 - A Third-party licenses page (Legal) documents every non-permissive runtime dependency (mutagen, fpdf2, ldap3, psycopg2, certifi, tqdm, lightningcss, the NVIDIA libraries, the Silo image): what it is, why it is used, where, its license and why it is compatible with AGPL-3.0. A test fails when the generated license inventory lists a package the page does not name; `NOTICE` links to it.
 - `.github/CODEOWNERS` assigns every path to the maintainer.
 - `scripts/perf/load/run.sh --fresh NAME --profile PROFILE` runs one load test end to end into one directory: a sampler records every 5 s the stack's Postgres connections by state (including idle in transaction), the API's `db_pool_*` gauges, every Celery queue's depth, CPU and memory of the stack's own containers and the project GPUs' memory and utilisation (GPU 0 is refused), then `summarize.py` writes a markdown report with per-endpoint p50/p95/p99, failures by cause, percentile history and a pass/fail verdict against `thresholds.toml`.

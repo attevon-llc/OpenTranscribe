@@ -151,8 +151,11 @@ class TestLostPostProcessingFrames:
         )
         for raw in (plan, done):
             fltr.relay(raw, state["ws"].send)
-        assert len(fltr.dropped) == 2 and fltr.relayed == [], (
-            f"post_processing_status frames reached the page: relayed={fltr.relayed}"
+        # The server also relays unrelated frames (e.g. connection_established); only
+        # post-processing frames must have been withheld.
+        leaked = [r for r in fltr.relayed if fltr.frame_type(r) == "post_processing_status"]
+        assert len(fltr.dropped) == 2 and leaked == [], (
+            f"post_processing_status frames reached the page: relayed={leaked}"
         )
 
         # Nothing has completed the card by frame...

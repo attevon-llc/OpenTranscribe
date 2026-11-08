@@ -28,6 +28,10 @@ class CapacitySettings(BaseSettings):
     # default is 30). A burst that exhausts the pool then answers an error quickly
     # instead of piling up requests that each hold a thread for half a minute.
     DB_POOL_TIMEOUT_SECONDS: float = 10.0
+    # Seconds /health/ready serves its last dependency snapshot before one caller
+    # re-probes. Probes run on their own thread limiter and one-connection engine
+    # (app/api/health.py), so a busy replica still answers. 0 probes on every call.
+    READINESS_CACHE_SECONDS: float = 2.0
     # Open connections (including WebSockets and SSE streams) one uvicorn process
     # accepts before answering 503. uvicorn reads the same variable itself
     # (--limit-concurrency); the app reads it to size the threadpool so that

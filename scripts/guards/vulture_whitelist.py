@@ -61,4 +61,7 @@ WHITELIST = (
     _.ProfileShape,
     _.on_start,
     _.on_stop,
+    # The probe tests reset the module's cached readiness snapshot between cases; production
+    # never resets it (the snapshot self-expires after READINESS_CACHE_SECONDS).
+    _.reset_readiness_state,
 )

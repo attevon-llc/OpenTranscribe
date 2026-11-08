@@ -952,6 +952,7 @@ DB_POOL_SIZE=20          # API process SQLAlchemy pool
 DB_MAX_OVERFLOW=40       # extra connections above the pool under load
 API_THREADPOOL_SIZE=0    # 0 = derived, see below
 DB_POOL_TIMEOUT_SECONDS=10       # wait for a connection before failing (SQLAlchemy: 30)
+READINESS_CACHE_SECONDS=2        # /health/ready serves its last snapshot this long (0 = probe every call)
 UVICORN_LIMIT_CONCURRENCY=512    # open connections per API process before 503 (0 = none)
 CHAT_THREADPOOL_SIZE=0           # chat's own worker threads; 0 = a quarter of the DB pool, min 4
 ```

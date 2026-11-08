@@ -897,6 +897,20 @@ Every service in the stack has a Docker health check. These are used for startup
 | Celery Beat | Newest `/app/celerybeat-schedule*` file modified < 300s ago | 30s | Verifies scheduler is writing heartbeats |
 | Flower | `curl -fs http://127.0.0.1:5555/${FLOWER_URL_PREFIX:-flower}/healthcheck` | 30s | Verifies Flower's own healthcheck endpoint (bypasses basic auth) |
 
+### Kubernetes probes
+
+Liveness must not depend on back-end services, or a Postgres blip restarts every replica. Readiness
+checks them, and stays green while the replica is merely busy.
+
+```yaml
+livenessProbe:  { httpGet: { path: /health,       port: 8080 }, periodSeconds: 10, timeoutSeconds: 3 }
+readinessProbe: { httpGet: { path: /health/ready, port: 8080 }, periodSeconds: 5,  timeoutSeconds: 3 }
+startupProbe:   { httpGet: { path: /health/ready, port: 8080 }, periodSeconds: 10, failureThreshold: 60 }  # 600 s boot budget
+```
+
+Docker Compose keeps `/health/ready` as the backend healthcheck: it gates `depends_on:
+condition: service_healthy` and `up --wait`, and Compose never restarts a container for being unhealthy.
+
 ### Monitoring Health
 
 Check all service health at once:

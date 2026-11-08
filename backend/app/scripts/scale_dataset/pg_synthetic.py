@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import Table
+from sqlalchemy import cast
 from sqlalchemy import func
 from sqlalchemy import insert
 from sqlalchemy import literal_column
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import REGCLASS
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.sql.expression import ColumnClause
@@ -78,6 +80,30 @@ class Shape:
     conversations: int = 20_000
     messages: int = 200_000
 
+    def max_rows(self) -> int:
+        """An upper bound on the rows any one table receives, for reserving its id range."""
+        spf, files = self.speakers_per_file, self.files
+        return max(
+            self.users,
+            files * spf,
+            files * self.segments_per_file,
+            files * self.tags_per_file,
+            self.profiles,
+            self.tags,
+            self.orgs,
+            self.holds,
+            self.hold_files,
+            self.collections,
+            self.collection_members,
+            self.collection_shares,
+            self.clusters,
+            self.cluster_members,
+            self.matches,
+            self.hidden,
+            self.conversations,
+            self.messages,
+        )
+
     def __post_init__(self) -> None:
         if self.users < 3:
             raise ValueError("users must be >= 3 (admin, heavy user, one ordinary user)")
@@ -128,10 +154,6 @@ def _series(n: int) -> FromClause:
     return func.generate_series(1, n).table_valued("g").render_derived(name="s")
 
 
-def _max_id(conn: Connection, table: Table) -> int:
-    return int(conn.execute(select(func.coalesce(func.max(table.c.id), 0))).scalar_one())
-
-
 def _fill(conn: Connection, table: Table, n: int, cols: dict[str, ColumnClause[Any]]) -> int:
     g = _series(n)
     stmt = insert(table).from_select(list(cols), select(*cols.values()).select_from(g))
@@ -139,9 +161,28 @@ def _fill(conn: Connection, table: Table, n: int, cols: dict[str, ColumnClause[A
     return n
 
 
-def _bump_sequence(conn: Connection, table: Table) -> None:
+def _claim_ids(conn: Connection, table: Table, rows: int) -> int:
+    """Reserve ``rows`` ids from the table's sequence and return the base (new id = base + g).
+
+    Taking the base from ``max(id)`` alone is only safe on a database nobody else is writing
+    to. On a shared one, two seeds read the same maximum and insert the same explicit ids, and
+    an ordinary insert drawing from the sequence lands inside the seeded range; each waits on
+    the other's uncommitted row and Postgres reports a deadlock on the primary key. One
+    ``setval`` statement moves the sequence past the whole range before any row is written, so
+    every other writer's ``nextval`` is already beyond it.
+    """
     seq = func.pg_get_serial_sequence(f'"{table.name}"', "id")
-    top = select(func.greatest(func.max(table.c.id), 1)).scalar_subquery()
+    last = func.coalesce(func.pg_sequence_last_value(cast(seq, REGCLASS)), 0)
+    top = select(func.coalesce(func.max(table.c.id), 0)).scalar_subquery()
+    claimed = conn.execute(select(func.setval(seq, func.greatest(top, last) + rows))).scalar_one()
+    return int(claimed) - rows
+
+
+def _bump_sequence(conn: Connection, table: Table) -> None:
+    """Leave the sequence at or past every seeded id (never behind a value already handed out)."""
+    seq = func.pg_get_serial_sequence(f'"{table.name}"', "id")
+    last = func.coalesce(func.pg_sequence_last_value(cast(seq, REGCLASS)), 0)
+    top = select(func.greatest(func.max(table.c.id), last, 1)).scalar_subquery()
     conn.execute(select(func.setval(seq, top)))
 
 
@@ -155,21 +196,42 @@ def _file_user_id(shape: Shape, seed: str, base_user: int, f: str) -> str:
     )
 
 
-def seed_dataset(conn: Connection, shape: Shape, seed: str, password_hash: str) -> dict[str, int]:
+def claim_core_bases(conn: Connection, shape: Shape) -> tuple[int, int, int]:
+    """Claimed id bases for users, media files and speakers (see :func:`_claim_ids`)."""
+    n = shape.max_rows()
+    return (
+        _claim_ids(conn, _table(User), n),
+        _claim_ids(conn, _table(MediaFile), n),
+        _claim_ids(conn, _table(Speaker), n),
+    )
+
+
+def seed_dataset(
+    conn: Connection,
+    shape: Shape,
+    seed: str,
+    password_hash: str,
+    bases: tuple[int, int, int] | None = None,
+) -> dict[str, int]:
     """Insert the whole dataset on ``conn`` and return rows written per table.
 
     The caller owns the transaction and ``ANALYZE`` (a tiny test seed rolls back; the CLI commits
-    and analyzes). User 1 is the admin, user 2 the heavy user, the rest ordinary.
+    and analyzes). User 1 is the admin, user 2 the heavy user, the rest ordinary. ``bases`` is
+    the already-claimed ``(user, file, speaker)`` id bases when the caller needs them first.
     """
     seed = _check_seed(seed)
     counts: dict[str, int] = {}
     t_user, t_file = _table(User), _table(MediaFile)
     t_spk, t_prof = _table(Speaker), _table(SpeakerProfile)
 
-    base_user, base_file = _max_id(conn, t_user), _max_id(conn, t_file)
-    base_spk, base_prof = _max_id(conn, t_spk), _max_id(conn, t_prof)
-    base_tag, base_seg = _max_id(conn, _table(Tag)), _max_id(conn, _table(TranscriptSegment))
-    base_ft = _max_id(conn, _table(FileTag))
+    n = shape.max_rows()
+    if bases is None:
+        bases = claim_core_bases(conn, shape)
+    base_user, base_file, base_spk = bases
+    base_prof = _claim_ids(conn, t_prof, n)
+    base_tag = _claim_ids(conn, _table(Tag), n)
+    base_seg = _claim_ids(conn, _table(TranscriptSegment), n)
+    base_ft = _claim_ids(conn, _table(FileTag), n)
 
     g: ColumnClause[Any] = literal_column("g")
     counts["user"] = _fill(

@@ -6,6 +6,7 @@ that point at seeded files) and determinism over every new table.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import Text
 from sqlalchemy import cast
 from sqlalchemy import func
@@ -16,6 +17,10 @@ from sqlalchemy.engine import Connection
 
 from app.scripts.scale_dataset import pg_synthetic as pg
 from app.scripts.scale_dataset.pg_governance import seed_all
+
+# Both seed suites write fixed natural keys (perf-N@loadtest.invalid, loadtest-tag-N), so two
+# of them open at once on the shared database block on each other's uncommitted rows.
+pytestmark = pytest.mark.xdist_group("scale_dataset_seed")
 
 SHAPE = pg.Shape(
     users=6,
@@ -75,10 +80,51 @@ FINGERPRINT = {
 }
 
 
-def _fingerprint(conn: Connection, seed: str) -> dict[str, str]:
-    """md5 per table over rows reachable from this seed's files/users (ids are not compared)."""
+# column holding another table's id -> that table. Compared relative to the table's first
+# seeded row: the seed claims its ids from the sequence, so absolute values depend on what the
+# shared database has already handed out.
+_REFERENCES = {
+    "organization_id": "organization",
+    "user_id": "user",
+    "target_user_id": "user",
+    "media_file_id": "media_file",
+    "hold_id": "content_hold",
+    "collection_id": "collection",
+    "cluster_id": "speaker_cluster",
+    "speaker_id": "speaker",
+    "speaker1_id": "speaker",
+    "speaker2_id": "speaker",
+    "conversation_id": "chat_conversation",
+}
+
+
+def _first_ids(conn: Connection, seed: str) -> dict[str, int]:
+    """One below the lowest id this seed gave each referenced table."""
     from app.db.base import Base
 
+    t = Base.metadata.tables
+    seeded_files = select(t["media_file"].c.id).where(
+        t["media_file"].c.storage_path.like(f"loadtest/{seed}/%")
+    )
+    scopes = {
+        "user": t["user"].c.email.like("perf-%@loadtest.invalid"),
+        "media_file": t["media_file"].c.storage_path.like(f"loadtest/{seed}/%"),
+        "organization": t["organization"].c.slug.like(f"perf-org-{seed}-%"),
+        "speaker": t["speaker"].c.media_file_id.in_(seeded_files),
+    }
+    for name in ("content_hold", "collection", "speaker_cluster", "chat_conversation"):
+        scopes[name] = t[name].c.uuid.in_(_uuids(conn, name, seed))
+    return {
+        name: int(conn.execute(select(func.min(t[name].c.id)).where(where)).scalar_one()) - 1
+        for name, where in scopes.items()
+    }
+
+
+def _fingerprint(conn: Connection, seed: str) -> dict[str, str]:
+    """md5 per table over rows reachable from this seed's files/users (ids relative to the seed)."""
+    from app.db.base import Base
+
+    first = _first_ids(conn, seed)
     marker = f"loadtest/{seed}/%"
     seeded_files = select(Base.metadata.tables["media_file"].c.id).where(
         Base.metadata.tables["media_file"].c.storage_path.like(marker)
@@ -86,7 +132,15 @@ def _fingerprint(conn: Connection, seed: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for name, cols in FINGERPRINT.items():
         table = Base.metadata.tables[name]
-        row = func.concat_ws("|", *[cast(table.c[c], Text) for c in cols])
+        row = func.concat_ws(
+            "|",
+            *[
+                cast(table.c[c] - first[_REFERENCES[c]], Text)
+                if c in _REFERENCES
+                else cast(table.c[c], Text)
+                for c in cols
+            ],
+        )
         agg = func.string_agg(row, aggregate_order_by(text("','"), row))
         stmt = select(func.md5(func.coalesce(agg, "")))
         if "media_file_id" in table.c:

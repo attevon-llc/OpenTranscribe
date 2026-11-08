@@ -46,8 +46,13 @@ if [[ "$*" == *alembic* ]]; then
 fi
 echo "pytest $*" >> "{log}"
 env > "{root}/pytest-env.txt"
-echo STUB-PYTEST-RUNNING
-[[ -n "${{STUB_PYTEST_HANG:-}}" ]] && sleep 2
+if [[ -n "${{STUB_PYTEST_HANG:-}}" ]]; then
+  exec 3<>"$STUB_PYTEST_HANG"  # read-write open of a fifo never blocks; held before announcing
+  echo STUB-PYTEST-RUNNING
+  read -r _ <&3  # parked until the test has sent its signal and releases us
+else
+  echo STUB-PYTEST-RUNNING
+fi
 [[ -n "${{STUB_PYTEST_FAIL:-}}" ]] && exit 7
 exit 0
 """
@@ -94,6 +99,15 @@ exit 0
         'exec /usr/bin/python3 "$@"\n',
     )
     return root
+
+
+def _release(fifo: Path) -> None:
+    """Let a stub parked on ``fifo`` continue; fails (ENXIO) rather than hangs if nothing waits."""
+    fd = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+    try:
+        os.write(fd, b"go\n")
+    finally:
+        os.close(fd)
 
 
 def _start(root: Path, *args: str, **env: str) -> subprocess.Popen[str]:
@@ -355,7 +369,9 @@ def test_a_worktree_without_a_venv_borrows_the_main_checkouts(fake_repo: Path) -
 
 @pytest.mark.parametrize(("sig", "code"), [(signal.SIGINT, 130), (signal.SIGTERM, 143)])
 def test_interrupt_tears_down_exactly_once(fake_repo: Path, sig: int, code: int) -> None:
-    proc = _start(fake_repo, "--throwaway-db", "tests/x.py", STUB_PYTEST_HANG="1")
+    hold = fake_repo / "hold.fifo"
+    os.mkfifo(hold)
+    proc = _start(fake_repo, "--throwaway-db", "tests/x.py", STUB_PYTEST_HANG=str(hold))
     try:
         assert proc.stdout is not None
         seen = []
@@ -366,6 +382,9 @@ def test_interrupt_tears_down_exactly_once(fake_repo: Path, sig: int, code: int)
         else:
             pytest.fail("stub pytest never started:\n" + "".join(seen))
         proc.send_signal(sig)
+        # bash runs its trap only once the foreground stub returns, so the stub is released
+        # AFTER the signal is pending: the interrupt cannot lose a race with a finished stub.
+        _release(hold)
         rest, _ = proc.communicate(timeout=60)
     finally:
         if proc.poll() is None:

@@ -18,6 +18,10 @@ from app.scripts.scale_dataset import __main__ as cli
 from app.scripts.scale_dataset import pg_synthetic as pg
 from app.scripts.scale_dataset.pg_governance import seed_all
 
+# Both seed suites write fixed natural keys (perf-N@loadtest.invalid, loadtest-tag-N), so two
+# of them open at once on the shared database block on each other's uncommitted rows.
+pytestmark = pytest.mark.xdist_group("scale_dataset_seed")
+
 TINY = pg.Shape(
     users=5,
     files=20,
@@ -86,11 +90,43 @@ def _fingerprint_tables() -> dict[str, Table]:
     return {name: Base.metadata.tables[name] for name in _FINGERPRINT_COLUMNS}
 
 
+# Columns holding another table's id: compared relative to that table's first seeded row too.
+_REFERENCES = {
+    "user_id": "user",
+    "media_file_id": "media_file",
+    "speaker_id": "speaker",
+    "profile_id": "speaker_profile",
+    "tag_id": "tag",
+}
+
+
 def fingerprint(conn: Connection, base_ids: dict[str, int] | None = None) -> dict[str, str]:
-    """md5 of the generated columns per table (rows with id > ``base_ids[table]``)."""
+    """md5 of the generated columns per table (rows with id > ``base_ids[table]``).
+
+    Ids are taken relative to the table's first seeded row: the seed claims its range from the
+    table's sequence, so the absolute ids depend on what else the shared database has handed
+    out, while the rows' shape does not.
+    """
+    tables = _fingerprint_tables()
+    first: dict[str, int] = {}
+    for name, table in tables.items():
+        if name != "task":
+            lowest = conn.execute(
+                select(func.min(table.c.id)).where(table.c.id > (base_ids or {}).get(name, 0))
+            ).scalar_one()
+            first[name] = int(lowest) - 1 if lowest is not None else 0
     out: dict[str, str] = {}
-    for name, table in _fingerprint_tables().items():
-        row = func.concat_ws("|", *[cast(table.c[c], Text) for c in _FINGERPRINT_COLUMNS[name]])
+    for name, table in tables.items():
+        parts = []
+        for c in _FINGERPRINT_COLUMNS[name]:
+            ref = name if c == "id" else _REFERENCES.get(c)
+            col = table.c[c]
+            parts.append(
+                cast(col - first[ref], Text)
+                if ref is not None and ref in first
+                else cast(col, Text)
+            )
+        row = func.concat_ws("|", *parts)
         agg = func.string_agg(row, aggregate_order_by(literal(","), table.c.id))
         stmt = select(func.md5(func.coalesce(agg, "")))
         if name == "task":  # varchar ids, so select the seeded rows by their prefix
@@ -174,6 +210,34 @@ def test_two_seeds_generate_identical_rows(db_session):
     assert first_counts == second_counts
     assert first == second
     assert all(len(v) == 32 for v in first.values())
+
+
+def test_claimed_id_ranges_are_past_the_sequence_before_any_row_is_written(db_session):
+    """A claim moves the sequence beyond the range, so another writer's ``nextval`` cannot land in it.
+
+    The seed used to take its base from ``max(id)`` and bump the sequence only at the end, so
+    for the whole seed an ordinary insert on the shared database drew ids inside the seeded
+    range and the two deadlocked on ``media_file_pkey`` (full-sweep failure of
+    ``test_scope_purge_holds``). A private temp table keeps this off the shared sequences.
+    """
+    from sqlalchemy import Column
+    from sqlalchemy import Integer
+    from sqlalchemy import MetaData
+
+    conn = db_session.connection()
+    conn.execute(text("CREATE TEMP TABLE claim_probe (id serial PRIMARY KEY)"))
+    conn.execute(text("INSERT INTO claim_probe DEFAULT VALUES"))
+    probe = Table("claim_probe", MetaData(), Column("id", Integer, primary_key=True))
+
+    first = pg._claim_ids(conn, probe, 10)
+    second = pg._claim_ids(conn, probe, 10)
+    drawn = conn.execute(
+        text("SELECT nextval(pg_get_serial_sequence('claim_probe', 'id'))")
+    ).scalar_one()
+
+    assert first >= 1, "the claim starts above the existing row"
+    assert second >= first + 10, "a second claim does not overlap the first"
+    assert drawn > second + 10, "an ordinary insert draws from beyond every claimed range"
 
 
 def test_a_different_seed_id_changes_the_rows(db_session):

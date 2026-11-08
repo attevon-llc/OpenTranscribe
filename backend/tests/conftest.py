@@ -522,6 +522,22 @@ def _clear_process_auth_cache():
 
 
 @pytest.fixture(autouse=True)
+def _forget_last_banner_read(monkeypatch):
+    """Start each test with no remembered banner setting.
+
+    ``lifecycle_gates._last_banner_read`` is deliberately process-global: after a failed
+    settings read the gate falls back to the last value read. Any test that reads an
+    enabled banner therefore leaves ``(True, ...)`` behind, and a later test whose fake
+    session cannot answer the query (``test_websocket_auth_accepts_active_user_with_valid_token``)
+    was refused as "banner not acknowledged" on whichever xdist worker ran it second.
+    """
+    import app.api.endpoints.auth.lifecycle_gates as gates
+
+    monkeypatch.setattr(gates, "_last_banner_read", None)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _unpin_opensearch_client_reexport():
     """Keep ``app.services.opensearch_service.opensearch_client`` forwarding to the client module.
 

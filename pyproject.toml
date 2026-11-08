@@ -5,7 +5,7 @@ name = "opentranscribe"
 version = "0.6.1"
 description = "AI-powered transcription application with speaker diarization and LLM features"
 authors = [
-    {name = "OpenTranscribe Contributors"}
+    {name = "OpenTranscribe"}
 ]
 requires-python = ">=3.12"
 license = "AGPL-3.0-only"

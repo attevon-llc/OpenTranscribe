@@ -136,6 +136,22 @@ def _scope_speaker_ids(scope: PurgeScope) -> Any:
     return select(Speaker.id).where(*scope.speaker_filters())
 
 
+def matches_touching(in_scope: Any) -> Any:
+    """``speaker_match`` ids with EITHER side in ``in_scope``, as a UNION of two index probes.
+
+    ``OR (speaker1_id IN (subquery), speaker2_id IN (subquery))`` cannot be pulled up into a
+    semi-join: the planner runs a SubPlan per arm per row. Each arm of a UNION is its own
+    semi-join (issue #1337, V1).
+    """
+    from app.models.speaker import SpeakerMatch
+
+    return (
+        select(SpeakerMatch.id)
+        .where(SpeakerMatch.speaker1_id.in_(in_scope))
+        .union(select(SpeakerMatch.id).where(SpeakerMatch.speaker2_id.in_(in_scope)))
+    )
+
+
 def org_stamp_clause(
     scope: PurgeScope, kind: str, *, keeps_protected: bool = False
 ) -> dict[str, Any] | None:
@@ -661,7 +677,7 @@ def purge_voiceprints_postgres(
     counts["cross_scope_matches"] = _rowcount(
         db,
         delete(SpeakerMatch)
-        .where(or_(SpeakerMatch.speaker1_id.in_(in_scope), SpeakerMatch.speaker2_id.in_(in_scope)))
+        .where(SpeakerMatch.id.in_(matches_touching(in_scope)))
         .execution_options(synchronize_session=False),
     )
 

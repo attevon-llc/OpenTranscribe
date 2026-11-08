@@ -19,6 +19,7 @@ from sqlalchemy import or_
 from sqlalchemy import select
 
 from app.services.privacy.measure import Residual
+from app.services.privacy.purge_voiceprints import matches_touching
 from app.services.privacy.purge_voiceprints import org_stamp_clause
 from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 
@@ -136,9 +137,7 @@ def measure_voiceprint_residual(
             db,
             select(func.count())
             .select_from(SpeakerMatch)
-            .where(
-                or_(SpeakerMatch.speaker1_id.in_(in_scope), SpeakerMatch.speaker2_id.in_(in_scope))
-            ),
+            .where(SpeakerMatch.id.in_(matches_touching(in_scope))),
         )
         result.counts["unpromoted_cluster_members"] = _count(
             db,

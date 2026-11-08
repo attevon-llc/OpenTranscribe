@@ -574,3 +574,27 @@ def test_every_personal_speaker_search_carries_the_organization_file_exclusion(
     assert len(bodies) == 5
     for body in bodies:
         assert '"media_file_id": [901, 902]' in _filters_of(body), body
+
+
+def test_cross_scope_match_delete_plans_without_a_subplan(gov, index, speaker_os_seams):
+    """The either-side speaker_match delete is a UNION of two semi-joins, not an OR of subqueries."""
+    from sqlalchemy import delete
+    from sqlalchemy import text
+
+    from app.models.speaker import SpeakerMatch
+    from app.services.privacy.purge_voiceprints import _scope_speaker_ids
+    from app.services.privacy.purge_voiceprints import matches_touching
+
+    _world(gov, index, speaker_os_seams)
+    scope = purge.PurgeScope("organization", organization_id=gov.org.id)
+    stmt = delete(SpeakerMatch).where(
+        SpeakerMatch.id.in_(matches_touching(_scope_speaker_ids(scope)))
+    )
+    compiled = stmt.compile(
+        dialect=gov.db.get_bind().dialect, compile_kwargs={"literal_binds": True}
+    )
+
+    plan = "\n".join(r[0] for r in gov.db.execute(text(f"EXPLAIN {compiled}")))
+
+    assert "SubPlan" not in plan, plan
+    assert "Semi Join" in plan or "Hash Join" in plan, plan

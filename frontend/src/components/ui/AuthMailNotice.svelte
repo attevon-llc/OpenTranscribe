@@ -33,12 +33,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { t } from '$stores/locale';
-  import { AuthConfigApi, type AuthMailDesignation } from '$lib/api/authConfig';
+  import { AuthConfigApi, type AuthMailDesignation, type AuthMailReadiness } from '$lib/api/authConfig';
 
   /** Where the notice is rendered -- selects the copy. */
   export let context: AuthMailNoticeContext = 'tab';
   /** The designation to describe; leave `undefined` to have the notice fetch it. */
-  export let readiness: AuthMailDesignation | null | undefined = undefined;
+  export let readiness: AuthMailReadiness | null | undefined = undefined;
 
   /** The page that explains why a relay or the business's own provider is needed. */
   const DOCS_URL = 'https://docs.opentranscribe.app/docs/authentication/email-delivery';
@@ -67,7 +67,9 @@
   $: show = readiness != null && readiness.deliverable === false;
   $: bodyKey =
     BODY_KEY_BY_CONTEXT[context] ??
-    (readiness ? TAB_BODY_KEY_BY_STATUS[readiness.status] : 'authMailNotice.tabNotDesignated');
+    (readiness?.status
+      ? TAB_BODY_KEY_BY_STATUS[readiness.status]
+      : 'authMailNotice.tabNotDesignated');
   /** With verification required, no mail also means no new local sign-ins. */
   $: escalated = show && readiness?.verification_required === true;
 </script>

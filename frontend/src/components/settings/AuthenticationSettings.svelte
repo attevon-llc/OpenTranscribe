@@ -4,6 +4,7 @@
   import {
     AuthConfigApi,
     type AuthMailDesignation,
+    type AuthMailReadiness,
     type AuthMethodTestResponse,
   } from '$lib/api/authConfig';
   import { getEmailConfigs, type EmailConfig } from '$lib/api/watchSourcesApi';
@@ -162,7 +163,7 @@
    * would not appear until the admin had already clicked in. The panel reports its
    * own saves back through `on:change`, so the dot clears the moment it is fixed.
    */
-  let mailReadiness: AuthMailDesignation | null = null;
+  let mailReadiness: AuthMailReadiness | null = null;
   let emailConfigsLoaded = false;
 
   async function loadEmailConfigs() {

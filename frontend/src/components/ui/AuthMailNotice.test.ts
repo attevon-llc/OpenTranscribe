@@ -175,3 +175,39 @@ describe('AuthMailNotice severity', () => {
     expect(screen.queryByTestId('auth-mail-notice-escalation')).not.toBeInTheDocument();
   });
 });
+
+describe('AuthMailNotice for a plain admin (issue #1265)', () => {
+  const summary = (deliverable: boolean) => ({ deliverable, verification_required: false });
+
+  it('falls back to the readiness route when the designation is 403, and shows the alarm', async () => {
+    get.mockImplementation((url: string) =>
+      url.endsWith('/email/designation')
+        ? Promise.reject({ response: { status: 403 } })
+        : Promise.resolve({ data: summary(false) })
+    );
+    render(AuthMailNotice, { props: { context: 'invite' } });
+
+    expect(await screen.findByTestId('auth-mail-notice')).toBeInTheDocument();
+    expect(get).toHaveBeenCalledWith('/admin/auth-config/email/readiness');
+  });
+
+  it('stays silent when the readiness route says mail is deliverable', async () => {
+    get.mockImplementation((url: string) =>
+      url.endsWith('/email/designation')
+        ? Promise.reject({ response: { status: 403 } })
+        : Promise.resolve({ data: summary(true) })
+    );
+    render(AuthMailNotice, { props: { context: 'invite' } });
+
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(screen.queryByTestId('auth-mail-notice')).not.toBeInTheDocument();
+  });
+
+  it('renders the tab copy from deliverable alone when status is absent', () => {
+    render(AuthMailNotice, { props: { context: 'tab', readiness: summary(false) } });
+
+    expect(screen.getByTestId('auth-mail-notice')).toHaveTextContent(
+      'authMailNotice.tabNotDesignated'
+    );
+  });
+});

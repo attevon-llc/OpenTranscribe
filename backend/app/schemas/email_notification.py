@@ -219,3 +219,16 @@ class AuthMailDesignationResponse(BaseModel):
     env_smtp_configured: bool = False
     deliverable: bool
     verification_required: bool
+
+
+class AuthMailReadinessResponse(BaseModel):
+    """The two booleans a plain admin may see about auth mail; nothing else.
+
+    A deliberate allowlist, not a projection of ``AuthMailDesignationResponse``:
+    the designation carries the config's name, UUID, provider and the env-SMTP
+    flag, which describe the deployment's mail infrastructure and stay
+    super_admin-only. ``deliverable`` is "configured", not "proven working".
+    """
+
+    deliverable: bool
+    verification_required: bool

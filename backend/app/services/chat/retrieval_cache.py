@@ -63,9 +63,9 @@ def corpus_version() -> str:
         degrades to the previous always-same-key behaviour).
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        raw = get_redis().get(_CORPUS_VERSION_KEY)
+        raw = get_request_redis().get(_CORPUS_VERSION_KEY)
         return raw.decode() if isinstance(raw, bytes) else str(raw or "0")
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat corpus version read failed: {exc}")
@@ -92,9 +92,9 @@ def bump_corpus_version() -> None:
     entry for at most the TTL, not a broken pipeline).
     """
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        get_redis().incr(_CORPUS_VERSION_KEY)
+        get_request_redis().incr(_CORPUS_VERSION_KEY)
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat corpus version bump failed: {exc}")
 
@@ -152,9 +152,9 @@ def cache_key(
 def get_cached(key: str) -> list[ChunkHit] | None:
     """Return cached hits for ``key``, or None on miss/error."""
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        raw = get_redis().get(key)
+        raw = get_request_redis().get(key)
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat retrieval cache read failed: {exc}")
         return None
@@ -174,10 +174,10 @@ def set_cached(key: str, hits: list[ChunkHit], ttl_seconds: int) -> None:
     if ttl_seconds <= 0 or not hits:
         return
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
         payload = json.dumps([hit.to_cache_dict() for hit in hits])
-        get_redis().setex(key, ttl_seconds, payload)
+        get_request_redis().setex(key, ttl_seconds, payload)
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat retrieval cache write failed: {exc}")
 
@@ -286,12 +286,12 @@ def find_semantic_match(
     corpus = corpus_version()
 
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
         redis_key = _SEMANTIC_KEY.format(
             user_id=user_id, org=organization_id or 0, leg_kind=leg_kind
         )
-        raw = get_redis().get(redis_key)
+        raw = get_request_redis().get(redis_key)
         entries = json.loads(raw) if raw else []
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat semantic cache read failed: {exc}")
@@ -390,8 +390,10 @@ def remember_semantic(
         }
     )
     try:
-        from app.core.redis import get_redis
+        from app.core.redis import get_request_redis
 
-        get_redis().eval(_REMEMBER_SCRIPT, 1, redis_key, ttl_seconds, entry, _SEMANTIC_HISTORY)
+        get_request_redis().eval(
+            _REMEMBER_SCRIPT, 1, redis_key, ttl_seconds, entry, _SEMANTIC_HISTORY
+        )
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"Chat semantic cache write failed: {exc}")

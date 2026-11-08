@@ -23,6 +23,7 @@ from app.core.env import env_bool
 from app.core.legacy_auth_env import oidc_bool_env
 from app.core.legacy_auth_env import oidc_env
 from app.core.legacy_auth_env import oidc_int_env
+from app.core.settings_capacity import CapacitySettings
 from app.core.settings_deployment import DeploymentSettings
 from app.core.settings_proxy_auth import ProxyAuthSettings
 from app.utils.cpu_budget import parse_thread_count_setting
@@ -102,7 +103,7 @@ def resolve_ldap_search_filter(search_filter: str, username_attr: str) -> str:
     return search_filter.replace("{username_attr}", username_attr)
 
 
-class Settings(ProxyAuthSettings, DeploymentSettings):
+class Settings(ProxyAuthSettings, DeploymentSettings, CapacitySettings):
     # API configuration
     API_PREFIX: str = "/api"
     PROJECT_NAME: str = "Transcription App"
@@ -696,18 +697,6 @@ class Settings(ProxyAuthSettings, DeploymentSettings):
     # segment-refresh per bulk batch. The interval is restored afterwards so
     # normal search latency is unaffected. Tuned for 6+ hour transcripts.
     SEARCH_LARGE_TRANSCRIPT_CHUNKS: int = 500
-    # SQLAlchemy connection pool for the FastAPI backend. Celery workers build
-    # their own engines, so these sizes mainly control API concurrency.
-    DB_POOL_SIZE: int = 20
-    DB_MAX_OVERFLOW: int = 40
-    # Worker threads for the API's sync handlers, sync dependencies and
-    # run_in_threadpool calls (Starlette's default is 40). 0 = size it to the DB
-    # pool capacity (DB_POOL_SIZE + DB_MAX_OVERFLOW, never below 40). A request
-    # holds its pooled connection from authentication until it ends, so with fewer
-    # threads than connections a burst can leave every thread blocked waiting for a
-    # connection while the requests holding them wait for a thread (#1169). See
-    # app/core/threadpool.py.
-    API_THREADPOOL_SIZE: int = 0
 
     # Server-side backstop for the "transaction held open across slow work"
     # bug class (issue #440). Postgres terminates a backend that has an OPEN

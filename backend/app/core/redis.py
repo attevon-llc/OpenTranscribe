@@ -6,7 +6,12 @@ All synchronous code that needs a Redis connection should import
 per process via ``@lru_cache`` and reused for the lifetime of the
 worker / API server.
 
-``get_probe_redis()`` is the one sanctioned second client: same URL, but with
+``get_request_redis()`` is for calls made while serving a request (chat limits and
+Stop flags, the retrieval cache): same URL, with the configurable
+``REDIS_REQUEST_*_TIMEOUT_SECONDS`` bounds, so a Redis that stops answering costs a
+request two seconds and a fail-open, never a thread held forever.
+
+``get_probe_redis()`` is the other sanctioned client: same URL, but with
 short socket timeouts, for the readiness probe and for the few callers that must
 never block (the worker's loaded-model report, which runs on ``worker_ready`` in
 the MainProcess main thread). The shared client keeps
@@ -45,6 +50,16 @@ def redis_tls_kwargs() -> dict[str, Any]:
 def get_redis() -> redis.Redis:
     """Return a process-wide singleton Redis client (db 0)."""
     return redis.from_url(settings.REDIS_URL)
+
+
+@lru_cache(maxsize=1)
+def get_request_redis() -> redis.Redis:
+    """Return a Redis client (db 0) with bounded socket timeouts, for request-path calls."""
+    return redis.from_url(
+        settings.REDIS_URL,
+        socket_timeout=settings.REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS,
+        socket_connect_timeout=settings.REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS,
+    )
 
 
 @lru_cache(maxsize=1)

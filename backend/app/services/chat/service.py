@@ -257,15 +257,19 @@ async def _answer_frames(
 
     stream = llm.chat_completion_stream(messages, cancel_event=cancel_event, **kwargs)
     last_beat = time.monotonic()
+    next_cancel_check = 0.0
     async for event in iterate_in_threadpool(stream):
         # Long gaps between tokens (or before the first) must not look
         # like a dead connection to an intermediary.
         if time.monotonic() - last_beat >= _KEEPALIVE_INTERVAL_S:
             last_beat = time.monotonic()
             yield _KEEPALIVE
-        # A user Stop may arrive over a separate connection.
-        if not cancel_event.is_set() and limits.is_cancelled(assistant_message_uuid):
-            cancel_event.set()
+        # A user Stop may arrive over a separate connection. The flag is a Redis read, so
+        # it is checked at most every CHAT_CANCEL_POLL_INTERVAL_S and off the event loop.
+        if not cancel_event.is_set() and time.monotonic() >= next_cancel_check:
+            next_cancel_check = time.monotonic() + chat_defaults.CHAT_CANCEL_POLL_INTERVAL_S
+            if await run_in_threadpool(limits.is_cancelled, assistant_message_uuid):
+                cancel_event.set()
 
         if event.type in ("delta", "reasoning"):
             # The watchdog below measures the PROVIDER's first token, so

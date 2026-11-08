@@ -170,7 +170,17 @@ def _create_limiter() -> Limiter:
         # Building the storage does NOT connect (limits is lazy), so an unreachable
         # Redis lands here happily and degrades at first use. This only catches a
         # genuinely unusable URI or a missing redis client library.
-        limiter = Limiter(storage_uri=settings.REDIS_URL, **kwargs)  # type: ignore[arg-type]
+        # storage_options reach redis.from_url: slowapi checks limits synchronously, on the
+        # event loop for an async route, so an unbounded read on a hung Redis would stall
+        # every request in the process. A timeout raises, and the in-memory fallback takes over.
+        redis_kwargs = {
+            **kwargs,
+            "storage_options": {
+                "socket_timeout": settings.REDIS_REQUEST_SOCKET_TIMEOUT_SECONDS,
+                "socket_connect_timeout": settings.REDIS_REQUEST_CONNECT_TIMEOUT_SECONDS,
+            },
+        }
+        limiter = Limiter(storage_uri=settings.REDIS_URL, **redis_kwargs)  # type: ignore[arg-type]
     except Exception as e:
         logger.error(
             "Cannot build a Redis-backed rate limiter (%s); falling back to per-process "

@@ -31,6 +31,7 @@ Key metric names (stable; dashboards are built against these):
 | `http_requests_in_flight` | Gauge | — |
 | `db_query_duration_seconds` | Histogram | — (no statement/table labels — cardinality) |
 | `db_queries_per_request` | Histogram | `method`, `route` |
+| `db_pool_capacity`, `db_pool_checked_out`, `db_pool_overflow` | Gauge | — (the API process's SQLAlchemy pool, read at scrape time; `checked_out` at `capacity` means requests are waiting for a connection) |
 | `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
 | `celery_queue_depth` | Gauge | `queue` |
 | `celery_queue_reserved` | Gauge | `queue` |

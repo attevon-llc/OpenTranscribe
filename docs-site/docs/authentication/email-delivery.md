@@ -32,7 +32,8 @@ The password-reset and verification pages answer identically whether or not the 
 or mail is configured. That is deliberate: a different answer would let anyone probe which
 addresses have accounts. It also means **the signal goes to administrators, not to the person
 who requested the link**, which is why OpenTranscribe shows a warning to admins when this state
-is detected.
+is detected. The reset page stays uniform even when mail is off, by design; there is no setting
+to make it say otherwise.
 
 ## Where you see the warning
 
@@ -41,7 +42,10 @@ is detected.
   disabled.
 - The **Auth Email** tab carries a marker while mail cannot be delivered, so you do not have to
   open the tab to find out.
-- The **Invite user** form shows the same notice to a super admin before you send.
+- The **Invite user** form shows the same notice before you send, to any admin. A plain admin
+  cannot read which email configuration is designated (that stays super admin), so the form asks
+  a narrower route, `GET /api/admin/auth-config/email/readiness`, which answers only two yes/no
+  facts: whether auth mail can be delivered, and whether sign-in depends on it.
 - The first-run wizard's final step lists whether authentication email is configured.
 
 :::note

@@ -249,6 +249,14 @@ export interface AuthMailDesignation {
   verification_required: boolean;
 }
 
+/**
+ * What any admin may learn about auth mail (`GET /admin/auth-config/email/readiness`):
+ * two booleans, nothing about which provider or config carries it. The richer fields
+ * are present only when the super_admin designation route answered.
+ */
+export type AuthMailReadiness = Pick<AuthMailDesignation, 'deliverable' | 'verification_required'> &
+  Partial<AuthMailDesignation>;
+
 export class AuthConfigApi {
   static async getAllConfigs(): Promise<Record<string, AuthConfigResponse[]>> {
     const response = await axiosInstance.get('/admin/auth-config');
@@ -305,19 +313,30 @@ export class AuthConfigApi {
     return response.data;
   }
 
+  /** The two-boolean readiness any admin may read (no config identity). */
+  static async getAuthMailReadinessSummary(): Promise<AuthMailReadiness> {
+    const response = await axiosInstance.get('/admin/auth-config/email/readiness');
+    return response.data;
+  }
+
   /**
-   * The designation, or `null` when it cannot be read.
+   * The designation for a super_admin, else the two-boolean readiness, or `null` when
+   * neither can be read.
    *
-   * The endpoint is super_admin and sits behind the `auth.config_ui` capability, so
-   * a plain admin gets 403 and an edition without the capability gets 404. Both mean
-   * "unknown", never "not deliverable": a caller that treated any non-200 as an
-   * alarm would show every such admin a false warning. Network errors read the same
-   * way -- the notice built on this is advisory and the send itself stays the
-   * authority.
+   * A plain admin gets 403 on the designation and falls back to the readiness route; an
+   * edition without the `auth.config_ui` capability gets 404 on both. Failures mean
+   * "unknown", never "not deliverable": a caller that treated any non-200 as an alarm
+   * would show a false warning. The notice built on this is advisory and the send itself
+   * stays the authority.
    */
-  static async getAuthMailReadiness(): Promise<AuthMailDesignation | null> {
+  static async getAuthMailReadiness(): Promise<AuthMailReadiness | null> {
     try {
       return await AuthConfigApi.getAuthMailDesignation();
+    } catch {
+      // fall through to the admin-level summary
+    }
+    try {
+      return await AuthConfigApi.getAuthMailReadinessSummary();
     } catch {
       return null;
     }

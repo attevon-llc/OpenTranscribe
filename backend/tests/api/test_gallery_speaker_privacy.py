@@ -163,3 +163,20 @@ def test_a_page_of_files_asks_the_policy_once_per_scope_not_once_per_speaker(
     assert response.status_code == status.HTTP_200_OK, response.text
     assert response.json()["total"] == 4
     assert len(asked) == 1  # one personal scope, whatever the number of files or speakers
+
+
+def test_the_speaker_filter_scope_lookup_is_bounded_by_the_names_asked_for(
+    client, user_token_headers, world, db_session
+):
+    """The pre-query that asks which scopes have voiceprints off reads only speakers named in
+    the filter (#1337 G6), and the filter's answer is the same as before."""
+    from tests.query_budget import count_statements
+
+    _off(db_session)
+    with count_statements(db_session.connection()) as log:
+        response = client.get("/api/files", params={"speaker": ALICE}, headers=user_token_headers)
+
+    assert response.status_code == status.HTTP_200_OK, response.text
+    lookups = log.matching(r"SELECT DISTINCT media_file\.user_id")
+    assert lookups, log.describe()
+    assert all("speaker.display_name IN" in s for s in lookups), log.describe()

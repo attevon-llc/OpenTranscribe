@@ -126,12 +126,11 @@ def hidden_speaker_name_clause(
     if not speaker:
         return None
     from app.services.privacy.redact_view import PrivacyView
-    from app.services.privacy.redact_view import machine_identity_clauses
+    from app.services.privacy.redact_view import name_hidden_clause_for_names
 
-    name_hidden, _link_hidden = machine_identity_clauses(
-        PrivacyView(db), query.with_entities(MediaFile.id).order_by(None)
+    return name_hidden_clause_for_names(
+        PrivacyView(db), query.with_entities(MediaFile.id).order_by(None), speaker
     )
-    return name_hidden
 
 
 def apply_speaker_filter(

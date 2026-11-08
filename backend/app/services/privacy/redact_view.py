@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -370,6 +371,36 @@ def machine_identity_clauses(
     name_hidden = and_(Speaker.identity_source == VOICEPRINT, in_off_file)
     link_hidden = and_(Speaker.identity_source.in_(sorted(MACHINE_IDENTITY_SOURCES)), in_off_file)
     return name_hidden, link_hidden
+
+
+def name_hidden_clause_for_names(
+    view: Session | PrivacyView, file_ids_select: Any, names: Sequence[str]
+) -> ColumnElement[bool]:
+    """The ``name_hidden`` half of :func:`machine_identity_clauses`, for a filter on ``names``.
+
+    A speaker filter only ever compares ``display_name`` with the names asked for, so only the
+    scopes holding a voiceprint-made speaker with one of those display names can change its
+    answer. Looking only at them makes the scope pre-query an index lookup on
+    ``speaker.display_name`` instead of a pass over every speaker of the caller's whole scope
+    (#1337 G6). The result is valid for speakers named ``names``; it must not be used for
+    anything else (the profile-link half is deliberately not offered here).
+    """
+    from sqlalchemy import and_
+    from sqlalchemy import false
+
+    from app.models.speaker import Speaker
+
+    in_off_file = _in_off_file(
+        view,
+        file_ids_select,
+        and_(
+            Speaker.identity_source == VOICEPRINT,
+            Speaker.display_name.in_(list(names)),
+        ),
+    )
+    if in_off_file is None:
+        return false()
+    return and_(Speaker.identity_source == VOICEPRINT, in_off_file)
 
 
 def hidden_suggestion_clause(

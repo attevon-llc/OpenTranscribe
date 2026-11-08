@@ -59,7 +59,7 @@ _DOCKER_TIMEOUT = 60
 
 
 def _run(argv: list[str], timeout: int = _DOCKER_TIMEOUT) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603  # nosec B603 -- fixed argv, no shell
+    return subprocess.run(  # nosec B603 -- fixed argv, no shell
         argv, capture_output=True, text=True, timeout=timeout, check=False
     )
 

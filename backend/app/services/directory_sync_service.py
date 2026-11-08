@@ -291,7 +291,7 @@ def _reconcile(
             reason="directory_sync",
             dry_run=dry_run,
         )
-    except Exception as exc:  # noqa: BLE001 - one bad account must not stop the sweep
+    except Exception as exc:  # one bad account must not stop the sweep
         # This entry flows into DirectorySyncResultModel (extra="allow" lets the
         # dict pass through untouched) and is rendered on the directory-sync
         # admin settings surface -- never interpolate the raw exception text,

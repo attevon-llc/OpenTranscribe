@@ -232,7 +232,7 @@ def update_media_file(
             from app.tasks.rename_propagation_task import propagate_title_rename
 
             propagate_title_rename.delay(file_uuid=str(db_file.uuid), new_title=new_title)
-        except Exception as exc:  # noqa: BLE001 — dispatch failure must not break the rename
+        except Exception as exc:  # dispatch failure must not break the rename
             logger.warning(f"Could not queue chunk title propagation for {db_file.uuid}: {exc}")
 
     # Invalidate caches so gallery reflects the update

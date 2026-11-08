@@ -142,8 +142,8 @@ def run_engine(backend: str, audio) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--audio', default='/tmp/der/karpathy_10m.wav')  # noqa: S108
-    parser.add_argument('--reference', default='/tmp/der/reference.rttm')  # noqa: S108
+    parser.add_argument('--audio', default='/tmp/der/karpathy_10m.wav')
+    parser.add_argument('--reference', default='/tmp/der/reference.rttm')
     parser.add_argument('--json-out', default='')
     parser.add_argument(
         '--seconds',
@@ -194,7 +194,7 @@ def main() -> int:
     for backend in ('native', 'pyannote'):
         try:
             record = run_engine(backend, audio)
-        except Exception as exc:  # noqa: BLE001 — one engine failing must not hide the other
+        except Exception as exc:  # one engine failing must not hide the other
             print(f'{backend:9s} FAILED {type(exc).__name__}: {exc}')
             results[backend] = {'error': f'{type(exc).__name__}: {exc}'}
             continue

@@ -72,7 +72,7 @@ def test_concurrent_readers_do_not_corrupt_the_cache(no_database):
         try:
             for user_id in range(offset, offset + 500):
                 os_client._org_file_ids_of([user_id])
-        except BaseException as exc:  # noqa: BLE001 - recorded, asserted on the main thread
+        except BaseException as exc:  # recorded, asserted on the main thread
             errors.append(exc)
 
     threads = [threading.Thread(target=reader, args=(i * 100,)) for i in range(8)]

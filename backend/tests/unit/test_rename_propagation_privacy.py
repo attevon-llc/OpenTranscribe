@@ -38,7 +38,7 @@ def seams(monkeypatch, db_session):
             updates.append(kwargs)
             return {"updated": 1, "version_conflicts": 0}
 
-        class indices:  # noqa: N801 — mirrors the client's attribute shape
+        class indices:  # mirrors the client's attribute shape
             @staticmethod
             def refresh(**kwargs):
                 return {}

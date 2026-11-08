@@ -72,7 +72,7 @@ class _FakeIndices:
     def __init__(self) -> None:
         self.refreshed = 0
 
-    def exists(self, index: str) -> bool:  # noqa: ARG002
+    def exists(self, index: str) -> bool:
         return True
 
     def get_mapping(self, index: str) -> dict[str, Any]:
@@ -84,17 +84,17 @@ class _FakeIndices:
     def put_settings(self, index: str, body: dict[str, Any]) -> None:
         pass
 
-    def refresh(self, index: str) -> None:  # noqa: ARG002
+    def refresh(self, index: str) -> None:
         self.refreshed += 1
 
-    def exists_alias(self, name: str) -> bool:  # noqa: ARG002
+    def exists_alias(self, name: str) -> bool:
         return True
 
 
 class _FakeTransport:
     """Answers the search-pipeline probe so ``ensure_search_pipeline_exists`` is a no-op."""
 
-    def perform_request(self, method: str, path: str, body: Any = None) -> Any:  # noqa: ARG002
+    def perform_request(self, method: str, path: str, body: Any = None) -> Any:
         # Built FROM the config rather than spelled out: since #363 the self-heal
         # compares the whole processor block, so a hand-written stand-in that
         # omitted a field would silently make this a delete-and-recreate probe
@@ -166,7 +166,7 @@ class _FakeIndex:
 
     def bulk(
         self, body: list[Any], refresh: bool = False, request_timeout: float | None = None
-    ) -> dict[str, Any]:  # noqa: ARG002
+    ) -> dict[str, Any]:
         for action, doc in zip(body[::2], body[1::2], strict=True):
             # ``doc_type`` is what #383 Phase 3 will stamp on chunk documents to tell
             # them apart from per-file digests. Nothing reads it today, so it is inert
@@ -175,15 +175,15 @@ class _FakeIndex:
             self.docs[action["index"]["_id"]] = {"doc_type": "chunk", **doc}
         return {"errors": False, "items": []}
 
-    def count(self, index: str, body: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+    def count(self, index: str, body: dict[str, Any]) -> dict[str, Any]:
         self.count_bodies.append(body)
         return {"count": len(self._hits(body["query"]))}
 
     def mget(
         self,
-        index: str,  # noqa: ARG002
+        index: str,
         body: dict[str, Any],
-        _source: bool = True,  # noqa: ARG002
+        _source: bool = True,
     ) -> dict[str, Any]:
         """Realtime lookup by id — the #435 gate.
 
@@ -198,10 +198,10 @@ class _FakeIndex:
 
     def delete_by_query(
         self,
-        index: str,  # noqa: ARG002
+        index: str,
         body: dict[str, Any],
-        refresh: bool = False,  # noqa: ARG002
-        conflicts: str | None = None,  # noqa: ARG002
+        refresh: bool = False,
+        conflicts: str | None = None,
     ) -> dict[str, Any]:
         self.delete_bodies.append(body)
         doomed = self._hits(body["query"])

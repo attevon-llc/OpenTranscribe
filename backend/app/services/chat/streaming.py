@@ -48,7 +48,7 @@ def _resolve_output_policy(
     try:
         with session_scope() as db:
             return resolve_effective_config(db, user_id, organization_id=organization_id)
-    except Exception:  # noqa: BLE001 — the redactor fails closed on None
+    except Exception:  # the redactor fails closed on None
         logger.exception("Could not resolve the output redaction policy for user %s", user_id)
         return None
 

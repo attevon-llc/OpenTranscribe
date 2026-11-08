@@ -39,7 +39,7 @@ from app.services.redaction.detectors import pii_presidio
 class _FakeAnalyzer:
     """Stands in for a built ``AnalyzerEngine``; identity is what the tests read."""
 
-    def analyze(self, text: str, language: str):  # noqa: ARG002
+    def analyze(self, text: str, language: str):
         return []
 
 
@@ -313,7 +313,7 @@ def test_the_warm_up_probe_runs_a_real_detection_pass(monkeypatch):
     analyzed: list[str] = []
 
     class _Recording(_FakeAnalyzer):
-        def analyze(self, text: str, language: str):  # noqa: ARG002
+        def analyze(self, text: str, language: str):
             analyzed.append(text)
             return []
 

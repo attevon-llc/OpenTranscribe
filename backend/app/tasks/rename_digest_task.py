@@ -147,7 +147,7 @@ def regenerate_rename_digests(
             )
             regenerated_uuids.append(file_uuid)
             owners.setdefault(user_id, []).append(file_uuid)
-        except Exception as exc:  # noqa: BLE001 — a digest miss must not fail a rename
+        except Exception as exc:  # a digest miss must not fail a rename
             logger.warning(f"Could not regenerate digest for file {file_uuid} after rename: {exc}")
             errors += 1
 
@@ -189,7 +189,7 @@ def regenerate_rename_digests(
                 },
                 file_uuids=visible,
             )
-        except Exception as exc:  # noqa: BLE001 — best-effort, matches every sibling dispatch here
+        except Exception as exc:  # best-effort, matches every sibling dispatch here
             logger.warning(
                 f"Could not send rename-propagation WS notification to user {user_id}: {exc}"
             )

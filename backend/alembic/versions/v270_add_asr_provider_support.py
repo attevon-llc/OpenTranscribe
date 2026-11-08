@@ -34,7 +34,7 @@ def upgrade():
                     ALTER TABLE {table} ADD COLUMN {column} {col_type};
                 END IF;
             END $$;
-            """  # noqa: S608  # nosec B608
+            """  # nosec B608
         )
 
     # user_asr_settings table

@@ -37,7 +37,7 @@ from app.core.exceptions import AccessDeniedError
 from app.models.invitation import EmailVerificationToken
 from app.models.user import User
 
-STRONG_PASSWORD = "Correct-Horse-9Battery!"  # noqa: S105 - test fixture, not a credential
+STRONG_PASSWORD = "Correct-Horse-9Battery!"  # test fixture, not a credential
 
 
 def _matches(row, criterion) -> bool:

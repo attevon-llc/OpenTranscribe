@@ -369,7 +369,7 @@ def _persist_summary(
             used_prompt = resolve_active_prompt_record(user_id or None, db, prompt_uuid)
             if used_prompt is not None:
                 increment_prompt_usage(db, int(used_prompt.id))
-        except Exception as usage_err:  # noqa: BLE001
+        except Exception as usage_err:
             logger.warning(f"Could not increment prompt usage_count: {usage_err}")
 
         _task, duration_seconds = update_task_status_with_duration(

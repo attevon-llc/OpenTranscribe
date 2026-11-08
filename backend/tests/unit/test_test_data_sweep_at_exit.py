@@ -69,7 +69,7 @@ def _sweeps(tmp_path: Path) -> list[str]:
 
 def _run(tmp_path: Path, body: str, extra_env: dict[str, str] | None = None):
     script, env = _harness(tmp_path, body, extra_env)
-    return subprocess.run(  # noqa: S603 - fixed argv: bash and a generated script
+    return subprocess.run(  # fixed argv: bash and a generated script
         [_BASH, str(script)], env=env, capture_output=True, text=True, timeout=60
     )
 
@@ -101,7 +101,7 @@ def test_a_failing_sweep_never_turns_a_green_run_red(tmp_path: Path) -> None:
 def test_a_terminated_run_sweeps_before_it_dies(tmp_path: Path) -> None:
     ready = tmp_path / "ready"
     script, env = _harness(tmp_path, f'touch "{ready}"\nsleep 30 & wait $!')
-    proc = subprocess.Popen(  # noqa: S603 - fixed argv: bash and a generated script
+    proc = subprocess.Popen(  # fixed argv: bash and a generated script
         [_BASH, str(script)], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     try:
@@ -163,7 +163,7 @@ def test_the_run_ends_its_own_liveness_before_its_end_sweep(tmp_path: Path) -> N
         'ls "$TESTRUN_REGISTRY_DIR" | grep -c lock >> "$SWEEP_LOG" || true\n',
         encoding="utf-8",
     )
-    result = subprocess.run(  # noqa: S603 - fixed argv: bash and a generated script
+    result = subprocess.run(  # fixed argv: bash and a generated script
         [_BASH, str(script)], env=env, capture_output=True, text=True, timeout=60
     )
     assert result.returncode == 0

@@ -217,7 +217,7 @@ def configure_from_device(device_index: int = 0) -> VramBudget | None:
                 _budget, _configured = None, True
             return None
         free_b, total_b = torch.cuda.mem_get_info(device_index)
-    except Exception as exc:  # noqa: BLE001 - admission must never break a worker
+    except Exception as exc:  # admission must never break a worker
         logger.warning("VRAM budget: could not read device memory (%s); admission off", exc)
         with _config_lock:
             _budget, _configured = None, True

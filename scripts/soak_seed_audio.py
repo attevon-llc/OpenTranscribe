@@ -216,7 +216,7 @@ def download_many(
                     f'    [FAIL {done}/{len(picks)}] tier {tier} {f["uuid"][:8]}: {e}',
                     file=sys.stderr,
                 )
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 print(
                     f'    [FAIL {done}/{len(picks)}] tier {tier} {f["uuid"][:8]}: {type(e).__name__}: {e}',
                     file=sys.stderr,

@@ -234,7 +234,7 @@ def create_vocabulary_term(
 
 
 @router.put("/{term_id}")
-def update_vocabulary_term(  # noqa: C901
+def update_vocabulary_term(
     term_id: int,
     body: dict,
     db: Session = Depends(get_db),
@@ -357,7 +357,7 @@ def delete_vocabulary_term(
 
 
 @router.post("/bulk", status_code=201)
-def bulk_import_vocabulary(  # noqa: C901
+def bulk_import_vocabulary(
     body: dict,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),

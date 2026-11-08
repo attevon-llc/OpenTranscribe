@@ -18,11 +18,11 @@ pytest.importorskip(
     reason="pytrec_eval_terrier is eval-only (licence); pip install -r requirements-eval.txt",
 )
 
-from tests.eval.harness.metrics import MEASURES  # noqa: E402
-from tests.eval.harness.metrics import RunDoc  # noqa: E402
-from tests.eval.harness.metrics import evaluate  # noqa: E402
-from tests.eval.harness.metrics import normalise_run  # noqa: E402
-from tests.eval.harness.metrics import subset  # noqa: E402
+from tests.eval.harness.metrics import MEASURES
+from tests.eval.harness.metrics import RunDoc
+from tests.eval.harness.metrics import evaluate
+from tests.eval.harness.metrics import normalise_run
+from tests.eval.harness.metrics import subset
 
 FILE = "3f2a9c10-0000-0000-0000-000000000000"
 

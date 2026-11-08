@@ -244,7 +244,7 @@ def test_multipart_round_trip_against_real_storage(minio_backend):
         mp.abort_uploads_for_object(object_name)
         try:
             delete_file(object_name)
-        except Exception:  # noqa: BLE001 — cleanup only
+        except Exception:  # cleanup only
             pass
     assert object_exists_and_size(object_name) is None
 

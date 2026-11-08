@@ -223,7 +223,7 @@ def _gather_digest_plans(
     # point instead of N independent ones.
     try:
         digest_rows = _load_digest_rows(db, [d.file_id for d in digests])
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Batched digest read failed; every hit falls through to unresolvable")
         digest_rows = {}
 
@@ -262,7 +262,7 @@ def _gather_digest_plans(
                 and not uncovered_detectors(scan, effective)
             ):
                 sentences = _digest_sentences_from_row(digest_rows.get(digest.file_id), digest)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Digest provenance lookup failed; withholding the section")
             sentences = None
             effective = _effective_cfg_for_owner(
@@ -283,7 +283,7 @@ def _gather_digest_plans(
         for sentence in sentences:
             try:
                 gathered.append(_gather_sentence_segments(db, sentence))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.exception("Digest sentence lookup failed; dropping that sentence")
                 gathered.append([])
         plans.append(_DigestPlan(sentences=gathered, cfg=effective, applies=applies))

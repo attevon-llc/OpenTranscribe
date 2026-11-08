@@ -53,7 +53,7 @@ def _run(tmp_path: Path, ps_output: str, *, env: dict[str, str] | None = None) -
     if env:
         run_env.update(env)
 
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    result = subprocess.run(  # fixed argv, no shell
         ["bash", "-c", f'set -euo pipefail; source "{LIB}"; compose_project_name'],
         capture_output=True,
         text=True,

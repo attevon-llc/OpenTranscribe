@@ -129,7 +129,7 @@ def _effective_cfg_for_owner(
             owner_cfg = resolve_effective_config(
                 db, owner_id, organization_id=owner_organization_id
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception(
                 "Could not resolve the file owner's redaction policy for chat "
                 "egress masking; failing closed to the most restrictive policy"
@@ -271,7 +271,7 @@ def _gather_chunk_plans(
             segments, effective = _gather_chunk_segments(
                 db, chunk, requester_user_id, requester_cfg, owner_cache
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Cached-span lookup failed for chunk; withholding content")
             # Fail CLOSED — an unmaskable chunk contributes nothing. The effective
             # policy could not be resolved either, so masking is treated as

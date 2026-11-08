@@ -145,7 +145,7 @@ class ScanDispatcher:
                     )
                     return False
                 self._dispatch(source_id)
-        except Exception as e:  # noqa: BLE001 - never kill the supervisor thread
+        except Exception as e:  # never kill the supervisor thread
             logger.warning("FS-event scan dispatch failed for source %s: %s", source_id, e)
             return False
 

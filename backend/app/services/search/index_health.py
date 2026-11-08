@@ -119,7 +119,7 @@ def notify_corruption(index_name: str, probe: KnnProbeResult) -> None:
                 True,
                 f"Admins were notified that '{index_name}' has a corrupted vector plane",
             )
-    except Exception:  # noqa: BLE001 - alerting must never break the health check
+    except Exception:  # alerting must never break the health check
         # logger.exception, not logger.error: this handler swallows the only signal
         # that an admin was NOT paged about a corrupt vector plane, so a bare message
         # with no traceback leaves "nobody was notified" indistinguishable from
@@ -149,7 +149,7 @@ def clear_corruption_notice(index_name: str) -> None:
                 return
             sss.set_setting(db, key, False, f"'{index_name}' vector plane recovered")
             logger.info(f"Vector plane of {index_name} recovered; corruption alert re-armed")
-    except Exception as e:  # noqa: BLE001 - never break the health check
+    except Exception as e:  # never break the health check
         logger.error(f"Could not clear the corruption notice for {index_name}: {e}")
 
 
@@ -194,7 +194,7 @@ def rebuild_chunks_index() -> bool:
             if opensearch_client.indices.exists_alias(name=CHUNKS_ALIAS_NAME):
                 opensearch_client.indices.delete_alias(index=index_name, name=CHUNKS_ALIAS_NAME)
                 logger.info(f"Removed alias '{CHUNKS_ALIAS_NAME}' ahead of rebuild")
-        except Exception as e:  # noqa: BLE001 - a missing alias must not block the rebuild
+        except Exception as e:  # a missing alias must not block the rebuild
             logger.info(f"No alias '{CHUNKS_ALIAS_NAME}' to remove before rebuild ({e})")
 
         opensearch_client.indices.delete(index=index_name, ignore=[404])

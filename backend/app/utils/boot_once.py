@@ -49,7 +49,7 @@ def run_once_per_boot(step: str, ttl: int = DEFAULT_BOOT_WINDOW_SECONDS) -> bool
         from app.core.redis import get_redis
 
         claimed = get_redis().set(key, "1", nx=True, ex=ttl)
-    except Exception as exc:  # noqa: BLE001 - Redis availability is a deployment concern
+    except Exception as exc:  # Redis availability is a deployment concern
         logger.warning(
             "Boot election unavailable for %s (%s); running the step. Duplicated work is "
             "safer here than skipped work.",

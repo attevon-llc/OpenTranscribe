@@ -715,7 +715,7 @@ def _delete_throwaway_user(engine: Any, user_id: int) -> None:
             _delete_user_media_files(db, user_id)
             db.delete(user)
             db.commit()
-        except Exception:  # noqa: BLE001 — teardown must finish against broken code too
+        except Exception:  # teardown must finish against broken code too
             # A red run executes the very defect under test (the ORM refusing to delete
             # an account); fall back to SQL so the throwaway account never outlives it.
             db.rollback()

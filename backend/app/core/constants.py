@@ -330,7 +330,7 @@ DEFAULT_BACKUP_RETENTION_MONTHLY = 12
 DEFAULT_BACKUP_ENCRYPT = False  # gpg AES-256 symmetric; needs a passphrase file
 # Path (in-container) to a file whose contents are the gpg symmetric passphrase.
 # Empty = no passphrase configured (encryption requested but unconfigured → task errors).
-DEFAULT_BACKUP_PASSPHRASE_FILE = ""  # noqa: S105  # nosec B105 - a file PATH default (empty = unset), not a password
+DEFAULT_BACKUP_PASSPHRASE_FILE = ""  # nosec B105 - a file PATH default (empty = unset), not a password
 # ⚠️ This used to default to False, justified by a comment calling OpenSearch derived data
 # that Postgres could rebuild. That justification was WRONG and the default was dangerous
 # (issue #658). The transcript/chunk indices are rebuildable; the SPEAKER indices are not.

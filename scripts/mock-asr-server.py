@@ -196,7 +196,7 @@ def _parse_multipart(body: bytes, content_type: str) -> dict[str, bytes]:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
-    def log_message(self, fmt, *args):  # noqa: A002 - quieter console
+    def log_message(self, fmt, *args):  # quieter console
         print(f'  {self.address_string()} {fmt % args}')
 
     def _json(self, payload: dict, status: int = 200) -> None:
@@ -211,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
         host = self.headers.get('Host') or f'localhost:{self.server.server_address[1]}'
         return f'http://{host}'
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path.rstrip('/') == '/v2/live':
             self._json({'status': 'ok'})
             return
@@ -268,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self._json({'error': 'not found'}, 404)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         length = int(self.headers.get('Content-Length') or 0)
         raw = self.rfile.read(length) if length else b''
 

@@ -46,8 +46,8 @@ def _get_json(url: str, *, data: bytes | None = None, headers: dict[str, str] | 
     """Fetch *url* and decode its JSON body; refuses anything but an http(s) URL."""
     if urllib.parse.urlsplit(url).scheme not in ('http', 'https'):
         raise ValueError(f'refusing a non-HTTP URL: {url}')
-    req = urllib.request.Request(url, data=data, headers=headers or {})  # noqa: S310 - scheme checked above
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - scheme checked above
+    req = urllib.request.Request(url, data=data, headers=headers or {})  # scheme checked above
+    with urllib.request.urlopen(req, timeout=30) as resp:  # scheme checked above
         return json.load(resp)
 
 

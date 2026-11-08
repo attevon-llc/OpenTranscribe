@@ -71,7 +71,7 @@ def _run_on_thread(name: str, fn: Any) -> Any:
     def body() -> None:
         try:
             box["value"] = fn()
-        except BaseException as exc:  # noqa: BLE001 - re-raised on the caller
+        except BaseException as exc:  # re-raised on the caller
             box["error"] = exc
 
     thread = threading.Thread(target=body, name=name)

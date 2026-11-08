@@ -92,7 +92,7 @@ def stub_public_dns(
     real_getaddrinfo = socket.getaddrinfo
     suffix = f".{domain}"
 
-    def fake_getaddrinfo(host, port, *args, **kwargs):  # noqa: ANN001, ANN202 - socket's signature
+    def fake_getaddrinfo(host, port, *args, **kwargs):  # socket's signature
         name = str(host).lower().rstrip(".")
         if name == domain or name.endswith(suffix):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
@@ -159,7 +159,7 @@ def does_not_raise(reason: str) -> Iterator[None]:
         raise ValueError("does_not_raise(reason=...) needs a reason; that is the point of it")
     try:
         yield
-    except BaseException as exc:  # noqa: BLE001 - re-reported as a test failure, not swallowed
+    except BaseException as exc:  # re-reported as a test failure, not swallowed
         pytest.fail(f"{reason} — but it raised {type(exc).__name__}: {exc}")
 
 
@@ -179,7 +179,7 @@ def reset_rate_limiter() -> None:
 
     try:
         limiter.reset()  # primary storage; raises when Redis is unreachable
-    except Exception:  # noqa: BLE001 - unreachable Redis is the normal case here
+    except Exception:  # unreachable Redis is the normal case here
         pass
     fallback_storage = getattr(limiter, "_fallback_storage", None)
     if fallback_storage is not None:

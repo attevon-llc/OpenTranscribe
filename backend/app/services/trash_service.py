@@ -173,7 +173,7 @@ def _after_trash(db: Session, trashed: Sequence[MediaFile], actor: User) -> None
             # Trash is reversible, so an in-flight task is cancelled, not refused.
             try:
                 cancel_active_task(db, int(f.id))
-            except Exception:  # noqa: BLE001 - the file is trashed either way
+            except Exception:  # the file is trashed either way
                 logger.warning("trash: could not cancel the task of file %s", f.uuid, exc_info=True)
     _after_state_change(db, trashed, actor, NOTIFICATION_TYPE_FILE_TRASHED)
 
@@ -331,7 +331,7 @@ def dispatch_purge(file_ids: Sequence[int]) -> None:
 
     try:
         purge_trash_now.delay(file_ids=[int(i) for i in file_ids])
-    except Exception:  # noqa: BLE001 - the rows are due; the beat tick purges them
+    except Exception:  # the rows are due; the beat tick purges them
         logger.warning("trash: purge dispatch failed; the hourly tick will purge", exc_info=True)
 
 
@@ -354,14 +354,14 @@ def _after_state_change(
         from app.services.chat.retrieval_cache import bump_corpus_version
 
         bump_corpus_version()
-    except Exception:  # noqa: BLE001 - a stale cache entry expires on its own
+    except Exception:  # a stale cache entry expires on its own
         logger.debug("trash: corpus version bump failed", exc_info=True)
     try:
         from app.services.redis_cache_service import redis_cache
 
         for owner_id in {int(f.user_id) for f in files}:
             redis_cache.invalidate_user_files(owner_id)
-    except Exception:  # noqa: BLE001 - the gallery reconciles on its next fetch
+    except Exception:  # the gallery reconciles on its next fetch
         logger.debug("trash: file-list cache invalidation failed", exc_info=True)
     _notify(db, files, actor, notification_type)
 
@@ -397,7 +397,7 @@ def _notify(db: Session, files: Sequence[MediaFile], actor: User, notification_t
             }
             for user_id in recipients:
                 send_ws_event(user_id, notification_type, data)
-    except Exception:  # noqa: BLE001 - a missed event is reconciled on the next fetch
+    except Exception:  # a missed event is reconciled on the next fetch
         logger.warning("trash: WebSocket notification failed", exc_info=True)
 
 

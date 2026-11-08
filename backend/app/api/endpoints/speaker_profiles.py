@@ -359,7 +359,7 @@ def _dispatch_profile_rename_propagation(
         from app.tasks.rename_propagation_task import dispatch_speaker_rename
 
         dispatch_speaker_rename(renames, new_name)
-    except Exception as exc:  # noqa: BLE001 — a committed rename must not 500 on dispatch
+    except Exception as exc:  # a committed rename must not 500 on dispatch
         logger.warning(f"Could not queue chunk-plane profile rename propagation: {exc}")
 
 

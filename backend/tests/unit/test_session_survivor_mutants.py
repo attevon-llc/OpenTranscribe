@@ -379,7 +379,7 @@ class TestInMemoryStoreExpiryBoundary:
     def _frozen(self, instant: datetime) -> type[datetime]:
         class _Frozen(datetime):
             @classmethod
-            def now(cls, tz=None):  # noqa: ARG003
+            def now(cls, tz=None):
                 return instant
 
         return _Frozen

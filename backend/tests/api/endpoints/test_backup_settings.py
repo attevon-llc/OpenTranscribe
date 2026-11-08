@@ -125,7 +125,7 @@ def test_put_stores_the_s3_secret_encrypted_and_never_returns_it(
     unencrypted, which would put an S3 secret in every ``pg_dump`` of this
     database in cleartext.
     """
-    secret = "s3-secret-value-do-not-log"  # noqa: S105 - test literal, not a credential
+    secret = "s3-secret-value-do-not-log"  # test literal, not a credential
     response = client.put(
         BASE,
         headers=super_admin_token_headers,

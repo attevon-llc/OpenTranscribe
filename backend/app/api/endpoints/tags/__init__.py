@@ -27,10 +27,10 @@ anything.
 # registers onto the one router in `_common`; sub-routers were tried and
 # rejected because FastAPI refuses an empty path when including a router with
 # no prefix, and `POST ""` / `GET ""` are real routes here.
-from app.api.endpoints.tags import crud  # noqa: E402,F401
-from app.api.endpoints.tags import discovery  # noqa: E402,F401
-from app.api.endpoints.tags import operations  # noqa: E402,F401
-from app.api.endpoints.tags import sharing  # noqa: E402,F401
+from app.api.endpoints.tags import crud
+from app.api.endpoints.tags import discovery
+from app.api.endpoints.tags import operations
+from app.api.endpoints.tags import sharing
 from app.api.endpoints.tags._common import router
 
 __all__ = ["router"]

@@ -50,7 +50,7 @@ class _BrokenLLM:
     def __init__(self) -> None:
         self.calls = 0
 
-    def chat_completion(self, messages, **_kwargs):  # noqa: ARG002
+    def chat_completion(self, messages, **_kwargs):
         self.calls += 1
         raise RuntimeError("provider exploded")
 

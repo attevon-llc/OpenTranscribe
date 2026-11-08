@@ -47,7 +47,7 @@ class _FakeRedis:
         self._store[key] = str(current)
         return current
 
-    def expire(self, key: str, ttl: int) -> None:  # noqa: ARG002 - TTL not modeled
+    def expire(self, key: str, ttl: int) -> None:  # TTL not modeled
         pass
 
     def delete(self, *keys: str) -> None:

@@ -607,7 +607,7 @@ def test_media_source_create_password_never_returned(
     client, user_token_headers, _public_media_host_dns
 ):
     """The encrypted password is write-only — no response surface echoes it."""
-    secret = "super-secret-pw-12345"  # noqa: S105 - test fixture, not a real credential
+    secret = "super-secret-pw-12345"  # test fixture, not a real credential
     resp = client.post(
         f"{_BASE}/media-sources",
         json={

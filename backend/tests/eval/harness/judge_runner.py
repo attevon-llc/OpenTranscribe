@@ -75,7 +75,7 @@ async def _score_one(metric: Any, record: dict[str, Any]) -> dict[str, Any]:
             retrieved_contexts=list(record["contexts"]),
         )
         return {"query_id": record["query_id"], "score": float(result.value)}
-    except Exception as exc:  # noqa: BLE001 - a per-record judge failure is data (null), not a crash
+    except Exception as exc:  # a per-record judge failure is data (null), not a crash
         print(f"[judge_runner] record {record.get('query_id')!r} failed: {exc}", file=sys.stderr)
         return {"query_id": record["query_id"], "score": None}
 
@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 3
-    except Exception as exc:  # noqa: BLE001 - construction failure is infra, not a record failure
+    except Exception as exc:  # construction failure is infra, not a record failure
         print(f"[judge_runner] failed to build the {args.mode} judge: {exc}", file=sys.stderr)
         return 3
 

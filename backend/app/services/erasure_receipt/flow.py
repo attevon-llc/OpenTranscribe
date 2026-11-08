@@ -58,7 +58,7 @@ def _schedule_reverify(entry: ErasureLedgerEntry, scope: ErasureScope, captured:
             kwargs={"ledger_uuid": str(entry.uuid), **reverify_payload(scope, captured)},
             countdown=REVERIFY_DELAY_SECONDS,
         )
-    except Exception as e:  # noqa: BLE001 - the immediate receipt stands; the sweep still runs
+    except Exception as e:  # the immediate receipt stands; the sweep still runs
         logger.error("Could not schedule the erasure receipt re-check: %s", type(e).__name__)
 
 

@@ -51,7 +51,7 @@ SEGMENT_TEXT = "call me on 555-867-5309 about the invoice"
 class _NullAnalyzer:
     """Presidio present and finding nothing — keeps the weights out of the fast suite."""
 
-    def analyze(self, text: str, language: str) -> list:  # noqa: ARG002
+    def analyze(self, text: str, language: str) -> list:
         return []
 
 
@@ -67,7 +67,7 @@ class _FakeLLMService:
         self._content = content
         self._raise_on_chat = raise_on_chat
 
-    def chat_completion(self, messages: list[dict[str, str]], **kwargs: Any) -> _FakeLLMResponse:  # noqa: ARG002
+    def chat_completion(self, messages: list[dict[str, str]], **kwargs: Any) -> _FakeLLMResponse:
         if self._raise_on_chat:
             raise RuntimeError("simulated LLM transport failure")
         return _FakeLLMResponse(self._content)

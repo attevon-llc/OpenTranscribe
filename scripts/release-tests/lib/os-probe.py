@@ -132,13 +132,13 @@ def _gpu() -> dict:
         out['device_name'] = torch.cuda.get_device_name(0) if out['cuda_available'] else ''
         if out['cuda_available']:
             torch.zeros(1, device='cuda')  # a real allocation, not just visibility
-    except Exception as exc:  # noqa: BLE001 - a probe failure is reported as data
+    except Exception as exc:  # a probe failure is reported as data
         out['torch_error'] = f'{type(exc).__name__}: {exc}'[:200]
     for name in ('torchcodec', 'torchaudio'):
         try:
             __import__(name)
             out[f'{name}_import'] = 'ok'
-        except Exception as exc:  # noqa: BLE001 - a probe failure is reported as data
+        except Exception as exc:  # a probe failure is reported as data
             out[f'{name}_import'] = f'{type(exc).__name__}: {exc}'[:200]
     try:
         from app.transcription.audio import load_audio
@@ -153,7 +153,7 @@ def _gpu() -> dict:
             samples = load_audio(handle.name)
         out['audio_samples'] = int(len(samples))
         out['app_loader_pulled_torchcodec'] = 'torchcodec' in sys.modules
-    except Exception as exc:  # noqa: BLE001 - a probe failure is reported as data
+    except Exception as exc:  # a probe failure is reported as data
         out['audio_error'] = f'{type(exc).__name__}: {exc}'[:200]
     return out
 
@@ -169,7 +169,7 @@ def main(argv: list[str]) -> int:
     }
     try:
         result = commands[argv[1]](argv[2:])
-    except Exception as exc:  # noqa: BLE001 - reported as data; the predicate decides
+    except Exception as exc:  # reported as data; the predicate decides
         result = {'error': f'{type(exc).__name__}: {exc}'[:300]}
     print(json.dumps(result))
     return 0

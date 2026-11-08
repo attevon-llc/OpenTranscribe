@@ -180,7 +180,7 @@ def recompute_all(self: Any, batch_size: int = 100, after_id: int = 0) -> dict:
                 else:
                     summary["files_skipped"] += 1
                     recompute_progress.increment_processed(success=False, file_uuid=row["uuid"])
-            except Exception as e:  # noqa: BLE001 - one bad file must not abort the batch
+            except Exception as e:  # one bad file must not abort the batch
                 logger.warning("imohash recompute failed for file %s: %s", row["id"], e)
                 summary["files_failed"] += 1
                 recompute_progress.increment_processed(success=False, file_uuid=row["uuid"])

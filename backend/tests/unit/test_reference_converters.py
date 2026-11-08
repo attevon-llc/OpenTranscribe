@@ -20,12 +20,12 @@ _SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
-import make_seam_labels  # noqa: E402
-import nlp_to_rttm  # noqa: E402
+import make_seam_labels
+import nlp_to_rttm
 
-from app.utils.diarization_metrics import assign_words_from_turns  # noqa: E402
-from app.utils.diarization_metrics import read_rttm  # noqa: E402
-from app.utils.diarization_metrics import words_to_rttm  # noqa: E402
+from app.utils.diarization_metrics import assign_words_from_turns
+from app.utils.diarization_metrics import read_rttm
+from app.utils.diarization_metrics import words_to_rttm
 
 # Tiny inline Earnings-21-style .nlp fixture: header + 5 tokens, two speakers.
 # Layout: token|speaker|ts|endTs|punctuation|case|tags

@@ -185,7 +185,7 @@ def _unit_vector(dim: int, seed: int) -> list[float]:
     return [v / norm for v in raw]
 
 
-def seed_complete_file(  # noqa: C901 — one linear recipe; splitting it hides the inventory
+def seed_complete_file(  # one linear recipe; splitting it hides the inventory
     db: Session,
     owner_id: int,
     *,

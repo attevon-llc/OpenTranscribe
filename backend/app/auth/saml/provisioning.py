@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 #: Byte-identical to the 401 the ACS endpoint returns for an unusable assertion, so
 #: a refusal cannot be used to probe which addresses already exist (see
 #: ``auth/account_linking.py``).
-LINK_REFUSED_DETAIL = "Invalid SAML assertion"  # noqa: S105 # nosec B105
+LINK_REFUSED_DETAIL = "Invalid SAML assertion"  # nosec B105
 
 
 def _create_saml_user(db: Session, saml_data: SAMLUserData, *, is_admin: bool) -> User:

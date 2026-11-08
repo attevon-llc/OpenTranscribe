@@ -292,7 +292,7 @@ def test_task_reports_skipped_with_a_real_completed_task_row_on_empty_population
     user = User(
         email="reembed-empty-fixture@example.com",
         full_name="Reembed Fixture",
-        hashed_password=get_password_hash("password123"),  # noqa: S106
+        hashed_password=get_password_hash("password123"),
         is_active=True,
         role="admin",
     )
@@ -338,7 +338,7 @@ def test_task_lock_already_held_prevents_dispatch(monkeypatch):
     from app.utils import task_lock
 
     @contextlib.contextmanager
-    def _busy(lock_key: str, timeout: int = 300, blocking_timeout: int = 0):  # noqa: ARG001
+    def _busy(lock_key: str, timeout: int = 300, blocking_timeout: int = 0):
         yield False
 
     monkeypatch.setattr(task_lock.task_lock_manager, "acquire_lock", _busy)

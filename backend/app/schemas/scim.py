@@ -139,7 +139,7 @@ class SCIMPatchRequest(_Lenient):
     """Inbound ``PATCH`` body."""
 
     schemas: list[str] = Field(default_factory=list)
-    Operations: list[SCIMPatchOperation] = Field(default_factory=list)  # noqa: N815 - SCIM
+    Operations: list[SCIMPatchOperation] = Field(default_factory=list)  # SCIM
 
 
 def _meta(

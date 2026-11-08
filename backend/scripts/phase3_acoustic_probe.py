@@ -67,7 +67,7 @@ def main() -> None:
                 v = arr.reshape(-1)
                 if v.size:
                     return v, desc
-            except Exception as ex:  # noqa: BLE001
+            except Exception as ex:
                 last = f"{desc}: {type(ex).__name__}: {str(ex)[:70]}"
         print("  embed failed:", last)
         return None, None

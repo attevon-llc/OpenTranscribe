@@ -275,7 +275,7 @@ def erase_user(
             # An erased account's open sockets would otherwise outlive it.
             token_service.stamp_user_revocation_epoch(subject_uuid)
             summary["legal_acceptances_pseudonymised"] = pseudonymised
-        except Exception as e:  # noqa: BLE001 — record, don't raise
+        except Exception as e:  # record, don't raise
             db.rollback()
             # `summary` is returned straight out of this function and becomes the
             # response body of POST /admin/gdpr/erase-user/{uuid} (admin.py:2527), so
@@ -660,7 +660,7 @@ def erase_organization(
         if not active_holds:
             db.delete(org)
             db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         db.rollback()
         # Same contract as erase_user's twin above: `summary` is returned verbatim as the
         # body of POST /org-admin/gdpr/erase-organization (org_admin.py:186), and the raw

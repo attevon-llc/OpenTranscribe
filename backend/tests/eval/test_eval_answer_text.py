@@ -11,13 +11,13 @@ import pytest
 
 pytest.importorskip("rouge_score", reason="rouge-score is eval-only; see requirements-eval.txt")
 
-from tests.eval.harness.answer_text import MEASURES  # noqa: E402
-from tests.eval.harness.answer_text import compute_bertscore  # noqa: E402
-from tests.eval.harness.answer_text import evaluate_answer_text  # noqa: E402
-from tests.eval.harness.answer_text import rouge_f_scores  # noqa: E402
-from tests.eval.harness.answer_text import score_one  # noqa: E402
-from tests.eval.harness.answer_text import subset_answer_text  # noqa: E402
-from tests.eval.harness.answer_text import token_f1  # noqa: E402
+from tests.eval.harness.answer_text import MEASURES
+from tests.eval.harness.answer_text import compute_bertscore
+from tests.eval.harness.answer_text import evaluate_answer_text
+from tests.eval.harness.answer_text import rouge_f_scores
+from tests.eval.harness.answer_text import score_one
+from tests.eval.harness.answer_text import subset_answer_text
+from tests.eval.harness.answer_text import token_f1
 
 
 class TestTokenF1:

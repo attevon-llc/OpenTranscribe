@@ -78,7 +78,7 @@ async def _finalize_turn(
             # meter. Providers that report usage already include them.
             turn.completion_tokens = llm.estimate_tokens(turn.answer + turn.reasoning)
             turn.tokens_estimated = True
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("Token estimation failed")
 
     turn.total_tokens = (turn.prompt_tokens or 0) + (turn.completion_tokens or 0)
@@ -97,7 +97,7 @@ async def _finalize_turn(
             is_first_exchange,
             question,
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Failed to persist chat reply %s", assistant_message_uuid)
 
     limits.clear_cancel(assistant_message_uuid)
@@ -123,7 +123,7 @@ async def _finalize_turn(
                 local=bool(is_local_provider(getattr(llm, "config", None))),
             )
         )
-    except Exception:  # noqa: BLE001 — hooks are contained by contract
+    except Exception:  # hooks are contained by contract
         logger.exception("Chat completion hook raised past its guard")
 
     _audit_message(
@@ -261,5 +261,5 @@ def _audit_message(
                 "finish_reason": turn.finish_reason,
             },
         )
-    except Exception:  # noqa: BLE001 — auditing must not break delivery
+    except Exception:  # auditing must not break delivery
         logger.exception("Chat audit write failed")

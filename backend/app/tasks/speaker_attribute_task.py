@@ -139,7 +139,7 @@ def _resolve_file_id_for_tracking(file_uuid: str) -> int | None:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             return int(media_file.id) if media_file else None
-    except Exception as exc:  # noqa: BLE001 — tracking must never block detection
+    except Exception as exc:  # tracking must never block detection
         logger.debug("File id resolution for task tracking failed for %s: %s", file_uuid, exc)
         return None
 
@@ -161,7 +161,7 @@ def _create_and_start_task_record(task_id: str, user_id: int, file_id: int) -> N
             if db.query(Task.id).filter(Task.id == task_id).first() is None:
                 create_task_record(db, task_id, user_id, file_id, "speaker_attribute_detection")
             update_task_status(db, task_id, "in_progress", progress=0.1)
-    except Exception as exc:  # noqa: BLE001 — tracking must never block detection
+    except Exception as exc:  # tracking must never block detection
         logger.warning("Could not create task record for %s: %s", task_id, exc)
 
 
@@ -190,7 +190,7 @@ def _update_attr_task(
                 error_message=error_message,
                 completed=status in ("completed", "failed", "skipped"),
             )
-    except Exception as exc:  # noqa: BLE001 — tracking must never mask the real outcome
+    except Exception as exc:  # tracking must never mask the real outcome
         logger.warning("Could not update task record %s to %s: %s", task_id, status, exc)
 
 
@@ -418,7 +418,7 @@ def _attributes_already_predicted(file_uuid: str) -> bool:
                 return False
             speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
             return bool(speakers) and all(s.attributes_predicted_at is not None for s in speakers)
-    except Exception as exc:  # noqa: BLE001 — never block detection on a bookkeeping read
+    except Exception as exc:  # never block detection on a bookkeeping read
         logger.debug("attributes-already-predicted check failed for %s: %s", file_uuid, exc)
         return False
 

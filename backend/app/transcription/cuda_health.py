@@ -104,7 +104,7 @@ def free_cached_vram() -> None:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    except Exception as exc:  # noqa: BLE001 - a failed cleanup must not mask the OOM path
+    except Exception as exc:  # a failed cleanup must not mask the OOM path
         logger.debug("empty_cache skipped: %s", exc)
 
 
@@ -125,7 +125,7 @@ def cuda_context_healthy(device_index: int = 0) -> bool:
 
         if not torch.cuda.is_available():
             return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         return True
     last: Exception | None = None
     for _ in range(2):
@@ -134,7 +134,7 @@ def cuda_context_healthy(device_index: int = 0) -> bool:
             float((probe + 1).sum().item())
             torch.cuda.synchronize(device_index)
             return True
-        except Exception as exc:  # noqa: BLE001 - the probe's failure IS the answer
+        except Exception as exc:  # the probe's failure IS the answer
             last = exc
     logger.error("CUDA context probe failed: %s", last)
     return False
@@ -169,7 +169,7 @@ def mark_context_poisoned(reason: str) -> None:
     mark_shutting_down()
     try:
         os.kill(os.getpid(), signal.SIGTERM)
-    except Exception as exc:  # noqa: BLE001 - the flag above already stops new work
+    except Exception as exc:  # the flag above already stops new work
         logger.error("Could not signal worker exit after a poisoned CUDA context: %s", exc)
 
 

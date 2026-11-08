@@ -179,7 +179,7 @@ def _append_journal(entry: ErasureLedgerEntry) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, separators=(",", ":")) + "\n")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error(
             "Erasure journal append FAILED for entry %s: %s — a restore of an older "
             "database would silently undo this erasure",
@@ -195,7 +195,7 @@ def _file_journal_records() -> Iterator[dict[str, Any]] | None:
         return iter(())
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Erasure journal unreadable at %s: %s", path, e)
         return None
 
@@ -230,7 +230,7 @@ def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
             and str(obj.object_name).endswith(".json")
             and not str(obj.object_name).startswith(prefix + RECEIPT_JOURNAL_DIR)
         ]
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Erasure journal unreadable at %s/%s: %s", bucket, prefix, e)
         return None
 
@@ -242,7 +242,7 @@ def _object_journal_records(known: set[str]) -> Iterator[dict[str, Any]] | None:
             try:
                 response = client.get_object(bucket, name)
                 yield json.loads(response.read().decode("utf-8"))
-            except Exception as e:  # noqa: BLE001 — one bad object must not stop the rest
+            except Exception as e:  # one bad object must not stop the rest
                 logger.warning("Skipping unreadable erasure journal object %s: %s", name, e)
             finally:
                 if response is not None:
@@ -289,7 +289,7 @@ def append_receipt_line(entry: ErasureLedgerEntry, receipt: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(body + "\n")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Erasure receipt journal append FAILED for %s: %s", entry.uuid, e)
 
 
@@ -301,7 +301,7 @@ def reopen_entry(db: Session, entry: ErasureLedgerEntry) -> None:
         entry.deferred_reason = "error"
         entry.completed_at = None
         db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         db.rollback()
         logger.error("Erasure ledger reopen FAILED for entry %s: %s", entry.uuid, e)
         return
@@ -407,7 +407,7 @@ def restore_from_journal(db: Session) -> int:
             db.commit()
             known.add(record["uuid"])
             restored += 1
-        except Exception as e:  # noqa: BLE001 — one bad line must not stop the rest
+        except Exception as e:  # one bad line must not stop the rest
             db.rollback()
             logger.error("Could not restore erasure journal entry %s: %s", record.get("uuid"), e)
 
@@ -509,7 +509,7 @@ def record_request(
         db.add(entry)
         db.commit()
         db.refresh(entry)
-    except Exception as e:  # noqa: BLE001 — a ledger failure must not abort the erasure
+    except Exception as e:  # a ledger failure must not abort the erasure
         db.rollback()
         logger.error(
             "Erasure ledger write FAILED for %s subject user=%s org=%s: %s — the erasure "
@@ -582,7 +582,7 @@ def record_outcome(
         entry.completed_at = _completion_time(entry, status, now)
         db.commit()
         db.refresh(entry)
-    except Exception as e:  # noqa: BLE001 — the deletion already happened; never re-raise
+    except Exception as e:  # the deletion already happened; never re-raise
         db.rollback()
         logger.error("Erasure ledger outcome write FAILED for entry %s: %s", entry.uuid, e)
         return entry
@@ -615,7 +615,7 @@ def record_resurrection(
             entry.status = "pending"
             entry.completed_at = None
         db.commit()
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         db.rollback()
         logger.error("Erasure ledger resurrection write FAILED for entry %s: %s", entry.uuid, e)
         return
@@ -819,5 +819,5 @@ def _audit(
                 **(extra or {}),
             },
         )
-    except Exception as e:  # noqa: BLE001 — audit must never break the erasure
+    except Exception as e:  # audit must never break the erasure
         logger.warning("Erasure ledger audit event failed: %s", e)

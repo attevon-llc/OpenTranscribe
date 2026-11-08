@@ -275,7 +275,7 @@ def _reply_text(model: str, messages: list[dict], system_sha256: str) -> str:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
-    def log_message(self, fmt, *args):  # noqa: A002 - quieter console
+    def log_message(self, fmt, *args):  # quieter console
         print(f'  {self.address_string()} {fmt % args}')
 
     def _json(self, payload: dict, status: int = 200) -> None:
@@ -286,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         # Model discovery — the app lists models for OpenAI-compatible providers.
         if self.path.rstrip('/').endswith('/models'):
             self._json(
@@ -303,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json({'status': 'ok', 'model': MODEL_ID})
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         length = int(self.headers.get('Content-Length') or 0)
         try:
             body = json.loads(self.rfile.read(length) or b'{}')

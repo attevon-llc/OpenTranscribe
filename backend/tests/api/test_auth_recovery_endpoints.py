@@ -43,8 +43,8 @@ from app.models.password_reset import PasswordResetToken
 
 #: Passes the default policy (length 12, upper/lower/digit/special) and shares no
 #: substring with the fixture users' emails or names, which the policy also checks.
-STRONG_PASSWORD = "Correct-Horse-9Battery!"  # noqa: S105 - test fixture, not a credential
-OTHER_STRONG_PASSWORD = "Vivid-Zebra-4Marmalade!"  # noqa: S105 - test fixture, not a credential
+STRONG_PASSWORD = "Correct-Horse-9Battery!"  # test fixture, not a credential
+OTHER_STRONG_PASSWORD = "Vivid-Zebra-4Marmalade!"  # test fixture, not a credential
 
 RESET_REQUEST_PATH = "/api/auth/password-reset/request"
 RESET_CONFIRM_PATH = "/api/auth/password-reset/confirm"

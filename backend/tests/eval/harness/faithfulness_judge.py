@@ -213,7 +213,7 @@ def _run_judge_subprocess(records: list[dict[str, Any]], config: JudgeConfig) ->
             str(JUDGE_TEMPERATURE),
         ]
         try:
-            completed = subprocess.run(  # noqa: S603 - fixed argv, no shell, trusted interpreter
+            completed = subprocess.run(  # fixed argv, no shell, trusted interpreter
                 command, capture_output=True, text=True, timeout=_SUBPROCESS_TIMEOUT_S
             )
         except subprocess.TimeoutExpired as exc:

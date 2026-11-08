@@ -36,7 +36,7 @@ pytestmark = [
 ]
 
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 STEPS = ["transcription", "diarization", "speaker_id", "llm"]
 

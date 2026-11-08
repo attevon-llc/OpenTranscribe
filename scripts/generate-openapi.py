@@ -86,7 +86,7 @@ def _serialize(schema: dict[str, Any]) -> str:
 def _generate() -> dict[str, Any]:
     """Import the app and produce the normalized OpenAPI document."""
     _prepare_environment()
-    from app.main import app  # noqa: PLC0415 (deferred: heavy import, see module docstring)
+    from app.main import app  # deferred: heavy import, see module docstring
 
     schema = app.openapi()
     return _normalize(schema)

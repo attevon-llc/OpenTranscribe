@@ -98,7 +98,7 @@ def update_gpu_stats(self: Any) -> list[dict[str, Any]]:
             logger.warning(f"Failed to broadcast GPU stats: {broadcast_err}")
 
         # Clear debounce lock (best-effort, non-critical)
-        with contextlib.suppress(Exception):  # noqa: S110
+        with contextlib.suppress(Exception):
             redis_client.delete("gpu_stats_pending")
 
         logger.debug(f"Updated GPU stats in Redis: {gpu_stats_list}")

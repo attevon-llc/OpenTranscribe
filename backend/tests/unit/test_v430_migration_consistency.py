@@ -156,7 +156,7 @@ def _term(conn, user_id: int | None, term: str | None = None, org_id: int | None
 
 def _org_of(conn, table: str, row_id: int) -> int | None:
     value = conn.execute(
-        text(f"SELECT organization_id FROM {table} WHERE id = :i"),  # noqa: S608 - fixed names
+        text(f"SELECT organization_id FROM {table} WHERE id = :i"),  # fixed names
         {"i": row_id},
     ).scalar()
     return int(value) if value is not None else None
@@ -537,7 +537,7 @@ def test_the_downgrade_restores_the_old_shape_and_the_upgrade_reapplies(db_sessi
         ):
             conn.execute(
                 text(
-                    f"DELETE FROM {table} c USING {table} d "  # noqa: S608 - fixed names
+                    f"DELETE FROM {table} c USING {table} d "  # fixed names
                     f"WHERE c.user_id = d.user_id AND c.{col} = d.{col} AND c.id > d.id"
                 )
             )

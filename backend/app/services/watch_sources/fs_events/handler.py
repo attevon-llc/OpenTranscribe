@@ -70,7 +70,7 @@ class WatchEventHandler:
         """Called by watchdog for every raw event on the watched tree."""
         try:
             self._dispatch(event)
-        except Exception as e:  # noqa: BLE001 - an emitter thread must not die
+        except Exception as e:  # an emitter thread must not die
             logger.debug("Ignoring malformed FS event for source %s: %s", self.source_id, e)
 
     def _dispatch(self, event: object) -> None:

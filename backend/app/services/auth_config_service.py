@@ -53,7 +53,7 @@ MAX_AUDIT_LOG_LIMIT = 500
 #: panel bound it into the password field, and clicking Save on any OTHER field in
 #: the same tab re-encrypted the placeholder over the real LDAP bind password /
 #: OIDC client secret, with a success toast. Writes now reject it outright.
-SENSITIVE_SET_SENTINEL = "__SECRET_IS_SET__"  # noqa: S105 # nosec B105
+SENSITIVE_SET_SENTINEL = "__SECRET_IS_SET__"  # nosec B105
 
 #: Values that mean "the user did not type a new secret" and must leave the stored
 #: one untouched. Empty is the deliberate "leave blank to keep current" case;

@@ -184,7 +184,7 @@ def _deliver(
     subject, heading, paragraphs = _compose(event, organization, items)
     try:
         email_service.send_takedown_notice(str(owner.email), subject, heading, paragraphs)
-    except Exception as exc:  # noqa: BLE001 - a failed notice must never break the takedown
+    except Exception as exc:  # a failed notice must never break the takedown
         logger.warning("Takedown email failed (%s)", type(exc).__name__)
         return TakedownNotifyStatus.FAILED
     return TakedownNotifyStatus.SENT

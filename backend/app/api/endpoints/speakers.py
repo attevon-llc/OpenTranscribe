@@ -283,7 +283,7 @@ def _propagate_speaker_rename_to_chunks(
         if file_uuid and previous_chunk_name:
             renames.append((file_uuid, previous_chunk_name))
         dispatch_speaker_rename(renames, new_display_name, speaker_id=speaker_id)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(f"Could not queue chunk-plane speaker rename propagation: {exc}")
 
 

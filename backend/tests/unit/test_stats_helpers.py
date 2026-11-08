@@ -91,7 +91,7 @@ def _make_user(db_session, *, is_active: bool = True, role: str = "user") -> Use
     user = User(
         email=f"stats-fixture-{uid}@example.com",
         full_name="Stats Fixture",
-        hashed_password=get_password_hash("password123"),  # noqa: S106 — throwaway fixture row
+        hashed_password=get_password_hash("password123"),  # throwaway fixture row
         is_active=is_active,
         is_superuser=role == "super_admin",
         role=role,

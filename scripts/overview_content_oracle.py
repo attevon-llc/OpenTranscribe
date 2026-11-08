@@ -144,8 +144,8 @@ def fetch_files(container: str, file_uuids: list[str]) -> dict[str, dict[str, An
         'ff.digest::text, ff.source_fingerprint '
         'FROM media_file mf JOIN file_facts ff ON ff.media_file_id = mf.id '
         f'WHERE mf.uuid IN ({uuids_sql});'
-    )  # noqa: S608 — uuids are our own generated values, not user input
-    proc = subprocess.run(  # noqa: S603
+    )  # uuids are our own generated values, not user input
+    proc = subprocess.run(
         [
             'docker',
             'exec',
@@ -159,7 +159,7 @@ def fetch_files(container: str, file_uuids: list[str]) -> dict[str, dict[str, An
             '\x1f',
             '-c',
             sql,
-        ],  # noqa: S607
+        ],
         capture_output=True,
         text=True,
         check=False,
@@ -387,20 +387,20 @@ def corpus_preconditions(container: str, title_like: str = 'QMSum Product%') -> 
         "AND mf.summary_data->'metadata'->>'source_fingerprint' = ff.source_fingerprint) AS fresh, "
         'count(*) AS total FROM media_file mf JOIN file_facts ff ON ff.media_file_id = mf.id '
         f"WHERE mf.title LIKE '{title_like}';"
-    )  # noqa: S608
+    )
     sections_sql = (
         "SELECT jsonb_array_length(ff.digest->'sections') AS n, count(*) FROM file_facts ff "
         'JOIN media_file mf ON mf.id = ff.media_file_id '
         f"WHERE mf.title LIKE '{title_like}' GROUP BY 1 ORDER BY 1;"
-    )  # noqa: S608
+    )
     items_sql = (
         "SELECT jsonb_array_length(mf.summary_data->'key_decisions') AS n_dec, "
         "jsonb_array_length(mf.summary_data->'action_items') AS n_act "
         f"FROM media_file mf WHERE mf.title LIKE '{title_like}';"
-    )  # noqa: S608
+    )
 
     def _run(sql: str) -> list[str]:
-        proc = subprocess.run(  # noqa: S603
+        proc = subprocess.run(
             [
                 'docker',
                 'exec',
@@ -414,7 +414,7 @@ def corpus_preconditions(container: str, title_like: str = 'QMSum Product%') -> 
                 '\x1f',
                 '-c',
                 sql,
-            ],  # noqa: S607
+            ],
             capture_output=True,
             text=True,
             check=False,

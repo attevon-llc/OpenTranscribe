@@ -117,7 +117,7 @@ def _fs_events_status(
     try:
         parsed: FsEventsStatus = FsEventsStatus.model_validate(raw)
         return parsed
-    except Exception as e:  # noqa: BLE001 - a stale blob must not 500 the list
+    except Exception as e:  # a stale blob must not 500 the list
         logger.debug("Ignoring unreadable FS-event status for source %s: %s", source.id, e)
         return None
 
@@ -406,7 +406,7 @@ def test_watch_source(
     try:
         with create_client(source) as client:
             ok, message = client.test_connection()
-    except Exception:  # noqa: BLE001
+    except Exception:
         # This endpoint's whole purpose is to report whether the connection
         # works, so any failure is a successful *test* with a negative result.
         # But this broad catch also wraps create_client(source) itself — a

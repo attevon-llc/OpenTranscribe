@@ -145,7 +145,7 @@ class RedactionService:
                     failures.append("pii")
                 if unavailable is not None:
                     unavailable.append("pii")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 logger.warning("PII detection skipped for a segment: %s", exc)
                 if failures is not None:
                     failures.append("pii")
@@ -166,7 +166,7 @@ class RedactionService:
                     failures.append("toxicity")
                 if unavailable is not None:
                     unavailable.append("toxicity")
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 # Was ``logger.debug`` and nothing else, so a toxicity-only fault
                 # reached neither sink and marked nothing — invisible by construction.
                 logger.warning("Toxicity scoring failed for a segment: %s", exc)
@@ -234,7 +234,7 @@ class RedactionService:
             det_cfg["pii_use_gliner"] = get_setting_bool(
                 db, "redaction.pii_use_gliner", settings.REDACTION_PII_USE_GLINER
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             det_cfg["pii_use_gliner"] = settings.REDACTION_PII_USE_GLINER
         # Language gating: skip detectors that don't support this transcript's language.
         supported, skipped = detector_language_support(media.language)
@@ -322,7 +322,7 @@ class RedactionService:
                         )
                         detector_failures.append("toxicity")
                         detector_unavailable.append("toxicity")
-                    except Exception as exc:  # noqa: BLE001
+                    except Exception as exc:
                         # It ran and threw. Worth re-running, so this one IS a failure.
                         logger.warning("Batch toxicity failed for file %s: %s", file_id, exc)
                         detector_failures.append("toxicity")
@@ -398,7 +398,7 @@ class RedactionService:
             media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION
             media.redaction_coverage = ran
             db.commit()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             db.rollback()
             media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
             db.commit()
@@ -485,7 +485,7 @@ class RedactionService:
                 det_cfg,
                 failures=failures,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             # Not just one detector — the whole re-detection. Nothing was
             # examined, and the segment's cached spans still describe the text it
             # had before the edit.
@@ -501,7 +501,7 @@ class RedactionService:
                     organization_id=getattr(media_file, "organization_id", None),
                 )
                 blocking = sorted(blocking_detector_failures(failures, cfg.enabled_categories))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 # Fail CLOSED: an unresolvable policy is not an absent policy. If
                 # we cannot tell whether the owner masks these categories, we
                 # cannot tell that caching this result is safe.
@@ -539,7 +539,7 @@ class RedactionService:
         media_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         try:
             db.commit()
-        except Exception:  # noqa: BLE001
+        except Exception:
             db.rollback()
             logger.exception(
                 "Could not mark file %s stale after an unexaminable segment edit", media_file.id
@@ -561,7 +561,7 @@ class RedactionService:
             from app.tasks.redaction_task import redaction_detect_task
 
             redaction_detect_task.delay(file_id=int(media_file.id), user_id=int(media_file.user_id))
-        except Exception:  # noqa: BLE001
+        except Exception:
             # The status stands either way — the file stays withheld rather than
             # silently reverting to "scanned and clean".
             logger.exception("Could not queue re-detection for file %s", media_file.id)
@@ -594,7 +594,7 @@ class RedactionService:
             )
             failures.append("llm")
             return {}
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("LLM redaction detection failed for file %s: %s", media.id, exc)
             failures.append("llm")
             return {}

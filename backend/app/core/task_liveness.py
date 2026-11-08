@@ -124,7 +124,7 @@ def _current_stage_id() -> str | None:
         request = getattr(current_task, "request", None)
         task_id = getattr(request, "id", None) if request is not None else None
         return str(task_id) if task_id else None
-    except Exception:  # noqa: BLE001 - outside a worker there is simply no owner
+    except Exception:  # outside a worker there is simply no owner
         return None
 
 

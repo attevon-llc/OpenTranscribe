@@ -80,7 +80,7 @@ def create_upload(object_name: str, content_type: str | None) -> str:
     headers: dict[str, str | list[str] | tuple[str]] = {
         "Content-Type": content_type or "application/octet-stream"
     }
-    upload_id = minio_client._create_multipart_upload(_bucket(), object_name, headers)  # noqa: SLF001
+    upload_id = minio_client._create_multipart_upload(_bucket(), object_name, headers)
     logger.info(f"Created multipart upload {upload_id} for {object_name}")
     return str(upload_id)
 
@@ -123,7 +123,7 @@ def list_uploaded_parts(object_name: str, upload_id: str) -> list[dict[str, Any]
     parts: list[dict[str, Any]] = []
     marker: str | None = None
     while True:
-        result = minio_client._list_parts(  # noqa: SLF001
+        result = minio_client._list_parts(
             _bucket(), object_name, upload_id, part_number_marker=marker
         )
         for part in result.parts:
@@ -155,17 +155,17 @@ def complete_upload(object_name: str, upload_id: str, parts: list[dict[str, Any]
 
     ordered = sorted(parts, key=lambda p: int(p["part_number"]))
     payload = [Part(int(p["part_number"]), _clean_etag(p["etag"])) for p in ordered]
-    minio_client._complete_multipart_upload(_bucket(), object_name, upload_id, payload)  # noqa: SLF001
+    minio_client._complete_multipart_upload(_bucket(), object_name, upload_id, payload)
     logger.info(f"Completed multipart upload {upload_id} for {object_name} ({len(payload)} parts)")
 
 
 def abort_upload(object_name: str, upload_id: str) -> bool:
     """Abort one multipart upload, discarding its parts. Best-effort."""
     try:
-        minio_client._abort_multipart_upload(_bucket(), object_name, upload_id)  # noqa: SLF001
+        minio_client._abort_multipart_upload(_bucket(), object_name, upload_id)
         logger.info(f"Aborted multipart upload {upload_id} for {object_name}")
         return True
-    except Exception as e:  # noqa: BLE001 — cleanup must never fail the caller
+    except Exception as e:  # cleanup must never fail the caller
         logger.warning(f"Could not abort multipart upload {upload_id} for {object_name}: {e}")
         return False
 
@@ -182,15 +182,13 @@ def abort_uploads_for_object(object_name: str) -> int:
     """
     aborted = 0
     try:
-        result = minio_client._list_multipart_uploads(  # noqa: SLF001
-            _bucket(), prefix=object_name
-        )
+        result = minio_client._list_multipart_uploads(_bucket(), prefix=object_name)
         for upload in result.uploads or []:
             if upload.object_name != object_name:
                 continue
             if abort_upload(object_name, str(upload.upload_id)):
                 aborted += 1
-    except Exception as e:  # noqa: BLE001 — cleanup must never fail the caller
+    except Exception as e:  # cleanup must never fail the caller
         logger.warning(f"Could not list multipart uploads for {object_name}: {e}")
     return aborted
 
@@ -249,7 +247,7 @@ def ensure_abort_incomplete_lifecycle(
         minio_client.set_bucket_lifecycle(bucket_name, LifecycleConfig([*others, rule]))
         logger.info(f"Abandoned multipart uploads on {bucket_name} expire after {days}d")
         return True
-    except Exception as e:  # noqa: BLE001 — best-effort housekeeping
+    except Exception as e:  # best-effort housekeeping
         logger.warning(f"Could not set multipart-abort lifecycle on {bucket_name}: {e}")
         return False
 
@@ -277,7 +275,7 @@ def build_upload_plan(
             upload_id = create_upload(object_name, content_type)
             first_batch = list(range(1, min(PART_URL_BATCH, part_count) + 1))
             urls, expires_in = presign_parts(object_name, upload_id, first_batch)
-        except Exception as e:  # noqa: BLE001 — degrade to the API-mediated path
+        except Exception as e:  # degrade to the API-mediated path
             logger.warning(f"Multipart setup failed for {object_name}, falling back: {e}")
             return None
         return {

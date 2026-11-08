@@ -68,7 +68,7 @@ REVOKED_TOKEN_PREFIX = "revoked:jti:"  # noqa: S105 # nosec B105
 #: ``/auth/logout``, which does blacklist the access JTI. Stamping a timestamp
 #: per user and rejecting any access token issued before it closes the gap for
 #: every revocation path at once.
-USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # noqa: S105 # nosec B105
+USER_REVOCATION_EPOCH_PREFIX = "revoked:user:"  # nosec B105
 
 
 class TokenService(RefreshTokenOps):

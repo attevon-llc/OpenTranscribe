@@ -57,7 +57,7 @@ class FakeChunkClient:
     def __init__(self, present: dict[str, int]) -> None:
         self._present = present
 
-    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:
         if body.get("search_after") is not None:
             return {"hits": {"hits": []}}
         requested = body["query"]["bool"]["filter"][0]["terms"]["file_uuid"]

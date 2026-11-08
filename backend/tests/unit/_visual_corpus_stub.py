@@ -95,7 +95,7 @@ class StubBackend:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def do_GET(self) -> None:  # noqa: N802 - stdlib handler name
+            def do_GET(self) -> None:  # stdlib handler name
                 parsed = urlparse(self.path)
                 stub.requests.append(("GET", parsed.path))
                 if parsed.path in {"/api/health", "/health"}:
@@ -121,7 +121,7 @@ class StubBackend:
                     }
                 )
 
-            def do_POST(self) -> None:  # noqa: N802 - stdlib handler name
+            def do_POST(self) -> None:  # stdlib handler name
                 path = urlparse(self.path).path
                 stub.requests.append(("POST", path))
                 length = int(self.headers.get("Content-Length", 0))

@@ -488,12 +488,12 @@ def import_single_file(
         if status == "imported" and source_type == "local" and delete_after_import:
             try:
                 client.delete_file(file_info.path)  # type: ignore[attr-defined]
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning("delete_after_import failed for %s: %s", file_info.path, e)
 
         return status
 
-    except Exception as e:  # noqa: BLE001 - one bad file must not abort the whole scan
+    except Exception as e:  # one bad file must not abort the whole scan
         logger.error("Watch import failed for %s: %s", file_info.path, e, exc_info=True)
         _record_error(source_id, file_info.path, str(e))
         return "error"
@@ -534,7 +534,7 @@ def _notify_file_created(user_id: int, media_file: MediaFile) -> None:
             {"file_id": str(media_file.uuid), "file": file_data},
             file_uuid=media_file.uuid,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("file_created WS notify failed for %s: %s", media_file.id, e)
 
 
@@ -555,7 +555,7 @@ def _dispatch_pipeline(media_file: MediaFile, user_id: int, source: WatchSource)
             task_id=None,
         )
         return None
-    except Exception as e:  # noqa: BLE001 - one file's failure must not abort the scan
+    except Exception as e:  # one file's failure must not abort the scan
         # This return value is persisted verbatim onto the tracking row's
         # error_message and rendered in the watch-source file listing
         # (api/endpoints/watch_sources_files.py) — never interpolate the raw exception
@@ -585,5 +585,5 @@ def _record_error(source_id: int, remote_path: str, message: str) -> None:
                 row.error_message = message[:2000]
                 row.retry_count = (row.retry_count or 0) + 1
                 row.processed_at = datetime.now(UTC)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.error("Failed to record watch import error for %s: %s", remote_path, e)

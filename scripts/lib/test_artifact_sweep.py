@@ -729,7 +729,7 @@ class DockerPlane:
         self.docker = docker
 
     def _run(self, *args: str) -> str:
-        result = subprocess.run(  # noqa: S603 - fixed argv from a resolved docker binary
+        result = subprocess.run(  # fixed argv from a resolved docker binary
             [self.docker, *args], capture_output=True, text=True, timeout=60, check=False
         )
         if result.returncode != 0:

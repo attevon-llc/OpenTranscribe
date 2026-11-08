@@ -24,7 +24,7 @@ _IGNORE_THEN_EXEC = (
 
 
 def _start(argv: list[str]) -> subprocess.Popen[str]:
-    proc = subprocess.Popen(  # noqa: S603 - fixed argv; bash from PATH
+    proc = subprocess.Popen(  # fixed argv; bash from PATH
         argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
     )
     assert proc.stdout is not None

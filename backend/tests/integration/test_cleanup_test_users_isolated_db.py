@@ -87,7 +87,7 @@ _SEED_STATEMENTS = (
 
 
 def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)  # noqa: S603
+    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
 
 
 def _postgres_image_tag() -> str:
@@ -297,7 +297,7 @@ def seeded_db(throwaway_pg: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 
 def _run_script(env: dict[str, str], *flags: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603
+    return subprocess.run(
         [sys.executable, str(_SCRIPT), *flags],
         env=env,
         capture_output=True,

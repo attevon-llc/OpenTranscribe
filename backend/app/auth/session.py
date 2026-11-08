@@ -89,7 +89,9 @@ class InMemoryStore:
         self._data: dict[str, tuple[str, float | None]] = {}  # key -> (value, expire_at)
         self._lock = threading.Lock()
 
-    def set(self, key: str, value: str, ex: int | None = None) -> None:  # noqa: A003 - intentionally mirrors Redis API
+    def set(
+        self, key: str, value: str, ex: int | None = None
+    ) -> None:  # intentionally mirrors Redis API
         """Set a value with optional expiration in seconds."""
         with self._lock:
             expire_at = None
@@ -153,7 +155,7 @@ class InMemoryStore:
                 del self._data[key]
             return removed
 
-    def smembers(self, key: str) -> builtins.set[str]:  # noqa: A003 - set type shadowed by Redis API method
+    def smembers(self, key: str) -> builtins.set[str]:  # set type shadowed by Redis API method
         """Get all members of a set."""
         with self._lock:
             existing = self._data.get(key)

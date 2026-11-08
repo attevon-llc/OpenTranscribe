@@ -59,10 +59,10 @@ class _RecordingIndices:
     def open(self, index: str) -> None:
         self._parent.opened.append(index)
 
-    def forcemerge(self, index: str, max_num_segments: int) -> None:  # noqa: ARG002
+    def forcemerge(self, index: str, max_num_segments: int) -> None:
         self._parent.force_merged.append(index)
 
-    def delete(self, index: str, **kwargs: Any) -> None:  # noqa: ARG002
+    def delete(self, index: str, **kwargs: Any) -> None:
         self._parent.deleted.append(index)
 
 
@@ -96,7 +96,7 @@ class _RecordingOpenSearch:
             raise error
         return {"hits": {"total": {"value": 1, "relation": "eq"}, "hits": []}}
 
-    def count(self, index: str) -> dict[str, int]:  # noqa: ARG002
+    def count(self, index: str) -> dict[str, int]:
         return {"count": 5}
 
 
@@ -482,7 +482,7 @@ def test_the_maintenance_task_declines_when_the_lock_is_held(monkeypatch):
     from contextlib import contextmanager
 
     @contextmanager
-    def _busy(lock_key: str, timeout: int = 300, blocking_timeout: int = 0):  # noqa: ARG001
+    def _busy(lock_key: str, timeout: int = 300, blocking_timeout: int = 0):
         yield False
 
     monkeypatch.setattr(task_lock.task_lock_manager, "acquire_lock", _busy)
@@ -530,7 +530,7 @@ def test_the_structure_lock_is_scoped_to_the_index_name():
     captured: list[str] = []
 
     class _Manager:
-        def acquire_lock(self, lock_key: str, **kwargs: Any):  # noqa: ARG002
+        def acquire_lock(self, lock_key: str, **kwargs: Any):
             captured.append(lock_key)
             from contextlib import nullcontext
 

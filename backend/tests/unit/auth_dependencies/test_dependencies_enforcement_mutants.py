@@ -163,7 +163,7 @@ class TestEnforceAccountExpiry:
 
         class _Frozen(datetime):
             @classmethod
-            def now(cls, tz=None):  # noqa: ARG003
+            def now(cls, tz=None):
                 return frozen
 
         user = _user(account_expires_at=frozen)

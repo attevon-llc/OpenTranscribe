@@ -100,7 +100,7 @@ def default_testruns_dir() -> Path:
         return _REPO_ROOT / '.testruns'
     argv = [git, '-C', str(_REPO_ROOT), 'rev-parse', '--path-format=absolute', '--git-common-dir']
     try:
-        result = subprocess.run(  # noqa: S603 - fixed argv from a resolved binary, no shell
+        result = subprocess.run(  # fixed argv from a resolved binary, no shell
             argv, capture_output=True, text=True, timeout=10, check=False
         )
     except (OSError, subprocess.SubprocessError):
@@ -136,7 +136,7 @@ def _admin_email() -> str:
 
 
 def _admin_password() -> str:
-    return os.environ.get('E2E_ADMIN_PASSWORD', 'password')  # noqa: S107 — documented dev default
+    return os.environ.get('E2E_ADMIN_PASSWORD', 'password')  # documented dev default
 
 
 def _load_cleanup_users_module() -> ModuleType:
@@ -862,7 +862,7 @@ def _delete_artifacts(
             else:
                 any_failed = True
                 print(f'  REFUSED/FAILED  {finding.name} (re-check did not allow it)')
-        except Exception as exc:  # noqa: BLE001 - one bad artifact must not stop the plane
+        except Exception as exc:  # one bad artifact must not stop the plane
             any_failed = True
             print(f'  FAILED  {finding.name}: {exc}')
     return deleted, any_failed
@@ -940,14 +940,14 @@ def _sweep_store_planes(args: argparse.Namespace, cutoff: int, report: dict[str,
 
     try:
         planes = _build_store_planes(sweep, args.planes)
-    except Exception as exc:  # noqa: BLE001 - a missing client library degrades, never crashes
+    except Exception as exc:  # a missing client library degrades, never crashes
         print(f'  WARN  could not set up the store planes: {exc}')
         return 1
 
     for name, plane in planes.items():
         try:
             findings = plane.list_findings(cutoff)
-        except Exception as exc:  # noqa: BLE001 - an unreachable store degrades, never crashes
+        except Exception as exc:  # an unreachable store degrades, never crashes
             print(f'\n{name}: UNAVAILABLE ({exc})')
             report['resources'][name] = {'error': str(exc)}
             exit_code = 1
@@ -1036,7 +1036,7 @@ def _report_orphan_profile_docs(plane: Any, report: dict[str, Any]) -> None:
         docs = resp.json().get('hits', {}).get('hits', [])
         with create_engine(_engine_url()).connect() as conn:
             live = {str(r[0]) for r in conn.execute(text('SELECT uuid FROM speaker_profile'))}
-    except Exception as exc:  # noqa: BLE001 - a report must not fail the sweep
+    except Exception as exc:  # a report must not fail the sweep
         print(f'\nspeaker profile docs: UNAVAILABLE ({exc})')
         return
     orphans = find_orphan_profile_docs(docs, live)
@@ -1128,7 +1128,7 @@ def _sweep_records(args: argparse.Namespace, cutoff: int, report: dict[str, Any]
     if subprocess_flag:
         cmd.append(subprocess_flag)
     print(f'\n--- {" ".join(cmd)} ---', flush=True)
-    result = subprocess.run(cmd, capture_output=False, check=False)  # noqa: S603
+    result = subprocess.run(cmd, capture_output=False, check=False)
     if result.returncode not in (0,):
         exit_code = 1
 

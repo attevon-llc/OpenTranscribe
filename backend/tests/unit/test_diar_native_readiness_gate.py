@@ -87,7 +87,7 @@ def _clear_probe_cache():
 
 def _make_handler(readyz: int | None, health_body: dict):
     class _Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        def do_GET(self) -> None:  # stdlib handler method name
             if self.path == "/healthz":
                 payload = json.dumps(health_body).encode()
                 self.send_response(200)
@@ -219,7 +219,7 @@ def _make_embed_handler(health_body: dict, embed_requests: list[dict]):
     """
 
     class _Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        def do_GET(self) -> None:  # stdlib handler method name
             if self.path == "/healthz":
                 payload = json.dumps(health_body).encode()
                 self.send_response(200)
@@ -234,7 +234,7 @@ def _make_embed_handler(health_body: dict, embed_requests: list[dict]):
                 self.send_response(404)
                 self.end_headers()
 
-        def do_POST(self) -> None:  # noqa: N802 - stdlib handler method name
+        def do_POST(self) -> None:  # stdlib handler method name
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
             if self.path == "/embed_window":

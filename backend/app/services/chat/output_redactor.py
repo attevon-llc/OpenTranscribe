@@ -190,7 +190,7 @@ class OutputRedactor:
         started = time.monotonic()
         try:
             masked = self._detect_and_mask(span)
-        except Exception:  # noqa: BLE001 — fail closed, never emit the raw span
+        except Exception:  # fail closed, never emit the raw span
             self.withheld_spans += 1
             logger.exception("Chat output masking failed; withholding a generated span")
             return redaction_defaults.REDACTION_LLM_FAILSAFE_TEXT

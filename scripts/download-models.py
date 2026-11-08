@@ -797,7 +797,7 @@ def _fetch_model_config(config_url, config_path):
     try:
         urllib.request.urlretrieve(config_url, config_path)
         return config_path.exists() and config_path.stat().st_size > 0
-    except Exception as exc:  # noqa: BLE001 - any failure means "no config", reported here
+    except Exception as exc:  # any failure means "no config", reported here
         print_error(f'  config.json unavailable ({exc}); cannot register this model offline')
         return False
 

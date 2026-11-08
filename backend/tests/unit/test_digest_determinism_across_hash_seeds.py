@@ -69,7 +69,7 @@ _PROBE = textwrap.dedent(
 
 def _run_with_seed(seed: str, tmp: Path) -> dict:
     """Run the probe in a fresh interpreter under one hash seed."""
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    result = subprocess.run(  # fixed argv, no shell
         [sys.executable, "-c", _PROBE],
         cwd=BACKEND_ROOT,
         capture_output=True,
@@ -106,7 +106,7 @@ def test_set_iteration_order_really_does_vary_between_these_seeds():
     probe = 'print(list({"alpha","beta","gamma","delta","epsilon","zeta","eta","theta"}))'
     orders = set()
     for seed in ("1", "424242"):
-        out = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        out = subprocess.run(  # fixed argv, no shell
             [sys.executable, "-c", probe],
             capture_output=True,
             text=True,

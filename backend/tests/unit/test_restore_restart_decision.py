@@ -40,7 +40,7 @@ def _decide(
     re-typing the function) is the point: this proves the SHIPPED source behaves this
     way, not a copy of it that could silently drift.
     """
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    result = subprocess.run(  # fixed argv, no shell
         [
             "bash",
             "-c",
@@ -214,7 +214,7 @@ def test_function_is_sourceable_standalone() -> None:
     class of bug test_shell_expansion_guards.py polices statically, checked here by
     actually executing the sourcing.
     """
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    result = subprocess.run(  # fixed argv, no shell
         ["bash", "-c", f'set -uo pipefail; . "{_COMMON_SH}"; echo sourced-ok'],
         capture_output=True,
         text=True,

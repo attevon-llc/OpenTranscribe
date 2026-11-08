@@ -59,7 +59,7 @@ def _free_port() -> int:
 
 def _make_handler(readyz: int):
     class _Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802 - stdlib handler method name
+        def do_GET(self) -> None:  # stdlib handler method name
             if self.path == "/healthz":
                 self.send_response(200)
                 self.end_headers()

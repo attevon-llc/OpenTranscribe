@@ -151,7 +151,7 @@ class NullTraceRecorder:
 
     __slots__ = ()
 
-    def record(self, event: TraceEvent) -> None:  # noqa: D102
+    def record(self, event: TraceEvent) -> None:
         return None
 
 
@@ -174,7 +174,7 @@ class ListTraceRecorder:
         """True when events were dropped, so a reader is never silently misled."""
         return self._truncated
 
-    def record(self, event: TraceEvent) -> None:  # noqa: D102
+    def record(self, event: TraceEvent) -> None:
         if len(self.events) >= self._cap:
             self._truncated = True
             return
@@ -211,5 +211,5 @@ def emit(
                 detail=_scrub(detail),
             )
         )
-    except Exception:  # noqa: BLE001 - a trace failure must never fail a turn
+    except Exception:  # a trace failure must never fail a turn
         logger.debug("query trace recorder raised; continuing", exc_info=True)

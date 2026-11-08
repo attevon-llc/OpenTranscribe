@@ -45,7 +45,7 @@ PROCESSING_LOGGER = "app.services.watch_sources.processing"
 # Shaped like the real thing: redis-py's ConnectionError for a refused broker quotes the
 # whole URL, credential included. ``BROKER_CREDENTIAL`` is the sentinel that must never
 # reach a persisted, user-rendered field.
-BROKER_CREDENTIAL = "hunter2-broker-secret"  # noqa: S105 - fake sentinel, not a credential
+BROKER_CREDENTIAL = "hunter2-broker-secret"  # fake sentinel, not a credential
 LEAKY_DISPATCH_ERROR = (
     f"Error 111 connecting to redis://:{BROKER_CREDENTIAL}@redis:6379/0. Connection refused."
 )

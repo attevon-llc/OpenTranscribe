@@ -174,7 +174,7 @@ def is_legacy_audio_key(key: str) -> bool:
 def _bucket_is_versioned(client: Minio, bucket: str) -> bool:
     try:
         status = client.get_bucket_versioning(bucket).status
-    except Exception as e:  # noqa: BLE001 — unknown is treated as versioned, the safe side
+    except Exception as e:  # unknown is treated as versioned, the safe side
         logger.warning(f"Could not read versioning of {bucket} ({e}); deleting by version.")
         return True
     return status in ("Enabled", "Suspended")
@@ -216,7 +216,7 @@ def reclaim_legacy_audio_cache(
                 break
             keys.add(name)
             targets.append(DeleteObject(name, obj.version_id) if versioned else DeleteObject(name))
-    except Exception as e:  # noqa: BLE001 — reported as an incomplete pass, never raised
+    except Exception as e:  # reported as an incomplete pass, never raised
         logger.warning(f"Could not list legacy audio cache keys in {bucket}: {e}")
         return LegacyAudioReclaim(scanned, len(keys), 0, 0, False)
 
@@ -226,7 +226,7 @@ def reclaim_legacy_audio_cache(
             for err in storage.remove_objects(bucket, iter(targets)):
                 failed += 1
                 logger.warning(f"Could not delete legacy audio key {err.name}: {err.code}")
-        except Exception as e:  # noqa: BLE001 — reported as an incomplete pass, never raised
+        except Exception as e:  # reported as an incomplete pass, never raised
             logger.warning(f"Legacy audio cache reclaim error in {bucket}: {e}")
             return LegacyAudioReclaim(scanned, len(keys), 0, len(targets), False)
     result = LegacyAudioReclaim(

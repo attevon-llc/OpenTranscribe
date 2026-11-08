@@ -32,7 +32,7 @@ def _make_user(db):
     user = User(
         email=f"rediarize-pandas3-{uuid.uuid4().hex[:8]}@example.invalid",
         full_name="Rediarize Pandas3 Fixture",
-        hashed_password=get_password_hash("throwaway-password-1"),  # noqa: S106
+        hashed_password=get_password_hash("throwaway-password-1"),
         is_active=True,
         is_superuser=False,
         role="user",

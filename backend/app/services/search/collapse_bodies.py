@@ -284,7 +284,7 @@ def _bm25_leg_is_starved(
             },
         )
         return int(resp.get("count", 0)) == 0
-    except Exception as e:  # noqa: BLE001 — best-effort pre-check, see docstring
+    except Exception as e:  # best-effort pre-check, see docstring
         logger.debug(f"BM25 starvation pre-check failed, assuming non-empty: {e}")
         return False
 

@@ -318,12 +318,12 @@ def queued_run_ids() -> set[str] | None:
     """:func:`read_queued_run_ids` over the app's own broker connection; None when unreadable."""
     try:
         conn = _broker_connection()
-    except Exception as e:  # noqa: BLE001 - conclude nothing from an unreadable broker
+    except Exception as e:  # conclude nothing from an unreadable broker
         logger.warning("Could not read the queued stages: %s", e)
         return None
     try:
         return read_queued_run_ids(conn.default_channel.client)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("Could not read the queued stages: %s", e)
         return None
     finally:
@@ -479,7 +479,7 @@ def discard_run_deliveries(run_id: str, client: Any = None) -> int:
                 discard_delivery(client, delivery.tag)
                 dropped += 1
         return dropped
-    except Exception as e:  # noqa: BLE001 - best effort; the stage's ownership check still guards
+    except Exception as e:  # best effort; the stage's ownership check still guards
         logger.warning("Could not discard the broker deliveries of run %s: %s", run_id, e)
         return 0
     finally:
@@ -510,7 +510,7 @@ def requeue_own_delivery_to_front(stage_id: str, connection: Any = None) -> bool
                     mark_queued(delivery.run_id)
                 return restore_to_front(delivery.tag, connection=conn)
         return False
-    except Exception as e:  # noqa: BLE001 - the caller falls back to Reject(requeue=True)
+    except Exception as e:  # the caller falls back to Reject(requeue=True)
         logger.warning("Could not requeue stage %s at the front: %s", stage_id, e)
         return False
     finally:
@@ -528,7 +528,7 @@ def held_by_live_workers(timeout: float = 3.0) -> set[str] | None:
 
         inspect = celery_app.control.inspect(timeout=timeout)
         replies = [inspect.active(), inspect.reserved(), inspect.scheduled()]
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("Could not ask the workers what they hold: %s", e)
         return None
     held: set[str] = set()
@@ -705,7 +705,7 @@ def reclaim_orphaned_deliveries(
         )
         summary["lost_runs"] = recover_lost_runs(exclude=in_broker)
         return summary
-    except Exception as e:  # noqa: BLE001 - conclude nothing from an unreadable broker
+    except Exception as e:  # conclude nothing from an unreadable broker
         logger.warning("Orphaned-delivery sweep skipped: %s", e)
         summary["error"] = 1
         return summary

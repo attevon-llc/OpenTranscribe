@@ -54,7 +54,7 @@ pytestmark = pytest.mark.transcription
 # when the run was aimed at an isolated stack (issue #431). Everything below takes
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 # Transcript export formats that are always offered (guards formatter/export refactor).
 EXPORT_FORMATS = ("txt", "json", "csv", "srt", "vtt", "md")
@@ -157,7 +157,7 @@ def _form_login_with_retry(page, base_url: str, attempts: int = 4) -> None:
             page.click("button[type=submit]")
             page.wait_for_selector(".user-button", timeout=20000)
             return
-        except Exception as exc:  # noqa: BLE001 - retry on any login-flow failure
+        except Exception as exc:  # retry on any login-flow failure
             last_error = exc
             # Kept deliberately: this wait IS the rate-limit backoff, not a settle for
             # something a locator could poll for (issue #431).

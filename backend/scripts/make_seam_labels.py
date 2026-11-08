@@ -160,7 +160,7 @@ def _cmd_emit(args: argparse.Namespace) -> int:
         args.out.write_text(text, encoding="utf-8")
         logger.info("Wrote %d seam labels to %s", n_seams, args.out)
     else:
-        print(text, end="")  # noqa: T201 — explicit stdout for piping
+        print(text, end="")  # explicit stdout for piping
     return 0
 
 
@@ -178,7 +178,7 @@ def _cmd_to_rttm(args: argparse.Namespace) -> int:
         args.out.write_text(rttm, encoding="utf-8")
         logger.info("Wrote %d turns to %s", len(turns), args.out)
     else:
-        print(rttm, end="")  # noqa: T201 — explicit stdout for piping
+        print(rttm, end="")  # explicit stdout for piping
     return 0
 
 

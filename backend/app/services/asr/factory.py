@@ -272,7 +272,7 @@ class ASRProviderFactory:
         return LocalASRProvider()
 
     @staticmethod
-    def _from_env(provider: str) -> ASRProvider:  # noqa: C901
+    def _from_env(provider: str) -> ASRProvider:
         """Instantiate a provider from environment variables.
 
         For providers that require an API key, falls back to LocalASRProvider with a

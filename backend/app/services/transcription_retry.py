@@ -205,7 +205,7 @@ def _retry_file(
             "Retrying after a temporary problem",
             stage=TranscriptionStage.PREPARE,
         )
-    except Exception as e:  # noqa: BLE001 - a missed notification must not undo the retry
+    except Exception as e:  # a missed notification must not undo the retry
         logger.debug("Retry notification for file %s failed: %s", file_id, e)
     return RunOutcome.RETRIED
 
@@ -272,7 +272,7 @@ def run_cancel_requested(task_id: str, file_id: int | None) -> bool:
                 else None
             )
             return _cancel_requested(media_file, task_id)
-    except Exception as e:  # noqa: BLE001 - see docstring
+    except Exception as e:  # see docstring
         logger.warning("Could not read the cancel state of run %s: %s", task_id, e)
         return False
 
@@ -392,7 +392,7 @@ def run_status(run_id: str) -> str:
                 if newer is not None:
                     return "finished"
             return "current"
-    except Exception as e:  # noqa: BLE001 - see docstring
+    except Exception as e:  # see docstring
         logger.warning("Could not read the state of run %s: %s", run_id, e)
         return "unknown"
 

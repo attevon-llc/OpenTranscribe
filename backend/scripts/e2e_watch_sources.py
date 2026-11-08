@@ -181,7 +181,7 @@ def test_beat_due_logic() -> None:
             ok,
             f"(due dispatched={due_id in dispatched}, not-due skipped={not_due_id not in dispatched})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("beat due-logic", False, f"error: {e}")
     finally:
         for sid in (due_id, not_due_id):
@@ -265,7 +265,7 @@ def test_import_and_transcribe(timeout: int = 360) -> None:
             len(hits) >= 2,
             f"({len(segs)} segments, matched {hits})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("import+transcribe", False, f"error: {e}")
     finally:
         if source_id:
@@ -315,7 +315,7 @@ def test_dedup() -> None:
             imported == 1 and dup == 1,
             f"(imported={imported}, dup={dup})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("dedup", False, f"error: {e}")
     finally:
         if source_id:
@@ -374,7 +374,7 @@ def test_multipart(timeout: int = 180) -> None:
             stitched >= 1 and parts == 3,
             f"(stitched={stitched}, parts={parts})",
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("multipart", False, f"error: {e}")
     finally:
         if source_id:
@@ -433,7 +433,7 @@ def test_s3_import() -> None:
             source_id = src.id
         res = scan_single.run(source_id)
         record("s3 import (boto3 → MinIO)", res.get("imported", 0) == 1, f"({res})")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         record("s3 import", False, f"error: {e}")
     finally:
         if source_id:

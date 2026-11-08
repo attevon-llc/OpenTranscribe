@@ -132,7 +132,7 @@ class StreamingTraceRecorder:
             # Raises RuntimeError if the loop has already closed — a real race
             # during process shutdown, while a retrieval thread is still alive.
             self._loop.call_soon_threadsafe(self._enqueue, WireEvent(seq, event))
-        except Exception:  # noqa: BLE001 — a trace failure must never fail a turn
+        except Exception:  # a trace failure must never fail a turn
             logger.debug("query-trace event could not be scheduled", exc_info=True)
 
     def _enqueue(self, wire: WireEvent) -> None:
@@ -142,7 +142,7 @@ class StreamingTraceRecorder:
         except asyncio.QueueFull:
             with self._lock:
                 self._truncated = True
-        except Exception:  # noqa: BLE001 — see the class docstring
+        except Exception:  # see the class docstring
             logger.debug("query-trace event could not be queued", exc_info=True)
 
 

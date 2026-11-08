@@ -226,7 +226,7 @@ def s3_bucket_status(cfg: dict[str, Any], db: Session | None = None) -> dict[str
         client = build_s3_client(cfg, db)
         client.head_bucket(Bucket=bucket)
         result["reachable"] = True
-    except Exception as exc:  # noqa: BLE001 - report any failure, never raise to the caller
+    except Exception as exc:  # report any failure, never raise to the caller
         result["error"] = str(exc)
     return result
 
@@ -245,7 +245,7 @@ def test_s3_connection(
             Bucket=bucket, Prefix=(cfg.get("s3_prefix") or "").lstrip("/"), MaxKeys=1
         )
         return {"ok": True, "error": None, "bucket": bucket}
-    except Exception as exc:  # noqa: BLE001 - surface the failure as data, never raise
+    except Exception as exc:  # surface the failure as data, never raise
         return {"ok": False, "error": str(exc), "bucket": bucket}
 
 

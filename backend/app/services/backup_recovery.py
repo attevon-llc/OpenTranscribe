@@ -30,7 +30,7 @@ import contextlib
 import hashlib
 import logging
 import os
-import subprocess  # noqa: S404 - gpg invoked with a fixed argv list, no shell
+import subprocess  # gpg invoked with a fixed argv list, no shell
 from datetime import UTC
 from datetime import datetime
 from pathlib import Path

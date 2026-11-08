@@ -24,7 +24,7 @@ REASONING = "Let me check excerpt [1] before I answer that."
 
 
 class _StubConfig:
-    class provider:  # noqa: N801 - mirrors LLMProvider's .value access
+    class provider:  # mirrors LLMProvider's .value access
         value = "vllm"
 
     model = "gemma-4-e4b"

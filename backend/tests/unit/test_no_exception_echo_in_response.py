@@ -343,19 +343,19 @@ class _TaintWalker(ast.NodeVisitor):
         self.raise_findings: list[tuple[str, int]] = []
         self.return_findings: list[tuple[str, int]] = []
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._func_stack.append(node.name)
         self._fn_taint.append(set())
         self.generic_visit(node)
         self._func_stack.pop()
         self._fn_taint.pop()
 
-    # noqa reason: dispatched by name from ast.NodeVisitor.generic_visit
+    # Why the N815 suppression below: dispatched by name from ast.NodeVisitor.generic_visit
     # ("visit_" + node.__class__.__name__); ast.AsyncFunctionDef is itself
     # mixedCase in the stdlib ast module, so a snake_case alias is never called.
     visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815
 
-    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])
         # Carry every name tainted inside this handler into the enclosing
         # function's persistent taint set too — EXCEPT the handler's own bound
@@ -367,7 +367,7 @@ class _TaintWalker(ast.NodeVisitor):
         self.generic_visit(node)
         self._taint_stack.pop()
 
-    def visit_Raise(self, node: ast.Raise) -> None:  # noqa: N802
+    def visit_Raise(self, node: ast.Raise) -> None:
         tainted = self._taint_stack[-1]
         if isinstance(node.exc, ast.Call) and _is_response_bound_finding(
             node.exc, tainted, self._error_subclasses
@@ -375,7 +375,7 @@ class _TaintWalker(ast.NodeVisitor):
             self.raise_findings.append((self._func_stack[-1], node.lineno))
         self.generic_visit(node)
 
-    def visit_Return(self, node: ast.Return) -> None:  # noqa: N802
+    def visit_Return(self, node: ast.Return) -> None:
         tainted = frozenset(self._taint_stack[-1] | self._fn_taint[-1])
         if node.value is not None and _references_tainted(node.value, tainted):
             self.return_findings.append((self._func_stack[-1], node.lineno))
@@ -447,7 +447,7 @@ class _ContainerTaintWalker(ast.NodeVisitor):
                 leaked.update(mutations)
         self.container_findings.extend((self._func_stack[-1], lineno) for lineno in sorted(leaked))
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._func_stack.append(node.name)
         self._fn_taint.append(set())
         self._containers.append({})
@@ -459,18 +459,18 @@ class _ContainerTaintWalker(ast.NodeVisitor):
         self._containers.pop()
         self._returns.pop()
 
-    # noqa reason: dispatched by name from ast.NodeVisitor.generic_visit, exactly as in
+    # Why the N815 suppression below: dispatched by name from ast.NodeVisitor.generic_visit, exactly as in
     # _TaintWalker above — a snake_case alias would never be called.
     visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]  # noqa: N815
 
-    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         tainted = _taint_from_except_handler(node, self._taint_stack[-1])
         self._fn_taint[-1] |= tainted - ({node.name} if node.name else set())
         self._taint_stack.append(tainted)
         self.generic_visit(node)
         self._taint_stack.pop()
 
-    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+    def visit_Call(self, node: ast.Call) -> None:
         tainted = self._live_taint()
         if (
             tainted
@@ -490,7 +490,7 @@ class _ContainerTaintWalker(ast.NodeVisitor):
             self._note_container(node.func.value, node.lineno)
         self.generic_visit(node)
 
-    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+    def visit_Assign(self, node: ast.Assign) -> None:
         tainted = self._live_taint()
         if (
             tainted
@@ -504,13 +504,13 @@ class _ContainerTaintWalker(ast.NodeVisitor):
                 self._note_container(target, node.lineno)
         self.generic_visit(node)
 
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
         tainted = self._live_taint()
         if tainted and _references_tainted(node.value, tainted, _is_class_name_or_length_only):
             self._note_container(node.target, node.lineno)
         self.generic_visit(node)
 
-    def visit_Return(self, node: ast.Return) -> None:  # noqa: N802
+    def visit_Return(self, node: ast.Return) -> None:
         if node.value is not None:
             self._returns[-1].append((node.lineno, node.value))
         self.generic_visit(node)

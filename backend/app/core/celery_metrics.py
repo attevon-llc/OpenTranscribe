@@ -193,7 +193,7 @@ def queue_snapshot(
                 counts["oldest_unacked_age"] = max(counts["oldest_unacked_age"], age)
 
         return result
-    except Exception as exc:  # noqa: BLE001 — scrape must never fail on broker issues
+    except Exception as exc:  # scrape must never fail on broker issues
         logger.debug("Queue snapshot skipped: %s", exc)
         return {name: _empty_counts() for name in names}
 
@@ -308,5 +308,5 @@ def update_transcription_lease_metrics() -> None:
         requeued = files_requeued_at_least(threshold)
         if requeued is not None:
             transcription_files_infra_requeued.set(_count_in_flight(requeued))
-    except Exception as exc:  # noqa: BLE001 — scrape must never fail on a backing store
+    except Exception as exc:  # scrape must never fail on a backing store
         logger.debug("Transcription lease metrics skipped: %s", exc)

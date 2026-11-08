@@ -172,8 +172,8 @@ def indexed_meetings(container: str, prefix: str = TITLE_PREFIX) -> dict[str, st
         SystemExit: The query failed — better to stop than to build a question set
             against meetings that may not exist.
     """
-    sql = f"SELECT uuid, title FROM media_file WHERE title LIKE '{prefix}%';"  # noqa: S608
-    proc = subprocess.run(  # noqa: S603
+    sql = f"SELECT uuid, title FROM media_file WHERE title LIKE '{prefix}%';"
+    proc = subprocess.run(
         [
             'docker',
             'exec',
@@ -185,7 +185,7 @@ def indexed_meetings(container: str, prefix: str = TITLE_PREFIX) -> dict[str, st
             'opentranscribe',
             '-tAc',
             sql,
-        ],  # noqa: S607
+        ],
         capture_output=True,
         text=True,
         check=False,

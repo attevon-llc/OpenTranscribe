@@ -152,7 +152,7 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
 
         try:
             expected = get_search_embedding_dimension()
-        except Exception:  # noqa: BLE001 - a settings read must not break deployment
+        except Exception:  # a settings read must not break deployment
             expected = None
 
         ok, detail = self.verify_model_can_embed(model_id, expected_dimension=expected)
@@ -209,7 +209,7 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
                     "target_response": ["sentence_embedding"],
                 },
             )
-        except Exception as exc:  # noqa: BLE001 - any failure means "cannot embed"
+        except Exception as exc:  # any failure means "cannot embed"
             return False, f"prediction request failed: {exc}"
 
         try:

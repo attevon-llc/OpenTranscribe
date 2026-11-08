@@ -207,7 +207,7 @@ def _dispatch_detection(file_id: int) -> None:
 
         redaction_detect_task.delay(file_id=file_id)
         logger.info("Dispatched missing redaction detection for file %s", file_id)
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Could not dispatch redaction detection for file %s", file_id)
 
 

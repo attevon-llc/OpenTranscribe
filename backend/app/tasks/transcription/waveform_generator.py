@@ -44,8 +44,8 @@ class WaveformGenerator:
         """Check that required dependencies (FFmpeg) are available."""
         try:
             # Using hardcoded ffmpeg/ffprobe commands, not user input
-            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603 S607 # nosec B603 B607
-            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S603 S607 # nosec B603 B607
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S607 # nosec B603 B607
+            subprocess.run(["ffprobe", "-version"], capture_output=True, check=True, timeout=10)  # noqa: S607 # nosec B603 B607
         except (
             subprocess.CalledProcessError,
             FileNotFoundError,

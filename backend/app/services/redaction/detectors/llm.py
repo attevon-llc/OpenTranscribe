@@ -77,7 +77,7 @@ def detect_with_llm(
         service = LLMService.create_from_settings(user_id)
     except SQLAlchemyError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.info("LLM redaction detector: no LLM service for user %s (%s)", user_id, exc)
         _report(failures)
         return {}
@@ -123,7 +123,7 @@ def _detect_one(
     except LLMBudgetExceededError:
         # Every later segment would be refused too: stop the scan here.
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug("LLM redaction detection failed for a segment: %s", exc)
         _report(failures)
         return []

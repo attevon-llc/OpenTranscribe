@@ -273,7 +273,7 @@ def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
             return _suppressed(
                 row[0], bool(row[1]), recipient_is_admin=is_review_admin(db, recipient_user_id)
             )
-    except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
+    except Exception as e:  # fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_id}; "
             f"suppressing as a precaution: {e}"
@@ -310,7 +310,7 @@ def is_notification_suppressed_for_uuid(
             return _suppressed(
                 row[0], bool(row[1]), recipient_is_admin=is_review_admin(db, recipient_user_id)
             )
-    except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
+    except Exception as e:  # fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_uuid}; "
             f"suppressing as a precaution: {e}"
@@ -367,7 +367,7 @@ def filter_suppressed_file_uuids(
                 continue
             visible.append(key)
         return visible
-    except Exception as e:  # noqa: BLE001 — fail CLOSED, see docstring
+    except Exception as e:  # fail CLOSED, see docstring
         logger.warning(
             f"Batch notification suppression check failed for {len(candidates)} file(s); "
             f"suppressing all as a precaution: {e}"

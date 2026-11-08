@@ -28,7 +28,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from app.core.enums import FileStatus  # noqa: F401 — re-exported for backward compat
+from app.core.enums import FileStatus  # re-exported for backward compat
 from app.db.base import Base
 from app.utils.uuid7 import uuid7
 

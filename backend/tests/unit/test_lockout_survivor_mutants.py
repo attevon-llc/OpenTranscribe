@@ -691,7 +691,7 @@ class TestUnlockAccountBoundary:
 
         class _Frozen(datetime):
             @classmethod
-            def now(cls, tz=None):  # noqa: ARG003 - signature must match
+            def now(cls, tz=None):  # signature must match
                 return frozen
 
         with patch.object(lockout_admin, "datetime", _Frozen):
@@ -767,7 +767,7 @@ class TestGetLockoutInfoShape:
 
         class _Frozen(datetime):
             @classmethod
-            def now(cls, tz=None):  # noqa: ARG003 - signature must match
+            def now(cls, tz=None):  # signature must match
                 return frozen
 
         with patch.object(lockout_admin, "datetime", _Frozen):

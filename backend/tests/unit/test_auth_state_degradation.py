@@ -95,7 +95,7 @@ class _RecordingRedis:
         self.keys_calls += 1
         return list(self._keys)
 
-    def scan_iter(self, match=None, count=None):  # noqa: ARG002 - mirrors redis-py
+    def scan_iter(self, match=None, count=None):  # mirrors redis-py
         self.scan_calls += 1
         yield from list(self._keys)
 

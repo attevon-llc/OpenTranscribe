@@ -68,7 +68,7 @@ def _declared_subjects(suite: str) -> list[str]:
     Running the real script is the point: a second parser could drift from the array the
     script actually declares, and then this test would be checking its own copy.
     """
-    result = subprocess.run(  # noqa: S603 - fixed in-repo script, no untrusted input
+    result = subprocess.run(  # fixed in-repo script, no untrusted input
         ["/bin/bash", str(REPO_ROOT / suite)],
         env={"OT_PRINT_SUBJECT_FILES": "1", "PATH": "/usr/bin:/bin"},
         capture_output=True,

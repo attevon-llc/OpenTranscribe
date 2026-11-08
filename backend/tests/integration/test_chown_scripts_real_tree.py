@@ -52,7 +52,7 @@ _EXPECTED_UID, _EXPECTED_GID = (int(part) for part in EXPECTED_OWNER.split(":"))
 def _run(
     cmd: list[str], *, cwd: str | Path | None = None, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(  # fixed argv, no shell
         cmd, capture_output=True, text=True, cwd=str(cwd) if cwd else None, env=env
     )
 

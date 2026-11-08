@@ -16,4 +16,4 @@ logger = logging.getLogger('probe_chat_rag')
 #: Test credentials documented throughout this repo (backend/tests/CLAUDE.md,
 #: e2e/conftest.py) — not a secret, just the seeded dev-stack admin account.
 DEFAULT_EMAIL = 'admin@example.com'
-DEFAULT_PASSWORD = 'password'  # noqa: S105 - documented dev-stack test credential, not a secret
+DEFAULT_PASSWORD = 'password'  # documented dev-stack test credential, not a secret

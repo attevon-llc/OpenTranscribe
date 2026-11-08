@@ -323,7 +323,7 @@ class TestTheSweepsBoundariesAndItsWholeLoop:
 
         class _FrozenDatetime(datetime):
             @classmethod
-            def now(cls, tz=None):  # noqa: ARG003 - signature must match
+            def now(cls, tz=None):  # signature must match
                 return frozen
 
         record = _record(
@@ -386,7 +386,7 @@ class TestTheSweepsBoundariesAndItsWholeLoop:
 
         class _FrozenDatetime(datetime):
             @classmethod
-            def now(cls, tz=None):  # noqa: ARG003 - signature must match
+            def now(cls, tz=None):  # signature must match
                 return frozen
 
         record = _record(

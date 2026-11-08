@@ -182,7 +182,7 @@ def _run_leg(leg: Leg) -> LegOutcome:
         return LegOutcome(
             leg=leg, result=result, duration_ms=int((time.monotonic() - started) * 1000)
         )
-    except Exception as exc:  # noqa: BLE001 — a leg failure degrades, never propagates
+    except Exception as exc:  # a leg failure degrades, never propagates
         logger.warning("Chat leg %r (%s) failed: %s", leg.name, leg.kind, exc)
         return LegOutcome(
             leg=leg, error=str(exc), duration_ms=int((time.monotonic() - started) * 1000)

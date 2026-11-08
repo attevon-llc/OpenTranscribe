@@ -122,7 +122,7 @@ class ModelManager:
                 native = NativeSpeakerDiarizer(config)
                 native.load_model()
                 return native
-            except Exception as exc:  # noqa: BLE001 — any failure means "use the fork"
+            except Exception as exc:  # any failure means "use the fork"
                 fallback_reason = self._native_unavailable_reason()
                 self._refuse_if_sidecar_required(fallback_reason, exc)
                 logger.warning(

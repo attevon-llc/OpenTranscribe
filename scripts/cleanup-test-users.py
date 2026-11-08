@@ -30,15 +30,15 @@ speaker-profile/conversation planes, which this script does not touch.
 from __future__ import annotations
 
 import argparse
-import os  # noqa: E402
+import os
 import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from dotenv import dotenv_values  # noqa: E402
+from dotenv import dotenv_values
 from sqlalchemy import (
-    create_engine,  # noqa: E402
-    text,  # noqa: E402
+    create_engine,
+    text,
 )
 
 # Build the DB URL from .env + dev-stack defaults directly — importing

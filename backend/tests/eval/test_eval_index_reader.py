@@ -30,10 +30,10 @@ class ScriptedClient:
         self.refreshes = 0
         self.indices = self  # `client.indices.refresh(...)` reaches the same object
 
-    def refresh(self, *, index: str) -> None:  # noqa: ARG002 - signature parity
+    def refresh(self, *, index: str) -> None:  # signature parity
         self.refreshes += 1
 
-    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:
         # The distinct-file count is a SECOND request, a paged `composite` walk, so
         # it must not advance the observation cursor — otherwise every poll would
         # consume two scripted observations. It replays the CURRENT observation's

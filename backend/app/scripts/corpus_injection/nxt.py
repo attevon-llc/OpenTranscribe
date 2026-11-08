@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import difflib
 import re
-import xml.etree.ElementTree as ET  # noqa: S405  # nosec B405 — see module note on XML trust
+import xml.etree.ElementTree as ET  # nosec B405 — see module note on XML trust
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path

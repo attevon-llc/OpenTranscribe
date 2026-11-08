@@ -39,7 +39,7 @@ import json
 import logging
 import os
 import shutil
-import subprocess  # noqa: S404 - diar-server invoked with a fixed argv list, no shell
+import subprocess  # diar-server invoked with a fixed argv list, no shell
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -201,7 +201,7 @@ def _describe(exit_code: int, payload: dict | None, stderr: str) -> str:
     return " ".join(part for part in (message, remedy) if part) or "no detail reported"
 
 
-def ensure_native_models(  # noqa: PLR0911 - one branch per distinct operator outcome
+def ensure_native_models(  # one branch per distinct operator outcome
     directory: str | None = None,
     *,
     force: bool = False,

@@ -94,12 +94,12 @@ class _LLMHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     # -- handlers --------------------------------------------------------------
-    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+    def do_GET(self) -> None:  # BaseHTTPRequestHandler API
         """Only reached by a client that FOLLOWED a redirect (302 turns POST into GET)."""
         self._record("GET")
         self._json({"served_by": self._which, "followed": True})
 
-    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+    def do_POST(self) -> None:  # BaseHTTPRequestHandler API
         self._record("POST")
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length) or b"{}")

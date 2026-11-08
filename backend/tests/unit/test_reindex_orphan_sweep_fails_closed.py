@@ -48,10 +48,10 @@ class _FakeRedis:
         self._uuids = set(uuids)
         self.deleted: list[tuple] = []
 
-    def hgetall(self, key: str) -> dict[Any, Any]:  # noqa: ARG002
+    def hgetall(self, key: str) -> dict[Any, Any]:
         return dict(self._state)
 
-    def smembers(self, key: str) -> set[str]:  # noqa: ARG002
+    def smembers(self, key: str) -> set[str]:
         return set(self._uuids)
 
     def delete(self, *keys: str) -> int:
@@ -66,7 +66,7 @@ def swept(monkeypatch) -> list[set[str]]:
 
     calls: list[set[str]] = []
 
-    def _record(user_id: int, indexed_file_uuids: set[str]) -> int:  # noqa: ARG001
+    def _record(user_id: int, indexed_file_uuids: set[str]) -> int:
         calls.append(set(indexed_file_uuids))
         return 0
 
@@ -147,17 +147,17 @@ class _FakeOpenSearch:
         self.deletes: list[dict[str, Any]] = []
         self.indices = self
 
-    def exists(self, *, index: str) -> bool:  # noqa: ARG002
+    def exists(self, *, index: str) -> bool:
         return True
 
-    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:  # noqa: ARG002
+    def search(self, *, index: str, body: dict[str, Any]) -> dict[str, Any]:
         return {
             "aggregations": {
                 "file_uuids": {"buckets": [{"key": key} for key in sorted(self._indexed)]}
             }
         }
 
-    def delete_by_query(self, *, index: str, body: dict[str, Any], **kwargs: Any) -> dict:  # noqa: ARG002
+    def delete_by_query(self, *, index: str, body: dict[str, Any], **kwargs: Any) -> dict:
         self.deletes.append(body)
         return {"deleted": 1}
 

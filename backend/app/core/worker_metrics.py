@@ -274,7 +274,7 @@ def task_label(task: Any) -> str:
         return OTHER_TASK
     try:
         registered = name in app.tasks
-    except Exception:  # noqa: BLE001 - a label lookup must never fail a task
+    except Exception:  # a label lookup must never fail a task
         return OTHER_TASK
     return str(name) if registered else OTHER_TASK
 
@@ -323,7 +323,7 @@ def configure(
         values.ValueClass = values.get_value_class()
         _multiproc_dir = path
         _metrics = WorkerTaskMetrics()
-    except Exception as exc:  # noqa: BLE001 - metrics must never stop a worker starting
+    except Exception as exc:  # metrics must never stop a worker starting
         logger.warning("Worker metrics could not be enabled: %s", exc)
         _metrics = None
         return False
@@ -370,7 +370,7 @@ def start_listener(**_: Any) -> Any:
         else:
             registry = _metrics.registry
         server = _start_http_server(port, registry)
-    except Exception as exc:  # noqa: BLE001 - e.g. port in use; the worker must still run
+    except Exception as exc:  # e.g. port in use; the worker must still run
         logger.warning("Worker metrics listener could not start on port %s: %s", port, exc)
         return None
     _listener_started = True
@@ -389,7 +389,7 @@ def mark_child_dead(pid: int | None = None, **_: Any) -> None:
         from prometheus_client import multiprocess
 
         multiprocess.mark_process_dead(pid or os.getpid(), _multiproc_dir)
-    except Exception as exc:  # noqa: BLE001 - see module docstring
+    except Exception as exc:  # see module docstring
         logger.debug("Could not mark worker child %s dead for metrics: %s", pid, exc)
 
 
@@ -409,7 +409,7 @@ def _record(outcome: str, sender: Any) -> None:
         return
     try:
         metrics.record_outcome(sender, outcome)
-    except Exception as exc:  # noqa: BLE001 - see module docstring
+    except Exception as exc:  # see module docstring
         logger.debug(
             "Could not record a %s for %s: %s", outcome, getattr(sender, "name", None), exc
         )
@@ -439,11 +439,11 @@ def on_task_prerun(
         return
     try:
         metrics.task_started(task_id)
-    except Exception as exc:  # noqa: BLE001 - see module docstring
+    except Exception as exc:  # see module docstring
         logger.debug("Could not record the start of %s: %s", task_id, exc)
     try:
         metrics.task_dequeued(task if task is not None else sender)
-    except Exception as exc:  # noqa: BLE001 - see module docstring
+    except Exception as exc:  # see module docstring
         logger.debug("Could not record the queue wait of %s: %s", task_id, exc)
 
 
@@ -455,7 +455,7 @@ def on_task_postrun(
         return
     try:
         metrics.task_finished(task if task is not None else sender, task_id)
-    except Exception as exc:  # noqa: BLE001 - see module docstring
+    except Exception as exc:  # see module docstring
         logger.debug("Could not record the run time of %s: %s", task_id, exc)
 
 
@@ -469,7 +469,7 @@ def set_gpu_concurrency(*, configured: int, host_cap: int | None, effective: int
         if host_cap is not None:
             metrics.gpu_concurrency_host_cap.set(host_cap)
         metrics.gpu_concurrency_effective.set(effective)
-    except Exception as exc:  # noqa: BLE001 - see module docstring
+    except Exception as exc:  # see module docstring
         logger.debug("Could not record the GPU concurrency decision: %s", exc)
 
 

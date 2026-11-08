@@ -80,7 +80,7 @@ def _duplicate_delivery_reason(task_id: str) -> str | None:
 
         if AsyncResult(stage_id, app=celery_app).state == "SUCCESS":
             return "this stage already completed"
-    except Exception as e:  # noqa: BLE001 - see docstring
+    except Exception as e:  # see docstring
         logger.debug("Could not read the result of stage %s: %s", stage_id, e)
     return None
 
@@ -108,7 +108,7 @@ def replaced_by_newer_run(task_id: str) -> bool:
                 .first()
             )
             return newer is not None
-    except Exception as e:  # noqa: BLE001 - see docstring
+    except Exception as e:  # see docstring
         logger.warning("Could not check whether run %s was replaced: %s", task_id, e)
         return False
 

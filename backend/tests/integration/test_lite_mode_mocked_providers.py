@@ -98,7 +98,7 @@ pytestmark = [
 # ORPHAN_PATTERNS_UNAMBIGUOUS so an interrupted run is swept, not leaked.
 _LITE_MODE_USER_PREFIX = "litemode-"
 _LITE_MODE_USER_DOMAIN = "@example.invalid"
-_LITE_MODE_PASSWORD = "lite-mode-fixture-pw-1"  # noqa: S105 — throwaway test user only
+_LITE_MODE_PASSWORD = "lite-mode-fixture-pw-1"  # throwaway test user only
 
 
 @pytest.fixture(scope="module")
@@ -174,7 +174,7 @@ def lite_mode_user():
             if reloaded is not None:
                 db.delete(reloaded)
                 db.commit()
-        except Exception as exc:  # noqa: BLE001 - a backstop must never fail the module
+        except Exception as exc:  # a backstop must never fail the module
             db.rollback()
             warnings.warn(
                 f"lite-mode fixture user {email} could not be torn down ({exc!r}); "

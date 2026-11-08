@@ -42,7 +42,7 @@ protocol, ``PM``/``ID``/``UI``/``ME``), falling back to ``"Participant <channel>
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET  # noqa: S405  # nosec B405 — see nxt.py's XML trust note
+import xml.etree.ElementTree as ET  # nosec B405 — see nxt.py's XML trust note
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path

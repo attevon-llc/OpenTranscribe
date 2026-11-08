@@ -286,7 +286,7 @@ class _AsyncDiarization:
                 self._value = _run_diarize(
                     self._diarizer, audio, wav_path, allow_local_fallback=False, tc=tc
                 )
-            except BaseException as exc:  # noqa: BLE001 — handed to the caller, not swallowed
+            except BaseException as exc:  # handed to the caller, not swallowed
                 self._error = exc
 
         self._thread = threading.Thread(target=_run, name="diarize-async", daemon=True)

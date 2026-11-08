@@ -26,7 +26,7 @@ def quiet_app_loggers() -> None:
     logging.getLogger('app.services.search.chunk_retrieval').setLevel(logging.WARNING)
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read top to bottom
+def main(argv: list[str] | None = None) -> int:  # a CLI, read top to bottom
     args = build_parser().parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO, format='%(levelname)s %(message)s'
@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901 — a CLI, read to
             # in the committed baseline rather than collapsed into one number.
             'configured_embedding_model': configured_model,
         }
-    except Exception as exc:  # noqa: BLE001 - recorded, never fatal to a measurement
+    except Exception as exc:  # recorded, never fatal to a measurement
         # Recorded rather than swallowed: "we could not read the model" and "the
         # model is X" must not look the same in a committed baseline.
         logger.warning('Could not resolve the embedding provenance: %s', exc)

@@ -90,7 +90,7 @@ def _build_analyzer(use_gliner: bool) -> Any:
             context=["ssn", "social security", "social security number"],
         )
         analyzer.registry.add_recognizer(ssn)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Could not register SSN pattern recognizer: %s", exc)
 
     # Names/orgs/locations come from spaCy NER by default (fast: ~10-20 ms/segment).
@@ -125,7 +125,7 @@ def _build_analyzer(use_gliner: bool) -> Any:
             redaction_defaults.REDACTION_PII_GLINER_MODEL,
             map_location,
         )
-    except Exception as exc:  # noqa: BLE001 — optional enhancement
+    except Exception as exc:  # optional enhancement
         logger.warning("GLiNER recognizer unavailable, using spaCy NER for names: %s", exc)
 
     return analyzer
@@ -165,7 +165,7 @@ def _get_analyzer(use_gliner: bool) -> Any:
             _analyzer = _build_analyzer(use_gliner)
             _analyzer_gliner = use_gliner
             _load_failed = False
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Presidio analyzer failed to load — PII detection disabled: %s", exc)
             _load_failed = True
             return _analyzer  # may be None

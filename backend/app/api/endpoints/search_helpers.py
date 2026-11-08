@@ -190,7 +190,7 @@ def _source_counts(
             **filter_kwargs,
         )
         counts["summary"] = total
-    except Exception:  # noqa: BLE001 — best-effort count, never a hard failure
+    except Exception:  # best-effort count, never a hard failure
         logger.warning("source_counts: summary count unavailable", exc_info=True)
 
     return counts

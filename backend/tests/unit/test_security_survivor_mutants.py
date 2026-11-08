@@ -199,7 +199,7 @@ from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.exceptions import AuthenticationError
 
-PROBE_PASSWORD = "correct horse battery staple"  # noqa: S105 - test fixture literal, not a secret
+PROBE_PASSWORD = "correct horse battery staple"  # test fixture literal, not a secret
 
 
 # ── accepted_algorithms / _bcrypt_rounds: equivalence proofs, no test needed ─────
@@ -321,7 +321,7 @@ class _NeverNeedsUpdate:
     function out of ``backend/mutants/`` to test it standalone.
     """
 
-    def needs_update(self, hashed_password: str) -> bool:  # noqa: ARG002
+    def needs_update(self, hashed_password: str) -> bool:
         return False
 
 

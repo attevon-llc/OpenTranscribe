@@ -453,7 +453,7 @@ def _mask_chunks_with_analyzer(analyzer, cfg):
 class _AnalyzerThatThrows:
     """Presidio built fine, then threw — the second row of the measured table."""
 
-    def analyze(self, text, language):  # noqa: ARG002
+    def analyze(self, text, language):
         raise RuntimeError("nlp engine exploded")
 
 

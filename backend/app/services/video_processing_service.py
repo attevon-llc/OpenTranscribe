@@ -465,7 +465,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 for obj in objects
                 if obj.object_name and pattern.match(obj.object_name)
             ]
-        except Exception as e:  # noqa: BLE001 - listing is a best-effort sweep
+        except Exception as e:  # listing is a best-effort sweep
             logger.warning(f"Could not list masked derived renders for {filename}: {e}")
             return []
 

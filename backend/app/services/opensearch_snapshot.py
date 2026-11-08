@@ -66,7 +66,7 @@ def is_reachable(client: Any | None = None) -> bool:
         return False
     try:
         return bool(client.ping())
-    except Exception:  # noqa: BLE001 - any failure means "not reachable"
+    except Exception:  # any failure means "not reachable"
         return False
 
 
@@ -80,7 +80,7 @@ def ensure_repository(client: Any) -> None:
     """
     try:
         existing = client.snapshot.get_repository(repository=REPO_NAME)
-    except Exception:  # noqa: BLE001 - "not found" raises; treat as needs-create
+    except Exception:  # "not found" raises; treat as needs-create
         existing = None
 
     if existing and REPO_NAME in existing:
@@ -118,7 +118,7 @@ def voiceprint_doc_count(client: Any) -> int | None:
 
     try:
         return int(client.count(index=f"{get_speaker_index()}*")["count"])
-    except Exception as exc:  # noqa: BLE001 - a diagnostic; unreadable is not zero
+    except Exception as exc:  # a diagnostic; unreadable is not zero
         logger.debug("Could not count voiceprint documents: %s", exc)
         return None
 
@@ -147,7 +147,7 @@ def list_snapshot_names(client: Any) -> list[str]:
         resp = client.snapshot.get(
             repository=REPO_NAME, snapshot="_all", request_timeout=_REQUEST_TIMEOUT_S
         )
-    except Exception as exc:  # noqa: BLE001 - missing repo / unreachable → no names
+    except Exception as exc:  # missing repo / unreachable → no names
         logger.debug("Could not list OpenSearch snapshots: %s", exc)
         return []
     names: list[str] = []
@@ -187,7 +187,7 @@ def prune_snapshots(client: Any, cfg: dict[str, Any]) -> list[str]:
                 repository=REPO_NAME, snapshot=name, request_timeout=_REQUEST_TIMEOUT_S
             )
             deleted.append(name)
-        except Exception as exc:  # noqa: BLE001 - one bad delete shouldn't abort the run
+        except Exception as exc:  # one bad delete shouldn't abort the run
             logger.warning("Could not delete old OpenSearch snapshot %s: %s", name, exc)
     return deleted
 
@@ -210,7 +210,7 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
 
     try:
         ensure_repository(client)
-    except Exception as exc:  # noqa: BLE001 - most often path.repo not allow-listed
+    except Exception as exc:  # most often path.repo not allow-listed
         # "error" is rendered on GET /admin/backup and /admin/backup/status --
         # never interpolate the raw exception text, only its class name (#914).
         msg = (
@@ -251,7 +251,7 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
             "pruned": pruned,
             "voiceprints": voiceprints,
         }
-    except Exception as exc:  # noqa: BLE001 - snapshot failure is recorded, never raised
+    except Exception as exc:  # snapshot failure is recorded, never raised
         duration = round(time.monotonic() - started, 2)
         logger.exception("OpenSearch snapshot failed")
         return {
@@ -279,7 +279,7 @@ def snapshot_status() -> dict[str, Any]:
     try:
         repos = client.snapshot.get_repository(repository=REPO_NAME)
         result["repository_registered"] = bool(repos and REPO_NAME in repos)
-    except Exception:  # noqa: BLE001 - not registered yet
+    except Exception:  # not registered yet
         result["repository_registered"] = False
     names = sorted(list_snapshot_names(client), reverse=True)
     if names:

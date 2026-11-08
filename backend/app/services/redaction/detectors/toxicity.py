@@ -78,7 +78,7 @@ def _get_pipe(model_name: str) -> Any:
                 "Toxicity model loaded: %s (device=cpu, auto-moves to GPU when free)", model_name
             )
             return pipe
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.error("Toxicity model %s failed to load: %s", model_name, exc)
             _load_failed.add(model_name)
             return None
@@ -100,7 +100,7 @@ def _place_on_device(pipe: Any, target: str) -> None:
         pipe.model.to(want)
         pipe.device = want
         logger.info("Toxicity model moved to %s", target)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("Could not move toxicity model to %s: %s", target, exc)
 
 
@@ -117,7 +117,7 @@ def _run_pipe(model_name: str, pipe: Any, payload: Any, **kwargs: Any) -> Any:
     _place_on_device(pipe, resolve_device())
     try:
         return pipe(payload, **kwargs)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if not is_cuda_fault(exc):
             raise
         mark_cuda_faulted(exc)

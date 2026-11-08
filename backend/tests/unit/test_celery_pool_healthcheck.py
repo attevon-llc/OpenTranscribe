@@ -45,9 +45,9 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from scripts import celery_pool_healthcheck  # noqa: E402
-from scripts.celery_pool_healthcheck import check_pool_has_live_processes  # noqa: E402
-from scripts.celery_pool_healthcheck import main  # noqa: E402
+from scripts import celery_pool_healthcheck
+from scripts.celery_pool_healthcheck import check_pool_has_live_processes
+from scripts.celery_pool_healthcheck import main
 
 HEALTHY_STATS_JSON = (
     '{"cpu-processor@abc123": {"pool": {"implementation": '

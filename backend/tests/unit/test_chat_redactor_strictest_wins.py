@@ -649,7 +649,7 @@ def test_fail_closed_when_the_owner_cannot_be_identified_at_all():
     db.query.side_effect = None
     db.query.return_value.filter.return_value.first.return_value = None  # no scan row at all
 
-    def _detect(text_in, _words, _det_cfg, *, failures=None, **_kwargs):  # noqa: ARG001
+    def _detect(text_in, _words, _det_cfg, *, failures=None, **_kwargs):
         return (
             [
                 {

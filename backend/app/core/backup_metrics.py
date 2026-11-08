@@ -130,7 +130,7 @@ def update_backup_metrics(db: Session | None = None) -> None:
             with contextlib.suppress(ValueError, TypeError):
                 backup_last_status.set(1 if json.loads(raw_result).get("ok") else 0)
         _sync_run_counters(vals)
-    except Exception as exc:  # noqa: BLE001 — scrape must never fail on DB issues
+    except Exception as exc:  # scrape must never fail on DB issues
         logger.debug("Backup metric sampling skipped: %s", exc)
 
 
@@ -189,7 +189,7 @@ def update_media_mirror_metrics(db: Session | None = None) -> None:
             (("success", mm.KEY_RUNS_SUCCESS), ("failure", mm.KEY_RUNS_FAILURE)),
             vals,
         )
-    except Exception as exc:  # noqa: BLE001 — scrape must never fail on DB issues
+    except Exception as exc:  # scrape must never fail on DB issues
         logger.debug("Media mirror metric sampling skipped: %s", exc)
 
 
@@ -210,7 +210,7 @@ def update_search_indexing_metrics(db: Session | None = None) -> None:
             finally:
                 own.close()
         search_indexing_files_awaiting_reindex.set(count)
-    except Exception as exc:  # noqa: BLE001 — scrape must never fail on DB issues
+    except Exception as exc:  # scrape must never fail on DB issues
         logger.debug("Search indexing metric sampling skipped: %s", exc)
 
 

@@ -217,7 +217,7 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
                         len(resp["failures"]),
                         idx,
                     )
-            except Exception as e:  # noqa: BLE001 — counted as survivors below
+            except Exception as e:  # counted as survivors below
                 logger.error("Voiceprint sweep: delete batch failed in %s: %s", idx, e)
         client.indices.refresh(index=idx)
         stats["surviving"] = sum(

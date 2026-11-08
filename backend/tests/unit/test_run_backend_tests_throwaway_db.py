@@ -70,7 +70,9 @@ def fake_repo(tmp_path: Path) -> Path:
         "scripts/lib/stock-port-owners.sh",
     ):
         shutil.copy(REPO_ROOT / rel, root / rel)
-    subprocess.run(["git", "init", "-q", str(root)], check=True)  # noqa: S603, S607 - fixed argv; git from PATH on a tmp repo
+    subprocess.run(
+        ["git", "init", "-q", str(root)], check=True
+    )  # fixed argv; git from PATH on a tmp repo
     (root / "backend").mkdir()
     log = root / "calls.log"
     for tool in ("python", "pytest"):
@@ -121,7 +123,7 @@ def _start(root: Path, *args: str, **env: str) -> subprocess.Popen[str]:
         **env,
     }
     full.pop("OT_TEST_PYTHON", None)
-    return subprocess.Popen(  # noqa: S603 - fixed argv; bash from PATH, script under tmp_path
+    return subprocess.Popen(  # fixed argv; bash from PATH, script under tmp_path
         with_default_sigint(["bash", str(root / "scripts" / "run-backend-tests.sh"), *args]),
         env=full,
         cwd=root,
@@ -347,9 +349,13 @@ def test_missing_venv_fails_fast_with_3_before_any_docker_call(fake_repo: Path) 
 
 def test_a_worktree_without_a_venv_borrows_the_main_checkouts(fake_repo: Path) -> None:
     git = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-C", str(fake_repo)]
-    subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True)  # noqa: S603 - fixed argv; git from PATH on a tmp repo
+    subprocess.run(
+        [*git, "commit", "-q", "--allow-empty", "-m", "base"], check=True
+    )  # fixed argv; git from PATH on a tmp repo
     wt = fake_repo.parent / "wt"
-    subprocess.run([*git, "worktree", "add", "-q", str(wt), "-b", "wt-branch"], check=True)  # noqa: S603 - fixed argv; git from PATH on a tmp repo
+    subprocess.run(
+        [*git, "worktree", "add", "-q", str(wt), "-b", "wt-branch"], check=True
+    )  # fixed argv; git from PATH on a tmp repo
     for rel in (
         "scripts/run-backend-tests.sh",
         "scripts/lib/throwaway-pg.sh",

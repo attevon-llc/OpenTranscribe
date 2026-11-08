@@ -145,7 +145,7 @@ def cluster_speakers_for_file(self: Any, file_uuid: str, user_id: int) -> dict[s
                 from app.utils.task_utils import update_task_status
 
                 update_task_status(db, task_id, "failed", error_message=str(e), completed=True)
-            except Exception as status_err:  # noqa: BLE001
+            except Exception as status_err:
                 logger.debug(f"Could not record clustering failure status: {status_err}")
             raise self.retry(exc=e) from e
 

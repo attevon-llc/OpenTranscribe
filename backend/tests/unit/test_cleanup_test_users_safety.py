@@ -141,7 +141,7 @@ def _find_ungated_deletes(source: str) -> list[str]:
         def __init__(self) -> None:
             self.guard_depth = 0
 
-        def visit_If(self, node: ast.If) -> None:  # noqa: N802 - ast.NodeVisitor convention
+        def visit_If(self, node: ast.If) -> None:  # ast.NodeVisitor convention
             if _is_execute_guard(node.test):
                 self.guard_depth += 1
                 for stmt in node.body:
@@ -152,7 +152,7 @@ def _find_ungated_deletes(source: str) -> list[str]:
             else:
                 self.generic_visit(node)
 
-        def visit_Constant(self, node: ast.Constant) -> None:  # noqa: N802
+        def visit_Constant(self, node: ast.Constant) -> None:
             if (
                 isinstance(node.value, str)
                 and "DELETE FROM" in node.value

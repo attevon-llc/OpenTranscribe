@@ -20,7 +20,7 @@ import time
 sys.path.insert(0, "/app")
 
 
-def main():  # noqa: C901
+def main():
     from sqlalchemy import create_engine
     from sqlalchemy import func
     from sqlalchemy.orm import sessionmaker

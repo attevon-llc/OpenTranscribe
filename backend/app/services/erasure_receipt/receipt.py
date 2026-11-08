@@ -141,7 +141,7 @@ def persist_receipt(
         db.add(row)
         db.commit()
         db.refresh(row)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         db.rollback()
         logger.error("Erasure receipt write FAILED for entry %s: %s", entry.uuid, type(e).__name__)
         return None

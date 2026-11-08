@@ -122,10 +122,10 @@ class _FakeQuery:
     def __init__(self, rows: list[tuple[int]]) -> None:
         self._rows = rows
 
-    def filter(self, *args: Any, **kwargs: Any) -> _FakeQuery:  # noqa: ARG002
+    def filter(self, *args: Any, **kwargs: Any) -> _FakeQuery:
         return self
 
-    def order_by(self, *args: Any, **kwargs: Any) -> _FakeQuery:  # noqa: ARG002
+    def order_by(self, *args: Any, **kwargs: Any) -> _FakeQuery:
         return self
 
     def all(self) -> list[tuple[int]]:
@@ -136,7 +136,7 @@ class _FakeSession:
     def __init__(self, file_ids: list[int]) -> None:
         self._rows = [(fid,) for fid in file_ids]
 
-    def query(self, *args: Any, **kwargs: Any) -> _FakeQuery:  # noqa: ARG002
+    def query(self, *args: Any, **kwargs: Any) -> _FakeQuery:
         return _FakeQuery(self._rows)
 
 
@@ -147,7 +147,7 @@ class _FakeTracker:
         self.kwargs = kwargs
 
     @staticmethod
-    def get_state(task_type: str, user_id: int) -> None:  # noqa: ARG004
+    def get_state(task_type: str, user_id: int) -> None:
         return None
 
     def start(self, message: str = "") -> None:
@@ -180,13 +180,13 @@ def redis(monkeypatch) -> _FakeRedis:
 
 
 @pytest.fixture
-def dispatched(monkeypatch, redis) -> list[list[Any]]:  # noqa: ARG001
+def dispatched(monkeypatch, redis) -> list[list[Any]]:
     """Capture the ``args`` of every `reindex_batch_task` the coordinator queues."""
     from app.tasks import reindex_task
 
     calls: list[list[Any]] = []
 
-    def _capture(args: list[Any], **kwargs: Any) -> None:  # noqa: ARG001
+    def _capture(args: list[Any], **kwargs: Any) -> None:
         calls.append(list(args))
 
     monkeypatch.setattr(reindex_task.reindex_batch_task, "apply_async", _capture)
@@ -207,13 +207,13 @@ def dispatched(monkeypatch, redis) -> list[list[Any]]:  # noqa: ARG001
 
 
 @pytest.fixture
-def swept(monkeypatch, redis) -> list[set[str]]:  # noqa: ARG001
+def swept(monkeypatch, redis) -> list[set[str]]:
     """Record every call the completion handler makes to the destructive sweep."""
     from app.tasks import reindex_completion
 
     calls: list[set[str]] = []
 
-    def _record(user_id: int, indexed_file_uuids: set[str]) -> int:  # noqa: ARG001
+    def _record(user_id: int, indexed_file_uuids: set[str]) -> int:
         calls.append(set(indexed_file_uuids))
         return 0
 
@@ -279,14 +279,14 @@ def _run_batch(monkeypatch, file_ids: list[int], *args: Any) -> dict[str, Any]:
         ]
 
     class _FakeIndexing:
-        def reindex_transcript(self, **kwargs: Any) -> int:  # noqa: ARG002
+        def reindex_transcript(self, **kwargs: Any) -> int:
             return 7
 
     monkeypatch.setattr(reindex_task, "_load_reindex_page", _page)
     monkeypatch.setattr(
         reindex_task,
         "_is_cancellation_requested",
-        lambda user_id, run_id=None: False,  # noqa: ARG005
+        lambda user_id, run_id=None: False,
     )
     monkeypatch.setattr(
         "app.services.search.indexing_service.TranscriptIndexingService", _FakeIndexing
@@ -531,7 +531,7 @@ def test_a_completion_whose_state_expired_does_not_sweep(redis, swept) -> None:
     assert swept == [], "swept on 22 uuids with no total to compare them against"
 
 
-def test_a_zero_file_run_releases_the_user_lock(monkeypatch, redis, dispatched) -> None:  # noqa: ARG001
+def test_a_zero_file_run_releases_the_user_lock(monkeypatch, redis, dispatched) -> None:
     """The leak that silently cancelled a model switch's re-embed, MEASURED live.
 
     A switch dispatched its reindex before any files existed; the coordinator found 0
@@ -569,7 +569,7 @@ def test_a_second_run_after_a_zero_file_run_proceeds(monkeypatch, redis, dispatc
     assert dispatched, "the second run dispatched no batches, so nothing re-embeds"
 
 
-def test_a_failed_model_switch_releases_the_user_lock(monkeypatch, redis, dispatched) -> None:  # noqa: ARG001
+def test_a_failed_model_switch_releases_the_user_lock(monkeypatch, redis, dispatched) -> None:
     """Same leak, other early exit: every return between lock and dispatch releases."""
     from app.tasks import reindex_task
 

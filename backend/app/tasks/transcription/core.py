@@ -214,7 +214,7 @@ def _running_at_retry_priority() -> bool:
 
         delivery = getattr(current_task.request, "delivery_info", None) or {}
         return delivery.get("priority") == GPUPriority.TRANSCRIPTION_RETRY
-    except Exception:  # noqa: BLE001 - outside a worker: a fresh run
+    except Exception:  # outside a worker: a fresh run
         return False
 
 

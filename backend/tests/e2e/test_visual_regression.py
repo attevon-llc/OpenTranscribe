@@ -104,7 +104,7 @@ pytestmark = pytest.mark.visual  # run-e2e.sh runs visual tests serially (quiet 
 # when the run was aimed at an isolated stack (issue #431). Everything below takes
 # conftest's ``base_url`` / ``backend_url`` fixtures instead.
 TEST_ADMIN_EMAIL = os.environ.get("E2E_ADMIN_EMAIL", "admin@example.com")
-TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")  # noqa: S105
+TEST_ADMIN_PASSWORD = os.environ.get("E2E_ADMIN_PASSWORD", "password")
 
 SCREENSHOT_DIR = Path(__file__).parent / "__screenshots__"
 

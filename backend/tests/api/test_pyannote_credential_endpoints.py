@@ -56,7 +56,7 @@ class _FakeVendor(http.server.BaseHTTPRequestHandler):
     def _record(self) -> None:
         type(self).seen.append((self.command, self.path))
 
-    def do_GET(self) -> None:  # noqa: N802 - http.server API
+    def do_GET(self) -> None:  # http.server API
         self._record()
         auth = self.headers.get("Authorization", "")
         if self.path == "/v1/test" and auth == f"Bearer {type(self).accepted_key}":
@@ -65,7 +65,7 @@ class _FakeVendor(http.server.BaseHTTPRequestHandler):
             # Echo the presented credential, as a careless vendor error page might.
             self._reply(401, {"error": f"invalid token {auth}"})
 
-    def do_POST(self) -> None:  # noqa: N802 - http.server API
+    def do_POST(self) -> None:  # http.server API
         self._record()
         self._reply(500, {"error": "billable endpoint must not be called"})
 

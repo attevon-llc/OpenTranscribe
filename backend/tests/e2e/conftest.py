@@ -73,7 +73,7 @@ from stack_urls import mixed_stack_problem
 from timeouts import APP_SHELL_READY_MS
 from timeouts import LOGIN_FORM_READY_MS
 
-import tests.conftest  # noqa: F401,E402 — side effects only, see above
+import tests.conftest  # noqa: F401 — side effects only, see above
 
 # ``tests/conftest.py`` registers ``search_corpus``/``search_corpus_token``/``neural_available``
 # etc. (the self-seeding 6-file search-quality corpus, ``tests/fixtures/search_corpus_stack.py``)
@@ -411,7 +411,7 @@ def _warm_frontend_module_graph(base_url: str) -> None:
                         return
                 else:
                     streak = 0
-        except Exception as exc:  # noqa: BLE001 — any failure here is "not warm yet"
+        except Exception as exc:  # any failure here is "not warm yet"
             streak = 0
             last = f"unreachable ({type(exc).__name__})"
         time.sleep(2.0)
@@ -966,7 +966,7 @@ SECOND_USER_PREFIX = "share-e2e-"
 
 #: Satisfies the DB-backed password policy (12+, upper/lower/digit/special, no
 #: fragment of the name or email). Same shape as test_mfa.py's.
-SECOND_USER_PASSWORD = "Xk9!pLm2@Wq7Rn"  # noqa: S105
+SECOND_USER_PASSWORD = "Xk9!pLm2@Wq7Rn"
 
 #: Prefix for every collection the sharing fixtures create.
 SHARED_COLLECTION_PREFIX = "e2e-shared-"
@@ -1074,7 +1074,7 @@ def second_user(backend_url: str, admin_token: str) -> Iterator[dict[str, str]]:
     headers = {"Authorization": f"Bearer {admin_token}"}
     # A throwaway creation password, deliberately DIFFERENT from SECOND_USER_PASSWORD —
     # see the reset-password call below for why.
-    provisioning_password = f"Zq3!{uuid.uuid4().hex[:10]}Rv9#"  # noqa: S105
+    provisioning_password = f"Zq3!{uuid.uuid4().hex[:10]}Rv9#"
     response = requests.post(
         f"{backend_url}/api/admin/users",
         headers=headers,

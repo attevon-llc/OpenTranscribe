@@ -295,7 +295,7 @@ def _pg_dump_custom_bytes(container: str, dbname: str) -> bytes:
     """Tier 2's cheap artifact producer — SAME format flags as run_pg_dump, run locally
     inside the container via peer trust instead of a --dbname URL (see module docstring).
     """
-    result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    result = subprocess.run(  # fixed argv, no shell
         [
             "docker",
             "exec",
@@ -444,7 +444,7 @@ def test_documented_pg_restore_into_a_populated_database_corrupts_alembic_versio
     # The literally-documented (pre-fix) command, redirect added — backup-restore.md's shape
     # once the "could not open input file" bug is naively patched.
     with dump_path.open("rb") as dump_fh:
-        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+        result = subprocess.run(  # fixed argv, no shell
             ["docker", "exec", "-i", container, "pg_restore", "-U", _DB_USER, "-d", dbname],
             stdin=dump_fh,
             capture_output=True,
@@ -666,7 +666,7 @@ def test_gpg_encrypted_scheduled_artifact_round_trips(
         pytest.skip("gpg not available on this host — cannot exercise the decrypt-on-host half")
 
     decrypted_path = tmp_path / "decrypted.dump"
-    decrypt_result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+    decrypt_result = subprocess.run(  # fixed argv, no shell
         [
             "gpg",
             "--batch",

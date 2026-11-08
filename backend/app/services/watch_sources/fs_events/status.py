@@ -41,7 +41,7 @@ def _client() -> Any | None:
         from app.core.redis import get_request_redis
 
         return get_request_redis()
-    except Exception as e:  # noqa: BLE001 - status is best-effort
+    except Exception as e:  # status is best-effort
         logger.debug("FS-event status store unavailable: %s", e)
         return None
 
@@ -54,7 +54,7 @@ def publish(source_id: int, payload: dict[str, Any], ttl: int = DEFAULT_TTL_SECO
     try:
         client.setex(_key(source_id), ttl, json.dumps(payload, default=str))
         return True
-    except Exception as e:  # noqa: BLE001 - status is best-effort
+    except Exception as e:  # status is best-effort
         logger.debug("Could not publish FS-event status for source %s: %s", source_id, e)
         return False
 
@@ -67,7 +67,7 @@ def clear(source_id: int) -> bool:
     try:
         client.delete(_key(source_id))
         return True
-    except Exception as e:  # noqa: BLE001 - status is best-effort
+    except Exception as e:  # status is best-effort
         logger.debug("Could not clear FS-event status for source %s: %s", source_id, e)
         return False
 
@@ -85,7 +85,7 @@ def get_many(source_ids: list[int]) -> dict[int, dict[str, Any]]:
         return {}
     try:
         raw = client.mget([_key(sid) for sid in source_ids])
-    except Exception as e:  # noqa: BLE001 - status is best-effort
+    except Exception as e:  # status is best-effort
         logger.debug("Could not read FS-event statuses: %s", e)
         return {}
 

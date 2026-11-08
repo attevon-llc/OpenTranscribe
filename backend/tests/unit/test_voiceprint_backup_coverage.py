@@ -235,7 +235,7 @@ def test_restorable_settings_drops_the_read_only_index_metadata(helper: ModuleTy
 
 
 def _call_common_fn(name: str, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(  # fixed argv, no shell
         ["bash", "-c", f'source "{_COMMON_SH}"; {name} "$@"', "--", *args],
         capture_output=True,
         text=True,

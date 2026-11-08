@@ -36,7 +36,7 @@ def _sentinel_config() -> LdapConfig:
         port=636,
         use_ssl=True,
         bind_dn=BIND_DN_SENTINEL,
-        bind_password="irrelevant",  # noqa: S106 - test fixture, not a real secret
+        bind_password="irrelevant",  # test fixture, not a real secret
         search_base="dc=corp",
     )
 

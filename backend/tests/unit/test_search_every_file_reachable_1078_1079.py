@@ -46,10 +46,10 @@ class _FakeOpenSearch:
     def __init__(self) -> None:
         self.bodies: list[dict[str, Any]] = []
 
-    def count(self, index=None, body=None):  # noqa: ARG002
+    def count(self, index=None, body=None):
         return {"count": BM25_FILES}
 
-    def search(self, index=None, body=None, params=None):  # noqa: ARG002
+    def search(self, index=None, body=None, params=None):
         body = body or {}
         self.bodies.append(body)
         if "hybrid" in body.get("query", {}):

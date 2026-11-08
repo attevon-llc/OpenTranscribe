@@ -153,7 +153,7 @@ def _cancelled_run_owner(file_uuid: str, task_id: str) -> tuple[int, int] | None
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             ids = (int(media_file.id), int(media_file.user_id))
-    except Exception as e:  # noqa: BLE001 - see docstring
+    except Exception as e:  # see docstring
         logger.debug("Could not read file %s for the cancel check: %s", file_uuid, e)
         return None
     return ids if run_cancel_requested(task_id, ids[0]) else None

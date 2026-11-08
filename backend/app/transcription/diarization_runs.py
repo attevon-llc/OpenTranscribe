@@ -50,5 +50,5 @@ def record_diarization_run(diarizer: Any) -> None:
                 "Set engine.diarizer_require_sidecar to fail instead of falling back.",
                 reason,
             )
-    except Exception:  # noqa: BLE001 - observability must never fail a transcription
+    except Exception:  # observability must never fail a transcription
         logger.debug("could not record the diarization run", exc_info=True)

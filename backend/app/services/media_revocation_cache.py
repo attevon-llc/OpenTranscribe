@@ -150,7 +150,7 @@ def remove_cache_copies(
     try:
         derived = _list(derived_prefix(file_id), client)
         derived += [k for k in _legacy_audio_present(filename, client) if k not in derived]
-    except Exception as e:  # noqa: BLE001 — reported as a failed object, never raised
+    except Exception as e:  # reported as a failed object, never raised
         results.append(_listing_failure("derived", e))
         derived = []
     results.extend(
@@ -160,7 +160,7 @@ def remove_cache_copies(
 
     try:
         markers = _list(bulk_marker_prefix(file_id), client)
-    except Exception as e:  # noqa: BLE001 — reported as a failed object, never raised
+    except Exception as e:  # reported as a failed object, never raised
         results.append(_listing_failure("bulk_export", e))
         markers = []
     for marker in markers:
@@ -197,7 +197,7 @@ def drop_bulk_result(export_key: str) -> None:
         from app.core.redis import get_request_redis
 
         get_request_redis().delete(BULK_RESULT_KEY.format(job=bulk_job_of(export_key)))
-    except Exception as e:  # noqa: BLE001 — the replay re-check is the guarantee
+    except Exception as e:  # the replay re-check is the guarantee
         logger.warning(f"Could not drop the cached result of {export_key}: {type(e).__name__}")
 
 

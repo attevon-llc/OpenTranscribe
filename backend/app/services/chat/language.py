@@ -108,7 +108,7 @@ def supported_rag_languages(db: Session | None = None) -> frozenset[str] | None:
         info = OPENSEARCH_EMBEDDING_MODELS.get(get_search_embedding_model()) or {}
         if info.get("language_type") == "multilingual":
             return ALL_LANGUAGES
-    except Exception:  # noqa: BLE001 — a diagnostic must never fail a chat turn
+    except Exception:  # a diagnostic must never fail a chat turn
         logger.exception("Could not resolve the active embedding model; assuming English-only")
     return SUPPORTED_RAG_LANGUAGES
 
@@ -260,7 +260,7 @@ def describe_context_languages(
 
     try:
         rows = db.query(MediaFile.language).filter(MediaFile.uuid.in_(parsed)).all()
-    except Exception:  # noqa: BLE001 — never fail a chat turn on a diagnostic read
+    except Exception:  # never fail a chat turn on a diagnostic read
         logger.exception("Chat language scope lookup failed; skipping the language notice")
         return ContextLanguages()
 

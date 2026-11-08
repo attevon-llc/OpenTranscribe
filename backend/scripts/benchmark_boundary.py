@@ -591,7 +591,7 @@ def main(argv: list[str] | None = None) -> int:
                     cache_dir,
                 )
                 assigned = finalize_from_cache(payload)
-            except Exception as exc:  # noqa: BLE001 — log and continue the corpus
+            except Exception as exc:  # log and continue the corpus
                 log(f"  ERROR building/finalizing {file_id} ({model}): {exc}")
                 continue
 

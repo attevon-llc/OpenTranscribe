@@ -151,7 +151,7 @@ def _drop_rebuild_index(rebuild_index: str) -> None:
             index=rebuild_index
         ):
             _client.opensearch_client.indices.delete(index=rebuild_index)
-    except Exception as cleanup_err:  # noqa: BLE001 - cleanup must not mask the real error
+    except Exception as cleanup_err:  # cleanup must not mask the real error
         logger.debug("Failed to clean up rebuild index: %s", cleanup_err)
 
 

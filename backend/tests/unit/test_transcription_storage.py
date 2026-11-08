@@ -787,8 +787,8 @@ def test_unique_speaker_names_are_returned_in_a_stable_order(run_in_clean_proces
     #
     # Written without the literal directive spelling on purpose: ruff scans the
     # text of EVERY comment for one, so prose describing a suppression parsed as
-    # a malformed one and printed `Invalid # noqa directive` on every run of the
-    # whole repo — permanent noise from a comment whose point is that nothing is
+    # a malformed one and printed ruff's invalid-noqa-directive warning on every
+    # run of the whole repo — permanent noise from a comment whose point is that nothing is
     # suppressed here.
     returned = ast.literal_eval(first.strip())
 

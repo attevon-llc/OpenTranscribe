@@ -45,7 +45,7 @@ def prune_audit_tables(db: Session, keep_days: int) -> dict[str, int]:
 
 
 @celery_app.task(bind=True, name=TASK_NAME, priority=UtilityPriority.BACKGROUND)
-def audit_retention_sweep(self: Any) -> dict:  # noqa: ARG001 — bind=True signature
+def audit_retention_sweep(self: Any) -> dict:  # bind=True signature
     """Delete audit rows older than ``AUDIT_LOG_RETENTION_DAYS`` (no-op when it is 0)."""
     from app.auth.audit import AuditEventType
     from app.auth.audit import AuditOutcome

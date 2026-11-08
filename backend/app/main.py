@@ -88,7 +88,7 @@ async def _drain_websockets() -> None:
         from app.api.websockets import manager
 
         await manager.drain()
-    except Exception as e:  # noqa: BLE001 - never block shutdown on drain
+    except Exception as e:  # never block shutdown on drain
         logger.warning(f"WebSocket drain failed (non-fatal): {e}")
 
 

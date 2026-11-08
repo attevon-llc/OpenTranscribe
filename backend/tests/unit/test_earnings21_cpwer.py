@@ -22,9 +22,9 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from scripts.score_earnings21_cpwer import build_reference_words  # noqa: E402
-from scripts.score_earnings21_cpwer import normalize_token  # noqa: E402
-from scripts.score_earnings21_cpwer import normalize_words  # noqa: E402
+from scripts.score_earnings21_cpwer import build_reference_words
+from scripts.score_earnings21_cpwer import normalize_token
+from scripts.score_earnings21_cpwer import normalize_words
 
 # Tiny inline Earnings-21 .nlp: header + 2 speakers, a few tokens.
 # Columns: token|speaker|ts|endTs|punctuation|case|tags|wer_tags  (ts/endTs empty, as in

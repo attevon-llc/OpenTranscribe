@@ -30,7 +30,7 @@ def _one(store: ErasureStore, scope: ErasureScope, captured: Captured, db: Sessi
         count = store.count(scope, captured, db)
         db.rollback()  # a failed statement must not poison the next store's read
         return count
-    except Exception as e:  # noqa: BLE001 - unmeasurable is a reported state, not a crash
+    except Exception as e:  # unmeasurable is a reported state, not a crash
         db.rollback()
         logger.warning(
             "erasure receipt: %s could not be measured (%s)", store.key, type(e).__name__

@@ -337,17 +337,17 @@ class _LlenCallVisitor(ast.NodeVisitor):
         self._hits = hits
         self._stack: list[str] = []
 
-    def visit_FunctionDef(self, node):  # noqa: N802 — ast visitor naming convention
+    def visit_FunctionDef(self, node):  # ast visitor naming convention
         self._stack.append(node.name)
         self.generic_visit(node)
         self._stack.pop()
 
-    # noqa reason: `visit_AsyncFunctionDef` is dispatched by name from
+    # Why the N815 suppression below: `visit_AsyncFunctionDef` is dispatched by name from
     # ast.NodeVisitor.visit() and MUST match the AST node class name exactly
     # (mixedCase) -- no restructuring removes that requirement.
     visit_AsyncFunctionDef = visit_FunctionDef  # noqa: N815
 
-    def visit_Call(self, node):  # noqa: N802
+    def visit_Call(self, node):
         func = node.func
         if isinstance(func, ast.Attribute):
             name = func.attr

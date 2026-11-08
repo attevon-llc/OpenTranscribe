@@ -346,7 +346,7 @@ def scope_digest_hits(
             .filter(available_pred())
             .all()
         )
-    except Exception:  # noqa: BLE001 — a missing map degrades the answer, never breaks it
+    except Exception:  # a missing map degrades the answer, never breaks it
         logger.exception("Could not read file_facts for the scope map")
         return DigestScopeHits([], {"files_without_artifacts": 0, "files_no_content": 0})
 
@@ -452,7 +452,7 @@ def _load_facts(db: Session, file_ids: list[int]) -> dict[str, dict[str, Any]]:
             .filter(FileFacts.media_file_id.in_(list(file_ids)))
             .all()
         )
-    except Exception:  # noqa: BLE001 — a summary without facts is degraded, not broken
+    except Exception:  # a summary without facts is degraded, not broken
         logger.exception("Could not load file_facts for the overview; composing without them")
         return {}
     return {str(row[0]): {"facts": row[1] or {}, "keyphrases": row[2] or {}} for row in rows}

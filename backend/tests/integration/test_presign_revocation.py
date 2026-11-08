@@ -72,7 +72,7 @@ def _delete_test_object(key: str) -> None:
 
     try:
         minio_client.remove_object(settings.MEDIA_BUCKET_NAME, key)
-    except Exception:  # noqa: BLE001 — best-effort test cleanup
+    except Exception:  # best-effort test cleanup
         pass
 
 

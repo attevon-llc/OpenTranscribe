@@ -83,7 +83,7 @@ def _owner_llm_configured(file_id: int) -> bool:
         with session_scope() as db:
             owner = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).scalar()
             return owner is not None and LLMService.is_configured_for_user(db, int(owner))
-    except Exception as e:  # noqa: BLE001 — the plan then waits for the tasks to report
+    except Exception as e:  # the plan then waits for the tasks to report
         logger.warning(f"LLM availability check failed for file {file_id}: {e}")
         return True
 

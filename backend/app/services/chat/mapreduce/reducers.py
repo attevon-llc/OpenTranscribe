@@ -105,7 +105,7 @@ def _corpus_header(summaries: list[FileSummary], files_in_scope: int = 0) -> lis
 def _speaker_focus_header(
     speaker_focus: str,
     summaries: list[FileSummary],
-    files_in_scope: int = 0,  # noqa: ARG001
+    files_in_scope: int = 0,
 ) -> list[str]:
     """The speaker-focus header: talk time / turns / longest monologue.
 
@@ -186,7 +186,7 @@ class CodeComposer:
         speaker_focus: str | None = None,
         citation_start: int | None = None,
         **_kwargs: Any,
-    ) -> Overview:  # noqa: ARG002
+    ) -> Overview:
         if not summaries:
             if speaker_focus:
                 return _empty_speaker_focus_overview(self.name, speaker_focus)
@@ -361,7 +361,7 @@ class BatchReducer:
         ]
         try:
             response = self.llm.chat_completion(messages, max_tokens=400, temperature=0.1)
-        except Exception as exc:  # noqa: BLE001 — one failed batch must not lose the rest
+        except Exception as exc:  # one failed batch must not lose the rest
             logger.info(f"Overview batch condense failed, using the composed form: {exc}")
             return None
         text = str(getattr(response, "content", "") or "").strip()

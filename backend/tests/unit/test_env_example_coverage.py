@@ -116,6 +116,8 @@ MUST_BE_DOCUMENTED = {
     "ALLOW_OPEN_REGISTRATION",
     "MAX_UPLOAD_BYTES",
     "HUGGINGFACE_TOKEN",
+    # Turns a deployment into the public read-only demo (#628).
+    "DEMO_MODE",
 }
 
 

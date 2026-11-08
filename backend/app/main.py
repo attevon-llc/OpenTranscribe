@@ -42,6 +42,7 @@ from app.core.validation_errors import validation_error_handler
 from app.core.version import APP_VERSION
 from app.middleware.audit import AuditMiddleware
 from app.middleware.csrf import CSRFMiddleware
+from app.middleware.demo_readonly import DemoReadOnlyMiddleware
 from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
@@ -326,6 +327,12 @@ app = FastAPI(
 # it runs INSIDE it (see the ordering note at ObservabilityMiddleware): its early 413
 # still carries the CORS headers a browser needs to read the error.
 app.add_middleware(UploadBodyLimitMiddleware)
+
+# Public read-only demo (issue #628): a pass-through unless DEMO_MODE is on, then every write
+# and every WebSocket is refused before routing. Added AFTER the upload limit so it runs
+# OUTSIDE it (a refused upload never reads its body) and before CORS so it runs inside it
+# (the 403 still carries CORS headers).
+app.add_middleware(DemoReadOnlyMiddleware)
 
 # Set up CORS
 app.add_middleware(

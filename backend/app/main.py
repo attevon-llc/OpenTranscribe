@@ -187,20 +187,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning(f"OpenSearch startup health check failed (non-fatal): {e}")
 
-    # Sync speaker profile data from PostgreSQL to OpenSearch
+    # Sync speaker profile data from PostgreSQL to OpenSearch. A worker task, once per boot
+    # window: at scale the sync takes minutes and must not hold up API health (#1337).
     try:
-        from app.db.base import SessionLocal
-        from app.services.opensearch_service import sync_speaker_profiles_to_opensearch
+        from app.tasks.speaker_profile_sync_task import speaker_profile_opensearch_sync_task
+        from app.utils.boot_once import run_once_per_boot
 
-        _db = SessionLocal()
-        try:
-            sync_result = sync_speaker_profiles_to_opensearch(_db)
-            if sync_result["updated"] > 0:
-                logger.info(f"Speaker profile sync: {sync_result}")
-        finally:
-            _db.close()
+        if run_once_per_boot("speaker_profile_sync_dispatch"):
+            speaker_profile_opensearch_sync_task.delay()
     except Exception as e:
-        logger.warning(f"Speaker profile sync failed (non-fatal): {e}")
+        logger.warning(f"Speaker profile sync could not be scheduled (non-fatal): {e}")
 
     # Apply the admin-configured derived-cache retention (DB over env) so the MinIO
     # lifecycle rule reflects UI changes after a restart — no redeploy needed. Also

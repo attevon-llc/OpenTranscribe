@@ -102,20 +102,22 @@ def list_clusters(
 
     total = query.count()
 
-    # Counts for section headers (unfiltered by search/has_label)
+    # Counts for section headers (unfiltered by search/has_label) and the last clustering
+    # time, in one statement over the tenant's clusters.
     from sqlalchemy import func as sa_func
 
-    base_count_query = self.db.query(SpeakerCluster).filter(*tenant_filters)
-    labeled_count = base_count_query.filter(
-        (SpeakerCluster.label.isnot(None)) | (SpeakerCluster.promoted_to_profile_id.isnot(None))
-    ).count()
-    unlabeled_count = base_count_query.filter(
-        SpeakerCluster.label.is_(None),
-        SpeakerCluster.promoted_to_profile_id.is_(None),
-    ).count()
-    # Most recent cluster update = last time clustering ran
-    last_clustered_at = (
-        self.db.query(sa_func.max(SpeakerCluster.updated_at)).filter(*tenant_filters).scalar()
+    is_labeled = (SpeakerCluster.label.isnot(None)) | (
+        SpeakerCluster.promoted_to_profile_id.isnot(None)
+    )
+    labeled_count, unlabeled_count, last_clustered_at = (
+        self.db.query(
+            sa_func.count().filter(is_labeled),
+            sa_func.count().filter(~is_labeled),
+            # Most recent cluster update = last time clustering ran
+            sa_func.max(SpeakerCluster.updated_at),
+        )
+        .filter(*tenant_filters)
+        .one()
     )
     pages = max(1, math.ceil(total / per_page))
     offset = (page - 1) * per_page

@@ -159,6 +159,13 @@ class PrivacyView:
             )
         return self._gender[scope]
 
+    def preload_gender_scopes(self, scopes: Iterable[tuple[int, int | None]]) -> None:
+        """Resolve the gender decision of every not-yet-known scope in one batch."""
+        wanted = {(int(u), o) for u, o in scopes} - set(self._gender)
+        if wanted:
+            for (user_id, org_id), decision in policy.gender_decisions(self._db, wanted).items():
+                self._gender[(int(user_id or 0), org_id)] = decision
+
     def voiceprints(self, file_id: int) -> Decision:
         """Voiceprint decision for a file's owner and organization (unknown file = denied)."""
         scope = self.file_scope(file_id)
@@ -510,6 +517,7 @@ def derived_profile_genders(db: Session, profiles: Iterable[Any]) -> dict[int, s
     if not rows:
         return {}
     view = PrivacyView(db)
+    view.preload_gender_scopes((int(p.user_id), p.organization_id) for p in rows)
     off_ids = [
         int(p.id)
         for p in rows

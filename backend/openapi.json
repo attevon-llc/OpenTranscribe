@@ -49735,16 +49735,35 @@
             }
           },
           {
-            "description": "for_filter only: page size",
+            "description": "Page size. for_filter: default 200. Full list without file_uuid: default 1000 (max 500 with for_filter, 5000 otherwise). A file_uuid listing is not paged.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 200,
-              "description": "for_filter only: page size",
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
+              "anyOf": [
+                {
+                  "maximum": 5000,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Page size. for_filter: default 200. Full list without file_uuid: default 1000 (max 500 with for_filter, 5000 otherwise). A file_uuid listing is not paged.",
+              "title": "Limit"
+            }
+          },
+          {
+            "description": "Full list without file_uuid: rows to skip",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "Full list without file_uuid: rows to skip",
+              "minimum": 0,
+              "title": "Skip",
               "type": "integer"
             }
           },

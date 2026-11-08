@@ -8,6 +8,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -326,14 +327,10 @@ def get_clustering_stats(
         Speaker.user_id == user_id,
         Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
     ]
-    total_speakers = db.query(Speaker).filter(*speaker_filters).count()
-    clustered = (
-        db.query(Speaker)
-        .filter(
-            *speaker_filters,
-            Speaker.cluster_id.isnot(None),
-        )
-        .count()
+    total_speakers, clustered = (
+        db.query(func.count(Speaker.id), func.count(Speaker.cluster_id))
+        .filter(*speaker_filters)
+        .one()
     )
     total_clusters = (
         db.query(SpeakerCluster)

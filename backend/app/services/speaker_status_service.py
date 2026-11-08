@@ -298,7 +298,7 @@ class SpeakerStatusService:
             return 0
 
     @staticmethod
-    def add_computed_status(speaker: Speaker) -> None:
+    def add_computed_status(speaker: Speaker, *, voiceprint_names: bool | None = None) -> None:
         """
         Add computed status fields to a speaker object in-place, for the response only.
 
@@ -311,8 +311,13 @@ class SpeakerStatusService:
 
         Args:
             speaker: Speaker object to enhance
+            voiceprint_names: The file's voiceprint decision when the caller already holds
+                it (a list resolves it once for every row); ``None`` asks the policy per row,
+                which costs several queries for a voiceprint-named speaker.
         """
-        status_info = SpeakerStatusService.compute_speaker_status(speaker)
+        status_info = SpeakerStatusService.compute_speaker_status(
+            speaker, voiceprint_names=voiceprint_names
+        )
 
         mapped = sa_inspect(speaker, raiseerr=False) is not None
         for field in _PERSISTED_STATUS_FIELDS:

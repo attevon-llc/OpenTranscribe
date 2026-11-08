@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.speakers_list_filters import SPEAKER_FILTER_DEFAULT_LIMIT
-from app.api.endpoints.speakers_list_filters import SPEAKER_FILTER_MAX_LIMIT
 from app.api.endpoints.speakers_list_filters import _filter_speakers_query
 from app.api.endpoints.speakers_list_filters import _get_first_segment_timestamps_for_speakers
 from app.api.endpoints.speakers_list_filters import _get_segment_counts_for_speakers
@@ -24,6 +23,7 @@ from app.api.endpoints.speakers_list_filters import _get_unique_speakers_for_fil
 from app.api.endpoints.speakers_list_filters import _resolve_file_uuid_to_id
 from app.api.endpoints.speakers_list_filters import _resolve_profile_filter_id
 from app.api.endpoints.speakers_list_filters import _sort_speakers
+from app.api.endpoints.speakers_list_filters import _speaker_number_order
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.speaker import Speaker
@@ -45,6 +45,10 @@ logger = logging.getLogger(__name__)
 # Speaker suggestion constants
 SPEAKER_SUGGESTION_MIN_CONFIDENCE = 0.5
 SPEAKER_SUGGESTION_MAX_COUNT = 5
+
+#: Rows returned by the unscoped full list when the caller sends no ``limit``.
+SPEAKER_LIST_DEFAULT_LIMIT = 1000
+SPEAKER_LIST_MAX_LIMIT = 5000
 
 
 def _get_profile_suggestions(raw_cross_video_matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -242,17 +246,15 @@ def _process_single_speaker_with_suggestions(
     segment_count: int,
     smart_suggestions: list,
     segment_timestamps: list[dict[str, Any]] | None = None,
+    *,
+    voiceprint_names: bool | None = None,
 ) -> dict[str, Any]:
     """Process a single speaker with pre-fetched suggestions (avoids N+1 OpenSearch)."""
     from app.services.smart_speaker_suggestion_service import SmartSpeakerSuggestionService
 
-    status_info = SpeakerStatusService.compute_speaker_status(speaker)
-    speaker.computed_status = status_info["computed_status"]
-    speaker.status_text = status_info["status_text"]
-    speaker.status_color = status_info["status_color"]
-    speaker.resolved_display_name = status_info["resolved_display_name"]
-    speaker.profile_name = status_info["profile_name"]  # type: ignore[attr-defined]
-    speaker.profile_status = status_info["profile_status"]  # type: ignore[attr-defined]
+    # Response decoration only: a plain assignment would dirty every listed row and
+    # autoflush one UPDATE per speaker from a GET (#1337).
+    SpeakerStatusService.add_computed_status(speaker, voiceprint_names=voiceprint_names)
 
     raw_cross_video_matches = SmartSpeakerSuggestionService.format_for_api(smart_suggestions)
     profile_suggestions = _get_profile_suggestions(raw_cross_video_matches)
@@ -293,12 +295,16 @@ def list_speakers(
     file_uuid: str | None = None,
     for_filter: bool = False,
     q: str | None = Query(None, description="for_filter only: substring search on display name"),
-    limit: int = Query(
-        SPEAKER_FILTER_DEFAULT_LIMIT,
+    limit: int | None = Query(
+        None,
         ge=1,
-        le=SPEAKER_FILTER_MAX_LIMIT,
-        description="for_filter only: page size",
+        le=SPEAKER_LIST_MAX_LIMIT,
+        description=(
+            "Page size. for_filter: default 200. Full list without file_uuid: default "
+            "1000 (max 500 with for_filter, 5000 otherwise). A file_uuid listing is not paged."
+        ),
     ),
+    skip: int = Query(0, ge=0, description="Full list without file_uuid: rows to skip"),
     profile_id: str | None = Query(None, description="for_filter only: profile UUID"),
     is_profile: bool | None = Query(
         None, description="for_filter only: restrict to profile-linked (true) or unlinked (false)"
@@ -358,7 +364,7 @@ def list_speakers(
                 current_user,
                 organization_id=ctx.org_id,
                 q=q,
-                limit=limit,
+                limit=limit if limit is not None else SPEAKER_FILTER_DEFAULT_LIMIT,
                 profile_id=resolved_profile_id,
                 is_profile=is_profile,
                 include_unnamed=include_unnamed,
@@ -392,6 +398,10 @@ def list_speakers(
             )
             query = query.filter(file_is_available(Speaker.media_file_id))
         query = _filter_speakers_query(query, verified_only, file_id)
+        if file_id is None:
+            # Bounded by default: an owner's whole library is hundreds of thousands of rows.
+            page = limit if limit is not None else SPEAKER_LIST_DEFAULT_LIMIT
+            query = query.order_by(*_speaker_number_order()).offset(skip).limit(page)
         speakers = query.all()
         speakers = _sort_speakers(speakers)
 
@@ -440,6 +450,7 @@ def list_speakers(
                 segment_counts.get(speaker.id, 0),
                 batch_suggestions.get(speaker.id, []),
                 all_timestamps.get(speaker.id),
+                voiceprint_names=speaker.media_file_id not in voiceprints_off,
             )
             for speaker in speakers
         ]

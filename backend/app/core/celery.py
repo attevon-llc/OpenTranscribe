@@ -203,6 +203,7 @@ celery_app = Celery(
         "app.tasks.ingest_artifacts_task",
         "app.tasks.reindex_task",
         "app.tasks.search_maintenance_task",
+        "app.tasks.speaker_profile_sync_task",
         "app.tasks.opensearch_integrity_task",
         "app.tasks.tenant_backfill_task",
         "app.tasks.storage_orphan_sweep_task",

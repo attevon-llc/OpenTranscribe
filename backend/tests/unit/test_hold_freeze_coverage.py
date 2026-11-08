@@ -49,6 +49,9 @@ GUARD_PRIMITIVES = frozenset(
         "is_held",
         "is_frozen",
         "frozen_states",
+        # A UNION spelling of held_pred for semi-joins (#1337 G8); kept equal to it by
+        # tests/api/test_held_file_ids_matches_held_pred.py.
+        "held_file_ids",
     }
 )
 
@@ -59,7 +62,6 @@ GUARD_WRAPPERS: dict[str, str] = {
     "file_is_frozen": "tasks/hold_skip.py::file_is_frozen",
     "file_is_held": "tasks/hold_skip.py::file_is_held",
     "unheld_file_ids": "services/hold_guard.py::unheld_file_ids",
-    "held_file_ids": "services/hold_guard.py::held_file_ids",
 }
 
 GUARD_CALLS = GUARD_PRIMITIVES | frozenset(GUARD_WRAPPERS)
@@ -1006,6 +1008,7 @@ TASK_EXEMPT: dict[str, str] = {
             "tasks/search_indexing_task.py::backfill_speaker_id_fields_task",
             "tasks/search_maintenance_task.py::search_index_maintenance_task",
             "tasks/search_maintenance_task.py::neural_search_bootstrap_task",
+            "tasks/speaker_profile_sync_task.py::speaker_profile_opensearch_sync_task",
             "tasks/search_reembed_task.py::reembed_degraded_files_task",
             "tasks/speaker_clustering.py::cluster_speakers_for_file",
             "tasks/speaker_clustering.py::recluster_all_speakers",

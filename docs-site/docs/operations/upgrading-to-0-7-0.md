@@ -218,6 +218,13 @@ old `MEDIACMS_ALLOWED_HOSTS` environment variable only chose which hosts count a
 sources (a value without a scheme means `https`); it never permitted a private address and still
 does not.
 
+## Speaker list API is paged
+
+`GET /api/speakers` without `file_uuid` (an account's whole speaker list) now returns at most
+1,000 speakers per call, ordered by speaker number. Pass `skip` and `limit` (up to 5,000) to read
+further pages. Before 0.7.0 it returned every speaker in one response, which took minutes on
+large libraries. Calls with `file_uuid`, and the `for_filter` picker, are unchanged.
+
 ## AI token limits
 
 **Check this if...** you want to limit how much your AI features can spend, or you see "token

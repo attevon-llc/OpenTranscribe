@@ -223,61 +223,121 @@ def update_speaker_profile(
         return None
 
 
-def sync_speaker_profiles_to_opensearch(db: Session) -> dict:
+#: Speakers read (and documents fetched) per round trip by the profile sync.
+SYNC_CHUNK_SIZE = 500
+
+_SYNCED_FIELDS = ["profile_id", "profile_uuid", "display_name", "verified"]
+
+
+def sync_speaker_profiles_to_opensearch(db: Session, *, chunk_size: int | None = None) -> dict:
     """Bulk-sync speaker profile_id, display_name, and verified from PostgreSQL to OpenSearch.
 
     Finds all speakers that have a profile_id or display_name in PostgreSQL and
     updates their corresponding OpenSearch documents. This repairs drift caused by
     profile assignments that bypassed the normal API update path.
 
-    Returns:
-        Dict with counts: updated, skipped, errors.
-    """
-    from app.models.speaker import Speaker
+    Works in id-keyed chunks: one SELECT of plain columns (profile UUID joined in, so no lazy
+    ``speaker.profile`` loads), the transaction ended, then one ``mget`` for the chunk's
+    documents and one bulk request for the documents that actually differ. No database
+    transaction is held across an OpenSearch call, and a document already in step is left
+    alone, so a repeat run converges to zero updates.
+    (https://opensearch.org/docs/latest/api-reference/document-apis/multi-get/,
+    https://opensearch.org/docs/latest/api-reference/document-apis/bulk/)
 
-    if not _client.opensearch_client:
+    Returns:
+        Dict with counts: updated, skipped (no document), errors.
+    """
+    from opensearchpy import helpers
+    from opensearchpy.exceptions import OpenSearchException
+    from sqlalchemy import or_
+
+    from app.models.speaker import Speaker
+    from app.models.speaker import SpeakerProfile
+
+    client = _client.opensearch_client
+    if not client:
         logger.warning("OpenSearch client not initialized, skipping profile sync")
         return {"updated": 0, "skipped": 0, "errors": 0}
 
-    speakers = (
-        db.query(Speaker)
-        .filter((Speaker.profile_id.isnot(None)) | (Speaker.display_name.isnot(None)))
-        .all()
-    )
+    size = chunk_size or SYNC_CHUNK_SIZE
+    index = get_speaker_index()
+    updated = skipped = errors = 0
+    last_id = 0
 
-    updated = 0
-    skipped = 0
-    errors = 0
+    while True:
+        rows = (
+            db.query(
+                Speaker.id,
+                Speaker.uuid,
+                Speaker.profile_id,
+                Speaker.display_name,
+                Speaker.verified,
+                SpeakerProfile.uuid.label("profile_uuid"),
+            )
+            .outerjoin(SpeakerProfile, SpeakerProfile.id == Speaker.profile_id)
+            .filter(
+                Speaker.id > last_id,
+                or_(Speaker.profile_id.isnot(None), Speaker.display_name.isnot(None)),
+            )
+            .order_by(Speaker.id)
+            .limit(size)
+            .all()
+        )
+        # The rows are plain tuples: end the read transaction before touching the network.
+        db.commit()
+        if not rows:
+            break
+        last_id = int(rows[-1].id)
 
-    for speaker in speakers:
-        speaker_uuid = str(speaker.uuid)
         try:
-            # update_speaker_profile() catches its OWN exceptions and never
-            # raises (it is a fire-and-forget helper for its other callers),
-            # so a try/except around it can never observe a failed write —
-            # every call used to count as "updated" even when the OpenSearch
-            # document did not exist and nothing was written. Checking
-            # existence first, and reading the (dict-or-None) return value,
-            # is what actually distinguishes the three outcomes.
-            if not _client.opensearch_client.exists(index=get_speaker_index(), id=speaker_uuid):
+            fetched = client.mget(
+                index=index,
+                body={"ids": [str(r.uuid) for r in rows]},
+                _source_includes=_SYNCED_FIELDS,
+            )["docs"]
+        except OpenSearchException as e:
+            logger.warning(f"Speaker profile sync: mget failed for a chunk of {len(rows)}: {e}")
+            errors += len(rows)
+            continue
+        documents = {d["_id"]: d for d in fetched}
+
+        now = datetime.datetime.now(datetime.UTC).isoformat()
+        actions: list[dict[str, Any]] = []
+        for row in rows:
+            speaker_uuid = str(row.uuid)
+            document = documents.get(speaker_uuid)
+            if not document or not document.get("found"):
                 skipped += 1
                 continue
-
-            profile_uuid = str(speaker.profile.uuid) if speaker.profile else None
-            response = update_speaker_profile(
-                speaker_uuid=speaker_uuid,
-                profile_id=int(speaker.profile_id) if speaker.profile_id else None,
-                profile_uuid=profile_uuid,
-                verified=bool(speaker.verified) if hasattr(speaker, "verified") else False,
-                display_name=str(speaker.display_name) if speaker.display_name else None,
+            wanted: dict[str, Any] = {
+                "profile_id": int(row.profile_id) if row.profile_id else None,
+                "profile_uuid": str(row.profile_uuid) if row.profile_uuid else None,
+                "verified": bool(row.verified),
+            }
+            if row.display_name:
+                wanted["display_name"] = str(row.display_name)
+            stored = document.get("_source") or {}
+            if all(stored.get(k) == v for k, v in wanted.items()):
+                continue
+            actions.append(
+                {
+                    "_op_type": "update",
+                    "_index": index,
+                    "_id": speaker_uuid,
+                    "doc": {**wanted, "updated_at": now},
+                }
             )
-            if response is None:
-                errors += 1
-            else:
-                updated += 1
-        except Exception as e:
-            logger.warning(f"Error syncing speaker {speaker_uuid}: {e}")
-            errors += 1
+
+        if actions:
+            try:
+                ok, failures = helpers.bulk(
+                    client, actions, raise_on_error=False, raise_on_exception=False
+                )
+                updated += int(ok)
+                errors += len(failures) if isinstance(failures, list) else 0
+            except OpenSearchException as e:
+                logger.warning(f"Speaker profile sync: bulk update failed for a chunk: {e}")
+                errors += len(actions)
 
     logger.info(
         f"Speaker profile sync complete: {updated} updated, {skipped} skipped "

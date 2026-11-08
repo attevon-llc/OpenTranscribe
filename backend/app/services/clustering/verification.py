@@ -7,7 +7,7 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
 
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import contains_eager
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
@@ -68,9 +68,11 @@ def get_unverified_speakers(
     """
     query = (
         self.db.query(Speaker)
+        # The query joins both tables to filter and sort, so those rows are the eager load:
+        # joinedload would join each of them a second time under an alias.
         .options(
-            joinedload(Speaker.media_file),
-            joinedload(Speaker.cluster),
+            contains_eager(Speaker.media_file),
+            contains_eager(Speaker.cluster),
         )
         .filter(
             Speaker.user_id == user_id,
@@ -94,7 +96,7 @@ def get_unverified_speakers(
     if tenant_pred is not None:
         query = query.filter(tenant_pred)
 
-    total = query.count()
+    total = query.order_by(None).count()
     pages = max(1, math.ceil(total / per_page))
     offset = (page - 1) * per_page
     speakers = query.offset(offset).limit(per_page).all()

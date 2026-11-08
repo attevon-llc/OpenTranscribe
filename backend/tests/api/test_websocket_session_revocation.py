@@ -222,3 +222,56 @@ def test_a_socket_does_not_outlive_its_access_token(db_session, revocation, clie
     assert closed is not None, "the socket outlived its access token"
     assert closed.code == ws_module.SESSION_REVOKED_CLOSE
     assert closed.reason == "Session expired"
+
+
+@pytest.fixture
+def http(db_session) -> Iterator[TestClient]:
+    """The real application, for the HTTP routes that revoke (not the socket client above)."""
+    from app.db.base import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+@pytest.mark.parametrize("trigger", ["password_change", "admin_disable"])
+def test_a_credential_or_status_change_closes_the_open_socket(
+    db_session, revocation, client, http, owner, monkeypatch, trigger
+):
+    """The two triggers #1362 names besides logout-all, driven through their real routes.
+
+    Both reach the socket only through ``account_security_service.revoke_all_sessions``;
+    this proves each route actually calls it, not just that the shared core closes sockets.
+    """
+    from app.services import account_security_service
+
+    monkeypatch.setattr(account_security_service, "token_service", revocation)
+    with client.websocket_connect("/ws", headers=cookie_header(access_token(owner))) as socket:
+        assert _established(socket)
+
+        if trigger == "password_change":
+            resp = http.put(
+                "/api/users/me",
+                headers={"Authorization": f"Bearer {access_token(owner)}"},
+                json={
+                    "password": "Fresh-Quartz-Passphrase-2026!",
+                    "current_password": "irrelevant-Passphrase99!",
+                },
+            )
+        else:
+            admin = make_user(db_session, role="super_admin", is_superuser=True)
+            resp = http.put(
+                f"/api/users/{owner.uuid}",
+                headers={"Authorization": f"Bearer {access_token(admin)}"},
+                json={"is_active": False},
+            )
+        assert resp.status_code == 200, resp.text
+
+        with pytest.raises(WebSocketDisconnect) as closed:
+            _next_frame(socket)
+
+    assert closed.value.code == ws_module.SESSION_REVOKED_CLOSE

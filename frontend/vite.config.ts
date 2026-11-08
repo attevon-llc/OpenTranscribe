@@ -29,6 +29,24 @@ const themeVersion = createHash('sha256')
 // substitutes vars carrying the public prefix, so this can never leak a private value.
 process.env.PUBLIC_THEME_VERSION = themeVersion;
 
+/** Dev-server warmup roots: layout/entry, login, file detail. Pinned by viteConfig.test.ts. */
+export const DEV_WARMUP_CLIENT_FILES = [
+  './src/routes/+layout.svelte',
+  './src/routes/+page.svelte',
+  './src/routes/login/+page.svelte',
+  './src/routes/files/[id]/+page.svelte',
+  './src/lib/axios.ts',
+] as const;
+
+/** Dependencies the crawler finds only on late routes (the Video.js player). */
+export const DEV_OPTIMIZE_DEPS_INCLUDE = [
+  '@videojs/html',
+  '@videojs/html/video',
+  '@videojs/html/audio',
+  '@videojs/html/icons',
+  '@videojs/html/i18n',
+] as const;
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current directory.
@@ -63,6 +81,12 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       port: 5173,
+      // Transform the entry, login and file-detail graphs as soon as the server starts so the
+      // first browser request is served from cache instead of stalling on a cold module
+      // graph (A16: `#email` never visible in 30 s). Vite server.warmup docs.
+      warmup: {
+        clientFiles: [...DEV_WARMUP_CLIENT_FILES],
+      },
       proxy: {
         '/health': {
           target: apiTarget,
@@ -177,6 +201,10 @@ export default defineConfig(({ mode }) => {
       __GIT_SHA__: JSON.stringify(process.env.GIT_SHA?.trim() || 'unknown'),
     },
     optimizeDeps: {
+      // Pre-bundle the player up front. Discovered late (only when the file-detail route
+      // loads), Vite re-optimizes and force-reloads the page mid-test. Vite dependency
+      // pre-bundling docs: list deps the crawler would find late.
+      include: [...DEV_OPTIMIZE_DEPS_INCLUDE],
       exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
     },
     worker: {

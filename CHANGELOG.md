@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The speaker clusters page and its statistics read their header counts (labeled, unlabeled, last clustering time; total and clustered speakers) with one query each instead of three and two.
 - The speaker review inbox reads each speaker's file and cluster through the joins it already uses to filter and sort, instead of joining both tables a second time, and its page count no longer sorts every unverified speaker.
 - The speaker filter roster (`GET /api/speakers?for_filter=true`) excludes trashed and quarantined files with an anti-join instead of a `NOT IN` subquery, which degrades on large libraries.
 - The licence-compliance report in `security-reports/license-compliance/` is regenerated from the v0.6.1 images and the current lockfile. It now lists `fpdf2` (LGPL-3.0, REVIEW), `python-docx` and `uharfbuzz`, and the Video.js 10 packages in place of Plyr. `scripts/generate-sbom-report.py` takes the image tag from `VERSION` instead of a hardcoded `v0.5.1` (#1309).

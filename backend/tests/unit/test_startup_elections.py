@@ -45,6 +45,9 @@ class _Task:
         self.sink.append(self.name)
         return SimpleNamespace(id=f"{self.name}-id")
 
+    def apply_async(self, *args, **kwargs):
+        return self.delay()
+
 
 @pytest.mark.parametrize("win", [True, False])
 def test_startup_recovery_dispatch_is_elected(election, monkeypatch, win):
@@ -67,6 +70,7 @@ def test_thumbnail_dispatch_is_elected(election, monkeypatch, win):
     monkeypatch.setattr(
         "app.tasks.thumbnail_migration.backfill_missing_thumbnails", _Task(sent, "backfill")
     )
+    monkeypatch.setattr("app.tasks.thumbnail_migration.one_time_pass_done", lambda key: False)
     election.state["win"] = win
 
     asyncio.run(maintenance._run_thumbnail_migration())

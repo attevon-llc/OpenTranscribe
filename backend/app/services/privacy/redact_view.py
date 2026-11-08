@@ -150,6 +150,19 @@ class PrivacyView:
             )
         return self._voiceprints[key]
 
+    def preload_voiceprint_scopes(self, scopes: Iterable[tuple[int, int | None]]) -> None:
+        """Resolve the file-less voiceprint decision of every not-yet-known scope in one batch.
+
+        Fills the same memo entries :meth:`voiceprints_for_scope` reads when it is called
+        without a file, so the answers are identical to asking one scope at a time.
+        """
+        wanted = {(int(u), o) for u, o in scopes} - set(self._voiceprints)
+        if wanted:
+            for (user_id, org_id), decision in policy.voiceprint_decisions(
+                self._db, wanted
+            ).items():
+                self._voiceprints[(int(user_id or 0), org_id)] = decision
+
     def gender_for_scope(self, user_id: int, organization_id: int | None) -> Decision:
         """May gender be inferred for this scope?"""
         scope = (int(user_id), organization_id)
@@ -349,10 +362,10 @@ def machine_identity_clauses(
 
     The off scopes are decided in Python (the policy has layers and hooks SQL cannot ask):
     one query reads the DISTINCT ``(owner, organization)`` of the files in
-    ``file_ids_select`` that carry a machine identity, and each scope is asked once through
-    the view. Scopes are matched with ``or_`` of per-scope conditions, never
-    ``tuple_(...).in_(...)``: ``(user, NULL) IN (...)`` is NULL in SQL and would silently let
-    every personal-workspace row through.
+    ``file_ids_select`` that carry a machine identity, and the scopes are decided together in
+    one batch through the view. Off scopes are matched per organization (see
+    :func:`_in_off_file`), never with ``tuple_(...).in_(...)``: ``(user, NULL) IN (...)`` is
+    NULL in SQL and would silently let every personal-workspace row through.
 
     Args:
         view: A session or a :class:`PrivacyView` (its memo is shared).
@@ -439,10 +452,11 @@ def _in_off_file(
 
     The off scopes are decided in Python (the policy has layers and hooks SQL cannot ask):
     one query reads the DISTINCT ``(owner, organization)`` of the files in ``file_ids_select``
-    that hold a speaker satisfying ``carries``, and each scope is asked once through the view.
-    Scopes are matched with ``or_`` of per-scope conditions, never ``tuple_(...).in_(...)``:
-    ``(user, NULL) IN (...)`` is NULL in SQL and would silently let every personal-workspace
-    row through.
+    that hold a speaker satisfying ``carries``, and every scope is decided in one batch through
+    the view (:meth:`PrivacyView.preload_voiceprint_scopes`). Off scopes are matched with one
+    ``or_`` arm per organization (``organization_id IS NULL`` for personal scope, ``= org``
+    otherwise) AND ``user_id IN (owners)``, never ``tuple_(...).in_(...)``: ``(user, NULL) IN
+    (...)`` is NULL in SQL and would silently let every personal-workspace row through.
     """
     from sqlalchemy import and_
     from sqlalchemy import or_
@@ -460,24 +474,33 @@ def _in_off_file(
         )
         .distinct()
     ).all()
+    candidates = [
+        (int(user_id), int(org_id) if org_id is not None else None) for user_id, org_id in scopes
+    ]
+    view.preload_voiceprint_scopes(candidates)
     off = [
-        (int(user_id), org_id)
-        for user_id, org_id in scopes
-        if not view.voiceprints_for_scope(
-            int(user_id), int(org_id) if org_id is not None else None
-        ).enabled
+        (user_id, org_id)
+        for user_id, org_id in candidates
+        if not view.voiceprints_for_scope(user_id, org_id).enabled
     ]
     if not off:
         return None
+    # One arm per organization (None = personal) with its owners as an IN list, not one arm
+    # per scope: at 980 off scopes the per-scope OR cost more to plan than to run.
+    owners_by_org: dict[int | None, set[int]] = {}
+    for user_id, org_id in off:
+        owners_by_org.setdefault(org_id, set()).add(user_id)
     in_off_scope = or_(
         *(
             and_(
-                MediaFile.user_id == user_id,
                 MediaFile.organization_id.is_(None)
                 if org_id is None
                 else MediaFile.organization_id == org_id,
+                MediaFile.user_id.in_(sorted(owners)),
             )
-            for user_id, org_id in off
+            for org_id, owners in sorted(
+                owners_by_org.items(), key=lambda item: (item[0] is not None, item[0] or 0)
+            )
         )
     )
     off_files = select(MediaFile.id).where(MediaFile.id.in_(file_ids_select), in_off_scope)

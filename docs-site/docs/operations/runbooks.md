@@ -167,6 +167,29 @@ voiceprints in `celery-cpu-worker`:
 
 ---
 
+## Runbook: Re-run the One-Time Thumbnail Passes
+
+**Background**: Two thumbnail passes start a few seconds after the backend boots: the JPEG to WebP migration, and the backfill that creates thumbnails for completed videos that have none. Each pass walks the library once, at the lowest CPU-queue priority. When it reaches the end it records a done flag in `system_settings`, and later boots skip it. This happens whatever the per-file results were. A file whose thumbnail cannot be generated is tried once per pass, not on every restart.
+
+| Pass | Done flag (`system_settings.key`) |
+|---|---|
+| WebP migration | `thumbnail_webp_migration_done` |
+| Missing-thumbnail backfill | `thumbnail_backfill_done` |
+
+**When to re-run**: after restoring media from a backup that has no thumbnails, or after fixing whatever made thumbnail generation fail (a codec, storage permissions).
+
+**Resolution**: delete the flag, then restart the backend. The next boot dispatches that pass again.
+
+```bash
+docker compose exec postgres psql -U postgres -d opentranscribe -c \
+  "DELETE FROM system_settings WHERE key = 'thumbnail_backfill_done';"
+./opentr.sh restart-backend
+```
+
+The worker log shows `One-time thumbnail pass thumbnail_backfill_done complete` when the pass ends. A pass that stops on an error (for example, the database is unreachable) does not set its flag, and the next boot tries it again.
+
+---
+
 ## Runbook: GPU Out of Memory (OOM)
 
 **Symptoms**: Celery worker crashes or restarts unexpectedly. Logs show `CUDA out of memory`, `RuntimeError: CUDA error: out of memory`, or the container is killed by the OOM killer.

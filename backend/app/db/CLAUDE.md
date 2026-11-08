@@ -379,7 +379,7 @@ Celery, or deliberately per process. Add a new startup step to this table with i
 | presign identity (`ensure_presign_identity`) | per process | memoized in-process; each replica signs with it |
 | startup recovery dispatch | elected (`startup_recovery_dispatch`) | the task lock stops overlap, not a second run after the first |
 | search maintenance, availability reconcile, tag tenant repair, neural bootstrap | elected | |
-| thumbnail migration / backfill dispatch | elected (`thumbnail_migration_dispatch`) | each walks the library |
+| thumbnail migration / backfill dispatch | elected (`thumbnail_migration_dispatch`) after the done-flag checks (`thumbnail_webp_migration_done`, `thumbnail_backfill_done`) | each walks the library once, then sets its flag (scale plan 5.2) |
 | imohash recompute dispatch | elected (`imohash_recompute_dispatch`) after the done-flag check | |
 | embedding normalization dispatch | elected (concurrency audit M12) | |
 

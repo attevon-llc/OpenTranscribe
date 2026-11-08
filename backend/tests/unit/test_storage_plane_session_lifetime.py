@@ -276,7 +276,10 @@ def thumbnail_env(db_session, normal_user, monkeypatch):
     monkeypatch.setattr(
         thumb,
         "_load_migration_batch",
-        lambda batch_size: ([r for r in real_loader(batch_size)[0] if r["id"] in ours], False),
+        lambda batch_size, after_id=0: (
+            [r for r in real_loader(batch_size, after_id)[0] if r["id"] in ours],
+            False,
+        ),
     )
 
     monkeypatch.setattr(

@@ -85,24 +85,31 @@ def record_retry() -> None:
 
 
 def _latest_index_status() -> Any:
-    """Scalar subquery: status of the file's most recently updated ``search_indexing`` row."""
-    from app.models.media import MediaFile
+    """Subquery ``(media_file_id, status)`` of each file's most recently updated indexing row.
+
+    One ``DISTINCT ON (media_file_id)`` pass over the ``search_indexing`` rows, outer-joined by
+    the callers (``_completed_with_transcript``). It used to be a scalar subquery correlated to
+    ``media_file`` and referenced twice per query, which PostgreSQL ran as two SubPlans per
+    file (EXPLAIN: 20,000 + 10,108 loops on a 30,000-file library). A file with no row has a
+    NULL ``status`` after the outer join. Ordering is the old ``ORDER BY ... LIMIT 1``'s.
+    """
     from app.models.media import Task
 
     return (
-        select(Task.status)
-        .where(
-            Task.media_file_id == MediaFile.id,
-            Task.task_type == SEARCH_INDEXING_TASK_TYPE,
+        select(Task.media_file_id, Task.status)
+        .where(Task.task_type == SEARCH_INDEXING_TASK_TYPE, Task.media_file_id.is_not(None))
+        .distinct(Task.media_file_id)
+        .order_by(
+            Task.media_file_id,
+            func.coalesce(Task.updated_at, Task.created_at).desc(),
+            Task.created_at.desc(),
         )
-        .order_by(func.coalesce(Task.updated_at, Task.created_at).desc(), Task.created_at.desc())
-        .limit(1)
-        .correlate(MediaFile)
-        .scalar_subquery()
+        .subquery("latest_index")
     )
 
 
-def _completed_with_transcript(db: Session, *columns: Any) -> Any:
+def _completed_with_transcript(db: Session, latest: Any, *columns: Any) -> Any:
+    """Completed files with a transcript, outer-joined to their latest indexing row."""
     from app.models.media import FileStatus
     from app.models.media import MediaFile
     from app.models.media import TranscriptSegment
@@ -110,7 +117,12 @@ def _completed_with_transcript(db: Session, *columns: Any) -> Any:
     has_segments = exists(
         select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
     )
-    return db.query(*columns).filter(MediaFile.status == FileStatus.COMPLETED, has_segments)
+    return (
+        db.query(*columns)
+        .select_from(MediaFile)
+        .outerjoin(latest, latest.c.media_file_id == MediaFile.id)
+        .filter(MediaFile.status == FileStatus.COMPLETED, has_segments)
+    )
 
 
 def _lookback_cutoff() -> datetime:
@@ -146,8 +158,8 @@ def find_files_awaiting_reindex(db: Session, *, limit: int) -> list[tuple[int, s
 
     latest = _latest_index_status()
     rows = (
-        _completed_with_transcript(db, MediaFile.id, MediaFile.uuid, MediaFile.user_id)
-        .filter(or_(latest == "failed", _never_attempted(latest)))
+        _completed_with_transcript(db, latest, MediaFile.id, MediaFile.uuid, MediaFile.user_id)
+        .filter(or_(latest.c.status == "failed", _never_attempted(latest.c.status)))
         .order_by(MediaFile.id)
         .limit(limit)
         .all()
@@ -161,8 +173,13 @@ def count_files_awaiting_index(db: Session) -> int:
 
     latest = _latest_index_status()
     return (
-        _completed_with_transcript(db, func.count(MediaFile.id))
-        .filter(or_(latest.in_(("failed", "pending", "in_progress")), _never_attempted(latest)))
+        _completed_with_transcript(db, latest, func.count(MediaFile.id))
+        .filter(
+            or_(
+                latest.c.status.in_(("failed", "pending", "in_progress")),
+                _never_attempted(latest.c.status),
+            )
+        )
         .scalar()
         or 0
     )

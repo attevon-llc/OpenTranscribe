@@ -39,6 +39,8 @@
   // Import components
   import Navbar from "../components/Navbar.svelte";
   import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
+  import DemoBanner from "$components/demo/DemoBanner.svelte";
+  import { demoMode, loadDemoAttributions } from "$stores/demo";
   import NotificationsPanel from "../components/NotificationsPanel.svelte";
   import ToastContainer from "../components/ToastContainer.svelte";
   import UploadManager from "../components/UploadManager.svelte";
@@ -277,6 +279,9 @@
     };
   });
 
+  // Public demo: credit for the seeded files is loaded once a visitor has a session.
+  $: if ($demoMode && $isAuthenticated) void loadDemoAttributions();
+
   // Guarantee no stuck overflow:hidden after any client-side navigation
   afterNavigate(() => {
     resetScrollLock();
@@ -315,6 +320,7 @@
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
       {#if $supportSession.active}<SupportAccessBanner />{/if}
+      {#if $demoMode}<DemoBanner />{/if}
       {#if ErasureRequestBanner}<svelte:component this={ErasureRequestBanner} />{/if}
       <NotificationsPanel />
       <UploadManager />
@@ -421,12 +427,12 @@
      screens) is published as --support-banner-height, and every page that sizes itself from
      --content-top follows. */
   .app.has-support-banner {
-    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px) + var(--erasure-banner-height, 0px));
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--support-banner-height, 0px) + var(--demo-banner-height) + var(--erasure-banner-height, 0px));
   }
 
   /* The erasure notice is fixed under the navbar too (and under a support banner when both show). */
   .app:not(.has-support-banner) {
-    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--erasure-banner-height, 0px));
+    --content-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px) + var(--demo-banner-height) + var(--erasure-banner-height, 0px));
   }
 
   /* Push navbar down when banner is present */

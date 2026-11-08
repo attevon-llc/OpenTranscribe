@@ -7234,5 +7234,15 @@
   "takedown.admin.export": "تصدير",
   "takedown.admin.exportEmpty": "لا توجد إشعارات للتصدير بعد.",
   "settings.quarantine.holdHelp": "الحجر والحجز القانوني أمران منفصلان. يمكن أن تحمل الإزالة حجزاً قانونياً خاصاً بها يحفظ الملف أثناء إزالته. أما الحجز القانوني المحدَّد في الإعدادات فيحفظ الملف دون إزالته.",
-  "settings.quarantine.holdHelpLink": "فتح الحجوزات القانونية"
+  "settings.quarantine.holdHelpLink": "فتح الحجوزات القانونية",
+  "demo.tryDemo": "جرّب العرض التجريبي",
+  "demo.tryDemoHint": "لا حاجة إلى حساب أو كلمة مرور. كل ما في العرض التجريبي للقراءة فقط.",
+  "demo.signInFailed": "العرض التجريبي غير متاح حاليًا. يُرجى المحاولة لاحقًا.",
+  "demo.bannerMessage": "هذا عرض تجريبي للقراءة فقط. التغييرات معطّلة وستُعاد تهيئة البيانات في ⁦{{time}}⁩.",
+  "demo.bannerMessageNoTime": "هذا عرض تجريبي للقراءة فقط. التغييرات معطّلة وتُعاد تهيئة البيانات كل ليلة.",
+  "demo.readOnlyTooltip": "معطّل في العرض التجريبي للقراءة فقط",
+  "demo.buildInfo": "الإصدار ⁦{{version}}⁩، تمت الترقية في ⁦{{time}}⁩",
+  "demo.buildInfoNoTime": "الإصدار ⁦{{version}}⁩",
+  "demo.attribution": "الإسناد: {{credit}}. مرخّص بموجب ⁦{{license}}⁩.",
+  "demo.attributionSource": "المصدر الأصلي"
 }

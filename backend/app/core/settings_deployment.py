@@ -33,6 +33,9 @@ class DeploymentSettings(BaseSettings):
     # (``python -m app.scripts.demo_seed import``). Unused unless DEMO_MODE is on.
     DEMO_USER_EMAIL: str = ""
     DEMO_USER_PASSWORD: str = ""
+    # Where the demo host's upgrade script records the last upgrade (the demo overlay mounts
+    # it read-only). Empty means the login page shows no upgrade time.
+    DEMO_STATUS_FILE: str = ""
 
     @field_validator("DEPLOYMENT_MODE", mode="after")
     @classmethod

@@ -634,6 +634,7 @@ ROUTE_NOT_FILE_CONTENT: dict[str, str] = {
     **{
         _r(k): _AUTH
         for k in (
+            "auth/demo_session.py::start_demo_session",
             "auth/email_verification.py::verify_email_endpoint",
             "auth/email_verification.py::resend_verification_endpoint",
             "auth/invitations.py::create_invitation_endpoint",

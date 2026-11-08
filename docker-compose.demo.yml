@@ -29,11 +29,18 @@ services:
       ACCOUNT_EXPIRATION_ENABLED: "false"
       API_MEDIATED_UPLOAD_ENABLED: "false"
       OPENTRANSCRIBE_TELEMETRY: "false"
+      # Where the upgrade script's record is mounted (below); the login page shows the time.
+      DEMO_STATUS_FILE: /run/demo/demo-status.json
       DEMO_RATE_LIMIT_PER_MINUTE: ${DEMO_RATE_LIMIT_PER_MINUTE:-120}
       # nginx (Docker's pool) is always trusted. Add the subnet of anything that terminates
       # TLS in front of nginx (an ALB, CloudFront) in .env — never a wildcard, which lets any
       # client forge X-Forwarded-For (issue #284).
       RATE_LIMIT_TRUSTED_PROXIES: ${RATE_LIMIT_TRUSTED_PROXIES:-127.0.0.1/32,172.16.0.0/12}
+    volumes:
+      # demo-upgrade.sh writes this file in the install directory (the compose project
+      # directory); demo-reset.sh creates it empty before the first start so Docker never
+      # makes a directory of it. Read-only: the API only reports what the host recorded.
+      - ./demo-status.json:/run/demo/demo-status.json:ro
 
   celery-beat:
     deploy:

@@ -29,6 +29,7 @@ from datetime import UTC
 from datetime import datetime
 from pathlib import Path
 
+from app.core.demo_info import DEMO_LICENSE_KEY
 from app.scripts.demo_seed.bundle import BundleError
 from app.scripts.demo_seed.bundle import SeedItem
 from app.scripts.demo_seed.bundle import load_bundle
@@ -134,6 +135,18 @@ def _seed_item(item: SeedItem, bundle_version: str, user_id: int) -> None:
         if media_file is None:
             raise RuntimeError(f"{item.id}: the injected media row vanished before upload")
         storage_path = media_file.storage_path
+        # The licence the item was published under, in a key the product may read (the
+        # injector's own ``rag_eval`` block is the evaluation harness's, not the product's);
+        # `GET /auth/demo/attributions` serves it so CC BY credit shows wherever the file is.
+        media_file.metadata_important = {
+            **(media_file.metadata_important or {}),
+            DEMO_LICENSE_KEY: {
+                "license": item.license,
+                "license_url": item.license_url,
+                "attribution": item.attribution,
+                "source_url": item.source_url,
+            },
+        }
         db.commit()
 
     content_type = mimetypes.guess_type(item.media.name)[0] or "application/octet-stream"

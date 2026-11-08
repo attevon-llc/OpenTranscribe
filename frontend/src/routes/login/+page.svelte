@@ -14,6 +14,7 @@
   import LoginBanner from '$components/LoginBanner.svelte';
   import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
   import Spinner from '../../components/ui/Spinner.svelte';
+  import DemoSignIn from '$components/demo/DemoSignIn.svelte';
   import { createRetryCountdown } from '$lib/utils/retryAfter';
   import { isValidLoginIdentifier, forcedChangeError } from '$lib/auth/loginIdentifier';
   import { startOidcLogin } from '$lib/auth/oidcLogin';
@@ -122,6 +123,7 @@
     mfa_enabled: false,
     mfa_required: false,
     login_banner_enabled: false,
+    demo_mode: false,
     login_banner_text: "",
     login_banner_classification: "UNCLASSIFIED",
   };
@@ -496,6 +498,12 @@
     } else {
       toastStore.error(result.message || $t('auth.loginFailed'));
     }
+  }
+
+  // Public demo: the shared read-only account signed in without a password.
+  async function handleDemoSignedIn() {
+    await banner.recordConsent();
+    redirectHome();
   }
 
   // Handle MFA verification
@@ -911,6 +919,9 @@
       <!-- Normal Login Form. Hidden entirely when neither local nor LDAP
            credentials are accepted — otherwise the user fills it in and the
            backend rejects every submission. -->
+      {#if authMethods.demo_mode}
+        <DemoSignIn disabled={loading} onSignedIn={handleDemoSignedIn} />
+      {/if}
       {#if credentialFormEnabled}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
       {#if successMessage}

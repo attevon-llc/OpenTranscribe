@@ -6949,5 +6949,15 @@
   "takedown.admin.export": "Esporta",
   "takedown.admin.exportEmpty": "Non ci sono ancora segnalazioni da esportare.",
   "settings.quarantine.holdHelp": "Quarantena e blocco legale sono funzioni separate. Una rimozione può avere un proprio blocco legale, che conserva il file mentre è rimosso. Un blocco legale impostato nelle Impostazioni conserva un file senza rimuoverlo.",
-  "settings.quarantine.holdHelpLink": "Apri Blocchi legali"
+  "settings.quarantine.holdHelpLink": "Apri Blocchi legali",
+  "demo.tryDemo": "Prova la demo",
+  "demo.tryDemoHint": "Non servono account né password. Tutto nella demo è in sola lettura.",
+  "demo.signInFailed": "La demo non è disponibile al momento. Riprova più tardi.",
+  "demo.bannerMessage": "Questa è una demo in sola lettura. Le modifiche sono disattivate e i dati vengono ripristinati il {{time}}.",
+  "demo.bannerMessageNoTime": "Questa è una demo in sola lettura. Le modifiche sono disattivate e i dati vengono ripristinati ogni notte.",
+  "demo.readOnlyTooltip": "Disattivato nella demo in sola lettura",
+  "demo.buildInfo": "Versione {{version}}, aggiornata il {{time}}",
+  "demo.buildInfoNoTime": "Versione {{version}}",
+  "demo.attribution": "Crediti: {{credit}}. Concesso in licenza con {{license}}.",
+  "demo.attributionSource": "Fonte originale"
 }

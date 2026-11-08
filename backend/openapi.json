@@ -904,6 +904,11 @@
             "title": "Allow Registration",
             "type": "boolean"
           },
+          "demo_mode": {
+            "default": false,
+            "title": "Demo Mode",
+            "type": "boolean"
+          },
           "external_providers": {
             "items": {
               "type": "string"
@@ -5054,6 +5059,95 @@
           }
         },
         "title": "DecisionNoteBody",
+        "type": "object"
+      },
+      "DemoAttribution": {
+        "description": "Licence and credit for one seeded item, shown wherever the file is viewed.",
+        "properties": {
+          "attribution": {
+            "title": "Attribution",
+            "type": "string"
+          },
+          "file_uuid": {
+            "title": "File Uuid",
+            "type": "string"
+          },
+          "license": {
+            "title": "License",
+            "type": "string"
+          },
+          "license_url": {
+            "title": "License Url",
+            "type": "string"
+          },
+          "source_url": {
+            "title": "Source Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_uuid",
+          "license",
+          "license_url",
+          "attribution",
+          "source_url"
+        ],
+        "title": "DemoAttribution",
+        "type": "object"
+      },
+      "DemoAttributionsResponse": {
+        "description": "Attribution for every seeded file the caller can see.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DemoAttribution"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DemoAttributionsResponse",
+        "type": "object"
+      },
+      "DemoInfoResponse": {
+        "description": "What a public demo tells its visitors about itself (issue #628).\n\n``enabled`` is false, and everything else ``None``, on every ordinary deployment.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "next_reset_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Reset At"
+          },
+          "upgraded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Upgraded At"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "DemoInfoResponse",
         "type": "object"
       },
       "DerivedCandidate": {
@@ -33893,6 +33987,77 @@
           }
         ],
         "summary": "Acknowledge Banner",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/demo": {
+      "get": {
+        "description": "Reset time and last-upgrade time for the banner and login page. Public: the login\npage needs it before a session exists. Reports ``enabled: false`` and nothing else\nanywhere but a demo deployment.",
+        "operationId": "get_demo_info_api_auth_demo_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoInfoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Demo Info",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/demo/attributions": {
+      "get": {
+        "description": "Licence and credit for every seeded file the caller owns (CC BY terms require it to\nbe shown wherever the file is viewed).",
+        "operationId": "get_demo_attributions_api_auth_demo_attributions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoAttributionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "summary": "Get Demo Attributions",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/demo/session": {
+      "post": {
+        "description": "Sign a visitor in as the shared read-only demo user, with no password.",
+        "operationId": "start_demo_session_api_auth_demo_session_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Demo Session",
         "tags": [
           "auth"
         ]

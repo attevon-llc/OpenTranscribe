@@ -5,11 +5,13 @@
   import ConfirmationModal from './ConfirmationModal.svelte';
   import HoldBadge from '$components/ui/HoldBadge.svelte';
   import CopyButton from '$components/ui/CopyButton.svelte';
+  import DemoAttribution from '$components/demo/DemoAttribution.svelte';
   import HeldFileBanner from '$components/legal-hold/HeldFileBanner.svelte';
   import FilePlaceHoldAction from '$components/legal-hold/FilePlaceHoldAction.svelte';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
   import { reportHoldRefusal } from '$lib/legalHold/refusal';
   import { toastStore } from '$stores/toast';
+  import { demoMode } from '$stores/demo';
   import { t } from '$stores/locale';
   import { resolveMediaErrorI18nKey } from '$lib/i18n/mediaErrors';
 
@@ -182,9 +184,9 @@
           type="button"
           on:click={startEditingTitle}
           class="edit-btn"
-          title={$frozen ? $t('holds.frozenControl') : $t('fileDetail.editDisplayName')}
+          title={$demoMode ? $t('demo.readOnlyTooltip') : $frozen ? $t('holds.frozenControl') : $t('fileDetail.editDisplayName')}
           aria-label={$t('fileDetail.editDisplayName')}
-          disabled={$frozen}
+          disabled={$frozen || $demoMode}
           aria-describedby={$frozen ? 'held-file-banner-text' : undefined}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -210,6 +212,8 @@
       </div>
     {/if}
   </div>
+
+  <DemoAttribution fileUuid={file?.uuid ? String(file.uuid) : null} />
 
   <HeldFileBanner hold={file?.hold} />
 

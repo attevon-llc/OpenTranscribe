@@ -6949,5 +6949,15 @@
   "takedown.admin.export": "Exportar",
   "takedown.admin.exportEmpty": "Ainda não há notificações para exportar.",
   "settings.quarantine.holdHelp": "Quarentena e retenção legal são funções separadas. Uma remoção pode ter sua própria retenção legal, que preserva o arquivo enquanto ele está removido. Uma retenção legal definida em Configurações mantém um arquivo sem removê-lo.",
-  "settings.quarantine.holdHelpLink": "Abrir Retenções legais"
+  "settings.quarantine.holdHelpLink": "Abrir Retenções legais",
+  "demo.tryDemo": "Experimentar a demonstração",
+  "demo.tryDemoHint": "Não é preciso conta nem senha. Tudo na demonstração é somente leitura.",
+  "demo.signInFailed": "A demonstração não está disponível no momento. Tente novamente mais tarde.",
+  "demo.bannerMessage": "Esta é uma demonstração somente leitura. As alterações estão desativadas e os dados são redefinidos em {{time}}.",
+  "demo.bannerMessageNoTime": "Esta é uma demonstração somente leitura. As alterações estão desativadas e os dados são redefinidos todas as noites.",
+  "demo.readOnlyTooltip": "Desativado na demonstração somente leitura",
+  "demo.buildInfo": "Versão {{version}}, atualizada em {{time}}",
+  "demo.buildInfoNoTime": "Versão {{version}}",
+  "demo.attribution": "Crédito: {{credit}}. Licenciado sob {{license}}.",
+  "demo.attributionSource": "Fonte original"
 }

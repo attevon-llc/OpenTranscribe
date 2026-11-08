@@ -6854,5 +6854,15 @@
   "takedown.admin.export": "Export",
   "takedown.admin.exportEmpty": "There are no notices to export yet.",
   "settings.quarantine.holdHelp": "Quarantine and legal hold are separate. A takedown can carry its own legal hold, which preserves the file while it is quarantined. A legal hold set in Settings keeps a file without quarantining it.",
-  "settings.quarantine.holdHelpLink": "Open Legal holds"
+  "settings.quarantine.holdHelpLink": "Open Legal holds",
+  "demo.tryDemo": "Try the demo",
+  "demo.tryDemoHint": "No account or password needed. Everything in the demo is read-only.",
+  "demo.signInFailed": "The demo is not available right now. Please try again later.",
+  "demo.bannerMessage": "This is a read-only demo. Changes are turned off, and the data resets on {{time}}.",
+  "demo.bannerMessageNoTime": "This is a read-only demo. Changes are turned off, and the data resets every night.",
+  "demo.readOnlyTooltip": "Turned off in the read-only demo",
+  "demo.buildInfo": "Version {{version}}, upgraded {{time}}",
+  "demo.buildInfoNoTime": "Version {{version}}",
+  "demo.attribution": "Credit: {{credit}}. Licensed under {{license}}.",
+  "demo.attributionSource": "Original source"
 }

@@ -18,6 +18,8 @@ import {
 } from '$lib/auth/authErrors';
 import { checkAuthorizationUrl } from '$lib/auth/oidcRedirect';
 import { failClosedAuthMethods, sharedFreshRequest, type AuthMethods } from '$lib/auth/authMethods';
+import { postDemoSession } from '$lib/demo/demoApi';
+import { demoMode } from '$stores/demo';
 
 export { readAccountLifecycle, type AccountLifecycleState } from '$lib/auth/accountLifecycle';
 export type { MfaEnrollmentError } from '$lib/auth/authErrors';
@@ -686,6 +688,7 @@ export function getAuthMethods(): Promise<AuthMethods> {
 async function fetchAuthMethods(): Promise<{ value: AuthMethods; ok: boolean }> {
   try {
     const response = await axiosInstance.get('/auth/methods');
+    demoMode.set(response.data?.demo_mode === true);
     return { value: response.data, ok: true };
   } catch (error) {
     console.error('Failed to fetch auth methods:', error);
@@ -828,6 +831,43 @@ export async function loginWithPKI(): Promise<{
   } catch (rawError: unknown) {
     console.error('PKI login error:', rawError);
     return { success: false, message: pkiLoginFailure(rawError, get(t)) };
+  }
+}
+
+// Sign in as the shared read-only demo user (public demo only; no password, no MFA).
+export async function loginAsDemo(): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await postDemoSession();
+    if (!response.access_token) {
+      return { success: false, message: get(t)('demo.signInFailed') };
+    }
+
+    await clearUserState();
+    authStore.setToken('cookie');
+
+    const userData = await fetchUserInfo();
+    if (!userData) {
+      authStore.reset();
+      return {
+        success: false,
+        message: _sessionCookieWasRejected()
+          ? get(t)('auth.error.sessionCookieRejected')
+          : get(t)('demo.signInFailed'),
+      };
+    }
+
+    authStore.setReady(true);
+    void loadCapabilities();
+    return { success: true };
+  } catch (rawError: unknown) {
+    console.error('Demo sign-in error:', rawError);
+    authStore.reset();
+    const status = asAuthError(rawError).response?.status;
+    return {
+      success: false,
+      message:
+        status === 429 ? get(t)('auth.error.tooManyLoginAttempts') : get(t)('demo.signInFailed'),
+    };
   }
 }
 

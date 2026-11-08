@@ -26,6 +26,8 @@ export interface AuthMethods {
   mfa_enabled: boolean;
   mfa_required: boolean;
   login_banner_enabled: boolean;
+  /** True only on a public read-only demo (offers "Try the demo", shows the banner). */
+  demo_mode?: boolean;
   login_banner_text: string;
   login_banner_classification: string;
   /** Session limits in minutes (0 = off). Absent from an older backend. */

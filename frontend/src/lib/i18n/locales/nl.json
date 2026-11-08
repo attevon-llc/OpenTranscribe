@@ -6854,5 +6854,15 @@
   "takedown.admin.export": "Exporteren",
   "takedown.admin.exportEmpty": "Er zijn nog geen meldingen om te exporteren.",
   "settings.quarantine.holdHelp": "Quarantaine en juridische bewaring zijn afzonderlijke functies. Een verwijdering kan een eigen juridische bewaring hebben, die het bestand bewaart zolang het is verwijderd. Een juridische bewaring uit de Instellingen bewaart een bestand zonder het te verwijderen.",
-  "settings.quarantine.holdHelpLink": "Juridische bewaringen openen"
+  "settings.quarantine.holdHelpLink": "Juridische bewaringen openen",
+  "demo.tryDemo": "Probeer de demo",
+  "demo.tryDemoHint": "Geen account of wachtwoord nodig. Alles in de demo is alleen-lezen.",
+  "demo.signInFailed": "De demo is momenteel niet beschikbaar. Probeer het later opnieuw.",
+  "demo.bannerMessage": "Dit is een alleen-lezen demo. Wijzigingen zijn uitgeschakeld en de gegevens worden op {{time}} gereset.",
+  "demo.bannerMessageNoTime": "Dit is een alleen-lezen demo. Wijzigingen zijn uitgeschakeld en de gegevens worden elke nacht gereset.",
+  "demo.readOnlyTooltip": "Uitgeschakeld in de alleen-lezen demo",
+  "demo.buildInfo": "Versie {{version}}, bijgewerkt op {{time}}",
+  "demo.buildInfoNoTime": "Versie {{version}}",
+  "demo.attribution": "Bronvermelding: {{credit}}. Gelicenseerd onder {{license}}.",
+  "demo.attributionSource": "Oorspronkelijke bron"
 }

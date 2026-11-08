@@ -24,6 +24,7 @@ Layout:
 - :mod:`email_verification` — ``/verify-email``, ``/verify-email/resend``.
 - :mod:`profile` — ``/me``, ``/session``, ``/me/certificate``.
 - :mod:`oidc` · :mod:`pki` · :mod:`proxy` — external identity flows.
+- :mod:`demo_session` — ``/demo``, ``/demo/session``, ``/demo/attributions`` (public demo, #628).
 - :mod:`methods` — ``/methods``, ``/banner``.
 - :mod:`mfa_tokens` — MFA half-token minting / scope + single-use replay protection.
 - :mod:`mfa_enrollment` — the enrolment dependency and post-second-factor session
@@ -115,6 +116,7 @@ from app.api.endpoints.auth.sessions import logout
 from app.api.endpoints.auth.sessions import logout_all_sessions
 from app.api.endpoints.auth.sessions import refresh_access_token
 
+from . import demo_session as _demo_session_module
 from . import email_verification as _email_verification_module
 from . import flower as _flower_module
 from . import invitations as _invitations_module
@@ -138,6 +140,7 @@ router.include_router(_profile_module.router)
 router.include_router(_oidc_module.router)
 router.include_router(_saml_module.router)
 router.include_router(_pki_module.router)
+router.include_router(_demo_session_module.router)
 router.include_router(_proxy_module.router)
 router.include_router(_methods_module.router)
 router.include_router(_mfa_module.router)

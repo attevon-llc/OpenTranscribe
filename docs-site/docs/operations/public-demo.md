@@ -98,7 +98,7 @@ from GitHub (or `DEMO_TARGET_TAG`, to run a pre-release), and when it differs fr
 3. checks that `/health` answers with the new version.
 
 If the check fails it rolls back with `./opentranscribe.sh update --rollback`, resets again and
-exits with an error. It writes the outcome to `demo-status.json` in the install directory.
+exits with an error. It writes the outcome to `demo-status.json` in the install directory; the API reads it (mounted read-only) to show the last upgrade time on the login page. To have `./scripts/release.sh finish` wait for the demo to reach the new tag, set `DEMO_STATUS_CMD` (for example `ssh demo cat /opt/opentranscribe/demo-status.json`) or `DEMO_STATUS_FILE` in the releaser's environment.
 `--dry-run` prints every command without running any. Exit codes: `0` upgraded or already
 current, `1` upgrade failed and rolled back, `2` bad input, `3` another reset or upgrade is
 running, `4` the rollback failed too.

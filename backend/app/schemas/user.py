@@ -307,6 +307,35 @@ class LoginBannerResponse(BaseModel):
     requires_acknowledgment: bool
 
 
+class DemoInfoResponse(BaseModel):
+    """What a public demo tells its visitors about itself (issue #628).
+
+    ``enabled`` is false, and everything else ``None``, on every ordinary deployment.
+    """
+
+    enabled: bool
+    #: Next nightly reset (UTC). The data a visitor sees is replaced at that moment.
+    next_reset_at: datetime | None = None
+    #: When the demo last moved to its current release; ``None`` when not recorded.
+    upgraded_at: datetime | None = None
+
+
+class DemoAttribution(BaseModel):
+    """Licence and credit for one seeded item, shown wherever the file is viewed."""
+
+    file_uuid: str
+    license: str
+    license_url: str
+    attribution: str
+    source_url: str
+
+
+class DemoAttributionsResponse(BaseModel):
+    """Attribution for every seeded file the caller can see."""
+
+    items: list[DemoAttribution]
+
+
 class AuthMethodsResponse(BaseModel):
     """What the login page needs in order to render itself correctly.
 
@@ -332,6 +361,9 @@ class AuthMethodsResponse(BaseModel):
     mfa_enabled: bool
     mfa_required: bool
     login_banner_enabled: bool
+    #: True only on a public read-only demo: the SPA then offers "Try the demo" and shows
+    #: the read-only banner. Nothing else about the deployment is implied.
+    demo_mode: bool = False
     login_banner_text: str
     login_banner_classification: str
     #: Session limits, from the same layered config the built-in session

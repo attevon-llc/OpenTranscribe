@@ -97,6 +97,7 @@ def get_auth_methods(request: Request, response: Response, db: Session = Depends
         mfa_enabled=mfa_enabled,
         mfa_required=mfa_required,
         login_banner_enabled=login_banner_enabled,
+        demo_mode=settings.DEMO_MODE,
         # Read the banner copy from the same place as the flag. Reading the flag
         # from the DB but the text from the environment meant enabling the banner
         # in the admin UI produced an EMPTY banner — the inverse of the AC-8

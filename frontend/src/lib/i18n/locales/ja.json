@@ -6759,5 +6759,15 @@
   "takedown.admin.export": "エクスポート",
   "takedown.admin.exportEmpty": "エクスポートする通知はまだありません。",
   "settings.quarantine.holdHelp": "隔離と法的保全は別の機能です。削除には独自の法的保全を付けることができ、削除中もファイルが保存されます。設定で指定する法的保全は、ファイルを削除せずに保存します。",
-  "settings.quarantine.holdHelpLink": "法的保全を開く"
+  "settings.quarantine.holdHelpLink": "法的保全を開く",
+  "demo.tryDemo": "デモを試す",
+  "demo.tryDemoHint": "アカウントもパスワードも不要です。デモ内のすべては読み取り専用です。",
+  "demo.signInFailed": "現在デモをご利用いただけません。しばらくしてからもう一度お試しください。",
+  "demo.bannerMessage": "これは読み取り専用のデモです。変更は無効になっており、データは{{time}}にリセットされます。",
+  "demo.bannerMessageNoTime": "これは読み取り専用のデモです。変更は無効になっており、データは毎晩リセットされます。",
+  "demo.readOnlyTooltip": "読み取り専用のデモでは無効です",
+  "demo.buildInfo": "バージョン {{version}}、{{time}} にアップグレード",
+  "demo.buildInfoNoTime": "バージョン {{version}}",
+  "demo.attribution": "クレジット: {{credit}}。ライセンス: {{license}}。",
+  "demo.attributionSource": "元のソース"
 }

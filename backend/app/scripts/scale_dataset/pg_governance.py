@@ -29,11 +29,12 @@ from app.models.speaker import SpeakerCluster
 from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerMatch
 from app.scripts.scale_dataset.pg_synthetic import Shape
+from app.scripts.scale_dataset.pg_synthetic import _claim_ids
 from app.scripts.scale_dataset.pg_synthetic import _fill
 from app.scripts.scale_dataset.pg_synthetic import _h
-from app.scripts.scale_dataset.pg_synthetic import _max_id
 from app.scripts.scale_dataset.pg_synthetic import _table
 from app.scripts.scale_dataset.pg_synthetic import _uuid
+from app.scripts.scale_dataset.pg_synthetic import claim_core_bases
 from app.scripts.scale_dataset.pg_synthetic import seed_dataset
 
 _ANCHOR = "timestamptz '2026-01-01 00:00:00+00'"
@@ -69,7 +70,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
     def other_user(salt: str) -> str:
         return f"({b.user} + 3 + {h(salt)} % {shape.users - 2})"
 
-    base_org = _max_id(conn, _table(Organization))
+    base_org = _claim_ids(conn, _table(Organization), shape.max_rows())
     counts["organization"] = _fill(
         conn,
         _table(Organization),
@@ -84,7 +85,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
     )
     # Users 3.. belong to org ((i - 3) % orgs) + 1; user 3 is that org's admin (perf-3).
     mem = shape.users - 2
-    base_mem = _max_id(conn, _table(OrganizationMembership))
+    base_mem = _claim_ids(conn, _table(OrganizationMembership), shape.max_rows())
     counts["organization_membership"] = _fill(
         conn,
         _table(OrganizationMembership),
@@ -97,7 +98,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
         },
     )
 
-    base_hold = _max_id(conn, _table(ContentHold))
+    base_hold = _claim_ids(conn, _table(ContentHold), shape.max_rows())
     plat = f"(((g - 1) * 1000 / {shape.holds}) % 1000 < {shape.platform_hold_pm})"
     counts["content_hold"] = _fill(
         conn,
@@ -133,7 +134,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
         },
     )
 
-    base_col = _max_id(conn, _table(Collection))
+    base_col = _claim_ids(conn, _table(Collection), shape.max_rows())
     org_col = f"({h('corg')} % 1000 < {shape.org_collection_pm})"
     owner = other_user("cown")
     counts["collection"] = _fill(
@@ -156,7 +157,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
     )
     cq = f"((g - 1) / {shape.collections})"
     col_idx = f"((g - 1) % {shape.collections} + 1)"
-    base_cm = _max_id(conn, _table(CollectionMember))
+    base_cm = _claim_ids(conn, _table(CollectionMember), shape.max_rows())
     counts["collection_member"] = _fill(
         conn,
         _table(CollectionMember),
@@ -168,7 +169,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
             "media_file_id": _lit(f"{b.file} + {_spread(col_idx, cq, shape.files, seed, 'cm')}"),
         },
     )
-    base_cs = _max_id(conn, _table(CollectionShare))
+    base_cs = _claim_ids(conn, _table(CollectionShare), shape.max_rows())
     counts["collection_share"] = _fill(
         conn,
         _table(CollectionShare),
@@ -184,7 +185,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
         },
     )
 
-    base_cl = _max_id(conn, _table(SpeakerCluster))
+    base_cl = _claim_ids(conn, _table(SpeakerCluster), shape.max_rows())
     counts["speaker_cluster"] = _fill(
         conn,
         _table(SpeakerCluster),
@@ -200,7 +201,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
     spk = shape.files * shape.speakers_per_file
     kq = f"((g - 1) / {shape.clusters})"
     cl_idx = f"((g - 1) % {shape.clusters} + 1)"
-    base_cmem = _max_id(conn, _table(SpeakerClusterMember))
+    base_cmem = _claim_ids(conn, _table(SpeakerClusterMember), shape.max_rows())
     counts["speaker_cluster_member"] = _fill(
         conn,
         _table(SpeakerClusterMember),
@@ -212,7 +213,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
             "speaker_id": _lit(f"{b.speaker} + {_spread(cl_idx, kq, spk, seed, 'clm')}"),
         },
     )
-    base_match = _max_id(conn, _table(SpeakerMatch))
+    base_match = _claim_ids(conn, _table(SpeakerMatch), shape.max_rows())
     # (s, s + 1 + q): unique per (s, q) and always speaker1 < speaker2.
     mq = f"((g - 1) / {spk - 1})"
     s1 = f"((g - 1) % {spk - 1} + 1)"
@@ -239,7 +240,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
         },
     )
 
-    base_conv = _max_id(conn, _table(ChatConversation))
+    base_conv = _claim_ids(conn, _table(ChatConversation), shape.max_rows())
     counts["chat_conversation"] = _fill(
         conn,
         _table(ChatConversation),
@@ -253,7 +254,7 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
             "last_message_at": _lit(f"{_ANCHOR} - ((g % 365) || ' days')::interval"),
         },
     )
-    base_msg = _max_id(conn, _table(ChatMessage))
+    base_msg = _claim_ids(conn, _table(ChatMessage), shape.max_rows())
     cited = f"md5('{seed}:file:' || (1 + {h('cf')} % {shape.files})::text)::uuid::text"
     counts["chat_message"] = _fill(
         conn,
@@ -278,15 +279,8 @@ def seed_governance(conn: Connection, shape: Shape, seed: str, b: Bases) -> dict
 
 def seed_all(conn: Connection, shape: Shape, seed: str, password_hash: str) -> dict[str, int]:
     """The whole dataset: core tables, then organizations, holds, collections, clusters, chat."""
-    from app.models.media import MediaFile
-    from app.models.speaker import Speaker
-    from app.models.user import User
-
-    bases = Bases(
-        user=_max_id(conn, _table(User)),
-        file=_max_id(conn, _table(MediaFile)),
-        speaker=_max_id(conn, _table(Speaker)),
-    )
-    counts = seed_dataset(conn, shape, seed, password_hash)
+    claimed = claim_core_bases(conn, shape)
+    bases = Bases(user=claimed[0], file=claimed[1], speaker=claimed[2])
+    counts = seed_dataset(conn, shape, seed, password_hash, claimed)
     counts.update(seed_governance(conn, shape, seed, bases))
     return counts

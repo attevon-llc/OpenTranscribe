@@ -8,6 +8,7 @@ Object-storage bootstrap, stale-Redis-state sweep and the delayed Celery dispatc
 import asyncio
 import logging
 
+from minio.error import MinioException
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
@@ -82,64 +83,30 @@ def _setup_minio() -> None:
     infrastructure: we verify it and configure CORS, but never create it and
     never touch its bucket policy — a globally-unique name created in the wrong
     region, or a deleted policy, is not ours to guess at.
+
+    Elected per boot window (``media_bucket_setup``) for everything that acts on the shared
+    bucket, so N replicas do not race ``make_bucket`` or walk the quarantine backfill N times.
     """
     try:
-        import json
-
         from app.services import storage_backend
         from app.services.minio_service import minio_client
+        from app.utils.boot_once import run_once_per_boot
 
         bucket_name = settings.MEDIA_BUCKET_NAME
         native_s3 = storage_backend.is_native_s3()
 
-        if not minio_client.bucket_exists(bucket_name):
-            if native_s3:
-                logger.error(
-                    f"S3 bucket '{bucket_name}' does not exist or is not reachable with the "
-                    "configured credentials. Create it (and grant the role access) before "
-                    "starting OpenTranscribe."
-                )
-                return
-            minio_client.make_bucket(bucket_name)
-            logger.info(f"MinIO bucket '{bucket_name}' created successfully")
-        else:
-            logger.info(f"Media bucket '{bucket_name}' already exists")
+        # Bucket creation, CORS, lifecycle, the public-policy sweep and the quarantine
+        # backfill act on the SHARED bucket: one replica per boot window does them. The
+        # presign identity below stays per process — its result is memoized in-process and
+        # every replica signs URLs with it.
+        owns_bucket_setup = run_once_per_boot("media_bucket_setup")
+        if owns_bucket_setup:
+            _setup_media_bucket(minio_client, bucket_name, native_s3)
 
-        # Browser-direct uploads need a bucket CORS policy on S3 (MinIO allows any
-        # origin already). Opt-in and best-effort; never blocks startup.
-        storage_backend.ensure_bucket_cors(bucket_name)
+        _ensure_presign_identity(minio_client, native_s3)
 
-        # Backstop for browser-side multipart uploads the user never finished:
-        # the parts of an abandoned upload are billable and invisible in a normal
-        # object listing. S3 needs an explicit lifecycle rule; MinIO expires them
-        # itself and refuses the rule, so this is a no-op there. Either way the
-        # explicit abort on cancel/delete is the primary path.
-        from app.services.multipart_upload import ensure_abort_incomplete_lifecycle
-
-        ensure_abort_incomplete_lifecycle(bucket_name)
-
-        # Presigned-URL revocation on quarantine (issue #907): provision the restricted
-        # presign identity now, at process startup, rather than lazily on the first
-        # presigned URL request — so a provisioning failure is visible in the startup
-        # log instead of buried in the first user's request. No-op (and no admin call)
-        # on native S3 or when the feature is disabled; never raises.
-        from app.services import storage_presign_identity
-
-        if storage_presign_identity.ensure_presign_identity():
-            logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
-        elif native_s3:
-            storage_presign_identity.report_native_s3_revocation_posture(minio_client)
-            # The bucket-policy Deny only enforces a tag that landed: check, at boot rather
-            # than at the first takedown, that this identity can write one.
-            from app.services.media_revocation_probe import report_native_s3_tagging_posture
-
-            report_native_s3_tagging_posture()
-        elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
-            logger.error(
-                "Presign identity NOT provisioned — presigned media URLs will be signed "
-                "with the root credential and quarantine will NOT revoke them. See the "
-                "preceding log line for why."
-            )
+        if not owns_bucket_setup:
+            return
 
         # Bounded best-effort backfill (issue #907): tag any file quarantined BEFORE this
         # feature shipped, so upgrading enforces revocation on pre-existing takedowns too.
@@ -153,31 +120,136 @@ def _setup_minio() -> None:
         if native_s3:
             return
 
-        # Security: ensure bucket has no public access policy.
-        # Previous versions set a public read policy ("Principal": {"AWS": "*"})
-        # which allowed anonymous access to all stored files. Since all file
-        # access goes through presigned URLs, public read is unnecessary.
-        # Remove any existing public policy to lock down the bucket.
-        try:
-            existing_policy = minio_client.get_bucket_policy(bucket_name)
-            if existing_policy:
-                policy_data = json.loads(existing_policy)
-                has_public_access = any(
-                    stmt.get("Principal") in ({"AWS": "*"}, "*", {"AWS": ["*"]})
-                    for stmt in policy_data.get("Statement", [])
-                )
-                if has_public_access:
-                    minio_client.delete_bucket_policy(bucket_name)
-                    logger.warning(
-                        f"SECURITY FIX: Removed public access policy from bucket '{bucket_name}'. "
-                        "All file access now requires authentication via presigned URLs."
-                    )
-        except Exception:
-            # No policy set (expected for new buckets) — this is the secure default
-            logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
+        _remove_public_bucket_policy(minio_client, bucket_name)
 
     except Exception as e:
         logger.error(f"Error setting up media bucket: {e}")
+
+
+def _setup_media_bucket(minio_client, bucket_name: str, native_s3: bool) -> None:
+    """Create (MinIO only) and configure the shared media bucket. Raises on storage errors."""
+    from app.services import storage_backend
+
+    if not minio_client.bucket_exists(bucket_name):
+        if native_s3:
+            logger.error(
+                f"S3 bucket '{bucket_name}' does not exist or is not reachable with the "
+                "configured credentials. Create it (and grant the role access) before "
+                "starting OpenTranscribe."
+            )
+            return
+        minio_client.make_bucket(bucket_name)
+        logger.info(f"MinIO bucket '{bucket_name}' created successfully")
+    else:
+        logger.info(f"Media bucket '{bucket_name}' already exists")
+
+    # Browser-direct uploads need a bucket CORS policy on S3 (MinIO allows any
+    # origin already). Opt-in and best-effort; never blocks startup.
+    storage_backend.ensure_bucket_cors(bucket_name)
+
+    # Backstop for browser-side multipart uploads the user never finished:
+    # the parts of an abandoned upload are billable and invisible in a normal
+    # object listing. S3 needs an explicit lifecycle rule; MinIO expires them
+    # itself and refuses the rule, so this is a no-op there. Either way the
+    # explicit abort on cancel/delete is the primary path.
+    from app.services.multipart_upload import ensure_abort_incomplete_lifecycle
+
+    ensure_abort_incomplete_lifecycle(bucket_name)
+
+
+def _ensure_presign_identity(minio_client, native_s3: bool) -> None:
+    """Provision this process's restricted presign identity (issue #907). Never raises.
+
+    Done now, at process startup, rather than lazily on the first presigned URL request —
+    so a provisioning failure is visible in the startup log instead of buried in the first
+    user's request. No-op (and no admin call) on native S3 or when the feature is disabled.
+    """
+    from app.services import storage_presign_identity
+
+    if storage_presign_identity.ensure_presign_identity():
+        logger.info("Presign identity ready — quarantine will revoke presigned media URLs")
+    elif native_s3:
+        storage_presign_identity.report_native_s3_revocation_posture(minio_client)
+        # The bucket-policy Deny only enforces a tag that landed: check, at boot rather
+        # than at the first takedown, that this identity can write one.
+        from app.services.media_revocation_probe import report_native_s3_tagging_posture
+
+        report_native_s3_tagging_posture()
+    elif settings.STORAGE_PRESIGN_IDENTITY_ENABLED:
+        logger.error(
+            "Presign identity NOT provisioned — presigned media URLs will be signed "
+            "with the root credential and quarantine will NOT revoke them. See the "
+            "preceding log line for why."
+        )
+
+
+def _remove_public_bucket_policy(minio_client, bucket_name: str) -> None:
+    """Delete a legacy public-read bucket policy (MinIO only).
+
+    Previous versions set a public read policy ("Principal": {"AWS": "*"}) which allowed
+    anonymous access to all stored files. Since all file access goes through presigned
+    URLs, public read is unnecessary.
+    """
+    import json
+
+    try:
+        existing_policy = minio_client.get_bucket_policy(bucket_name)
+        if existing_policy:
+            policy_data = json.loads(existing_policy)
+            has_public_access = any(
+                stmt.get("Principal") in ({"AWS": "*"}, "*", {"AWS": ["*"]})
+                for stmt in policy_data.get("Statement", [])
+            )
+            if has_public_access:
+                minio_client.delete_bucket_policy(bucket_name)
+                logger.warning(
+                    f"SECURITY FIX: Removed public access policy from bucket '{bucket_name}'. "
+                    "All file access now requires authentication via presigned URLs."
+                )
+    except Exception:
+        # No policy set (expected for new buckets) — this is the secure default
+        logger.debug("No bucket policy set for '%s' (secure default)", bucket_name)
+
+
+def _apply_derived_cache_policy() -> None:
+    """Apply the derived-cache retention and run the one-time legacy reclaims. Never raises.
+
+    Retention runs in every process on purpose: one idempotent lifecycle PUT that re-reads
+    the admin-configured value (DB over env), so any restart picks up a UI change with no
+    redeploy. The legacy reclaims list and delete bucket objects and their DB flags are
+    check-then-set, so replicas booting together would each run them in full: they are
+    elected (``legacy_cache_reclaim``).
+    """
+    try:
+        from app.db.base import SessionLocal
+        from app.services import cache_management_service
+        from app.services import system_settings_service
+        from app.utils.boot_once import run_once_per_boot
+
+        db = SessionLocal()
+        try:
+            days = cache_management_service.apply_retention(db)
+            logger.info(f"Derived-cache retention applied: {days} day(s)")
+
+            if not run_once_per_boot("legacy_cache_reclaim"):
+                return
+            reclaimed_key = "cache.legacy_derived_reclaimed"
+            if not system_settings_service.get_setting_bool(db, reclaimed_key, False):
+                count = cache_management_service.reclaim_legacy_derived_cache()
+                system_settings_service.set_setting(
+                    db,
+                    reclaimed_key,
+                    True,
+                    "One-time reclaim of pre-prefix derived cache objects has run",
+                )
+                if count:
+                    logger.info(f"Upgrade reclaim: removed {count} legacy derived cache object(s)")
+
+            cache_management_service.reclaim_legacy_audio_cache_once(db)
+        finally:
+            db.close()
+    except (SQLAlchemyError, MinioException, OSError, ValueError) as e:
+        logger.warning(f"Derived-cache retention/reclaim setup failed (non-fatal): {e}")
 
 
 def _clear_stale_task_state() -> None:
@@ -210,10 +282,19 @@ def _clear_stale_task_state() -> None:
 
 
 async def _run_startup_recovery() -> None:
-    """Schedule startup recovery task after a delay."""
+    """Schedule the startup recovery task after a delay, once per boot window.
+
+    The task's own lock stops two recoveries overlapping, not a second one starting after
+    the first finished; electing the dispatch is what keeps N replicas from re-queueing
+    stuck files N times in one rollout.
+    """
     try:
         await asyncio.sleep(10)
         from app.tasks.recovery import startup_recovery_task
+        from app.utils.boot_once import run_once_per_boot
+
+        if not run_once_per_boot("startup_recovery_dispatch"):
+            return
 
         result = startup_recovery_task.delay()
         logger.info(f"Startup recovery task scheduled: {result.id}")
@@ -300,6 +381,11 @@ async def _run_thumbnail_migration() -> None:
         await asyncio.sleep(45)  # Wait for other startup tasks
         from app.tasks.thumbnail_migration import backfill_missing_thumbnails
         from app.tasks.thumbnail_migration import migrate_thumbnails_to_webp
+        from app.utils.boot_once import run_once_per_boot
+
+        # One replica per boot window: each dispatch walks the whole media library.
+        if not run_once_per_boot("thumbnail_migration_dispatch"):
+            return
 
         result = migrate_thumbnails_to_webp.delay(batch_size=20)
         logger.info(f"Thumbnail migration task scheduled: {result.id}")
@@ -336,7 +422,12 @@ async def _run_imohash_recompute() -> None:
             db.close()
 
         from app.tasks.imohash_recompute import recompute_all
+        from app.utils.boot_once import run_once_per_boot
 
+        # The flag is set only when the whole library is done, so every replica booting
+        # before then would otherwise dispatch its own full recompute.
+        if not run_once_per_boot("imohash_recompute_dispatch"):
+            return
         result = recompute_all.delay()
         logger.info(f"imohash package recompute task scheduled: {result.id}")
     except Exception as e:

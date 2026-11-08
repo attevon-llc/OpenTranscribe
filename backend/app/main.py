@@ -49,6 +49,7 @@ from app.middleware.observability import ObservabilityMiddleware
 from app.middleware.robots import RobotsHeaderMiddleware
 from app.middleware.upload_limit import UploadBodyLimitMiddleware
 from app.services.hold_guard import HoldRefusedError
+from app.startup.maintenance import _apply_derived_cache_policy
 from app.startup.maintenance import _clear_stale_task_state
 from app.startup.maintenance import _run_availability_reconcile
 from app.startup.maintenance import _run_imohash_recompute
@@ -201,36 +202,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as e:
         logger.warning(f"Speaker profile sync could not be scheduled (non-fatal): {e}")
 
-    # Apply the admin-configured derived-cache retention (DB over env) so the MinIO
-    # lifecycle rule reflects UI changes after a restart — no redeploy needed. Also
-    # run a one-time reclaim of pre-prefix (legacy) derived assets for upgraders.
-    try:
-        from app.db.base import SessionLocal
-        from app.services import cache_management_service
-        from app.services import system_settings_service
-
-        _db = SessionLocal()
-        try:
-            days = cache_management_service.apply_retention(_db)
-            logger.info(f"Derived-cache retention applied: {days} day(s)")
-
-            reclaimed_key = "cache.legacy_derived_reclaimed"
-            if not system_settings_service.get_setting_bool(_db, reclaimed_key, False):
-                count = cache_management_service.reclaim_legacy_derived_cache()
-                system_settings_service.set_setting(
-                    _db,
-                    reclaimed_key,
-                    True,
-                    "One-time reclaim of pre-prefix derived cache objects has run",
-                )
-                if count:
-                    logger.info(f"Upgrade reclaim: removed {count} legacy derived cache object(s)")
-
-            cache_management_service.reclaim_legacy_audio_cache_once(_db)
-        finally:
-            _db.close()
-    except Exception as e:
-        logger.warning(f"Derived-cache retention/reclaim setup failed (non-fatal): {e}")
+    # Derived-cache retention (per process) and the one-time legacy reclaims (elected).
+    _apply_derived_cache_policy()
 
     # Clear stale reindex cancel requests (locks and progress now expire on their own;
     # see _clear_stale_task_state). Still elected: a replica booting later must not

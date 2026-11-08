@@ -68,7 +68,7 @@ backend/app/core/task_liveness.py	11	ratchet: may only go down
 backend/app/core/task_replay.py	7	ratchet: may only go down
 backend/app/core/worker_metrics.py	9	ratchet: may only go down
 backend/app/db/migrations.py	2	ratchet: may only go down
-backend/app/main.py	11	ratchet: may only go down
+backend/app/main.py	10	ratchet: may only go down
 backend/app/services/backup_s3.py	4	ratchet: may only go down
 backend/app/services/erasure_index_reconcile.py	1	v0.6.1 merge: release handler; ratchet: may only go down
 backend/app/services/erasure_receipt/destroy_extras.py	6	v0.6.1 merge: release handler; ratchet: may only go down

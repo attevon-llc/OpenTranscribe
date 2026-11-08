@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Organization content stays with the organization when a member leaves (#1104). Deleting an account now first hands the person's organization files (trashed ones too), speakers, speaker profiles, collections, tags, prompts, vocabulary, watch sources and owned groups to an administrator and re-points the search index at the new owner; personal content is erased as before. An organization admin can do the same on request with `POST /api/org-admin/members/{user_uuid}/transfer-content`. Held files are never re-owned, a sole admin's deletion is refused (`no_transfer_target`) while organization content remains, and the transfer is audited as `org.content.transfer`. Managed edition only in effect: the community edition has no organization memberships.
 - The interface language picker (Settings > Language) marks every non-English language as machine-translated, in the reader's own language; the translations have no human review.
 - A Third-party licenses page (Legal) documents every non-permissive runtime dependency (mutagen, fpdf2, ldap3, psycopg2, certifi, tqdm, lightningcss, the NVIDIA libraries, the Silo image): what it is, why it is used, where, its license and why it is compatible with AGPL-3.0. A test fails when the generated license inventory lists a package the page does not name; `NOTICE` links to it.
 - `.github/CODEOWNERS` assigns every path to the maintainer.

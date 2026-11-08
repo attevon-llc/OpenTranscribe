@@ -210,6 +210,10 @@ PG=<fresh postgres container> scripts/perf/query-review/explain.sh <run-id> [id 
   plans every one against the current schema.
 - Enable `pg_stat_statements`/`auto_explain` with an UNQUOTED
   `ALTER SYSTEM SET shared_preload_libraries = pg_stat_statements, auto_explain;` (quoted, Postgres will not start).
+- Concurrent users: `scripts/perf/load/locustfile.py --fresh NAME` (Locust, own venv from
+  `scripts/perf/load/requirements.txt`), same seed and the same `--fresh`-only guard; runbook in
+  `scripts/perf/load/README.md`. `backend/tests/unit/test_load_scenario_routes.py` checks every
+  request it makes against `backend/openapi.json`.
 - Regression checks use `backend/tests/query_budget.py` (`count_statements`): assert the statement count is
   EQUAL at two row counts (for example 2 and 12) with a control that the response held both, never a ceiling.
   Prove each check red on a `git archive HEAD` tree first.

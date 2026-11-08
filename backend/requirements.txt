@@ -147,7 +147,12 @@ ctranslate2==4.8.4
 # tokenizers==0.23.2 transformers==5.10.4` is a real ResolutionImpossible.
 # Dependabot PR #949 proposed 0.23.2; caught before it reached a built image.
 # Lift together with the transformers pin (dependabot.yml).
-av==19.0.2
+#
+# av capped below 19: PyAV 19 removed av.open(metadata_errors=...), which
+# faster-whisper 1.2.1's decode_audio (the newest release) still passes, so every
+# transcription fails with "Unable to load audio content" (caught by
+# tests/unit/test_audio_stream_choice.py). Lift once faster-whisper drops it.
+av==18.1.0
 tokenizers==0.22.2
 tqdm==4.70.1
 

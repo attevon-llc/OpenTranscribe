@@ -24,6 +24,15 @@ class CapacitySettings(BaseSettings):
     # connection while the requests holding them wait for a thread (#1169). See
     # app/core/threadpool.py.
     API_THREADPOOL_SIZE: int = 0
+    # Seconds a request waits for a pooled connection before it fails (SQLAlchemy's
+    # default is 30). A burst that exhausts the pool then answers an error quickly
+    # instead of piling up requests that each hold a thread for half a minute.
+    DB_POOL_TIMEOUT_SECONDS: float = 10.0
+    # Open connections (including WebSockets and SSE streams) one uvicorn process
+    # accepts before answering 503. uvicorn reads the same variable itself
+    # (--limit-concurrency); the app reads it to size the threadpool so that
+    # DB pool + threads always exceed it (app/core/threadpool.py). 0 = no limit.
+    UVICORN_LIMIT_CONCURRENCY: int = 512
 
     # Bounds on every Redis call a request makes (chat limits and Stop flags, the
     # retrieval cache, the rate limiter). Without them a Redis that accepts the

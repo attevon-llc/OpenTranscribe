@@ -16,6 +16,7 @@ def test_the_pool_matches_the_api_threadpool(monkeypatch):
     monkeypatch.setattr(settings, "API_THREADPOOL_SIZE", 0)
     monkeypatch.setattr(settings, "DB_POOL_SIZE", 20)
     monkeypatch.setattr(settings, "DB_MAX_OVERFLOW", 40)
+    monkeypatch.setattr(settings, "UVICORN_LIMIT_CONCURRENCY", 0)
 
     kwargs = opensearch_auth.opensearch_connection_kwargs()
 

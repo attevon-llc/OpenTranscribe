@@ -535,6 +535,11 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
+# Open connections (WebSockets and SSE included) this uvicorn process accepts before it
+# answers 503 (uvicorn reads UVICORN_LIMIT_CONCURRENCY as --limit-concurrency). The app
+# reads the same variable to size its threadpool; sizing rule in app/core/threadpool.py.
+ENV UVICORN_LIMIT_CONCURRENCY=512
+
 # Command to run the application in production (no reload).
 #
 # --proxy-headers makes uvicorn honour X-Forwarded-Proto/-For from the reverse proxy, so

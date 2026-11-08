@@ -295,6 +295,9 @@ services:
       - DENO_NO_UPDATE_CHECK=${DENO_NO_UPDATE_CHECK:-1}
       # Tenancy mode (auto|single|multi); see docs/security/tenant-boundaries.md
       - TENANCY_MODE=${TENANCY_MODE:-auto}
+      # uvicorn's --limit-concurrency, also read by the app to size its threadpool
+      # (app/core/threadpool.py). Overrides the image's ENV default when set in .env.
+      - UVICORN_LIMIT_CONCURRENCY=${UVICORN_LIMIT_CONCURRENCY:-512}
       # Internal Docker network settings (hardcoded for service-to-service communication)
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

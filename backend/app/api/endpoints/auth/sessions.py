@@ -19,6 +19,7 @@ from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
 from joserfc.jwt import JWTClaimsRegistry
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.endpoints.auth.dependencies import get_current_active_user
 from app.api.endpoints.auth.dependencies import get_current_user
@@ -248,21 +249,78 @@ def _revoke_presented_tokens(db: Session, request: Request, claims: dict | None)
     return failed
 
 
-async def _end_federated_session(db: Session, user: User) -> bool | None:
-    """Terminate the OIDC SSO session (issue #125); None when not applicable."""
-    if user.auth_type != AUTH_TYPE_OIDC or not user.oidc_refresh_token:
+def _has_federated_session(db: Session, user_id: int) -> bool:
+    user = db.get(User, user_id)
+    return bool(user and user.auth_type == AUTH_TYPE_OIDC and user.oidc_refresh_token)
+
+
+def _federated_logout_inputs(db: Session, user_id: int) -> tuple[str, Any]:
+    """The decrypted OIDC refresh token and the provider config, as plain values.
+
+    Releases the read transaction before returning, so the caller's provider round trip
+    does not hold it.
+    """
+    try:
+        user = db.get(User, user_id)
+        if user is None or not user.oidc_refresh_token:
+            raise LookupError("the OIDC refresh token is gone")
+        return MFAService.decrypt_totp_secret(user.oidc_refresh_token), OIDCConfig.from_db(db)
+    finally:
+        db.close()
+
+
+def _clear_oidc_refresh_token(db: Session, user_id: int) -> None:
+    user = db.get(User, user_id)
+    if user is not None:
+        user.oidc_refresh_token = None
+        db.commit()
+
+
+async def _end_federated_session(db: Session, user_id: int) -> bool | None:
+    """Terminate the OIDC SSO session (issue #125); None when not applicable.
+
+    The reads and the token clear run through ``run_in_threadpool``; only the provider
+    call is awaited on the event loop.
+    """
+    if not await run_in_threadpool(_has_federated_session, db, user_id):
         return None
     try:
-        oidc_cfg = OIDCConfig.from_db(db)
-        decrypted_rt = MFAService.decrypt_totp_secret(user.oidc_refresh_token)
+        decrypted_rt, oidc_cfg = await run_in_threadpool(_federated_logout_inputs, db, user_id)
         return await call_federated_logout(decrypted_rt, cfg=oidc_cfg)
     except Exception as e:
         logger.warning(f"OIDC federated logout failed: {e}")
         return False
     finally:
         # Always clear stored token regardless of outcome
-        user.oidc_refresh_token = None
+        await run_in_threadpool(_clear_oidc_refresh_token, db, user_id)
+
+
+def _revoke_and_identify(
+    db: Session, request: Request, claims: dict | None
+) -> tuple[list[str], int | None, str | None]:
+    """Revoke the presented tokens and resolve who logged out, as plain values."""
+    failed = _revoke_presented_tokens(db, request, claims)
+    subject = claims.get("sub") if claims else None
+    if not subject:
+        return failed, None, None
+    user = db.query(User).filter(User.uuid == UUID(str(subject))).first()
+    if user is None:
+        return failed, None, None
+    return failed, int(user.id), str(user.email)
+
+
+def _revoke_all_and_commit(db: Session, user_id: int) -> Any:
+    """Revoke every refresh token of ``user_id`` and commit; roll back on failure."""
+    try:
+        pending = token_service.revoke_all_user_tokens_pending_audit(db, user_id)
         db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            logger.debug("Rollback after failed logout-all also failed", exc_info=True)
+        raise
+    return pending
 
 
 @router.post(
@@ -316,13 +374,11 @@ async def logout(
     # happens to the server-side state below.
     try:
         claims = _verified_claims(token)
-        failed = _revoke_presented_tokens(db, request, claims)
-        subject = claims.get("sub") if claims else None
-        if subject:
-            user = db.query(User).filter(User.uuid == UUID(str(subject))).first()
-            if user:
-                user_id, username = user.id, str(user.email)
-                federated_ok = await _end_federated_session(db, user)
+        failed, user_id, username = await run_in_threadpool(
+            _revoke_and_identify, db, request, claims
+        )
+        if user_id is not None:
+            federated_ok = await _end_federated_session(db, user_id)
     except Exception as e:
         # Infrastructure failure (database). Logged loudly and reported below.
         logger.error("Logout could not fully revoke server-side state: %s", e)
@@ -399,13 +455,8 @@ async def logout_all_sessions(
     username = str(current_user.email)
 
     try:
-        pending = token_service.revoke_all_user_tokens_pending_audit(db, user_id)
-        db.commit()
+        pending = await run_in_threadpool(_revoke_all_and_commit, db, user_id)
     except Exception as exc:
-        try:
-            db.rollback()
-        except Exception:
-            logger.debug("Rollback after failed logout-all also failed", exc_info=True)
         logger.error("Logout from all sessions not completed for user %s", user_id)
         audit_logger.log(
             event_type=AuditEventType.AUTH_LOGOUT_ALL,
@@ -424,7 +475,7 @@ async def logout_all_sessions(
 
     count = pending.count
     pending.record_audit()
-    await _end_federated_session(db, current_user)
+    await _end_federated_session(db, user_id)
 
     audit_logger.log_logout(
         user_id=user_id,

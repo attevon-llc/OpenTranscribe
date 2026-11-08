@@ -166,7 +166,9 @@ def list_erasures(
 @admin_router.get(
     "/gdpr/erasures/{ledger_uuid}/receipts", response_model=list[ErasureReceiptResponse]
 )
-@limiter.limit(ERASURE_RECEIPT_READ_RATE_LIMIT, key_func=user_or_ip_key)
+@limiter.shared_limit(
+    ERASURE_RECEIPT_READ_RATE_LIMIT, scope="erasure-receipts-read", key_func=user_or_ip_key
+)
 def read_receipts(
     request: Request,
     response: Response,  # required by slowapi
@@ -186,7 +188,9 @@ def read_receipts(
 @org_router.get(
     "/gdpr/erasures/{ledger_uuid}/receipts", response_model=list[ErasureReceiptResponse]
 )
-@limiter.limit(ERASURE_RECEIPT_READ_RATE_LIMIT, key_func=user_or_ip_key)
+@limiter.shared_limit(
+    ERASURE_RECEIPT_READ_RATE_LIMIT, scope="org-erasure-receipts-read", key_func=user_or_ip_key
+)
 def read_org_receipts(
     request: Request,
     response: Response,  # required by slowapi

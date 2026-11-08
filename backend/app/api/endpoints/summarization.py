@@ -34,6 +34,7 @@ from fastapi import Query
 from fastapi import Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -104,6 +105,36 @@ async def trigger_summarization(
     - **Key Decisions**: Concrete decisions made
     - **Follow-up Items**: Future discussion points
     """
+    # The checks, the reset and the dispatch run through ``run_in_threadpool``, and the
+    # request transaction is released before the provider health check: only that check
+    # is awaited on the event loop (FastAPI, "Concurrency and async / await").
+    user_id = int(current_user.id)
+    file_id, file_ref = await run_in_threadpool(
+        _summarize_preconditions, db, file_uuid, request, current_user, ctx
+    )
+
+    # Check LLM availability before starting the task
+    with llm_settings_outage_as_503():
+        llm_available = await is_llm_available(user_id=user_id)
+    if not llm_available:
+        raise HTTPException(
+            status_code=503,
+            detail="AI summarization is currently unavailable. Please configure an LLM provider or check your server configuration. You can still access all transcription features.",
+        )
+
+    return await run_in_threadpool(
+        _start_summarization, db, file_uuid, file_id, file_ref, request, user_id
+    )
+
+
+def _summarize_preconditions(
+    db: Session,
+    file_uuid: str,
+    request: SummaryTaskRequest,
+    current_user: User,
+    ctx: RequestContext,
+) -> tuple[int, str]:
+    """Refuse a summary request the file cannot take; return ``(id, uuid)``, release ``db``."""
     # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
         db,
@@ -115,7 +146,7 @@ async def trigger_summarization(
     )
     require_processing_allowed_for_file(db, media_file)
     refuse_if_frozen(db, int(media_file.id), actor=current_user, action="summary_generate")
-    file_id = media_file.id
+    file_id = int(media_file.id)
 
     # An explicit prompt must be one the caller may use (system, own, or shared within
     # the caller's tenant); the worker applies it as given.
@@ -150,16 +181,20 @@ async def trigger_summarization(
             f"User manually triggered summary for file {file_id}; "
             f"resetting per-file disabled status"
         )
+    file_ref = str(media_file.uuid)
+    db.close()
+    return file_id, file_ref
 
-    # Check LLM availability before starting the task
-    with llm_settings_outage_as_503():
-        llm_available = await is_llm_available(user_id=current_user.id)
-    if not llm_available:
-        raise HTTPException(
-            status_code=503,
-            detail="AI summarization is currently unavailable. Please configure an LLM provider or check your server configuration. You can still access all transcription features.",
-        )
 
+def _start_summarization(
+    db: Session,
+    file_uuid: str,
+    file_id: int,
+    file_ref: str,
+    request: SummaryTaskRequest,
+    user_id: int,
+) -> dict[str, Any]:
+    """Queue the summary (and its topic companion) and report what was started."""
     try:
         # Start summarization task
         task = summarize_transcript_task.delay(
@@ -176,7 +211,7 @@ async def trigger_summarization(
         from app.tasks.summarization import send_summary_notification
 
         send_summary_notification(
-            current_user.id,
+            user_id,
             file_id,
             "queued",
             f"AI summary {'regeneration' if request.force_regenerate else 'generation'} has been queued for processing",
@@ -184,7 +219,14 @@ async def trigger_summarization(
 
         # A file transcribed before any LLM existed also never had topic extraction, so the
         # summary request fills that in when the owner's automatic setting allows it.
-        topic_extraction = _queue_topic_companion(db, media_file, current_user.id)
+        from app.services.ai_insights_companion import TopicCompanion
+
+        media_file = db.get(MediaFile, file_id)
+        topic_extraction = (
+            _queue_topic_companion(db, media_file, user_id)
+            if media_file is not None
+            else TopicCompanion.UNAVAILABLE.value
+        )
 
         # Get LLM provider info for response
         from app.core.config import settings
@@ -203,7 +245,7 @@ async def trigger_summarization(
         return {
             "message": "Summarization task started",
             "task_id": task.id,
-            "file_id": str(media_file.uuid),  # Use UUID for frontend
+            "file_id": file_ref,  # Use UUID for frontend
             "provider": provider,
             "model": model,
             "topic_extraction": topic_extraction,
@@ -548,26 +590,17 @@ async def identify_speakers(
     - Suggest matches with existing speaker profiles
     - Provide context clues for manual identification
     """
-    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
-    media_file = get_file_by_uuid_with_permission(
-        db,
-        file_uuid,
-        current_user.id,
-        bypass=ctx.bypass,
-        organization_id=ctx.org_id,
-        min_permission="editor",
+    # The checks and the dispatch run through ``run_in_threadpool``, and the request
+    # transaction is released before the provider health check: only that check is
+    # awaited on the event loop (FastAPI, "Concurrency and async / await").
+    user_id = int(current_user.id)
+    file_id, file_ref, speaker_count = await run_in_threadpool(
+        _identify_speakers_preconditions, db, file_uuid, current_user, ctx
     )
-    require_processing_allowed_for_file(db, media_file)
-    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="identify_speakers")
-    file_id = media_file.id
-
-    # Check if file has speakers to identify
-    if not media_file.speakers:
-        raise HTTPException(status_code=400, detail="No speakers found in this file to identify")
 
     # Check LLM availability before starting the task
     with llm_settings_outage_as_503():
-        llm_available = await is_llm_available(user_id=current_user.id)
+        llm_available = await is_llm_available(user_id=user_id)
     if not llm_available:
         raise HTTPException(
             status_code=503,
@@ -575,16 +608,18 @@ async def identify_speakers(
         )
 
     try:
-        # Start speaker identification task
-        task = identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        # Start speaker identification task (a broker publish: off the loop too)
+        task = await run_in_threadpool(
+            lambda: identify_speakers_llm_task.delay(file_uuid=file_uuid)
+        )
 
         logger.info(f"Started speaker identification task {task.id} for file {file_id}")
 
         return SpeakerIdentificationResponse(
             message="Speaker identification task started",
             task_id=task.id,
-            file_id=UUID(str(media_file.uuid)),
-            speaker_count=len(media_file.speakers),
+            file_id=UUID(file_ref),
+            speaker_count=speaker_count,
         )
 
     except (HTTPException, DomainError):
@@ -600,6 +635,30 @@ async def identify_speakers(
             status_code=500,
             detail="An internal error occurred. Please try again.",
         ) from e
+
+
+def _identify_speakers_preconditions(
+    db: Session, file_uuid: str, current_user: User, ctx: RequestContext
+) -> tuple[int, str, int]:
+    """Refuse a request the file cannot take; return ``(id, uuid, speaker count)``, release."""
+    # Verify file exists and belongs to user (tenant-gated via ctx.org_id)
+    media_file = get_file_by_uuid_with_permission(
+        db,
+        file_uuid,
+        current_user.id,
+        bypass=ctx.bypass,
+        organization_id=ctx.org_id,
+        min_permission="editor",
+    )
+    require_processing_allowed_for_file(db, media_file)
+    refuse_if_frozen(db, int(media_file.id), actor=current_user, action="identify_speakers")
+
+    # Check if file has speakers to identify
+    if not media_file.speakers:
+        raise HTTPException(status_code=400, detail="No speakers found in this file to identify")
+    result = (int(media_file.id), str(media_file.uuid), len(media_file.speakers))
+    db.close()
+    return result
 
 
 @router.delete("/{file_uuid}/summary")

@@ -27,16 +27,16 @@ Line references are to the tree at the commit that adds this file.
 |---|---|---|---|
 | F1 | One API process: one event loop, one GIL, 60 worker threads for the whole deployment | High | Recommendation R1 (measure first, section 4) |
 | F2 | A streamed chat reply held a pooled DB connection, idle in a transaction, for the whole generation | High | **Fixed** (C3) |
-| F3 | No per-user fairness in the transcription queues: one bulk upload delays everyone | High | Recommendation R2 |
-| F4 | `/api/search`, `/search/count`, `/search/suggestions` hold the request transaction across OpenSearch; the session auditor cannot see it | Medium | Recommendation R3 |
-| F5 | Async handlers run synchronous SQLAlchemy on the event loop (pool checkout can block the loop up to 30 s) | Medium | 3 hot ones **fixed** (C2, C4); the rest R4 |
+| F3 | No per-user fairness in the transcription queues: one bulk upload delays everyone | High | **Fixed** on `v070/concurrency2` (R2's first step: demote past `transcription.fair_share_threshold`, default 5; `services/transcription_fairness.py`) |
+| F4 | `/api/search`, `/search/count`, `/search/suggestions` hold the request transaction across OpenSearch; the session auditor cannot see it | Medium | **Fixed** on `v070/concurrency2` (also `/search/filters`; auditor now sees search-service calls) |
+| F5 | Async handlers run synchronous SQLAlchemy on the event loop (pool checkout can block the loop up to 30 s) | Medium | 3 hot ones **fixed** (C2, C4); the other 12 **fixed** on `v070/concurrency2`, guarded by `tests/api/test_async_handler_session_use.py` |
 | F6 | WebSocket fan-out iterated live collections across awaits: lost notifications for everyone | Medium | **Fixed** (C5) |
 | F7 | WebSocket handshake authenticated on the event loop | Medium | **Fixed** (C4) |
 | F8 | `/llm/status` (polled by every tab) and `/files/{uuid}/summary-status` held the request transaction across the provider health check | Medium | **Fixed** (C2); caching the result is R5 |
-| F9 | Connection budget is per PROCESS, documented as per container; defaults can reach 270 against `max_connections=200` | Medium | Recommendation R6 |
+| F9 | Connection budget is per PROCESS, documented as per container; defaults can reach 270 against `max_connections=200` | Medium | **Fixed** on `v070/concurrency2`: prefork pools 2 + 0, threads pools 2 + 3, worst case about 165; `tests/unit/test_db_connection_budget.py` (old defaults: 280, 285 with the gpu-scale worker) |
 | F10 | A prefork child's `engine.dispose()` closed the parent's connections | Medium | **Fixed** (C1) |
-| F11 | WebSocket fan-out is sequential with no send timeout (one slow client delays the subscriber for all) | Medium | Recommendation R7 |
-| F12 | Per-IP rate limits on page-load endpoints throttle many users behind one NAT or an untrusted proxy | Medium (config) | Recommendation R8 (documentation) |
+| F11 | WebSocket fan-out is sequential with no send timeout (one slow client delays the subscriber for all) | Medium | **Fixed** on `v070/concurrency2`: TaskGroup fan-out, 5 s `asyncio.timeout` per send, a stalled socket is dropped and closed |
+| F12 | Per-IP rate limits on page-load endpoints throttle many users behind one NAT or an untrusted proxy | Medium (config) | The 14 authenticated routes that limited per IP (chat among them) are per user on `v070/concurrency2`, guarded by `tests/api/test_per_user_rate_limits.py`; the pre-auth limits stay per IP and R8 (documentation) still applies to them |
 | F13 | No pool saturation metric | Low | **Added** (C6: `db_pool_*` gauges, `backend/app/core/db_metrics.py:146-189`) |
 | F14 | Cache invalidation push opens a new Redis connection per call | Low | Recommendation R9 |
 | F15 | WebSocket subscriber task created without a kept reference | Low | Recommendation R9 |

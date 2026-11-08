@@ -35,6 +35,28 @@ router = APIRouter()
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 
+def _owned_profile_ref(
+    db: Session, profile_uuid: str, current_user: User, organization_id: int | None
+) -> tuple[int, str]:
+    """``(id, uuid)`` of a profile the caller may edit; the read transaction is released."""
+    profile = require_profile_in_scope(
+        db, profile_uuid, current_user, organization_id=organization_id
+    )
+    ref = (int(profile.id), str(profile.uuid))
+    db.close()
+    return ref
+
+
+def _swap_avatar_or_rollback(db: Session, profile_id: int, object_name: str) -> str | None:
+    from app.services.speaker_avatar_service import swap_avatar_path
+
+    try:
+        return swap_avatar_path(db, profile_id, object_name)
+    except Exception:
+        db.rollback()
+        raise
+
+
 @router.post("/profiles/{profile_uuid}/avatar", response_model=dict[str, Any])
 async def upload_profile_avatar(
     profile_uuid: str,
@@ -44,9 +66,11 @@ async def upload_profile_avatar(
     ctx: RequestContext = Depends(get_current_context),
 ) -> Any:
     """Upload an avatar image for a speaker profile."""
+    # `async` for the upload read; every database step runs through run_in_threadpool
+    # so none of them blocks the event loop (FastAPI, "Concurrency and async / await").
     try:
-        profile = require_profile_in_scope(
-            db, profile_uuid, current_user, organization_id=ctx.org_id
+        profile_id, profile_ref = await run_in_threadpool(
+            _owned_profile_ref, db, profile_uuid, current_user, ctx.org_id
         )
 
         # Validate content type
@@ -76,31 +100,30 @@ async def upload_profile_avatar(
         from app.services.minio_service import upload_file
         from app.services.speaker_avatar_service import delete_avatar_object
         from app.services.speaker_avatar_service import new_avatar_key
-        from app.services.speaker_avatar_service import swap_avatar_path
 
         # Upload under a key of this request's own, before any lock is taken.
-        object_name = new_avatar_key(int(current_user.id), profile.uuid, ext)
+        object_name = new_avatar_key(int(current_user.id), profile_ref, ext)
         await run_in_threadpool(
             upload_file, io.BytesIO(content), len(content), object_name, file.content_type
         )
 
         try:
-            previous = swap_avatar_path(db, int(profile.id), object_name)
+            previous = await run_in_threadpool(
+                _swap_avatar_or_rollback, db, profile_id, object_name
+            )
         except Exception:
-            db.rollback()
             await run_in_threadpool(delete_avatar_object, object_name)
             raise
         await run_in_threadpool(delete_avatar_object, previous, current=object_name)
-        db.refresh(profile)
 
         avatar_url = await run_in_threadpool(get_file_url, object_name, expires=3600)
-        return {"uuid": str(profile.uuid), "avatar_url": avatar_url}
+        return {"uuid": profile_ref, "avatar_url": avatar_url}
 
     except (HTTPException, DomainError):
         raise
     except Exception as e:
         logger.exception(f"Error uploading avatar: {e}")
-        db.rollback()
+        await run_in_threadpool(db.rollback)
         raise ErrorHandler.internal_error() from e
 
 

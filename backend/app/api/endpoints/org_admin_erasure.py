@@ -103,7 +103,7 @@ def _require_reauth(db: Session, user: User, body: OrgErasureConfirm | None) -> 
     response_model=ScheduledErasureReceipt,
     status_code=status.HTTP_202_ACCEPTED,
 )
-@limiter.limit(get_auth_rate_limit(), key_func=user_or_ip_key)
+@limiter.shared_limit(get_auth_rate_limit(), scope="org-erase-member", key_func=user_or_ip_key)
 def erase_org_member(
     request: Request,
     response: Response,  # required by slowapi

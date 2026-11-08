@@ -34,6 +34,7 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core import local_whisper_catalog as catalog
 from app.core.redis import get_redis
 from app.db.base import get_db
@@ -143,7 +144,7 @@ def list_local_models(
 
 
 @router.post("/download", status_code=202, response_model=LocalModelDownloadState)
-@limiter.limit("5/minute")
+@limiter.limit("5/minute", key_func=user_or_ip_key)
 def start_local_model_download(
     request: Request,
     body: LocalModelDownloadRequest,
@@ -200,7 +201,7 @@ def start_local_model_download(
 
 
 @router.post("/download/cancel", response_model=LocalModelDownloadState)
-@limiter.limit("10/minute")
+@limiter.limit("10/minute", key_func=user_or_ip_key)
 def cancel_local_model_download(
     request: Request,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi

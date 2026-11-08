@@ -245,6 +245,47 @@ estimated cost where the model's price is known. Models on your own server show 
 `vllm` or `ollama` address on another company's server now shows as "not priced" rather than
 free.
 
+## Celery worker database pools are sized per process
+
+**Check this if...** your `.env` sets `WORKER_DB_MAX_OVERFLOW`, or you raised a worker's
+concurrency (for example `CLOUD_ASR_CONCURRENCY`) or `PG_MAX_CONNECTIONS`.
+
+A database pool belongs to one process, not one container. A prefork Celery worker (download,
+cpu, cloud-asr, nlp, embedding) is a main process plus one child per `--concurrency`, and each
+builds its own pool, so with the old defaults the services could open up to 285 connections
+against PostgreSQL's 200. The last process to connect, the API included, then failed with
+"sorry, too many clients already".
+
+In 0.7.0:
+
+- `WORKER_DB_MAX_OVERFLOW` now defaults to `0` (was `3`). It applies to every process of the
+  prefork workers and to beat; each keeps `WORKER_DB_POOL_SIZE` (2) connections.
+- The new `THREADED_WORKER_DB_MAX_OVERFLOW` (default `3`) applies to the threads-pool workers
+  (the GPU workers and redaction), whose task threads share one process's pool.
+
+The worst case with the defaults is now about 165 of the 197 connections PostgreSQL allows
+ordinary roles. If your `.env` was copied from an older `.env.example`, it still says
+`WORKER_DB_MAX_OVERFLOW=3`, which overrides the new default: change it to `0`, and add
+`THREADED_WORKER_DB_MAX_OVERFLOW=3`. Each extra prefork child costs two connections, so raise
+`PG_MAX_CONNECTIONS` with any concurrency you raise. See
+[Performance Tuning](./performance-tuning.md#connection-budget).
+
+## Transcriptions are shared fairly between users
+
+**Check this if...** one user uploads many files at once, or you rely on strictly
+first-uploaded, first-transcribed order.
+
+Before 0.7.0 every transcription was queued at the same priority, so a user who uploaded a
+folder of 500 files put every other user's file behind all 500. Now each user's first 5 queued or
+running transcriptions keep the normal priority and later ones are queued one step lower, so
+another user's file starts as soon as those first 5 are through. A user's own files still run in
+upload order, and automatic retries always go first.
+
+The limit is set in **Settings -> File status -> Recovery -> Fair sharing between users**
+(default 5). Set it to 0 to keep the old strict first-come order. Runs already queued when you
+upgrade keep their place. See
+[Performance Tuning](./performance-tuning.md#fair-sharing-between-users).
+
 ## Organization erasures are scheduled, not immediate
 
 **Check this if...** you run organizations and call `POST /api/org-admin/gdpr/erase-user/{uuid}`

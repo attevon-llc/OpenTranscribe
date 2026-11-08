@@ -282,7 +282,7 @@ docker compose restart backend
 1. Increase the pool size in `.env`:
    ```bash
    DB_POOL_SIZE=20       # API default is 20 (workers use a smaller pool, WORKER_DB_POOL_SIZE=2)
-   DB_MAX_OVERFLOW=40    # API default is 40 (workers: WORKER_DB_MAX_OVERFLOW=3)
+   DB_MAX_OVERFLOW=40    # API default is 40 (prefork workers: WORKER_DB_MAX_OVERFLOW=0 per process)
    ```
 2. Restart the backend:
    ```bash

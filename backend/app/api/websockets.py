@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -82,6 +83,18 @@ def _socket_auth(user_uuid: str | None, claims: dict[str, Any] | None) -> Socket
         issued_at=_int("iat"),
         expires_at=_int("exp"),
     )
+
+
+#: Upper bound on one fan-out send. A client that cannot take a frame in this long is
+#: dropped and closed (it reconnects), instead of delaying everyone else's notifications.
+WS_SEND_TIMEOUT_S = 5.0
+
+
+async def _close_quietly(websocket: WebSocket) -> None:
+    """Close a stalled socket without waiting on it: the close frame can stall too."""
+    with contextlib.suppress(Exception):
+        async with asyncio.timeout(WS_SEND_TIMEOUT_S):
+            await websocket.close(code=1013, reason="Client too slow")
 
 
 # Connection manager to handle WebSocket connections
@@ -185,41 +198,96 @@ class ConnectionManager:
         return len(doomed)
 
     def disconnect(self, websocket: WebSocket, user_id: int) -> None:
+        # Tolerates a socket the fan-out already dropped for stalling: its own coroutine
+        # still runs this when its receive loop ends.
         self.admin_connections.discard(websocket)
         self.socket_owners.pop(websocket, None)
-        if user_id in self.active_connections:
-            self.active_connections[user_id].remove(websocket)
-            if not self.active_connections[user_id]:
+        sockets = self.active_connections.get(user_id)
+        if sockets is not None and websocket in sockets:
+            sockets.remove(websocket)
+            if not sockets:
                 del self.active_connections[user_id]
             logger.info(
                 f"User {user_id} disconnected. Total connections: {len(self.active_connections)}"
             )
 
     async def send_personal_message(self, user_id: int, message: dict[str, Any]) -> None:
-        # Iterate a copy: each send yields to the loop, and a tab that connects or closes
+        # A copy: each send yields to the loop, and a tab that connects or closes
         # meanwhile mutates the live list (removing one skipped the next tab).
-        if user_id in self.active_connections:
-            for connection in list(self.active_connections[user_id]):
-                try:
-                    await connection.send_text(json.dumps(message))
-                except Exception as e:
-                    logger.error(f"Error sending message to user {user_id}: {str(e)}")
+        targets = [(ws, user_id) for ws in self.active_connections.get(user_id, [])]
+        await self._fan_out(targets, json.dumps(message))
 
     async def broadcast(self, message: dict[str, Any]) -> None:
         # A snapshot, for the same reason: a connect or disconnect during the fan-out
         # raised "dictionary changed size during iteration", which the subscriber took
         # for a lost connection, dropping every notification published while it resubscribed.
-        for user_id in list(self.active_connections):
-            await self.send_personal_message(user_id, message)
+        targets = [
+            (ws, user_id)
+            for user_id, sockets in list(self.active_connections.items())
+            for ws in list(sockets)
+        ]
+        await self._fan_out(targets, json.dumps(message))
 
     async def broadcast_to_admins(self, message: dict[str, Any]) -> None:
         """Send to administrator sockets only (e.g. host GPU telemetry)."""
-        payload = json.dumps(message)
-        for connection in list(self.admin_connections):
+        targets = [(ws, self._owner_id(ws)) for ws in list(self.admin_connections)]
+        await self._fan_out(targets, json.dumps(message))
+
+    def _owner_id(self, websocket: WebSocket) -> int | None:
+        for user_id, sockets in self.active_connections.items():
+            if websocket in sockets:
+                return user_id
+        return None
+
+    async def _fan_out(self, targets: Sequence[tuple[WebSocket, int | None]], payload: str) -> None:
+        """Send ``payload`` to every target at once, each send bounded by ``WS_SEND_TIMEOUT_S``.
+
+        One subscriber task delivers every notification for the process, so a sequential
+        fan-out let one client whose TCP window was full hold up every other user until its
+        write drained. The sends now run concurrently in a ``TaskGroup`` (Python docs: it
+        cancels the siblings when a task fails, ``gather`` does not; each send here handles
+        its own errors, so none fails) with ``asyncio.timeout`` around each. A socket that
+        times out is dropped from the bookkeeping and closed, so the next event does not wait
+        on it again; the client reconnects. A socket that left after the snapshot was taken
+        is skipped.
+        """
+        stalled: list[tuple[WebSocket, int | None]] = []
+
+        async def _send(websocket: WebSocket, user_id: int | None) -> None:
+            if websocket not in self.socket_owners:
+                return
             try:
-                await connection.send_text(payload)
+                async with asyncio.timeout(WS_SEND_TIMEOUT_S):
+                    await websocket.send_text(payload)
+            except TimeoutError:
+                stalled.append((websocket, user_id))
             except Exception as e:
-                logger.error(f"Error sending admin message: {str(e)}")
+                logger.error(f"Error sending WebSocket message to user {user_id}: {e}")
+
+        async with asyncio.TaskGroup() as group:
+            for websocket, user_id in targets:
+                group.create_task(_send(websocket, user_id))
+
+        for websocket, user_id in stalled:
+            logger.warning(
+                "Dropping a WebSocket of user %s: a send took longer than %.1f s",
+                user_id,
+                WS_SEND_TIMEOUT_S,
+            )
+            self._forget(websocket, user_id)
+        if stalled:
+            async with asyncio.TaskGroup() as group:
+                for websocket, _ in stalled:
+                    group.create_task(_close_quietly(websocket))
+
+    def _forget(self, websocket: WebSocket, user_id: int | None) -> None:
+        if user_id is None:
+            user_id = self._owner_id(websocket)
+        if user_id is not None:
+            self.disconnect(websocket, user_id)
+        else:
+            self.admin_connections.discard(websocket)
+            self.socket_owners.pop(websocket, None)
 
 
 #: Event types that expose host/infrastructure detail and are never sent to non-admins,

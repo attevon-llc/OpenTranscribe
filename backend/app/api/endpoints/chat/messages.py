@@ -28,7 +28,6 @@ from pydantic import Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
-from starlette.concurrency import run_in_threadpool
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.chat.common import get_owned_conversation
@@ -37,6 +36,7 @@ from app.api.endpoints.chat.common import resolve_effective_scope
 from app.api.endpoints.chat.common import resolve_llm_config_id
 from app.api.endpoints.chat.common import resolve_use_context
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import LLM_CONTEXT_WINDOW_MAX
 from app.core.constants import LLM_CONTEXT_WINDOW_MIN
 from app.core.tenant_limits import resolve_allowed_models
@@ -89,6 +89,14 @@ STREAM_HEADERS = {
 
 # Rough tokens-per-file estimate for the context sizing hint (a typical
 # transcript chunk set, not the full transcript — chat retrieves excerpts).
+#: Chat turns (send, regenerate, edit) per user per minute, across every conversation.
+#: A named scope rather than ``@limiter.limit``: the limiter keys buckets by request path
+#: by default (``key_style="url"``), which made the limit per conversation, so opening
+#: another conversation bought another allowance. ``shared_limit``'s scope replaces the
+#: path in the bucket key (slowapi, ``Limiter.shared_limit``).
+CHAT_TURN_LIMIT = "20/minute"
+CHAT_CANCEL_LIMIT = "60/minute"
+
 _ESTIMATED_TOKENS_PER_FILE = 700
 
 
@@ -430,8 +438,8 @@ def _streaming_response(kwargs: dict, user_id: int) -> StreamingResponse:
 
 
 @router.post("/conversations/{conversation_uuid}/messages")
-@limiter.limit("20/minute")
-async def send_message(
+@limiter.shared_limit(CHAT_TURN_LIMIT, scope="chat-turn", key_func=user_or_ip_key)
+def send_message(
     request: Request,
     response: Response,
     conversation_uuid: str,
@@ -445,26 +453,23 @@ async def send_message(
     ``error``. The request body is POSTed (never a query string) so message text
     never lands in access logs or browser history.
     """
+    # A plain `def`: everything before the stream is synchronous (the conversation
+    # lookup, Redis, key decryption, per-file permission checks, a commit), so FastAPI
+    # runs it in the threadpool rather than on the event loop every other request and
+    # stream shares. Only the reply itself streams from the loop.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
-    # _prepare_turn is fully synchronous (Redis, key decryption, per-file
-    # permission checks, a commit). Calling it directly from an async handler
-    # would block the event loop — and with up to 100 files each fanning out into
-    # permission queries, that stalls every other request in the process,
-    # including other users' in-flight SSE streams.
-    kwargs = await run_in_threadpool(
-        _prepare_turn, request, db, ctx, conversation, body.content, body.search_mode
-    )
+    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, body.search_mode)
     # FastAPI closes this session only after the response is SENT, i.e. when the model
     # finishes. _prepare_turn reopened its transaction after committing, so release the
     # pooled connection now: otherwise every in-flight chat holds one for the whole reply.
     user_id = ctx.user.id
-    await run_in_threadpool(db.close)
+    db.close()
     return _streaming_response(kwargs, user_id)
 
 
 @router.post("/conversations/{conversation_uuid}/regenerate")
-@limiter.limit("20/minute")
-async def regenerate(
+@limiter.shared_limit(CHAT_TURN_LIMIT, scope="chat-turn", key_func=user_or_ip_key)
+def regenerate(
     request: Request,
     response: Response,
     conversation_uuid: str,
@@ -472,6 +477,7 @@ async def regenerate(
     ctx: RequestContext = Depends(get_current_context),
 ):
     """Re-answer the last user message, superseding the previous reply."""
+    # A plain `def` for the reason given in send_message.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
     last_user = (
@@ -491,7 +497,7 @@ async def regenerate(
     # replace it — it vanishes from the thread, from prompt history and from
     # export, with no answer and no way back.
     question = str(last_user.content)
-    kwargs = await run_in_threadpool(_prepare_turn, request, db, ctx, conversation, question, None)
+    kwargs = _prepare_turn(request, db, ctx, conversation, question, None)
 
     db.query(ChatMessage).filter(
         ChatMessage.conversation_id == conversation.id,
@@ -512,8 +518,8 @@ class MessageEdit(BaseModel):
 
 
 @router.post("/conversations/{conversation_uuid}/messages/{message_uuid}/edit")
-@limiter.limit("20/minute")
-async def edit_message(
+@limiter.shared_limit(CHAT_TURN_LIMIT, scope="chat-turn", key_func=user_or_ip_key)
+def edit_message(
     request: Request,
     response: Response,
     conversation_uuid: str,
@@ -530,6 +536,7 @@ async def edit_message(
     ``superseded`` — hidden from the thread and excluded from prompt history,
     but still on record.
     """
+    # A plain `def` for the reason given in send_message.
     conversation = get_owned_conversation(db, ctx, conversation_uuid)
 
     target = (
@@ -554,9 +561,7 @@ async def edit_message(
         .filter(ChatMessage.conversation_id == conversation.id)
         .scalar()
     )
-    kwargs = await run_in_threadpool(
-        _prepare_turn, request, db, ctx, conversation, body.content, None
-    )
+    kwargs = _prepare_turn(request, db, ctx, conversation, body.content, None)
 
     # Retire the edited question and everything downstream of it.
     db.query(ChatMessage).filter(
@@ -570,7 +575,7 @@ async def edit_message(
 
 
 @router.post("/messages/{message_uuid}/cancel")
-@limiter.limit("60/minute")
+@limiter.shared_limit(CHAT_CANCEL_LIMIT, scope="chat-cancel", key_func=user_or_ip_key)
 def cancel_message(
     request: Request,
     response: Response,

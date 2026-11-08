@@ -56,7 +56,9 @@ router = APIRouter()
         503: {"description": "The state was saved but the purge could not be queued."},
     },
 )
-@limiter.limit(get_directory_rate_limit(), key_func=user_or_ip_key)
+@limiter.shared_limit(
+    get_directory_rate_limit(), scope="file-voiceprint-consent", key_func=user_or_ip_key
+)
 def set_file_voiceprint_consent(
     file_uuid: UUID,
     body: FileVoiceprintConsentUpdate,

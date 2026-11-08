@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 
 from session_lifetime_audit.findings import Finding
-from session_lifetime_audit.rules import RULES, Rule
+from session_lifetime_audit.rules import RULES, SLOW_CLIENTS, Rule
 
 _SESSION_OPENERS = frozenset(
     {
@@ -71,13 +71,59 @@ def last_name(node: ast.AST) -> str:
     return ''
 
 
-def classify(call: ast.Call) -> Rule | None:
-    """Return the rule this call trips, or None."""
+def client_bindings(tree: ast.AST) -> dict[str, str]:
+    """Local names bound from a :data:`SLOW_CLIENTS` constructor, mapped to its category.
+
+    Module-wide rather than per function: a handler module binds the same service under the
+    same name in each handler (``search_service = HybridSearchService()``), and a name that
+    meant a slow client in one function and something else in another would be a reading
+    hazard of its own.
+    """
+    bound: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign | ast.AnnAssign):
+            continue
+        value = node.value
+        if not isinstance(value, ast.Call) or last_name(value.func) not in SLOW_CLIENTS:
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name):
+                bound[target.id] = SLOW_CLIENTS[last_name(value.func)]
+    return bound
+
+
+def _client_rule(call: ast.Call, bound: dict[str, str]) -> Rule | None:
+    """The rule for a PUBLIC method called on a slow client instance, or None."""
+    func = call.func
+    if not isinstance(func, ast.Attribute) or func.attr.startswith('_'):
+        return None
+    if func.attr in _BENIGN_LAST_NAMES:
+        return None
+    receiver = func.value
+    category: str | None = None
+    if isinstance(receiver, ast.Call) and last_name(receiver.func) in SLOW_CLIENTS:
+        category = SLOW_CLIENTS[last_name(receiver.func)]
+    elif isinstance(receiver, ast.Name) and receiver.id in bound:
+        category = bound[receiver.id]
+    if category is None:
+        return None
+    return next((rule for rule in RULES if rule.category == category), None)
+
+
+def classify(call: ast.Call, bound: dict[str, str] | None = None) -> Rule | None:
+    """Return the rule this call trips, or None.
+
+    ``bound`` is :func:`client_bindings` for the module the call is in.
+    """
     name = last_name(call.func)
     dotted = dotted_name(call.func).lower()
     for rule in RULES:
         if name in rule.names:
             return rule
+    client_rule = _client_rule(call, bound or {})
+    if client_rule is not None:
+        return client_rule
     if name in _BENIGN_LAST_NAMES:
         return None
     for rule in RULES:
@@ -207,6 +253,7 @@ def scan_source(source: str, rel: str) -> list[Finding]:
         for child in ast.iter_child_nodes(parent):
             parents[child] = parent
     owner = enclosing_scopes(tree)
+    bound = client_bindings(tree)
 
     findings: list[Finding] = []
     seen: set[tuple[str, int, str]] = set()
@@ -237,7 +284,7 @@ def scan_source(source: str, rel: str) -> list[Finding]:
             for inner in ast.walk(stmt):
                 if not isinstance(inner, ast.Call):
                     continue
-                rule = classify(inner)
+                rule = classify(inner, bound)
                 if rule is not None:
                     record(rule, inner, scope, 'runs with a DB transaction open')
         # A `with ThreadPoolExecutor(...)` inside the session body is caught above by its
@@ -264,7 +311,7 @@ def scan_source(source: str, rel: str) -> list[Finding]:
         for inner in ast.walk(node):
             if not isinstance(inner, ast.Call):
                 continue
-            rule = classify(inner)
+            rule = classify(inner, bound)
             if rule is None:
                 continue
             if released_after is not None and inner.lineno > released_after:

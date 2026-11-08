@@ -123,19 +123,20 @@ def _read_summary_state(
     return state
 
 
-@router.post("/{file_uuid}/retry-summary", dependencies=[Depends(refuse_under_support_grant)])
-async def retry_summary(
-    file_uuid: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-    ctx: RequestContext = Depends(get_current_context),
-) -> dict[str, Any]:
+def _retry_preconditions(
+    db: Session, file_uuid: str, current_user: User, ctx: RequestContext
+) -> tuple[int, str]:
+    """Refuse a retry the file cannot take; return ``(file_id, file_uuid)`` and release ``db``.
+
+    Raises:
+        HTTPException: 400 when summaries are disabled for the file, its summary is not
+            failed or pending, or its transcription is not complete; and whatever the
+            permission, processing and hold gates raise.
     """
-    Retry failed summary generation for a file
-    """
-    # Get file by UUID with permission check (tenant-gated via ctx.org_id)
+    from app.api.hold_refusal import refuse_if_frozen
     from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
+    # Get file by UUID with permission check (tenant-gated via ctx.org_id)
     media_file = get_file_by_uuid_with_permission(
         db,
         file_uuid,
@@ -144,11 +145,9 @@ async def retry_summary(
         organization_id=ctx.org_id,
         min_permission="editor",
     )
-    file_id = media_file.id
+    file_id = int(media_file.id)
     require_processing_allowed_for_file(db, media_file)
-    from app.api.hold_refusal import refuse_if_frozen
-
-    refuse_if_frozen(db, int(file_id), actor=current_user, action="summary_generate")
+    refuse_if_frozen(db, file_id, actor=current_user, action="summary_generate")
 
     # Check if retry is needed and possible
     if str(media_file.summary_status) == "disabled":
@@ -171,11 +170,32 @@ async def retry_summary(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot generate summary until transcription is completed",
         )
+    file_ref = str(media_file.uuid)
+    db.close()
+    return file_id, file_ref
+
+
+@router.post("/{file_uuid}/retry-summary", dependencies=[Depends(refuse_under_support_grant)])
+async def retry_summary(
+    file_uuid: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+    ctx: RequestContext = Depends(get_current_context),
+) -> dict[str, Any]:
+    """
+    Retry failed summary generation for a file
+    """
+    # The checks and the reset run through run_in_threadpool; the request transaction
+    # is released before the provider health check, the only work awaited on the loop.
+    user_id = int(current_user.id)
+    file_id, file_ref = await run_in_threadpool(
+        _retry_preconditions, db, file_uuid, current_user, ctx
+    )
 
     # Check LLM availability for current user
     try:
         with llm_settings_outage_as_503():
-            llm_available = await is_llm_available(user_id=current_user.id)
+            llm_available = await is_llm_available(user_id=user_id)
     except ServiceUnavailableError:
         raise
     except Exception as e:
@@ -195,17 +215,17 @@ async def retry_summary(
     # internal integer PK (`file_id` above) — get_by_uuid_optional inside it
     # would never match on a stringified PK, so this always returned False and
     # the endpoint always 500'd "Failed to queue summary retry" (issue #474).
-    success = await retry_summary_if_available(db, str(media_file.uuid))
+    success = await retry_summary_if_available(db, file_ref)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to queue summary retry",
         )
 
-    logger.info(f"Summary retry queued for file {file_id} by user {current_user.email}")
+    logger.info(f"Summary retry queued for file {file_id} by user {user_id}")
 
     return {
         "status": "success",
         "message": "Summary generation has been queued",
-        "file_id": str(media_file.uuid),  # Use UUID for frontend
+        "file_id": file_ref,  # Use UUID for frontend
     }

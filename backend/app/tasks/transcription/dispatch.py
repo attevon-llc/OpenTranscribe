@@ -34,6 +34,7 @@ from app.db.session_utils import session_scope
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.pipeline_plan import PipelinePlan
+from app.services.transcription_fairness import over_fair_share
 from app.utils.task_utils import create_task_record
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
@@ -116,15 +117,18 @@ def _plan_for_dispatch(
     return plan
 
 
-def stage_priorities(*, retry: bool) -> tuple[int, int]:
+def stage_priorities(*, retry: bool, backlogged: bool = False) -> tuple[int, int]:
     """``(cpu_priority, gpu_priority)`` for a pipeline's stages.
 
     A retry outranks a fresh submission on every queue it touches, which is what keeps a
     requeued file in front of work submitted after it (kombu's Redis transport serves the
-    lower priority number first).
+    lower priority number first). A fresh run whose owner is past their fair share
+    (``services/transcription_fairness.py``) goes one step behind other users' imports.
     """
     if retry:
         return CPUPriority.PIPELINE_RETRY, GPUPriority.TRANSCRIPTION_RETRY
+    if backlogged:
+        return CPUPriority.PIPELINE_BACKLOG, GPUPriority.USER_BACKLOG
     return CPUPriority.PIPELINE_CRITICAL, GPUPriority.USER_IMPORT
 
 
@@ -328,11 +332,13 @@ def dispatch_transcription_pipeline(
             skip_diarization=options.skip_diarization,
         )
 
+        # Counted before this run's own row is written.
+        backlogged = not retry and over_fair_share(db, user_id)
         create_task_record(db, task_id, user_id, file_id, "transcription")
         update_media_file_status(db, file_id, FileStatus.PROCESSING)
         update_task_status(db, task_id, "in_progress", progress=0.0)
 
-    cpu_priority, gpu_priority = stage_priorities(retry=retry)
+    cpu_priority, gpu_priority = stage_priorities(retry=retry, backlogged=backlogged)
     transcribe_task = _transcribe_stage(plan, cpu_priority, gpu_priority)
 
     first_stage_options: dict = {"queue": CeleryQueues.CPU, "priority": cpu_priority}
@@ -460,6 +466,9 @@ def dispatch_batch_transcription(
                     skip_diarization=skip_diarization,
                 )
 
+                cpu_priority, gpu_priority = stage_priorities(
+                    retry=False, backlogged=over_fair_share(db, owner_id)
+                )
                 create_task_record(db, task_id, owner_id, file_id, "transcription")
                 update_media_file_status(db, file_id, FileStatus.PROCESSING)
                 update_task_status(db, task_id, "in_progress", progress=0.0)
@@ -470,11 +479,9 @@ def dispatch_batch_transcription(
                     task_id=task_id,
                     pipeline_plan=plan.to_context(),
                     **batch_kwargs,
-                ).set(queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL),
-                _transcribe_stage(plan, CPUPriority.PIPELINE_CRITICAL, GPUPriority.USER_IMPORT),
-                finalize_transcription.s().set(
-                    queue=CeleryQueues.CPU, priority=CPUPriority.PIPELINE_CRITICAL
-                ),
+                ).set(queue=CeleryQueues.CPU, priority=cpu_priority),
+                _transcribe_stage(plan, cpu_priority, gpu_priority),
+                finalize_transcription.s().set(queue=CeleryQueues.CPU, priority=cpu_priority),
             )
             pipeline.set(
                 link_error=[

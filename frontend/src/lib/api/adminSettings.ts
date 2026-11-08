@@ -7,11 +7,14 @@ import axiosInstance from '../axios';
 export interface RetryConfig {
   max_retries: number;
   retry_limit_enabled: boolean;
+  /** Queued or running transcriptions per user before later ones wait behind other users' (0 = off). */
+  fair_share_threshold: number;
 }
 
 export interface RetryConfigUpdate {
   max_retries?: number;
   retry_limit_enabled?: boolean;
+  fair_share_threshold?: number;
 }
 
 export interface GarbageCleanupConfig {

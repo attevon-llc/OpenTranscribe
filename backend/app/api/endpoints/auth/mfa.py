@@ -31,6 +31,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.mfa import MFAService
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.auth_settings import get_auth_settings
 from app.db.base import get_db
 from app.models.user import User
@@ -393,7 +394,7 @@ def verify_mfa(
 
 
 @router.post("/mfa/disable")
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_rate_limit(), key_func=user_or_ip_key)
 def disable_mfa(
     request: Request,
     response: Response,

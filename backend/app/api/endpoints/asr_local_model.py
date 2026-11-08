@@ -27,6 +27,7 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core import local_whisper_catalog
 from app.core.config import settings
 from app.core.constants import WHISPER_WORKER_PREFIXES
@@ -106,7 +107,7 @@ class _SetLocalModelRequest(BaseModel):
 
 
 @router.post("/local-model/set")
-@limiter.limit(get_api_rate_limit())
+@limiter.limit(get_api_rate_limit(), key_func=user_or_ip_key)
 def set_active_local_model(
     request: Request,
     body: _SetLocalModelRequest,
@@ -183,7 +184,7 @@ def set_active_local_model(
 
 
 @router.post("/local-model/restart")
-@limiter.limit("5/minute")
+@limiter.limit("5/minute", key_func=user_or_ip_key)
 def restart_gpu_worker(
     request: Request,
     response: Response = None,  # type: ignore[assignment]  # required by slowapi

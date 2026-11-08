@@ -17,6 +17,7 @@
   import { t, locale } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import RetrySettings from '$components/settings/RetrySettings.svelte';
+  import FairShareSettings from '$components/settings/FairShareSettings.svelte';
   import YouTubePolicySettings from '$components/settings/YouTubePolicySettings.svelte';
   import RecoveryActionRow from '$components/settings/RecoveryActionRow.svelte';
   import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
@@ -233,6 +234,7 @@
 
   <div class="settings-form">
     <RetrySettings />
+    <FairShareSettings />
     <YouTubePolicySettings />
 
     {#if taskHealthLoading}

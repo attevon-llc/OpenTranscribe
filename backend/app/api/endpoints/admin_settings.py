@@ -89,6 +89,7 @@ def update_retry_configuration(
         db,
         max_retries=config.max_retries,
         retry_limit_enabled=config.retry_limit_enabled,
+        fair_share_threshold=config.fair_share_threshold,
     )
 
     return RetryConfig(**updated)

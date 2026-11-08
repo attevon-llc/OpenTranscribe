@@ -26,6 +26,7 @@ from app.api.endpoints.asr_config_state import _get_config_or_404
 from app.api.endpoints.auth import get_current_active_user
 from app.auth.rate_limit import get_api_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services.asr.base import ASRProvider
 from app.services.request_context import RequestContext
@@ -87,7 +88,7 @@ def _create_asr_provider(
 
 
 @router.post("/test")
-@limiter.limit(get_api_rate_limit())
+@limiter.limit(get_api_rate_limit(), key_func=user_or_ip_key)
 def test_asr_connection(
     request: Request,
     settings_in: schemas.ASRConnectionTestRequest,
@@ -135,7 +136,7 @@ def test_asr_connection(
 
 
 @router.post("/test-config/{config_uuid}")
-@limiter.limit(get_api_rate_limit())
+@limiter.shared_limit(get_api_rate_limit(), scope="asr-test-config", key_func=user_or_ip_key)
 def test_saved_asr_config(
     request: Request,
     config_uuid: UUID,

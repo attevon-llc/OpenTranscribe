@@ -175,6 +175,10 @@ class GPUPriority:
     USER_IMPORT = 3  # User-submitted transcription/import (~5-60min)
     USER_REDIARIZ = 4  # User-triggered re-diarization of an existing file (~5-30min)
     USER_RECLUSTER = 5  # User-triggered full speaker re-clustering (~5-15min)
+    # A user's transcription past their fair share of queued runs
+    # (services/transcription_fairness.py): behind every other user's imports, ahead of
+    # admin migrations.
+    USER_BACKLOG = 6
     ADMIN_MIGRATION = 7  # Admin bulk migration batches (~1-5min/batch); yields to user work
 
 
@@ -186,6 +190,9 @@ class CPUPriority:
     PIPELINE_RETRY = 1
     PIPELINE_CRITICAL = 2  # Completes the import pipeline the user is watching
     #                        e.g. waveform, thumbnail, post-transcription clustering
+    # The pipeline stages of a run past its owner's fair share of queued runs
+    # (services/transcription_fairness.py): behind other users' imports.
+    PIPELINE_BACKLOG = 3
     USER_TRIGGERED = 4  # Explicit user action outside the import pipeline
     SYSTEM = 5  # System monitoring and stats collection
     ADMIN_BATCH = 6  # Admin bulk operations and data migrations

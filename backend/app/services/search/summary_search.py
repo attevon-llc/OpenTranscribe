@@ -47,8 +47,6 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import _UNMASKED_TOP_LEVEL_KEYS
 from app.services.redaction.summary_redaction import mask_summary_leaf
@@ -135,7 +133,6 @@ def _snippet(text_value: str) -> str:
 
 
 def search_summaries(
-    db: Session,
     query: str,
     user_id: int,
     *,
@@ -161,9 +158,9 @@ def search_summaries(
 ) -> SummarySearchResult:
     """Hybrid (BM25 + kNN) search over the OpenSearch summary plane (issue #963).
 
-    ``db`` is accepted for call-site symmetry with the endpoint (which already
-    holds a session for redaction-config resolution) but is not read here:
-    access control, the trash and the quarantine are enforced by
+    Takes no database session, on purpose: the endpoint resolves the redaction config
+    first and releases its request transaction before this OpenSearch round trip
+    (concurrency audit F4). Access control, the trash and the quarantine are enforced by
     :meth:`HybridSearchService._build_filters`'s ACL clause inside the
     OpenSearch query (``accessible_user_ids``/org terms and the
     ``availability`` field) — the same authority the transcript leg uses,

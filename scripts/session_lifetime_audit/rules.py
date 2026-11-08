@@ -80,6 +80,15 @@ RULES: tuple[Rule, ...] = (
                 'ensure_v4_index_exists',
                 'delete_by_query',
                 'msearch',
+                # The read side, through the search service rather than a raw client
+                # (concurrency audit F4): `/search`, `/search/count` and
+                # `/search/suggestions` held the request transaction across these and the
+                # gate saw nothing, because no name or path here matched them.
+                'count_matches',
+                'get_suggestions',
+                'get_available_filters',
+                'search_summary_plane',
+                'search_summaries',
             }
         ),
         ('opensearch', 'os_client.'),
@@ -162,6 +171,16 @@ RULES: tuple[Rule, ...] = (
         ('concurrent.futures', 'legs.run_legs', 'legs.get_executor'),
     ),
 )
+
+#: Service classes whose PUBLIC methods all reach a slow backend, mapped to the category
+#: such a call reports under. A method name alone cannot carry this: the slow call in
+#: ``HybridSearchService().search(...)`` is ``search``, which ``re.search`` shares, so it is
+#: recognised by the RECEIVER instead: a direct ``Cls().method(...)``, or a local name bound
+#: from ``Cls(...)`` in the same module. Underscore-prefixed methods are excluded; callers
+#: borrow pure helpers such as ``_build_filters`` and ``_get_search_fields``.
+SLOW_CLIENTS: dict[str, str] = {
+    'HybridSearchService': 'session-search-engine',
+}
 
 #: Callables that OPEN a database session as a context manager.
 #: ``session_factory`` and ``_short_session`` were added after the chat turn was phased

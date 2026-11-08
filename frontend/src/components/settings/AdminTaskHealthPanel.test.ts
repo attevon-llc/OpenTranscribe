@@ -12,7 +12,9 @@ const axiosMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: axiosMock }));
 vi.mock('$lib/api/adminSettings', () => ({
   AdminSettingsApi: {
-    getRetryConfig: vi.fn().mockResolvedValue({ retry_limit_enabled: true, max_retries: 3 }),
+    getRetryConfig: vi
+      .fn()
+      .mockResolvedValue({ retry_limit_enabled: true, max_retries: 3, fair_share_threshold: 5 }),
     updateRetryConfig: vi.fn(),
   },
 }));
@@ -170,8 +172,8 @@ describe('Recovery tab: lists and page consistency', () => {
   it('draws the retries card and the actions card with the same card component', async () => {
     const { container } = await renderLoaded();
     const cards = container.querySelectorAll('.tx-form .settings-section');
-    // retries + youtube policy + actions + stuck tasks + inconsistent files
-    expect(cards).toHaveLength(5);
+    // retries + fair sharing + youtube policy + actions + stuck tasks + inconsistent files
+    expect(cards).toHaveLength(6);
     for (const card of cards) {
       expect(card.querySelector('h3.section-title')).not.toBeNull();
     }

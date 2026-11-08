@@ -14,10 +14,7 @@ exercise exactly the orchestration logic that lives in this module.
 
 from __future__ import annotations
 
-from typing import cast
-
 import pytest
-from sqlalchemy.orm import Session
 
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.services.redaction.summary_redaction import SummaryMaskingUnavailableError
@@ -27,10 +24,6 @@ from app.services.search.summary_search import search_summaries
 from app.services.search.summary_search import walk_summary_leaves
 
 pytestmark = pytest.mark.unit
-
-#: search_summaries's `db` param is unused (see its docstring) — a real
-#: Postgres session buys nothing here, so a sentinel keeps this file DB-free.
-_DB = cast(Session, object())
 
 
 def _cfg(enabled: bool, categories: frozenset[str] = frozenset()) -> EffectiveRedactionConfig:
@@ -134,7 +127,7 @@ class TestSearchSummariesOrchestration:
                 }
             ],
         )
-        result = search_summaries(_DB, "roadmap", 1, organization_id=None)
+        result = search_summaries("roadmap", 1, organization_id=None)
         assert result.total == 1
         assert len(result.results) == 1
         hit = result.results[0]
@@ -150,12 +143,12 @@ class TestSearchSummariesOrchestration:
             monkeypatch,
             hits=[{"file_uuid": "u", "file_id": 1, "title": "", "matches": []}],
         )
-        result = search_summaries(_DB, "roadmap", 1, organization_id=None)
+        result = search_summaries("roadmap", 1, organization_id=None)
         assert result.results[0].title == ""
 
     def test_no_hits_returns_an_empty_result(self, monkeypatch):
         _patch_plane(monkeypatch, hits=[], total=0)
-        result = search_summaries(_DB, "zzz_no_such_term", 1, organization_id=None)
+        result = search_summaries("zzz_no_such_term", 1, organization_id=None)
         assert result.total == 0
         assert result.results == []
 
@@ -172,7 +165,7 @@ class TestSearchSummariesOrchestration:
                 }
             ],
         )
-        result = search_summaries(_DB, "roadmap", 1, organization_id=None)
+        result = search_summaries("roadmap", 1, organization_id=None)
         snippet = result.results[0].matches[0].snippet
         assert len(snippet) <= summary_search._MAX_SNIPPET_CHARS + 1  # +1 for the ellipsis char
         assert snippet.endswith("…")
@@ -183,7 +176,6 @@ class TestSearchSummariesOrchestration:
         calls = _patch_plane(monkeypatch, hits=[])
 
         search_summaries(
-            _DB,
             "roadmap",
             7,
             organization_id=3,
@@ -219,7 +211,7 @@ class TestSearchSummariesOrchestration:
     def test_the_review_exemption_is_forwarded(self, monkeypatch):
         calls = _patch_plane(monkeypatch, hits=[])
 
-        search_summaries(_DB, "roadmap", 1, organization_id=None, include_quarantined=True)
+        search_summaries("roadmap", 1, organization_id=None, include_quarantined=True)
         assert calls[0][2]["include_quarantined"] is True
 
 
@@ -243,7 +235,7 @@ class TestMasking:
                 }
             ],
         )
-        result = search_summaries(_DB, "slipped", 1, organization_id=None, redaction_cfg=None)
+        result = search_summaries("slipped", 1, organization_id=None, redaction_cfg=None)
         assert "Damn" in result.results[0].matches[0].snippet
 
     def test_a_disabled_policy_leaves_the_snippet_untouched(self, monkeypatch):
@@ -261,7 +253,7 @@ class TestMasking:
             ],
         )
         cfg = _cfg(False)
-        result = search_summaries(_DB, "slipped", 1, organization_id=None, redaction_cfg=cfg)
+        result = search_summaries("slipped", 1, organization_id=None, redaction_cfg=cfg)
         assert "Damn" in result.results[0].matches[0].snippet
 
     def test_an_enabled_policy_masks_the_returned_snippet(self, monkeypatch):
@@ -279,7 +271,7 @@ class TestMasking:
             ],
         )
         cfg = _cfg(True, frozenset({"profanity"}))
-        result = search_summaries(_DB, "slipped", 1, organization_id=None, redaction_cfg=cfg)
+        result = search_summaries("slipped", 1, organization_id=None, redaction_cfg=cfg)
         assert "Damn" not in result.results[0].matches[0].snippet
 
     def test_masking_is_applied_per_returned_leaf_not_batched(self, monkeypatch):
@@ -316,7 +308,7 @@ class TestMasking:
         monkeypatch.setattr(summary_search, "mask_summary_leaf", _spy)
         cfg = _cfg(True, frozenset({"profanity"}))
 
-        search_summaries(_DB, "roadmap", 1, organization_id=None, redaction_cfg=cfg)
+        search_summaries("roadmap", 1, organization_id=None, redaction_cfg=cfg)
 
         assert calls == ["roadmap one", "roadmap two"], (
             "mask_summary_leaf must be called once per matched leaf, individually — "
@@ -343,7 +335,7 @@ class TestMasking:
         cfg = _cfg(True, frozenset({"pii"}))
 
         with pytest.raises(SummaryMaskingUnavailableError):
-            search_summaries(_DB, "roadmap", 1, organization_id=None, redaction_cfg=cfg)
+            search_summaries("roadmap", 1, organization_id=None, redaction_cfg=cfg)
 
     def test_a_file_with_no_matches_is_never_examined_by_the_masker(self, monkeypatch):
         """issue #822's narrowing, preserved: an empty ``matches`` list must
@@ -358,5 +350,5 @@ class TestMasking:
         monkeypatch.setattr(summary_search, "mask_summary_leaf", _boom)
         cfg = _cfg(True, frozenset({"pii"}))
 
-        result = search_summaries(_DB, "roadmap", 1, organization_id=None, redaction_cfg=cfg)
+        result = search_summaries("roadmap", 1, organization_id=None, redaction_cfg=cfg)
         assert result.results[0].matches == []

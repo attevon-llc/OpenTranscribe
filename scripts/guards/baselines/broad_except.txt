@@ -37,7 +37,7 @@ backend/app/api/endpoints/speakers_profile_workflow.py	2	ratchet: may only go do
 backend/app/api/endpoints/speakers_suggestions.py	1	ratchet: may only go down
 backend/app/api/endpoints/transcript_segments.py	1	ratchet: may only go down
 backend/app/api/endpoints/watch_sources.py	1	ratchet: may only go down
-backend/app/api/websockets.py	9	ratchet: may only go down
+backend/app/api/websockets.py	8	ratchet: may only go down
 backend/app/auth/audit.py	4	ratchet: may only go down
 backend/app/auth/audit_query.py	2	ratchet: may only go down
 backend/app/auth/direct_auth.py	3	ratchet: may only go down

@@ -34,6 +34,7 @@ from app.models.user import User
 from app.services.collection_visibility import resolve_collection_filter
 from app.services.file_availability import unavailable_list_exempt
 from app.services.hidden_media_service import hidden_uuids
+from app.services.redaction.config import resolve_effective_config
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,7 @@ def search_transcripts(
     # The caller's hidden files (issue #1102) leave every leg's query, count and pill, except
     # when the request is scoped to one file the caller picked: hide is not access control.
     hidden = [] if file_uuid else hidden_uuids(db, ctx.user.id)
+    include_quarantined = unavailable_list_exempt(ctx.bypass)
 
     # OR-union (issue #760, J-760-10): a file matches if it matches ANY
     # selected source. The transcript leg and the summary leg are two
@@ -189,7 +191,34 @@ def search_transcripts(
     want_transcripts = bool(source_set & {"content", "title", "speaker"})
     want_summaries = "summary" in source_set
     transcript_sources = source_set - {"summary"}
+    filter_kwargs: dict[str, Any] = {
+        "speakers": speakers,
+        "tags": tags,
+        "date_from": date_from,
+        "date_to": date_to,
+        "file_type": file_type,
+        "collection_id": collection_id,
+        "min_duration": min_duration,
+        "max_duration": max_duration,
+        "min_file_size": min_file_size,
+        "max_file_size": max_file_size,
+        "language": language,
+        "title_filter": title_filter,
+        "file_uuid": file_uuid,
+        "exclude_file_uuids": hidden,
+    }
+    redaction_cfg = (
+        resolve_effective_config(db, ctx.user.id, organization_id=ctx.org_id)
+        if want_summaries
+        else None
+    )
 
+    # Concurrency audit F4: everything above is the Postgres read phase and returned plain
+    # data. Release the request transaction before the OpenSearch round trips and the
+    # snippet masking below; the post-filter at the end opens a second, short one.
+    db.close()
+
+    search_response = None
     if want_transcripts:
         from app.services.search.hybrid_search_service import HybridSearchService
 
@@ -199,36 +228,61 @@ def search_transcripts(
             user_id=ctx.user.id,
             page=page,
             page_size=page_size,
-            speakers=speakers,
-            tags=tags,
-            date_from=date_from,
-            date_to=date_to,
             sort_by=sort_by,
             sort_order=sort_order,
             search_mode=search_mode,
-            file_type=file_type,
-            collection_id=collection_id,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_file_size=min_file_size,
-            max_file_size=max_file_size,
-            language=language,
-            title_filter=title_filter,
             organization_id=ctx.org_id,
-            file_uuid=file_uuid,
             sources=transcript_sources if explicit_sources else None,
-            exclude_file_uuids=hidden,
-            include_quarantined=unavailable_list_exempt(ctx.bypass),
+            include_quarantined=include_quarantined,
+            **filter_kwargs,
         )
 
+    summary_payload: dict[str, Any] | None = None
+    if redaction_cfg is not None:
+        # The SPA sends every filter on every tab, so the summary leg has to
+        # honour the same ones the transcript leg above just did — otherwise one
+        # request's two legs disagree about which files the caller asked for
+        # (issue #831). Since #963 both legs route through the SAME filter
+        # builder (`HybridSearchService._build_filters`), so there is no
+        # longer a second SQL predicate implementation to keep in sync.
+        # `date_from`/`date_to` were validated as ISO 8601 above, then reach
+        # OpenSearch as raw strings.
+        try:
+            summary_payload = _summary_search_payload(
+                redaction_cfg, ctx, q, page, page_size, **filter_kwargs
+            )
+        except (HTTPException, DomainError) as e:
+            # Issue #760, §6: a masking outage must not blank the whole page
+            # when more than one source was requested — only the summary leg
+            # degrades. `_summary_search_payload` still raises a literal 503
+            # for `SummaryMaskingUnavailableError`;
+            # re-raise unchanged for a summary-ONLY request (nothing else to
+            # show), degrade otherwise. Never "fail open" — this withholds
+            # the summary results, it never serves them unmasked.
+            if e.status_code == 503 and want_transcripts:
+                summary_payload = {
+                    "summary_results": [],
+                    "summary_total": 0,
+                    "summary_unavailable": "masking_unavailable",
+                }
+            else:
+                raise
+
+    # Issue #760: the per-source pill counts are computed ONLY when the caller explicitly
+    # asked via `sources` — a legacy `result_type` request stays byte-identical (no new
+    # keys, no extra cost).
+    source_counts = _source_counts(ctx, q, **filter_kwargs) if explicit_sources else None
+
+    if search_response is not None:
         # The query already excludes trashed and quarantined files through the index's
         # `availability` stamp; this page-sized post-filter (one IN query) is the backstop
         # for a document the stamp has not reached yet. An exempt reviewer keeps
-        # quarantined hits; a trashed file is dropped for everyone.
+        # quarantined hits; a trashed file is dropped for everyone. It and the collection
+        # lookup below reopen `db` in a second, short transaction.
         search_response = _drop_quarantined_search_hits(
             db,
             search_response,
-            include_quarantined=unavailable_list_exempt(ctx.bypass),
+            include_quarantined=include_quarantined,
             hidden_uuids=frozenset(hidden),
         )
 
@@ -251,55 +305,8 @@ def search_transcripts(
             "search_mode": search_mode,
         }
 
-    if want_summaries:
-        # The SPA sends every filter on every tab, so the summary leg has to
-        # honour the same ones the transcript leg above just did — otherwise one
-        # request's two legs disagree about which files the caller asked for
-        # (issue #831). Since #963 both legs route through the SAME filter
-        # builder (`HybridSearchService._build_filters`), so there is no
-        # longer a second SQL predicate implementation to keep in sync.
-        # `date_from`/`date_to` were validated as ISO 8601 above, then reach
-        # OpenSearch as raw strings.
-        try:
-            payload.update(
-                _summary_search_payload(
-                    db,
-                    ctx,
-                    q,
-                    page,
-                    page_size,
-                    speakers=speakers,
-                    tags=tags,
-                    date_from=date_from,
-                    date_to=date_to,
-                    file_type=file_type,
-                    collection_id=collection_id,
-                    min_duration=min_duration,
-                    max_duration=max_duration,
-                    min_file_size=min_file_size,
-                    max_file_size=max_file_size,
-                    language=language,
-                    title_filter=title_filter,
-                    file_uuid=file_uuid,
-                    exclude_file_uuids=hidden,
-                )
-            )
-        except (HTTPException, DomainError) as e:
-            # Issue #760, §6: a masking outage must not blank the whole page
-            # when more than one source was requested — only the summary leg
-            # degrades. `_summary_search_payload` still raises a literal 503
-            # for `SummaryMaskingUnavailableError`;
-            # re-raise unchanged for a summary-ONLY request (nothing else to
-            # show), degrade otherwise. Never "fail open" — this withholds
-            # the summary results, it never serves them unmasked.
-            if e.status_code == 503 and want_transcripts:
-                payload["summary_results"] = []
-                payload["summary_total"] = 0
-                payload["summary_unavailable"] = "masking_unavailable"
-            else:
-                raise
-
-    if want_summaries:
+    if summary_payload is not None:
+        payload.update(summary_payload)
         # `total_pages` is the only paging signal the response carries, so it has
         # to reach the END OF EVERY LEG the request asked for.
         #
@@ -334,30 +341,9 @@ def search_transcripts(
         else:
             payload["total_pages"] = summary_pages
 
-    # Issue #760: the resolved source set and the per-source pill counts are
-    # attached ONLY when the caller explicitly asked via `sources` — a legacy
-    # `result_type` request stays byte-identical (no new keys, no extra cost).
-    if explicit_sources:
+    if source_counts is not None:
         payload["sources"] = sorted(source_set)
-        payload["source_counts"] = _source_counts(
-            db,
-            ctx,
-            q,
-            speakers=speakers,
-            tags=tags,
-            date_from=date_from,
-            date_to=date_to,
-            file_type=file_type,
-            collection_id=collection_id,
-            min_duration=min_duration,
-            max_duration=max_duration,
-            min_file_size=min_file_size,
-            max_file_size=max_file_size,
-            language=language,
-            title_filter=title_filter,
-            file_uuid=file_uuid,
-            exclude_file_uuids=hidden,
-        )
+        payload["source_counts"] = source_counts
 
     return payload
 
@@ -407,6 +393,13 @@ def search_match_count(
             organization_id=ctx.org_id,
         )
 
+    # A whole-corpus count leaves out the caller's hidden files (issue #1102); a count
+    # inside one file the caller opened does not.
+    hidden = None if file_uuid else hidden_uuids(db, ctx.user.id)
+    # Per-keystroke: release the request transaction before the OpenSearch count
+    # (concurrency audit F4).
+    db.close()
+
     service = HybridSearchService()
     try:
         total = service.count_matches(
@@ -415,9 +408,7 @@ def search_match_count(
             file_uuid=file_uuid,
             organization_id=ctx.org_id,
             is_admin=unavailable_list_exempt(ctx.bypass),
-            # A whole-corpus count leaves out the caller's hidden files (issue #1102); a
-            # count inside one file the caller opened does not.
-            exclude_file_uuids=None if file_uuid else hidden_uuids(db, ctx.user.id),
+            exclude_file_uuids=hidden,
         )
     except SearchCountUnavailableError as e:
         # Literal 503; this module does not import `fastapi.status`.
@@ -456,6 +447,11 @@ def search_suggestions(
     """
     from app.services.search.hybrid_search_service import HybridSearchService
 
+    hidden = hidden_uuids(db, ctx.user.id)
+    # Per-keystroke: release the request transaction before OpenSearch (concurrency
+    # audit F4).
+    db.close()
+
     search_service = HybridSearchService()
     return search_service.get_suggestions(
         prefix=q,
@@ -463,7 +459,7 @@ def search_suggestions(
         limit=limit,
         organization_id=ctx.org_id,
         is_admin=unavailable_list_exempt(ctx.bypass),
-        exclude_file_uuids=hidden_uuids(db, ctx.user.id),
+        exclude_file_uuids=hidden,
     )
 
 
@@ -487,10 +483,15 @@ def get_available_filters(
     """
     from app.services.search.hybrid_search_service import HybridSearchService
 
+    hidden = hidden_uuids(db, ctx.user.id)
+    # The facet aggregation is an OpenSearch round trip: release the request transaction
+    # first (concurrency audit F4).
+    db.close()
+
     search_service = HybridSearchService()
     return search_service.get_available_filters(
         user_id=ctx.user.id,
         organization_id=ctx.org_id,
         is_admin=unavailable_list_exempt(ctx.bypass),
-        exclude_file_uuids=hidden_uuids(db, ctx.user.id),
+        exclude_file_uuids=hidden,
     )

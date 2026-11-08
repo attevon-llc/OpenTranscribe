@@ -301,9 +301,16 @@ ROUTE_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
         _r("files/crud.py::update_media_file"),
     ),
     # W10-W12 summary generation and LLM speaker identification.
-    _r("summarization.py::trigger_summarization"): (_r("summarization.py::trigger_summarization"),),
-    _r("summarization.py::identify_speakers"): (_r("summarization.py::identify_speakers"),),
-    _r("files/summary_status.py::retry_summary"): (_r("files/summary_status.py::retry_summary"),),
+    # The checks run in a sync helper handed to run_in_threadpool (concurrency audit F5).
+    _r("summarization.py::trigger_summarization"): (
+        _r("summarization.py::_summarize_preconditions"),
+    ),
+    _r("summarization.py::identify_speakers"): (
+        _r("summarization.py::_identify_speakers_preconditions"),
+    ),
+    _r("files/summary_status.py::retry_summary"): (
+        _r("files/summary_status.py::_retry_preconditions"),
+    ),
     # W13-W18 topics and auto-label.
     _r("topics.py::extract_topics"): (_r("topics.py::extract_topics"),),
     _r("topics.py::apply_topic_suggestions"): (_r("topics.py::apply_topic_suggestions"),),

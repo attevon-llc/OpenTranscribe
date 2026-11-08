@@ -17,6 +17,7 @@ from app.auth.audit_events import AuditOutcome
 from app.auth.rate_limit import get_auth_methods_rate_limit
 from app.auth.rate_limit import get_auth_rate_limit
 from app.auth.rate_limit import limiter
+from app.auth.rate_limit import user_or_ip_key
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
 from app.db.base import get_db
@@ -138,7 +139,7 @@ def get_login_banner(db: Session = Depends(get_db)) -> Any:
 
 
 @router.post("/banner/acknowledge")
-@limiter.limit(get_auth_rate_limit())
+@limiter.limit(get_auth_rate_limit(), key_func=user_or_ip_key)
 def acknowledge_banner(
     request: Request,
     response: Response,

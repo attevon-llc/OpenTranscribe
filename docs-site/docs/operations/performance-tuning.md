@@ -171,6 +171,23 @@ GPU_SCALE_WORKERS=4         # Parallel workers
 
 See the [Multi-GPU Scaling](../configuration/multi-gpu-scaling) documentation for details.
 
+### Fair sharing between users
+
+Transcriptions are queued by priority, first come first served within a priority. Without a
+limit, one user who uploads a folder of 500 files would put every other user's file behind all
+500. So a user's first 5 queued or running transcriptions go in at the normal priority, and each
+one after that goes in one step lower: another user's new file starts as soon as those first 5
+are through, ahead of the rest of the bulk upload. The bulk owner's own files still run in the
+order they were uploaded.
+
+An administrator sets the limit in **Settings > File status > Recovery > Fair sharing between
+users** (default `5`; `0` turns the rule off and restores strict first-come order). The value is
+stored in the database (`transcription.fair_share_threshold`), applies within 30 seconds, and
+needs no restart.
+
+A run's priority is decided when it is queued, so lowering the limit does not reorder runs
+already waiting, and an automatic retry of an interrupted run always keeps its place at the front.
+
 ### Auto-Detection Logic
 
 The `HardwareConfig` class in `backend/app/utils/hardware_detection.py` handles all auto-detection:
@@ -205,6 +222,20 @@ OpenTranscribe configures PostgreSQL with tuning parameters optimized for transc
 | `PG_RANDOM_PAGE_COST` | 1.1 | Planner cost estimate for random I/O | Already tuned for SSD; use 4.0 for spinning disks |
 | `PG_EFFECTIVE_IO_CONCURRENCY` | 200 | Concurrent I/O operations | Already tuned for SSD; use 2 for spinning disks |
 | `PG_MAX_CONNECTIONS` | 200 | Maximum client connections | Increase if connection errors appear |
+
+### Connection budget
+
+Every pool belongs to one process, not one container. The API is one process with a pool of
+`DB_POOL_SIZE + DB_MAX_OVERFLOW` (60). A prefork Celery worker (download, cpu, cloud-asr, nlp,
+embedding) is a main process plus one child per `--concurrency`, and each builds its own pool of
+`WORKER_DB_POOL_SIZE + WORKER_DB_MAX_OVERFLOW` (2 + 0). The threads-pool workers (GPU, redaction)
+are one process whose task threads share `WORKER_DB_POOL_SIZE + THREADED_WORKER_DB_MAX_OVERFLOW`
+(2 + 3). The worst case is the sum over services of pool capacity times processes, about 165
+with the defaults, and it must stay below `PG_MAX_CONNECTIONS` minus the 3 slots PostgreSQL
+reserves for superusers (197 of 200). `backend/tests/unit/test_db_connection_budget.py`
+recomputes it from `docker-compose.yml`. If you raise a worker's concurrency (for example
+`CLOUD_ASR_CONCURRENCY`) or a pool, raise `PG_MAX_CONNECTIONS` with it; each extra prefork child
+costs two connections.
 
 Additional hardcoded tuning (in `docker-compose.yml`):
 

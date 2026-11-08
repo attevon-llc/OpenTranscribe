@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Alembic is the sole schema authority; `database/init_db.sql` is **legacy reference only, not
-used for schema**. The 5-step change procedure (revision → model → schema → detection guard →
+Alembic is the sole schema authority (the legacy `database/init_db.sql` was removed in
+v0.7.0). The 5-step change procedure (revision → model → schema → detection guard →
 test both paths) lives in `app/db/CLAUDE.md` — **do not duplicate it here**. This file is about
 authoring the revision file itself.
 

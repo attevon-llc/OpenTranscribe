@@ -39,7 +39,9 @@ from app.auth.refresh_tokens import RefreshTokenReplayError
 from app.auth.revocation_error import RevocationError
 from app.auth.token_service import token_service
 from app.core.auth_types import AUTH_TYPE_OIDC
+from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
+from app.core.security import accepted_algorithms
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import Token
@@ -239,7 +241,9 @@ def _verified_claims(token: str | None) -> dict | None:
         return None
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        claims = jwt.decode(token, key, algorithms=[settings.JWT_ALGORITHM]).claims
+        # The migration window applies here too: a token accepted on every request
+        # must also be revocable at logout, whichever algorithm signed it.
+        claims = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_REFRESH)).claims
         # joserfc verifies the signature/algorithm only — exp is not checked
         # automatically (unlike python-jose), so it's validated explicitly here.
         JWTClaimsRegistry(exp={"essential": True}).validate(claims)

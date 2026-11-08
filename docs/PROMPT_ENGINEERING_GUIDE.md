@@ -542,7 +542,7 @@ class PromptTester:
 
 ✅ **Add XML Structure**
 - Wrap transcript, speaker data, instructions in XML tags
-- Files: `database/init_db.sql`, `llm_service.py`
+- Files: `backend/app/core/default_prompts.py`, `llm_service.py`
 
 ✅ **Implement Response Prefilling**
 - Add `{"role": "assistant", "content": "{"}` to force JSON
@@ -554,7 +554,7 @@ class PromptTester:
 
 ✅ **Add BLUF Guidelines**
 - Provide concrete examples in prompts
-- Files: `database/init_db.sql`
+- Files: `backend/app/core/default_prompts.py`
 
 ### Priority 2 Improvements (Medium Impact, Medium Effort)
 

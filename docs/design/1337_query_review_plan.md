@@ -690,4 +690,38 @@ then `exists`.
 
 ## 9. Results (appended by the implementer)
 
-_Empty until M1._
+### 9.1 `/api/tags` usage counts (`tag_collisions.accessible_usage_counts`): no avoidable SubPlan
+
+Measured 2026-11-08 on a throwaway Postgres 17.5 (`run-backend-tests.sh --throwaway-db`), after
+`ANALYZE`. Seed: an owner with 10,000 files in one collection shared to a viewer, 200 files owned
+by the viewer, 200 tags, 3 tags per file (30,294 `file_tag` rows), plus a third user with 60,000
+files and their own ~180,000 `file_tag` rows as other-tenant noise. Query run as the viewer.
+
+Plan (`organization_id=None`; `UNSCOPED` has the same shape), trimmed:
+
+```
+GroupAggregate  (actual rows=200)                     Execution Time: 69-72 ms
+  ->  Sort  (rows=30294)  quicksort 1479kB
+        ->  Nested Loop  (rows=30294)
+              ->  HashAggregate  Group Key: media_file.id   (rows=10200; estimated 200)
+                    ->  Append
+                          ->  Index Scan using idx_media_file_user_id on media_file   (owned)
+                          ->  Nested Loop / Merge Join collection_share x collection_member  (shared)
+                                Seq Scan on collection_share  Filter: target_user_id = ... OR
+                                  ANY (target_group_id = (hashed SubPlan 1))   -- runs once
+                          ->  Nested Loop ... collection  (org collections; never executed here)
+                                Filter: CASE ... (SubPlan 2) ... (SubPlan 3)  -- per org collection
+              ->  Index Scan using idx_file_tag_media_file_id on file_tag  (loops=10200, rows=3)
+```
+
+Without the other-tenant noise the planner picks `Seq Scan on file_tag` + `Hash Join` instead,
+which is correct there: every `file_tag` row belonged to an accessible file.
+
+Verdict: **no avoidable SubPlan; no rewrite.** The `IN (accessible ids)` is planned as a semi-join
+(`HashAggregate` over the union, then an index nested loop on `file_tag`), so the cost scales with
+the caller's accessible files, not with `file_tag`. The SubPlans that remain are not this query's:
+`SubPlan 1` is a hashed group-membership lookup that runs once, and `SubPlans 2/3` are the
+per-collection role lookup inside the shared visibility helper
+(`collection_visibility.org_collection_file_ids_stmt`), bounded by the number of org collections
+and covered by `uq_org_membership`. The one wart is the union's row estimate (200 against 10,200),
+which did not change the join choice at this scale.

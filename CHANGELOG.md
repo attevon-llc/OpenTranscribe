@@ -149,6 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `database/init_db.sql`, the pre-Alembic schema snapshot. Nothing mounted, applied or read it; Alembic is the only schema source, and v0.3.3-era databases bootstrapped from it are still detected and stamped. `database/README.md` and the docs that pointed at it are updated.
 - The file page header no longer carries **Copy file ID**, **Place legal hold** or the **Legal hold** pill beside the title; they read as the title's own state. The banner below the title still says the file is held, holds are placed from the gallery or Settings, and the file ID moved to the collapsed **File details** section, with a copy button, for support tickets, takedown disputes and the audit log filter.
 - The gallery's "force delete processing files" prompt. A file still being processed is moved to the trash like any other (#1101).
 - `scripts/test-in-worktree.sh` (added in 0.6.1) is removed, together with its test. `./scripts/run-backend-tests.sh --throwaway-db` does the same job from any worktree and is the only throwaway-database runner.
@@ -316,6 +317,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Logout now revokes a token signed before an operator changed `JWT_ALGORITHM`. Such a token was still accepted on every request during the migration window, but logout decoded it with the current algorithm only, so it revoked nothing and the session stayed usable until the token expired. An MFA half-token minted just before the change is accepted too, instead of failing the sign-in. Every JWT encode and decode in `backend/app` now goes through `core.security.signing_algorithm`/`accepted_algorithms`; the FOLLOW-UP allowlist in `test_jwt_algorithm_single_owner.py` is empty.
 - A refresh token can now be used only once, even when two requests present it at the same moment. If a token that was already used is presented again, the session it belongs to is ended (recorded as `auth.token.reuse` in the audit log) and that browser has to sign in again; other sessions are not affected.
 - Request bodies are now size-limited everywhere. The API refuses a JSON or form body larger than `MAX_REQUEST_BODY_BYTES` (default 1 MiB) with `413` before the request is processed; the media upload and speaker-avatar routes keep their own limits. The bundled nginx configurations allow 10m on the API and keep 15G only for the upload locations (`/api/files`, `/s3/`, `/minio/`).
 - Password reset and email verification requests now take the same path whether or not the address has an account: the request looks the account up and queues a background task, and the mail is built and sent there. Invitations and account-change notices are sent from the same background tasks, with retries on temporary mail-server or network errors. An invitation is now refused up front (503) when no mail transport is configured, instead of being created and then failing.

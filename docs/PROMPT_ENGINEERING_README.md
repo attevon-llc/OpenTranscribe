@@ -272,7 +272,7 @@ To revert database prompts, you would need to restore from a backup or manually 
 │   ├── PROMPT_ENGINEERING_GUIDE.md           # Comprehensive best practices
 │   └── PROMPT_IMPROVEMENTS_IMPLEMENTATION.md # Implementation details
 ├── backend/app/services/llm_service.py       # Enhanced LLM service
-└── database/init_db.sql                      # Enhanced default prompts (lines 358-620)
+└── backend/app/core/default_prompts.py       # Enhanced default prompts
 ```
 
 ---

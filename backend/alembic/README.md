@@ -8,7 +8,7 @@
 
 Alembic migrations in `backend/alembic/versions/` are the **sole authority** for the database schema in all environments. The baseline migration (`v010_baseline.py`) creates the full schema from scratch and subsequent migrations handle schema evolution.
 
-`database/init_db.sql` does still exist, but it is **legacy reference only and is not used for schema** — do not treat it as authoritative or keep it in sync.
+The legacy `database/init_db.sql` snapshot was removed in v0.7.0; releases up to v0.3.3 bootstrapped from it, and the migration runner still detects and stamps such databases.
 
 ## Current Migration Chain
 

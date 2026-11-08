@@ -17,8 +17,8 @@ Moved intact from `backend/app/auth/CLAUDE.md`. Read before adding an auth provi
   `'external'` value (real provider kept in a metadata column) would remove the need for edition
   migrations entirely; it is a schema decision not taken here.
 - **`user.auth_type` had TWO CHECK constraints** — `ck_user_auth_type_valid` (v377) and
-  a legacy `users_auth_type_check` (v200, re-asserted by v367/v371, still in
-  `database/init_db.sql`). Swapping only the first would not have failed the migration;
+  a legacy `users_auth_type_check` (v200, re-asserted by v367/v371, and in the
+  pre-Alembic `database/init_db.sql`, since removed). Swapping only the first would not have failed the migration;
   it would have failed every OIDC login afterwards with a CheckViolation on JIT
   provisioning. `v380` drops the duplicate — one rule, one owner — and
   `test_v380_migration_consistency.py` pins that exactly one remains.

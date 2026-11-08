@@ -89,7 +89,7 @@ def _create_backup_code_context() -> CryptContext:
     Returns:
         CryptContext: Configured password hashing context
     """
-    if settings.FIPS_MODE and settings.FIPS_VERSION == "140-3":
+    if settings.fips_140_3_active:
         # Use PBKDF2-SHA256 with 600k iterations for FIPS 140-3.
         # FIPS_MODE is the master switch — FIPS_VERSION alone defaults to
         # "140-3" even on non-FIPS deployments (matches core/security.py).
@@ -162,7 +162,7 @@ def backup_codes_need_regeneration(hashed_codes: list[str]) -> bool:
     Returns:
         bool: True if codes are hashed with bcrypt while FIPS 140-3 mode is active
     """
-    if not (settings.FIPS_MODE and settings.FIPS_VERSION == "140-3"):
+    if not settings.fips_140_3_active:
         return False
 
     if not hashed_codes:

@@ -168,7 +168,7 @@ Model and migration tests live in `backend/tests/` (see `backend/README.md` for 
 ## Migration Considerations
 
 ### Schema Authority
-Alembic migrations (`backend/alembic/versions/`) are the sole authority for schema in all environments. The bootstrap migration (`v010_baseline.py`) creates the original schema and later revisions evolve it. (`database/init_db.sql` at the repo root is legacy reference only.)
+Alembic migrations (`backend/alembic/versions/`) are the sole authority for schema in all environments. The bootstrap migration (`v010_baseline.py`) creates the original schema and later revisions evolve it.
 
 ### Schema Changes
 The checklist is in `app/db/README.md` and `app/db/CLAUDE.md`: write an idempotent Alembic revision, update the model here (and export it in `__init__.py`), update the Pydantic schema in `app/schemas/`, add a detection guard in `app/db/migrations.py`, and test with `./opentr.sh reset dev` (deletes all data) as well as a restart over an existing database.

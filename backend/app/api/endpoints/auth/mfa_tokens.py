@@ -43,6 +43,8 @@ from app.core.auth_types import TOKEN_TYPE_MFA
 from app.core.auth_types import VALID_AUTH_TYPES
 from app.core.config import settings
 from app.core.exceptions import DomainError
+from app.core.security import accepted_algorithms
+from app.core.security import signing_algorithm
 from app.models.user import User
 from app.models.user_mfa import UserMFA
 
@@ -292,9 +294,8 @@ def _create_mfa_token(user_uuid_str: str, user_role: str, scope: str = MFA_SCOPE
 
     # Create token manually since we need to include jti
     key = OctKey.import_key(settings.JWT_SECRET_KEY)
-    return jwt.encode(
-        {"alg": settings.JWT_ALGORITHM}, mfa_token_data, key, algorithms=[settings.JWT_ALGORITHM]
-    )
+    algorithm = signing_algorithm(TOKEN_TYPE_MFA)
+    return jwt.encode({"alg": algorithm}, mfa_token_data, key, algorithms=[algorithm])
 
 
 def _verify_mfa_token(
@@ -319,7 +320,7 @@ def _verify_mfa_token(
     """
     try:
         key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        token_obj = jwt.decode(mfa_token, key, algorithms=[settings.JWT_ALGORITHM])
+        token_obj = jwt.decode(mfa_token, key, algorithms=accepted_algorithms(TOKEN_TYPE_MFA))
         # joserfc verifies the signature/algorithm only — exp is not checked
         # automatically (unlike python-jose), so it's validated explicitly here.
         JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)

@@ -691,7 +691,7 @@ that drains as summaries are regenerated, not a column worth a destructive migra
 
 ## File Locations
 
-- **Schema Definition**: [database/init_db.sql](../database/init_db.sql)
+- **Schema Definition**: the Alembic revisions in [backend/alembic/versions/](../backend/alembic/versions/)
 - **SQLAlchemy Models**: [backend/app/models/](../backend/app/models/)
 - **Pydantic Schemas**: [backend/app/schemas/](../backend/app/schemas/)
 - **OpenSearch Service**: [backend/app/services/opensearch_service/](../backend/app/services/opensearch_service/)

@@ -33,6 +33,9 @@ from app.core.queues import GPUPriority
 from app.core.redis import get_redis
 from app.db.session_utils import session_scope
 from app.services.privacy.policy import voiceprints_allowed_for_file
+from app.tasks.embedding_consistency_run import FAILED_FILES_KEY
+from app.tasks.embedding_consistency_run import FAILED_FILES_SAMPLE
+from app.tasks.embedding_consistency_run import FAILED_FILES_TTL
 from app.tasks.embedding_consistency_run import LOCK_TTL as _LOCK_TTL
 from app.tasks.embedding_consistency_run import release_run_lease
 from app.tasks.embedding_consistency_run import renew_run_lease
@@ -265,16 +268,22 @@ def _update_repair_progress(
             progress["repaired"] = progress.get("repaired", 0) + repaired_count
             progress["skipped_by_policy"] = progress.get("skipped_by_policy", 0) + skipped_by_policy
 
-            if not success and file_uuid:
-                failed = progress.get("failed_files", [])
-                failed.append(file_uuid)
-                progress["failed_files"] = failed
+            failed_now = not success and bool(file_uuid)
+            if failed_now:
+                progress["failed_count"] = progress.get("failed_count", 0) + 1
+                sample = progress.get("failed_files", [])
+                if len(sample) < FAILED_FILES_SAMPLE:
+                    sample.append(file_uuid)
+                progress["failed_files"] = sample
 
             processed = progress["processed_files"]
             progress["running"] = processed < total_files
 
             pipe.multi()
             pipe.set(_REDIS_PROGRESS_KEY, json.dumps(progress), ex=_LOCK_TTL)
+            if failed_now and file_uuid:
+                pipe.sadd(FAILED_FILES_KEY, file_uuid)
+                pipe.expire(FAILED_FILES_KEY, FAILED_FILES_TTL)
             pipe.execute()
             break  # success
         except redis.WatchError:
@@ -310,6 +319,7 @@ def _update_repair_progress(
             "repaired": progress.get("repaired", 0),
             "skipped_by_policy": progress.get("skipped_by_policy", 0),
             "failed_files": progress.get("failed_files", []),
+            "failed_count": progress.get("failed_count", 0),
             "running": progress["running"],
         },
         message=f"Repaired {processed} of {total_files} files",
@@ -605,6 +615,7 @@ def _check_repair_completion(total_files: int, *, run_id: str, user_id: int = 1)
             "unrepairable": progress.get("unrepairable", 0),
             "skipped_by_policy": progress.get("skipped_by_policy", 0),
             "failed_files": progress.get("failed_files", []),
+            "failed_count": progress.get("failed_count", 0),
             "total_files": total_files,
             "duration_seconds": duration,
         }
@@ -627,6 +638,7 @@ def _check_repair_completion(total_files: int, *, run_id: str, user_id: int = 1)
                 "unrepairable": progress.get("unrepairable", 0),
                 "skipped_by_policy": progress.get("skipped_by_policy", 0),
                 "failed_files": progress.get("failed_files", []),
+                "failed_count": progress.get("failed_count", 0),
                 "total_files": total_files,
                 "duration_seconds": duration,
             },

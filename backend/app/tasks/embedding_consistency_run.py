@@ -142,3 +142,31 @@ def release_run_lease(lease: Lock) -> bool:
         logger.warning("Consistency run lease was no longer ours at release: %s", exc)
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# Files that failed
+# ---------------------------------------------------------------------------
+
+#: File uuids whose repair failed in a run (unreadable audio, or no speaker produced a
+#: usable embedding). A SCHEDULED check leaves them out for ``FAILED_FILES_TTL``: they
+#: stay missing, so without this every 10-minute beat queued them on the GPU again,
+#: forever. A manual Repair clears the set and retries them.
+FAILED_FILES_KEY = "embedding_consistency:failed_files"
+FAILED_FILES_TTL = 86400
+#: How many failed file uuids the progress record and its events list. ``failed_count`` is
+#: exact; the list used to hold every failure and was rewritten, and sent to the browser,
+#: on every file of the run.
+FAILED_FILES_SAMPLE = 50
+
+
+def deferred_failed_files(client: redis.Redis) -> set[str]:
+    """Files a scheduled check should leave out (they failed within the last day)."""
+    return {
+        m.decode() if isinstance(m, bytes) else str(m) for m in client.smembers(FAILED_FILES_KEY)
+    }
+
+
+def forget_failed_files(client: redis.Redis) -> None:
+    """A manual repair retries every file."""
+    client.delete(FAILED_FILES_KEY)

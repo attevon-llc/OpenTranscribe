@@ -35,6 +35,8 @@ from app.db.session_utils import session_scope
 from app.tasks.embedding_consistency_run import LOCK_TTL as _LOCK_TTL
 from app.tasks.embedding_consistency_run import ORCHESTRATOR_MAX_HOLD
 from app.tasks.embedding_consistency_run import REDIS_LOCK_KEY as _REDIS_LOCK_KEY
+from app.tasks.embedding_consistency_run import deferred_failed_files
+from app.tasks.embedding_consistency_run import forget_failed_files
 from app.tasks.embedding_consistency_run import plan_repair_batches
 from app.tasks.embedding_consistency_run import release_run_lease
 from app.tasks.embedding_consistency_run import run_lease
@@ -358,6 +360,29 @@ def get_embedding_consistency_counts() -> dict[str, Any]:
     }
 
 
+def _defer_failed_files(r: Any, grouped: dict[str, list[str]], manual: bool) -> int:
+    """Drop recently failed files from a scheduled run; a manual run retries them all.
+
+    Returns:
+        How many files were left out.
+    """
+    if manual:
+        forget_failed_files(r)
+        return 0
+    deferred = deferred_failed_files(r) & grouped.keys()
+    for file_uuid in deferred:
+        del grouped[file_uuid]
+    return len(deferred)
+
+
+def _nothing_to_dispatch(total_missing: int, deferred: int) -> dict[str, Any]:
+    """The result of a check that found gaps but has no file to queue."""
+    if deferred:
+        logger.info("Embedding consistency: %d recently failed files deferred", deferred)
+        return {"status": "deferred", "missing": total_missing, "deferred_files": deferred}
+    return {"status": "no_repairable", "missing": total_missing}
+
+
 def _select_voiceprints_to_remove(
     os_all: set[str], pg_with_segments: set[str], all_pg: set[str]
 ) -> tuple[set[str], set[str]]:
@@ -431,7 +456,7 @@ def speaker_embedding_consistency_check_task(
     ).start()
     result: dict[str, Any] | None = None
     try:
-        result = _check_and_dispatch(r, run_id, user_id)
+        result = _check_and_dispatch(r, run_id, manual, user_id)
         return result
     finally:
         heartbeat.stop()
@@ -439,7 +464,7 @@ def speaker_embedding_consistency_check_task(
             release_run_lease(lease)
 
 
-def _check_and_dispatch(r: Any, run_id: str, user_id: int) -> dict[str, Any]:
+def _check_and_dispatch(r: Any, run_id: str, manual: bool, user_id: int) -> dict[str, Any]:
     """Detect gaps and dispatch repair batches, under the run lease the caller holds."""
     # Don't run if a migration, reindex, or related heavy task is in progress.
     # Check both the migration progress service AND Redis keys that indicate
@@ -594,8 +619,9 @@ def _check_and_dispatch(r: Any, run_id: str, user_id: int) -> dict[str, Any]:
         all_missing = missing_v3 | missing_v4
         grouped = _group_by_file(all_missing, pg_speakers)
 
+        deferred = _defer_failed_files(r, grouped, manual)
         if not grouped:
-            return {"status": "no_repairable", "missing": total_missing}
+            return _nothing_to_dispatch(total_missing, deferred)
 
         # Each batch names only its own files' speakers (bounded message size).
         batches = plan_repair_batches(grouped, missing_v3, missing_v4 if v4_exists else set())
@@ -623,6 +649,8 @@ def _check_and_dispatch(r: Any, run_id: str, user_id: int) -> dict[str, Any]:
             "unrepairable": len(unrepairable),
             "skipped_by_policy": skipped_by_policy,
             "failed_files": [],
+            "failed_count": 0,
+            "deferred_files": deferred,
             "repaired": 0,
             "skipped": 0,
             "running": True,
@@ -667,6 +695,7 @@ def _check_and_dispatch(r: Any, run_id: str, user_id: int) -> dict[str, Any]:
             "v3_missing": len(missing_v3),
             "v4_missing": len(missing_v4),
             "skipped_by_policy": skipped_by_policy,
+            "deferred_files": deferred,
             "batches": len(batches),
         }
 

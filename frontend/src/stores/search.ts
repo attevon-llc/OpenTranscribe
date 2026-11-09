@@ -78,7 +78,7 @@ export interface SearchResponse {
   page_size: number;
   total_pages: number;
   search_time_ms: number;
-  filters_applied: Record<string, any>;
+  filters_applied: Record<string, unknown>;
   search_mode?: string;
   // Present only when `result_type`/`sources` requested summaries.
   summary_results?: SummaryHit[];
@@ -98,7 +98,7 @@ export interface SearchState {
   pageSize: number;
   totalPages: number;
   searchTimeMs: number;
-  filtersApplied: Record<string, any>;
+  filtersApplied: Record<string, unknown>;
   isLoading: boolean;
   error: string | null;
   sortBy: string;

@@ -20,7 +20,7 @@
 <div class="list-skeleton" role="status" aria-busy="true" aria-live="polite">
   <span class="sr-only">{$t('common.loading')}</span>
 
-  {#each rows as _, i}
+  {#each rows as _, i (i)}
     <div class="skel-row" class:compact={size === 'compact'}>
       <div class="skel-avatar shimmer"></div>
       <div class="skel-body">

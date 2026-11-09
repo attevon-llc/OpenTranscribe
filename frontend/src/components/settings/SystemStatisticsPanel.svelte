@@ -12,6 +12,7 @@
 </script>
 
 <script lang="ts">
+  import type { SystemStats } from '$lib/settings/adminLoaders';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { taskStatusIcon } from '$lib/ui/menuIcons';
   import { createEventDispatcher } from 'svelte';
@@ -19,7 +20,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
 
-  export let stats: any;
+  export let stats: SystemStats;
   export let statsLoading = false;
   export let statsRefreshing = false;
   export let searchIndexStatus: SearchIndexStatus | null = null;
@@ -124,7 +125,7 @@
           <li>
             <strong>{$t('settings.statistics.cpuMode.modelLabel')}:</strong>
             <code>{stats.system?.whisper_model || '—'}</code>
-            {#if ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'].includes(stats.system?.whisper_model)}
+            {#if ['tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en'].includes(stats.system?.whisper_model ?? '')}
               — {$t('settings.statistics.cpuMode.modelHintGood')}
             {:else}
               — {$t('settings.statistics.cpuMode.modelHintHeavy')}
@@ -207,7 +208,7 @@
               { key: 'nlp', label: $t('settings.statistics.queueNlp') },
               { key: 'embedding', label: $t('settings.statistics.queueEmbedding') },
               { key: 'cpu', label: $t('settings.statistics.queueCpu') }
-            ] as queue}
+            ] as queue (queue.key)}
               {#if stats.queues?.[queue.key] > 0}
                 <div class="stat-detail">{queue.label}: {stats.queues[queue.key]}</div>
               {/if}
@@ -290,7 +291,7 @@
           {/if}
           {#if searchHealthStatus}
             <div class="search-health-row">
-              {#each Object.entries(searchHealthStatus) as [name, info]}
+              {#each Object.entries(searchHealthStatus) as [name, info] (name)}
                 <span class="search-health-dot" class:healthy={info.status === 'green'} class:error={info.status === 'red'} title="{name}: {info.status === 'green' ? $t('settings.search.indexGreen') : $t('settings.search.indexRed')}"></span>
               {/each}
               <span class="search-health-label">
@@ -405,7 +406,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each stats.tasks.recent as task}
+              {#each stats.tasks.recent as task (task.id)}
                 <tr>
                   <td>{task.id.substring(0, 8)}...</td>
                   <td>{task.type}</td>

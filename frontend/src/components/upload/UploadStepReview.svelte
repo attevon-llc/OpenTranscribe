@@ -95,7 +95,7 @@
           <em>{$t('uploader.reviewSkipped')}</em>
         {:else if selectedTags.length > 0}
           <span class="review-chips">
-            {#each selectedTags as tag}
+            {#each selectedTags as tag (tag)}
               <span class="review-chip tag">{tag}</span>
             {/each}
           </span>
@@ -112,7 +112,7 @@
           <em>{$t('uploader.reviewSkipped')}</em>
         {:else if selectedCollections.length > 0}
           <span class="review-chips">
-            {#each selectedCollections as col}
+            {#each selectedCollections as col (col.uuid)}
               <span class="review-chip collection">{col.name}</span>
             {/each}
           </span>

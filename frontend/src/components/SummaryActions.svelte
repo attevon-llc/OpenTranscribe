@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { createEventDispatcher } from 'svelte';
   import type { SummaryData } from '$lib/types/summary';
+  import type { SummaryPrompt } from '$lib/api/prompts';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
   import { settingsModalStore } from '$stores/settingsModalStore';
@@ -35,7 +36,7 @@
     dispatch('openSettings');
   }
 
-  let availablePrompts: any[] = [];
+  let availablePrompts: SummaryPrompt[] = [];
   let selectedPromptUuid: string | null = null;
   let loadingPrompts = false;
 
@@ -150,7 +151,7 @@
         title={$t('summary.selectPromptTooltip')}
       >
         <option value={null}>{$t('summary.useActivePrompt')}</option>
-        {#each availablePrompts as prompt}
+        {#each availablePrompts as prompt (prompt.uuid)}
           <option value={prompt.uuid}>
             {prompt.name}{prompt.is_system_default ? ` (${$t('summary.systemPrompt')})` : ''}
           </option>

@@ -124,7 +124,7 @@
           title={$t('speakers.inbox.assignToProfile')}
         >
           <option value="">{$t('speakers.inbox.assignToProfile')}</option>
-          {#each profiles as profile}
+          {#each profiles as profile (profile.uuid)}
             <option value={profile.uuid}>{profile.name}</option>
           {/each}
         </select>

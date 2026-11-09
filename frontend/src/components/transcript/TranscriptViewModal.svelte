@@ -25,7 +25,7 @@
   import { createEventDispatcher, tick } from 'svelte';
   import type { Speaker } from '$lib/types/speaker';
   import type { GroupedTranscriptSegment } from '$lib/types/media';
-  import type { TranscriptSegment } from '$lib/types/media';
+  import type { TranscriptSegment, TranscriptSourceFile } from '$lib/types/media';
   import type { SearchOccurrence } from '$stores/search';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -48,7 +48,7 @@
   // Only `file` is required — grouping is resolved here via the shared
   // `resolveGroupedSegments` helper (the same one `TranscriptDisplay` uses), so the page
   // does not need to compute or pass it twice.
-  export let file: any = null;
+  export let file: TranscriptSourceFile | null = null;
   export let totalSegments = 0;
   export let hasMoreSegments = false;
   export let loadingMoreSegments = false;
@@ -86,19 +86,23 @@
 
   $: searchHasMore = searchTotalSegments > searchSegments.length;
 
-  $: if (isOpen && mode === 'search' && fileUuid && fetchedForUuid !== fileUuid) {
-    fetchedForUuid = fileUuid;
-    currentOccurrenceIdx = 0;
-    initSearchFetch();
+  function syncSearchFetch(open: boolean, viewMode: string, uuid: string) {
+    if (viewMode !== 'search') return;
+    if (open && uuid && fetchedForUuid !== uuid) {
+      fetchedForUuid = uuid;
+      currentOccurrenceIdx = 0;
+      initSearchFetch();
+    } else if (!open && fetchedForUuid !== null) {
+      fetchedForUuid = null;
+      searchSegments = [];
+      searchGroupedRaw = [];
+      searchTotalSegments = 0;
+      searchShowOriginal = false;
+      searchError = null;
+    }
   }
-  $: if (!isOpen && mode === 'search' && fetchedForUuid !== null) {
-    fetchedForUuid = null;
-    searchSegments = [];
-    searchGroupedRaw = [];
-    searchTotalSegments = 0;
-    searchShowOriginal = false;
-    searchError = null;
-  }
+
+  $: syncSearchFetch(isOpen, mode, fileUuid);
 
   async function initSearchFetch() {
     searchLoading = true;

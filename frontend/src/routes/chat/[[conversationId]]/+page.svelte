@@ -121,15 +121,18 @@
   // optimistic messages the stream is writing into — and the assistant row does
   // not exist server-side until the stream finishes, so the reload would show a
   // lone question and every delta would land nowhere.
-  $: if (data.conversationId && data.conversationId !== lastLoadedId) {
-    lastLoadedId = data.conversationId;
-    if (!chatStore.consumeSelfCreated(data.conversationId)) {
-      chatStore.openConversation(data.conversationId);
+  function syncConversation(conversationId: string | null | undefined) {
+    if (conversationId && conversationId !== lastLoadedId) {
+      lastLoadedId = conversationId;
+      if (!chatStore.consumeSelfCreated(conversationId)) {
+        chatStore.openConversation(conversationId);
+      }
+    } else if (!conversationId && lastLoadedId !== null) {
+      lastLoadedId = null;
+      chatStore.newConversation();
     }
-  } else if (!data.conversationId && lastLoadedId !== null) {
-    lastLoadedId = null;
-    chatStore.newConversation();
   }
+  $: syncConversation(data.conversationId);
 
   onMount(() => {
     chatStore.loadConversations(true);

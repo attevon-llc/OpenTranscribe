@@ -30,7 +30,7 @@
       value={$locale}
       on:change={handleLanguageChange}
     >
-      {#each SUPPORTED_LANGUAGES as lang}
+      {#each SUPPORTED_LANGUAGES as lang (lang.code)}
         <option value={lang.code}>
           {lang.nativeName} ({lang.name}){isMachineTranslated(lang.code)
             ? ` · ${$t("settings.language.machineTranslated")}`

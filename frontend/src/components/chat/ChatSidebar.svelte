@@ -7,6 +7,7 @@
   whole history.
 -->
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import { CHAT_GROUP_KEYS } from '$lib/i18n/keyMaps';
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { isThisMonth, isThisWeek, isToday, isYesterday, parseISO } from 'date-fns';
@@ -43,7 +44,7 @@
 
   function toggleProject(uuid: string): void {
     // Reassigned rather than mutated so Svelte's reactivity sees the change.
-    const next = new Set(expanded);
+    const next = new SvelteSet(expanded);
     if (next.has(uuid)) next.delete(uuid);
     else next.add(uuid);
     expanded = next;

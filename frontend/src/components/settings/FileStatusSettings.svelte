@@ -136,7 +136,7 @@
     <div class="error-message" role="alert">{error}</div>
   {:else if data}
     <div class="counts">
-      {#each COUNTS as c}
+      {#each COUNTS as c (c.key)}
         <div class="count-card" class:error={c.key === 'error' && data.status_counts.error > 0}>
           <div class="count-number">{data.status_counts[c.key]}</div>
           <div class="count-label">{$t(c.label)}</div>

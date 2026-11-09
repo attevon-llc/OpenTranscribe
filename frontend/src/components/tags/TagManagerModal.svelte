@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteMap } from 'svelte/reactivity';
   /**
    * The tag manager: create, browse, select and change tags.
    *
@@ -125,7 +126,7 @@
     tags: TagListEntry[],
     groups: TagCollisionCluster[]
   ): Map<string, TagListEntry> {
-    const index = new Map<string, TagListEntry>();
+    const index = new SvelteMap<string, TagListEntry>();
     const add = (tag: TagListEntry) => {
       if (index.has(tag.uuid)) return;
       index.set(tag.uuid, {

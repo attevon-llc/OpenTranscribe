@@ -1,9 +1,11 @@
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import type { SummaryData } from '$lib/types/summary';
   import TopicsList from './TopicsList.svelte';
   import { t } from '$stores/locale';
-  import { escapeHtml, sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
+  import { escapeHtml } from '$lib/utils/sanitizeHtml';
+  import { isRecord } from '$lib/utils/typeGuards';
 
   export let summary: SummaryData;
   export let searchQuery: string = '';
@@ -33,7 +35,7 @@
   }
 
   // Highlighted rendering for custom formats with search
-  function renderObjectWithHighlighting(obj: any, depth: number = 0): string {
+  function renderObjectWithHighlighting(obj: unknown, depth: number = 0): string {
     if (!searchQuery) {
       return renderObject(obj, depth);
     }
@@ -42,8 +44,8 @@
     return renderObjectWithIndex(obj, depth, globalIndex);
   }
 
-  function renderObjectWithIndex(obj: any, depth: number, globalIndex: { count: number }): string {
-    if (!obj || typeof obj !== 'object') return '';
+  function renderObjectWithIndex(obj: unknown, depth: number, globalIndex: { count: number }): string {
+    if (!isRecord(obj)) return '';
 
     const entries = Object.entries(obj).filter(([key]) => key !== 'metadata');
 
@@ -57,7 +59,7 @@
     `).join('');
   }
 
-  function renderValueWithIndex(value: any, depth: number, globalIndex: { count: number }): string {
+  function renderValueWithIndex(value: unknown, depth: number, globalIndex: { count: number }): string {
     if (value === null || value === undefined) return '';
 
     if (Array.isArray(value)) {
@@ -126,7 +128,7 @@
       .join(' ');
   }
 
-  function renderValue(value: any, depth: number = 0): string {
+  function renderValue(value: unknown, depth: number = 0): string {
     if (value === null || value === undefined) return '';
 
     if (Array.isArray(value)) {
@@ -161,8 +163,8 @@
     return escapeHtml(String(value)).replace(/\n/g, '<br>');
   }
 
-  function renderObject(obj: any, depth: number = 0): string {
-    if (!obj || typeof obj !== 'object') return '';
+  function renderObject(obj: unknown, depth: number = 0): string {
+    if (!isRecord(obj)) return '';
 
     const entries = Object.entries(obj).filter(([key]) => key !== 'metadata');
 
@@ -177,13 +179,17 @@
   }
 
   // Extract text from value (handles both strings and objects)
-  function extractText(value: any): string {
+  function extractText(value: unknown): string {
     if (typeof value === 'string') {
       return value;
     }
-    if (typeof value === 'object' && value !== null) {
+    if (isRecord(value)) {
       // Try common field names for text content
-      return value.decision || value.text || value.item || value.description || JSON.stringify(value);
+      for (const key of ['decision', 'text', 'item', 'description']) {
+        const candidate = value[key];
+        if (candidate) return String(candidate);
+      }
+      return JSON.stringify(value);
     }
     return String(value);
   }
@@ -195,45 +201,49 @@
   // shape, {text, assigned_to, ..., status}. SummaryData is extra="allow", so
   // a custom prompt may emit either, or neither. Try both spellings; never
   // assume one.
-  function actionItemText(item: any): string {
+  function actionItemText(item: unknown): string {
     if (typeof item === 'string') return item;
-    if (item && typeof item === 'object') {
-      return item.item || item.text || item.description || '';
+    if (isRecord(item)) {
+      return String(item.item || item.text || item.description || '');
     }
     return '';
   }
-  function actionItemOwner(item: any): string {
-    if (item && typeof item === 'object') {
-      return item.owner || item.assigned_to || '';
+  function actionItemOwner(item: unknown): string {
+    if (isRecord(item)) {
+      return String(item.owner || item.assigned_to || '');
     }
     return '';
   }
-  function actionItemDueDate(item: any): string {
-    return item && typeof item === 'object' && item.due_date ? String(item.due_date) : '';
+  function actionItemDueDate(item: unknown): string {
+    return isRecord(item) && item.due_date ? String(item.due_date) : '';
   }
-  function actionItemPriority(item: any): string {
-    return item && typeof item === 'object' && item.priority ? String(item.priority) : '';
+  function actionItemPriority(item: unknown): string {
+    return isRecord(item) && item.priority ? String(item.priority) : '';
   }
 
   // Speaker analysis: the default prompt's key is `speakers_analysis`, with
   // entries shaped {speaker, role, talk_time_percentage, key_contributions}.
   // `summary` field / `SpeakerInfo` shape ({name, percentage, key_points}) is
   // a legacy/alternate spelling this also tolerates.
-  function speakerEntries(s: SummaryData): any[] {
-    return (s.speakers_analysis as any[]) || (s.speakers as any[]) || [];
+  function speakerEntries(s: SummaryData): unknown[] {
+    const entries = s.speakers_analysis || s.speakers;
+    return Array.isArray(entries) ? entries : [];
   }
-  function speakerName(entry: any): string {
-    return (entry && (entry.speaker || entry.name)) || '';
+  function speakerName(entry: unknown): string {
+    return isRecord(entry) ? String(entry.speaker || entry.name || '') : '';
   }
-  function speakerRole(entry: any): string {
-    return (entry && entry.role) || '';
+  function speakerRole(entry: unknown): string {
+    return isRecord(entry) ? String(entry.role || '') : '';
   }
-  function speakerTalkTime(entry: any): number | null {
-    const pct = entry && (entry.talk_time_percentage ?? entry.percentage);
+  function speakerTalkTime(entry: unknown): number | null {
+    if (!isRecord(entry)) return null;
+    const pct = entry.talk_time_percentage ?? entry.percentage;
     return pct === undefined || pct === null ? null : Number(pct);
   }
-  function speakerPoints(entry: any): string[] {
-    return (entry && (entry.key_contributions || entry.key_points)) || [];
+  function speakerPoints(entry: unknown): string[] {
+    if (!isRecord(entry)) return [];
+    const points = entry.key_contributions || entry.key_points;
+    return Array.isArray(points) ? points.map(String) : [];
   }
 
   // Reactive function to generate highlighted content (for BLUF format)
@@ -298,7 +308,7 @@
     points: speakerPoints(entry).map((p: string) => escapeHtml(p || ''))
   }));
 
-  let highlightedContent: any = null;
+  let highlightedContent: ReturnType<typeof getHighlightedContent> = null;
   let customHighlightedContent: string = '';
 
   // Reactive statement that triggers when searchQuery OR currentMatchIndex changes
@@ -326,14 +336,14 @@
     <section class="bluf-section">
       <h3 class="section-title">{$t('summary.executiveSummary')}</h3>
       <div class="bluf-content">
-        {@html sanitizeHighlightHtml(highlightedContent?.bluf || escapeHtml(summary.bluf || ''))}
+        <SanitizedHtml html={highlightedContent?.bluf || escapeHtml(summary.bluf || '')} />
       </div>
     </section>
 
     <section class="brief-summary-section">
       <h3 class="section-title">{$t('summary.briefSummary')}</h3>
       <div class="brief-summary-content">
-        {@html sanitizeHighlightHtml(highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || ''))}
+        <SanitizedHtml html={highlightedContent?.briefSummary || escapeHtml(summary.brief_summary || '')} />
       </div>
     </section>
 
@@ -347,18 +357,18 @@
       <section class="action-items-section">
         <h3 class="section-title">{$t('summary.actionItems')}</h3>
         <div class="action-items-list">
-          {#each (highlightedContent?.actionItems || escapedActionItems) as item}
+          {#each (highlightedContent?.actionItems || escapedActionItems) as item, i (i)}
             <div class="action-item">
               <div class="action-item-bullet" aria-hidden="true"><MenuIcon name="checkbox" size="sm" /></div>
               <div class="action-item-body">
-                <div class="action-item-text">{@html sanitizeHighlightHtml(item.text)}</div>
+                <div class="action-item-text"><SanitizedHtml html={item.text} /></div>
                 {#if item.owner || item.dueDate || item.priority}
                   <div class="action-item-meta">
                     {#if item.owner}
-                      <span class="action-item-owner">{$t('summary.owner')}: {@html sanitizeHighlightHtml(item.owner)}</span>
+                      <span class="action-item-owner">{$t('summary.owner')}: <SanitizedHtml html={item.owner} /></span>
                     {/if}
                     {#if item.dueDate}
-                      <span class="action-item-due">{$t('summary.dueDate')}: {@html sanitizeHighlightHtml(item.dueDate)}</span>
+                      <span class="action-item-due">{$t('summary.dueDate')}: <SanitizedHtml html={item.dueDate} /></span>
                     {/if}
                     {#if item.priority}
                       <span class="action-item-priority priority-{item.priority}">{item.priority}</span>
@@ -376,10 +386,10 @@
       <section class="key-decisions-section">
         <h3 class="section-title">{$t('summary.keyDecisions')}</h3>
         <div class="key-decisions-list">
-          {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision}
+          {#each (highlightedContent?.keyDecisions || summary.key_decisions) as decision, i (i)}
             <div class="key-decision-item">
               <div class="decision-bullet" aria-hidden="true"><MenuIcon name="check" size="sm" /></div>
-              <div class="decision-text">{@html sanitizeHighlightHtml(highlightedContent ? (decision as string) : escapeHtml(extractText(decision)))}</div>
+              <div class="decision-text"><SanitizedHtml html={highlightedContent ? (decision as string) : escapeHtml(extractText(decision))} /></div>
             </div>
           {/each}
         </div>
@@ -390,19 +400,19 @@
       <section class="speaker-analysis-section">
         <h3 class="section-title">{$t('summary.speakerAnalysis')}</h3>
         <div class="speakers-list">
-          {#each (highlightedContent?.speakersAnalysis || escapedSpeakersAnalysis) as s}
+          {#each (highlightedContent?.speakersAnalysis || escapedSpeakersAnalysis) as s, i (i)}
             <div class="speaker-item">
               <div class="speaker-header">
-                <span class="speaker-name">{@html sanitizeHighlightHtml(s.name)}</span>
-                {#if s.role}<span class="speaker-role">{@html sanitizeHighlightHtml(s.role)}</span>{/if}
+                <span class="speaker-name"><SanitizedHtml html={s.name} /></span>
+                {#if s.role}<span class="speaker-role"><SanitizedHtml html={s.role} /></span>{/if}
                 {#if s.talkTime !== null && s.talkTime !== undefined}
                   <span class="speaker-talktime" dir="ltr">{s.talkTime}%</span>
                 {/if}
               </div>
               {#if s.points && s.points.length > 0}
                 <ul class="speaker-points">
-                  {#each s.points as point}
-                    <li>{@html sanitizeHighlightHtml(point)}</li>
+                  {#each s.points as point, i (i)}
+                    <li><SanitizedHtml html={point} /></li>
                   {/each}
                 </ul>
               {/if}
@@ -416,10 +426,10 @@
       <section class="follow-up-section">
         <h3 class="section-title">{$t('summary.followUpItems')}</h3>
         <div class="follow-up-list">
-          {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item}
+          {#each (highlightedContent?.followUpItems || summary.follow_up_items) as item, i (i)}
             <div class="follow-up-item">
               <div class="follow-up-bullet" aria-hidden="true"><MenuIcon name="arrow-right" size="sm" /></div>
-              <div class="follow-up-text">{@html sanitizeHighlightHtml(highlightedContent ? (item as string) : escapeHtml(extractText(item)))}</div>
+              <div class="follow-up-text"><SanitizedHtml html={highlightedContent ? (item as string) : escapeHtml(extractText(item))} /></div>
             </div>
           {/each}
         </div>
@@ -428,7 +438,7 @@
   {:else}
     <!-- Flexible Custom Format Display -->
     <div class="custom-summary">
-      {@html sanitizeHighlightHtml(customHighlightedContent)}
+      <SanitizedHtml html={customHighlightedContent} />
     </div>
   {/if}
 

@@ -192,7 +192,7 @@
     <div class="form-group">
       <span class="group-label">{$t('settings.session.sessionLimitPolicy')}</span>
       <div class="radio-group">
-        {#each sessionPolicies as policy}
+        {#each sessionPolicies as policy (policy.value)}
           <label class="radio-label">
             <input
               type="radio"

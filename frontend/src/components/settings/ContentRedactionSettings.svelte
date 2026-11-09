@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { REDACTION_CATEGORY_KEYS, REDACTION_DETECTOR_KEYS, REDACTION_STYLE_KEYS, labelFor } from '$lib/i18n/keyMaps';
   import { onMount } from 'svelte';
@@ -15,16 +16,6 @@
     type RedactionSettings,
     type RedactionSystemDefaults,
   } from '$lib/api/redactionSettings';
-
-  // Inline Feather-style icons (no emojis in the UI).
-  const lockSvg =
-    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
-  const clockSvg =
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-  const warningSvg =
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-  const globeSvg =
-    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
 
   let loading = true;
   let saving = false;
@@ -148,7 +139,7 @@
         </div>
         <p class="field-desc">{$t('settings.contentRedaction.enabledHelp')}</p>
         <p class="perf-note">
-          <span class="perf-icon">{@html clockSvg}</span>
+          <span class="perf-icon"><MenuIcon name="clock" size={14} /></span>
           {$t('settings.contentRedaction.performanceNote')}
         </p>
 
@@ -157,7 +148,7 @@
             {$t('settings.contentRedaction.style')}
           </label>
           <select id="redaction-style" class="form-select" bind:value={settings.style}>
-            {#each defaults?.available_styles ?? [] as style}
+            {#each defaults?.available_styles ?? [] as style (style)}
               <option value={style}>{labelFor($t, REDACTION_STYLE_KEYS, style)}</option>
             {/each}
           </select>
@@ -183,7 +174,7 @@
         <p class="section-desc">{$t('settings.contentRedaction.detectorsDesc')}</p>
         {#if defaults}
           <p class="lang-note">
-            <span class="lang-icon">{@html globeSvg}</span>
+            <span class="lang-icon"><MenuIcon name="globe" size={14} /></span>
             {$t('settings.contentRedaction.languageSupport')}
             <br />
             <strong>{$t('settings.contentRedaction.detector.profanity')} / {$t('settings.contentRedaction.detector.pii')}:</strong>
@@ -196,7 +187,7 @@
           </p>
         {/if}
         <div class="chip-grid">
-          {#each defaults?.available_detectors ?? [] as det}
+          {#each defaults?.available_detectors ?? [] as det (det)}
             <label class="chip" class:active={settings.detectors.includes(det)}>
               <input
                 type="checkbox"
@@ -213,7 +204,7 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.categories')}</h3>
         <div class="chip-grid">
-          {#each defaults?.available_categories ?? [] as cat}
+          {#each defaults?.available_categories ?? [] as cat (cat)}
             {@const locked = lockedCategories.has(cat)}
             <label
               class="chip"
@@ -229,7 +220,7 @@
               <span>{labelFor($t, REDACTION_CATEGORY_KEYS, cat)}</span>
               {#if locked}
                 <span class="lock-badge" title={$t('settings.contentRedaction.requiredByAdmin')}>
-                  {@html lockSvg}
+                  <MenuIcon name="lock" size={13} />
                 </span>
               {/if}
             </label>
@@ -241,7 +232,7 @@
       <div class="settings-section">
         <h3 class="section-title">{$t('settings.contentRedaction.piiEntities')}</h3>
         <div class="chip-grid">
-          {#each defaults?.available_pii_entities ?? [] as ent}
+          {#each defaults?.available_pii_entities ?? [] as ent (ent)}
             <label class="chip small" class:active={settings.pii_entities.includes(ent)}>
               <input
                 type="checkbox"
@@ -256,7 +247,7 @@
              discover it (issue #499). Measured on the shipped en_core_web_sm model:
              a surname can be tagged ORGANIZATION, and some names are missed entirely. -->
         <p class="perf-note">
-          <span class="perf-icon">{@html warningSvg}</span>
+          <span class="perf-icon"><MenuIcon name="warning" size={14} /></span>
           {$t('settings.contentRedaction.piiEntitiesWarning')}
         </p>
       </div>
@@ -320,7 +311,7 @@
             <span class="toggle-switch"></span>
             <span class="toggle-text">
               {$t('settings.contentRedaction.redactBeforeLlm')}
-              {#if llmLocked}<span class="lock-badge">{@html lockSvg}</span>{/if}
+              {#if llmLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
             </span>
           </label>
         </div>
@@ -337,7 +328,7 @@
             <span class="toggle-switch"></span>
             <span class="toggle-text">
               {$t('settings.contentRedaction.exportRedacted')}
-              {#if exportLocked}<span class="lock-badge">{@html lockSvg}</span>{/if}
+              {#if exportLocked}<span class="lock-badge"><MenuIcon name="lock" size={13} /></span>{/if}
             </span>
           </label>
         </div>

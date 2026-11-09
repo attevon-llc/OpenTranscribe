@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteMap } from 'svelte/reactivity';
   import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy } from 'svelte';
   import type { TranscriptSegment } from '$lib/types/media';
@@ -51,7 +52,7 @@
     const normalizedQuery = query.toLowerCase().trim();
     if (!normalizedQuery || !transcriptSegments?.length) return [];
 
-    const speakerMapping = new Map<string, string>();
+    const speakerMapping = new SvelteMap<string, string>();
     speakerList.forEach((speaker: Speaker) => {
       speakerMapping.set(speaker.name, translateSpeakerLabel(speaker.display_name || speaker.name));
     });
@@ -245,30 +246,28 @@
   // When the page appends newly loaded segments or a speaker is renamed, re-index and (if
   // the user pressed "next" past the loaded window) advance to the first newly revealed
   // match.
-  $: if (
-    isVisible &&
-    searchQuery.trim() &&
-    (transcriptSegments.length !== lastSegmentCount ||
-      speakerNameSignature !== lastSpeakerNameSignature)
-  ) {
-    lastSpeakerNameSignature = speakerNameSignature;
+  function syncAfterSegmentsChange(visible: boolean, query: string, segmentCount: number, signature: string) {
+    if (!visible || !query.trim()) return;
+    if (segmentCount === lastSegmentCount && signature === lastSpeakerNameSignature) return;
+    lastSpeakerNameSignature = signature;
     const prevTotal = reindexLocal();
-    if (pendingAdvance) {
-      if (totalMatches > prevTotal) {
-        pendingAdvance = false;
-        advanceLoads = 0;
-        currentMatch = prevTotal + 1;
-        navigateToMatch(currentMatch - 1);
-        emitResults();
-      } else if (moreMatchesMayExist() && advanceLoads < MAX_ADVANCE_LOADS) {
-        advanceLoads += 1;
-        requestMoreSegments(); // keep pulling pages until a new match appears
-      } else {
-        pendingAdvance = false;
-        advanceLoads = 0;
-      }
+    if (!pendingAdvance) return;
+    if (totalMatches > prevTotal) {
+      pendingAdvance = false;
+      advanceLoads = 0;
+      currentMatch = prevTotal + 1;
+      navigateToMatch(currentMatch - 1);
+      emitResults();
+    } else if (moreMatchesMayExist() && advanceLoads < MAX_ADVANCE_LOADS) {
+      advanceLoads += 1;
+      requestMoreSegments(); // keep pulling pages until a new match appears
+    } else {
+      pendingAdvance = false;
+      advanceLoads = 0;
     }
   }
+
+  $: syncAfterSegmentsChange(isVisible, searchQuery, transcriptSegments.length, speakerNameSignature);
 
   // ---- Counter / status presentation ----------------------------------------
 

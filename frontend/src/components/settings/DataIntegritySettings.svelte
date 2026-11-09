@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isRecord } from '$lib/utils/typeGuards';
   import { formatCompactDuration, formatDateTime } from '$lib/utils/formatting';
   import { onMount, onDestroy } from 'svelte';
   import axiosInstance from '$lib/axios';
@@ -13,7 +14,10 @@
   let running = false;
   let loading = true;
   let error = '';
-  let lastRun: { timestamp: number; results: any; duration_seconds: number } | null = null;
+  /** Per-index result keyed by index name, plus `summary` and `error` entries. */
+  type IntegrityResults = Record<string, unknown>;
+
+  let lastRun: { timestamp: number; results: IntegrityResults; duration_seconds: number } | null = null;
 
   // Index overview
   interface IndexEntry {
@@ -56,7 +60,7 @@
   interface IntegrityComplete {
     status: string;
     scope?: string;
-    results?: any;
+    results?: IntegrityResults;
     duration_seconds?: number;
     error?: string;
   }
@@ -127,24 +131,44 @@
     }
   }
 
-  function getTotalOrphans(results: any): number {
-    return results?.summary?.total_orphans_found ?? 0;
+  function summaryCount(results: IntegrityResults | undefined, field: string): number {
+    const summary = results?.summary;
+    if (!isRecord(summary)) return 0;
+    const value = summary[field];
+    return typeof value === 'number' ? value : 0;
   }
 
-  function getTotalDeleted(results: any): number {
-    return results?.summary?.total_deleted ?? 0;
+  function getTotalOrphans(results: IntegrityResults | undefined): number {
+    return summaryCount(results, 'total_orphans_found');
   }
 
-  function getIndexResults(results: any): Array<{ name: string; total: number; orphaned: number; deleted: number }> {
+  function getTotalDeleted(results: IntegrityResults | undefined): number {
+    return summaryCount(results, 'total_deleted');
+  }
+
+  function docCount(stats: Record<string, unknown>, field: string): number {
+    const value = stats[field];
+    return typeof value === 'number' ? value : 0;
+  }
+
+  function getIndexResults(
+    results: IntegrityResults | undefined
+  ): Array<{ name: string; total: number; orphaned: number; deleted: number }> {
     if (!results) return [];
     return Object.entries(results)
       .filter(([key]) => key !== 'summary' && key !== 'error')
-      .map(([name, stats]: [string, any]) => ({
-        name,
-        total: stats.total_docs || 0,
-        orphaned: stats.orphaned_docs || 0,
-        deleted: stats.deleted_docs || 0,
-      }));
+      .flatMap(([name, stats]) =>
+        isRecord(stats)
+          ? [
+              {
+                name,
+                total: docCount(stats, 'total_docs'),
+                orphaned: docCount(stats, 'orphaned_docs'),
+                deleted: docCount(stats, 'deleted_docs'),
+              },
+            ]
+          : []
+      );
   }
 
   onMount(() => {
@@ -214,7 +238,7 @@
             </div>
           {/if}
           <div class="overview-grid">
-            {#each indexOverview.indices as idx}
+            {#each indexOverview.indices as idx (idx.name)}
               <div class="index-card" class:missing={!idx.exists && !idx.error}>
                 <div class="index-header">
                   <span class="index-label">{idx.label}</span>
@@ -230,7 +254,7 @@
                   </div>
                 {:else if idx.breakdown && Object.keys(idx.breakdown).length > 0}
                   <div class="index-body">
-                    {#each Object.entries(idx.breakdown) as [key, count], i}
+                    {#each Object.entries(idx.breakdown) as [key, count], i (key)}
                       <div class="breakdown-row" class:muted={i > 0}>
                         <span>{$t(breakdownLabels[key] || key)}</span>
                         <span class="breakdown-val">{count}</span>
@@ -324,7 +348,7 @@
               <span class="col-orphans">{$t('settings.dataIntegrity.colOrphans')}</span>
               <span class="col-cleaned">{$t('settings.dataIntegrity.colCleaned')}</span>
             </div>
-            {#each getIndexResults(lastRun.results) as row}
+            {#each getIndexResults(lastRun.results) as row (row.name)}
               <div class="results-row" class:has-orphans={row.orphaned > 0}>
                 <span class="col-index">{row.name}</span>
                 <span class="col-total">{row.total}</span>

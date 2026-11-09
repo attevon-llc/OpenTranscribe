@@ -7,11 +7,16 @@
   wrote — which is why the markdown renderer blocks relative URLs outright.
 -->
 <script context="module" lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   // Module-scope so every ChatSources instance on the page (one per assistant
   // message) gets a disjoint id namespace — see ExpandableSection.svelte's
   // identical idiom. Keying aria-controls off `source.id` alone collides
   // across instances, since citation ids restart at 1 per message.
   let instanceUid = 0;
+  function nextInstanceUid(): number {
+    instanceUid += 1;
+    return instanceUid;
+  }
 </script>
 
 <script lang="ts">
@@ -24,7 +29,7 @@
   /** Collapsed by default under long answers; expanded while streaming context. */
   export let expanded = false;
 
-  const instanceId = ++instanceUid;
+  const instanceId = nextInstanceUid();
 
   $: count = sources.length;
 
@@ -77,7 +82,7 @@
   }
 
   function toggleSnippet(id: number): void {
-    const next = new Set(expandedSnippets);
+    const next = new SvelteSet(expandedSnippets);
     if (next.has(id)) {
       next.delete(id);
     } else {

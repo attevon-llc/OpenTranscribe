@@ -49,7 +49,7 @@
   let currentPassword = '';
   let newPassword = '';
   let confirmPassword = '';
-  let passwordChanged = false;
+  let passwordChanged: boolean;
   let passwordLoading = false;
   let showCurrentPassword = false;
   let showNewPassword = false;

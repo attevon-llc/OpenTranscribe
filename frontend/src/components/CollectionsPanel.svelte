@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { SvelteURLSearchParams } from 'svelte/reactivity';
   import type { Collection, CollectionVisibility } from '$lib/types/collection';
+  import type { SummaryPrompt } from '$lib/api/prompts';
   import { onMount, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import axiosInstance from '$lib/axios';
@@ -87,7 +89,7 @@
     }
     currentLoading = true;
     try {
-      const params = new URLSearchParams();
+      const params = new SvelteURLSearchParams();
       for (const uuid of selectedMediaIds) params.append('file_uuids', uuid);
       const response = await axiosInstance.get('/collections/for-files', { params });
       if (requestId !== currentCollectionsRequestId) return;
@@ -135,7 +137,7 @@
     : sharedCollections;
 
   // Prompt selection state
-  let availablePrompts: any[] = [];
+  let availablePrompts: SummaryPrompt[] = [];
   let newCollectionPromptId: string | null = null;
   let editCollectionPromptId: string | null = null;
   let newCollectionVisibility: CollectionVisibility = 'organization';
@@ -172,7 +174,7 @@
       availablePrompts = response.data.prompts || [];
       // Find the system default (Universal Content Analyzer) — used as
       // the pre-selected default when creating new collections.
-      const systemDefault = availablePrompts.find((p: any) => p.is_system_default);
+      const systemDefault = availablePrompts.find((p) => p.is_system_default);
       if (systemDefault) {
         systemDefaultPromptId = systemDefault.uuid;
         // Apply to the Create form if it hasn't been touched yet

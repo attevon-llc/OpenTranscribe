@@ -141,7 +141,7 @@
       use:anchoredPanel={{ anchor: buttonEl, width: 'content', edge: align, gap: 8 }}
       transition:fade={{ duration: 120 }}
     >
-      {#each sortOptions as option}
+      {#each sortOptions as option (option.value)}
         <button
           type="button"
           class="dropdown-item"

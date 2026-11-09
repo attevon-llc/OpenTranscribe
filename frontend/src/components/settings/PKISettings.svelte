@@ -86,7 +86,7 @@
     <h3>{$t('settings.pki.authenticationMode')}</h3>
 
     <div class="radio-group">
-      {#each pkiModes as mode}
+      {#each pkiModes as mode (mode.value)}
         <label class="radio-label">
           <input
             type="radio"

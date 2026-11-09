@@ -243,7 +243,7 @@
         disabled={disabled || !useContext}
         data-testid="chat-search-mode"
       >
-        {#each SEARCH_MODES as mode}
+        {#each SEARCH_MODES as mode (mode)}
           <option value={mode}>{$t(SEARCH_MODE_KEYS[mode])}</option>
         {/each}
       </select>

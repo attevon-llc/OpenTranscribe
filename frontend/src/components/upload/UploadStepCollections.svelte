@@ -116,7 +116,7 @@
   <!-- Selected chips -->
   {#if selectedCollections.length > 0}
     <div class="selected-chips">
-      {#each selectedCollections as collection}
+      {#each selectedCollections as collection (collection.uuid)}
         <span class="chip">
           {collection.name}
           <button type="button" class="chip-remove" on:click={() => removeCollection(collection.uuid)} title={$t('uploader.removeItem')}>×</button>

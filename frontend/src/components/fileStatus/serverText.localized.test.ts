@@ -50,6 +50,7 @@ describe('FileDetailModal formats server text in the interface language', () => 
           is_stuck: false,
           task_details: [
             {
+              id: 'task-1',
               task_type: 'transcription',
               status: 'completed',
               created_at: '2026-08-01T10:00:00Z',

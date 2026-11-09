@@ -11,12 +11,12 @@
   list is the only scroll region, so no scrollbar can ever sit on top of the input.
 -->
 <script lang="ts">
+  import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import { createEventDispatcher, tick } from 'svelte';
   import { t } from '$stores/locale';
   import type { FuzzyIndex } from '$lib/search/fuzzyMatcher';
   import type { SettingsSearchItem } from '$lib/search/settingsSearchIndex';
   import { highlightText } from '$lib/utils/searchHighlight';
-  import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
   import SearchBar from '$components/ui/SearchBar.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
 
@@ -150,8 +150,7 @@
               on:click={() => selectResult(i)}
             >
               <span class="result-label">
-                <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by sanitizeHighlightHtml -->
-                {@html sanitizeHighlightHtml(highlightText(result.item.label, trimmed))}
+                <SanitizedHtml html={highlightText(result.item.label, trimmed)} />
               </span>
               <span class="result-section">{result.item.sectionLabel}</span>
             </li>

@@ -2,32 +2,12 @@
   import { slide } from 'svelte/transition';
   import SpeakerStats from './SpeakerStats.svelte';
   import { t } from '$stores/locale';
-
-  interface OverallAnalytics {
-    word_count?: number;
-    duration_seconds?: number;
-    talk_time?: {
-      by_speaker: Record<string, number>;
-      total: number;
-    };
-    turn_taking?: {
-      by_speaker: Record<string, number>;
-      total_turns: number;
-    };
-    interruptions?: {
-      by_speaker: Record<string, number>;
-      total: number;
-    };
-    questions?: {
-      by_speaker: Record<string, number>;
-      total: number;
-    };
-  }
+  import type { OverallAnalytics } from '$lib/types/analytics';
 
   interface FileAnalytics {
     analytics?: {
       overall_analytics?: OverallAnalytics;
-    };
+    } | null;
     overall_analytics?: OverallAnalytics;
     status?: string;
   }
@@ -43,9 +23,6 @@
   export let speakerList: Speaker[] = [];
   export let transcriptStore: { speakers: Speaker[] } = { speakers: [] };
   export let diarizationDisabled: boolean = false;
-
-  // Simple refresh counter to force re-rendering
-  let refreshCounter = 0;
 
   // Use speakerList prop (gets updated immediately) or fallback to transcript store
   $: activeSpeakers = speakerList?.length > 0 ? speakerList : (transcriptStore?.speakers || []);
@@ -64,17 +41,7 @@
       interruptions: analyticsData.interruptions,
       questions: analyticsData.questions
     }) : '';
-  $: combinedKey = `${speakerKey}-${analyticsKey}-${refreshCounter}`;
-
-  // Watch for changes and force refresh when analytics data OR speaker names change
-  $: if ((file?.analytics?.overall_analytics || file?.overall_analytics) && analyticsKey) {
-    refreshCounter++;
-  }
-
-  // Force refresh when speaker names change (for immediate frontend updates)
-  $: if (speakerKey) {
-    refreshCounter++;
-  }
+  $: combinedKey = `${speakerKey}-${analyticsKey}`;
 
   function toggleAnalytics() {
     isAnalyticsExpanded = !isAnalyticsExpanded;

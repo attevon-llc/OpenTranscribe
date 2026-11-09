@@ -7,12 +7,20 @@ vi.mock('$stores/locale', () => ({
 }));
 
 import SystemStatisticsPanel from './SystemStatisticsPanel.svelte';
+import { initialSystemStats, type SystemStats } from '$lib/settings/adminLoaders';
 
-function renderWith(chatRerankerThreads: unknown) {
-  const system: Record<string, unknown> = {};
-  if (chatRerankerThreads !== undefined) system.chat_reranker_threads = chatRerankerThreads;
+const identity = (key: string) => key;
+
+function statsWith(
+  chatRerankerThreads: SystemStats['system']['chat_reranker_threads']
+): SystemStats {
+  const base = initialSystemStats(identity);
+  return { ...base, system: { ...base.system, chat_reranker_threads: chatRerankerThreads } };
+}
+
+function renderWith(chatRerankerThreads: SystemStats['system']['chat_reranker_threads']) {
   return render(SystemStatisticsPanel, {
-    stats: { models: { whisper: { name: 'base' } }, system },
+    stats: statsWith(chatRerankerThreads),
     statsLoading: false,
   });
 }
@@ -40,10 +48,7 @@ describe('SystemStatisticsPanel: reranker threads (issue #1270)', () => {
     const opened = vi.fn();
     render(SystemStatisticsPanel, {
       props: {
-        stats: {
-          models: { whisper: { name: 'base' } },
-          system: { chat_reranker_threads: { threads: 8, source: 'auto', setting: 'auto' } },
-        },
+        stats: statsWith({ threads: 8, source: 'auto', setting: 'auto' }),
         statsLoading: false,
       },
       events: { openDetails: opened },

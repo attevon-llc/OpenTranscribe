@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import type { TranscriptSegment } from '$lib/types/media';
   import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -21,7 +22,7 @@
   let isCollapsed = true;
 
   // Track selected speakers
-  let selectedSpeakers = new Set<string>();
+  let selectedSpeakers = new SvelteSet<string>();
   let showTargetDialog = false;
   let targetSpeaker: Speaker | null = null;
   let merging = false;
@@ -34,7 +35,7 @@
 
   // Reactive: Calculate segment counts from transcript data for live updates
   $: segmentCountMap = (() => {
-    const counts = new Map<string, number>();
+    const counts = new SvelteMap<string, number>();
     if (transcriptSegments && transcriptSegments.length > 0) {
       for (const segment of transcriptSegments) {
         const speakerId = segment.speaker?.uuid || segment.speaker_id;
@@ -64,7 +65,7 @@
     } else {
       selectedSpeakers.add(speakerUuid);
     }
-    selectedSpeakers = new Set(selectedSpeakers); // Trigger reactivity
+    selectedSpeakers = new SvelteSet(selectedSpeakers); // new reference: re-runs the `$:` statements above
   }
 
   // Open target selection dialog
@@ -138,7 +139,7 @@
 
     // Reset selection
     selectedSpeakers.clear();
-    selectedSpeakers = new Set(selectedSpeakers);
+    selectedSpeakers = new SvelteSet(selectedSpeakers);
     closeTargetDialog();
 
     // Dispatch merged event to parent if any merges succeeded
@@ -152,7 +153,7 @@
   // Clear all selections
   function clearSelection() {
     selectedSpeakers.clear();
-    selectedSpeakers = new Set(selectedSpeakers);
+    selectedSpeakers = new SvelteSet(selectedSpeakers);
   }
 </script>
 
@@ -189,7 +190,7 @@
       <p class="help-text">{$t('speaker.helpText')}</p>
 
       <div class="speaker-grid">
-        {#each speakers as speaker}
+        {#each speakers as speaker (speaker.uuid)}
           <label class="speaker-card" class:selected={selectedSpeakers.has(speaker.uuid)}>
             <input
               type="checkbox"
@@ -246,7 +247,7 @@
     </p>
 
     <div class="target-list">
-      {#each selectedSpeakerList as speaker}
+      {#each selectedSpeakerList as speaker (speaker.uuid)}
         <label class="target-option" class:selected={targetSpeaker?.uuid === speaker.uuid}>
           <input
             type="radio"

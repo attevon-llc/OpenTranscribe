@@ -71,7 +71,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each logs as event}
+        {#each logs as event (event.id)}
           <tr class:failure={event.outcome?.toLowerCase() === 'failure'}>
             <td dir="ltr">{formatAuditTimestamp(event.timestamp, $locale)}</td>
             <td>

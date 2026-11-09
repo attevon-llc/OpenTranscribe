@@ -148,7 +148,7 @@
           <!-- Unkeyed on purpose: a pasted list may legitimately repeat a value,
                and keying by the claim string crashes the block on the duplicate. -->
           <span class="chips">
-            {#each result.matched_claims as claim}
+            {#each result.matched_claims as claim (claim)}
               <Badge variant="info">{claim}</Badge>
             {/each}
           </span>
@@ -161,7 +161,7 @@
         <span class="result-label">{$t('settings.groupMappings.test.unmatched')}</span>
         {#if result.unmatched_claims.length}
           <span class="chips">
-            {#each result.unmatched_claims as claim}
+            {#each result.unmatched_claims as claim (claim)}
               <Badge variant="default">{claim}</Badge>
             {/each}
           </span>

@@ -6,6 +6,7 @@
  * deliberately NOT mapped here: the page reads it inline where it decides the edit and
  * show-original gates, so the rule stays in one visible place.
  */
+import type { MediaFileDetail } from '$lib/types/media';
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
 import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
@@ -108,7 +109,9 @@ export function mergeTranscriptRefresh<T extends Record<string, unknown>>(
 }
 
 /** Only the analytics (lightweight, no full file detail); `null` when there is nothing to apply. */
-export async function fetchFileAnalytics(fileUuid: string): Promise<{ analytics: unknown } | null> {
+export async function fetchFileAnalytics(
+  fileUuid: string
+): Promise<{ analytics: MediaFileDetail['analytics'] } | null> {
   try {
     const response = await axiosInstance.get(`/files/${fileUuid}/analytics`);
     if (response.data && typeof response.data === 'object') {

@@ -3,7 +3,6 @@
     uuid: string;
     name: string;
     is_system_default?: boolean;
-    [key: string]: any;
   };
 </script>
 
@@ -77,7 +76,7 @@
         disabled={busy || loadingPrompts}
       >
         <option value={null}>{$t('collectionsPanel.noDefaultPrompt')}</option>
-        {#each availablePrompts as prompt}
+        {#each availablePrompts as prompt (prompt.uuid)}
           <option value={prompt.uuid}>
             {prompt.name}{prompt.is_system_default ? ` (${$t('collectionsPanel.system')})` : ''}
           </option>

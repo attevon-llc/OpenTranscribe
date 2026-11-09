@@ -53,7 +53,7 @@
 
 <div class="tag-input-container" class:disabled>
   <div class="tags-wrapper">
-    {#each tags as tag, i}
+    {#each tags as tag, i (tag)}
       <span class="tag-pill">
         {tag}
         {#if !disabled}

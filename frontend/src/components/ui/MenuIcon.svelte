@@ -50,7 +50,7 @@
   focusable="false"
   data-icon={name}
 >
-  {#each MENU_ICONS[name] as [tag, attrs]}
+  {#each MENU_ICONS[name] as [tag, attrs], i (i)}
     <svelte:element this={tag} {...attrs} />
   {/each}
 </svg>

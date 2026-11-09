@@ -52,7 +52,7 @@
   // Sticky floating player state
   let speakerPreviewData: SpeakerMediaPreviewData | null = null;
   let previewCurrentTime = 0;
-  let previewPlayerRef: { getPlayer: () => { pause: () => void } | null } | null = null;
+  let previewPlayerRef: ReturnType<typeof import('$components/FloatingPreviewPlayer.svelte').default> | null = null;
   const previewCache = createPreviewCache(getSpeakerMediaPreview);
 
   // Rename-propagation progress. Every rename here — a cluster label edit, promoting a

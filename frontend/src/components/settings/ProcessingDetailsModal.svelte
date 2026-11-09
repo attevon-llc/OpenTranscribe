@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { SystemStats } from '$lib/settings/adminLoaders';
   import { formatDateTime, formatElapsed } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
@@ -7,7 +8,7 @@
 
   export let isOpen = false;
   export let section = 'performance';
-  export let stats: any = {};
+  export let stats: SystemStats;
 
   function close() {
     isOpen = false;
@@ -135,7 +136,7 @@
         {#if section === 'queues'}
           <div class="detail-section">
             <div class="detail-grid">
-              {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName}
+              {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName (queueName)}
                 <div class="detail-row">
                   <span class="detail-label">
                     {$t(QUEUE_NAME_KEYS[queueName])}
@@ -159,7 +160,7 @@
           <div class="detail-section">
             {#if stats.models}
               <div class="detail-grid">
-                {#each Object.entries(stats.models) as [key, model]}
+                {#each Object.entries(stats.models) as [key, model] (key)}
                   {@const m = model as {
                     name?: string;
                     description?: string;

@@ -158,7 +158,7 @@
 
   <!-- Domain filter tabs -->
   <div class="domain-tabs">
-    {#each DOMAINS as domain}
+    {#each DOMAINS as domain (domain)}
       <button
         class="domain-tab"
         class:active={selectedDomain === domain}
@@ -180,7 +180,7 @@
         on:keydown={e => e.key === 'Enter' && addTerm()}
       />
       <select bind:value={newDomain} class="domain-select">
-        {#each DOMAINS.filter(d => d !== 'all') as d}
+        {#each DOMAINS.filter(d => d !== 'all') as d (d)}
           <option value={d}>{getDomainLabel(d)}</option>
         {/each}
       </select>
@@ -275,7 +275,7 @@
         ></textarea>
         <div class="bulk-row">
           <select bind:value={bulkDomain} class="domain-select">
-            {#each DOMAINS.filter(d => d !== 'all') as d}
+            {#each DOMAINS.filter(d => d !== 'all') as d (d)}
               <option value={d}>{getDomainLabel(d)}</option>
             {/each}
           </select>

@@ -192,6 +192,12 @@ export const MENU_ICONS = {
     rect(9, 9, 6, 6),
     d('M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3'),
   ],
+  clock: [circle(12, 12, 10), poly('12 6 12 12 16 14')],
+  globe: [
+    circle(12, 12, 10),
+    line(2, 12, 22, 12),
+    d('M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'),
+  ],
   plus: [line(12, 5, 12, 19), line(5, 12, 19, 12)],
   checkbox: [rect(3, 3, 18, 18, 2)],
   'circle-outline': [circle(12, 12, 7)],

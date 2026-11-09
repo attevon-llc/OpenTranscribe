@@ -50,9 +50,13 @@
   $: isSelectable = isSplitTarget || isUnassignTarget;
 
   // Auto-fetch outlier analysis when cluster with gender conflict is expanded
-  $: if (hasGenderConflict && members.length > 0 && !outlierAnalysis && !outlierLoading && !outlierError) {
-    fetchOutlierAnalysis();
+  function maybeFetchOutlierAnalysis(conflict: boolean, memberCount: number) {
+    if (conflict && memberCount > 0 && !outlierAnalysis && !outlierLoading && !outlierError) {
+      void fetchOutlierAnalysis();
+    }
   }
+
+  $: maybeFetchOutlierAnalysis(hasGenderConflict, members.length);
 
   async function fetchOutlierAnalysis() {
     outlierLoading = true;

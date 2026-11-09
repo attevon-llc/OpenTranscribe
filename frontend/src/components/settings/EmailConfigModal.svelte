@@ -4,7 +4,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import { buildEmailConfigPayload } from '$lib/settings/emailConfigPayload';
+  import { buildEmailConfigPayload, type EmailConfigForm } from '$lib/settings/emailConfigPayload';
   import {
     createEmailConfig,
     updateEmailConfig,
@@ -20,7 +20,7 @@
   let saving = false;
   let lastId: string | null = null;
 
-  function blank(): any {
+  function blank(): EmailConfigForm {
     return {
       name: '',
       provider: 'smtp' as EmailProvider,
@@ -42,33 +42,39 @@
     };
   }
 
-  let form: any = blank();
+  let form: EmailConfigForm = blank();
 
-  $: if (show) {
-    if (editingConfig && editingConfig.uuid !== lastId) {
-      form = {
-        ...blank(),
-        name: editingConfig.name,
-        provider: editingConfig.provider,
-        is_enabled: editingConfig.is_enabled,
-        from_address: editingConfig.from_address ?? '',
-        default_recipients: editingConfig.default_recipients ?? '',
-        smtp_host: editingConfig.smtp_host ?? '',
-        smtp_port: editingConfig.smtp_port ?? 587,
-        smtp_use_tls: editingConfig.smtp_use_tls,
-        smtp_username: editingConfig.smtp_username ?? '',
-        m365_tenant_id: editingConfig.m365_tenant_id ?? '',
-        m365_client_id: editingConfig.m365_client_id ?? '',
-        exchange_server: editingConfig.exchange_server ?? '',
-        exchange_domain: editingConfig.exchange_domain ?? '',
-        exchange_username: editingConfig.exchange_username ?? '',
-      };
-      lastId = editingConfig.uuid;
-    } else if (!editingConfig && lastId !== null) {
+  function formFromConfig(config: EmailConfig) {
+    return {
+      ...blank(),
+      name: config.name,
+      provider: config.provider,
+      is_enabled: config.is_enabled,
+      from_address: config.from_address ?? '',
+      default_recipients: config.default_recipients ?? '',
+      smtp_host: config.smtp_host ?? '',
+      smtp_port: config.smtp_port ?? 587,
+      smtp_use_tls: config.smtp_use_tls,
+      smtp_username: config.smtp_username ?? '',
+      m365_tenant_id: config.m365_tenant_id ?? '',
+      m365_client_id: config.m365_client_id ?? '',
+      exchange_server: config.exchange_server ?? '',
+      exchange_domain: config.exchange_domain ?? '',
+      exchange_username: config.exchange_username ?? '',
+    };
+  }
+
+  function syncEditingConfig(isShown: boolean, config: typeof editingConfig) {
+    if (!isShown) return;
+    if (config && config.uuid !== lastId) {
+      form = formFromConfig(config);
+      lastId = config.uuid;
+    } else if (!config && lastId !== null) {
       form = blank();
       lastId = null;
     }
   }
+  $: syncEditingConfig(show, editingConfig);
 
   $: isValid = (() => {
     if (!form.name?.trim() || !form.from_address?.trim()) return false;

@@ -51,7 +51,7 @@
   /** Same empty-admits-everyone semantics as OIDC/Proxy admission control. */
   $: allowListOpen = (formData.saml_allowed_groups ?? '').trim() === '';
 
-  $: metadataUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/saml/metadata` : '';
+  const metadataUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/auth/saml/metadata` : '';
 
   function buildPayload(): Record<string, unknown> {
     const payload: Record<string, unknown> = { ...formData };

@@ -117,7 +117,7 @@ By using this IS (which includes any device attached to this IS), you consent to
         {/if}
 
         <div class="consent-text">
-          {#each displayText.split('\n\n') as paragraph}
+          {#each displayText.split('\n\n') as paragraph, i (i)}
             <p>{paragraph}</p>
           {/each}
         </div>

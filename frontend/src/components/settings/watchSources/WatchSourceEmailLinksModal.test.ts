@@ -83,6 +83,26 @@ function open() {
   return render(WatchSourceEmailLinksModal, { props: { show: true, source: SOURCE } } as never);
 }
 
+describe('load guard', () => {
+  it('loads once per open and again for a new source, never on a same-source re-render', async () => {
+    const { rerender } = render(WatchSourceEmailLinksModal, {
+      props: { show: true, source: SOURCE },
+    } as never);
+    await waitFor(() => expect(api.getEmailLinks).toHaveBeenCalledTimes(1));
+
+    await rerender({ show: true, source: SOURCE } as never);
+    await rerender({ show: true, source: { ...(SOURCE as object) } } as never);
+    expect(api.getEmailLinks).toHaveBeenCalledTimes(1);
+
+    await rerender({ show: false, source: SOURCE } as never);
+    await rerender({ show: true, source: SOURCE } as never);
+    await waitFor(() => expect(api.getEmailLinks).toHaveBeenCalledTimes(2));
+
+    await rerender({ show: true, source: { uuid: 'w2', name: 'Other' } } as never);
+    await waitFor(() => expect(api.getEmailLinks).toHaveBeenLastCalledWith('w2'));
+  });
+});
+
 describe('loading', () => {
   it('reads the links and the source-scoped picker together', async () => {
     open();

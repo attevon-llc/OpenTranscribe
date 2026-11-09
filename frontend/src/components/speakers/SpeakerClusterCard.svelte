@@ -155,7 +155,7 @@
     <div class="card-body">
       {#if loading}
         <div class="skeleton-members">
-          {#each Array(Math.min(cluster.member_count, 3)) as _}
+          {#each Array(Math.min(cluster.member_count, 3)) as _, i (i)}
             <div class="skeleton-row">
               <div class="skeleton-avatar"></div>
               <div class="skeleton-text">

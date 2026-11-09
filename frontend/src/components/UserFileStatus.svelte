@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import type { DetailedFileStatus, UserFileStatusSummary, UserTask } from '$lib/types/fileStatus';
   import axiosInstance from '$lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { user } from '$stores/auth';
@@ -24,11 +26,11 @@
 
   // Component state
   let loading = false;
-  let error: any = null;
-  let fileStatus: any = null;
-  let selectedFile: any = null;
-  let detailedStatus: any = null;
-  let retryingFiles = new Set();
+  let error: string | null = null;
+  let fileStatus: UserFileStatusSummary | null = null;
+  let selectedFile: string | null = null;
+  let detailedStatus: DetailedFileStatus | null = null;
+  let retryingFiles = new SvelteSet<string>();
 
   // Auto-refresh settings (enabled by default)
   // WebSocket push handles real-time updates; this is a fallback safety net to catch any
@@ -39,9 +41,9 @@
   );
 
   // Tasks section state
-  let tasks: any[] = [];
+  let tasks: UserTask[] = [];
   let tasksLoading = false;
-  let tasksError: any = null;
+  let tasksError: string | null = null;
   let showTasksSection = false;
 
   // Restore tasks section state from session storage
@@ -58,7 +60,7 @@
   let taskAgeFilter = 'all'; // 'all', 'today', 'week', 'month', 'older'
   let taskDateFrom = '';
   let taskDateTo = '';
-  let filteredTasks: any[] = [];
+  let filteredTasks: UserTask[] = [];
 
   // Task pagination state
   let taskPage = 1;
@@ -67,7 +69,7 @@
   let filtersReady = false;
 
   // WebSocket subscription
-  let unsubscribeWebSocket: any = null;
+  let unsubscribeWebSocket: (() => void) | null = null;
   let lastProcessedNotificationId = '';
 
   // Push-based cache invalidation listener
@@ -97,10 +99,13 @@
   // fetch, and the block used to re-run on that flip and request the identical page again.
   $: tasksFilterKey = [taskFilter, taskTypeFilter, taskAgeFilter, taskDateFrom, taskDateTo].join('|');
   let fetchedFilterKey: string | null = null;
-  $: if (filtersReady && tasksFilterKey !== fetchedFilterKey) {
+  function refetchOnFilterChange(filterKey: string) {
+    if (!filtersReady || filterKey === fetchedFilterKey) return;
     taskPage = 1;
     fetchTasks(true);
   }
+
+  $: refetchOnFilterChange(tasksFilterKey);
 
   async function fetchFileStatus(silent = false) {
     if (!silent) {
@@ -142,7 +147,7 @@
 
     try {
       // Build query parameters for backend filtering + pagination
-      const params = new URLSearchParams();
+      const params = new SvelteURLSearchParams();
       if (taskFilter !== 'all') {
         params.append('status', taskFilter);
       }
@@ -195,7 +200,7 @@
     window.open(url, '_blank', 'noopener');
   }
 
-  async function fetchDetailedStatus(fileId: any) {
+  async function fetchDetailedStatus(fileId: string) {
     try {
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
@@ -213,7 +218,7 @@
     unlockScroll();
   }
 
-  async function retryFile(fileId: any) {
+  async function retryFile(fileId: string) {
     if (retryingFiles.has(fileId)) return;
 
     retryingFiles.add(fileId);
@@ -280,7 +285,7 @@
     }
   }
 
-  function showMessage(message: any, type: any) {
+  function showMessage(message: string, type: 'success' | 'error') {
     if (type === 'success') {
       toastStore.success(message);
     } else {
@@ -385,7 +390,7 @@
   {#if loading && !fileStatus}
     <div class="skeleton-status">
       <div class="status-cards">
-        {#each Array(5) as _}
+        {#each Array(5) as _, i (i)}
           <div class="status-card skeleton-card">
             <SkeletonLoader lines={1} height={28} />
             <SkeletonLoader lines={1} height={12} />

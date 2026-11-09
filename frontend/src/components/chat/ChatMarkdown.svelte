@@ -130,7 +130,7 @@
 
 <!-- dir="auto": an English answer in the ar (RTL) UI keeps its own direction. -->
 <div class="chat-markdown" class:streaming dir="auto" bind:this={container}>
-  <!-- Sanitized by renderChatMarkdown's dedicated DOMPurify profile. -->
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- `html` is renderChatMarkdown output, its dedicated DOMPurify profile (XSS boundary for LLM text) -->
   {@html html}
 </div>
 

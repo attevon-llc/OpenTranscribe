@@ -260,7 +260,7 @@
 
       <!-- Large Horizontal Bar Chart -->
       <div class="talk-time-bar-large">
-        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time]}
+        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker) as [speakerName, time] (speakerName)}
           <div
             class="speaker-segment-large"
             style="
@@ -274,7 +274,7 @@
 
       <!-- Combined Speaker Data Chips -->
       <div class="speaker-chips-grid">
-        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker).sort(([,a], [,b]) => b - a) as [speakerName, time]}
+        {#each getObjectEntries(normalizedAnalytics.talk_time.by_speaker).sort(([,a], [,b]) => b - a) as [speakerName, time] (speakerName)}
           {@const speakerTurns = normalizedAnalytics.turn_taking?.by_speaker?.[speakerName] || 0}
           <div class="speaker-chip">
             <div class="chip-header">
@@ -316,7 +316,7 @@
             {$t('stats.interruptions')}
           </h4>
           <div class="metric-list">
-            {#each getObjectEntries(normalizedAnalytics.interruptions.by_speaker) as [speakerName, count]}
+            {#each getObjectEntries(normalizedAnalytics.interruptions.by_speaker) as [speakerName, count] (speakerName)}
               <div class="metric-item">
                 <div class="metric-speaker">
                   <div class="speaker-dot" style="background-color: {getSpeakerBgColor(speakerName)};"></div>
@@ -342,7 +342,7 @@
             {$t('stats.questions')}
           </h4>
           <div class="metric-list">
-            {#each getObjectEntries(normalizedAnalytics.questions.by_speaker) as [speakerName, count]}
+            {#each getObjectEntries(normalizedAnalytics.questions.by_speaker) as [speakerName, count] (speakerName)}
               <div class="metric-item">
                 <div class="metric-speaker">
                   <div class="speaker-dot" style="background-color: {getSpeakerBgColor(speakerName)};"></div>

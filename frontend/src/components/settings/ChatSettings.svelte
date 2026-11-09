@@ -96,7 +96,7 @@
         bind:value={settings.default_search_mode}
         data-testid="chat-settings-search-mode"
       >
-        {#each SEARCH_MODES as mode}
+        {#each SEARCH_MODES as mode (mode)}
           <option value={mode}>{$t(SEARCH_MODE_KEYS[mode])}</option>
         {/each}
       </select>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import type { TranscriptSourceFile } from '$lib/types/media';
+  import type { CrossVideoMatch, SpeakerEditorEntry } from '$lib/types/speaker';
   import { resolve } from '$app/paths';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
@@ -15,8 +17,8 @@
   import { RENAME_PROPAGATION_TIMEOUT_MS } from '$lib/api/speakerClusters';
   import { isPlaceholderSpeakerName } from '$lib/utils/speakerNames';
 
-  export let file: any = null;
-  export let speakerList: any[] = [];
+  export let file: TranscriptSourceFile | null = null;
+  export let speakerList: SpeakerEditorEntry[] = [];
   export let speakerNamesChanged: boolean = false;
   export let savingSpeakers: boolean = false;
 
@@ -40,8 +42,8 @@
   // ordered by Svelte's dependency sort to run BEFORE this one (this block
   // reads `wasSaving`), so the "previous" value would already have been
   // overwritten with the current one by the time the comparison ran.
-  $: {
-    if (wasSaving && !savingSpeakers) {
+  function trackSaveCompletion(saving: boolean) {
+    if (wasSaving && !saving) {
       // The save request just completed — the backend has committed the
       // rename and queued digest regeneration in the background by now.
       propagationPending = true;
@@ -50,8 +52,10 @@
         propagationPending = false;
       }, RENAME_PROPAGATION_TIMEOUT_MS);
     }
-    wasSaving = savingSpeakers;
+    wasSaving = saving;
   }
+
+  $: trackSaveCompletion(savingSpeakers);
 
   function handleRenamePropagation(): void {
     propagationPending = false;
@@ -93,7 +97,7 @@
   }
 
 
-  function handleSpeakerTimestampClick(startTime: number, segmentUuid: string, segmentIndex: number) {
+  function handleSpeakerTimestampClick(startTime: number, segmentUuid: string | undefined, segmentIndex: number | undefined) {
     // Seek the media player to this timestamp
     dispatch('segmentClick', { startTime });
 
@@ -120,7 +124,9 @@
   }
 
   // Helper function to check if speaker has cross-video matches to display
-  function hasCrossVideoMatches(speaker: any): boolean {
+  function hasCrossVideoMatches(
+    speaker: SpeakerEditorEntry
+  ): speaker is SpeakerEditorEntry & { cross_video_matches: CrossVideoMatch[] } {
     if (!speaker.cross_video_matches || speaker.cross_video_matches.length === 0) {
       return false;
     }
@@ -191,7 +197,7 @@
 
   {#if speakerList && speakerList.length > 0}
     <div class="speaker-list">
-      {#each speakerList as speaker}
+      {#each speakerList as speaker (speaker.uuid)}
         <div class="speaker-item">
           <div class="speaker-header">
             <span
@@ -266,7 +272,7 @@
           <!-- Speaker Timestamp Links -->
           {#if speaker.segment_timestamps && speaker.segment_timestamps.length > 0}
             <div class="speaker-timestamps">
-              {#each speaker.segment_timestamps as ts}
+              {#each speaker.segment_timestamps as ts, i (i)}
                 <button
                   class="timestamp-link"
                   title={$t('transcript.jumpToTimestampTitle', { time: formatClock(ts.start_time) })}
@@ -275,11 +281,11 @@
                   {formatClock(ts.start_time)}
                 </button>
               {/each}
-              {#if speaker.segment_count > speaker.segment_timestamps.length}
+              {#if (speaker.segment_count ?? 0) > speaker.segment_timestamps.length}
                 <span class="timestamp-more">
-                  {speaker.segment_count - speaker.segment_timestamps.length === 1
+                  {(speaker.segment_count ?? 0) - speaker.segment_timestamps.length === 1
                     ? $t('transcript.moreSegmentsSingular')
-                    : $t('transcript.moreSegments', { count: speaker.segment_count - speaker.segment_timestamps.length })}
+                    : $t('transcript.moreSegments', { count: (speaker.segment_count ?? 0) - speaker.segment_timestamps.length })}
                 </span>
               {/if}
             </div>
@@ -315,7 +321,7 @@
                         <div class="chip-row">
                           <span class="chip-label metadata-label">{$t('transcript.metadataHints')}</span>
                           <div class="chips-wrap">
-                            {#each speaker.metadata_hints.slice(0, 4) as hint}
+                            {#each speaker.metadata_hints.slice(0, 4) as hint, i (i)}
                               <button
                                 class="suggestion-chip metadata-chip"
                                 on:click={() => {
@@ -344,17 +350,17 @@
                           <span class="chip-label">{$t('transcript.aiSuggestion')}</span>
                           <button
                             class="suggestion-chip llm-chip"
-                            class:high-confidence={speaker.confidence >= 0.75}
-                            class:medium-confidence={speaker.confidence >= 0.5 && speaker.confidence < 0.75}
-                            class:low-confidence={speaker.confidence < 0.5}
+                            class:high-confidence={(speaker.confidence ?? 0) >= 0.75}
+                            class:medium-confidence={(speaker.confidence ?? 0) >= 0.5 && (speaker.confidence ?? 0) < 0.75}
+                            class:low-confidence={(speaker.confidence ?? 0) < 0.5}
                             on:click={() => {
                               // Unlike the metadata/profile chips beside it, this one only
                               // mutated `speaker.display_name` in place and never told the
                               // parent — `speakerNamesChanged` never flipped true, so Save
                               // stayed disabled until the user separately typed into the
                               // input. One click was supposed to be enough.
-                              speaker.display_name = speaker.suggested_name;
-                              dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.suggested_name });
+                              speaker.display_name = speaker.suggested_name ?? '';
+                              dispatch('speakerNameChanged', { speakerId: speaker.uuid, newName: speaker.suggested_name ?? '' });
                             }}
                             title={speaker.suggestion_source === 'llm_analysis' ? $t('transcript.aiSuggestedBasedOnContent') : $t('transcript.aiSuggestedBasedOnSimilarity')}
                           >
@@ -384,7 +390,7 @@
                                 ? $t('transcript.sourceContentAnalysis')
                                   : $t('transcript.sourceVoiceSimilarity')}
                             </span>
-                            <span class="chip-confidence" dir="ltr">{Math.round(speaker.confidence * 100)}%</span>
+                            <span class="chip-confidence" dir="ltr">{Math.round((speaker.confidence ?? 0) * 100)}%</span>
                           </button>
                         </div>
                       {/if}
@@ -393,7 +399,7 @@
                         <div class="chip-row">
                           <span class="chip-label profile-label">{$t('transcript.profileMatch')}</span>
                           <div class="chips-wrap">
-                            {#each speaker.profile_suggestions.slice(0, 4) as suggestion}
+                            {#each speaker.profile_suggestions.slice(0, 4) as suggestion, i (i)}
                               <button
                                 class="suggestion-chip profile-chip"
                                 class:high-confidence={suggestion.confidence >= 0.75}
@@ -465,7 +471,7 @@
                       </div>
                       <div class="compact-matches">
                         <div class="matches-scroll-container">
-                        {#each visibleMatches as match}
+                        {#each visibleMatches as match, i (i)}
                           <div class="compact-match" title={match.title || match.media_file_title || $t('transcript.unknownVideo')}>
                             <span class="match-text">{((match.title || match.media_file_title || $t('transcript.unknownVideo')).length > 35 ? (match.title || match.media_file_title || $t('transcript.unknownVideo')).substring(0, 35) + '...' : (match.title || match.media_file_title || $t('transcript.unknownVideo')))}</span>
                             <span class="match-confidence">
@@ -486,7 +492,7 @@
                           <div class="more-matches-compact hover-container">
                             <span class="more-matches-text">{$t('transcript.moreMatches', { count: remainingCount })}</span>
                             <div class="hover-popup">
-                              {#each remainingMatches as match}
+                              {#each remainingMatches as match, i (i)}
                                 <div class="popup-match">
                                   <span class="popup-match-text">{match.title || match.media_file_title || $t('transcript.unknownVideo')}</span>
                                   <span class="popup-match-confidence">

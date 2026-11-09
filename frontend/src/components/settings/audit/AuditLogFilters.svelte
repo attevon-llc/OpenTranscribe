@@ -49,7 +49,7 @@
       <span class="label-text">{$t('settings.auditLog.event')}</span>
       <select bind:value={filters.eventType}>
         <option value="">{$t('settings.auditLog.all')}</option>
-        {#each eventTypes as type}
+        {#each eventTypes as type (type.value)}
           <option value={type.value}>{type.label}</option>
         {/each}
       </select>

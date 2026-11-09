@@ -71,4 +71,21 @@ describe('ChatSettingsPanel tabs', () => {
     expect(container.querySelector('#tabpanel-chat-advanced')).toBeNull();
     expect(container.querySelector('#tabpanel-chat-general')).toBeVisible();
   });
+
+  it('follows a changed initialTab once, and does not snap back after the user moves', async () => {
+    const { rerender } = render(ChatSettingsPanel, {
+      props: { isAdmin: true, initialTab: 'chat-general' },
+    });
+    const advanced = () => screen.getByRole('tab', { name: 'chat.settings.tabs.advanced' });
+    const general = () => screen.getByRole('tab', { name: 'chat.settings.tabs.general' });
+
+    await rerender({ isAdmin: true, initialTab: 'chat-advanced' });
+    expect(advanced()).toHaveAttribute('aria-selected', 'true');
+
+    // The user leaves the deep-linked tab; a re-render with the SAME prop must not undo it.
+    await fireEvent.keyDown(advanced(), { key: 'ArrowLeft' });
+    expect(general()).toHaveAttribute('aria-selected', 'true');
+    await rerender({ isAdmin: true, initialTab: 'chat-advanced' });
+    expect(general()).toHaveAttribute('aria-selected', 'true');
+  });
 });

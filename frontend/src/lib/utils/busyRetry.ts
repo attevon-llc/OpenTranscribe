@@ -1,6 +1,10 @@
+import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { get } from 'svelte/store';
 import { t } from '$stores/locale';
 import { retryAfterFromHeaders } from '$lib/utils/retryAfter';
+
+/** The request config carrying the replay-once flag. */
+export type BusyRetryConfig = InternalAxiosRequestConfig & { _busyRetry?: boolean };
 
 /** Methods safe to replay after a 503 (safe methods; never POST/PATCH/DELETE). */
 const BUSY_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -20,14 +24,19 @@ const BUSY_RETRY_MAX_WAIT_S = 10;
  * Lives in its own module and is imported on the first 503, so the retry path stays out of the
  * first-load closure. Returns `undefined` when the 503 carries no Retry-After (not a busy signal).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- axios error/config are untyped here
-export function handleBusy(error: any, send: (config: any) => Promise<unknown>) {
+export function handleBusy(
+  error: AxiosError & { retryAfterSeconds?: number },
+  send: (config: BusyRetryConfig) => Promise<unknown>
+) {
   const busyWait = retryAfterFromHeaders(error.response?.headers);
-  if (busyWait === null) return undefined;
+  if (busyWait === null || !error.response) return undefined;
   error.retryAfterSeconds = busyWait;
   // Ours to word, and translated: `getErrorMessage` reads `detail`, so every caller shows it.
-  error.response.data = { ...error.response.data, detail: get(t)('common.serverBusy') };
-  const cfg = error.config;
+  error.response.data = {
+    ...(error.response.data as Record<string, unknown>),
+    detail: get(t)('common.serverBusy'),
+  };
+  const cfg = error.config as BusyRetryConfig | undefined;
   const method = String(cfg?.method ?? 'get').toUpperCase();
   if (cfg && !cfg._busyRetry && BUSY_RETRY_METHODS.has(method)) {
     cfg._busyRetry = true;

@@ -41,12 +41,16 @@
   let pickedUuid = '';
   let loadedFor: string | null = null;
 
-  $: if (show && source && loadedFor !== source.uuid) {
-    loadedFor = source.uuid;
-    pickedUuid = '';
-    load();
+  function syncSource(isShown: boolean, current: typeof source) {
+    if (!isShown) {
+      loadedFor = null;
+    } else if (current && loadedFor !== current.uuid) {
+      loadedFor = current.uuid;
+      pickedUuid = '';
+      load();
+    }
   }
-  $: if (!show) loadedFor = null;
+  $: syncSource(show, source);
 
   async function load() {
     if (!source) return;

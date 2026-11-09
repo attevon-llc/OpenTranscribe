@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { SvelteSet } from 'svelte/reactivity';
   import { supportSessionGate } from '$stores/supportSession';
   import type { Speaker } from '$lib/types/speaker';
   import { resolveGroupedSegments } from '$lib/transcript/resolveGroupedSegments';
   import { createEventDispatcher } from 'svelte';
   import TranscriptSearch from './TranscriptSearch.svelte';
   import TranscriptSegmentList from './transcript/TranscriptSegmentList.svelte';
-  import type { TranscriptSegment } from '$lib/types/media';
+  import type { TranscriptSegment, TranscriptSourceFile } from '$lib/types/media';
   import { findNearestSegment } from '$lib/utils/scrollbarCalculations';
   import { toastStore } from '$stores/toast';
   import { type SearchMatch } from '$lib/utils/searchHighlight';
@@ -28,7 +29,7 @@
   // SSE stream that row triggers moved with them into `$lib/fileDetail/downloadStream.ts`
   // (J5). This component is now just the search bar + the segment list.
 
-  export let file: any = null;
+  export let file: TranscriptSourceFile | null = null;
   export let savingTranscript: boolean = false;
 
   export let editingSegmentId: string | number | null = null;
@@ -99,9 +100,12 @@
   }
 
   // Handle segment speaker change
-  const updatingSegments = new Set<string>();
+  const updatingSegments = new SvelteSet<string>();
 
-  async function handleSegmentSpeakerChange(event: CustomEvent) {
+  async function handleSegmentSpeakerChange(
+    event: CustomEvent<{ segmentUuid: string; speakerUuid: string; speaker?: Speaker }>
+  ) {
+    if (!file) return;
     const { segmentUuid, speakerUuid, speaker: createdSpeaker } = event.detail;
 
     // Prevent duplicate requests
@@ -142,7 +146,7 @@
       // The backend auto-deletes a speaker left with no segments, so sync the frontend:
       // the parent updates speakerList, which flows back down to this component and its
       // children (SpeakerMerge, etc.)
-      const orphanedUuid = orphanedSpeakerUuid(file.transcript_segments, originalSpeaker);
+      const orphanedUuid = orphanedSpeakerUuid(file.transcript_segments ?? [], originalSpeaker);
       if (orphanedUuid) dispatch('speakerDeleted', { speakerUuid: orphanedUuid });
 
       // Notify parent to refresh analytics (backend refreshed them, frontend needs to fetch)
@@ -220,7 +224,7 @@
   {#if $frozen}
     <FrozenNote id="transcript-frozen-note" message={$t('holds.frozenTranscript')} />
   {/if}
-  {#if file.transcript_segments && file.transcript_segments.length > 0}
+  {#if file?.transcript_segments && file.transcript_segments.length > 0}
     <TranscriptSegmentList
       bind:this={segmentListComponent}
       {file}
@@ -246,9 +250,9 @@
       on:speakerCreatedFromDropdown={handleSpeakerCreated}
       on:speakerUpdate
     />
-  {:else if file.status === 'completed'}
+  {:else if file?.status === 'completed'}
     <p>{$t('transcript.noTranscriptAvailable')}</p>
-  {:else if file.status === 'processing'}
+  {:else if file?.status === 'processing'}
     <p>{$t('transcript.transcriptGenerating')}</p>
   {:else}
     <p>{$t('transcript.transcriptNotAvailable')}</p>

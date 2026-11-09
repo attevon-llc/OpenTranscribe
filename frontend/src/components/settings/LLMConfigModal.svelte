@@ -140,7 +140,7 @@
 
   // Bedrock account fields: any admin sees whether the server's own AWS credentials resolve.
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
-  $: bedrockDefaults = getProviderDefaults('bedrock');
+  const bedrockDefaults = getProviderDefaults('bedrock');
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -150,18 +150,19 @@
   let lastEditingConfigId: string | null = null;
 
   // Only populate form when modal opens or editingConfig changes
-  $: if (show) {
-    if (editingConfig && editingConfig.uuid !== lastEditingConfigId) {
-      populateForm(editingConfig);
-      lastEditingConfigId = editingConfig.uuid;
-    } else if (!editingConfig && lastEditingConfigId !== null) {
+  function syncEditingConfig(isShown: boolean, config: typeof editingConfig) {
+    if (!isShown) {
+      // Reset tracking when modal closes
+      lastEditingConfigId = null;
+    } else if (config && config.uuid !== lastEditingConfigId) {
+      populateForm(config);
+      lastEditingConfigId = config.uuid;
+    } else if (!config && lastEditingConfigId !== null) {
       resetForm();
       lastEditingConfigId = null;
     }
-  } else {
-    // Reset tracking when modal closes
-    lastEditingConfigId = null;
   }
+  $: syncEditingConfig(show, editingConfig);
 
   // Track form changes for dirty state
   $: isDirty = JSON.stringify(formData) !== JSON.stringify(originalFormData);
@@ -398,11 +399,12 @@
   let lastContextWindowProvider: string = '';
 
   // Apply provider defaults when provider changes
-  $: if (formData.provider) {
-    const defaults = getProviderDefaults(formData.provider);
-    if (defaults && !editingConfig) {
+  function applyProviderDefaults(provider: string, isEditing: boolean) {
+    if (!provider) return;
+    const defaults = getProviderDefaults(provider);
+    if (defaults && !isEditing) {
       // Detect if provider actually changed (not just initialization)
-      const providerChanged = previousProvider !== '' && previousProvider !== formData.provider;
+      const providerChanged = previousProvider !== '' && previousProvider !== provider;
 
       if (providerChanged) {
         // Provider changed - reset and apply new defaults
@@ -427,25 +429,25 @@
       // default when the catalog has no entry for this provider (e.g.
       // Bedrock/custom, whose real maximum varies by model and is never
       // guessed). Still fully admin-editable afterward.
-      if (lastContextWindowProvider !== formData.provider) {
+      if (lastContextWindowProvider !== provider) {
         formData.max_tokens = defaults.max_context_length ?? SCHEMA_DEFAULT_MAX_TOKENS;
-        lastContextWindowProvider = formData.provider;
+        lastContextWindowProvider = provider;
       }
 
       // Track current provider for next change detection
-      previousProvider = formData.provider;
+      previousProvider = provider;
     }
   }
+  $: applyProviderDefaults(formData.provider, Boolean(editingConfig));
 
-  let _llmConfigModalWasOpen = false;
-  $: {
-    const _anyOpen = show || showUnsavedChangesModal;
-    if (_anyOpen !== _llmConfigModalWasOpen) {
-      if (_anyOpen) lockScroll();
-      else unlockScroll();
-      _llmConfigModalWasOpen = _anyOpen;
-    }
+let _llmConfigModalWasOpen = false;
+  function syncScrollLock(anyOpen: boolean) {
+    if (anyOpen === _llmConfigModalWasOpen) return;
+    if (anyOpen) lockScroll();
+    else unlockScroll();
+    _llmConfigModalWasOpen = anyOpen;
   }
+  $: syncScrollLock(show || showUnsavedChangesModal);
 
   onDestroy(() => {
     if (_llmConfigModalWasOpen) unlockScroll();
@@ -487,7 +489,7 @@
             required
           >
             <option value="">{$t('llm.selectProvider')}</option>
-            {#each [...supportedProviders].sort((a, b) => llmProviderDisplayName(a.provider, $t).localeCompare(llmProviderDisplayName(b.provider, $t))) as provider}
+            {#each [...supportedProviders].sort((a, b) => llmProviderDisplayName(a.provider, $t).localeCompare(llmProviderDisplayName(b.provider, $t))) as provider (provider.provider)}
               <option value={provider.provider}>{llmProviderDisplayName(provider.provider, $t)}</option>
             {/each}
           </select>
@@ -658,7 +660,7 @@
               <div class="model-selector">
                 <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
-                  {#each ollamaModels as model}
+                  {#each ollamaModels as model (model.name)}
                     <button
                       type="button"
                       class="model-item"
@@ -683,7 +685,7 @@
               <div class="model-selector">
                 <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
-                  {#each openaiCompatibleModels as model}
+                  {#each openaiCompatibleModels as model (model.id)}
                     <button
                       type="button"
                       class="model-item"
@@ -709,7 +711,7 @@
               <div class="model-selector">
                 <h4>{$t('llm.availableModels')}</h4>
                 <div class="model-list">
-                  {#each anthropicModels as model}
+                  {#each anthropicModels as model (model.id)}
                     <button
                       type="button"
                       class="model-item"

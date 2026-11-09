@@ -205,7 +205,7 @@
       {#if file.error_suggestions?.length}
         <p class="error-suggestions-title">{$t('fileDetail.errorSuggestionsTitle')}</p>
         <ul class="error-suggestions">
-          {#each file.error_suggestions as suggestion}<li>{suggestion}</li>{/each}
+          {#each file.error_suggestions as suggestion, i (i)}<li>{suggestion}</li>{/each}
         </ul>
       {/if}
       {#if file.is_retryable}<p class="error-retryable">{$t('fileDetail.errorRetryable')}</p>{/if}

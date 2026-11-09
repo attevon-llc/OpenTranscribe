@@ -17,15 +17,19 @@
   });
 
   let panelWasOpen = false;
-  $: if (typeof document !== 'undefined' && showPanel !== panelWasOpen) {
-    if (showPanel) lockScroll();
+  function syncScrollLock(open: boolean) {
+    if (typeof document === 'undefined' || open === panelWasOpen) return;
+    if (open) lockScroll();
     else unlockScroll();
-    panelWasOpen = showPanel;
+    panelWasOpen = open;
   }
+
+  $: syncScrollLock(showPanel);
 
   let body: Body | null = null;
   let loading: Promise<void> | null = null;
-  $: if (showPanel && !body && !loading) {
+  function loadBody(open: boolean) {
+    if (!open || body || loading) return;
     loading = import('./notifications/NotificationsPanelBody.svelte')
       .then((m) => {
         body = m.default;
@@ -35,6 +39,8 @@
         loading = null;
       });
   }
+
+  $: loadBody(showPanel);
 
   function closePanel() {
     showNotificationsPanel.set(false);

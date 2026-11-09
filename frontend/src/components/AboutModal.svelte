@@ -77,9 +77,11 @@
         : REPOSITORY_URL;
   $: sourceIsExact = sourceRef.kind === 'release' || (sourceRef.kind === 'commit' && sourceRef.exact);
 
-  $: if (showModal && !serverVersion) {
-    fetchVersion();
+  function ensureVersion(open: boolean) {
+    if (open && !serverVersion) fetchVersion();
   }
+
+  $: ensureVersion(showModal);
 
 </script>
 

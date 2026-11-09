@@ -11,7 +11,7 @@
 </script>
 
 <div class="skeleton-container">
-  {#each Array(lines) as _, i}
+  {#each Array(lines) as _, i (i)}
     <div
       class="skeleton-line"
       style="height: {height}px; width: {i === lines - 1 ? '60%' : '100%'}"

@@ -16,7 +16,7 @@ and domain formatting belong in the backend (thin-frontend rule).
   at 30 s. The retry-delay source for WebSocket reconnects (`$stores/websocket`) AND upload
   retries (`$lib/services/uploadService`, `$lib/services/multipartUploader`, H4a) — so a backend
   restart doesn't bring every client back in lockstep. Pass a deterministic `random` in tests.
-- `sanitizeHtml.ts` — DOMPurify allowlist wrappers (`sanitizeHighlightHtml`, `sanitizeToPlainText`); every `{@html}` must go through this.
+- `sanitizeHtml.ts` — DOMPurify allowlist wrappers (`sanitizeHighlightHtml`, `sanitizeToPlainText`); render it through `components/ui/SanitizedHtml.svelte` (it owns the only raw-HTML tag for this profile). `svelte/no-at-html-tags` is an error; the sinks allowed are pinned by `SanitizedHtml.test.ts`.
 - `speakerColors.ts` — deterministic speaker color assignment (`getSpeakerColor*`).
 - `mediaType.ts` — `playableSourceType(contentType)` is the only `<source type>` hint a
   player may render. It returns the canonical type, or `undefined` to omit the attribute,

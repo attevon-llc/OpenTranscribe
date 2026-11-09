@@ -29,10 +29,12 @@
   // string, not the id union: <Tabs bind:activeId> is string-typed.
   let activeId: string = initialTab;
   let seenInitial = initialTab;
-  $: if (initialTab !== seenInitial) {
-    seenInitial = initialTab;
-    activeId = initialTab;
+  function followInitialTab(requested: typeof initialTab) {
+    if (requested === seenInitial) return;
+    seenInitial = requested;
+    activeId = requested;
   }
+  $: followInitialTab(initialTab);
   $: {
     const next = resolveStatusTab(activeId as StatusTabId, specs);
     if (next && next !== activeId) activeId = next;

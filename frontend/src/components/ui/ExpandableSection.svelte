@@ -1,5 +1,9 @@
 <script context="module" lang="ts">
   let uid = 0;
+  function nextUid(): number {
+    uid += 1;
+    return uid;
+  }
 </script>
 
 <script lang="ts">
@@ -15,7 +19,7 @@
    */
   export let headingLevel: 2 | 3 | 4 | 5 | 6 | null = null;
 
-  const regionId = `expandable-region-${++uid}`;
+  const regionId = `expandable-region-${nextUid()}`;
   const dispatch = createEventDispatcher<{ toggle: boolean }>();
 
   function toggle() {

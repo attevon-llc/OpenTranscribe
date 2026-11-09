@@ -42,7 +42,7 @@
   {#if variant === 'chips'}
     <!-- chip row only -->
   {:else if variant === 'dashboard'}
-    {#each items.slice(0, 2) as _}
+    {#each items.slice(0, 2) as _, i (i)}
       <div class="sk-card">
         <div class="sk-title shimmer"></div>
         <div class="sk-text shimmer"></div>
@@ -50,14 +50,14 @@
       </div>
     {/each}
   {:else if variant === 'rows'}
-    {#each items as _, i}
+    {#each items as _, i (i)}
       <div class="sk-toggle-row">
         <div class="sk-label shimmer" style="width: {32 + ((i * 19) % 26)}%"></div>
         <div class="sk-toggle shimmer"></div>
       </div>
     {/each}
   {:else}
-    {#each items as _, i}
+    {#each items as _, i (i)}
       <div class="sk-field">
         <div class="sk-label shimmer" style="width: {22 + ((i * 13) % 20)}%"></div>
         <div class="sk-input shimmer"></div>

@@ -50,8 +50,16 @@
     }
   })();
 
-  export function getUrlPayloadExtras(): Record<string, any> {
-    const extras: Record<string, any> = {};
+  type UrlPayloadExtras = {
+    media_username?: string;
+    media_password?: string;
+    video_quality?: string;
+    audio_only?: boolean;
+    audio_quality?: string;
+  };
+
+  export function getUrlPayloadExtras(): UrlPayloadExtras {
+    const extras: UrlPayloadExtras = {};
     if (mediaUsername) extras.media_username = mediaUsername;
     if (mediaPassword) extras.media_password = mediaPassword;
     if (downloadVideoQuality !== downloadInitialVideoQuality) extras.video_quality = downloadVideoQuality;
@@ -196,7 +204,7 @@
           <div class="download-option-row">
             <label for="dl-video-quality">{$t('settings.download.videoQuality')}</label>
             <select id="dl-video-quality" bind:value={downloadVideoQuality} disabled={downloadAudioOnly} class="download-select">
-              {#each Object.entries(downloadDefaults.available_video_qualities) as [value, label]}
+              {#each Object.entries(downloadDefaults.available_video_qualities) as [value, label] (value)}
                 <option {value}>{label}</option>
               {/each}
             </select>
@@ -212,7 +220,7 @@
             <div class="download-option-row">
               <label for="dl-audio-quality">{$t('settings.download.audioQuality')}</label>
               <select id="dl-audio-quality" bind:value={downloadAudioQuality} class="download-select">
-                {#each Object.entries(downloadDefaults.available_audio_qualities) as [value, label]}
+                {#each Object.entries(downloadDefaults.available_audio_qualities) as [value, label] (value)}
                   <option {value}>{label}</option>
                 {/each}
               </select>

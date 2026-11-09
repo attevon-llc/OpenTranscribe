@@ -26,7 +26,7 @@
 
   let loading = true;
   let saving = false;
-  let hasChanges = false;
+  let hasChanges: boolean;
 
   // Form fields
   let enabled = false;
@@ -587,7 +587,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each backups as file}
+            {#each backups as file (file.filename)}
               <tr>
                 <td class="col-title">{file.filename}</td>
                 <td>{formatDateTime(file.created_at, $t('settings.backup.lastRunNever'), $locale)}</td>

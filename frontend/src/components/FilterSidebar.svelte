@@ -111,10 +111,9 @@
   let allTags: TagWithCount[] = [];
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };
-  let dropdownTags: MultiSelectOption[] = [];  // All tags for multiselect dropdown
 
   // Reactive: Prepare dropdown tags with proper format
-  $: dropdownTags = allTags.map(tag => ({
+  $: dropdownTags = allTags.map((tag): MultiSelectOption => ({
     id: tag.uuid,
     name: tag.name,
     count: tag.usage_count || 0
@@ -136,11 +135,10 @@
   }));
 
   // Component refs
-  let collectionsFilterRef: any;
+  let collectionsFilterRef: CollectionsFilter | undefined;
 
   /** @type {Speaker[]} */
   let allSpeakers: FilterSpeaker[] = [];
-  let dropdownSpeakers: { id: string; name: string; count: number }[] = [];  // Named speakers for multiselect dropdown
 
   // Named people vs. unlabeled diarization placeholders (#743).
   //
@@ -156,7 +154,7 @@
     unlabeledLabels.length > 0 && unlabeledLabels.every(label => selectedSpeakers.includes(label));
 
   // Reactive: Prepare dropdown speakers with proper format
-  $: dropdownSpeakers = namedSpeakers.map(speaker => ({
+  $: dropdownSpeakers = namedSpeakers.map((speaker): MultiSelectOption => ({
     id: speaker.uuid,
     name: translateSpeakerLabel(speakerLabel(speaker)),
     count: speaker.media_count || 0
@@ -207,17 +205,22 @@
   });
 
   // Reactive watcher for collection selection (immediate)
-  $: if (isInitialized && selectedLanguage !== prevLanguage) {
-    prevLanguage = selectedLanguage;
-    // Immediate, not debounced: a select is a discrete choice, like the collection
-    // filter beside it. Debouncing is for the free-text box.
+  // Immediate, not debounced: a select is a discrete choice, like the collection
+  // filter beside it. Debouncing is for the free-text box.
+  function applyLanguageChange(language: string | null, initialized: boolean) {
+    if (!initialized || language === prevLanguage) return;
+    prevLanguage = language;
     triggerFiltersImmediate();
   }
 
-  $: if (isInitialized && selectedCollectionId !== prevCollectionId) {
-    prevCollectionId = selectedCollectionId;
+  function applyCollectionChange(collectionId: string | null, initialized: boolean) {
+    if (!initialized || collectionId === prevCollectionId) return;
+    prevCollectionId = collectionId;
     triggerFiltersImmediate();
   }
+
+  $: applyLanguageChange(selectedLanguage, isInitialized);
+  $: applyCollectionChange(selectedCollectionId, isInitialized);
 
   async function fetchTags() {
     loadingTags = true;
@@ -590,7 +593,7 @@
   <div class="filter-section">
     <h3>{$t('filter.fileType')}</h3>
     <div class="file-type-list">
-      {#each availableFileTypes as fileType}
+      {#each availableFileTypes as fileType (fileType)}
         <FilterChipButton
           class="file-type-button"
           selected={selectedFileTypes.includes(fileType)}
@@ -652,7 +655,7 @@
         </p>
       {:else}
         <div class="speakers-list">
-          {#each namedSpeakers.slice(0, 4) as speaker}
+          {#each namedSpeakers.slice(0, 4) as speaker (speakerLabel(speaker))}
             <FilterChipButton
               class="speaker-button"
               selected={selectedSpeakers.includes(speakerLabel(speaker))}
@@ -791,7 +794,7 @@
   <div class="filter-section">
     <h3>{$t('filter.processingStatus')}</h3>
     <div class="status-list">
-      {#each availableStatuses as status}
+      {#each availableStatuses as status (status)}
         <FilterChipButton
           class="status-button"
           selected={selectedStatuses.includes(status)}
@@ -825,7 +828,7 @@
       <p class="empty-text">{$t('filter.noTagsCreated')}</p>
     {:else}
       <div class="tags-list">
-        {#each allTags.slice(0, 6) as tag}
+        {#each allTags.slice(0, 6) as tag (tag.name)}
           <FilterChipButton
             class="tag-button"
             selected={selectedTags.includes(tag.name)}
@@ -864,7 +867,7 @@
     <div class="filter-section">
       <h3>{$t('filter.language')}</h3>
       <div class="file-type-list">
-        {#each availableLanguages as lang}
+        {#each availableLanguages as lang (lang)}
           <FilterChipButton
             class="file-type-button"
             selected={selectedLanguage === lang}

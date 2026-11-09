@@ -44,6 +44,14 @@
     last_indexed_at: string | null;
   }
 
+  interface ReindexStats {
+    indexed_files: number;
+    total_files: number;
+    total_chunks: number;
+    failed_files: number;
+    mode?: string;
+  }
+
   interface ReindexProgress {
     progress: number;
     indexed_files: number;
@@ -103,9 +111,9 @@
     isReindexing = true;
   }
 
-  let lastReindexStats: any = null;
+  let lastReindexStats: ReindexStats | null = null;
 
-  function handleReindexComplete(event: CustomEvent<{ stats: any }>) {
+  function handleReindexComplete(event: CustomEvent<{ stats?: ReindexStats }>) {
     reindexProgress = null;
     isReindexing = false;
     lastReindexStats = event.detail?.stats || null;
@@ -535,7 +543,7 @@
       {#if models.length === 0}
         <option value="">{$t('settings.search.loadingModels')}</option>
       {:else}
-        {#each models as model}
+        {#each models as model (model.model_id)}
           <option value={model.model_id}>
             {model.name} — {model.dimension}d, ~{model.size_mb}MB{model.model_id === currentModelId ? ' (Current)' : ''}
           </option>

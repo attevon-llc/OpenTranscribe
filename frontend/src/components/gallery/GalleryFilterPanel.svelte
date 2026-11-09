@@ -21,7 +21,7 @@
 
   const dispatch = createEventDispatcher();
 
-  let filterSidebarRef: any;
+  let filterSidebarRef: FilterSidebar | undefined;
 
   // Expose collections refresh to the parent (used by the Collections modal)
   export function refreshCollections() {

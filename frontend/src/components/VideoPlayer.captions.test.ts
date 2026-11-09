@@ -45,7 +45,13 @@ const file = {
   status: 'completed' as const,
   content_type: 'video/mp4',
   transcript_segments: [
-    { start_time: 0, end_time: 90, text: LONG_SEGMENT_TEXT, speaker_label: 'SPEAKER_00' },
+    {
+      uuid: 'segment-uuid-1',
+      start_time: 0,
+      end_time: 90,
+      text: LONG_SEGMENT_TEXT,
+      speaker_label: 'SPEAKER_00',
+    },
   ],
 };
 

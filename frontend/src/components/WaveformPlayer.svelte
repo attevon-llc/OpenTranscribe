@@ -216,11 +216,14 @@
   }
 
   // Flush a seek that arrived before duration was known.
-  $: if (duration > 0 && pendingSeekRatio !== null) {
+  function flushPendingSeek(knownDuration: number) {
+    if (knownDuration <= 0 || pendingSeekRatio === null) return;
     const ratio = pendingSeekRatio;
     pendingSeekRatio = null;
-    dispatch('seek', { time: ratio * duration });
+    dispatch('seek', { time: ratio * knownDuration });
   }
+
+  $: flushPendingSeek(duration);
 
   /**
    * Handle click/seek on waveform
@@ -289,7 +292,7 @@
     // ratio, so there's no meaningful value to queue when duration is still 0.
     if (duration <= 0 && event.code !== 'Home') return;
 
-    let seekTime = currentTime;
+    let seekTime: number;
     const seekStep = duration * 0.01; // 1% of duration
 
     switch (event.code) {

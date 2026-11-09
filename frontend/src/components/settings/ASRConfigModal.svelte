@@ -6,6 +6,8 @@
   import {
     ASRSettingsApi,
     type UserASRSettingsResponse,
+    type UserASRSettingsCreate,
+    type ASRConnectionTestRequest,
     type ASRProviderInfo,
     type ASRProvider,
   } from '$lib/api/asrSettings';
@@ -40,7 +42,7 @@
   let testing = false;
   let testResult: { success: boolean; message: string } | null = null;
   let showApiKey = false;
-  let isDirty = false;
+  let isDirty: boolean;
 
   let formData = {
     name: '',
@@ -60,26 +62,35 @@
   const AZURE_REGIONS = ['westus', 'eastus', 'eastus2', 'westeurope', 'northeurope', 'uksouth', 'australiaeast'];
   const AWS_REGIONS = ['us-east-1', 'us-west-2', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-northeast-1'];
 
-  $: if (show) {
-    if (editingConfig && editingConfig.uuid !== lastEditingConfigId) {
-      populateForm(editingConfig);
-      lastEditingConfigId = editingConfig.uuid;
-    } else if (!editingConfig && lastEditingConfigId !== null) {
+  function syncEditingConfig(isShown: boolean, config: typeof editingConfig) {
+    if (!isShown) {
+      lastEditingConfigId = null;
+      testResult = null;
+    } else if (config && config.uuid !== lastEditingConfigId) {
+      populateForm(config);
+      lastEditingConfigId = config.uuid;
+    } else if (!config && lastEditingConfigId !== null) {
       resetForm();
       lastEditingConfigId = null;
     }
-  } else {
-    lastEditingConfigId = null;
-    testResult = null;
   }
+  $: syncEditingConfig(show, editingConfig);
 
   let presetApplied = false;
-  $: if (!show) {
-    presetApplied = false;
-  } else if (!editingConfig && !presetApplied && (presetProvider || presetShared)) {
-    presetApplied = true;
-    applyPreset();
+  function syncPreset(
+    isShown: boolean,
+    config: typeof editingConfig,
+    provider: typeof presetProvider,
+    shared: typeof presetShared
+  ) {
+    if (!isShown) {
+      presetApplied = false;
+    } else if (!config && !presetApplied && (provider || shared)) {
+      presetApplied = true;
+      applyPreset();
+    }
   }
+  $: syncPreset(show, editingConfig, presetProvider, presetShared);
 
   function applyPreset() {
     resetForm();
@@ -186,10 +197,10 @@
   }
 
   async function handleSave() {
-    if (!isFormValid) return;
+    if (!isFormValid || !formData.provider) return;
     saving = true;
     try {
-      const payload: any = {
+      const payload: UserASRSettingsCreate = {
         name: formData.name.trim(),
         provider: formData.provider,
         model_name: formData.model_name.trim(),
@@ -234,7 +245,7 @@
     testing = true;
     testResult = null;
     try {
-      const params: any = {
+      const params: ASRConnectionTestRequest = {
         provider: formData.provider,
         model_name: formData.model_name,
       };
@@ -292,7 +303,7 @@
             title={editingConfig ? $t('settings.asrProvider.providerLockedOnEdit') : undefined}
           >
             <option value="">{$t('settings.asrProvider.selectProvider')}</option>
-            {#each selectableProviders as p}
+            {#each selectableProviders as p (p.provider)}
               <option value={p.provider}>
                 {optionWithFlags(
                   ASRSettingsApi.getProviderDisplayName(p.provider),
@@ -339,7 +350,7 @@
             {#if availableModels.length > 0}
               <select id="asr-model" bind:value={formData.model_name} on:change={onModelChange} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectModel')}</option>
-                {#each availableModels as m}
+                {#each availableModels as m (m.id)}
                   <option value={m.id}>
                     {optionWithFlags(m.name, modelCapability(providers, formData.provider, m.id), $t)}{m.price_per_min_batch ? ` — $${m.price_per_min_batch}/min` : ''}{m.description ? ` — ${m.description}` : ''}
                   </option>
@@ -423,7 +434,7 @@
               <label for="asr-region">{$t('settings.asrProvider.fields.region')}</label>
               <select id="asr-region" bind:value={formData.region} class="form-select">
                 <option value="">{$t('settings.asrProvider.selectRegion')}</option>
-                {#each regionOptions as r}
+                {#each regionOptions as r (r)}
                   <option value={r}>{r}</option>
                 {/each}
               </select>

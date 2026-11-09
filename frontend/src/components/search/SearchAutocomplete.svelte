@@ -13,7 +13,14 @@
 
   const dispatch = createEventDispatcher();
 
-  let suggestions: any[] = [];
+  interface SearchSuggestion {
+    type?: string;
+    text?: string;
+    title?: string;
+    file_uuid?: string;
+  }
+
+  let suggestions: SearchSuggestion[] = [];
   let showSuggestions = false;
   let selectedIndex = -1;
   let inputEl: HTMLInputElement;
@@ -116,7 +123,7 @@
     }
   }
 
-  function selectSuggestion(suggestion: any) {
+  function selectSuggestion(suggestion: SearchSuggestion) {
     showSuggestions = false;
     selectedIndex = -1;
 
@@ -127,7 +134,7 @@
     }
 
     // Otherwise, populate search input for other suggestion types
-    value = suggestion.text || suggestion.title || suggestion;
+    value = suggestion.text || suggestion.title || '';
     dispatch('select', value);
   }
 
@@ -209,7 +216,7 @@
       id="search-suggestions-listbox"
       use:anchoredPanel={{ anchor: inputEl }}
     >
-      {#each suggestions as suggestion, i}
+      {#each suggestions as suggestion, i (i)}
         <button
           class="suggestion-item"
           class:selected={i === selectedIndex}

@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -21,8 +22,20 @@ STAGE = REPO_ROOT / "scripts" / "release" / "60-test.sh"
 REAL_OPENTR = REPO_ROOT / "opentr.sh"
 
 
+# Every call gets a docker stub first on PATH unless the test brings its own: the library's
+# default fast volumes otherwise ran `docker volume create` against the HOST daemon on every
+# test run and left otfresh-rel-x_* volumes behind.
+_DOCKER_STUB_DIR = tempfile.TemporaryDirectory(prefix="ot-test-docker-stub-")
+_DOCKER_STUB = Path(_DOCKER_STUB_DIR.name) / "docker"
+_DOCKER_STUB.write_text(
+    '#!/bin/bash\n[ -n "$STUB_LOG" ] && echo "docker $*" >> "$STUB_LOG"\nexit 0\n'
+)
+_DOCKER_STUB.chmod(0o755)
+
+
 def _bash(script: str, repo: Path, env: dict[str, str] | None = None) -> str:
     base = {k: v for k, v in os.environ.items() if not k.startswith("RELEASE_TEST_")}
+    base["PATH"] = f"{_DOCKER_STUB.parent}:{base.get('PATH', '')}"
     full = {**base, "REPO_ROOT": str(repo), **(env or {})}
     return subprocess.run(
         ["bash", "-c", f"source {LIB}\n{script}"],
@@ -92,7 +105,7 @@ def test_up_destroys_stale_state_first_and_is_isolated(tmp_path: Path) -> None:
     log = tmp_path / "calls.log"
     env = {"STUB_LOG": str(log)}
     _bash("fresh_stack_up rel-x 400", repo, env)
-    calls = log.read_text().splitlines()
+    calls = [c for c in log.read_text().splitlines() if not c.startswith("docker ")]
     assert calls[0].startswith("fresh-destroy rel-x --yes"), "stale deployment not cleared first"
     assert calls[1].startswith("start dev --fresh rel-x --port-offset 400")
     assert "project=otfresh-rel-x" in calls[1] and "pg=5576" in calls[1]

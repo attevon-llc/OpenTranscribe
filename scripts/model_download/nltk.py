@@ -1,5 +1,6 @@
 """The NLTK data download group, including the hardlinked-cache repair."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from model_download.ui import (
     print_success,
     print_warning,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _rewrite_as_own_inode(path):
@@ -185,24 +188,33 @@ def download_nltk_data():
         ]
 
         downloaded = []
+        missing = []
         for package in required_packages:
             try:
                 print_info(f'Downloading NLTK package: {package}')
-                nltk.download(package, download_dir=str(nltk_data_path), quiet=False)
+                # nltk.download reports a failed fetch by returning False, not by raising.
+                ok = nltk.download(package, download_dir=str(nltk_data_path), quiet=False)
+            except (OSError, ValueError):
+                logger.warning('NLTK package %s download raised', package, exc_info=True)
+                ok = False
+            if ok:
                 downloaded.append(package)
                 print_success(f'  Downloaded: {package}')
-            except Exception as pkg_error:
-                print_error(f'  Failed to download {package}: {pkg_error}')
+            else:
+                missing.append(package)
+                print_error(f'  Failed to download {package}')
 
-        if downloaded:
-            print_success(f'NLTK data downloaded successfully ({len(downloaded)} packages)')
-        else:
-            raise Exception('No NLTK packages were downloaded')
+        if missing:
+            # Every package here is required offline (issue #491); a partial set must not
+            # be reported as a successful download.
+            raise RuntimeError(f'NLTK packages not downloaded: {", ".join(missing)}')
+        print_success(f'NLTK data downloaded successfully ({len(downloaded)} packages)')
 
         return {
             'nltk': {'packages': downloaded, 'path': str(nltk_data_path), 'status': 'downloaded'}
         }
 
-    except Exception as e:
+    except Exception as e:  # group boundary: recorded as status=failed, download-models.py exits 1
+        logger.exception('NLTK data download failed')
         print_error(f'Failed to download NLTK data: {e}')
         return {'nltk': {'status': 'failed', 'error': str(e)}}

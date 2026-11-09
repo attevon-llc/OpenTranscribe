@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import sys
 import time
@@ -102,6 +103,9 @@ MULTILINGUAL = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+
 def _request(url: str, method: str = 'GET', body: dict | None = None, timeout: int = 60):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(  # localhost throwaway cluster
@@ -112,7 +116,8 @@ def _request(url: str, method: str = 'GET', body: dict | None = None, timeout: i
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         return {'__http_error__': exc.code, 'body': exc.read().decode()[:400]}
-    except Exception as exc:
+    except (OSError, ValueError) as exc:  # URLError, timeout, undecodable body: returned as data
+        logger.warning('request to %s failed', url, exc_info=True)
         return {'__error__': str(exc)}
 
 
@@ -266,7 +271,8 @@ def check_availability(short_name: str, version: str = '1.0.1') -> dict:
                 outcome[label] = resp.status
         except urllib.error.HTTPError as exc:
             outcome[label] = exc.code
-        except Exception as exc:
+        except OSError as exc:  # URLError or timeout: recorded as the outcome
+            logger.warning('HEAD %s failed', url, exc_info=True)
             outcome[label] = str(exc)
     outcome['available'] = outcome.get('zip') == 200 and outcome.get('config') == 200
     return outcome

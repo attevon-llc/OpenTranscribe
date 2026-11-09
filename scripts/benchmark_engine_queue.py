@@ -35,7 +35,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import redis
 from benchmark_table import print_table
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +121,8 @@ def _audio_duration_s(audio_path: Path) -> float:
     try:
         with wave.open(str(audio_path), 'rb') as wf:
             return wf.getnframes() / wf.getframerate()
-    except Exception:
+    except (wave.Error, OSError, EOFError, ZeroDivisionError):
+        logger.warning('could not read WAV duration of %s', audio_path, exc_info=True)
         return 0.0
 
 
@@ -130,8 +133,6 @@ def _audio_duration_s(audio_path: Path) -> float:
 
 def _build_redis_client() -> Any:
     """Return a Redis client connected to REDIS_URL from the environment."""
-    import redis
-
     redis_url = os.getenv('REDIS_URL', 'redis://localhost:5177/0')
     return redis.from_url(redis_url)
 
@@ -147,7 +148,8 @@ def _llen_queue(client: Any, queue_name: str) -> int:
     try:
         result = client.llen(queue_name)
         return int(result or 0)
-    except Exception:
+    except redis.exceptions.RedisError:
+        logger.warning('could not read depth of queue %s', queue_name, exc_info=True)
         return 0
 
 
@@ -159,8 +161,8 @@ def monitor_queues(
     """Background thread: sample CPU/GPU queue depths every poll_interval seconds."""
     try:
         client = _build_redis_client()
-    except Exception as exc:
-        logger.warning('Queue monitor: Redis unavailable — %s', exc)
+    except (redis.exceptions.RedisError, OSError):
+        logger.warning('Queue monitor: Redis unavailable', exc_info=True)
         return
 
     while not stop_event.is_set():
@@ -191,8 +193,8 @@ def _resolve_file_duration_from_db(file_uuid: str) -> float:
             mf = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
             if mf and mf.duration:
                 return float(mf.duration)
-    except Exception as exc:
-        logger.debug('Could not resolve duration for %s: %s', file_uuid, exc)
+    except SQLAlchemyError:
+        logger.warning('Could not resolve duration for %s', file_uuid, exc_info=True)
     return 0.0
 
 
@@ -232,8 +234,8 @@ def _poll_task_completion(app_task_id: str, timeout_s: float = 14400.0) -> tuple
                         return True, ''
                     if task.status == 'failed':
                         return False, task.error_message or 'task failed'
-        except Exception as exc:
-            logger.debug('Poll error for %s: %s', app_task_id, exc)
+        except SQLAlchemyError:
+            logger.warning('Poll error for %s', app_task_id, exc_info=True)
         time.sleep(2.0)
 
     return False, f'timed out after {timeout_s:.0f}s'
@@ -256,7 +258,8 @@ def run_queue_mode(
         try:
             app_task_id, file_name = _dispatch_one_file(file_uuid)
             success, error_msg = _poll_task_completion(app_task_id)
-        except Exception as exc:
+        except Exception as exc:  # per-file isolation boundary: recorded in the row's error
+            logger.exception('file %s failed', file_uuid)
             success = False
             error_msg = str(exc)
 
@@ -303,7 +306,8 @@ def run_queue_mode(
         for future in as_completed(futures):
             try:
                 row = future.result()
-            except Exception as exc:
+            except Exception as exc:  # per-future isolation boundary: recorded as a failed row
+                logger.exception('worker for %s raised', futures[future])
                 fuid = futures[future]
                 row = FileRow(
                     file_name=fuid,
@@ -347,9 +351,9 @@ def run_direct_mode(
             job = JobSpec(audio_path=str(audio_path), task_id=job_task_id)
             engine.process(job)
             success = True
-        except Exception as exc:
+        except Exception as exc:  # per-file isolation boundary: recorded in the row's error
             error_msg = str(exc)
-            logger.error('Engine failed on %s: %s', audio_path.name, exc)
+            logger.exception('Engine failed on %s', audio_path.name)
 
         complete_time = time.time()
         wall_time_s = complete_time - submit_time
@@ -385,7 +389,8 @@ def run_direct_mode(
         for future in as_completed(futures):
             try:
                 row = future.result()
-            except Exception as exc:
+            except Exception as exc:  # per-future isolation boundary: recorded as a failed row
+                logger.exception('worker for %s raised', futures[future])
                 p = futures[future]
                 row = FileRow(
                     file_name=p.name,

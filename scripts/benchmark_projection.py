@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import subprocess
 import sys
 from datetime import datetime
@@ -36,6 +37,9 @@ from datetime import datetime
 DB_CONTAINER = 'opentranscribe-postgres'
 DB_USER = 'postgres'
 DB_NAME = 'opentranscribe'
+
+
+logger = logging.getLogger(__name__)
 
 
 def db_query(sql: str) -> list[list[str]]:
@@ -218,7 +222,8 @@ def read_benchmark_csv(csv_path: str) -> dict:
             'avg_gpu_s': sum(gpu_durations) / len(gpu_durations) if gpu_durations else 0,
             'avg_total_s': sum(total_durations) / len(total_durations) if total_durations else 0,
         }
-    except Exception as e:
+    except (OSError, csv.Error, ValueError) as e:
+        logger.exception('could not read benchmark CSV %s', csv_path)
         print(f'WARNING: Could not read benchmark CSV: {e}', file=sys.stderr)
         return {}
 

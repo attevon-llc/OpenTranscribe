@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import logging
 import mimetypes
 import os
 import sys
@@ -23,6 +24,9 @@ EMAIL = os.environ.get('BENCHMARK_EMAIL', 'admin@example.com')
 PASSWORD = os.environ.get('BENCHMARK_PASSWORD', 'password')
 POLL_INTERVAL = 3.0
 POLL_TIMEOUT = 7200  # 2 hr per file
+
+
+logger = logging.getLogger(__name__)
 
 
 def login() -> str:
@@ -112,7 +116,8 @@ def main() -> None:
         t0 = time.time()
         try:
             file_uuid, put_s = upload(token, fp, fh)
-        except Exception as e:
+        except (requests.RequestException, OSError) as e:
+            logger.exception('upload of %s failed', fp)
             print(f'  ✗ upload: {e}')
             continue
         if not file_uuid:

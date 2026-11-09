@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import requests
+
 from chat_probe.config import logger
 
 
@@ -246,14 +248,16 @@ def restore_state(
     for conversation_uuid in conversations:
         try:
             session.delete(f'{base_url}/chat/conversations/{conversation_uuid}', timeout=30)
-        except Exception as exc:  # keep restoring the rest
-            logger.warning('could not delete probe conversation %s: %s', conversation_uuid, exc)
+        except requests.RequestException:  # per-item isolation: keep restoring the rest
+            logger.warning(
+                'could not delete probe conversation %s', conversation_uuid, exc_info=True
+            )
     if chat_flags:
         try:
             session.put(f'{base_url}/admin/chat-settings', json=chat_flags, timeout=30)
             logger.info('restored chat flags: %s', chat_flags)
-        except Exception as exc:  # report, do not mask the run's own result
-            logger.warning('could not restore chat flags %s: %s', chat_flags, exc)
+        except requests.RequestException:  # report, do not mask the run's own result
+            logger.warning('could not restore chat flags %s', chat_flags, exc_info=True)
     if prior_llm and prior_llm != current_llm:
         try:
             session.post(
@@ -262,5 +266,5 @@ def restore_state(
                 timeout=30,
             )
             logger.info('restored active LLM config %s', prior_llm)
-        except Exception as exc:  # report, do not mask the run's own result
-            logger.warning('could not restore active LLM config %s: %s', prior_llm, exc)
+        except requests.RequestException:  # report, do not mask the run's own result
+            logger.warning('could not restore active LLM config %s', prior_llm, exc_info=True)

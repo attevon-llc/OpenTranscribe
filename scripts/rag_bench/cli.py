@@ -9,6 +9,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from rag_bench.compare import run_compare_only
 from rag_bench.config import DEFAULT_BASELINE_ROOT, REPO_ROOT, logger
 from rag_bench.corpus import load_corpus, resolve_user_id, scan_injection_identity
@@ -156,10 +159,10 @@ def main(argv: list[str] | None = None) -> int:  # a CLI, read top to bottom
             # in the committed baseline rather than collapsed into one number.
             'configured_embedding_model': configured_model,
         }
-    except Exception as exc:  # recorded, never fatal to a measurement
+    except (OpenSearchException, SQLAlchemyError, ImportError, OSError):  # recorded, not fatal
         # Recorded rather than swallowed: "we could not read the model" and "the
         # model is X" must not look the same in a committed baseline.
-        logger.warning('Could not resolve the embedding provenance: %s', exc)
+        logger.warning('Could not resolve the embedding provenance', exc_info=True)
         index_state = {
             **index_state,
             'embedding_models': [],

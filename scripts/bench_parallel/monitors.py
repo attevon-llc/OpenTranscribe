@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import threading
 import time
 
 from bench_parallel.config import GPU_DEVICE_ID, STATS_SAMPLE_INTERVAL, VRAM_SAMPLE_INTERVAL
 from bench_parallel.models import CpuSample, VramSample
+
+logger = logging.getLogger(__name__)
 
 
 class VramMonitor:
@@ -59,8 +62,8 @@ class VramMonitor:
                     utilization_pct=int(parts[3]),
                     temp_c=int(parts[4]),
                 )
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError, ValueError, IndexError):
+            logger.warning('nvidia-smi VRAM sample failed', exc_info=True)
         return None
 
     def get_results(self) -> tuple[list[VramSample], int, float]:
@@ -134,7 +137,8 @@ class DockerStatsMonitor:
                 cpu_total += _parse_cpu_pct(parts[0])
                 mem_total += _parse_mem_usage(parts[1])
             return CpuSample(timestamp=time.time(), cpu_pct=cpu_total, mem_mb=mem_total)
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError):
+            logger.warning('docker stats sample failed', exc_info=True)
             return None
 
     def get_results(self) -> tuple[list[CpuSample], float, float, float, float]:

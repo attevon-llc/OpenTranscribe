@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from pyannote_direct.aggregate import aggregate_runs
-from pyannote_direct.config import AUDIO_DIR, DEFAULT_MODEL, DEFAULT_OPTIMIZED_SRC, RESULTS_DIR
+from pyannote_direct.config import (
+    AUDIO_DIR,
+    DEFAULT_MODEL,
+    DEFAULT_OPTIMIZED_SRC,
+    RESULTS_DIR,
+)
 from pyannote_direct.pipeline import load_pipeline, resolve_device_str
 from pyannote_direct.runs import run_diarization, run_diarization_with_profiler
 from pyannote_direct.summary import print_summary
 from pyannote_direct.vram import MPSVRAMPoller, get_gpu_info
+
+logger = logging.getLogger(__name__)
 
 
 def run_benchmark(
@@ -97,11 +106,9 @@ def run_benchmark(
                             mps_poller=mps_poller,
                         )
                     run_results.append(r)
-                except Exception as e:
+                except Exception as e:  # per-run isolation boundary: recorded in the run's error
+                    logger.exception('[%s run=%s] failed', label, run_idx)
                     print(f'  [{label} run={run_idx}] ERROR: {e}')
-                    import traceback
-
-                    traceback.print_exc()
                     run_results.append(
                         {
                             'label': label,
@@ -162,8 +169,6 @@ def run_benchmark(
 
     # Fork git SHA (best-effort)
     try:
-        import subprocess
-
         src_for_sha = Path(os.environ.get('PYANNOTE_OPTIMIZED_SRC') or DEFAULT_OPTIMIZED_SRC)
         if src_for_sha.exists():
             repo_root = src_for_sha
@@ -178,8 +183,8 @@ def run_benchmark(
                 ).stdout.strip()
                 report['pyannote_fork_sha'] = sha
                 report['pyannote_fork_path'] = str(repo_root)
-    except Exception:
-        pass
+    except (subprocess.SubprocessError, OSError):
+        logger.warning('could not read the pyannote fork git SHA', exc_info=True)
 
     # Tagged file + legacy "latest" for the --compare flow
     stem = f'benchmark_{variant}_{tag}_{timestamp}' if tag else f'benchmark_{variant}_{timestamp}'

@@ -11,10 +11,13 @@ Usage:
 import argparse
 import gc
 import json
+import logging
 import os
 import sys
 import time
 import warnings
+
+import httpx
 
 warnings.filterwarnings('ignore')
 os.environ['PYANNOTE_METRICS_ENABLED'] = 'false'
@@ -24,6 +27,8 @@ os.environ['PYANNOTE_METRICS_ENABLED'] = 'false'
 import numpy as np  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 import torch  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
 import torchaudio  # noqa: E402 - must follow the PYANNOTE_METRICS_ENABLED setting above
+
+logger = logging.getLogger(__name__)
 
 
 def get_process_rss_mb():
@@ -36,7 +41,8 @@ def get_process_rss_mb():
         if sys.platform == 'darwin':
             return maxrss / (1024 * 1024)  # bytes -> MB
         return maxrss / 1024  # KB -> MB
-    except Exception:
+    except (ImportError, OSError, ValueError):
+        logger.warning('could not read process RSS', exc_info=True)
         return 0
 
 
@@ -185,7 +191,8 @@ def main():
             pipeline = Pipeline.from_pretrained(model_name, token=token)
             print(f'Model: {model_name}')
             break
-        except Exception:
+        except (OSError, ValueError, httpx.HTTPError):
+            logger.warning('could not load %s', model_name, exc_info=True)
             continue
     else:
         print('ERROR: Could not load any pipeline model')

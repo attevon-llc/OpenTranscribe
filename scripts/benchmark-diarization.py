@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -36,6 +37,9 @@ TEST_FILES = {
 
 # Status values indicating completion
 DONE_STATUSES = {'completed', 'failed', 'error'}
+
+
+logger = logging.getLogger(__name__)
 
 
 def login(email: str = DEFAULT_EMAIL, password: str = DEFAULT_PASSWORD) -> str:
@@ -96,10 +100,13 @@ def get_gpu_profiles(token: str) -> list[dict]:
 
 
 def get_nvml_info() -> dict | None:
-    """Get current GPU VRAM info via pynvml."""
+    """Get current GPU VRAM info via pynvml; None when it is not installed or NVML fails."""
     try:
         import pynvml
-
+    except ImportError:
+        logger.info('pynvml not installed; no GPU VRAM info')
+        return None
+    try:
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -114,7 +121,8 @@ def get_nvml_info() -> dict | None:
         }
         pynvml.nvmlShutdown()
         return result
-    except Exception:
+    except pynvml.NVMLError:
+        logger.warning('NVML query failed', exc_info=True)
         return None
 
 

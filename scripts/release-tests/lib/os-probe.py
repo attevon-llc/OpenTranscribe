@@ -22,10 +22,13 @@ Commands
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import tempfile
 import uuid
 import wave
+
+logger = logging.getLogger(__name__)
 
 
 def _labels(file_uuid: str) -> dict:
@@ -132,13 +135,15 @@ def _gpu() -> dict:
         out['device_name'] = torch.cuda.get_device_name(0) if out['cuda_available'] else ''
         if out['cuda_available']:
             torch.zeros(1, device='cuda')  # a real allocation, not just visibility
-    except Exception as exc:  # a probe failure is reported as data
+    except (ImportError, OSError, RuntimeError) as exc:  # a probe failure is reported as data
+        logger.exception('torch probe failed')
         out['torch_error'] = f'{type(exc).__name__}: {exc}'[:200]
     for name in ('torchcodec', 'torchaudio'):
         try:
             __import__(name)
             out[f'{name}_import'] = 'ok'
-        except Exception as exc:  # a probe failure is reported as data
+        except (ImportError, OSError, RuntimeError) as exc:  # a probe failure is reported as data
+            logger.exception('%s import failed', name)
             out[f'{name}_import'] = f'{type(exc).__name__}: {exc}'[:200]
     try:
         from app.transcription.audio import load_audio
@@ -153,7 +158,8 @@ def _gpu() -> dict:
             samples = load_audio(handle.name)
         out['audio_samples'] = int(len(samples))
         out['app_loader_pulled_torchcodec'] = 'torchcodec' in sys.modules
-    except Exception as exc:  # a probe failure is reported as data
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:  # reported as data
+        logger.exception('audio loader probe failed')
         out['audio_error'] = f'{type(exc).__name__}: {exc}'[:200]
     return out
 
@@ -169,7 +175,8 @@ def main(argv: list[str]) -> int:
     }
     try:
         result = commands[argv[1]](argv[2:])
-    except Exception as exc:  # reported as data; the predicate decides
+    except Exception as exc:  # probe boundary: reported as data, the predicate decides
+        logger.exception('probe command %s failed', argv[1])
         result = {'error': f'{type(exc).__name__}: {exc}'[:300]}
     print(json.dumps(result))
     return 0

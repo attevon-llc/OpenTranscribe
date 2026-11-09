@@ -1,8 +1,11 @@
 """Sentence-transformers, chat reranker and speaker-attribute model download groups."""
 
+import logging
 from pathlib import Path
 
 from model_download.ui import print_error, print_header, print_info, print_success
+
+logger = logging.getLogger(__name__)
 
 
 def download_sentence_transformers():
@@ -41,7 +44,8 @@ def download_sentence_transformers():
             }
         }
 
-    except Exception as e:
+    except Exception as e:  # group boundary: recorded as status=failed, download-models.py exits 1
+        logger.exception('sentence-transformers download failed')
         print_error(f'Failed to download sentence-transformers model: {e}')
         return {'sentence_transformers': {'status': 'failed', 'error': str(e)}}
 
@@ -85,7 +89,8 @@ def download_chat_reranker():
             }
         }
 
-    except Exception as e:
+    except Exception as e:  # group boundary: recorded as status=failed, download-models.py exits 1
+        logger.exception('chat reranker download failed')
         print_error(f'Failed to download chat reranker: {e}')
         return {'chat_reranker': {'status': 'failed', 'error': str(e)}}
 
@@ -124,7 +129,8 @@ def download_speaker_attribute_models():
             }
         }
 
-    except Exception as e:
+    except Exception as e:  # group boundary: recorded as status=failed, download-models.py exits 1
+        logger.exception('speaker attribute model download failed')
         print_error(f'Failed to download speaker attribute model: {e}')
         print_info('Speaker gender detection will not work offline.')
         print_info('This is non-critical - transcription will still function normally.')

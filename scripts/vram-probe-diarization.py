@@ -239,8 +239,8 @@ def _load_nvml() -> Any:
         lib = ctypes.CDLL('libnvidia-ml.so.1')
         lib.nvmlInit_v2()
         return lib
-    except Exception as e:
-        logger.debug(f'NVML ctypes load failed: {e}')
+    except (OSError, AttributeError):
+        logger.warning('NVML ctypes load failed', exc_info=True)
         return None
 
 
@@ -262,8 +262,8 @@ def get_gpu_info() -> tuple[str, int]:
         mem = _NvmlMem()
         lib.nvmlDeviceGetMemoryInfo(handle, ctypes.byref(mem))
         return name_buf.value.decode(errors='replace'), int(mem.total / (1024**2))
-    except Exception as e:
-        logger.warning(f'NVML ctypes unavailable: {e}; falling back to nvidia-smi')
+    except (RuntimeError, OSError, AttributeError, ctypes.ArgumentError):
+        logger.warning('NVML ctypes unavailable; falling back to nvidia-smi', exc_info=True)
         try:
             out = subprocess.run(
                 ['nvidia-smi', '--query-gpu=name,memory.total', '--format=csv,noheader,nounits'],
@@ -274,8 +274,8 @@ def get_gpu_info() -> tuple[str, int]:
             ).stdout.splitlines()[0]
             parts = [p.strip() for p in out.split(',')]
             return parts[0], int(parts[1])
-        except Exception as e2:
-            logger.error(f'nvidia-smi fallback also failed: {e2}')
+        except (subprocess.SubprocessError, OSError, IndexError, ValueError):
+            logger.exception('nvidia-smi fallback also failed')
             return 'unknown', 0
 
 
@@ -297,8 +297,8 @@ class NVMLSampler:
             return
         try:
             self._handle = _nvml_device_handle(self._lib, 0)
-        except Exception as e:
-            logger.warning(f'NVMLSampler disabled (device handle failed): {e}')
+        except (OSError, AttributeError, ctypes.ArgumentError):
+            logger.warning('NVMLSampler disabled (device handle failed)', exc_info=True)
             self._lib = None
             return
         self._t0 = time.perf_counter()
@@ -312,7 +312,8 @@ class NVMLSampler:
             try:
                 self._lib.nvmlDeviceGetMemoryInfo(self._handle, ctypes.byref(mem))
                 self._samples.append((time.perf_counter() - self._t0, int(mem.used)))
-            except Exception:
+            except (OSError, AttributeError, ctypes.ArgumentError):
+                logger.debug('NVML sample failed', exc_info=True)
                 continue
 
     def stop(self) -> tuple[list[tuple[float, int]], float]:
@@ -460,8 +461,10 @@ def run_one(args: argparse.Namespace) -> RunResult:
             _bm = _NvmlMem()
             _baseline_lib.nvmlDeviceGetMemoryInfo(_bh, ctypes.byref(_bm))
             device_baseline_mb = _bm.used / (1024**2)
-        except Exception as e:
-            logger.debug(f'baseline NVML query failed: {e}')
+        except (OSError, AttributeError, ctypes.ArgumentError):
+            logger.warning(
+                'baseline NVML query failed; footprint will include other GPU users', exc_info=True
+            )
     sampler = NVMLSampler()
     sampler.start()
 
@@ -507,8 +510,8 @@ def run_one(args: argparse.Namespace) -> RunResult:
             labels = annotation.labels()
             num_speakers = len(set(labels))
             num_segments = sum(1 for _ in annotation.itertracks())
-        except Exception as e:
-            logger.warning(f'Could not summarize annotation: {e}')
+        except (AttributeError, TypeError, ValueError):
+            logger.warning('Could not summarize annotation', exc_info=True)
         # Dump RTTM alongside the JSON result for DER computation (Phase A.3).
         try:
             rttm_dir = Path(args.out) / 'rttm'
@@ -520,8 +523,8 @@ def run_one(args: argparse.Namespace) -> RunResult:
             )
             with open(rttm_path, 'w') as f:
                 annotation.write_rttm(f)
-        except Exception as e:
-            logger.warning(f'Could not write RTTM: {e}')
+        except OSError:
+            logger.warning('Could not write RTTM', exc_info=True)
 
     # Release the pipeline so the next run starts clean
     del pipeline

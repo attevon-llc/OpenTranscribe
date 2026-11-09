@@ -2,6 +2,7 @@
 """Score BOTH diarization engines against hand-labelled ground truth (issue #669).
 
 **"Same weights" does not imply "same output."** diar-native serves ONNX graphs exported
+import logging
 from the same ``pyannote/speaker-diarization-community-1`` pipeline the in-process fork
 runs, but the export, the clustering implementation and the segmentation batching all
 differ. Upstream's own ``verify-models`` passes all five of its stages on a build whose
@@ -44,6 +45,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import logging
 import sys
 import time
 from pathlib import Path
@@ -51,6 +53,9 @@ from pathlib import Path
 from rttm_io import read_rttm
 
 DEFAULT_APP_ROOT = '/app'
+
+
+logger = logging.getLogger(__name__)
 
 
 def to_annotation(result):
@@ -174,7 +179,8 @@ def main() -> int:
     for backend in ('native', 'pyannote'):
         try:
             record = run_engine(backend, audio)
-        except Exception as exc:  # one engine failing must not hide the other
+        except Exception as exc:  # per-engine isolation boundary: recorded, run exits 1 below
+            logger.exception('%s engine failed', backend)
             print(f'{backend:9s} FAILED {type(exc).__name__}: {exc}')
             results[backend] = {'error': f'{type(exc).__name__}: {exc}'}
             continue

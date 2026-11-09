@@ -5,14 +5,14 @@ from __future__ import annotations
 import threading
 import time
 
-from pyannote_direct.config import GPU_INDEX
+from pyannote_direct.config import GPU_INDEX, logger
 
 
-def get_gpu_info() -> dict | None:
-    """Get GPU info via pynvml; fall back to torch if pynvml is unavailable."""
+def _nvml_gpu_info() -> dict | None:
+    """GPU info via pynvml; None when NVML cannot answer. ImportError if pynvml is absent."""
+    import pynvml
+
     try:
-        import pynvml
-
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(GPU_INDEX)
         mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
@@ -27,8 +27,20 @@ def get_gpu_info() -> dict | None:
         }
         pynvml.nvmlShutdown()
         return result
-    except Exception:
-        pass
+    except pynvml.NVMLError:
+        logger.warning('NVML query failed; falling back to torch', exc_info=True)
+        return None
+
+
+def get_gpu_info() -> dict | None:
+    """Get GPU info via pynvml; fall back to torch if pynvml is unavailable."""
+    try:
+        info = _nvml_gpu_info()
+    except ImportError:
+        logger.info('pynvml not installed; falling back to torch')
+        info = None
+    if info is not None:
+        return info
     try:
         import torch
 
@@ -41,8 +53,8 @@ def get_gpu_info() -> dict | None:
                 'vram_used_mb': round((total - free) / (1024**2)),
                 'vram_free_mb': round(free / (1024**2)),
             }
-    except Exception:
-        pass
+    except (ImportError, RuntimeError):
+        logger.warning('torch GPU memory query failed', exc_info=True)
     return None
 
 
@@ -59,8 +71,8 @@ def get_mps_driver_allocated_mb() -> int | None:
 
         if torch.backends.mps.is_available():
             return int(torch.mps.driver_allocated_memory() / (1024**2))
-    except Exception:
-        pass
+    except (ImportError, RuntimeError):
+        logger.warning('MPS allocator query failed', exc_info=True)
     return None
 
 

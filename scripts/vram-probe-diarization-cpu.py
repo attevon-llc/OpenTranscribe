@@ -81,8 +81,8 @@ def _rss_mb() -> float:
                 if line.startswith('VmRSS:'):
                     # "VmRSS:  123456 kB"
                     return int(line.split()[1]) / 1024.0
-    except Exception:
-        pass
+    except (OSError, ValueError, IndexError):
+        log.warning('could not read VmRSS from /proc/self/status', exc_info=True)
     return 0.0
 
 

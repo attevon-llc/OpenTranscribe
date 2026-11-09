@@ -52,10 +52,15 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import logging
 import os
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BACKEND = REPO_ROOT / 'backend'
@@ -171,7 +176,8 @@ def main() -> int:
 
     try:
         diffs = collect_diffs()
-    except Exception as exc:
+    except (SQLAlchemyError, ImportError, OSError) as exc:  # unreachable DB or unimportable models
+        logger.exception('schema comparison failed')
         print(f'ERROR: could not compare schema: {type(exc).__name__}: {exc}', file=sys.stderr)
         print('Is the dev stack up? `./opentr.sh start dev`', file=sys.stderr)
         return 3

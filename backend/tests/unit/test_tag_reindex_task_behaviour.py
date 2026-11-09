@@ -15,6 +15,7 @@ from fixtures.tag_world import attach
 from fixtures.tag_world import make_file
 from fixtures.tag_world import make_tag
 from fixtures.tag_world import word
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.core.config import settings
 from app.tasks.search_file_field_tasks import update_file_tags_index
@@ -28,7 +29,7 @@ class _Indices:
     def refresh(self, index):
         self.refreshes.append(index)
         if self.fail:
-            raise RuntimeError("refresh refused")
+            raise OpenSearchConnectionError("N/A", "refresh refused", Exception("x"))
 
 
 class _Client:
@@ -42,7 +43,7 @@ class _Client:
         file_id = body["query"]["term"]["file_id"]
         self.calls.append({"index": index, "body": body, "conflicts": conflicts})
         if file_id in self.fail_for:
-            raise RuntimeError("opensearch refused")
+            raise OpenSearchConnectionError("N/A", "opensearch refused", Exception("x"))
         return {"updated": self.updated}
 
 

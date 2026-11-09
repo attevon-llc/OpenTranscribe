@@ -26,6 +26,8 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.queues import CPUPriority
@@ -192,10 +194,28 @@ def _log_legal_refusal_hourly(source_id: int, refusal: ProcessingRefusal) -> Non
 
         key = f"watch_source:legal_refusal_logged:{source_id}"
         first = bool(get_redis().set(key, "1", nx=True, ex=3600))
-    except Exception as e:  # a log throttle only; the scan is skipped regardless
-        logger.debug("Watch source %s: refusal-log throttle unavailable: %s", source_id, e)
+    except RedisError as e:  # a log throttle only; the scan is skipped regardless
+        logger.debug(
+            "Watch source %s: refusal-log throttle unavailable: %s", source_id, e, exc_info=True
+        )
     log = logger.warning if first else logger.debug
     log("Watch source %s skipped by the legal processing gate: %s", source_id, refusal.message)
+
+
+def _write_back_stitched(
+    client: BaseWatchSourceClient, stitched_path: str, stitched_remote: str
+) -> bool:
+    """Upload the stitched file to the source; False when the optional write-back failed.
+
+    The import already succeeded by the time this runs, so a failure is reported to the
+    caller rather than raised.
+    """
+    try:
+        client.upload_file(stitched_path, stitched_remote)
+    except Exception:  # client backends (S3, SMB, local) raise unrelated exception families
+        logger.exception("upload_stitched_to_source failed")
+        return False
+    return True
 
 
 def _load_scan_plan(source_id: int) -> dict | None:
@@ -484,6 +504,7 @@ def stitch_and_import(
         first_dir = os.path.dirname(file_infos[0].path)
         stitched_remote = (first_dir + "/" if first_dir else "") + stitched_name
 
+        writeback_failed = False
         with contextlib.ExitStack() as stack:
             if client is not None:
                 stack.enter_context(client)
@@ -558,14 +579,15 @@ def stitch_and_import(
 
             # Phase 4 — optional write-back to the source. NO DB session held.
             if upload_stitched and client is not None:
-                try:
-                    client.upload_file(stitched_path, stitched_remote)
-                except Exception as e:
-                    logger.warning("upload_stitched_to_source failed: %s", e)
+                writeback_failed = not _write_back_stitched(client, stitched_path, stitched_remote)
 
-        return {"status": result_status, "stitched": stitched_name}
+        return {
+            "status": result_status,
+            "stitched": stitched_name,
+            "writeback_failed": writeback_failed,
+        }
     except Exception as e:
-        logger.error("stitch_and_import failed for source %s group %s: %s", source_id, base_name, e)
+        logger.exception("stitch_and_import failed for source %s group %s", source_id, base_name)
         return {"status": "error", "error": str(e)}
     finally:
         if stitched_path and os.path.exists(stitched_path):
@@ -732,5 +754,5 @@ def _notify_scan_complete(user_id: int, source_uuid: str, status: str, summary: 
                 "summary": summary,
             },
         )
-    except Exception as e:
-        logger.debug("watch_source_scan WS notify failed: %s", e)
+    except RedisError as e:
+        logger.warning("watch_source_scan WS notify failed: %s", e, exc_info=True)

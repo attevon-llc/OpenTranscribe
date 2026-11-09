@@ -8,6 +8,9 @@ import contextlib
 import logging
 from typing import Any
 
+from kombu.exceptions import OperationalError as BrokerUnavailableError
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NEURAL_BOOTSTRAP_LOCK_TIMEOUT_SECONDS
@@ -69,8 +72,8 @@ def _get_indexed_uuids() -> set[str] | None:
         )
         buckets = response.get("aggregations", {}).get("file_uuids", {}).get("buckets", [])
         return {b["key"] for b in buckets}
-    except Exception as e:
-        logger.warning(f"Could not check indexed files: {e}")
+    except OpenSearchException as e:
+        logger.warning(f"Could not check indexed files: {e}", exc_info=True)
         return None
 
 
@@ -139,14 +142,18 @@ def _find_unindexed_by_user(
     return unindexed_by_user
 
 
-def _dispatch_reindex_tasks(unindexed_by_user: dict[int, list[str]]) -> None:
+def _dispatch_reindex_tasks(unindexed_by_user: dict[int, list[str]]) -> int:
     """Dispatch reindex Celery tasks for each user with unindexed files.
 
     Args:
         unindexed_by_user: Dict mapping user_id to list of file UUIDs.
+
+    Returns:
+        The number of users whose reindex task could not be published.
     """
     from app.tasks.reindex_task import reindex_transcripts_task
 
+    failed_users = 0
     for user_id, file_uuids in unindexed_by_user.items():
         try:
             reindex_transcripts_task.delay(
@@ -154,8 +161,10 @@ def _dispatch_reindex_tasks(unindexed_by_user: dict[int, list[str]]) -> None:
                 file_uuids=file_uuids,
             )
             logger.info(f"Dispatched reindex for user {user_id}: {len(file_uuids)} files")
-        except Exception as e:
-            logger.error(f"Failed to dispatch reindex for user {user_id}: {e}")
+        except BrokerUnavailableError as e:
+            failed_users += 1
+            logger.error(f"Failed to dispatch reindex for user {user_id}: {e}", exc_info=True)
+    return failed_users
 
 
 #: Lock key for this task. Matches the registered Celery task name, the same
@@ -411,11 +420,11 @@ def _run_search_maintenance() -> dict[str, Any]:
                 f"{len(unindexed_by_user)} users. Dispatching reindex tasks."
             )
 
-            _dispatch_reindex_tasks(unindexed_by_user)
+            stats["reindex_dispatch_failures"] = _dispatch_reindex_tasks(unindexed_by_user)
             stats["reindex_triggered"] = True
 
     except Exception as e:
-        logger.error(f"Search maintenance task failed: {e}")
+        logger.exception("Search maintenance task failed")
         stats["error"] = str(e)
 
     return stats

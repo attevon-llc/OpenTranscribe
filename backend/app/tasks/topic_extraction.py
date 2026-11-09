@@ -28,10 +28,12 @@ import logging
 from typing import Any
 
 from celery.exceptions import Retry
+from kombu.exceptions import OperationalError as BrokerUnavailableError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
+from app.core.exceptions import ResourceNotFoundError
 from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.services.llm_budget import notification_extra
@@ -190,8 +192,8 @@ def _trigger_batch_grouping(user_id: int, upload_batch_id: int | None) -> None:
 
                 group_batch_files_task.delay(batch.id, user_id)
                 logger.info(f"Triggered batch grouping for batch {batch.id}")
-    except Exception as e:
-        logger.warning(f"Batch grouping check failed: {e}")
+    except (SQLAlchemyError, BrokerUnavailableError) as e:
+        logger.warning(f"Batch grouping check failed: {e}", exc_info=True)
 
 
 def _mark_task_status(
@@ -221,8 +223,10 @@ def _mark_task_status(
                 completed=status in ("completed", "failed"),
             )
             return duration_seconds
-    except Exception as status_err:
-        logger.debug(f"Could not record topic-extraction task status: {status_err}")
+    except SQLAlchemyError as status_err:
+        logger.warning(
+            f"Could not record topic-extraction task status: {status_err}", exc_info=True
+        )
         return None
 
 
@@ -244,9 +248,12 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
             notify = (
                 (int(media_file.user_id), int(media_file.id)) if media_file is not None else None
             )
-    except Exception as notify_err:
+    except (SQLAlchemyError, ResourceNotFoundError) as notify_err:
         # Log but don't raise - notification failures shouldn't mask the original error
-        logger.debug(f"Failed to resolve file for topic extraction failure notice: {notify_err}")
+        logger.warning(
+            f"Failed to resolve file for topic extraction failure notice: {notify_err}",
+            exc_info=True,
+        )
         notify = None
 
     if notify is not None:
@@ -258,8 +265,11 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
                 message=refusal.user_message if refusal is not None else _EXTRACTION_FAILED,
                 extra=notification_extra(refusal) if refusal is not None else None,
             )
-        except Exception as notify_err:
-            logger.debug(f"Failed to send topic extraction failure notification: {notify_err}")
+        except Exception as notify_err:  # best-effort: must not mask the original failure
+            logger.warning(
+                f"Failed to send topic extraction failure notification: {notify_err}",
+                exc_info=True,
+            )
 
     return {
         "status": "failed",
@@ -434,6 +444,7 @@ def extract_topics_task(self, file_uuid: str, force_regenerate: bool = False):
         _mark_task_status(task_id, "failed", error_message=task_error_text(e))
         return _handle_task_error(e, file_uuid)
     except Exception as e:
+        logger.exception(f"Topic extraction failed for {file_uuid}")
         budget_refusal = refusal_of(e)
         _mark_task_status(
             task_id,

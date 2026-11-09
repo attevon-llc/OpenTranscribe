@@ -10,6 +10,8 @@ import json
 import logging
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.env import env_bool
@@ -94,8 +96,8 @@ def update_gpu_stats(self: Any) -> list[dict[str, Any]]:
                 ),
             )
             logger.debug(f"Broadcast GPU stats for {len(gpu_stats_list)} device(s)")
-        except Exception as broadcast_err:
-            logger.warning(f"Failed to broadcast GPU stats: {broadcast_err}")
+        except RedisError as broadcast_err:
+            logger.warning(f"Failed to broadcast GPU stats: {broadcast_err}", exc_info=True)
 
         # Clear debounce lock (best-effort, non-critical)
         with contextlib.suppress(Exception):
@@ -110,7 +112,7 @@ def update_gpu_stats(self: Any) -> list[dict[str, Any]]:
     # behaviour the product does not have — and its log line is exactly what an
     # operator would grep for after a failure and never find.
     except Exception as e:
-        logger.error(f"Error updating GPU stats: {str(e)}")
+        logger.exception("Error updating GPU stats")
         fallback = [
             {
                 "available": False,

@@ -9,6 +9,9 @@ without re-embedding the transcript; the transcript indexer itself lives in
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
 from app.core.queues import UtilityPriority
@@ -119,9 +122,9 @@ def update_file_access_index(file_ids: list[int]) -> dict[str, Any]:
                 f"{file_updated} chunks, {len(accessible_ids)} users"
             )
 
-        except Exception as e:
+        except (OpenSearchException, SQLAlchemyError) as e:
             errors += 1
-            logger.error(f"Failed to update access index for file {file_id}: {e}")
+            logger.error(f"Failed to update access index for file {file_id}: {e}", exc_info=True)
 
     # Unconditional — including when errors > 0. A chat retrieval cache entry is
     # keyed ACL-blind (see retrieval_cache.cache_key), so an ACL rewrite here is
@@ -223,15 +226,17 @@ def update_file_tags_index(self: Any, file_ids: list[int]) -> dict[str, Any]:
                 conflicts="proceed",
             )
             updated += int(response.get("updated", 0))
-        except Exception as e:
+        except OpenSearchException as e:
             errors += 1
-            logger.error(f"Failed to update tags in the search index for file {file_id}: {e}")
+            logger.error(
+                f"Failed to update tags in the search index for file {file_id}: {e}", exc_info=True
+            )
 
     if updated:
         try:
             client.indices.refresh(index=index_name)
-        except Exception as e:
-            logger.warning(f"Search index refresh after a tag update failed: {e}")
+        except OpenSearchException as e:
+            logger.warning(f"Search index refresh after a tag update failed: {e}", exc_info=True)
 
     logger.info(
         f"Tag index update: {updated} documents across {len(file_ids)} files, {errors} errors"

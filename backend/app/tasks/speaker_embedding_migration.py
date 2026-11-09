@@ -19,6 +19,7 @@ from app.core.embedding_models import get_speaker_index
 from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
 from app.services.opensearch_service import get_opensearch_client
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.privacy import policy as privacy_policy
 
 logger = logging.getLogger(__name__)
@@ -141,8 +142,8 @@ def _bulk_update_embeddings(
         else:
             summary["normalized"] += len(normalized_embeddings)
 
-    except Exception as e:
-        logger.error(f"Bulk update failed: {e}")
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.error(f"Bulk update failed: {e}", exc_info=True)
         summary["failed"] += len(normalized_embeddings)
 
 
@@ -170,8 +171,8 @@ def _sample_check_normalized(client: Any, index_name: str, sample_size: int = 50
             if emb and not _is_normalized(emb):
                 return False
         return True
-    except Exception as e:
-        logger.warning("Sample normalization check failed for %s: %s", index_name, e)
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.warning("Sample normalization check failed for %s: %s", index_name, e, exc_info=True)
         return False  # be safe — run full scan
 
 
@@ -188,8 +189,9 @@ def _normalize_index(
         if not client.indices.exists(index=index_name):
             logger.info(f"Index {index_name} does not exist, skipping")
             return
-    except Exception as e:
-        logger.error(f"Error checking index {index_name}: {e}")
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.error(f"Error checking index {index_name}: {e}", exc_info=True)
+        summary.setdefault("errors", []).append(f"{index_name}: {e}")
         return
 
     # Fast pre-check: sample random vectors. If all normalized, skip full scan.
@@ -241,11 +243,14 @@ def _normalize_index(
 
         try:
             client.indices.refresh(index=index_name)
-        except Exception as e:
-            logger.warning(f"Failed to refresh {index_name} after normalization: {e}")
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            logger.warning(
+                f"Failed to refresh {index_name} after normalization: {e}", exc_info=True
+            )
 
     except Exception as e:
-        logger.error(f"Error normalizing index {index_name}: {e}")
+        # Per-index isolation: one failing index must not stop the others.
+        logger.exception(f"Error normalizing index {index_name}")
         summary.setdefault("errors", []).append(str(e))
 
     finally:
@@ -325,8 +330,9 @@ def _run_normalize_embeddings(batch_size: int) -> dict[str, Any]:
 
         active = get_active_speaker_index()
         indices_to_scan.add(active)
-    except Exception as e:
-        logger.debug("Could not detect active speaker index: %s", e)
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
+        logger.warning("Could not detect active speaker index: %s", e, exc_info=True)
+        summary.setdefault("errors", []).append(f"active speaker index lookup: {e}")
 
     logger.info("Starting embedding normalization across indices: %s", indices_to_scan)
 

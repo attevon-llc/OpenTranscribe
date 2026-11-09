@@ -84,9 +84,10 @@ def generate_waveform_data_task(
                         f"Failed to generate waveform for file {media_file.id}: {media_file.filename}"
                     )
 
-            except Exception as e:
+            except Exception:
+                # Per-file isolation: counted in `errors`, the batch carries on.
                 error_count += 1
-                logger.error(f"Error processing file {media_file.id}: {e}")
+                logger.exception(f"Error processing file {media_file.id}")
 
         logger.info(
             f"Waveform generation completed: {processed_count} processed, {error_count} errors"
@@ -99,7 +100,7 @@ def generate_waveform_data_task(
         }
 
     except Exception as e:
-        logger.error(f"Error in waveform generation task: {e}")
+        logger.exception("Error in waveform generation task")
         return {"status": "error", "message": str(e)}
 
 
@@ -142,8 +143,9 @@ def _generate_waveform_for_file(file_id: int, storage_path: str, filename: str) 
 
             return False
 
-    except Exception as e:
-        logger.error(f"Error generating waveform for file {file_id}: {e}")
+    except Exception:
+        # The caller counts False as an error; the traceback is what tells an operator why.
+        logger.exception(f"Error generating waveform for file {file_id}")
         return False
 
 

@@ -29,6 +29,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.tasks import search_file_field_tasks
 
@@ -95,7 +96,9 @@ class TestBumpFiresOnErrorToo:
         bump_mock = MagicMock()
         monkeypatch.setattr("app.services.chat.retrieval_cache.bump_corpus_version", bump_mock)
         client = _stub_opensearch_client(
-            update_by_query_side_effect=RuntimeError("opensearch is down")
+            update_by_query_side_effect=OpenSearchConnectionError(
+                "N/A", "opensearch is down", Exception("x")
+            )
         )
         monkeypatch.setattr("app.services.opensearch_service.get_opensearch_client", lambda: client)
 

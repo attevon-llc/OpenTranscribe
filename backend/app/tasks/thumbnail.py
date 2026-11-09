@@ -9,6 +9,8 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from minio.error import S3Error
+
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
@@ -59,8 +61,8 @@ def generate_thumbnail_task(self: Any, file_id: int, user_id: int, storage_path:
                 f"Generated presigned URL for thumbnail generation (host: {settings.MINIO_HOST})"
             )
 
-        except Exception as e:
-            logger.error(f"Failed to get presigned URL for file {file_id}: {e}")
+        except (S3Error, OSError) as e:
+            logger.error(f"Failed to get presigned URL for file {file_id}: {e}", exc_info=True)
             result["error"] = f"Presigned URL generation failed: {str(e)}"
             return result
 
@@ -129,9 +131,10 @@ def generate_thumbnail_task(self: Any, file_id: int, user_id: int, storage_path:
                         file_id=file_id,
                         extra={"thumbnail_url": thumbnail_url},
                     )
-            except Exception as notify_err:
+            except Exception as notify_err:  # best-effort: the thumbnail is already stored
                 logger.warning(
-                    f"Thumbnail notify failed for file {file_id} (non-fatal): {notify_err}"
+                    f"Thumbnail notify failed for file {file_id} (non-fatal): {notify_err}",
+                    exc_info=True,
                 )
 
             result["success"] = True

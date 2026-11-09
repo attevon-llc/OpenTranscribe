@@ -24,6 +24,10 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 from typing import Any
 
+from kombu.exceptions import OperationalError as BrokerUnavailableError
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import SPEAKER_SHORT_SEGMENT_MIN_DURATION
@@ -139,8 +143,10 @@ def _resolve_file_id_for_tracking(file_uuid: str) -> int | None:
         with session_scope() as db:
             media_file = get_file_by_uuid(db, file_uuid)
             return int(media_file.id) if media_file else None
-    except Exception as exc:  # tracking must never block detection
-        logger.debug("File id resolution for task tracking failed for %s: %s", file_uuid, exc)
+    except SQLAlchemyError:  # tracking must never block detection
+        logger.warning(
+            "File id resolution for task tracking failed for %s", file_uuid, exc_info=True
+        )
         return None
 
 
@@ -161,8 +167,8 @@ def _create_and_start_task_record(task_id: str, user_id: int, file_id: int) -> N
             if db.query(Task.id).filter(Task.id == task_id).first() is None:
                 create_task_record(db, task_id, user_id, file_id, "speaker_attribute_detection")
             update_task_status(db, task_id, "in_progress", progress=0.1)
-    except Exception as exc:  # tracking must never block detection
-        logger.warning("Could not create task record for %s: %s", task_id, exc)
+    except SQLAlchemyError as exc:  # tracking must never block detection
+        logger.warning("Could not create task record for %s: %s", task_id, exc, exc_info=True)
 
 
 def _update_attr_task(
@@ -190,8 +196,10 @@ def _update_attr_task(
                 error_message=error_message,
                 completed=status in ("completed", "failed", "skipped"),
             )
-    except Exception as exc:  # tracking must never mask the real outcome
-        logger.warning("Could not update task record %s to %s: %s", task_id, status, exc)
+    except SQLAlchemyError as exc:  # tracking must never mask the real outcome
+        logger.warning(
+            "Could not update task record %s to %s: %s", task_id, status, exc, exc_info=True
+        )
 
 
 def _auto_speaker_identification_enabled(user_id: int) -> bool:
@@ -248,8 +256,8 @@ def _dispatch_llm_speaker_identification(
         logger.info(
             f"Dispatched LLM speaker identification for {file_uuid} (gender attributes ready)"
         )
-    except Exception as e:
-        logger.warning(f"Failed to dispatch LLM speaker identification: {e}")
+    except (BrokerUnavailableError, SQLAlchemyError) as e:
+        logger.warning(f"Failed to dispatch LLM speaker identification: {e}", exc_info=True)
     finally:
         post_processing_status.report(
             PostProcessingTask.SPEAKER_IDENTIFICATION, state, file_uuid=str(file_uuid)
@@ -362,7 +370,8 @@ def detect_speaker_attributes_task(self: Any, file_uuid: str, user_id: int) -> d
             _update_attr_task(task_id, "skipped", progress=1.0)
             _dispatch_llm_speaker_identification(file_uuid)
             return {"status": "skipped", "reason": "duplicate_in_progress"}
-    except Exception:
+    except RedisError:
+        logger.warning("Redis unavailable; running attribute detection unguarded", exc_info=True)
         _guard = None  # Redis unavailable — proceed unguarded
 
     try:
@@ -418,8 +427,12 @@ def _attributes_already_predicted(file_uuid: str) -> bool:
                 return False
             speakers = db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
             return bool(speakers) and all(s.attributes_predicted_at is not None for s in speakers)
-    except Exception as exc:  # never block detection on a bookkeeping read
-        logger.debug("attributes-already-predicted check failed for %s: %s", file_uuid, exc)
+    except SQLAlchemyError:  # never block detection on a bookkeeping read
+        logger.warning(
+            "attributes-already-predicted check failed for %s; running detection",
+            file_uuid,
+            exc_info=True,
+        )
         return False
 
 

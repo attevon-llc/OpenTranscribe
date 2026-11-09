@@ -84,8 +84,13 @@ from typing import Any
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.queues import CPUPriority
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 
 logger = logging.getLogger(__name__)
+
+
+class TenantBackfillError(RuntimeError):
+    """The backfill left some documents without their organization_id."""
 
 
 @dataclass
@@ -225,6 +230,7 @@ def _backfill_file_uuid_docs(
     and the legacy whole-document ``transcripts`` index (#1027).
     """
     updated = 0
+    failed_orgs: list[int] = []
     if not client.indices.exists(index=index_name):
         return 0
     for org_id, file_uuids in org_to_file_uuids.items():
@@ -245,8 +251,13 @@ def _backfill_file_uuid_docs(
                 },
             )
             updated += int(resp.get("updated", 0))
-        except Exception as e:
-            logger.error(f"{index_name} backfill failed for org {org_id}: {e}")
+        except CLUSTER_UNAVAILABLE_ERRORS:
+            logger.exception(f"{index_name} backfill failed for org {org_id}")
+            failed_orgs.append(org_id)
+    if failed_orgs:
+        # Documents left without organization_id are served outside tenant scoping, so a
+        # partial stamp must fail the run (the update is idempotent; a rerun resumes).
+        raise TenantBackfillError(f"{index_name}: backfill failed for orgs {failed_orgs}")
     return updated
 
 
@@ -279,21 +290,27 @@ def _speaker_indices(client: Any) -> list[str]:
         try:
             if client.indices.exists(index=index_name):
                 indices.append(index_name)
-        except Exception as e:
-            logger.debug(f"Skipping index {index_name} (existence check failed): {e}")
+        except CLUSTER_UNAVAILABLE_ERRORS:
+            # Skipping would leave that index's documents unstamped and report success.
+            logger.exception(f"Existence check failed for speaker index {index_name}")
+            raise
     return indices
 
 
 def _update_by_query(client: Any, index_name: str, query: dict, script: dict, label: str) -> int:
-    """Run one update_by_query, returning the updated-doc count (0 on error)."""
+    """Run one update_by_query, returning the updated-doc count.
+
+    Raises:
+        OpenSearch errors propagate after being logged: 0 updated must mean "nothing matched".
+    """
     from app.services.opensearch_service.update_by_query import update_by_query
 
     try:
         resp = update_by_query(client, index_name, query, script)
         return int(resp.get("updated", 0))
-    except Exception as e:
-        logger.error(f"Speaker backfill ({label}) failed in {index_name}: {e}")
-        return 0
+    except CLUSTER_UNAVAILABLE_ERRORS:
+        logger.exception(f"Speaker backfill ({label}) failed in {index_name}")
+        raise
 
 
 def _stamp_script(org_id: int) -> dict:

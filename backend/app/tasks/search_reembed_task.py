@@ -20,6 +20,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from kombu.exceptions import OperationalError as BrokerUnavailableError
+
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.db.session_utils import session_scope
@@ -89,10 +91,10 @@ def _reembed_degraded_files(self: Any, triggered_by: int, limit: int = 500) -> d
             )
             dispatched_files += len(file_uuids)
             dispatched_users += 1
-        except Exception as e:
+        except BrokerUnavailableError as e:
             # Per-owner isolation: one broker failure must not stop dispatch to
             # every other owner.
-            logger.error(f"search_reembed: dispatch failed for user {user_id}: {e}")
+            logger.error(f"search_reembed: dispatch failed for user {user_id}: {e}", exc_info=True)
             dispatch_failures.append({"user_id": user_id, "error": str(e)})
 
     with session_scope() as db:

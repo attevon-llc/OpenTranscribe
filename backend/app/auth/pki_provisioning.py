@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
@@ -78,13 +79,9 @@ def _create_pki_user(db: Session, pki_data: PKIUserData) -> User:
     pki_not_after = None
     not_before_str = pki_data.get("not_before")
     if not_before_str:
-        from datetime import datetime
-
         pki_not_before = datetime.fromisoformat(not_before_str)
     not_after_str = pki_data.get("not_after")
     if not_after_str:
-        from datetime import datetime
-
         pki_not_after = datetime.fromisoformat(not_after_str)
 
     fingerprint = pki_data.get("fingerprint")
@@ -153,6 +150,30 @@ def _same_issuer(user: User, pki_data: PKIUserData) -> bool:
     return not (stored and presented and stored != presented)
 
 
+def _apply_certificate_metadata(user: User, pki_data: PKIUserData) -> None:
+    """Copy the certificate fields that are present onto the user."""
+    if pki_data.get("serial_number"):
+        user.pki_serial_number = pki_data["serial_number"]
+    if pki_data.get("issuer_dn"):
+        user.pki_issuer_dn = pki_data["issuer_dn"]
+    if pki_data.get("organization"):
+        user.pki_organization = pki_data["organization"]
+    if pki_data.get("organizational_unit"):
+        user.pki_organizational_unit = pki_data["organizational_unit"]
+    if pki_data["common_name"]:
+        user.pki_common_name = pki_data["common_name"]
+    not_before_str = pki_data.get("not_before")
+    if not_before_str:
+        user.pki_not_before = datetime.fromisoformat(not_before_str)
+    not_after_str = pki_data.get("not_after")
+    if not_after_str:
+        user.pki_not_after = datetime.fromisoformat(not_after_str)
+    fingerprint = pki_data.get("fingerprint")
+    if fingerprint:
+        # Store fingerprint without colons for consistent storage
+        user.pki_fingerprint_sha256 = fingerprint.replace(":", "")
+
+
 def _update_pki_user(db: Session, user: User, pki_data: PKIUserData) -> User:
     """
     Update an existing user's PKI data and certificate metadata.
@@ -182,31 +203,7 @@ def _update_pki_user(db: Session, user: User, pki_data: PKIUserData) -> User:
     user.pki_subject_dn = subject_dn
     user.auth_type = AUTH_TYPE_PKI
 
-    # Update certificate metadata if available
-    if pki_data.get("serial_number"):
-        user.pki_serial_number = pki_data["serial_number"]
-    if pki_data.get("issuer_dn"):
-        user.pki_issuer_dn = pki_data["issuer_dn"]
-    if pki_data.get("organization"):
-        user.pki_organization = pki_data["organization"]
-    if pki_data.get("organizational_unit"):
-        user.pki_organizational_unit = pki_data["organizational_unit"]
-    if pki_data["common_name"]:
-        user.pki_common_name = pki_data["common_name"]
-    not_before_str = pki_data.get("not_before")
-    if not_before_str:
-        from datetime import datetime
-
-        user.pki_not_before = datetime.fromisoformat(not_before_str)
-    not_after_str = pki_data.get("not_after")
-    if not_after_str:
-        from datetime import datetime
-
-        user.pki_not_after = datetime.fromisoformat(not_after_str)
-    fingerprint = pki_data.get("fingerprint")
-    if fingerprint:
-        # Store fingerprint without colons for consistent storage
-        user.pki_fingerprint_sha256 = fingerprint.replace(":", "")
+    _apply_certificate_metadata(user, pki_data)
 
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:
@@ -254,31 +251,7 @@ def _convert_local_user_to_pki(db: Session, user: User, pki_data: PKIUserData) -
     user.pki_subject_dn = subject_dn
     user.hashed_password = EXTERNAL_AUTH_NO_PASSWORD  # Clear local password
 
-    # Store certificate metadata
-    if pki_data.get("serial_number"):
-        user.pki_serial_number = pki_data["serial_number"]
-    if pki_data.get("issuer_dn"):
-        user.pki_issuer_dn = pki_data["issuer_dn"]
-    if pki_data.get("organization"):
-        user.pki_organization = pki_data["organization"]
-    if pki_data.get("organizational_unit"):
-        user.pki_organizational_unit = pki_data["organizational_unit"]
-    if pki_data["common_name"]:
-        user.pki_common_name = pki_data["common_name"]
-    not_before_str = pki_data.get("not_before")
-    if not_before_str:
-        from datetime import datetime
-
-        user.pki_not_before = datetime.fromisoformat(not_before_str)
-    not_after_str = pki_data.get("not_after")
-    if not_after_str:
-        from datetime import datetime
-
-        user.pki_not_after = datetime.fromisoformat(not_after_str)
-    fingerprint = pki_data.get("fingerprint")
-    if fingerprint:
-        # Store fingerprint without colons for consistent storage
-        user.pki_fingerprint_sha256 = fingerprint.replace(":", "")
+    _apply_certificate_metadata(user, pki_data)
 
     # Update admin role based on PKI_ADMIN_DNS list
     if pki_data["is_admin"]:

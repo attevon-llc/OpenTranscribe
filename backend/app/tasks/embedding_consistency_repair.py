@@ -20,6 +20,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from collections.abc import Iterator
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
 
     from app.services.speaker_analysis_models import SegmentResult
     from app.tasks.migration_pipeline import PreparedFile
+    from app.tasks.migration_pipeline import SpeakerSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +77,60 @@ def _voiceprints_allowed(media_file_id: int) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _unit_speaker_vectors(
+    prepared: PreparedFile,
+    results_by_model: dict[str, list[SegmentResult]],
+    target_uuids: set[str],
+) -> Iterator[tuple[SpeakerSnapshot, list[float], int]]:
+    """Yield ``(speaker, unit_vector, segment_count)`` for each speaker that may be written.
+
+    Per-segment embeddings are averaged and L2-normalised. A speaker is skipped when it is not
+    in ``target_uuids``, or when its segments cancel out to a zero/near-zero vector (a degenerate
+    vector must never reach OpenSearch; a later repair run retries). Yields nothing at all when
+    there are no embedding results or the file's voiceprint policy denies re-creation.
+    """
+    import numpy as np
+
+    embedding_results = results_by_model.get("embedding", [])
+    if not embedding_results:
+        return
+
+    if not _voiceprints_allowed(prepared.media_file_id):
+        return
+
+    speaker_embeddings: dict[int, list] = {}
+    for sr in embedding_results:
+        speaker_embeddings.setdefault(sr.speaker_id, []).append(sr.value)
+
+    speaker_by_id = {sp.id: sp for sp in prepared.speakers}
+
+    for speaker_id, embs in speaker_embeddings.items():
+        speaker = speaker_by_id.get(speaker_id)
+        if not speaker or speaker.uuid not in target_uuids:
+            continue
+
+        if len(embs) == 1:
+            aggregated = embs[0]
+        else:
+            stacked = np.vstack(embs)
+            aggregated = np.mean(stacked, axis=0)
+        norm = np.linalg.norm(aggregated)
+        if norm <= _ZERO_NORM_EPSILON:
+            logger.warning(
+                "Skipping write for speaker %s (uuid=%s) in file %s: aggregated "
+                "embedding from %d segment(s) has zero/near-zero norm (%.2e) — "
+                "embeddings cancelled out. Not writing a degenerate vector to "
+                "OpenSearch; retry in a future repair run.",
+                speaker.id,
+                speaker.uuid,
+                prepared.file_uuid,
+                len(embs),
+                norm,
+            )
+            continue
+        yield speaker, (aggregated / norm).tolist(), len(embs)
+
+
 def _v3_result_writer(
     prepared: PreparedFile,
     results_by_model: dict[str, list[SegmentResult]],
@@ -86,67 +142,26 @@ def _v3_result_writer(
     the alias may point to speakers_v4 post-finalization.  Writing 512-dim
     v3 embeddings to a 256-dim v4 index would fail with a dimension mismatch.
     """
-    import numpy as np
-
     from app.core.embedding_models import get_speaker_index_v3
     from app.services.opensearch_service import add_speaker_embedding
 
-    embedding_results = results_by_model.get("embedding", [])
-    if not embedding_results:
-        return 0
-
-    if not _voiceprints_allowed(prepared.media_file_id):
-        return 0
-
-    # Group by speaker
-    speaker_embeddings: dict[int, list] = {}
-    for sr in embedding_results:
-        speaker_embeddings.setdefault(sr.speaker_id, []).append(sr.value)
-
-    speaker_by_id = {sp.id: sp for sp in prepared.speakers}
     written = 0
-
-    for speaker_id, embs in speaker_embeddings.items():
-        speaker = speaker_by_id.get(speaker_id)
-        if not speaker or speaker.uuid not in target_uuids:
-            continue
-
-        if len(embs) == 1:
-            aggregated = embs[0]
-        else:
-            stacked = np.vstack(embs)
-            aggregated = np.mean(stacked, axis=0)
-        norm = np.linalg.norm(aggregated)
-        if norm <= _ZERO_NORM_EPSILON:
-            logger.warning(
-                "Skipping write for speaker %s (uuid=%s) in file %s: aggregated "
-                "embedding from %d segment(s) has zero/near-zero norm (%.2e) — "
-                "embeddings cancelled out. Not writing a degenerate vector to "
-                "OpenSearch; retry in a future repair run.",
-                speaker.id,
-                speaker.uuid,
-                prepared.file_uuid,
-                len(embs),
-                norm,
-            )
-            continue
-        aggregated = aggregated / norm
-
-        # Write to concrete v3 index, not the alias
+    for speaker, embedding, segment_count in _unit_speaker_vectors(
+        prepared, results_by_model, target_uuids
+    ):
         result = add_speaker_embedding(
             speaker_id=speaker.id,
             speaker_uuid=speaker.uuid,
             user_id=prepared.user_id,
             name=speaker.name,
-            embedding=aggregated.tolist(),
+            embedding=embedding,
             media_file_id=prepared.media_file_id,
-            segment_count=len(embs),
+            segment_count=segment_count,
             target_index=get_speaker_index_v3(),
             organization_id=prepared.organization_id,
         )
         if result is not None:
             written += 1
-
     return written
 
 
@@ -156,63 +171,24 @@ def _v4_result_writer(
     target_uuids: set[str],
 ) -> int:
     """Write extracted embeddings to the v4 staging index."""
-    import numpy as np
-
     from app.services.opensearch_service import add_speaker_embedding_v4
 
-    embedding_results = results_by_model.get("embedding", [])
-    if not embedding_results:
-        return 0
-
-    if not _voiceprints_allowed(prepared.media_file_id):
-        return 0
-
-    speaker_embeddings: dict[int, list] = {}
-    for sr in embedding_results:
-        speaker_embeddings.setdefault(sr.speaker_id, []).append(sr.value)
-
-    speaker_by_id = {sp.id: sp for sp in prepared.speakers}
     written = 0
-
-    for speaker_id, embs in speaker_embeddings.items():
-        speaker = speaker_by_id.get(speaker_id)
-        if not speaker or speaker.uuid not in target_uuids:
-            continue
-
-        if len(embs) == 1:
-            aggregated = embs[0]
-        else:
-            stacked = np.vstack(embs)
-            aggregated = np.mean(stacked, axis=0)
-        norm = np.linalg.norm(aggregated)
-        if norm <= _ZERO_NORM_EPSILON:
-            logger.warning(
-                "Skipping write for speaker %s (uuid=%s) in file %s: aggregated "
-                "embedding from %d segment(s) has zero/near-zero norm (%.2e) — "
-                "embeddings cancelled out. Not writing a degenerate vector to "
-                "OpenSearch; retry in a future repair run.",
-                speaker.id,
-                speaker.uuid,
-                prepared.file_uuid,
-                len(embs),
-                norm,
-            )
-            continue
-        aggregated = aggregated / norm
-
+    for speaker, embedding, segment_count in _unit_speaker_vectors(
+        prepared, results_by_model, target_uuids
+    ):
         result = add_speaker_embedding_v4(
             speaker_id=speaker.id,
             speaker_uuid=speaker.uuid,
             user_id=prepared.user_id,
             name=speaker.name,
-            embedding=aggregated.tolist(),
+            embedding=embedding,
             media_file_id=prepared.media_file_id,
-            segment_count=len(embs),
+            segment_count=segment_count,
             organization_id=prepared.organization_id,
         )
         if result is not None:
             written += 1
-
     return written
 
 

@@ -14,6 +14,7 @@ immediately; other processes catch up within ``PRIVACY_WRITE_BACKSTOP_TTL_SECOND
 from __future__ import annotations
 
 import logging
+import uuid as uuid_pkg
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -23,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.auth.audit_events import AuditOutcome
 from app.core import constants
 from app.core.env import parse_bool
+from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
 from app.models.system_settings import SystemSettings
@@ -148,6 +150,13 @@ def update_instance_policy(
 
 
 # --- user layer --------------------------------------------------------------------------
+
+
+def organization_uuid(db: Session, organization_id: int | None) -> uuid_pkg.UUID | None:
+    """The public uuid of ``organization_id``; ``None`` for no organization or an unknown id."""
+    if organization_id is None:
+        return None
+    return db.scalar(select(Organization.uuid).where(Organization.id == organization_id))
 
 
 def read_user_switch(db: Session, user_id: int) -> bool:

@@ -16,9 +16,6 @@ app/api/endpoints/auth/sessions.py::_revoke_all_and_commit  # the inner except g
 app/api/endpoints/auth/sessions.py::logout  # logout reports each piece it could not end in `failed`; the cookies are cleared regardless
 app/api/endpoints/auth/sessions.py::_end_federated_session  # best-effort IdP single logout; local logout still completes
 
-# Not the request path.
-app/auth/token_service.py::cleanup_expired_tokens  # Celery beat housekeeping; returns 0 and runs again next schedule
-
 # Best-effort side effects after the request's own work has committed; failure is logged
 # and the response is unaffected.
 app/api/endpoints/auth/oidc.py::_store_session_id_token  # optional id_token for RP-initiated logout; login completes without it

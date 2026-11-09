@@ -136,7 +136,7 @@ def test_any_member_removes_any_file_of_an_org_collection(client, gov):
 
 
 def test_the_transcript_search_is_scoped_to_the_tenant_and_owner(client, gov, monkeypatch):
-    from app.api.endpoints.files import filtering
+    from app.services import file_list_filters as filtering
 
     seen: list[dict] = []
 

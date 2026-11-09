@@ -1,0 +1,742 @@
+import logging
+from datetime import datetime
+from uuid import UUID
+
+import sqlalchemy as sa
+from sqlalchemy import ColumnElement
+from sqlalchemy import Float
+from sqlalchemy import Integer
+from sqlalchemy import String
+from sqlalchemy import cast
+from sqlalchemy import func
+from sqlalchemy import select
+from sqlalchemy.orm import Query
+from sqlalchemy.orm import Session
+
+from app.core.constants import FILE_TYPE_MIME_PREFIXES
+from app.core.tenancy import UNSCOPED
+from app.core.tenancy import OrgScope
+from app.core.tenancy import _Unscoped
+from app.models.media import MediaFile
+from app.models.speaker import Speaker
+from app.models.tag import FileTag
+from app.models.tag import Tag
+from app.models.user import User
+from app.services.admin_file_search import title_or_filename_matches
+from app.services.file_availability import available_pred
+from app.services.file_availability import unavailable_list_exempt
+from app.services.file_owner_queries import distinct_owner_ids
+from app.services.hidden_media_service import hidden_mode_pred
+from app.services.hold_guard import held_count_in
+from app.services.hold_guard import held_file_ids
+from app.services.hold_guard import not_held_pred
+from app.services.platform_bypass import PlatformBypass
+from app.services.search.availability_field import exclude_unavailable_clause
+
+logger = logging.getLogger(__name__)
+
+# Query-cost bound on the owner-facet endpoint (issue #966). NOT a security
+# control — the security boundary is the join predicate in
+# `get_accessible_owners` (the same `get_accessible_file_ids_subquery`/org-scope
+# predicate `GET /files` itself uses). Raising this number only changes how many
+# rows a single request can cost; it does not widen who can be seen.
+OWNER_FACET_LIMIT = 100
+
+
+def apply_search_filter(query: Query, search: str | None) -> Query:
+    """
+    Apply search filter for filename and title.
+
+    Args:
+        query: Base query
+        search: Search term
+
+    Returns:
+        Filtered query
+    """
+    if search:
+        # One predicate with the administrators' file pickers (services/admin_file_search).
+        query = query.filter(title_or_filename_matches(search))
+    return query
+
+
+def apply_tag_filter(query: Query, tag: list[str] | None) -> Query:
+    """
+    Apply tag filter — finds files that have ALL specified tags (AND logic).
+
+    Uses a single subquery with HAVING COUNT instead of chaining one join per
+    tag, which avoids Cartesian-product blowup when multiple tags are selected.
+
+    Args:
+        query: Base query
+        tag: List of tag names
+
+    Returns:
+        Filtered query
+    """
+    if tag and len(tag) > 0:
+        # Subquery: find media_file IDs that have every requested tag.
+        # COUNT over Tag.name, not Tag.id: since v374 the same name can exist as
+        # several rows (one per owner), and a file carrying two of them would
+        # otherwise satisfy a two-tag filter with a single distinct name.
+        matching_ids = (
+            select(FileTag.media_file_id)
+            .join(Tag, Tag.id == FileTag.tag_id)
+            .where(Tag.name.in_(tag))
+            .group_by(FileTag.media_file_id)
+            .having(func.count(func.distinct(Tag.name)) == len(tag))
+        )
+        query = query.filter(MediaFile.id.in_(matching_ids))
+    return query
+
+
+#: The ``load_only`` column set a gallery-style list needs on each file's speakers: the
+#: label inputs (so building the speaker summary issues no per-speaker lazy load) and the
+#: provenance the privacy redaction reads (``identity_source``, ``media_file_id``,
+#: ``profile_id``, ``verified``).
+LIST_SPEAKER_COLUMNS = (
+    Speaker.uuid,
+    Speaker.name,
+    Speaker.display_name,
+    Speaker.suggested_name,
+    Speaker.confidence,
+    Speaker.suggestion_source,
+    Speaker.verified,
+    Speaker.identity_source,
+    Speaker.media_file_id,
+    Speaker.profile_id,
+)
+
+
+def hidden_speaker_name_clause(
+    db: Session, query: Query, speaker: list[str] | None
+) -> ColumnElement[bool] | None:
+    """The SQL condition "this speaker's display name is withheld", or ``None`` with no filter.
+
+    A speaker filter matches the name the response would show: a display name a voiceprint
+    made is not matchable while the file's voiceprints are off (#1280). Bounded by the files of
+    ``query`` (call it with the query before the filters are applied) and resolved per
+    (owner, organization) scope, so a gallery pays one extra query, and only when a speaker
+    filter was actually given.
+    """
+    if not speaker:
+        return None
+    from app.services.privacy.redact_view import PrivacyView
+    from app.services.privacy.redact_view import name_hidden_clause_for_names
+
+    return name_hidden_clause_for_names(
+        PrivacyView(db), query.with_entities(MediaFile.id).order_by(None), speaker
+    )
+
+
+def apply_speaker_filter(
+    query: Query, speaker: list[str] | None, name_hidden: sa.ColumnElement[bool] | None = None
+) -> Query:
+    """
+    Apply speaker filter using display name or original name.
+
+    ``name_hidden`` (from :func:`hidden_speaker_name_clause`) makes a display name that is
+    withheld for the speaker's file unmatchable: the filter then agrees with the chips the
+    page shows. The diarizer name still matches.
+
+    Uses an EXISTS subquery instead of joining through transcript_segment
+    then calling DISTINCT.  This eliminates the Cartesian product that occurs
+    when a file has many segments — the planner can stop at the first
+    matching row per file.
+
+    Args:
+        query: Base query
+        speaker: List of speaker names
+        name_hidden: Speakers whose display name must not be matched (see above).
+
+    Returns:
+        Filtered query
+    """
+    if speaker and len(speaker) > 0:
+        from app.services.privacy.redact_view import visible_display_name_expr
+
+        shown_name = (
+            Speaker.display_name if name_hidden is None else visible_display_name_expr(name_hidden)
+        )
+        speaker_or_conditions = []
+        for s in speaker:
+            speaker_or_conditions.append(sa.or_(shown_name == s, Speaker.name == s))
+
+        if speaker_or_conditions:
+            exists_subq = (
+                select(sa.literal(1))
+                .select_from(Speaker)
+                .where(
+                    Speaker.media_file_id == MediaFile.id,
+                    sa.or_(*speaker_or_conditions),
+                )
+                .exists()
+            )
+            query = query.filter(exists_subq)
+    return query
+
+
+def apply_date_filters(query: Query, from_date: datetime | None, to_date: datetime | None) -> Query:
+    """
+    Apply date range filters.
+
+    Args:
+        query: Base query
+        from_date: Start date
+        to_date: End date
+
+    Returns:
+        Filtered query
+    """
+    if from_date:
+        query = query.filter(MediaFile.upload_time >= from_date)
+
+    if to_date:
+        query = query.filter(MediaFile.upload_time <= to_date)
+
+    return query
+
+
+def apply_duration_filters(
+    query: Query, min_duration: float | None, max_duration: float | None
+) -> Query:
+    """
+    Apply duration range filters.
+
+    Args:
+        query: Base query
+        min_duration: Minimum duration in seconds
+        max_duration: Maximum duration in seconds
+
+    Returns:
+        Filtered query
+    """
+    if min_duration is not None:
+        query = query.filter(cast(MediaFile.duration, Float) >= min_duration)
+
+    if max_duration is not None:
+        query = query.filter(cast(MediaFile.duration, Float) <= max_duration)
+
+    return query
+
+
+def apply_file_size_filters(
+    query: Query, min_file_size: int | None, max_file_size: int | None
+) -> Query:
+    """
+    Apply file size range filters (MB to bytes conversion).
+
+    Args:
+        query: Base query
+        min_file_size: Minimum file size in MB
+        max_file_size: Maximum file size in MB
+
+    Returns:
+        Filtered query
+    """
+    if min_file_size is not None:
+        query = query.filter(MediaFile.file_size >= min_file_size * 1024 * 1024)
+
+    if max_file_size is not None:
+        query = query.filter(MediaFile.file_size <= max_file_size * 1024 * 1024)
+
+    return query
+
+
+def apply_file_type_filter(query: Query, file_type: list[str] | None) -> Query:
+    """
+    Apply file type filter (audio/video).
+
+    Args:
+        query: Base query
+        file_type: List of file types ('audio', 'video')
+
+    Returns:
+        Filtered query
+
+    An unrecognized value narrows to nothing rather than being dropped (issue #871):
+    dropping it returned the caller's WHOLE accessible file set while they believed they had
+    filtered, and ``?file_type=audio&file_type=bogus`` silently narrowed to audio-only. This
+    is not an authorization bug — the base query is already scoped to the caller's own
+    accessible/non-quarantined files before this filter runs — it just returned too many of
+    the caller's OWN files. Mirrors the search plane's ``_file_type_filter_clause``
+    (``FILE_TYPE_MIME_PREFIXES``, shared with this function since #871), including its literal
+    MIME fallback: a caller passing a full ``audio/mpeg`` still gets an exact match.
+    """
+    if file_type:
+        type_conditions: list[sa.ColumnElement[bool]] = []
+        for ft in file_type:
+            prefix = FILE_TYPE_MIME_PREFIXES.get(ft.lower())
+            if prefix:
+                type_conditions.append(MediaFile.content_type.like(f"{prefix}%"))
+            else:
+                type_conditions.append(MediaFile.content_type == ft)
+        # type_conditions is never empty here (every branch above appends exactly one
+        # condition per requested value) — no "if type_conditions:" guard. That guard was
+        # the bug: it let an all-unrecognized file_type list fall through unfiltered.
+        query = query.filter(sa.or_(*type_conditions))
+
+    return query
+
+
+def apply_status_filter(query: Query, status: list[str] | None) -> Query:
+    """
+    Apply status filter.
+
+    Args:
+        query: Base query
+        status: List of status values
+
+    Returns:
+        Filtered query
+    """
+    if status:
+        status_conditions = []
+        for s in status:
+            status_conditions.append(MediaFile.status == s)
+        if status_conditions:
+            query = query.filter(sa.or_(*status_conditions))
+
+    return query
+
+
+def apply_transcript_search_filter(
+    query: Query,
+    transcript_search: str | None,
+    user_id: int | None = None,
+    *,
+    organization_id: int | None,
+    include_quarantined: bool = False,
+) -> Query:
+    """
+    Apply transcript content search filter using OpenSearch.
+
+    Delegates to the OpenSearch transcript index instead of scanning the
+    transcript_segment table with ILIKE.  OpenSearch provides BM25 keyword
+    matching with highlighting — orders of magnitude faster than a
+    PostgreSQL full-table scan on a TEXT column.
+
+    Falls back gracefully if OpenSearch is unavailable (filter is skipped).
+
+    Args:
+        query: Base query
+        transcript_search: Search term for transcript content
+        user_id: Restrict search to this user's files (None = all)
+        organization_id: The request's tenant scope (None = personal). Required
+            (#1027): the index query carries its own tenant gate rather than relying
+            only on the org-scoped SQL query it is intersected with. That also keeps
+            other tenants' hits from filling the 10,000-hit window below.
+        include_quarantined: The quarantine review exemption, the same value the SQL side
+            of the listing passes to ``exclude_unavailable``. Trashed files never match.
+
+    Returns:
+        Filtered query with only matching file IDs
+    """
+    if not transcript_search:
+        return query
+
+    from app.core.config import settings
+    from app.services.opensearch_service import get_opensearch_client
+    from app.services.search.tenant_scope import org_filter_clauses
+
+    client = get_opensearch_client()
+    if not client:
+        logger.warning("OpenSearch unavailable — skipping transcript search filter")
+        return query
+
+    try:
+        # Build OpenSearch query with both phrase and keyword matching
+        must_clauses: list[dict] = []
+        filter_clauses: list[dict] = []
+
+        # Keyword search on transcript content
+        must_clauses.append(
+            {
+                "multi_match": {
+                    "query": transcript_search,
+                    "fields": ["content"],
+                    "type": "best_fields",
+                    "operator": "and",
+                }
+            }
+        )
+
+        # Scope to user's files when specified
+        if user_id is not None:
+            filter_clauses.append({"term": {"user_id": user_id}})
+        filter_clauses.extend(org_filter_clauses(organization_id))
+        # A trashed or quarantined file's transcript never matches (#1101, #1253); the SQL side
+        # drops it too, under the same review exemption.
+        filter_clauses.append(exclude_unavailable_clause(include_quarantined=include_quarantined))
+
+        search_body: dict = {
+            "query": {
+                "bool": {
+                    "must": must_clauses,
+                    **({"filter": filter_clauses} if filter_clauses else {}),
+                }
+            },
+            "_source": ["file_uuid"],
+            "size": 10000,  # upper bound; gallery pagination trims further
+        }
+
+        response = client.search(
+            index=settings.OPENSEARCH_TRANSCRIPT_INDEX,
+            body=search_body,
+        )
+
+        file_uuids = []
+        for hit in response["hits"]["hits"]:
+            file_uuid = hit["_source"].get("file_uuid")
+            if file_uuid:
+                file_uuids.append(file_uuid)
+
+        if not file_uuids:
+            # No matches — return impossible filter so query yields zero rows
+            query = query.filter(sa.literal(False))
+        else:
+            query = query.filter(MediaFile.uuid.in_(file_uuids))
+
+    except Exception as e:
+        logger.exception(f"OpenSearch transcript search failed: {e}")
+        # Degrade gracefully — skip filter rather than error the whole request
+
+    return query
+
+
+def resolve_owner_user_ids(db: Session, owner: list[UUID] | None) -> list[int] | None:
+    """Translate the ``owner`` query param's UUIDs into internal user ids.
+
+    No authorization check happens here — the caller applies the resulting ids
+    as a predicate *inside* an already-authorized file set (the
+    ``get_accessible_file_ids_subquery`` union for a normal user, or the
+    tenant-org predicate for an admin — see ``list_media_files`` and
+    ``get_accessible_owners``), so a UUID that does not name an owner the
+    caller can actually see just matches zero rows; it cannot widen the set.
+
+    Args:
+        db: Database session.
+        owner: Requested owner UUIDs, or ``None``/empty for "no owner filter".
+
+    Returns:
+        ``None`` when no filter was requested. Otherwise a list of internal
+        user ids — ``[-1]`` (an impossible id) when none of the requested
+        UUIDs resolved to a real user, so an unmatched owner narrows to zero
+        results rather than silently falling through to "unfiltered"
+        (mirrors the ``file_type`` fix for issue #871).
+    """
+    if not owner:
+        return None
+    ids = [row[0] for row in db.query(User.id).filter(User.uuid.in_(owner)).all()]
+    return ids or [-1]
+
+
+def apply_owner_filter(query: Query, owner_user_ids: list[int] | None) -> Query:
+    """Restrict to specific owner(s) (issue #966's ownership multi-select).
+
+    Applied INSIDE the caller's already-authorized accessible/admin file set —
+    this is a plain narrowing predicate, not a second authorization check.
+    See :func:`resolve_owner_user_ids`.
+
+    Args:
+        query: Base query, already scoped to the caller's accessible files.
+        owner_user_ids: Internal user ids to restrict to, or ``None`` for no filter.
+
+    Returns:
+        Filtered query.
+    """
+    if owner_user_ids is not None:
+        query = query.filter(MediaFile.user_id.in_(owner_user_ids))
+    return query
+
+
+def apply_hold_filter(query: Query, held: bool | None) -> Query:
+    """The computed "Legal hold" tag: keep only held files (``True``) or only free ones.
+
+    Computed from ``hold_guard``'s predicate at read time, never stored as tag or collection rows
+    (docs/design/legal_hold_ux_freeze_plan.md section 5), so it narrows whatever the caller's
+    list already scoped and cannot reach a file the caller could not already see.
+
+    Args:
+        query: Base query, already scoped to the caller's accessible files.
+        held: ``True`` held only, ``False`` free only, ``None`` no filter.
+
+    Returns:
+        Filtered query.
+    """
+    if held is None:
+        return query
+    return query.filter(MediaFile.id.in_(held_file_ids()) if held else not_held_pred())
+
+
+def get_accessible_owners(
+    db: Session,
+    user_id: int,
+    *,
+    organization_id: OrgScope = UNSCOPED,
+    bypass: PlatformBypass = PlatformBypass.none(),
+) -> list[User]:
+    """Distinct owners of the files THIS caller can already see (issue #966).
+
+    SECURITY (constraint 1 of the #966 review): joins ``User`` against the
+    IDENTICAL file-visibility predicate ``GET /files`` itself uses —
+    ``PermissionService.get_accessible_file_ids_subquery`` for a normal
+    caller (owned files + files reachable via a shared collection, grant or
+    group), or the same tenant-org predicate ``list_media_files``'s own
+    admin branch uses for an admin. This answers "whose files can *this*
+    caller already see", never "who exists" — it deliberately does NOT reuse
+    ``GET /users/search``'s tenant-wide directory scope, which would let any
+    authenticated user enumerate every account in the organization.
+
+    This is a CLOSED ENUMERATION endpoint: there is no free-text parameter
+    here on purpose (constraint 2) — the caller receives the full (capped)
+    list of owners they can already see and filters it client-side, the same
+    shape ``SearchableMultiSelect`` already uses for tags/collections/speakers.
+    A free-text parameter would turn an authorized list into an
+    account-probing oracle.
+
+    Args:
+        db: Database session.
+        user_id: The caller's internal id.
+        organization_id: Active org id, ``None`` for personal, or ``UNSCOPED``
+            (legacy) — tenant-gates the query exactly like ``list_media_files``.
+        bypass: When it ``sees_all_in_scope``, mirrors ``list_media_files``'s admin
+            branch (every file in the active org scope, not just the caller's
+            accessible subset). The tenant predicate still applies.
+
+    Returns:
+        Up to :data:`OWNER_FACET_LIMIT` distinct ``User`` rows (constraint 4 —
+        a QUERY COST bound only; see that constant's docstring for why it must
+        never be mistaken for the security boundary, which is the join
+        predicate above).
+    """
+    if bypass.sees_all_in_scope:
+        if not isinstance(organization_id, _Unscoped):
+            org_pred = (
+                MediaFile.organization_id == organization_id
+                if organization_id is not None
+                else MediaFile.organization_id.is_(None)
+            )
+            file_pred: sa.ColumnElement[bool] = org_pred
+        else:
+            file_pred = sa.true()
+    else:
+        from app.services.permission_service import PermissionService
+
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=organization_id
+        )
+        file_pred = MediaFile.id.in_(select(accessible_sq))
+
+    # The distinct owner ids first, then the users: joining every accessible file to ``user``
+    # and de-duplicating the joined rows sorted all of them (#1337 G11).
+    owner_ids = distinct_owner_ids(
+        sa.and_(file_pred, available_pred(include_quarantined=unavailable_list_exempt(bypass)))
+    )
+    return (
+        db.query(User)
+        .filter(User.id.in_(owner_ids))
+        .order_by(User.full_name, User.email)
+        .limit(OWNER_FACET_LIMIT)
+        .all()
+    )
+
+
+def apply_all_filters(query: Query, filters: dict) -> Query:
+    """
+    Apply all filters to the query.
+
+    Filter order is optimized: cheap, high-selectivity filters (status,
+    date range) are applied first to reduce the working set before more
+    expensive filters (speaker EXISTS, tag subquery, OpenSearch).
+
+    Args:
+        query: Base query
+        filters: Dictionary of filter parameters. ``organization_id`` is required —
+            the request's tenant scope, forwarded to the transcript-index query.
+            ``include_quarantined`` is the review exemption the caller's SQL base
+            query was built with; it reaches the transcript-index query too.
+
+    Returns:
+        Filtered query
+    """
+    # High-selectivity / cheap filters first
+    query = apply_status_filter(query, filters.get("status"))
+    query = apply_date_filters(query, filters.get("from_date"), filters.get("to_date"))
+    query = apply_file_type_filter(query, filters.get("file_type"))
+    query = apply_duration_filters(query, filters.get("min_duration"), filters.get("max_duration"))
+    query = apply_file_size_filters(
+        query, filters.get("min_file_size"), filters.get("max_file_size")
+    )
+    query = apply_search_filter(query, filters.get("search"))
+    # An indexed flag plus an EXISTS on the hold tables: cheap next to the subqueries below.
+    query = apply_hold_filter(query, filters.get("held"))
+
+    # More expensive filters — subqueries / external service
+    query = apply_tag_filter(query, filters.get("tag"))
+    query = apply_speaker_filter(
+        query, filters.get("speaker"), name_hidden=filters.get("speaker_name_hidden")
+    )
+    query = apply_owner_filter(query, filters.get("owner_user_ids"))
+    query = apply_transcript_search_filter(
+        query,
+        filters.get("transcript_search"),
+        user_id=filters.get("user_id"),
+        organization_id=filters["organization_id"],
+        include_quarantined=bool(filters.get("include_quarantined", False)),
+    )
+
+    return query
+
+
+def get_metadata_filters(
+    db: Session,
+    user_id: int,
+    ownership: str = "all",
+    *,
+    organization_id: OrgScope = UNSCOPED,
+    include_quarantined: bool = False,
+    owner_user_ids: list[int] | None = None,
+    hidden: str = "exclude",
+) -> dict:
+    """
+    Get available metadata filters for the user's accessible files.
+
+    Consolidated into 2 queries (was 6) — one for distinct values, one for
+    all min/max ranges — so PostgreSQL scans the table at most twice.
+
+    Args:
+        db: Database session
+        user_id: User ID
+        ownership: 'mine', 'shared', or 'all' (default: 'all')
+        organization_id: Active org id, None for personal, or UNSCOPED (legacy) —
+            tenant-gates every ownership branch (default-deny across scopes).
+        include_quarantined: When False (default), quarantined (DMCA/legal-hold) files are
+            excluded — matching every other read surface (A2). Facet VALUES
+            (formats, codecs, languages, date/size ranges) drawn only from a
+            quarantined file must not leak even though the file itself 404s.
+        owner_user_ids: Optional owner-filter ids (issue #966), applied INSIDE
+            the ownership-scoped predicate below via ``resolve_owner_user_ids``
+            — so the facet counts this returns match what ``GET /files``
+            itself would return for the same ``owner`` selection.
+        hidden: The caller's hide rows (issue #1102), ``exclude`` (default) / ``include`` /
+            ``only``, the same mode ``GET /files`` takes.
+
+    Returns:
+        Dictionary of available filter options
+    """
+    from sqlalchemy import and_
+
+    from app.services.permission_service import PermissionService
+
+    # Build the file filter based on ownership (tenant-gated)
+    if ownership == "mine":
+        file_filter = MediaFile.user_id == user_id
+        if not isinstance(organization_id, _Unscoped):
+            org_pred = (
+                MediaFile.organization_id == organization_id
+                if organization_id is not None
+                else MediaFile.organization_id.is_(None)
+            )
+            file_filter = and_(file_filter, org_pred)
+    elif ownership == "shared":
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=organization_id
+        )
+        file_filter = and_(MediaFile.id.in_(select(accessible_sq)), MediaFile.user_id != user_id)
+    else:  # "all"
+        accessible_sq = PermissionService.get_accessible_file_ids_subquery(
+            db, user_id, organization_id=organization_id
+        )
+        file_filter = MediaFile.id.in_(select(accessible_sq))
+
+    # A bare predicate, combined into two different queries below.
+    file_filter = and_(file_filter, available_pred(include_quarantined=include_quarantined))
+    # The caller's own hide rows (issue #1102), so the facets describe the list they filter.
+    hidden_pred = hidden_mode_pred(user_id, hidden)
+    if hidden_pred is not None:
+        file_filter = and_(file_filter, hidden_pred)
+
+    if owner_user_ids is not None:
+        file_filter = and_(file_filter, MediaFile.user_id.in_(owner_user_ids))
+
+    format_text = cast(MediaFile.metadata_important["format"], String)
+    codec_text = cast(MediaFile.metadata_important["codec"], String)
+    width_text = cast(MediaFile.metadata_important["width"], String)
+    height_text = cast(MediaFile.metadata_important["height"], String)
+
+    # --- Query 1: Distinct values (formats, codecs, languages) via array_agg ---
+    #
+    # `languages` rides this existing query rather than taking its own round trip
+    # (#453). Transcription has always been multilingual — WhisperX detects 100+
+    # languages and `MediaFile.language` records the code — but nothing ever offered
+    # it as a filter, so a user with a mixed-language library had no way to narrow to
+    # one. The chunk index has carried `language` as a filterable keyword all along.
+    distinct_row = (
+        db.query(
+            func.array_agg(func.distinct(format_text)).filter(
+                format_text.isnot(None), format_text != "null"
+            ),
+            func.array_agg(func.distinct(codec_text)).filter(
+                codec_text.isnot(None), codec_text != "null"
+            ),
+            func.array_agg(func.distinct(MediaFile.language)).filter(
+                MediaFile.language.isnot(None), MediaFile.language != ""
+            ),
+        )
+        .filter(file_filter)
+        .first()
+    )
+
+    formats = [v for v in (distinct_row[0] or []) if v] if distinct_row else []
+    codecs = [v for v in (distinct_row[1] or []) if v] if distinct_row else []
+    # Sorted so the filter list is stable between requests; array_agg order is not.
+    languages = sorted(v for v in (distinct_row[2] or []) if v) if distinct_row else []
+
+    # --- Query 2: All min/max ranges in a single table scan ---
+    ranges = (
+        db.query(
+            func.min(cast(MediaFile.duration, Float)),
+            func.max(cast(MediaFile.duration, Float)),
+            func.min(cast(width_text, Integer)),
+            func.max(cast(width_text, Integer)),
+            func.min(cast(height_text, Integer)),
+            func.max(cast(height_text, Integer)),
+            func.min(MediaFile.file_size),
+            func.max(MediaFile.file_size),
+            # The computed "Legal hold" tag's count over the same scoped set. An uncorrelated
+            # semi-join, not an EXISTS inside the aggregate (a per-row SubPlan, #1337 G8).
+            held_count_in(file_filter),
+        )
+        .filter(file_filter)
+        .first()
+    )
+
+    if ranges is not None:
+        min_duration = float(ranges[0]) if ranges[0] is not None else 0.0
+        max_duration = float(ranges[1]) if ranges[1] is not None else 0.0
+        min_width = ranges[2] if ranges[2] is not None else 0
+        max_width = ranges[3] if ranges[3] is not None else 0
+        min_height = ranges[4] if ranges[4] is not None else 0
+        max_height = ranges[5] if ranges[5] is not None else 0
+        min_file_size = ranges[6] if ranges[6] is not None else 0
+        max_file_size = ranges[7] if ranges[7] is not None else 0
+        held_count = int(ranges[8] or 0)
+    else:
+        min_duration = max_duration = 0.0
+        min_width = max_width = min_height = max_height = 0
+        min_file_size = max_file_size = 0
+        held_count = 0
+
+    return {
+        "formats": formats,
+        "codecs": codecs,
+        "languages": languages,
+        "duration": {"min": min_duration, "max": max_duration},
+        "file_size": {"min": min_file_size, "max": max_file_size},
+        "resolution": {
+            "width": {"min": min_width, "max": max_width},
+            "height": {"min": min_height, "max": max_height},
+        },
+        "held_count": held_count,
+    }

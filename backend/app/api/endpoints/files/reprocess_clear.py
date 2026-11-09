@@ -5,6 +5,13 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
+from app.services.file_route_queries import delete_file_analytics
+from app.services.file_route_queries import delete_file_segments
+from app.services.file_route_queries import delete_file_speakers
+from app.services.file_route_queries import delete_file_topic_suggestions
+from app.services.file_route_queries import list_file_speaker_ids
+from app.services.file_route_queries import list_file_speakers
+from app.services.file_route_queries import unlink_segment_speakers
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import reconcile_speaker_impact
@@ -18,11 +25,7 @@ def _capture_file_speakers(db: Session, media_file_id: int) -> SpeakerImpact:
 
     The re-run indexes the file again itself, so no reindex is requested here.
     """
-    from app.models.speaker import Speaker
-
-    speaker_ids = [
-        int(row[0]) for row in db.query(Speaker.id).filter(Speaker.media_file_id == media_file_id)
-    ]
+    speaker_ids = list_file_speaker_ids(db, media_file_id)
     return capture_speaker_impact(db, speaker_ids, removed=True, reindex=False)
 
 
@@ -43,9 +46,6 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         media_file.waveform_data = None  # Clear waveform data for regeneration
 
         # Clear existing transcript segments
-        from app.models.media import Analytics
-        from app.models.media import TranscriptSegment
-        from app.models.speaker import Speaker
         from app.services.speaker_correction_carryover import stash_file_corrections
 
         # The user's corrections of these speakers are kept by the audio they judged,
@@ -58,21 +58,13 @@ def clear_existing_transcription_data(db: Session, media_file: MediaFile) -> Non
         # Bulk, like the speaker delete below: with autoflush off, per-row ORM deletes
         # were still pending when the speakers went, and the segments' foreign key
         # refused the speaker delete for any file that had speakers.
-        db.query(TranscriptSegment).filter(TranscriptSegment.media_file_id == media_file.id).delete(
-            synchronize_session=False
-        )
+        delete_file_segments(db, media_file.id)
 
         # Clear any existing speaker data.
-        db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
-            synchronize_session=False
-        )
+        delete_file_speakers(db, media_file.id)
 
         # Clear any existing analytics data
-        existing_analytics = (
-            db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
-        )
-        if existing_analytics:
-            db.delete(existing_analytics)
+        delete_file_analytics(db, media_file.id)
 
         db.commit()
 
@@ -103,9 +95,6 @@ def clear_selective_data(
 
     ``user_id`` is the person who asked for the reprocess, for the speaker identity history.
     """
-    from app.models.media import Analytics
-    from app.models.media import TranscriptSegment
-    from app.models.speaker import Speaker
     from app.services.speaker_rename_tracker import SpeakerRenameTracker
     from app.utils.speaker_labels import canonical_speaker_label_for_row
 
@@ -128,27 +117,15 @@ def clear_selective_data(
             stash_file_corrections(db, int(media_file.id))
             # Null out speaker_id on segments first to avoid FK constraint violations,
             # then delete speakers. Transcript text/words are preserved.
-            db.query(TranscriptSegment).filter(
-                TranscriptSegment.media_file_id == media_file.id
-            ).update({TranscriptSegment.speaker_id: None}, synchronize_session=False)
+            unlink_segment_speakers(db, media_file.id)
 
             rediarize_impact = _capture_file_speakers(db, int(media_file.id))
-            db.query(Speaker).filter(Speaker.media_file_id == media_file.id).delete(
-                synchronize_session=False
-            )
+            delete_file_speakers(db, media_file.id)
             # Also clear analytics since speaker stats change
-            existing_analytics = (
-                db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
-            )
-            if existing_analytics:
-                db.delete(existing_analytics)
+            delete_file_analytics(db, media_file.id)
 
         if "analytics" in stages:
-            existing_analytics = (
-                db.query(Analytics).filter(Analytics.media_file_id == media_file.id).first()
-            )
-            if existing_analytics:
-                db.delete(existing_analytics)
+            delete_file_analytics(db, media_file.id)
 
         if "speaker_llm" in stages:
             # Reset suggested names on speakers. Nulling a confident suggestion
@@ -159,10 +136,7 @@ def clear_selective_data(
             # speaker scope indefinitely). Per-speaker "after" values differ
             # (each speaker's raw name), so this batches through the tracker
             # rather than a single dispatch call.
-            existing_speakers = (
-                db.query(Speaker).filter(Speaker.media_file_id == media_file.id).all()
-            )
-            for speaker in existing_speakers:
+            for speaker in list_file_speakers(db, media_file.id):
                 before = canonical_speaker_label_for_row(speaker)
                 clear_suggestion(speaker, user_id=user_id)
                 tracker.record(int(media_file.id), before, canonical_speaker_label_for_row(speaker))
@@ -174,15 +148,7 @@ def clear_selective_data(
 
         if "topic_extraction" in stages:
             # Clear AI-generated topic suggestions
-            from app.models.topic import TopicSuggestion
-
-            existing_suggestions = (
-                db.query(TopicSuggestion)
-                .filter(TopicSuggestion.media_file_id == media_file.id)
-                .all()
-            )
-            for suggestion in existing_suggestions:
-                db.delete(suggestion)
+            delete_file_topic_suggestions(db, media_file.id)
 
         db.commit()
         tracker.flush(db)

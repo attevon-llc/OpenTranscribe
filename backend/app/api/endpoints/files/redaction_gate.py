@@ -24,6 +24,7 @@ from app.db.request_deadline import RequestDeadlineExceededError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_route_queries import withdraw_pending_redaction
 from app.services.platform_bypass import PlatformBypass
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
 
@@ -118,14 +119,7 @@ def _withdraw_redaction_claim(db: Session, db_file: MediaFile, previous_status: 
     the stranding it is rather than replacing the caller's exception.
     """
     try:
-        withdrawn = (
-            db.query(MediaFile)
-            .filter(
-                MediaFile.id == db_file.id,
-                MediaFile.redaction_status == redaction_defaults.REDACTION_STATUS_PENDING,
-            )
-            .update({MediaFile.redaction_status: previous_status}, synchronize_session=False)
-        )
+        withdrawn = withdraw_pending_redaction(db, db_file.id, previous_status)
         db.commit()
     except Exception:
         db.rollback()

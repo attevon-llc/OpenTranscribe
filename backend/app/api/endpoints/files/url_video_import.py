@@ -5,7 +5,6 @@ from typing import Any
 
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -14,10 +13,10 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services.dispatch_priority import download_priority
 from app.services.error_categorization_service import ErrorCategorizationService
+from app.services.file_route_queries import find_imported_duplicate
 from app.services.formatting_service import FormattingService
 from app.services.media_download_service import MediaDownloadService
 from app.tasks.youtube_processing import process_youtube_url_task
-from app.utils.db_helpers import org_stamp_is
 from app.utils.task_secret_handoff import discard_task_secret
 from app.utils.task_secret_handoff import media_credentials_context
 from app.utils.task_secret_handoff import stash_task_secret
@@ -91,33 +90,13 @@ def _check_duplicate_video(
     Raises:
         HTTPException: If a duplicate video is found (409 Conflict).
     """
-    from app.services.file_availability import available_pred
-
-    # A trashed copy is not a duplicate (issue #1101): re-importing creates a new file.
-    base = db.query(MediaFile).filter(
-        MediaFile.user_id == user_id,
-        org_stamp_is(MediaFile.organization_id, organization_id),
-        available_pred(include_quarantined=True),
+    existing_video = find_imported_duplicate(
+        db,
+        user_id=user_id,
+        organization_id=organization_id,
+        normalized_url=normalized_url,
+        video_id=video_id,
     )
-
-    # Check by source_url first (works for all platforms)
-    existing_video = base.filter(MediaFile.source_url == normalized_url).first()
-
-    # Also check by metadata_raw video_id (for backward compatibility with YouTube)
-    if not existing_video:
-        existing_video = (
-            base.filter(text("metadata_raw->>'video_id' = :video_id"))
-            .params(video_id=video_id)
-            .first()
-        )
-
-    # Check by youtube_id for backward compatibility
-    if not existing_video:
-        existing_video = (
-            base.filter(text("metadata_raw->>'youtube_id' = :youtube_id"))
-            .params(youtube_id=video_id)
-            .first()
-        )
 
     if not existing_video:
         return

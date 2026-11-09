@@ -7,26 +7,26 @@ from fastapi import status
 from kombu.exceptions import KombuError
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
 
 from app.core.env import env_bool
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.media import MediaFile
-from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
 from app.schemas.media import MediaFileUpdate
 from app.schemas.transcript import TranscriptSegment as TranscriptSegmentSchema
 from app.schemas.transcript import TranscriptSegmentUpdate
 from app.services.file_availability import is_unavailable
+from app.services.file_route_queries import get_file_by_id
+from app.services.file_route_queries import get_owned_file_in_tenant
+from app.services.file_route_queries import get_segment_with_speaker
 from app.services.ingest_artifacts.recorded_date_service import set_manual_date
 from app.services.opensearch_service import update_transcript_title
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.db_helpers import owned_in_tenant
 from app.utils.speaker_labels import canonical_speaker_label
 from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.time_format import format_timestamp_simple as format_timestamp
@@ -106,7 +106,7 @@ def get_media_file_by_id(
     Raises:
         HTTPException: If file not found
     """
-    db_file = db.query(MediaFile).filter(MediaFile.id == file_id).first()
+    db_file = get_file_by_id(db, file_id)
     platform_reached = db_file is not None and bypass.allows(
         org_id=db_file.organization_id,
         owner_id=db_file.user_id,
@@ -115,11 +115,8 @@ def get_media_file_by_id(
         resource_uuid=str(db_file.uuid),
     )
     if not platform_reached:
-        db_file = (
-            db.query(MediaFile)
-            .filter(MediaFile.id == file_id)
-            .filter(owned_in_tenant(MediaFile, user_id=user_id, organization_id=organization_id))
-            .first()
+        db_file = get_owned_file_in_tenant(
+            db, file_id, user_id=user_id, organization_id=organization_id
         )
 
     # Same availability rule as the uuid choke point: trashed is not found for anyone,
@@ -370,15 +367,7 @@ def update_single_transcript_segment(
     refuse_if_frozen(db, int(file_id), actor=current_user, action="segment_edit", request=request)
 
     # Find the specific segment by UUID with speaker eagerly loaded
-    segment = (
-        db.query(TranscriptSegment)
-        .options(joinedload(TranscriptSegment.speaker))
-        .filter(
-            TranscriptSegment.uuid == segment_uuid,
-            TranscriptSegment.media_file_id == file_id,
-        )
-        .first()
-    )
+    segment = get_segment_with_speaker(db, segment_uuid, file_id)
 
     if not segment:
         raise HTTPException(

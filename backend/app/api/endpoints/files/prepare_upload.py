@@ -7,9 +7,6 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
-from sqlalchemy import select
-from sqlalchemy import update
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -17,22 +14,25 @@ from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.files.upload import create_media_file_record
 from app.api.error_handlers import ErrorHandler
-from app.core.constants import TAG_SOURCE_MANUAL
 from app.core.exceptions import DomainError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed
 from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.tag import FileTag
 from app.models.upload_batch import UploadBatch
 from app.models.user import User
 from app.schemas.processing_request import PrepareUploadRequest
-from app.services.collection_visibility import usable_collections
 from app.services.privacy import file_consent
 from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed
 from app.services.tag_service import resolve_or_create_tags
+from app.services.upload_prepare_queries import attach_tags_to_file
+from app.services.upload_prepare_queries import bump_upload_batch_file_count
+from app.services.upload_prepare_queries import get_upload_batch
+from app.services.upload_prepare_queries import insert_upload_batch_if_absent
+from app.services.upload_prepare_queries import member_collection_ids
+from app.services.upload_prepare_queries import usable_collections_in_file_tenant
 from app.utils import benchmark_timing
 from app.utils.file_hash import check_duplicate_by_fingerprint
 from app.utils.file_hash import cleanup_failed_duplicates
@@ -85,31 +85,19 @@ def get_or_create_upload_batch(
     Returns:
         UploadBatch record
     """
-    # Atomic: parallel prepare requests of one multi-file upload share this uuid, so a
-    # read-then-insert would let two requests both miss and the loser hit the unique index.
-    # A concurrent uncommitted insert makes this statement wait for it, then do nothing.
-    inserted = db.execute(
-        pg_insert(UploadBatch)
-        .values(uuid=batch_uuid, user_id=user_id, source=source, file_count=0)
-        .on_conflict_do_nothing(index_elements=[UploadBatch.uuid])
-        .returning(UploadBatch.id)
-    ).first()
-    batch = db.query(UploadBatch).filter(UploadBatch.uuid == batch_uuid).one()
+    created = insert_upload_batch_if_absent(db, batch_uuid, user_id, source)
+    batch = get_upload_batch(db, batch_uuid)
     if batch.user_id != user_id:
         # Never link a file to a batch another user owns.
         raise HTTPException(status_code=409, detail="Upload batch id is already in use")
-    if inserted is not None:
+    if created:
         logger.info(f"Created upload batch {batch_uuid} for user {user_id}")
     return batch
 
 
 def increment_upload_batch_file_count(db: Session, batch_id: int) -> None:
     """Atomically bump ``file_count`` (no read-modify-write, safe under concurrency)."""
-    db.execute(
-        update(UploadBatch)
-        .where(UploadBatch.id == batch_id)
-        .values(file_count=UploadBatch.file_count + 1)
-    )
+    bump_upload_batch_file_count(db, batch_id)
 
 
 def add_file_to_collections(
@@ -135,11 +123,9 @@ def add_file_to_collections(
 
     wanted = [str(coll_uuid) for coll_uuid in collection_ids]
 
-    # The file's tenant is a correlated subquery, not a separate SELECT, so the lookup stays
-    # one round trip (the batching contract above); a collection qualifies when it belongs to
-    # that tenant and ``user_id`` may edit it (collection_visibility.usable_collections).
-    file_org = select(MediaFile.organization_id).where(MediaFile.id == file_id).scalar_subquery()
-    collections = usable_collections(db, user_id, file_org, collection_uuids=wanted)
+    # A collection qualifies when it belongs to the file's tenant and ``user_id`` may edit it
+    # (collection_visibility.usable_collections), resolved in one round trip.
+    collections = usable_collections_in_file_tenant(db, user_id, file_id, wanted)
     by_uuid = {str(collection.uuid): collection for collection in collections}
 
     for coll_uuid in wanted:
@@ -151,13 +137,7 @@ def add_file_to_collections(
         db.flush()
         return
 
-    already_member = {
-        row[0]
-        for row in db.query(CollectionMember.collection_id).filter(
-            CollectionMember.collection_id.in_(resolved_ids),
-            CollectionMember.media_file_id == file_id,
-        )
-    }
+    already_member = member_collection_ids(db, resolved_ids, file_id)
 
     # dict.fromkeys keeps insertion order while de-duplicating a repeated UUID —
     # the per-UUID loop relied on the just-added row being visible to the next
@@ -204,19 +184,8 @@ def add_tags_to_file(db: Session, file_id: int, tag_names: list[str], user_id: i
         db.flush()
         return
 
-    # ON CONFLICT DO NOTHING on (media_file_id, tag_id): an already-attached tag, or one
-    # a concurrent caller attaches first, is skipped instead of failing the insert.
     db.flush()
-    db.execute(
-        pg_insert(FileTag)
-        .values(
-            [
-                {"media_file_id": file_id, "tag_id": tag_id, "source": TAG_SOURCE_MANUAL}
-                for tag_id in dict.fromkeys(tag_ids)
-            ]
-        )
-        .on_conflict_do_nothing(index_elements=[FileTag.media_file_id, FileTag.tag_id])
-    )
+    attach_tags_to_file(db, file_id, tag_ids)
 
     on_tags_changed(db, [file_id], user_id=user_id)
 

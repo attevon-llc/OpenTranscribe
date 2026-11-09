@@ -30,11 +30,11 @@ from app.auth.rate_limit import get_directory_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.file_consent import FileVoiceprintConsent
 from app.schemas.file_consent import FileVoiceprintConsentUpdate
 from app.services.file_availability import is_unavailable
+from app.services.file_route_queries import get_owned_file_by_uuid
 from app.services.hold_guard import hold_state
 from app.services.hold_guard import refusal_detail
 from app.services.privacy import file_consent
@@ -69,11 +69,7 @@ def set_file_voiceprint_consent(
 ) -> FileVoiceprintConsent:
     """Record the owner's choice for one file; ``declined`` also deletes its voiceprints."""
     current_user: User = ctx.user
-    row = (
-        db.query(MediaFile)
-        .filter(MediaFile.uuid == file_uuid, MediaFile.user_id == current_user.id)
-        .first()
-    )
+    row = get_owned_file_by_uuid(db, file_uuid, current_user.id)
     if row is None or is_unavailable(row):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
 

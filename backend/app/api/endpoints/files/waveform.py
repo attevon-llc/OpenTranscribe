@@ -22,6 +22,8 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_route_queries import waveform_candidates
+from app.services.file_route_queries import waveform_counts
 from app.services.minio_service import download_file
 from app.services.request_context import RequestContext
 from app.tasks.transcription.waveform_generator import WaveformGenerator
@@ -384,19 +386,8 @@ def generate_waveforms_for_files(
         )
 
     try:
-        from app.models.media import FileStatus
-
         # Get count of files that would be processed
-        query = (
-            db.query(MediaFile)
-            .filter(MediaFile.status == FileStatus.COMPLETED)
-            .filter(MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%"))
-        )
-
-        if not force_regenerate:
-            query = query.filter(MediaFile.waveform_data.is_(None))
-
-        files_to_process = query.all()
+        files_to_process = waveform_candidates(db, force_regenerate=force_regenerate)
 
         if not files_to_process:
             return {
@@ -448,30 +439,7 @@ def get_waveform_status(
         )
 
     try:
-        # Get all counts in a single query (replaces 3 separate queries)
-        from sqlalchemy import func
-
-        from app.models.media import FileStatus
-
-        is_media = MediaFile.content_type.like("audio/%") | MediaFile.content_type.like("video/%")
-        counts = (
-            db.query(
-                func.count().label("total"),
-                func.count().filter(MediaFile.status == FileStatus.COMPLETED).label("completed"),
-                func.count()
-                .filter(
-                    MediaFile.status == FileStatus.COMPLETED,
-                    MediaFile.waveform_data.isnot(None),
-                )
-                .label("with_waveforms"),
-            )
-            .filter(is_media)
-            .one()
-        )
-
-        total_media_files = counts.total
-        completed_media_files = counts.completed
-        files_with_waveforms = counts.with_waveforms
+        total_media_files, completed_media_files, files_with_waveforms = waveform_counts(db)
         files_without_waveforms = completed_media_files - files_with_waveforms
 
         return {

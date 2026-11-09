@@ -31,10 +31,11 @@ from app.core.redaction_config import EffectiveRedactionConfig
 from app.db.base import get_db
 from app.models.media import Comment
 from app.models.media import MediaFile
-from app.models.media import TranscriptSegment
-from app.models.speaker import Speaker
 from app.models.user import User
 from app.services.content_audit import record_file_event
+from app.services.file_route_queries import list_comments_by_time
+from app.services.file_route_queries import list_file_speakers
+from app.services.file_route_queries import list_ordered_segments
 from app.services.platform_bypass import PlatformBypass
 from app.services.redaction.export_policy import resolve_export_reveal
 from app.services.redaction.reveal_audit import audit_unredacted_reveal
@@ -186,29 +187,15 @@ def export_transcript(
             ),
         )
 
-    segments = (
-        db.query(TranscriptSegment)
-        .filter(TranscriptSegment.media_file_id == file_id)
-        .order_by(
-            TranscriptSegment.start_time,
-            TranscriptSegment.end_time,
-            TranscriptSegment.id,
-        )
-        .all()
-    )
+    segments = list_ordered_segments(db, file_id)
     if not segments:
         raise HTTPException(status_code=404, detail="No transcript available for this file")
 
-    speakers = db.query(Speaker).filter(Speaker.media_file_id == file_id).all()
+    speakers = list_file_speakers(db, file_id)
 
     comments: list[Comment] = []
     if include_comments:
-        comments = (
-            db.query(Comment)
-            .filter(Comment.media_file_id == file_id)
-            .order_by(Comment.timestamp)
-            .all()
-        )
+        comments = list_comments_by_time(db, file_id)
 
     try:
         content = build_export_content(

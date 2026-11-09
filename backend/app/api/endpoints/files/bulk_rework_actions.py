@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.files.bulk_action_handlers import BulkActionResult
 from app.core.env import env_bool
 from app.models.media import FileStatus
-from app.models.media import MediaFile
 from app.services import system_settings_service
+from app.services.file_route_queries import get_file_by_id
 from app.tasks.transcription import dispatch_transcription_pipeline
 from app.utils.file_retry import reset_file_for_retry
 from app.utils.file_retry import transcript_is_regenerable
@@ -33,7 +33,7 @@ def _handle_retry_action(
     fewer than every route reachable for the same action).
     """
 
-    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    db_file = get_file_by_id(db, file_id)
     if not db_file:
         return BulkActionResult(
             file_uuid=file_uuid,
@@ -115,7 +115,7 @@ def _handle_reprocess_action(
 
     from app.api.endpoints.files.reprocess import MEDIA_REQUIRING_STAGES
 
-    db_file = db.query(MediaFile).filter_by(id=file_id).first()
+    db_file = get_file_by_id(db, file_id)
     if not db_file:
         return BulkActionResult(
             file_uuid=file_uuid,

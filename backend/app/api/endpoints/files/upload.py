@@ -20,6 +20,7 @@ from app.core.exceptions import DomainError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
+from app.services.file_route_queries import get_owned_file_by_uuid
 from app.services.minio_service import upload_file_tuned
 from app.utils import benchmark_timing
 from app.utils.file_validation import HEADER_READ_SIZE
@@ -247,14 +248,7 @@ def _get_or_create_file_record(
         return db_file
 
     # Look up file by UUID
-    db_file_result = (
-        db.query(MediaFile)
-        .filter(
-            MediaFile.uuid == existing_file_uuid,
-            MediaFile.user_id == current_user.id,
-        )
-        .first()
-    )
+    db_file_result = get_owned_file_by_uuid(db, existing_file_uuid, current_user.id)
 
     if not db_file_result:
         logger.warning(

@@ -21,6 +21,7 @@ from fastapi.routing import APIRoute
 
 from app.auth.audit_events import AuditEventType
 from app.core.enums import FileStatus
+from app.core.exceptions import EmailDeliveryError
 from app.models.media import MediaFile
 from app.models.takedown import TakedownNotification
 from app.services import takedown_notification_service as notify_mod
@@ -522,7 +523,7 @@ class _Mailer:
 
     def send_takedown_notice(self, to_email, subject, heading, paragraphs):
         if self.fail:
-            raise RuntimeError(f"smtp exploded for {to_email}")
+            raise EmailDeliveryError(f"smtp exploded for {to_email}")
         self.sent.append((to_email, subject, heading, paragraphs))
 
 

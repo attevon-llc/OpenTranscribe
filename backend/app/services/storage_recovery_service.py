@@ -38,6 +38,8 @@ from dataclasses import field
 from typing import Any
 from typing import Protocol
 
+import urllib3
+from minio.error import S3Error
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -237,7 +239,11 @@ def fingerprint_object(media_file: MediaFile) -> None:
         fingerprint = compute_from_minio(str(media_file.storage_path), size=media_file.file_size)
         if fingerprint:
             media_file.imohash = fingerprint
-    except Exception as exc:  # pragma: no cover - defensive, network path
+    except (
+        S3Error,
+        urllib3.exceptions.HTTPError,
+        OSError,
+    ) as exc:  # pragma: no cover - network path
         logger.debug(
             "imohash compute failed for %s (non-fatal): %s",
             media_file.storage_path,
@@ -316,7 +322,7 @@ def reingest_objects(
             summary.skipped_existing += 1
             logger.info("skip (registered concurrently): %s", object_name)
             continue
-        except Exception as exc:
+        except Exception as exc:  # boundary: per-item isolation, counted in summary.errors
             db.rollback()
             summary.errors += 1
             logger.exception("failed to register %s: %s", object_name, exc)
@@ -337,7 +343,7 @@ def reingest_objects(
                 )
                 summary.dispatched += 1
                 logger.info("dispatched pipeline for media_file id=%s", media_file.id)
-            except Exception as exc:
+            except Exception as exc:  # boundary: per-item isolation, counted in summary.errors
                 summary.errors += 1
                 logger.exception("dispatch failed for media_file id=%s: %s", media_file.id, exc)
 
@@ -397,7 +403,7 @@ def load_metadata_sidecar(minio_service: Any) -> dict[str, dict[str, Any]]:
 
     try:
         response = minio_service.get_object(settings.MEDIA_BUCKET_NAME, YOUTUBE_METADATA_SIDECAR)
-    except Exception as exc:
+    except Exception as exc:  # MinIOService wraps every client failure in a bare Exception
         if is_absent_error(exc):
             logger.debug("metadata sidecar not present (%s); starting fresh", exc)
             return {}
@@ -405,7 +411,7 @@ def load_metadata_sidecar(minio_service: Any) -> dict[str, dict[str, Any]]:
         raise MetadataSidecarUnavailableError(f"cannot read metadata sidecar: {exc}") from exc
     try:
         raw = response.read()
-    except Exception as exc:
+    except (urllib3.exceptions.HTTPError, OSError) as exc:
         logger.warning("metadata sidecar read failed, refusing to start fresh: %s", exc)
         raise MetadataSidecarUnavailableError(f"cannot read metadata sidecar: {exc}") from exc
     finally:
@@ -441,9 +447,9 @@ def fetch_youtube_metadata(video_id: str) -> dict[str, Any] | None:
     is fetched — never the video bytes (re-downloading is forbidden). Returns
     ``None`` on any error so the caller can record a miss and continue.
     """
-    try:
-        import yt_dlp
+    import yt_dlp
 
+    try:
         url = f"https://www.youtube.com/watch?v={video_id}"
         opts = {
             **YT_DLP_BASE_OPTS,
@@ -464,7 +470,7 @@ def fetch_youtube_metadata(video_id: str) -> dict[str, Any] | None:
             "uploader": info.get("uploader"),
             "source_url": url,
         }
-    except Exception as exc:
+    except (yt_dlp.utils.YoutubeDLError, OSError, ValueError) as exc:
         logger.warning("yt-dlp metadata fetch failed for %s: %s", video_id, exc, exc_info=True)
         return None
 

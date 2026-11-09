@@ -6,6 +6,9 @@ small module. An outage is never reported as "absent".
 
 import logging
 
+import urllib3
+from minio.error import S3Error
+
 from app.core.config import settings
 from app.services.minio_service import _temp_audio_object_name
 from app.services.minio_service import minio_client
@@ -30,7 +33,7 @@ def temp_audio_exists(file_uuid: str) -> bool:
     try:
         minio_client.stat_object(settings.MEDIA_BUCKET_NAME, _temp_audio_object_name(file_uuid))
         return True
-    except Exception as exc:
+    except (S3Error, urllib3.exceptions.HTTPError, OSError) as exc:
         if is_absent_error(exc):
             return False
         logging.getLogger(__name__).warning(

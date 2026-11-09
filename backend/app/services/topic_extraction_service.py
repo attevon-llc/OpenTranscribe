@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any
 from typing import Optional
 
+from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,7 @@ from app.schemas.topic import LLMSuggestionResponse
 from app.services import post_processing_status
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
+from app.services.llm_service import LLMConfigurationError
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMProvider
 from app.services.redaction.config import EffectiveRedactionConfig
@@ -240,7 +242,7 @@ IMPORTANT GUIDELINES:
                 return None
         except SQLAlchemyError:
             raise
-        except Exception as e:
+        except (LLMConfigurationError, ValueError, KeyError) as e:
             logger.warning(f"Could not create topic extraction service: {e}", exc_info=True)
             return None
 
@@ -477,7 +479,7 @@ IMPORTANT GUIDELINES:
             logger.info(f"Applied suggestions for file {suggestion.media_file_id}")
             return True
 
-        except Exception as e:
+        except (SQLAlchemyError, ValueError, KeyError, TypeError) as e:
             logger.exception(f"Error applying suggestions: {e}")
             db.rollback()
             return False
@@ -626,7 +628,7 @@ IMPORTANT GUIDELINES:
             # Parse response
             return self._parse_llm_response(response.content, llm_service.config.provider)
 
-        except Exception as e:
+        except Exception as e:  # LLMService wraps provider failures in a bare Exception
             logger.exception(f"Error calling LLM for suggestion extraction: {e}")
             return None
 
@@ -681,7 +683,7 @@ IMPORTANT GUIDELINES:
             )
             log_llm_text_excerpt(logger, "Topic extraction response", response_text)
             return None
-        except Exception as e:
+        except (ValidationError, TypeError, ValueError) as e:
             # Class name only: a pydantic ValidationError's message embeds the
             # offending input values, i.e. the model's output.
             logger.error(
@@ -775,12 +777,14 @@ IMPORTANT GUIDELINES:
                             apply_collections=user_settings.get("collections_enabled", True),
                         )
                     logger.info(f"Auto-applied suggestions for file {media_file.id}")
-            except Exception as e:
+            except (
+                Exception
+            ) as e:  # boundary: optional auto-apply must not undo the stored suggestion
                 logger.warning(f"Auto-apply failed for file {media_file.id}: {e}", exc_info=True)
 
             return suggestion
 
-        except Exception as e:
+        except (SQLAlchemyError, ValueError, TypeError) as e:
             logger.exception(f"Error storing suggestion: {e}")
             session.rollback()
             return None

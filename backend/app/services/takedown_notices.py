@@ -12,6 +12,9 @@ deployment's abuse contact (the operator did not make that decision).
 
 import logging
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
@@ -89,7 +92,7 @@ def notify_owner_takedown(
                 "link_uuid": link_uuid,
             },
         )
-    except Exception as e:  # the notice must never break the takedown
+    except (SQLAlchemyError, RedisError, OSError) as e:  # the notice must never break the takedown
         logger.warning(f"Owner takedown notification failed for file {file.id}: {e}", exc_info=True)
 
 
@@ -118,7 +121,7 @@ def notify_owner_release(file: MediaFile, *, link_uuid: str | None = None) -> No
                 "link_uuid": link_uuid,
             },
         )
-    except Exception as e:  # the notice must never break the release
+    except (SQLAlchemyError, RedisError, OSError) as e:  # the notice must never break the release
         logger.warning(f"Owner release notification failed for file {file.id}: {e}", exc_info=True)
 
 
@@ -177,7 +180,7 @@ def audit_takedown(
             # actor's tenant, so it names none.
             target_user_id=int(file.user_id) if (not refused or in_own_tenant) else None,
         )
-    except Exception as e:  # audit must never break the action
+    except (SQLAlchemyError, ValueError, TypeError) as e:  # audit must never break the action
         logger.warning(f"Audit log for {event_type} failed: {e}", exc_info=True)
 
 
@@ -208,5 +211,5 @@ def audit_unresolved_lookup(
             details={"actor_role": actor.role_label, "authority": actor.authority.value},
             organization_id=actor.organization_id,
         )
-    except Exception as e:  # audit must never break the action
+    except (SQLAlchemyError, ValueError, TypeError) as e:  # audit must never break the action
         logger.warning(f"Audit log for {event_type} failed: {e}", exc_info=True)

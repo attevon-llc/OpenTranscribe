@@ -55,6 +55,6 @@ def delete_avatar_object(key: str | None, *, current: str | None = None) -> None
 
     try:
         delete_file(key)
-    except Exception:
+    except Exception:  # delete_file's contract raises a bare Exception, so nothing narrower matches
         # A leftover avatar object is a leak, not data loss; the request already succeeded.
         logger.warning("Failed to delete superseded avatar object %s", key, exc_info=True)

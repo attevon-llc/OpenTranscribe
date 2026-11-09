@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.core.redaction_config import EffectiveRedactionConfig
@@ -346,7 +347,7 @@ def test_when_the_use_row_cannot_be_written_nothing_is_served(support_world):
     grant_uuid = w.active_grant()
 
     def _broken():
-        raise RuntimeError("database unavailable")
+        raise OperationalError("statement", {}, Exception("database unavailable"))
 
     with patch("app.db.session_utils.session_scope", side_effect=_broken):
         response = w.client.get(f"/api/files/{w.file.uuid}", headers=w.with_grant(grant_uuid))

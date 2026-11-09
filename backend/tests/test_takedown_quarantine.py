@@ -31,6 +31,7 @@ import json
 import uuid as uuid_pkg
 
 import pytest
+from redis.exceptions import RedisError
 
 from app.core.enums import FileStatus
 from app.core.exceptions import ResourceNotFoundError
@@ -661,7 +662,7 @@ class TestOwnerNotification:
         or the release — the DB action and audit still complete."""
 
         def boom(*_args, **_kwargs):
-            raise RuntimeError("redis down")
+            raise RedisError("redis down")
 
         monkeypatch.setattr("app.services.notification_service.send_task_notification", boom)
         db, owner, admin, file = world

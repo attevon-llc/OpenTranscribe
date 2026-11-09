@@ -7,6 +7,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.task_config import RECOVERED_AFTER_STUCK
@@ -112,7 +113,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
 
             return True
 
-        except Exception as e:
+        except Exception as e:  # boundary: per-item isolation in the recovery sweep
             logger.exception(f"Error recovering stuck task {task.id}: {str(e)}")
             return False
 
@@ -162,7 +163,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
             # Analyze task statuses and update file accordingly
             return self._update_file_based_on_tasks(db, media_file, tasks)
 
-        except Exception as e:
+        except Exception as e:  # boundary: per-item isolation in the recovery sweep
             logger.exception(f"Error fixing inconsistent media file {media_file.id}: {str(e)}")
             return False
 
@@ -191,12 +192,12 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
 
                 recovered_count += 1
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error recovering orphaned task {task.id}: {e}")
 
         try:
             db.commit()
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.exception(f"Error committing orphaned task recovery: {e}")
             db.rollback()
             return 0
@@ -249,7 +250,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                     update_media_file_status(db, int(media_file.id), FileStatus.PENDING)
                     stats["files_reset"] += 1
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error handling abandoned file {media_file.id}: {e}")
                 db.rollback()
 
@@ -355,7 +356,7 @@ class TaskRecoveryStuckMixin(TaskRecoveryRetryMixin):
                 else:
                     logger.error(f"Failed to schedule retry for stuck file {media_file.id}")
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error recovering stuck file {media_file.id}: {e}")
 
         return stats

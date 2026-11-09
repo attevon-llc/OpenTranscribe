@@ -21,6 +21,8 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from redis.exceptions import RedisError
+
 from app.core.config import settings
 from app.core.redis import get_async_redis
 from app.db.session_utils import session_scope
@@ -87,7 +89,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             logger.info(
                 f"Sent download progress update: user={user_id}, file={file_id}, status={status}"
             )
-        except Exception as e:
+        except (RedisError, OSError, ValueError, TypeError) as e:
             logger.exception(f"Failed to send download progress update: {e}")
 
     def _send_download_progress_sync(
@@ -111,7 +113,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             loop.run_until_complete(
                 self._send_download_progress(user_id, file_id, status, progress, error)
             )
-        except Exception as e:
+        except (RedisError, OSError, RuntimeError, ValueError, TypeError) as e:
             logger.exception(f"Failed to send download progress update (sync): {e}")
 
     def _ensure_cache_bucket_exists(self) -> None:
@@ -207,7 +209,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             # Check if cached video exists
             self.minio_service.stat_object(self.cache_bucket, cache_key)
             return True
-        except Exception as exc:
+        except Exception as exc:  # MinIOService wraps client failures in a bare Exception
             if not is_absent_error(exc):
                 logger.warning("video cache probe failed for %s", cache_key, exc_info=True)
             return False
@@ -331,7 +333,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 for obj in objects
                 if obj.object_name and pattern.match(obj.object_name)
             ]
-        except Exception as e:
+        except Exception as e:  # MinIOService wraps failures in a bare Exception; re-raised as StorageDeleteIncompleteError
             logger.exception(f"Could not list masked derived renders for {filename}: {e}")
             from app.services.storage_versions import StorageDeleteIncompleteError
 

@@ -27,6 +27,7 @@ from app.core.config import settings
 from app.core.enums import TakedownLinkStatus
 from app.core.enums import TakedownNotifyEvent
 from app.core.enums import TakedownNotifyStatus
+from app.core.exceptions import EmailDeliveryError
 from app.models.takedown import TakedownNotice
 from app.models.takedown import TakedownNoticeFile
 from app.models.takedown import TakedownNotification
@@ -184,7 +185,8 @@ def _deliver(
     subject, heading, paragraphs = _compose(event, organization, items)
     try:
         email_service.send_takedown_notice(str(owner.email), subject, heading, paragraphs)
-    except Exception as exc:  # a failed notice must never break the takedown
-        logger.warning("Takedown email failed (%s)", type(exc).__name__, exc_info=True)
+    except EmailDeliveryError as exc:  # a failed notice must never break the takedown
+        # Class name only, no traceback: the message can quote the recipient address or the legal reason.
+        logger.warning("Takedown email failed (%s)", type(exc).__name__)
         return TakedownNotifyStatus.FAILED
     return TakedownNotifyStatus.SENT

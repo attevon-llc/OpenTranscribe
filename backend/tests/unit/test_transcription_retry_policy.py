@@ -91,7 +91,7 @@ def notifications(monkeypatch) -> dict[str, list]:
     )
     monkeypatch.setattr(
         "app.tasks.transcription.notifications.send_progress_notification",
-        lambda user_id, file_id, progress, message: sent["progress"].append(message),
+        lambda user_id, file_id, progress, message, **_kw: sent["progress"].append(message),
     )
     return sent
 

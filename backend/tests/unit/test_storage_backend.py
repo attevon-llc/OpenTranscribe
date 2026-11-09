@@ -29,6 +29,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from app.core.config import settings
 from app.services import storage_backend as sb
@@ -291,7 +292,9 @@ def test_cors_failure_never_raises(s3_backend, monkeypatch):
     monkeypatch.setattr(settings, "S3_CONFIGURE_BUCKET_CORS", True)
     monkeypatch.setattr(settings, "S3_CORS_ALLOWED_ORIGINS", "https://app.example.com")
     fake = MagicMock()
-    fake.put_bucket_cors.side_effect = RuntimeError("AccessDenied")
+    fake.put_bucket_cors.side_effect = ClientError(
+        {"Error": {"Code": "AccessDenied", "Message": "denied"}}, "PutBucketCors"
+    )
     with patch("boto3.client", return_value=fake):
         assert sb.ensure_bucket_cors("ot-media") is False
 

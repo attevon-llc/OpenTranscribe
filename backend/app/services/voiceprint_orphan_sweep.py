@@ -41,6 +41,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
+
 logger = logging.getLogger(__name__)
 
 #: ids per ``delete_by_query`` — well under ``index.max_terms_count`` / ids-query limits.
@@ -217,7 +219,7 @@ def sweep_orphan_voiceprints(dry_run: bool = True, force: bool = False) -> dict[
                         len(resp["failures"]),
                         idx,
                     )
-            except Exception as e:  # counted as survivors below
+            except CLUSTER_UNAVAILABLE_ERRORS as e:  # counted as survivors below
                 logger.exception("Voiceprint sweep: delete batch failed in %s: %s", idx, e)
         client.indices.refresh(index=idx)
         stats["surviving"] = sum(

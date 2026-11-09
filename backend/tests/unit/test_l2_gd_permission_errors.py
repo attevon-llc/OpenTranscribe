@@ -20,6 +20,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy.exc import OperationalError
 
 from app.core.enums import FileStatus
 from app.core.exceptions import DomainError
@@ -266,7 +267,10 @@ def test_resolve_active_grant_unknown_uuid_is_the_coded_403(db_session, admin_us
 def test_record_use_fails_closed_with_the_coded_503():
     from app.services.support_access_service import record_use
 
-    with patch("app.db.session_utils.session_scope", side_effect=RuntimeError("db down")):
+    with patch(
+        "app.db.session_utils.session_scope",
+        side_effect=OperationalError("statement", {}, Exception("db down")),
+    ):
         exc = _refusal(
             lambda: record_use(
                 MagicMock(),

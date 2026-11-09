@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 
+from kombu.exceptions import KombuError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
@@ -114,7 +116,7 @@ class SpeakerRenameTracker:
             if queued:
                 logger.info(f"Queued chunk speaker-rename propagation for {queued} file(s)")
             return queued
-        except Exception as exc:  # a rename must not fail on dispatch
+        except (KombuError, OSError, SQLAlchemyError) as exc:  # a rename must not fail on dispatch
             logger.warning(
                 f"Could not queue chunk-plane speaker rename propagation: {exc}", exc_info=True
             )

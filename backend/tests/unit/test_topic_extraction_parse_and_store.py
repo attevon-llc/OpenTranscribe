@@ -16,6 +16,7 @@ import uuid as uuid_mod
 from unittest import mock
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.models.media import FileStatus
 from app.models.media import MediaFile
@@ -185,7 +186,11 @@ def test_store_suggestion_returns_none_and_rolls_back_when_the_write_fails(db_se
     # rollback is spied on rather than run: on the shared test connection a real rollback
     # would also discard the rows the fixtures committed.
     with (
-        mock.patch.object(db_session, "commit", side_effect=RuntimeError("disk full")),
+        mock.patch.object(
+            db_session,
+            "commit",
+            side_effect=OperationalError("statement", {}, Exception("disk full")),
+        ),
         mock.patch.object(db_session, "rollback") as rollback,
     ):
         stored = service._store_suggestion(media_file, _response(("budget", 0.9)))
@@ -270,7 +275,11 @@ def test_apply_suggestions_reports_false_and_rolls_back_when_the_commit_fails(
     service = TopicExtractionService(db_session)
 
     with (
-        mock.patch.object(db_session, "commit", side_effect=RuntimeError("deadlock")),
+        mock.patch.object(
+            db_session,
+            "commit",
+            side_effect=OperationalError("statement", {}, Exception("deadlock")),
+        ),
         mock.patch.object(db_session, "rollback") as rollback,
     ):
         ok = service.apply_suggestions(stored_suggestion.id, ["Team Standups"], ["budget"])

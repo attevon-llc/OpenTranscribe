@@ -339,9 +339,11 @@ def ensure_bucket_cors(bucket_name: str) -> bool:
         logger.warning("S3_CONFIGURE_BUCKET_CORS=true but no allowed origins are configured")
         return False
 
-    try:
-        import boto3
+    import boto3
+    from botocore.exceptions import BotoCoreError
+    from botocore.exceptions import ClientError
 
+    try:
         endpoint, secure = storage_endpoint()
         client = boto3.client(
             "s3",
@@ -371,6 +373,6 @@ def ensure_bucket_cors(bucket_name: str) -> bool:
         )
         logger.info(f"Configured CORS on bucket {bucket_name} for origins: {origins}")
         return True
-    except Exception as e:  # CORS setup must never block startup
+    except (ClientError, BotoCoreError) as e:  # CORS setup must never block startup
         logger.warning(f"Could not configure CORS on bucket {bucket_name}: {e}", exc_info=True)
         return False

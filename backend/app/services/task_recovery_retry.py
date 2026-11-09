@@ -10,6 +10,8 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.enums import TranscriptionStage
@@ -139,7 +141,7 @@ class TaskRecoveryRetryMixin:
             logger.info(f"Scheduled retry for file {media_file_id}, task ID: {task_id}")
             return True
 
-        except Exception as e:
+        except Exception as e:  # boundary: returns False, which the sweep counts as a failed retry
             logger.exception(f"Failed to schedule retry for file {media_file_id}: {e}")
             return False
 
@@ -223,7 +225,7 @@ class TaskRecoveryRetryMixin:
                     if self.schedule_file_retry(int(media_file.id)):
                         stats["tasks_retried"] += 1
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error recovering file {media_file.id}: {e}")
 
         return stats
@@ -266,7 +268,7 @@ class TaskRecoveryRetryMixin:
                     stats["tasks_retried"] += 1
                     logger.info(f"Scheduled download retry for file {media_file.id}")
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error recovering stuck download for file {media_file.id}: {e}")
                 db.rollback()
 
@@ -343,7 +345,7 @@ class TaskRecoveryRetryMixin:
                             progress=0,
                             stage=TranscriptionStage.PREPARE,
                         )
-                    except Exception as e:
+                    except (RedisError, OSError, SQLAlchemyError) as e:
                         logger.warning(
                             f"Failed to send notification for OOM retry {media_file.id}: {e}",
                             exc_info=True,
@@ -356,7 +358,7 @@ class TaskRecoveryRetryMixin:
                 else:
                     logger.error(f"Failed to schedule OOM retry for file {media_file.id}")
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error recovering OOM file {media_file.id}: {e}")
 
         return stats
@@ -417,7 +419,7 @@ class TaskRecoveryRetryMixin:
                     stats["files_failed"] += 1
                     logger.error(f"Failed to schedule retry for ERROR file {media_file.id}")
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 stats["files_failed"] += 1
                 logger.exception(f"Error recovering ERROR file {media_file.id}: {e}")
 
@@ -451,7 +453,7 @@ class TaskRecoveryRetryMixin:
                 update_media_file_status(db, int(media_file.id), FileStatus.ERROR)
                 stats["files_marked_error"] += 1
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error marking stuck PENDING file {media_file.id} as ERROR: {e}")
                 db.rollback()
 

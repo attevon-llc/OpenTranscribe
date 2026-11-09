@@ -15,6 +15,7 @@ from datetime import datetime
 from datetime import timedelta
 from http import HTTPStatus
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.constants import SUPPORT_ACCESS_PENDING_EXPIRY_HOURS
@@ -156,7 +157,7 @@ def record_use(
                     owner_user_id=owner_user_id,
                 )
             )
-    except Exception:
+    except (SQLAlchemyError, ValueError):
         logger.exception("Support-access use row could not be written; refusing the request")
         raise coded_error(
             HTTPStatus.SERVICE_UNAVAILABLE,

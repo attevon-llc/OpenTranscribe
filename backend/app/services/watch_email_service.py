@@ -30,6 +30,8 @@ from email.utils import parseaddr
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
+from cryptography.exceptions import InvalidTag
+
 from app.utils.encryption import decrypt_api_key
 from app.utils.smtp_transport import SMTP_DEFAULT_PORT
 from app.utils.smtp_transport import SMTP_IMPLICIT_SSL_PORT
@@ -92,7 +94,7 @@ def send_email(
         if config.provider == "m365":
             return _send_m365(config, recipients, subject, html_body, text_body)
         return False, f"Unknown email provider: {config.provider}"
-    except Exception as e:
+    except (smtplib.SMTPException, OSError, ValueError, InvalidTag) as e:
         logger.exception("Email send failed (%s): %s", config.provider, e)
         return False, str(e)
 
@@ -105,7 +107,7 @@ def test_connection(config: EmailNotificationConfig) -> tuple[bool, str]:
         if config.provider == "m365":
             return _test_m365(config)
         return False, f"Unknown email provider: {config.provider}"
-    except Exception as e:
+    except (smtplib.SMTPException, OSError, ValueError, InvalidTag) as e:
         # Returned as EmailTestResponse.message AND persisted to
         # cfg.test_message (watch_sources_email_configs.py) -- an smtplib/msal exception can
         # quote the server/credential, so only the class of failure survives.

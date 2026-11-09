@@ -87,7 +87,9 @@ def masked_segments(
                     redaction_cfg,
                     reveal_categories or set(),
                 )
-            except Exception:
+            except (
+                Exception
+            ):  # boundary: redaction fail-closed, any masking failure withholds the text
                 # FAIL CLOSED — see SubtitleService._redact_segments_inplace for why a
                 # masking failure must never fall back to the raw text.
                 logger.exception(

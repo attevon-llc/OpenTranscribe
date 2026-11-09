@@ -38,6 +38,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.enums import TranscriptionStage
 from app.core.task_config import task_recovery_config
 from app.core.task_liveness import clear_infra_requeues
@@ -120,7 +123,7 @@ def _release_reservation(media_file: MediaFile, task_id: str) -> None:
                 success=False,
             )
         )
-    except Exception:  # pragma: no cover - the hook layer already contains failures
+    except Exception:  # pragma: no cover - the hook layer already contains failures  # boundary: completion hooks must never fail the run
         logger.exception("Failure-path completion hook raised (contained)")
 
 
@@ -205,7 +208,11 @@ def _retry_file(
             "Retrying after a temporary problem",
             stage=TranscriptionStage.PREPARE,
         )
-    except Exception as e:  # a missed notification must not undo the retry
+    except (
+        RedisError,
+        OSError,
+        SQLAlchemyError,
+    ) as e:  # a missed notification must not undo the retry
         logger.debug("Retry notification for file %s failed: %s", file_id, e, exc_info=True)
     return RunOutcome.RETRIED
 
@@ -272,7 +279,7 @@ def run_cancel_requested(task_id: str, file_id: int | None) -> bool:
                 else None
             )
             return _cancel_requested(media_file, task_id)
-    except Exception as e:  # see docstring
+    except SQLAlchemyError as e:  # see docstring
         logger.warning("Could not read the cancel state of run %s: %s", task_id, e, exc_info=True)
         return False
 
@@ -392,7 +399,7 @@ def run_status(run_id: str) -> str:
                 if newer is not None:
                     return "finished"
             return "current"
-    except Exception as e:  # see docstring
+    except SQLAlchemyError as e:  # see docstring
         logger.warning("Could not read the state of run %s: %s", run_id, e, exc_info=True)
         return "unknown"
 

@@ -86,7 +86,7 @@ def run_session_cap_sweep(db: Session) -> dict:
                 db, user_id, limit, batch_limit=SESSION_CAP_SWEEP_MAX_PER_USER
             )
             db.commit()
-        except Exception:
+        except Exception:  # boundary: per-user isolation in the sweep, logged and counted
             db.rollback()
             logger.exception(
                 "Session cap sweep failed to enforce the ceiling for user_id=%s "

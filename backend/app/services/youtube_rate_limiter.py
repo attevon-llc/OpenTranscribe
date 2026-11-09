@@ -17,6 +17,8 @@ from datetime import UTC
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from redis.exceptions import RedisError
+
 from app.core.config import settings
 from app.core.redis import redis_tls_kwargs
 from app.services import youtube_policy
@@ -97,7 +99,7 @@ class YouTubeRateLimiter:
                     socket_connect_timeout=2,
                 )
                 self._redis.ping()
-            except Exception as e:
+            except (RedisError, OSError, ValueError, TypeError) as e:
                 logger.warning(f"Redis rate limiter unavailable: {e}", exc_info=True)
                 self._redis = None
         return self._redis
@@ -161,7 +163,7 @@ class YouTubeRateLimiter:
 
             return (True, "", None)
 
-        except Exception as e:
+        except (RedisError, OSError, ValueError, TypeError) as e:
             # Graceful degradation: allow if Redis check fails
             logger.warning(f"Rate limiter check failed: {e}. Allowing request.", exc_info=True)
             return (True, "", None)
@@ -189,7 +191,7 @@ class YouTubeRateLimiter:
                 return None
             oldest_ts = oldest[0][1]
             return max(1, int(float(oldest_ts) + window_seconds - now))
-        except Exception as e:
+        except (RedisError, OSError, ValueError, TypeError) as e:
             logger.warning(f"Failed to compute retry-after for {key}: {e}", exc_info=True)
             return None
 
@@ -215,7 +217,7 @@ class YouTubeRateLimiter:
             client.zadd(day_key, {str(now): now})
             client.expire(day_key, 86400)  # Auto-expire after 24 hours
 
-        except Exception as e:
+        except (RedisError, OSError, ValueError, TypeError) as e:
             logger.warning(f"Failed to record download: {e}", exc_info=True)
 
     def get_remaining_quota(self, user_id: int) -> dict:
@@ -265,7 +267,7 @@ class YouTubeRateLimiter:
                 "hourly_limit": policy.user_rate_limit_per_hour,
                 "daily_limit": policy.user_rate_limit_per_day,
             }
-        except Exception as e:
+        except (RedisError, OSError, ValueError, TypeError) as e:
             logger.warning(f"Failed to get quota: {e}", exc_info=True)
             return {
                 "hourly_remaining": -1,

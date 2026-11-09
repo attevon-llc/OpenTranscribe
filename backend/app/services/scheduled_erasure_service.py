@@ -500,7 +500,7 @@ def execute_due_requests(
             with session_scope() as db:
                 if _execute_one(db, entry_id, current):
                     executed += 1
-        except Exception as e:  # one bad request must not stop the pass
+        except Exception as e:  # boundary: per-item isolation, counted in failures
             failures += 1
             logger.exception("Scheduled erasure failed for ledger entry %s: %s", entry_id, e)
     return {"due": len(due_ids), "executed": executed, "failures": failures}

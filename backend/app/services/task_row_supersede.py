@@ -203,7 +203,7 @@ def record_superseded(task_types: list[str]) -> None:
 
         for task_type in task_types:
             task_rows_superseded_total.labels(task_type=task_type).inc()
-    except Exception as exc:  # telemetry never fails the recovery it describes
+    except (ImportError, ValueError) as exc:  # telemetry never fails the recovery it describes
         logger.debug("Could not record task_rows_superseded_total: %s", exc, exc_info=True)
 
 

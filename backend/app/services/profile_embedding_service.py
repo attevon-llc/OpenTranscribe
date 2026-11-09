@@ -17,6 +17,7 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -24,6 +25,7 @@ from app.core.embedding_models import get_speaker_index
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services.opensearch_service import get_speaker_embedding
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.opensearch_service.profiles import SPEAKER_PROFILE_MATCH_THRESHOLD
 from app.services.permission_service import file_ids_in_scope
@@ -34,6 +36,9 @@ from app.services.search.availability_field import exclude_unavailable_clause
 from app.utils.cosine_space import raw_cosine_from_opensearch_score
 
 logger = logging.getLogger(__name__)
+
+# What an OpenSearch call here can raise: the cluster could not answer, or the service helper said so.
+_OPENSEARCH_ERRORS = (*CLUSTER_UNAVAILABLE_ERRORS, OpenSearchUnavailableError)
 
 
 class ProfileEmbeddingRecomputeError(RuntimeError):
@@ -51,7 +56,7 @@ def _clear_profile_embedding_from_opensearch(profile_uuid: str) -> None:
         from app.services.opensearch_service import remove_profile_embedding
 
         remove_profile_embedding(profile_uuid)
-    except Exception as e:
+    except _OPENSEARCH_ERRORS as e:
         logger.warning(
             f"Could not clear profile {profile_uuid} embedding from OpenSearch: {e}", exc_info=True
         )
@@ -85,7 +90,7 @@ def _store_profile_embedding_to_opensearch(
                 organization_id=organization_id,
             )
         )
-    except Exception as e:
+    except _OPENSEARCH_ERRORS as e:
         logger.warning(
             f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}", exc_info=True
         )
@@ -219,7 +224,7 @@ def _check_profiles_exist_in_opensearch(
         if profile_check["hits"]["total"]["value"] == 0:
             logger.info(f"No profile documents found for user/scope {user_id}, skipping KNN search")
             return False
-    except Exception as e:
+    except _OPENSEARCH_ERRORS as e:
         if _is_index_corruption_error(e):
             logger.warning(f"Index corruption during profile check, attempting repair: {e}")
             if _repair_index(index_name):
@@ -233,7 +238,7 @@ def _check_profiles_exist_in_opensearch(
                         )
                         return False
                     return True
-                except Exception as retry_err:
+                except _OPENSEARCH_ERRORS as retry_err:
                     logger.exception(f"Profile check retry after repair failed: {retry_err}")
         logger.warning(
             f"Profile document check failed: {e}, proceeding with KNN query", exc_info=True
@@ -288,14 +293,14 @@ def _execute_knn_search(
 
     try:
         response = opensearch_client.search(index=index_name, body=query)
-    except Exception as e:
+    except _OPENSEARCH_ERRORS as e:
         if _is_index_corruption_error(e):
             logger.warning(f"Index corruption during KNN search, attempting repair: {e}")
             if _repair_index(index_name):
                 try:
                     response = opensearch_client.search(index=index_name, body=query)
                     return _extract_matches_from_response(response, threshold)
-                except Exception as retry_err:
+                except _OPENSEARCH_ERRORS as retry_err:
                     logger.exception(f"KNN search retry after repair failed: {retry_err}")
         logger.error(f"Error in OpenSearch KNN search: {e}")
         if strict:
@@ -460,7 +465,7 @@ class ProfileEmbeddingService:
 
         except ProfileEmbeddingRecomputeError:
             raise
-        except Exception as e:
+        except (SQLAlchemyError, *_OPENSEARCH_ERRORS, ValueError, TypeError) as e:
             logger.error(f"Error updating profile embedding for profile {profile_id}: {e}")
             db.rollback()
             if strict:
@@ -578,7 +583,9 @@ class ProfileEmbeddingService:
                     results[profile_id] = ProfileEmbeddingService._process_single_profile_in_batch(
                         profile, profile_id, speakers, speaker_embeddings
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # boundary: per-item isolation, one profile must not sink the batch
                     logger.exception(f"Error updating profile {profile_id} in batch: {e}")
                     results[profile_id] = False
 
@@ -586,7 +593,7 @@ class ProfileEmbeddingService:
             success_count = sum(1 for r in results.values() if r)
             logger.info(f"Batch updated {success_count} profiles successfully")
 
-        except Exception as e:
+        except (SQLAlchemyError, *_OPENSEARCH_ERRORS, ValueError, TypeError) as e:
             logger.exception(f"Error in batch profile embedding update: {e}")
             db.rollback()
             for profile_id in profile_ids:
@@ -621,7 +628,7 @@ class ProfileEmbeddingService:
             result = get_profile_embedding(str(profile.uuid))
             return list(result) if result else None
 
-        except Exception as e:
+        except (SQLAlchemyError, *_OPENSEARCH_ERRORS) as e:
             logger.exception(f"Error retrieving profile embedding for profile {profile_id}: {e}")
             return None
 
@@ -689,7 +696,7 @@ class ProfileEmbeddingService:
             )
             return matches
 
-        except Exception as e:
+        except (*_OPENSEARCH_ERRORS, ValueError, KeyError, TypeError) as e:
             logger.error(f"Error in OpenSearch profile similarity search: {e}")
             if strict:
                 if isinstance(e, OpenSearchUnavailableError):

@@ -84,7 +84,7 @@ class EmbeddingModelAdapter:
                 "np.ndarray | None",
                 self._service.extract_embedding_from_waveform(waveform, sample_rate),
             )
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.warning("Embedding extraction failed: %s", e, exc_info=True)
             return None
 
@@ -116,7 +116,7 @@ class GenderModelAdapter:
         try:
             result: tuple[str, float] | None = self._service._run_inference(audio_np)
             return result
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.warning("Gender inference failed: %s", e, exc_info=True)
             return None
 
@@ -179,5 +179,5 @@ class MultiModelRunner:
         for model in self._models:
             try:
                 model.cleanup()
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation, release the remaining models
                 logger.debug("Model cleanup failed for %s: %s", model.name, e, exc_info=True)

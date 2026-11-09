@@ -17,6 +17,7 @@ from enum import StrEnum
 
 from sqlalchemy import exists
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -60,13 +61,13 @@ def _detect_auto(db: Session) -> tuple[TenancyMode, bool]:
 
     try:
         has_org = db.scalar(select(exists().where(Organization.is_active.is_(True))))
-    except Exception:
+    except SQLAlchemyError:
         logger.error("Tenancy mode detection failed; treating as multi-tenant", exc_info=True)
         # The failed statement leaves the caller's transaction aborted; clear it so the
         # request can still run its own queries.
         try:
             db.rollback()
-        except Exception:
+        except SQLAlchemyError:
             logger.debug("rollback after failed tenancy probe also failed", exc_info=True)
         return TenancyMode.MULTI, False
     if has_org:
@@ -117,7 +118,7 @@ def warn_if_forced_single_with_orgs(db: Session) -> None:
 
     try:
         has_org = db.scalar(select(exists().where(Organization.is_active.is_(True))))
-    except Exception:
+    except SQLAlchemyError:
         logger.warning(
             "Could not check organizations for the TENANCY_MODE=single notice", exc_info=True
         )

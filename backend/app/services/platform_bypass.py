@@ -25,6 +25,7 @@ from typing import Literal
 
 from sqlalchemy import exists
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -49,7 +50,7 @@ def _active_orgs_exist(db: Session) -> bool:
 
     try:
         return bool(db.scalar(select(exists().where(Organization.is_active.is_(True)))))
-    except Exception:
+    except SQLAlchemyError:
         logger.warning("organization probe failed; auditing cross-tenant bypass", exc_info=True)
         return True
 

@@ -358,14 +358,10 @@ def quarantine_file(
 
     # Best-effort storage legal-hold (DB flag is the source of truth).
     if legal_hold and media.storage_path:
-        try:
-            from app.services.minio_service import set_object_legal_hold
+        from app.services.minio_service import set_object_legal_hold
 
-            set_object_legal_hold(media.storage_path, True)
-        except Exception as e:  # advisory; never break the takedown
-            logger.warning(
-                f"Storage legal-hold enable failed for file {file.id}: {e}", exc_info=True
-            )
+        # Advisory and never raises; it logs its own failure and returns False.
+        set_object_legal_hold(media.storage_path, True)
 
     # Presigned-URL revocation (issue #907): every object a URL can be minted for (the
     # original, thumbnail and playback rendition; the rendition is not under legal hold, it
@@ -516,14 +512,10 @@ def release_file(
     # The object lock mirrors "held by ANYONE": releasing the platform's hold must not lift it
     # while an organization hold still covers the file (issue #1276).
     if lift_object_lock and media.storage_path:
-        try:
-            from app.services.minio_service import set_object_legal_hold
+        from app.services.minio_service import set_object_legal_hold
 
-            set_object_legal_hold(media.storage_path, False)
-        except Exception as e:  # advisory; never break the release
-            logger.warning(
-                f"Storage legal-hold disable failed for file {file.id}: {e}", exc_info=True
-            )
+        # Advisory and never raises; it logs its own failure and returns False.
+        set_object_legal_hold(media.storage_path, False)
 
     # Presigned-URL untag (issue #907), retried — see this function's docstring for why a
     # failure here is worse than the legal-hold sibling's. Independent of

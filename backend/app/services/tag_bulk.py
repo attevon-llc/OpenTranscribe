@@ -20,6 +20,7 @@ from enum import StrEnum
 from typing import Final
 
 from sqlalchemy import exists
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.constants import TAG_SOURCE_MANUAL
@@ -226,14 +227,14 @@ def apply_tag_to_file(
         result = _change_association(db, file_id, tag, add)
         db.flush()
         savepoint.commit()
-    except Exception as exc:
+    except Exception as exc:  # boundary: per-file isolation, returned as a failed outcome
         # Any failure, a poisoned transaction included: undo only this file.
         savepoint.rollback()
         logger.exception(f"Bulk tag change failed on file {file_id} for tag '{tag_name}'")
         return _failed(type(exc).__name__)
     try:
         db.commit()
-    except Exception as exc:
+    except SQLAlchemyError as exc:
         db.rollback()
         logger.exception(f"Commit failed after a bulk tag change on file {file_id}")
         return _failed(type(exc).__name__)

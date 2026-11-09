@@ -8,6 +8,7 @@
   import { formatDateTime } from '$lib/utils/formatting';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import EmptyState from '$components/ui/EmptyState.svelte';
+  import { describeUserAgent } from '$lib/settings/userAgent';
 
   /**
    * One row of `GET /api/auth/sessions` — an active (non-revoked, unexpired)
@@ -74,29 +75,8 @@
     }
   }
 
-  /**
-   * Coarse browser/OS label for a user-agent string. Deliberately shallow — this
-   * is a hint about "which device is this", not UA sniffing, and an unrecognised
-   * agent falls back to the raw string rather than claiming something wrong.
-   */
-  function describeUserAgent(ua: string | null): string {
-    if (!ua) return $t('settings.sessions.unknownDevice');
-    const browser =
-      /Edg\//.test(ua) ? 'Edge'
-      : /OPR\/|Opera/.test(ua) ? 'Opera'
-      : /Chrome\//.test(ua) ? 'Chrome'
-      : /Firefox\//.test(ua) ? 'Firefox'
-      : /Safari\//.test(ua) ? 'Safari'
-      : null;
-    const platform =
-      /Windows/.test(ua) ? 'Windows'
-      : /Android/.test(ua) ? 'Android'
-      : /iPhone|iPad|iOS/.test(ua) ? 'iOS'
-      : /Mac OS X|Macintosh/.test(ua) ? 'macOS'
-      : /Linux/.test(ua) ? 'Linux'
-      : null;
-    if (browser && platform) return `${browser} — ${platform}`;
-    return browser ?? platform ?? ua;
+  function deviceLabel(ua: string | null): string {
+    return describeUserAgent(ua) ?? $t('settings.sessions.unknownDevice');
   }
 
   const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -175,7 +155,7 @@
           {#each sessions as session (session.jti)}
             <tr>
               <td>
-                <span class="device">{describeUserAgent(session.user_agent)}</span>
+                <span class="device">{deviceLabel(session.user_agent)}</span>
                 {#if session.is_current}
                   <span class="current-badge">{$t('settings.sessions.current')}</span>
                 {/if}

@@ -2,6 +2,8 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/env';
 import type { MediaFile } from '$lib/types/media';
 import type { HiddenMode } from '$lib/api/hiddenMedia';
+import { selectionAfterClick, toggled } from '$lib/gallery/selection';
+import { createGalleryTriggers } from './galleryActionTriggers';
 
 // LocalStorage key for view mode persistence
 const VIEW_MODE_STORAGE_KEY = 'gallery-view-mode';
@@ -105,6 +107,26 @@ export interface GalleryActions {
   setLoadingMore: (loading: boolean) => void;
 }
 
+/** The filter fields at rest: nothing selected, newest upload first. Fresh values per call. */
+function defaultFilters() {
+  return {
+    filterSearchQuery: '',
+    filterSelectedTags: [] as string[],
+    filterSelectedSpeakers: [] as string[],
+    filterSelectedCollectionId: null as string | null,
+    filterDateRange: { from: null, to: null } as GalleryState['filterDateRange'],
+    filterDurationRange: { min: null, max: null } as GalleryState['filterDurationRange'],
+    filterSelectedFileTypes: [] as string[],
+    filterSelectedStatuses: [] as string[],
+    filterOwnershipFilter: 'all' as GalleryState['filterOwnershipFilter'],
+    filterSelectedOwners: [] as string[],
+    filterHiddenMode: 'exclude' as HiddenMode,
+    filterHeld: false,
+    filterSortBy: 'upload_time',
+    filterSortOrder: 'desc' as GalleryState['filterSortOrder'],
+  };
+}
+
 // Initial state
 const initialState: GalleryState = {
   viewMode: getPersistedViewMode(),
@@ -120,257 +142,14 @@ const initialState: GalleryState = {
   hasMoreFiles: false,
   isLoadingMore: false,
   scrollTop: 0,
-  filterSearchQuery: '',
-  filterSelectedTags: [],
-  filterSelectedSpeakers: [],
-  filterSelectedCollectionId: null,
-  filterDateRange: { from: null, to: null },
-  filterDurationRange: { min: null, max: null },
-  filterSelectedFileTypes: [],
-  filterSelectedStatuses: [],
-  filterOwnershipFilter: 'all',
-  filterSelectedOwners: [],
-  filterHiddenMode: 'exclude',
-  filterHeld: false,
-  filterSortBy: 'upload_time',
-  filterSortOrder: 'desc',
+  ...defaultFilters(),
 };
 
-// Create the store
-function createGalleryStore() {
-  const { subscribe, update } = writable<GalleryState>(initialState);
+type UpdateGallery = (fn: (state: GalleryState) => GalleryState) => void;
 
-  // Action stores for triggering operations
-  const uploadTrigger = writable<number>(0);
-  const collectionsTrigger = writable<number>(0);
-  const tagsTrigger = writable<number>(0);
-  const addToCollectionTrigger = writable<number>(0);
-  const addTagsTrigger = writable<number>(0);
-  const removeTagsTrigger = writable<number>(0);
-  const deleteSelectedTrigger = writable<number>(0);
-  const reprocessTrigger = writable<number>(0);
-  const summarizeTrigger = writable<number>(0);
-  const redactTrigger = writable<number>(0);
-  const retryFailedTrigger = writable<number>(0);
-  const exportTrigger = writable<string>(''); // format string
-  const speakerIdTrigger = writable<number>(0);
-  const cancelProcessingTrigger = writable<number>(0);
-  const quarantineTrigger = writable<number>(0);
-  const hiddenChangedTrigger = writable<number>(0);
-  const placeHoldTrigger = writable<number>(0);
-  const heldChangedTrigger = writable<number>(0);
-
+// Paging: appending a fetched page, the loading flag, and scroll restoration.
+function createPaginationActions(update: UpdateGallery) {
   return {
-    subscribe,
-    // State management actions
-    setViewMode: (mode: ViewMode) => {
-      if (browser) {
-        localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
-      }
-      update((state) => ({ ...state, viewMode: mode }));
-    },
-
-    setSelecting: (selecting: boolean) => {
-      update((state) => ({
-        ...state,
-        isSelecting: selecting,
-        selectedFiles: selecting ? state.selectedFiles : new Set<string>(),
-        lastSelectedId: selecting ? state.lastSelectedId : null,
-      }));
-    },
-
-    toggleSelection: () => {
-      update((state) => ({
-        ...state,
-        isSelecting: !state.isSelecting,
-        selectedFiles: !state.isSelecting ? state.selectedFiles : new Set<string>(),
-        lastSelectedId: !state.isSelecting ? state.lastSelectedId : null,
-      }));
-    },
-
-    toggleFileSelection: (fileId: string) => {
-      update((state) => {
-        const newSelected = new Set(state.selectedFiles);
-        if (newSelected.has(fileId)) {
-          newSelected.delete(fileId);
-        } else {
-          newSelected.add(fileId);
-        }
-        return {
-          ...state,
-          selectedFiles: newSelected,
-          lastSelectedId: fileId,
-          isSelecting: newSelected.size > 0,
-        };
-      });
-    },
-
-    handleMultiSelect: (fileId: string, shiftKey: boolean) => {
-      update((state) => {
-        const newSelected = new Set(state.selectedFiles);
-
-        if (shiftKey && state.lastSelectedId) {
-          // Range select: find indices of anchor and target in files array
-          const fileIds = state.files.map((f) => f.uuid);
-          const anchorIdx = fileIds.indexOf(state.lastSelectedId);
-          const targetIdx = fileIds.indexOf(fileId);
-
-          if (anchorIdx !== -1 && targetIdx !== -1) {
-            const start = Math.min(anchorIdx, targetIdx);
-            const end = Math.max(anchorIdx, targetIdx);
-            for (let i = start; i <= end; i++) {
-              newSelected.add(fileIds[i]);
-            }
-          } else {
-            // Fallback: just toggle the item
-            if (newSelected.has(fileId)) {
-              newSelected.delete(fileId);
-            } else {
-              newSelected.add(fileId);
-            }
-          }
-        } else {
-          // Ctrl/Cmd+click or shift without anchor: toggle individual
-          if (newSelected.has(fileId)) {
-            newSelected.delete(fileId);
-          } else {
-            newSelected.add(fileId);
-          }
-        }
-
-        const isSelecting = newSelected.size > 0;
-        return {
-          ...state,
-          selectedFiles: newSelected,
-          lastSelectedId: fileId,
-          isSelecting,
-        };
-      });
-    },
-
-    selectAllFiles: () => {
-      update((state) => {
-        // An empty list makes `size === length` (0 === 0) true, so "select all" of
-        // nothing was read as "already all selected" and took the deselect branch —
-        // clicking Select All while the file list is still loading silently selected
-        // nothing instead of either selecting the (eventually non-empty) list or
-        // visibly doing nothing.
-        if (state.files.length === 0) {
-          return state;
-        }
-        const allSelected = state.selectedFiles.size === state.files.length;
-        const newSelected = allSelected
-          ? new Set<string>()
-          : new Set(state.files.map((f) => f.uuid));
-        return { ...state, selectedFiles: newSelected };
-      });
-    },
-
-    clearSelection: () => {
-      update((state) => ({
-        ...state,
-        isSelecting: false,
-        selectedFiles: new Set<string>(),
-        lastSelectedId: null,
-      }));
-    },
-
-    setFiles: (files: MediaFile[]) => {
-      update((state) => {
-        const safeFiles = files || [];
-        const fileUuids = new Set(safeFiles.map((f) => f.uuid));
-        const selectedFiles = new Set([...state.selectedFiles].filter((id) => fileUuids.has(id)));
-        return { ...state, files: safeFiles, selectedFiles };
-      });
-    },
-
-    toggleFilters: () => {
-      update((state) => ({ ...state, showFilters: !state.showFilters }));
-    },
-
-    // Action triggers (for UI operations)
-    triggerUpload: () => {
-      uploadTrigger.update((n) => n + 1);
-    },
-
-    triggerTags: () => {
-      tagsTrigger.update((n) => n + 1);
-    },
-    triggerCollections: () => {
-      collectionsTrigger.update((n) => n + 1);
-    },
-
-    triggerAddToCollection: () => {
-      addToCollectionTrigger.update((n) => n + 1);
-    },
-
-    // Direct add/remove entry points into the bulk tag dialog; no UI calls them today.
-    triggerAddTags: () => {
-      addTagsTrigger.update((n) => n + 1);
-    },
-
-    triggerRemoveTags: () => {
-      removeTagsTrigger.update((n) => n + 1);
-    },
-
-    triggerDeleteSelected: () => {
-      deleteSelectedTrigger.update((n) => n + 1);
-    },
-
-    triggerReprocess: () => {
-      reprocessTrigger.update((n) => n + 1);
-    },
-
-    triggerSummarize: () => {
-      summarizeTrigger.update((n) => n + 1);
-    },
-
-    triggerRedact: () => {
-      redactTrigger.update((n) => n + 1);
-    },
-
-    triggerRetryFailed: () => {
-      retryFailedTrigger.update((n) => n + 1);
-    },
-
-    triggerExport: (format: string) => {
-      exportTrigger.set(format);
-    },
-
-    triggerSpeakerId: () => {
-      speakerIdTrigger.update((n) => n + 1);
-    },
-
-    triggerCancelProcessing: () => {
-      cancelProcessingTrigger.update((n) => n + 1);
-    },
-
-    triggerQuarantine: () => {
-      quarantineTrigger.update((n) => n + 1);
-    },
-
-    notifyHiddenChanged: () => {
-      hiddenChangedTrigger.update((n) => n + 1);
-    },
-
-    setHiddenMode: (mode: HiddenMode) => {
-      update((state) => ({ ...state, filterHiddenMode: mode }));
-      hiddenChangedTrigger.update((n) => n + 1);
-    },
-
-    triggerPlaceHold: () => {
-      placeHoldTrigger.update((n) => n + 1);
-    },
-
-    setHeldFilter: (held: boolean, notify = true) => {
-      update((state) => ({
-        ...state,
-        filterHeld: held,
-        filterSelectedCollectionId: held ? null : state.filterSelectedCollectionId,
-      }));
-      if (notify) heldChangedTrigger.update((n) => n + 1);
-    },
-
     appendFiles: (newFiles: MediaFile[], metadata: PaginationMetadata) => {
       update((state) => {
         // Guard against undefined/null data from failed API responses
@@ -415,7 +194,12 @@ function createGalleryStore() {
     setScrollTop: (scrollTop: number) => {
       update((state) => ({ ...state, scrollTop }));
     },
+  };
+}
 
+// The persisted filter fields: saving the sidebar's selection and clearing it.
+function createFilterActions(update: UpdateGallery) {
+  return {
     saveFilters: (filters: {
       searchQuery: string;
       selectedTags: string[];
@@ -448,207 +232,135 @@ function createGalleryStore() {
     },
 
     resetFilters: () => {
+      update((state) => ({ ...state, ...defaultFilters() }));
+    },
+  };
+}
+
+// Create the store
+function createGalleryStore() {
+  const { subscribe, update } = writable<GalleryState>(initialState);
+
+  // UI-operation triggers; the held trigger hands its observers the filter's current value.
+  const { fireHiddenChanged, fireHeldChanged, ...publicTriggers } = createGalleryTriggers(
+    () => get({ subscribe }).filterHeld
+  );
+
+  return {
+    subscribe,
+    // State management actions
+    setViewMode: (mode: ViewMode) => {
+      if (browser) {
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, mode);
+      }
+      update((state) => ({ ...state, viewMode: mode }));
+    },
+
+    setSelecting: (selecting: boolean) => {
       update((state) => ({
         ...state,
-        filterSearchQuery: '',
-        filterSelectedTags: [],
-        filterSelectedSpeakers: [],
-        filterSelectedCollectionId: null,
-        filterDateRange: { from: null, to: null },
-        filterDurationRange: { min: null, max: null },
-        filterSelectedFileTypes: [],
-        filterSelectedStatuses: [],
-        filterOwnershipFilter: 'all',
-        filterSelectedOwners: [],
-        filterHiddenMode: 'exclude',
-        filterHeld: false,
-        filterSortBy: 'upload_time',
-        filterSortOrder: 'desc',
+        isSelecting: selecting,
+        selectedFiles: selecting ? state.selectedFiles : new Set<string>(),
+        lastSelectedId: selecting ? state.lastSelectedId : null,
       }));
     },
 
-    // Subscribe to action triggers (skip initial values)
-    onUploadTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return uploadTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
+    toggleSelection: () => {
+      update((state) => ({
+        ...state,
+        isSelecting: !state.isSelecting,
+        selectedFiles: !state.isSelecting ? state.selectedFiles : new Set<string>(),
+        lastSelectedId: !state.isSelecting ? state.lastSelectedId : null,
+      }));
+    },
+
+    toggleFileSelection: (fileId: string) => {
+      update((state) => {
+        const selectedFiles = toggled(state.selectedFiles, fileId);
+        return {
+          ...state,
+          selectedFiles,
+          lastSelectedId: fileId,
+          isSelecting: selectedFiles.size > 0,
+        };
       });
     },
 
-    onTagsTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return tagsTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-    onCollectionsTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return collectionsTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onAddToCollectionTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return addToCollectionTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
+    handleMultiSelect: (fileId: string, shiftKey: boolean) => {
+      update((state) => {
+        const selectedFiles = selectionAfterClick(
+          state.selectedFiles,
+          state.files.map((f) => f.uuid),
+          state.lastSelectedId,
+          fileId,
+          shiftKey
+        );
+        return {
+          ...state,
+          selectedFiles,
+          lastSelectedId: fileId,
+          isSelecting: selectedFiles.size > 0,
+        };
       });
     },
 
-    onAddTagsTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return addTagsTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
+    selectAllFiles: () => {
+      update((state) => {
+        // An empty list makes `size === length` (0 === 0) true, so "select all" of
+        // nothing was read as "already all selected" and took the deselect branch —
+        // clicking Select All while the file list is still loading silently selected
+        // nothing instead of either selecting the (eventually non-empty) list or
+        // visibly doing nothing.
+        if (state.files.length === 0) {
+          return state;
         }
-        hasInitialized = true;
+        const allSelected = state.selectedFiles.size === state.files.length;
+        const newSelected = allSelected
+          ? new Set<string>()
+          : new Set(state.files.map((f) => f.uuid));
+        return { ...state, selectedFiles: newSelected };
       });
     },
 
-    onRemoveTagsTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return removeTagsTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
+    clearSelection: () => {
+      update((state) => ({
+        ...state,
+        isSelecting: false,
+        selectedFiles: new Set<string>(),
+        lastSelectedId: null,
+      }));
+    },
+
+    setFiles: (files: MediaFile[]) => {
+      update((state) => {
+        const safeFiles = files || [];
+        const fileUuids = new Set(safeFiles.map((f) => f.uuid));
+        const selectedFiles = new Set([...state.selectedFiles].filter((id) => fileUuids.has(id)));
+        return { ...state, files: safeFiles, selectedFiles };
       });
     },
 
-    onDeleteSelectedTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return deleteSelectedTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
+    toggleFilters: () => {
+      update((state) => ({ ...state, showFilters: !state.showFilters }));
     },
 
-    onReprocessTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return reprocessTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
+    setHiddenMode: (mode: HiddenMode) => {
+      update((state) => ({ ...state, filterHiddenMode: mode }));
+      fireHiddenChanged();
     },
 
-    onSummarizeTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return summarizeTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
+    setHeldFilter: (held: boolean, notify = true) => {
+      update((state) => ({
+        ...state,
+        filterHeld: held,
+        filterSelectedCollectionId: held ? null : state.filterSelectedCollectionId,
+      }));
+      if (notify) fireHeldChanged();
     },
 
-    onRedactTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return redactTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onRetryFailedTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return retryFailedTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onExportTrigger: (callback: (format: string) => void) => {
-      let hasInitialized = false;
-      return exportTrigger.subscribe((value) => {
-        if (hasInitialized && value !== '') {
-          callback(value);
-          // Reset so the same format can be triggered again
-          exportTrigger.set('');
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onSpeakerIdTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return speakerIdTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onCancelProcessingTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return cancelProcessingTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onQuarantineTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return quarantineTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onPlaceHoldTrigger: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return placeHoldTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    /** The held filter changed; the callback gets the new value. */
-    onHeldChanged: (callback: (held: boolean) => void) => {
-      let hasInitialized = false;
-      return heldChangedTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(get({ subscribe }).filterHeld);
-        }
-        hasInitialized = true;
-      });
-    },
-
-    onHiddenChanged: (callback: (value: number) => void) => {
-      let hasInitialized = false;
-      return hiddenChangedTrigger.subscribe((value) => {
-        if (hasInitialized && value > 0) {
-          callback(value);
-        }
-        hasInitialized = true;
-      });
-    },
+    ...createPaginationActions(update),
+    ...createFilterActions(update),
+    ...publicTriggers,
   };
 }
 

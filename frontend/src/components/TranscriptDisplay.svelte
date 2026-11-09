@@ -11,6 +11,12 @@
   import { type SearchMatch } from '$lib/utils/searchHighlight';
   import { updateSegmentSpeaker } from '$lib/api/transcripts';
   import { patchSegmentInFile } from '$lib/fileDetail/segmentSync';
+  import {
+    assignmentPatch,
+    orphanedSpeakerUuid,
+    pickNewSpeaker,
+    rollbackPatch
+  } from '$lib/fileDetail/segmentSpeaker';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import FrozenNote from '$components/legal-hold/FrozenNote.svelte';
@@ -119,24 +125,12 @@
     // Store original speaker for rollback and orphan detection
     const originalSpeaker = existingSegment.speaker;
 
-    // Optimistic update - find the new speaker from our speaker list.
-    //
-    // `createdSpeaker` is the just-created row handed over by the dropdown's
-    // "Add speaker" flow. `speakerList` is reloaded asynchronously by the route, so
-    // it CANNOT contain a speaker created a millisecond ago — the lookup returned
-    // undefined and the segment optimistically rendered "Unknown", which is what
-    // made "Add speaker" look like it had done nothing at all (#740).
-    const newSpeaker = speakerUuid
-      ? (speakerList.find((s: Speaker) => s.uuid === speakerUuid) ?? createdSpeaker ?? null)
-      : null;
+    // Optimistic update — see pickNewSpeaker for why `createdSpeaker` is consulted.
+    const newSpeaker = pickNewSpeaker(speakerUuid, speakerList, createdSpeaker);
 
     // `file` is bound, so these assignments reach the page — which is what makes the
     // grouped view (the thing actually rendered) pick them up.
-    file = patchSegmentInFile(file, segmentUuid, {
-      speaker: newSpeaker,
-      speaker_id: newSpeaker?.uuid ?? null,
-      resolved_speaker_name: newSpeaker?.display_name || newSpeaker?.name || null
-    });
+    file = patchSegmentInFile(file, segmentUuid, assignmentPatch(newSpeaker));
 
     try {
       // Make API call
@@ -145,20 +139,11 @@
       // Update with server response
       file = patchSegmentInFile(file, segmentUuid, updatedSegment);
 
-      // Check if the old speaker is now orphaned (no remaining segments)
-      // The backend auto-deletes orphaned speakers, so we need to sync the frontend
-      const originalSpeakerUuid = originalSpeaker?.uuid;
-      if (originalSpeaker && originalSpeakerUuid) {
-        const oldSpeakerStillUsed = file.transcript_segments.some(
-          (s: TranscriptSegment) => s.speaker?.uuid === originalSpeakerUuid
-        );
-
-        if (!oldSpeakerStillUsed) {
-          // Notify parent that a speaker was deleted - parent will update speakerList
-          // which flows back down to this component and its children (SpeakerMerge, etc.)
-          dispatch('speakerDeleted', { speakerUuid: originalSpeakerUuid });
-        }
-      }
+      // The backend auto-deletes a speaker left with no segments, so sync the frontend:
+      // the parent updates speakerList, which flows back down to this component and its
+      // children (SpeakerMerge, etc.)
+      const orphanedUuid = orphanedSpeakerUuid(file.transcript_segments, originalSpeaker);
+      if (orphanedUuid) dispatch('speakerDeleted', { speakerUuid: orphanedUuid });
 
       // Notify parent to refresh analytics (backend refreshed them, frontend needs to fetch)
       dispatch('analyticsRefreshNeeded');
@@ -168,11 +153,11 @@
       console.error('Error updating segment speaker:', error);
 
       // Rollback on error
-      file = patchSegmentInFile(file, segmentUuid, {
-        speaker: originalSpeaker,
-        speaker_id: originalSpeaker?.uuid ?? null,
-        resolved_speaker_name: existingSegment.resolved_speaker_name ?? null
-      });
+      file = patchSegmentInFile(
+        file,
+        segmentUuid,
+        rollbackPatch(originalSpeaker, existingSegment.resolved_speaker_name)
+      );
 
       if (!reportHoldRefusal(error)) {
         toastStore.error(getErrorMessage(error, $t('transcript.failedToUpdateSpeaker')));

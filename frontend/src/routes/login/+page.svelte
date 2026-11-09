@@ -16,7 +16,12 @@
   import Spinner from '$components/ui/Spinner.svelte';
   import DemoSignIn from '$components/demo/DemoSignIn.svelte';
   import { createRetryCountdown } from '$lib/utils/retryAfter';
-  import { isValidLoginIdentifier, forcedChangeError } from '$lib/auth/loginIdentifier';
+  import {
+    isValidLoginIdentifier,
+    forcedChangeError,
+    loginFieldError,
+    failureFocusField
+  } from '$lib/auth/loginIdentifier';
   import { startOidcLogin } from '$lib/auth/oidcLogin';
   import { runOidcCallback } from '$lib/auth/oidcCallback';
   import { createExternalSignIn } from '$lib/auth/externalSignIn';
@@ -276,26 +281,48 @@
     return emailValid && passwordValid;
   }
 
+  // A session exists now.
+  async function handleLoginSuccess(result: Awaited<ReturnType<typeof login>>) {
+    // The consent captured by the banner modal can finally be recorded. Ahead of the
+    // forced-password-change branch below because the server checks the banner FIRST — clearing
+    // the password hold without this one would just produce a banner 403 next.
+    await banner.recordConsent();
+
+    // The account carries `must_change_password`: the lifecycle gate refuses every route bar
+    // PUT /users/me until it clears. Publishing the hold here shows the remedy immediately,
+    // instead of the app shell failing its first request with a 403.
+    if (result.must_change_password) {
+      accountLifecycle.set({ code: 'password_change_required', message: '' });
+      password = "";
+      loading = false;
+      return;
+    }
+
+    loading = false;
+    redirectHome();
+  }
+
+  function handleLoginFailure(result: Awaited<ReturnType<typeof login>>) {
+    console.error('Login.svelte: Login failed:', result.message);
+    if (result.status === 429) retryCountdown.start(result.retry_after);
+    toastStore.error(result.message || $t('auth.loginFailed'));
+
+    // Steer focus from the HTTP status, never from the message text.
+    const focusField = failureFocusField(result.status);
+    if (focusField) document.getElementById(focusField)?.focus();
+    // Clear password on failed authentication for security
+    if (focusField === 'password') password = "";
+  }
+
   // Handle form submission
   async function handleSubmit() {
     successMessage = "";
 
     // Validate required fields first
-    if (!email.trim()) {
-      toastStore.error($t('auth.identifierRequired'));
-      document.getElementById('email')?.focus();
-      return;
-    }
-
-    if (!isValidLoginIdentifier(email.trim())) {
-      toastStore.error($t('auth.validIdentifierRequired'));
-      document.getElementById('email')?.focus();
-      return;
-    }
-
-    if (!password.trim()) {
-      toastStore.error($t('auth.passwordRequired'));
-      document.getElementById('password')?.focus();
+    const fieldError = loginFieldError(email, password);
+    if (fieldError) {
+      toastStore.error($t(fieldError.messageKey));
+      document.getElementById(fieldError.fieldId)?.focus();
       return;
     }
 
@@ -338,42 +365,9 @@
       }
 
       if (result.success) {
-        // A session exists now, so the consent captured by the banner modal can
-        // finally be recorded. Ahead of the forced-password-change branch below
-        // because the server checks the banner FIRST — clearing the password
-        // hold without this one would just produce a banner 403 next.
-        await banner.recordConsent();
-
-        // The account carries `must_change_password`: a session exists, but the
-        // lifecycle gate refuses every route bar PUT /users/me until it clears.
-        // Publishing the hold here shows the remedy immediately, instead of the
-        // app shell failing its first request with a 403.
-        if (result.must_change_password) {
-          accountLifecycle.set({ code: 'password_change_required', message: '' });
-          password = "";
-          loading = false;
-          return;
-        }
-
-        loading = false;
-        redirectHome();
+        await handleLoginSuccess(result);
       } else {
-        console.error('Login.svelte: Login failed:', result.message);
-        if (result.status === 429) retryCountdown.start(result.retry_after);
-        toastStore.error(result.message || $t('auth.loginFailed'));
-
-        // Steer focus from the HTTP status, never from the message text: the
-        // message is localised, so matching English substrings ('email',
-        // 'credentials', …) silently no-ops in the other seven locales.
-        // 401/403 = the credentials were rejected; 400/422 = the identifier
-        // itself was malformed.
-        if (result.status === 401 || result.status === 403) {
-          document.getElementById('password')?.focus();
-          // Clear password on failed authentication for security
-          password = "";
-        } else if (result.status === 400 || result.status === 422) {
-          document.getElementById('email')?.focus();
-        }
+        handleLoginFailure(result);
       }
     } catch (err) {
       console.error("Login.svelte: Login error:", err);

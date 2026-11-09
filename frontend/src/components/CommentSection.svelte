@@ -8,6 +8,12 @@
   import CommentComposer from '$components/comments/CommentComposer.svelte';
   import CommentItem from '$components/comments/CommentItem.svelte';
   import { sortComments } from '$components/comments/commentOrder';
+  import {
+    CommentEndpointsExhausted,
+    fetchFileComments,
+    postFileComment,
+    withUser
+  } from '$components/comments/commentRequests';
   import { createConfirmDialog } from '$lib/confirmDialog';
   import EmptyState from './ui/EmptyState.svelte';
   import { toastStore } from '$stores/toast';
@@ -59,6 +65,24 @@
     fetchComments();
   });
 
+  /** @param {any} error */
+  function logFetchError(error) {
+    console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
+  }
+
+  /** @param {any} error */
+  function reportFetchFailure(error) {
+    if (error instanceof CommentEndpointsExhausted) {
+      console.error('[CommentSection] All endpoints failed');
+      toastStore.error($t('comments.loadFailed', { error: getErrorMessage(error.cause, /** @type {any} */ (error.cause)?.message) }));
+    } else if (error.response?.status === 401) {
+      // An authentication issue
+      toastStore.error($t('comments.loginRequired'));
+    } else {
+      toastStore.error($t('comments.loadFailed', { error: getErrorMessage(error, error?.message) }));
+    }
+  }
+
   async function fetchComments() {
     loading = true;
     try {
@@ -72,68 +96,18 @@
 
       let response;
       try {
-        const endpoint = commentsEndpoint;
-        response = await axiosInstance.get(endpoint);
+        response = await fetchFileComments(axiosInstance, fileId, logFetchError);
       } catch (/** @type {any} */ error) {
-        console.error('Error fetching comments:', error?.message, error?.response?.status, error?.response?.data);
-
-        // If the error is a 401, this is an authentication issue
-        if (error.response?.status === 401) {
-          toastStore.error($t('comments.loginRequired'));
-          loading = false;
-          return;
-        }
-
-        // Try alternate endpoints as fallback
-        if (error.response?.status === 404) {
-          try {
-            // Try the legacy endpoint as fallback
-            response = await axiosInstance.get(`/files/${fileId}/comments`);
-          } catch (/** @type {any} */ legacyError) {
-            try {
-              // If that fails, try the query parameter approach as last resort
-              response = await axiosInstance.get('/comments', {
-                params: { media_file_id: fileId }
-              });
-            } catch (/** @type {any} */ lastError) {
-              console.error('[CommentSection] All endpoints failed');
-              toastStore.error($t('comments.loadFailed', { error: getErrorMessage(lastError, lastError?.message) }));
-              return;
-            }
-          }
-        } else {
-          toastStore.error($t('comments.loadFailed', { error: getErrorMessage(error, error?.message) }));
-          return;
-        }
+        reportFetchFailure(error);
+        return;
       }
 
-      // Comments response received
-
-      // Process comments to ensure they have user information
-      // Processing comments
-      comments = response.data.map(/** @param {any} comment */ (comment) => {
-        // If comment has no user info, add it from the auth store
-        if (!comment.user) {
-          const currentUser = $authStore.user;
-          return {
-            ...comment,
-            user: {
-              uuid: comment.user_id,
-              email: currentUser?.email,
-              full_name: currentUser?.full_name || currentUser?.email || 'User ' + comment.user_id
-            }
-          };
-        }
-        return comment;
-      });
-
-      if (!Array.isArray(comments) || comments.length === 0) {
-        // No comments found for this file
-      } else {
-        // Successfully processed comments
-      }
-
-      comments = sortComments(comments);
+      // A comment with no user info gets one from the auth store
+      comments = sortComments(
+        response.data.map(/** @param {any} comment */ (comment) =>
+          withUser(comment, $authStore.user, comment.user_id)
+        )
+      );
     } catch (/** @type {any} */ err) { // Handle error with proper type
       console.error('[CommentSection] Error fetching comments:', err);
       console.error('[CommentSection] Error details:', {
@@ -156,95 +130,51 @@
     }
   }
 
+  /** @param {any} error */
+  function logAddError(error) {
+    // Log detailed error information for debugging
+    console.error('[CommentSection] Error adding comment:', error);
+    console.error('[CommentSection] Error response:', error.response?.status, error.response?.data);
+  }
+
+  /** @param {any} error */
+  function reportAddFailure(error) {
+    if (error instanceof CommentEndpointsExhausted) {
+      console.error('[CommentSection] All endpoints failed for adding comment');
+      toastStore.error($t('comments.addFailed', { error: getErrorMessage(error.cause, /** @type {any} */ (error.cause)?.message) }));
+    } else if (error.response?.status === 401) {
+      // An authentication issue
+      toastStore.error($t('comments.loginRequiredToAdd'));
+    } else {
+      toastStore.error($t('comments.addFailed', { error: getErrorMessage(error, error?.message) }));
+    }
+  }
+
   /**
    * Post a comment from the composer. `timestamp` is null for a general comment.
    * @param {{text: string, timestamp: number | null}} payload
    * @returns {Promise<boolean>} whether the comment was saved
    */
   async function addComment({ text: newComment, timestamp }) {
-    // Store locally for optimistic UI updates
     try {
       // Get user data from auth store
       const currentUser = $authStore.user;
 
-      // Use the endpoint confirmed to be working in the API debugger
       let response;
       try {
-        // The correct endpoint with leading slash (baseURL is '/api')
-        // This will become /api/comments/files/{fileId}/comments
-        const endpoint = `/comments/files/${fileId}/comments`;
-
-        // The backend expects media_file_id in the payload even though it's in the URL path
-        const commentPayload = {
-          text: newComment,
-          timestamp: timestamp,
-          media_file_id: fileId // Required by the CommentCreate schema
-        };
-
         // Cookies handle authentication automatically
-        response = await axiosInstance.post(endpoint, commentPayload);
-
-        // Successfully added comment
+        response = await postFileComment(axiosInstance, fileId, newComment, timestamp, logAddError);
       } catch (/** @type {any} */ error) {
-        // Log detailed error information for debugging
-        console.error('[CommentSection] Error adding comment:', error);
-        console.error('[CommentSection] Error response:',
-          error.response?.status,
-          error.response?.data
-        );
-
-        // If the error is a 401, this is an authentication issue
-        if (error.response?.status === 401) {
-          toastStore.error($t('comments.loginRequiredToAdd'));
-          return false;
-        }
-
-        // Try alternate endpoints as fallback if we get a 404
-        if (error.response?.status === 404) {
-          try {
-            // Try the legacy endpoint approach as fallback
-            // Trying legacy endpoint for adding comment
-            const legacyPayload = {
-              text: newComment,
-              timestamp: timestamp,
-              media_file_id: fileId // Required by the CommentCreate schema
-            };
-            response = await axiosInstance.post(`/files/${fileId}/comments`, legacyPayload);
-            // Successfully added comment using main endpoint
-          } catch (/** @type {any} */ legacyError) {
-            try {
-              // Try the query parameter endpoint as last resort
-              // Trying query parameter endpoint as last resort
-              response = await axiosInstance.post('/comments', {
-                text: newComment,
-                timestamp,
-                media_file_id: fileId // Required by the CommentCreate schema
-              });
-              // Successfully added comment using root endpoint
-            } catch (/** @type {any} */ lastError) {
-              console.error('[CommentSection] All endpoints failed for adding comment');
-              toastStore.error($t('comments.addFailed', { error: getErrorMessage(lastError, lastError?.message) }));
-              return false;
-            }
-          }
-        } else {
-          toastStore.error($t('comments.addFailed', { error: getErrorMessage(error, error?.message) }));
-          return false;
-        }
+        reportAddFailure(error);
+        return false;
       }
 
-      // Comment added successfully
-
-      // Ensure the comment has a user object with username
-      const commentWithUser = {
-        ...response.data,
-        // Add user info from auth store if not present in the response
-        user: response.data.user || {
-          uuid: response.data.user_id || currentUser?.uuid || '',
-          email: currentUser?.email,
-          full_name: currentUser?.full_name || currentUser?.email || 'User ' + response.data.user_id
-        }
-      };
+      // Ensure the comment has a user object, from the auth store if the response had none
+      const commentWithUser = withUser(
+        response.data,
+        currentUser,
+        response.data.user_id || currentUser?.uuid || ''
+      );
 
       comments = sortComments([...comments, commentWithUser]);
       dispatch('commentAdded', commentWithUser);

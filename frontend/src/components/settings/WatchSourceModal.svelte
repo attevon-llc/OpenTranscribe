@@ -19,6 +19,12 @@
     type DirectoryListing,
   } from '$lib/api/watchSourcesApi';
   import { listTags } from '$lib/api/tags';
+  import {
+    DEFAULT_MULTIPART_REGEX,
+    buildWatchSourcePayload,
+    formFromSource,
+    type WatchSourceForm,
+  } from '$lib/settings/watchSourceForm';
 
   export let show = false;
   export let editingSource: WatchSource | null = null;
@@ -30,8 +36,6 @@
   };
 
   const dispatch = createEventDispatcher();
-
-  const DEFAULT_REGEX = '^(.+?)_P(\\d{3})(\\.[^.]+)$';
 
   // ── Stepper state ──
   let currentStepIndex = 0;
@@ -70,42 +74,6 @@
   let colOptions: ColOption[] = [];
   let availableCollections: Array<{ uuid: string; name: string }> = [];
 
-  interface WatchSourceForm {
-    name: string;
-    source_type: SourceType;
-    is_enabled: boolean;
-    local_path: string;
-    delete_after_import: boolean;
-    s3_endpoint_url: string;
-    s3_bucket_name: string;
-    s3_prefix: string;
-    s3_region: string;
-    s3_access_key_id: string;
-    s3_secret_key: string;
-    s3_use_ssl: boolean;
-    smb_server: string;
-    smb_share: string;
-    smb_path: string;
-    smb_username: string;
-    smb_password: string;
-    smb_domain: string;
-    smb_port: number;
-    polling_interval_minutes: number;
-    use_fs_events: boolean;
-    file_extensions: string;
-    // An emptied number input binds as null or ''.
-    skip_files_older_than_days: number | null | '';
-    recursive: boolean;
-    auto_transcribe: boolean;
-    min_speakers: number | null;
-    max_speakers: number | null;
-    multipart_enabled: boolean;
-    multipart_regex: string;
-    multipart_time_window_hours: number;
-    multipart_wait_scans: number;
-    upload_stitched_to_source: boolean;
-  }
-
   function blankForm(): WatchSourceForm {
     return {
       name: '',
@@ -137,7 +105,7 @@
       min_speakers: null,
       max_speakers: null,
       multipart_enabled: false,
-      multipart_regex: DEFAULT_REGEX,
+      multipart_regex: DEFAULT_MULTIPART_REGEX,
       multipart_time_window_hours: 24,
       multipart_wait_scans: 3,
       upload_stitched_to_source: false,
@@ -193,41 +161,7 @@
   }
 
   function populate(src: WatchSource) {
-    form = {
-      ...blankForm(),
-      name: src.name,
-      source_type: src.source_type,
-      is_enabled: src.is_enabled,
-      local_path: src.local_path ?? '',
-      delete_after_import: src.delete_after_import,
-      s3_endpoint_url: src.s3_endpoint_url ?? '',
-      s3_bucket_name: src.s3_bucket_name ?? '',
-      s3_prefix: src.s3_prefix ?? '',
-      s3_region: src.s3_region ?? '',
-      s3_access_key_id: src.s3_access_key_id ?? '',
-      s3_secret_key: '',
-      s3_use_ssl: src.s3_use_ssl,
-      smb_server: src.smb_server ?? '',
-      smb_share: src.smb_share ?? '',
-      smb_path: src.smb_path ?? '/',
-      smb_username: src.smb_username ?? '',
-      smb_password: '',
-      smb_domain: src.smb_domain ?? '',
-      smb_port: src.smb_port,
-      polling_interval_minutes: src.polling_interval_minutes,
-      use_fs_events: src.use_fs_events,
-      file_extensions: src.file_extensions ?? '',
-      skip_files_older_than_days: src.skip_files_older_than_days ?? null,
-      recursive: src.recursive,
-      auto_transcribe: src.auto_transcribe,
-      min_speakers: src.min_speakers ?? null,
-      max_speakers: src.max_speakers ?? null,
-      multipart_enabled: src.multipart_enabled,
-      multipart_regex: src.multipart_regex || DEFAULT_REGEX,
-      multipart_time_window_hours: src.multipart_time_window_hours,
-      multipart_wait_scans: src.multipart_wait_scans,
-      upload_stitched_to_source: src.upload_stitched_to_source,
-    };
+    form = formFromSource(src, blankForm());
     selectedTags = [...(src.tag_names ?? [])];
     mapEditingCollections();
   }
@@ -282,55 +216,8 @@
     if (i <= maxStepReached) currentStepIndex = i;
   }
 
-  // A blank speaker field is sent as null, which the server reads as "my saved range".
-  function optionalCount(value: unknown): number | null {
-    return value === null || value === undefined || value === '' ? null : Number(value);
-  }
-
   function buildPayload(collectionIds: string[]): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-      name: form.name.trim(),
-      is_enabled: form.is_enabled,
-      polling_interval_minutes: Number(form.polling_interval_minutes),
-      use_fs_events: form.use_fs_events,
-      file_extensions: form.file_extensions?.trim() || null,
-      skip_files_older_than_days:
-        form.skip_files_older_than_days === null || form.skip_files_older_than_days === ''
-          ? null
-          : Number(form.skip_files_older_than_days),
-      recursive: form.recursive,
-      auto_transcribe: form.auto_transcribe,
-      min_speakers: optionalCount(form.min_speakers),
-      max_speakers: optionalCount(form.max_speakers),
-      tag_names: selectedTags,
-      collection_ids: collectionIds,
-      multipart_enabled: form.multipart_enabled,
-      multipart_regex: form.multipart_regex,
-      multipart_time_window_hours: Number(form.multipart_time_window_hours),
-      multipart_wait_scans: Number(form.multipart_wait_scans),
-      upload_stitched_to_source: form.upload_stitched_to_source,
-    };
-    if (form.source_type === 'local') {
-      payload.local_path = form.local_path?.trim() || '';
-      payload.delete_after_import = form.delete_after_import;
-    } else if (form.source_type === 's3') {
-      payload.s3_endpoint_url = form.s3_endpoint_url?.trim() || null;
-      payload.s3_bucket_name = form.s3_bucket_name.trim();
-      payload.s3_prefix = form.s3_prefix?.trim() || null;
-      payload.s3_region = form.s3_region?.trim() || null;
-      payload.s3_access_key_id = form.s3_access_key_id.trim();
-      payload.s3_use_ssl = form.s3_use_ssl;
-      if (form.s3_secret_key?.trim()) payload.s3_secret_key = form.s3_secret_key.trim();
-    } else if (form.source_type === 'smb') {
-      payload.smb_server = form.smb_server.trim();
-      payload.smb_share = form.smb_share.trim();
-      payload.smb_path = form.smb_path?.trim() || '/';
-      payload.smb_username = form.smb_username?.trim() || null;
-      payload.smb_domain = form.smb_domain?.trim() || null;
-      payload.smb_port = Number(form.smb_port);
-      if (form.smb_password?.trim()) payload.smb_password = form.smb_password.trim();
-    }
-    return payload;
+    return buildWatchSourcePayload(form, selectedTags, collectionIds);
   }
 
   async function handleSave() {

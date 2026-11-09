@@ -97,6 +97,58 @@ def test_update_current_user(client, user_token_headers):
     assert user_data["full_name"] == "Updated Name"
 
 
+def test_update_current_user_email_change_requires_current_password(
+    client, user_token_headers, normal_user, db_session
+):
+    new_email = f"new_{uuid_pkg.uuid4().hex[:8]}@example.com"
+    missing = client.put("/api/users/me", headers=user_token_headers, json={"email": new_email})
+    assert missing.status_code == 400
+    assert missing.json()["detail"] == "Current password is required for this change"
+
+    wrong = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": new_email, "current_password": "not-the-password"},
+    )
+    assert wrong.status_code == 400
+    assert wrong.json()["detail"] == "Current password is incorrect"
+    db_session.refresh(normal_user)
+    assert normal_user.email != new_email
+
+
+def test_update_current_user_email_taken_is_refused_before_password_check(
+    client, user_token_headers, other_user
+):
+    response = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"email": other_user.email, "current_password": "password123"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Email already registered"
+
+
+def test_update_current_user_password_change_requires_current_password(
+    client, user_token_headers, normal_user, db_session
+):
+    old_hash = normal_user.hashed_password
+    missing = client.put(
+        "/api/users/me", headers=user_token_headers, json={"password": "Zx9!veryLongNewPass#42"}
+    )
+    assert missing.status_code == 400
+    assert missing.json()["detail"] == "Current password is required for this change"
+
+    wrong = client.put(
+        "/api/users/me",
+        headers=user_token_headers,
+        json={"password": "Zx9!veryLongNewPass#42", "current_password": "nope"},
+    )
+    assert wrong.status_code == 400
+    assert wrong.json()["detail"] == "Current password is incorrect"
+    db_session.refresh(normal_user)
+    assert normal_user.hashed_password == old_hash
+
+
 def test_get_user_by_uuid(client, admin_token_headers, normal_user):
     """Test getting user by UUID (admin only)"""
     response = client.get(f"/api/users/{normal_user.uuid}", headers=admin_token_headers)

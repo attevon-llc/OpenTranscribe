@@ -31,12 +31,18 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
 
+from redis.exceptions import RedisError
 from redis.typing import EncodableT
 from redis.typing import FieldT
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.env import env_bool
 
 logger = logging.getLogger(__name__)
+
+# Telemetry reads/writes touch Redis and (for the in-flight count) Postgres only; anything else
+# is a bug and must surface rather than be swallowed as "telemetry unavailable".
+_TELEMETRY_ERRORS = (RedisError, SQLAlchemyError)
 
 # Benchmark hash TTL matches the dispatch.py existing convention (24h).
 BENCHMARK_HASH_TTL_SECONDS = 24 * 60 * 60
@@ -88,8 +94,8 @@ def mark(task_id: str | None, name: str, value: float | None = None) -> None:
         pipe.hset(key, name, str(ts))
         pipe.expire(key, BENCHMARK_HASH_TTL_SECONDS)
         pipe.execute()
-    except Exception as e:
-        logger.debug(f"benchmark mark '{name}' for {task_id} failed: {e}")
+    except _TELEMETRY_ERRORS as e:
+        logger.debug(f"benchmark mark '{name}' for {task_id} failed: {e}", exc_info=True)
 
 
 def mark_many(task_id: str | None, markers: dict[str, float | str]) -> None:
@@ -112,8 +118,8 @@ def mark_many(task_id: str | None, markers: dict[str, float | str]) -> None:
         pipe.hset(key, mapping=payload)
         pipe.expire(key, BENCHMARK_HASH_TTL_SECONDS)
         pipe.execute()
-    except Exception as e:
-        logger.debug(f"benchmark mark_many for {task_id} failed: {e}")
+    except _TELEMETRY_ERRORS as e:
+        logger.debug(f"benchmark mark_many for {task_id} failed: {e}", exc_info=True)
 
 
 def pipeline_task_id(file_id: int) -> str | None:
@@ -134,8 +140,8 @@ def pipeline_task_id(file_id: int) -> str | None:
         with session_scope() as db:
             mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
             return str(mf.active_task_id) if mf and mf.active_task_id else None
-    except Exception as e:  # telemetry must never break the task it measures
-        logger.debug(f"pipeline_task_id lookup failed for file {file_id}: {e}")
+    except SQLAlchemyError as e:  # telemetry must never break the task it measures
+        logger.warning(f"pipeline_task_id lookup failed for file {file_id}: {e}", exc_info=True)
         return None
 
 
@@ -204,10 +210,10 @@ def capture_queue_depth(
                     db.query(MediaFile).filter(MediaFile.status == FileStatus.PROCESSING).count()
                 )
             mark_many(task_id, {"concurrent_files_at_dispatch": str(int(count))})
-        except Exception as db_err:
-            logger.debug(f"concurrent files count failed: {db_err}")
-    except Exception as e:
-        logger.debug(f"capture_queue_depth for {task_id} failed: {e}")
+        except SQLAlchemyError as db_err:
+            logger.debug(f"concurrent files count failed: {db_err}", exc_info=True)
+    except RedisError as e:
+        logger.debug(f"capture_queue_depth for {task_id} failed: {e}", exc_info=True)
 
 
 def mark_cold_start(task_id: str | None, worker_key: str) -> None:
@@ -306,8 +312,11 @@ def record_retry(
         pipe.hset(key, "retry_count", str(len(existing)))
         pipe.expire(key, BENCHMARK_HASH_TTL_SECONDS)
         pipe.execute()
-    except Exception as e:
-        logger.debug(f"record_retry for {task_id} stage={stage} attempt={attempt} failed: {e}")
+    except RedisError as e:
+        logger.debug(
+            f"record_retry for {task_id} stage={stage} attempt={attempt} failed: {e}",
+            exc_info=True,
+        )
 
 
 def fetch_all(task_id: str) -> dict[str, str]:
@@ -328,6 +337,6 @@ def fetch_all(task_id: str) -> dict[str, str]:
             )
             for k, v in raw.items()
         }
-    except Exception as e:
-        logger.debug(f"fetch_all for {task_id} failed: {e}")
+    except RedisError as e:
+        logger.warning(f"fetch_all for {task_id} failed: {e}", exc_info=True)
         return {}

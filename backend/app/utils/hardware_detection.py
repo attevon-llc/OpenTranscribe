@@ -24,6 +24,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# What torch raises for a missing/broken CUDA or MPS runtime: RuntimeError (driver and
+# out-of-memory errors), AssertionError ("Torch not compiled with CUDA enabled"), ImportError
+# (torch absent) and ValueError (bad device index). Anything else is a defect and propagates.
+_CUDA_ERRORS = (RuntimeError, AssertionError, ImportError, ValueError)
+
 
 def resolve_cuda_device_index(cuda: Any | None = None) -> int:
     """Return the CUDA ordinal this process should compute on.
@@ -53,8 +58,8 @@ def resolve_cuda_device_index(cuda: Any | None = None) -> int:
 
     try:
         visible = int(cuda.device_count())
-    except Exception as e:  # pragma: no cover - driver-level failure
-        logger.debug(f"Could not count CUDA devices ({e}); using ordinal 0")
+    except _CUDA_ERRORS as e:  # pragma: no cover - driver-level failure
+        logger.debug(f"Could not count CUDA devices ({e}); using ordinal 0", exc_info=True)
         return 0
 
     if visible <= 1:
@@ -172,8 +177,8 @@ class HardwareConfig:
                 props.name,
                 getattr(props, "pci_bus_id", "unknown"),
             )
-        except Exception as e:
-            logger.warning(f"Could not select CUDA device {self.device_index}: {e}")
+        except _CUDA_ERRORS as e:
+            logger.warning(f"Could not select CUDA device {self.device_index}: {e}", exc_info=True)
 
     def _detect_optimal_compute_type(self) -> str:
         """Detect optimal compute precision based on device and capabilities."""
@@ -222,7 +227,11 @@ class HardwareConfig:
                 total_memory = torch.cuda.get_device_properties(self.device_index).total_memory
                 memory_gb = total_memory / (1024**3)
                 return self._batch_for_model(model_name or "", memory_gb)
-            except Exception:
+            except _CUDA_ERRORS:
+                logger.warning(
+                    "Could not read CUDA device properties; using the safe default batch size of 8",
+                    exc_info=True,
+                )
                 return 8  # Safe default
 
         elif self.device == "mps":
@@ -325,7 +334,11 @@ class HardwareConfig:
                 min_peak = self._min_peak_mb(model_name)
                 # If bs=2 peak exceeds 80% of total VRAM, GPU can't run this model safely
                 return bool(min_peak > total_mb * 0.80)
-            except Exception:
+            except _CUDA_ERRORS:
+                logger.warning(
+                    "Could not read CUDA device properties; assuming the model fits on the GPU",
+                    exc_info=True,
+                )
                 return False
 
         return False
@@ -406,8 +419,8 @@ class HardwareConfig:
                     "total_mb": round(total, 2),
                     "usage_percent": round((allocated / total) * 100, 2),
                 }
-            except Exception as e:
-                logger.error(f"Error getting VRAM usage: {e}")
+            except _CUDA_ERRORS as e:
+                logger.error(f"Error getting VRAM usage: {e}", exc_info=True)
                 return {"error": str(e)}
         else:
             return {"device": self.device, "message": "Not using CUDA"}
@@ -484,8 +497,8 @@ class HardwareConfig:
                     # between pipeline stages.
                     torch.cuda.empty_cache()
 
-        except Exception as e:
-            logger.debug(f"CUDA memory cleanup skipped: {e}")
+        except _CUDA_ERRORS as e:
+            logger.debug(f"CUDA memory cleanup skipped: {e}", exc_info=True)
 
         try:
             if (
@@ -496,8 +509,8 @@ class HardwareConfig:
             ):
                 # Clear MPS cache only if MPS is actually being used
                 torch.mps.empty_cache()
-        except Exception as e:
-            logger.debug(f"MPS memory cleanup skipped: {e}")
+        except _CUDA_ERRORS as e:
+            logger.debug(f"MPS memory cleanup skipped: {e}", exc_info=True)
 
         # Final garbage collection pass
         gc.collect()
@@ -573,7 +586,8 @@ class HardwareConfig:
 
             return True, "Configuration valid"
 
-        except Exception as e:
+        except _CUDA_ERRORS as e:
+            logger.warning(f"Configuration validation failed: {e}", exc_info=True)
             return False, f"Configuration validation failed: {str(e)}"
 
 

@@ -22,6 +22,8 @@ import logging
 import uuid as uuid_pkg
 from collections.abc import Sequence
 
+from redis.exceptions import RedisError
+
 from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
@@ -38,12 +40,13 @@ def _publish(notification: dict, target: object, notification_type: str) -> bool
         get_request_redis().publish("websocket_notifications", json.dumps(notification))
         logger.info("Published WS notification for user %s: %s", target, notification_type)
         return True
-    except Exception as e:
+    except (RedisError, TypeError, ValueError) as e:
         logger.error(
             "Failed to publish WS notification for user %s (%s): %s",
             target,
             notification_type,
             e,
+            exc_info=True,
         )
         return False
 

@@ -129,7 +129,7 @@ def _get_stopwords() -> frozenset[str]:
             from nltk.corpus import stopwords
 
             words = set(stopwords.words("english"))
-        except Exception as exc:
+        except NLTK_CORPUS_UNAVAILABLE as exc:
             logger.warning(
                 "NLTK stopwords unavailable (%s: %s); keyword extraction will keep "
                 "common words, and this verdict is cached for the life of this "
@@ -138,6 +138,7 @@ def _get_stopwords() -> frozenset[str]:
                 "NLTK corpora — see docs-site/docs/installation/offline-installation.md.",
                 type(exc).__name__,
                 exc,
+                exc_info=True,
             )
             words = set()
 
@@ -166,12 +167,13 @@ def _tokenize(text: str) -> list[str]:
                 logger.info("Downloading NLTK punkt_tab tokenizer (one-time)")
                 nltk.download("punkt_tab", quiet=True)
             return list(nltk.word_tokenize(text))
-        except Exception as exc:
+        except NLTK_CORPUS_UNAVAILABLE as exc:
             # Fallback: simple regex tokenizer if NLTK data unavailable
             logger.warning(
                 "NLTK tokenizer unavailable (%s: %s), using regex fallback",
                 type(exc).__name__,
                 exc,
+                exc_info=True,
             )
             return list(re.findall(r"\b\w+(?:'\w+)?\b", text))
 

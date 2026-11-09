@@ -63,8 +63,8 @@ def _ensure_init(device: int = 0) -> bool:
                 return False
             _handles[device] = handle
         return True
-    except Exception as e:
-        logger.debug(f"NVML init failed: {e}")
+    except (OSError, AttributeError, ctypes.ArgumentError) as e:
+        logger.debug(f"NVML init failed: {e}", exc_info=True)
         _nvml = None
         _nvml_unavailable = True
         _handles.clear()
@@ -87,8 +87,8 @@ def get_gpu_memory(device: int = 0) -> GpuMemory | None:
             used_mb=mem.used / (1024**2),
             free_mb=mem.free / (1024**2),
         )
-    except Exception as e:
-        logger.debug(f"NVML memory query failed: {e}")
+    except (AttributeError, ctypes.ArgumentError) as e:
+        logger.debug(f"NVML memory query failed: {e}", exc_info=True)
         return None
 
 

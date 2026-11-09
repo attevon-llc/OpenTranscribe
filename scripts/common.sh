@@ -225,7 +225,11 @@ ensure_minio_kms_secret() {
       # No confirmation prompt (unlike other .env edits): only the shipped placeholder is
       # replaced, so nothing of the operator's is lost. The generated key is what matters:
       # losing it makes every object encrypted with it unreadable, so warn loudly.
-      sed -i "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${generated}|" "$env_file"
+      # -i with a glued suffix is the only form both GNU and BSD (macOS) sed accept; the suffix
+      # is unique to this process so removing it cannot delete a backup the operator made.
+      local sed_suffix=".ot-sed.$$"
+      sed -i"$sed_suffix" "s|^MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=${generated}|" "$env_file"
+      rm -f "${env_file}${sed_suffix}"
       # `cp .env.example .env` leaves mode 0644 and `sed -i` keeps it; the real secret just
       # written must not stay world-readable (as install-offline-package.sh also does).
       ensure_env_permissions "$env_file"
@@ -753,9 +757,9 @@ print_access_info() {
 # Wait for backend to be healthy with timeout
 # Uses $COMPOSE_CMD if set (for prod mode), otherwise uses 'docker compose' (for dev mode)
 wait_for_backend_health() {
-  TIMEOUT=60
-  INTERVAL=2
-  ELAPSED=0
+  local TIMEOUT=60
+  local INTERVAL=2
+  local ELAPSED=0
 
   # Use COMPOSE_CMD if set (prod mode), otherwise default to 'docker compose' (dev mode)
   local CMD="${COMPOSE_CMD:-docker compose}"
@@ -1366,6 +1370,9 @@ backup_database() {
       echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
       echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use '$frontend_cmd backup --encrypt' for off-box storage."
     else
+      # The redirect already created the file; a truncated dump left behind looks like a
+      # restore point (the encrypted branch above removes its partial output too).
+      rm -f "./backups/${BACKUP_FILE}"
       echo "❌ Backup failed."
       exit 1
     fi

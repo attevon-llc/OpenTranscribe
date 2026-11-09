@@ -2063,7 +2063,15 @@ update_parse_args() {
     UPDATE_FORCE_DOWNGRADE=false
     while [ $# -gt 0 ]; do
         case "$1" in
-            --version) UPDATE_TARGET_VERSION="${2:-}"; shift 2 ;;
+            --version)
+                # `shift 2` with no value left fails under set -e and killed the script silently.
+                if [ $# -lt 2 ] || [ -z "$2" ]; then
+                    echo -e "${RED}❌ --version needs a value, e.g. --version v0.7.0${NC}"
+                    exit 2
+                fi
+                UPDATE_TARGET_VERSION="$2"
+                shift 2
+                ;;
             --rollback) UPDATE_ROLLBACK=true; shift ;;
             --force-downgrade) UPDATE_FORCE_DOWNGRADE=true; shift ;;
             *) echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"; shift ;;
@@ -2105,19 +2113,35 @@ update_refuse_unforced_downgrade() {
     fi
 }
 
+# In-place sed on .env that works on GNU and BSD (macOS) sed: only a suffix glued to -i is
+# portable. The suffix is unique to this process so cleaning it up can never delete a
+# .env.bak the operator keeps on purpose.
+sed_env_inplace() {
+    local suffix=".ot-sed.$$"
+    sed -i"$suffix" "$1" .env && rm -f ".env$suffix"
+}
+
+# Append a line to .env, first terminating a last line that has no newline; otherwise the
+# new key is glued onto the previous value and both are lost.
+append_env_line() {
+    if [ -s .env ] && [ -n "$(tail -c1 .env)" ]; then
+        printf '\n' >> .env
+    fi
+    printf '%s\n' "$1" >> .env
+}
+
 # Record where we came from so --rollback has a target, then pin the new tag.
 update_pin_image_tag() {
     if grep -q '^# *OT_PREVIOUS_IMAGE_TAG=' .env; then
-        sed -i.bak "s|^# *OT_PREVIOUS_IMAGE_TAG=.*|# OT_PREVIOUS_IMAGE_TAG=${UPDATE_CURRENT_TAG}|" .env
+        sed_env_inplace "s|^# *OT_PREVIOUS_IMAGE_TAG=.*|# OT_PREVIOUS_IMAGE_TAG=${UPDATE_CURRENT_TAG}|"
     else
-        echo "# OT_PREVIOUS_IMAGE_TAG=${UPDATE_CURRENT_TAG}" >> .env
+        append_env_line "# OT_PREVIOUS_IMAGE_TAG=${UPDATE_CURRENT_TAG}"
     fi
     if grep -q '^OT_IMAGE_TAG=' .env; then
-        sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${UPDATE_TARGET_VERSION}|" .env
+        sed_env_inplace "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${UPDATE_TARGET_VERSION}|"
     else
-        echo "OT_IMAGE_TAG=${UPDATE_TARGET_VERSION}" >> .env
+        append_env_line "OT_IMAGE_TAG=${UPDATE_TARGET_VERSION}"
     fi
-    rm -f .env.bak
     echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${UPDATE_TARGET_VERSION} (was ${UPDATE_CURRENT_TAG})${NC}"
     echo -e "${YELLOW}📥 Updating to ${UPDATE_TARGET_VERSION}...${NC}"
 }
@@ -2198,6 +2222,14 @@ cmd_update() {
 
     if [ -n "$UPDATE_TARGET_VERSION" ]; then
         case "$UPDATE_TARGET_VERSION" in v*) ;; *) UPDATE_TARGET_VERSION="v${UPDATE_TARGET_VERSION}" ;; esac
+        # The tag is spliced into a sed replacement, .env, an image reference and a `sh -c`
+        # run inside the target image, so only characters a tag can contain are accepted.
+        case "$UPDATE_TARGET_VERSION" in
+            *[!A-Za-z0-9._-]*)
+                echo -e "${RED}❌ Not a valid release tag: ${UPDATE_TARGET_VERSION}${NC}"
+                exit 2
+                ;;
+        esac
         update_refuse_unforced_downgrade
         update_pin_image_tag
         if [ "$UPDATE_ROLLBACK" = true ] && [ "$UPDATE_FORCE_DOWNGRADE" = false ]; then
@@ -2506,7 +2538,10 @@ cmd_config() {
     check_environment
     echo -e "${BLUE}⚙️  Current Configuration:${NC}"
     echo "Environment file (.env):"
-    grep -E "^[A-Z]" .env | head -20
+    # Mask the value of anything credential-shaped: this output ends up in terminals,
+    # screen shares and pasted bug reports, and the first lines of .env are the passwords.
+    grep -E "^[A-Z]" .env | head -20 \
+        | sed -E 's/^([A-Za-z0-9_]*(PASSWORD|SECRET|TOKEN|_KEY|KEY_|CREDENTIAL|DATABASE_URL)[A-Za-z0-9_]*)=.+/\1=********/'
     echo ""
     echo "Docker Compose configuration:"
     if docker compose config > /dev/null 2>&1; then
@@ -2675,15 +2710,12 @@ setup_ssl_issue_certs() {
 setup_ssl_write_env() {
     local hostname="$SSL_HOSTNAME"
     if [ -f .env ]; then
-        if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-            sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$hostname|g" .env
-            rm -f .env.bak
+        if grep -qE "^#*[[:space:]]*NGINX_SERVER_NAME=" .env; then
+            sed_env_inplace "s|^#*[[:space:]]*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$hostname|"
         else
-            {
-                echo ""
-                echo "# HTTPS/SSL Configuration"
-                echo "NGINX_SERVER_NAME=$hostname"
-            } >> .env
+            append_env_line ""
+            append_env_line "# HTTPS/SSL Configuration"
+            append_env_line "NGINX_SERVER_NAME=$hostname"
         fi
         echo -e "${GREEN}✓ Updated .env with NGINX_SERVER_NAME=$hostname${NC}"
     fi

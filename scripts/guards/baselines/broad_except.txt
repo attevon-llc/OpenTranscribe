@@ -389,8 +389,8 @@ backend/app/services/opensearch_service/repair.py::_repair_index#4	1	re-keyed pe
 backend/app/services/opensearch_service/repair.py::check_and_repair_indices#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/repair.py::check_and_repair_indices#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_verify_rebuild_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_cleanup_after_failed_rebuild#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_collections.py::bulk_update_collection_assignments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_collections.py::get_speakers_in_collection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_collections.py::move_speaker_to_profile_collection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

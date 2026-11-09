@@ -192,3 +192,131 @@ def test_complete_rebuild_reports_the_copied_count(db_session, clustered_speaker
 
     assert result["status"] == "rebuilt"
     assert result["speakers_indexed"] == 1
+
+
+def test_unverifiable_rebuild_index_is_dropped_and_original_kept(db_session, clustered_speaker):
+    """A failing count probe aborts before the delete and cleans the temporary index."""
+    client = MagicMock()
+    client.indices.exists.side_effect = _exists_map(
+        **{_SPEAKER_INDEX: True, _V4_INDEX: True, _REBUILD_INDEX: True}
+    )
+    client.search.side_effect = [_v4_page(clustered_speaker), _EMPTY_PAGE]
+    client.bulk.return_value = {"errors": False}
+    client.count.side_effect = RuntimeError("probe down")
+
+    with patch(_CLIENT_PATH, client), patch(_DIMENSION_PATH, return_value=256):
+        result = repair.rebuild_speaker_index(db_session)
+
+    assert result == {"status": "error", "speakers_indexed": 0}
+    assert _SPEAKER_INDEX not in _deleted_indices(client)
+    assert _deleted_indices(client)[-1] == _REBUILD_INDEX
+
+
+def test_failure_after_the_original_was_deleted_keeps_the_rebuild_index(
+    db_session, clustered_speaker
+):
+    """Once ``speakers`` is gone the temporary index is the only copy: an error must not drop it."""
+    client = MagicMock()
+    present = {_SPEAKER_INDEX: True, _V4_INDEX: True}
+
+    def _exists(index: str, **_kwargs) -> bool:
+        return present.get(index, False)
+
+    def _delete(index: str, **_kwargs) -> None:
+        present[index] = False
+
+    client.indices.exists.side_effect = _exists
+    client.indices.delete.side_effect = _delete
+    client.search.side_effect = [_v4_page(clustered_speaker), _EMPTY_PAGE, RuntimeError("boom")]
+    client.bulk.return_value = {"errors": False}
+    client.count.return_value = {"count": 1}
+
+    with patch(_CLIENT_PATH, client), patch(_DIMENSION_PATH, return_value=256):
+        result = repair.rebuild_speaker_index(db_session)
+
+    assert result == {"status": "error", "speakers_indexed": 0}
+    assert _deleted_indices(client) == [_SPEAKER_INDEX]
+
+
+def test_failure_while_the_original_exists_drops_the_rebuild_index(db_session, clustered_speaker):
+    client = MagicMock()
+    client.indices.exists.side_effect = _exists_map(
+        **{_SPEAKER_INDEX: True, _V4_INDEX: True, _REBUILD_INDEX: True}
+    )
+    client.search.side_effect = [_v4_page(clustered_speaker), _EMPTY_PAGE]
+    client.bulk.side_effect = RuntimeError("bulk failed")
+
+    with patch(_CLIENT_PATH, client), patch(_DIMENSION_PATH, return_value=256):
+        result = repair.rebuild_speaker_index(db_session)
+
+    assert result["status"] == "error"
+    assert _deleted_indices(client)[-1] == _REBUILD_INDEX
+    assert _SPEAKER_INDEX not in _deleted_indices(client)
+
+
+def test_only_documents_known_to_postgres_with_an_embedding_are_loaded(
+    db_session, clustered_speaker
+):
+    """The v4 scan pages through, and strangers / embedding-less docs are not carried over."""
+    page = _v4_page(clustered_speaker)
+    stranger = {"_id": "x", "sort": ["b"], "_source": {"speaker_uuid": "nope", "embedding": [1]}}
+    no_embedding = {
+        "_id": "y",
+        "sort": ["c"],
+        "_source": {"speaker_uuid": clustered_speaker},
+    }
+    page["hits"]["hits"].extend([stranger, no_embedding])
+    client = MagicMock()
+    client.indices.exists.side_effect = _exists_map(**{_SPEAKER_INDEX: True, _V4_INDEX: True})
+    client.search.side_effect = [page, _EMPTY_PAGE, _v4_page(clustered_speaker), _EMPTY_PAGE]
+    client.bulk.return_value = {"errors": False}
+    client.count.return_value = {"count": 1}
+
+    with patch(_CLIENT_PATH, client), patch(_DIMENSION_PATH, return_value=256):
+        result = repair.rebuild_speaker_index(db_session)
+
+    first_bulk = client.bulk.call_args_list[0].kwargs["body"]
+    assert [a["index"]["_id"] for a in first_bulk[::2]] == [clustered_speaker]
+    assert result["status"] == "rebuilt"
+
+
+def test_rejected_bulk_items_leave_the_original_untouched(db_session, clustered_speaker):
+    client = MagicMock()
+    client.indices.exists.side_effect = _exists_map(**{_SPEAKER_INDEX: True, _V4_INDEX: True})
+    client.search.side_effect = [_v4_page(clustered_speaker), _EMPTY_PAGE]
+    client.bulk.return_value = {
+        "errors": True,
+        "items": [{"index": {"status": 400}}],
+    }
+    client.count.return_value = {"count": 0}
+
+    with patch(_CLIENT_PATH, client), patch(_DIMENSION_PATH, return_value=256):
+        result = repair.rebuild_speaker_index(db_session)
+
+    # The count probe says nothing landed, so the original is left alone.
+    assert result["status"] == "error"
+    assert _SPEAKER_INDEX not in _deleted_indices(client)
+
+
+def test_empty_rebuild_is_allowed_only_when_the_operator_asks(db_session):
+    client = MagicMock()
+    client.indices.exists.side_effect = _exists_map(**{_SPEAKER_INDEX: True})
+    client.count.return_value = {"count": 0}
+
+    with patch(_CLIENT_PATH, client), patch(_DIMENSION_PATH, return_value=256):
+        result = repair.rebuild_speaker_index(db_session, allow_empty_rebuild=True)
+
+    assert result == {"status": "rebuilt", "speakers_indexed": 0}
+    assert _SPEAKER_INDEX in _deleted_indices(client)
+    assert any(
+        c.kwargs.get("index") == _SPEAKER_INDEX for c in client.indices.create.call_args_list
+    )
+
+
+def test_missing_client_and_bad_session_are_reported_without_touching_anything(db_session):
+    with patch(_CLIENT_PATH, None):
+        assert repair.rebuild_speaker_index(db_session)["message"] == (
+            "OpenSearch client not available"
+        )
+    with patch(_CLIENT_PATH, MagicMock()):
+        assert repair.rebuild_speaker_index(object())["message"] == "Invalid database session"

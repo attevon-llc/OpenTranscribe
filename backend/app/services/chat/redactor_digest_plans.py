@@ -53,7 +53,7 @@ def _load_digest_rows(db: Session, file_ids: list[int]) -> dict[int, Any]:
     """``media_file_id -> digest JSON`` for every digest hit in ONE masking call.
 
     A single ``file_id IN (...)`` query, instead of the one-query-per-hit
-    :func:`_digest_sentences` used to run inside :func:`_gather_digest_plans`'s
+    a per-hit helper used to run inside :func:`_gather_digest_plans`'s
     loop. A bounded-scope summarize turn's map (``mapreduce.scope_digest_hits``)
     is exactly the shape that made this an N+1 in practice: with the default
     ``sections_per_file``, one hit per file in scope means one round trip per
@@ -70,7 +70,7 @@ def _load_digest_rows(db: Session, file_ids: list[int]) -> dict[int, Any]:
         A dict covering every file that HAS a ``file_facts`` row. A file with
         no row (never ingested, or predates ``file_facts``) is simply absent —
         callers already treat an absent/empty digest as "fall through to the
-        inline masker", the same contract :func:`_digest_sentences` had.
+        inline masker", the same contract the per-hit helper had.
     """
     from app.models.file_facts import FileFacts
 
@@ -123,10 +123,8 @@ def _filter_sentences_by_speaker(sentences: list[dict], speaker_filter: str) -> 
 def _digest_sentences_from_row(digest_json: Any, chunk: ChunkHit) -> list[dict] | None:
     """The stored sentences of one digest section, given an ALREADY-LOADED digest.
 
-    Split out of :func:`_digest_sentences` so the section-matching rule has one
-    implementation whether the digest JSON came from a single-hit query (that
-    function) or from the batched read :func:`_load_digest_rows` performs once
-    per masking call (:func:`_gather_digest_plans`). ``None`` means the row or
+    The section-matching rule, fed by the batched read :func:`_load_digest_rows` performs
+    once per masking call (:func:`_gather_digest_plans`). ``None`` means the row or
     the section is not resolvable, and the caller must then fail closed rather
     than fall back.
 
@@ -151,29 +149,6 @@ def _digest_sentences_from_row(digest_json: Any, chunk: ChunkHit) -> list[dict] 
                 sentences = _filter_sentences_by_speaker(sentences, chunk.speaker)
             return list(sentences) if sentences else None
     return None
-
-
-def _digest_sentences(db: Session, chunk: ChunkHit) -> list[dict] | None:
-    """The stored sentences of one digest section, with their provenance.
-
-    The INDEXED digest document carries only its rendered text — no segment ids
-    — so re-masking has to come back to ``file_facts`` for the provenance the
-    extractive builder recorded. ``None`` means the row or the section is not
-    resolvable, and the caller must then fail closed rather than fall back.
-
-    The single-hit form: reads its own row. :func:`_gather_digest_plans` does
-    NOT call this — it batches the read for every hit in the masking call via
-    :func:`_load_digest_rows` and calls :func:`_digest_sentences_from_row`
-    directly, to avoid the N+1 this function's per-hit query would otherwise
-    reproduce inside a loop. This form remains for any caller that genuinely
-    has one hit and no batch to amortize the query over.
-    """
-    from app.models.file_facts import FileFacts
-
-    row = db.query(FileFacts.digest).filter(FileFacts.media_file_id == chunk.file_id).first()
-    if row is None:
-        return None
-    return _digest_sentences_from_row(row[0], chunk)
 
 
 def _gather_sentence_segments(db: Session, sentence: dict) -> list[_SegmentSpans]:

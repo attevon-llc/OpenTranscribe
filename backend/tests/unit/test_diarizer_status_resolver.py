@@ -35,7 +35,7 @@ import pytest
 
 from app.transcription.diar_sidecar_status import _ENGINE_DESCRIPTIONS
 from app.transcription.diar_sidecar_status import describe_diarizer_status
-from app.transcription.diar_sidecar_status import reset_readiness_cache
+from tests.state_resets import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.

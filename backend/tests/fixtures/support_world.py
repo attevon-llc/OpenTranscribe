@@ -33,8 +33,8 @@ from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.support_access import SupportAccessGrant
 from app.models.user import User
-from app.services.platform_access import reset_tenancy_mode_cache
 from tests.audit_maintenance import audit_maintenance
+from tests.state_resets import reset_tenancy_mode_cache
 
 GRANT_HEADER = "X-Support-Access-Grant"
 #: Random per process: these accounts exist only inside a rolled-back transaction, and a

@@ -51,6 +51,7 @@ import pytest
 from app.services.search import chunking_service
 from app.services.search import sentence_splitter
 from app.services.search.chunking_service import chunk_transcript_by_speaker_turns
+from tests import state_resets
 
 #: Metadata every call needs; none of it participates in boundary decisions.
 BASE_KWARGS: dict[str, Any] = {
@@ -880,7 +881,7 @@ def test_the_splitter_choice_is_latched_for_the_process(sentence_splitter_state)
     # The control: clearing the latch — which only tests do — must let punkt back in,
     # or the assertion above would hold for the trivial reason that the injected
     # tokenizer is never consulted at all.
-    sentence_splitter.reset_sentence_splitter_state()
+    state_resets.reset_sentence_splitter_state()
     sentence_splitter._nltk_tokenizers["english"] = _AbbreviationAwareTokenizer()
     unlatched = chunk_transcript_by_speaker_turns(
         segments, **BASE_KWARGS, target_words=40, overlap_words=8

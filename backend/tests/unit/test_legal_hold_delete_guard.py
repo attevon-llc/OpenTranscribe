@@ -285,7 +285,7 @@ def test_the_sweep_keeps_a_file_whose_retention_override_cannot_be_resolved(
             db_session, {"delete_error_files": False}, cutoff, cutoff, resolve_retention_days
         )
     finally:
-        from app.core.tenant_limits import reset_resolvers
+        from tests.state_resets import reset_resolvers
 
         reset_resolvers()
 
@@ -298,9 +298,9 @@ def test_a_resolver_outage_logs_one_traceback_per_pass_not_one_per_file(
     """Every candidate is kept with a short warning; the cause is logged once."""
     import logging
 
-    from app.core.tenant_limits import reset_resolvers
     from app.core.tenant_limits import resolve_retention_days
     from app.core.tenant_limits import set_retention_resolver
+    from tests.state_resets import reset_resolvers
 
     def _unavailable(_org_id):
         raise RuntimeError("retention resolver unavailable")

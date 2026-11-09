@@ -24,7 +24,7 @@ from app.models.tag import FileTag
 from app.models.tag import Tag
 from app.services.formatting_service import FormattingService
 from app.services.permission_service import PermissionService
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 _ANY_UUID = "00000000-0000-7000-8000-000000000001"
 

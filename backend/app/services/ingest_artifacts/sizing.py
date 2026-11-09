@@ -96,22 +96,6 @@ MAX_DIGEST_SECTIONS = 8
 MIN_DIGEST_SECTIONS = 1
 
 
-def estimate_wordpieces(text: str) -> int:
-    """Estimate the wordpiece count of *text* using the measured ratio.
-
-    An estimate, deliberately: the real tokenizer lives inside OpenSearch and calling it
-    per sentence would couple digest generation to index availability — the same coupling
-    the plan rejected for sentence embeddings. The ratio is calibrated on transcript text,
-    which is denser in tokens than the digest prose it is applied to, so it over-counts.
-    """
-    return math.ceil(len(text.split()) * MEASURED_WORDPIECES_PER_WORD)
-
-
-def fits_embedding_window(text: str, *, header_wordpieces: int = HEADER_WORDPIECE_RESERVE) -> bool:
-    """True when *text* plus a header of *header_wordpieces* fits the measured window."""
-    return estimate_wordpieces(text) + header_wordpieces <= EMBEDDING_CONTENT_WORDPIECES
-
-
 def section_count_for(total_words: int) -> int:
     """How many digest sections a transcript of *total_words* source words gets."""
     if total_words <= 0:

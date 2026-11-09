@@ -13,7 +13,7 @@ import pytest
 from app.core.config import settings
 from app.models.media import MediaFile
 from app.models.organization import Organization
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 
 @pytest.fixture(autouse=True)

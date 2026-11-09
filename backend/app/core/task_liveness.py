@@ -327,18 +327,6 @@ def record_infra_requeue(file_uuid: str) -> int | None:
         return None
 
 
-def infra_requeues(file_uuid: str) -> int:
-    """How many infrastructure requeues ``file_uuid`` has had (0 when unknown)."""
-    from app.core.redis import get_request_redis
-
-    try:
-        score = get_request_redis().zscore(INFRA_REQUEUES_KEY, file_uuid)
-    except Exception as e:
-        logger.warning("Could not read the infrastructure requeues of %s: %s", file_uuid, e)
-        return 0
-    return int(score or 0)
-
-
 def clear_infra_requeues(file_uuid: str) -> None:
     """Forget a file's infrastructure requeues once its run reached a terminal state."""
     from app.core.redis import get_request_redis

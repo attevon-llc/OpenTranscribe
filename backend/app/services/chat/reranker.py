@@ -171,14 +171,6 @@ def get_reranker(
     return _rerankers.get(model_name)
 
 
-def reset_reranker_state() -> None:
-    """Clear every cached model, cooldown and the scoring pool. For tests only."""
-    with _lock:
-        _rerankers.clear()
-        _retry_after.clear()
-    reranker_threads.shutdown_for_tests()
-
-
 def rerank(
     query: str,
     hits: list,

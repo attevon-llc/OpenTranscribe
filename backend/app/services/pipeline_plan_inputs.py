@@ -3,7 +3,7 @@
 Reuses, never re-derives: the active ASR config comes from
 ``ASRProviderFactory.resolve_active_config`` (the same precedence a job uses), the #1109
 lock from ``locked_transcription_fields``, the pyannote.ai key from
-``has_pyannote_credential``, and capabilities from the ASR catalog. DB reads only; no
+``get_pyannote_credential``, and capabilities from the ASR catalog. DB reads only; no
 provider is built and nothing is decrypted or contacted.
 """
 

@@ -51,41 +51,98 @@ def _get_redis_client() -> redis.Redis | None:
         return None
 
 
+#: Hard ceiling on records held by the in-memory fallback. A record is ~300 bytes, so this is
+#: tens of MB at most. Every failed login for a distinct identifier writes one, so without a
+#: bound an unauthenticated client could grow the process by trying names.
+IN_MEMORY_MAX_RECORDS = 50_000
+#: Expired records are swept at most this often (counted in writes) so a write stays O(1) amortised.
+_PRUNE_EVERY_WRITES = 256
+
+
 class InMemoryLockoutStore:
     """
-    Thread-safe in-memory storage for lockout records.
+    Thread-safe, bounded in-memory storage for lockout records.
+
+    Mirrors the Redis semantics the callers rely on: ``set(..., ex=ttl)`` makes the key
+    vanish after ``ttl`` seconds (checked on read, swept on write), and the store never holds
+    more than ``max_records`` keys (oldest-written evicted first). No background thread: the
+    sweep piggybacks on writes.
 
     Warning:
         This store does not persist across restarts and does not work
         in distributed deployments. Use Redis for production.
     """
 
-    def __init__(self) -> None:
-        self._data: dict[str, str] = {}  # key -> JSON string
+    def __init__(
+        self,
+        *,
+        max_records: int = IN_MEMORY_MAX_RECORDS,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._data: dict[str, str] = {}  # key -> JSON string, in write order
+        self._expires: dict[str, float] = {}  # key -> clock() deadline, only for keys set with ex
         self._lock = threading.Lock()
+        self._max_records = max_records
+        self._clock = clock
+        self._writes_since_prune = 0
+
+    def _drop_if_expired(self, key: str) -> bool:
+        deadline = self._expires.get(key)
+        if deadline is not None and self._clock() >= deadline:
+            self._data.pop(key, None)
+            del self._expires[key]
+            return True
+        return False
+
+    def _prune_expired(self) -> None:
+        now = self._clock()
+        for key in [k for k, deadline in self._expires.items() if now >= deadline]:
+            self._data.pop(key, None)
+            del self._expires[key]
 
     def get(self, key: str) -> str | None:
-        """Get a value."""
+        """Get a value, or None when absent or past its ``ex`` lifetime."""
         with self._lock:
+            if self._drop_if_expired(key):
+                return None
             return self._data.get(key)
 
     def set(self, key: str, value: str, ex: int | None = None) -> None:
-        """Set a value (ex parameter ignored for in-memory)."""
+        """Set a value that expires after ``ex`` seconds (never, when ``ex`` is None)."""
         with self._lock:
+            self._data.pop(key, None)  # re-insert so write order tracks recency
             self._data[key] = value
+            if ex is not None:
+                self._expires[key] = self._clock() + ex
+            else:
+                self._expires.pop(key, None)
+            self._writes_since_prune += 1
+            if self._writes_since_prune >= _PRUNE_EVERY_WRITES or (
+                len(self._data) > self._max_records
+            ):
+                self._writes_since_prune = 0
+                self._prune_expired()
+            while len(self._data) > self._max_records:
+                oldest = next(iter(self._data))
+                del self._data[oldest]
+                self._expires.pop(oldest, None)
 
     def delete(self, key: str) -> int:
-        """Delete a key, returning 1 if deleted, 0 if not found."""
+        """Delete a key, returning 1 if deleted, 0 if not found (or already expired)."""
         with self._lock:
+            if self._drop_if_expired(key):
+                return 0
+            self._expires.pop(key, None)
             if key in self._data:
                 del self._data[key]
                 return 1
             return 0
 
     def keys(self, pattern: str) -> list[str]:
-        """Get keys matching a pattern (simple prefix matching)."""
+        """Get live keys matching a pattern (simple prefix matching)."""
         prefix = pattern.rstrip("*")
         with self._lock:
+            self._prune_expired()
             return [k for k in self._data if k.startswith(prefix)]
 
 

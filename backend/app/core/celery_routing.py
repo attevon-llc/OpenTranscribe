@@ -206,6 +206,8 @@ TASK_ROUTES: dict[str, dict[str, str]] = {
     # FedRAMP AC-10 concurrent-session ceiling (issue #632): one grouped
     # query plus small per-user UPDATEs. Utility — never gpu.
     "session.cap_sweep": {"queue": CeleryQueues.UTILITY},
+    # Expired refresh-token cleanup: one indexed range DELETE. Utility, never gpu.
+    "auth.cleanup_expired_refresh_tokens": {"queue": CeleryQueues.UTILITY},
     # Chat retention: one settings read, then bounded deletes. Utility — never gpu.
     "chat.retention_sweep": {"queue": CeleryQueues.UTILITY},
     # Legal record / voiceprint retention: bounded selection + delete or dispatch. Utility.

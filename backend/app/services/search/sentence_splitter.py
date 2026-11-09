@@ -110,19 +110,6 @@ def _get_nltk_tokenizer(language: str = "english") -> Any:
     return None
 
 
-def reset_sentence_splitter_state() -> None:
-    """Clear the latched splitter decision and the tokenizer cache.
-
-    For tests only. The latch is deliberately permanent in production — see
-    ``_nltk_load_failed`` — so a suite that exercises both splitters needs an
-    explicit way to undo it rather than waiting out a cooldown that no longer
-    exists.
-    """
-    global _nltk_load_failed
-    _nltk_load_failed = False
-    _nltk_tokenizers.clear()
-
-
 def _load_punkt_model(nltk_data_module: Any, language: str) -> Any:
     """Try loading punkt_tab first, fall back to punkt.
 

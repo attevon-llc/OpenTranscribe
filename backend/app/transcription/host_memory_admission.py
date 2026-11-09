@@ -168,10 +168,6 @@ def configure(configured: int) -> AdmissionDecision:
     return decision
 
 
-def current_gate() -> SlotGate | None:
-    return _gate
-
-
 @contextmanager
 def task_slot(stage: str) -> Iterator[int]:
     """Hold one host-memory slot for the block. A no-op until configured or when disabled."""
@@ -181,9 +177,3 @@ def task_slot(stage: str) -> Iterator[int]:
         return
     with gate.reserve(stage, 1, timeout_s=admission_timeout_s()) as granted:
         yield granted
-
-
-def reset_for_tests() -> None:
-    global _gate
-    with _lock:
-        _gate = None

@@ -16,10 +16,10 @@ import pytest
 from fastapi import status
 
 from app.services.privacy import policy
-from app.services.speaker_status_service import SpeakerStatusService
 from tests.fixtures.privacy_switches import set_instance_switch
 from tests.fixtures.provenance_world import ALICE
 from tests.fixtures.provenance_world import build_world
+from tests.helpers import persist_speaker_status
 
 pytestmark = pytest.mark.usefixtures("speaker_os_seams")
 
@@ -35,7 +35,7 @@ def _reset_ceiling():
 def world(db_session, normal_user):
     built = build_world(db_session, normal_user)
     for speaker in (built.alice, built.carol, built.bob):
-        assert SpeakerStatusService.update_speaker_status_in_db(db_session, speaker.id)
+        assert persist_speaker_status(db_session, speaker.id)
     db_session.expire_all()
     # The stored status is the policy-free description of the data: the premise of the test.
     assert ALICE in built.alice.resolved_display_name

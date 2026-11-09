@@ -193,7 +193,7 @@ class TestAddTagsToFile:
             "(issue #284 A2.8)"
         )
         # Observed: one Tag lookup + one FileTag lookup + one read inside
-        # redis_cache.invalidate_tags_for_file. Bounded, never per-name.
+        # the tag service's own invalidation. Bounded, never per-name.
         assert counts[5] <= 4, f"expected a small constant number of SELECTs, got {counts[5]}"
 
     def test_missing_tags_are_created_and_owned_by_the_caller(self, db_session, normal_user):

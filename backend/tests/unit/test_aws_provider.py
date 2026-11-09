@@ -50,6 +50,7 @@ from app.core.config import settings
 from app.services.asr import aws_provider as aws_provider_module
 from app.services.asr.aws_provider import AWSTranscribeProvider
 from app.services.asr.types import ASRConfig
+from tests import state_resets
 
 
 def _provider(**kwargs) -> AWSTranscribeProvider:
@@ -489,9 +490,9 @@ def test_an_unresolvable_account_id_stops_the_job_before_anything_is_uploaded(
 
 @pytest.fixture(autouse=True)
 def _fresh_owner_cache():
-    aws_provider_module.clear_bucket_owner_cache()
+    state_resets.clear_bucket_owner_cache()
     yield
-    aws_provider_module.clear_bucket_owner_cache()
+    state_resets.clear_bucket_owner_cache()
 
 
 def test_the_account_lookup_is_made_once_per_credentials_not_once_per_job(monkeypatch):

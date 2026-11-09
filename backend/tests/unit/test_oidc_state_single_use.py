@@ -118,37 +118,6 @@ class TestKeyDerivationIsShared:
         assert store.get_state(STATE) == STATE_DATA
 
 
-class TestExplicitDeletionIsIdempotent:
-    """Consequence prevented: the error/abort paths that call ``delete_state`` after a
-    redemption raising, which would turn a failed login into a 500."""
-
-    def test_deleting_a_live_state_reports_success(self, store):
-        store.store_state(STATE, STATE_DATA)
-
-        assert store.delete_state(STATE) is True
-
-    def test_deleting_a_live_state_makes_it_unredeemable(self, store):
-        store.store_state(STATE, STATE_DATA)
-        store.delete_state(STATE)
-
-        assert store.get_state(STATE) is None
-
-    def test_deleting_an_already_redeemed_state_reports_false(self, store):
-        store.store_state(STATE, STATE_DATA)
-        store.get_state(STATE)
-
-        assert store.delete_state(STATE) is False
-
-    def test_deleting_an_unknown_state_reports_false(self, store):
-        assert store.delete_state("never-issued") is False
-
-    def test_deleting_twice_is_not_an_error(self, store):
-        store.store_state(STATE, STATE_DATA)
-        store.delete_state(STATE)
-
-        assert store.delete_state(STATE) is False
-
-
 class TestStateExhaustionIsCapped:
     """Consequence prevented: an unauthenticated caller growing the state store without
     limit by hitting the login route repeatedly (the reason ``MAX_STATES`` exists)."""

@@ -22,6 +22,7 @@ from app.core import chat_defaults
 from app.services.chat import reranker as reranker_mod
 from app.services.chat import reranker_warmup
 from app.services.system_settings_service import set_setting
+from tests import state_resets
 from tests.helpers import make_stub_module
 
 _APP_DIR = Path(__file__).resolve().parents[2] / "app"
@@ -29,14 +30,14 @@ _APP_DIR = Path(__file__).resolve().parents[2] / "app"
 
 @pytest.fixture(autouse=True)
 def _clean_state():
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
     reranker_warmup._warmup_thread = None
     yield
     running = reranker_warmup._warmup_thread
     if running is not None:
         running.join(timeout=10)
     reranker_warmup._warmup_thread = None
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
 
 
 class _FakeEncoder:

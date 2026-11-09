@@ -38,6 +38,8 @@ from typing import Literal
 import numpy as np
 import pytest
 
+from tests.helpers import segment_embedding
+
 pytestmark = pytest.mark.models
 
 MEDIA_FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "media"
@@ -128,9 +130,7 @@ def test_cpu_extraction_produces_valid_embedding(cpu_service) -> None:
     """
     assert SAMPLE_WAV.exists(), f"fixture missing: {SAMPLE_WAV}"
 
-    embedding = cpu_service.extract_embedding_from_segment(
-        str(SAMPLE_WAV), {"start": 1.0, "end": 6.0}
-    )
+    embedding = segment_embedding(cpu_service, str(SAMPLE_WAV), {"start": 1.0, "end": 6.0})
 
     assert embedding is not None, "CPU extraction returned None — extraction silently failed"
     assert isinstance(embedding, np.ndarray)
@@ -164,7 +164,7 @@ def test_cpu_matches_gpu_dimensionality_and_direction() -> None:
     assert str(gpu_service.device).startswith("cuda"), (
         f"Expected GPU auto-detection with CUDA available, got {gpu_service.device}"
     )
-    gpu_embedding = gpu_service.extract_embedding_from_segment(str(SAMPLE_WAV), segment)
+    gpu_embedding = segment_embedding(gpu_service, str(SAMPLE_WAV), segment)
     assert gpu_embedding is not None
 
     from _pytest.monkeypatch import MonkeyPatch
@@ -176,7 +176,7 @@ def test_cpu_matches_gpu_dimensionality_and_direction() -> None:
         mp.setattr(settings, "TORCH_DEVICE", "cpu")
         cpu_service = _embedding_service()
         assert str(cpu_service.device) == "cpu"
-        cpu_embedding = cpu_service.extract_embedding_from_segment(str(SAMPLE_WAV), segment)
+        cpu_embedding = segment_embedding(cpu_service, str(SAMPLE_WAV), segment)
     finally:
         mp.undo()
 
@@ -218,12 +218,10 @@ def test_cpu_distinguishes_real_different_speakers(cpu_service) -> None:
     assert sarah_words and all(w["speaker"] == "Sarah" for w in sarah_words)
     assert andrej_words and all(w["speaker"] == "Andrej" for w in andrej_words)
 
-    sarah_embedding = cpu_service.extract_embedding_from_segment(str(KARPATHY_AUDIO), SARAH_SEGMENT)
-    andrej_embedding = cpu_service.extract_embedding_from_segment(
-        str(KARPATHY_AUDIO), ANDREJ_SEGMENT
-    )
-    same_speaker_embedding = cpu_service.extract_embedding_from_segment(
-        str(KARPATHY_AUDIO), {"start": 34.54, "end": 41.0}
+    sarah_embedding = segment_embedding(cpu_service, str(KARPATHY_AUDIO), SARAH_SEGMENT)
+    andrej_embedding = segment_embedding(cpu_service, str(KARPATHY_AUDIO), ANDREJ_SEGMENT)
+    same_speaker_embedding = segment_embedding(
+        cpu_service, str(KARPATHY_AUDIO), {"start": 34.54, "end": 41.0}
     )  # a second, disjoint Sarah run
 
     assert sarah_embedding is not None

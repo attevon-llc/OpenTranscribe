@@ -25,7 +25,7 @@ def _no_stored_floor(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _reset_resolvers():
-    from app.core.tenant_limits import reset_resolvers
+    from tests.state_resets import reset_resolvers
 
     reset_resolvers()
     yield

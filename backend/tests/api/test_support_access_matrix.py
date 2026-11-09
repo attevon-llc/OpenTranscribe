@@ -606,7 +606,7 @@ def test_degraded_listing_stays_instance_wide_in_a_single_tenant_deployment(
     support_world, seeded, monkeypatch
 ):
     from app.core.config import settings
-    from app.services.platform_access import reset_tenancy_mode_cache
+    from tests.state_resets import reset_tenancy_mode_cache
 
     w = support_world
     monkeypatch.setattr(settings, "TENANCY_MODE", "single")

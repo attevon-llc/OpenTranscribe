@@ -16,6 +16,7 @@ import pytest
 
 from app.core import worker_shutdown as ws
 from app.transcription import cuda_health
+from tests import state_resets
 
 CT2_OOM = RuntimeError("CUDA failed with error out of memory")
 TORCH_OOM_MSG = "CUDA out of memory. Tried to allocate 2.44 GiB."
@@ -34,9 +35,9 @@ class OutOfMemoryError(RuntimeError):
 def _clean_state():
     was_set = ws._SHUTDOWN.is_set()
     ws._SHUTDOWN.clear()
-    cuda_health.reset_for_tests()
+    state_resets.reset_cuda_health()
     yield
-    cuda_health.reset_for_tests()
+    state_resets.reset_cuda_health()
     (ws._SHUTDOWN.set() if was_set else ws._SHUTDOWN.clear())
 
 
@@ -86,7 +87,7 @@ class TestPoisonedExit:
         cuda_health.mark_context_poisoned("invalid device ordinal")
         cuda_health.mark_context_poisoned("illegal memory access")
 
-        assert cuda_health.context_poisoned()
+        assert state_resets.cuda_context_poisoned()
         # Other threads on this worker stand down at their next checkpoint and requeue.
         assert ws.shutdown_requested()
         assert sent == [(cuda_health.os.getpid(), signal.SIGTERM)]
@@ -94,7 +95,7 @@ class TestPoisonedExit:
     def test_nothing_is_signalled_while_healthy(self, monkeypatch):
         sent: list[tuple[int, int]] = []
         monkeypatch.setattr(cuda_health.os, "kill", lambda pid, sig: sent.append((pid, sig)))
-        assert not cuda_health.context_poisoned()
+        assert not state_resets.cuda_context_poisoned()
         assert sent == []
         assert not ws.shutdown_requested()
 

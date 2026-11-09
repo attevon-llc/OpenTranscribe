@@ -88,24 +88,6 @@ class TestJobSpec:
         assert spec.file_id == 0
         assert spec.user_id == 0
 
-    def test_from_audio_path_sets_path_and_task_id(self):
-        spec = JobSpec.from_audio_path("/data/audio/sample.wav", task_id="my-task")
-
-        assert spec.audio_path == "/data/audio/sample.wav"
-        assert spec.task_id == "my-task"
-        assert spec.file_id == 0
-        assert spec.user_id == 0
-
-    def test_from_audio_path_default_task_id_is_empty_string(self):
-        spec = JobSpec.from_audio_path("/data/audio/sample.wav")
-
-        assert spec.task_id == ""
-
-    def test_from_audio_path_returns_job_spec_instance(self):
-        spec = JobSpec.from_audio_path("/data/audio/sample.wav")
-
-        assert isinstance(spec, JobSpec)
-
 
 # ---------------------------------------------------------------------------
 # TestJobResult

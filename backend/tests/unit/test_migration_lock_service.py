@@ -80,23 +80,6 @@ class TestMigrationLockService:
             mock_fn.side_effect = ConnectionError("down")
             assert self.service.is_active() is False
 
-    # ---- refresh_ttl ----
-
-    def test_refresh_ttl_resets_expiry(self):
-        self.mock_redis.expire.return_value = True
-        assert self.service.refresh_ttl() is True
-        self.mock_redis.expire.assert_called_once()
-
-    def test_refresh_ttl_custom_value(self):
-        self.mock_redis.expire.return_value = True
-        self.service.refresh_ttl(ttl=600)
-        args = self.mock_redis.expire.call_args
-        assert args[0][1] == 600
-
-    def test_refresh_ttl_false_when_key_missing(self):
-        self.mock_redis.expire.return_value = False
-        assert self.service.refresh_ttl() is False
-
     # ---- lifecycle ----
 
     def test_activate_then_deactivate(self):

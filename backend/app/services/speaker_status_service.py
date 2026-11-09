@@ -18,7 +18,6 @@ and reduce frontend complexity.
 import logging
 
 from sqlalchemy import inspect as sa_inspect
-from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.models.speaker import Speaker
@@ -27,7 +26,7 @@ from app.utils.speaker_labels import canonical_speaker_label_for_row
 logger = logging.getLogger(__name__)
 
 # Mapped ``Speaker`` columns that hold a computed status. Only
-# ``update_speaker_status_in_db`` writes them; reads decorate without dirtying.
+# nothing in production writes them; reads decorate without dirtying.
 _PERSISTED_STATUS_FIELDS = (
     "computed_status",
     "status_text",
@@ -185,47 +184,6 @@ class SpeakerStatusService:
         return canonical_speaker_label_for_row(speaker, voiceprint_names=voiceprint_names)
 
     @staticmethod
-    def update_speaker_status_in_db(db: Session, speaker_id: int) -> bool:
-        """
-        Update computed status fields for a speaker in the database.
-
-        Args:
-            db: Database session
-            speaker_id: ID of the speaker to update
-
-        Returns:
-            True if updated successfully, False otherwise
-        """
-        try:
-            speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
-            if not speaker:
-                logger.error(f"Speaker {speaker_id} not found")
-                return False
-
-            # Policy-free: a stored status describes the data. A response recomputes it on
-            # the redacted row (privacy.redact_view.redact_speaker_rows).
-            status_info = SpeakerStatusService.compute_speaker_status(
-                speaker, voiceprint_names=True
-            )
-
-            # Update computed fields
-            speaker.computed_status = status_info["computed_status"]
-            speaker.status_text = status_info["status_text"]
-            speaker.status_color = status_info["status_color"]
-            speaker.resolved_display_name = status_info["resolved_display_name"]
-
-            db.commit()
-            logger.info(
-                f"Updated status for speaker {speaker_id}: {status_info['computed_status']}"
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Error updating speaker status for {speaker_id}: {e}")
-            db.rollback()
-            return False
-
-    @staticmethod
     def add_computed_status(speaker: Speaker, *, voiceprint_names: bool | None = None) -> None:
         """
         Add computed status fields to a speaker object in-place, for the response only.
@@ -235,7 +193,7 @@ class SpeakerStatusService:
         see a change and never flushes an ``UPDATE speaker``. Assigning them normally
         made every read that later committed write each speaker row, and a read polling
         a file mid-processing then deadlocked with the worker writing the same rows
-        (#1152). ``update_speaker_status_in_db`` is the path that persists them.
+        (#1152). Nothing in production persists them.
 
         Args:
             speaker: Speaker object to enhance

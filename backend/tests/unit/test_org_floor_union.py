@@ -19,12 +19,12 @@ import uuid
 import pytest
 
 from app.core.tenant_limits import RedactionFloor
-from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import resolve_redaction_floor
 from app.core.tenant_limits import set_redaction_floor_resolver
 from app.models.organization import Organization
 from app.models.organization_policy import OrganizationPolicy
 from app.services.redaction.config import resolve_effective_config
+from tests.state_resets import reset_resolvers
 
 
 @pytest.fixture(autouse=True)

@@ -23,6 +23,7 @@ from app.core.worker_shutdown import TranscriptionAbortedError
 from app.transcription import vram_budget
 from app.transcription.vram_budget import VramAdmissionTimeoutError
 from app.transcription.vram_budget import VramBudget
+from tests import state_resets
 from tests.helpers import make_stub_module
 
 
@@ -36,9 +37,9 @@ def _reset_budget(monkeypatch):
         "GPU_STAGE_VRAM_MB_DIARIZATION",
     ):
         monkeypatch.delenv(name, raising=False)
-    vram_budget.reset_for_tests()
+    state_resets.reset_vram_budget()
     yield
-    vram_budget.reset_for_tests()
+    state_resets.reset_vram_budget()
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> None:
@@ -217,7 +218,7 @@ class TestAdmit:
         monkeypatch.setitem(sys.modules, "torch", _fake_torch(total_mb=24000, free_mb=19000))
         with vram_budget.admit("asr", device="cpu", batch_size=16) as granted:
             assert granted == 0
-        assert vram_budget.current_budget() is None
+        assert state_resets.current_vram_budget() is None
 
     def test_admission_can_be_switched_off(self, monkeypatch):
         monkeypatch.setenv("GPU_VRAM_ADMISSION", "false")
@@ -230,7 +231,7 @@ class TestAdmit:
         expected = vram_budget.stage_estimate_mb("asr", batch_size=8)
         with vram_budget.admit("asr", device="cuda", batch_size=8) as granted:
             assert granted == expected
-            budget = vram_budget.current_budget()
+            budget = state_resets.current_vram_budget()
             assert budget is not None
             assert budget.reserved_mb == expected
         assert budget.reserved_mb == 0

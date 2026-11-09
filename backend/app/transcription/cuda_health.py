@@ -150,10 +150,6 @@ def recurring_context_error(now: float | None = None) -> bool:
         return len(_recent_errors) >= RECURRING_ERROR_LIMIT
 
 
-def context_poisoned() -> bool:
-    return _POISONED.is_set()
-
-
 def mark_context_poisoned(reason: str) -> None:
     """Take this worker out of service and ask it to exit so it is restarted. Idempotent."""
     if _POISONED.is_set():
@@ -171,9 +167,3 @@ def mark_context_poisoned(reason: str) -> None:
         os.kill(os.getpid(), signal.SIGTERM)
     except Exception as exc:  # the flag above already stops new work
         logger.error("Could not signal worker exit after a poisoned CUDA context: %s", exc)
-
-
-def reset_for_tests() -> None:
-    _POISONED.clear()
-    with _recent_lock:
-        _recent_errors.clear()

@@ -17,11 +17,11 @@ import pytest
 
 from app.services import chat as chat_pkg
 from app.services.chat.trace import NULL_RECORDER
-from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceEvent
 from app.services.chat.trace import emit
+from tests.fixtures.list_trace_recorder import ListTraceRecorder
 from tests.helpers import does_not_raise
 
 

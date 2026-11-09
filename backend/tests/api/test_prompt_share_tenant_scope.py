@@ -23,7 +23,7 @@ from app.core.config import settings
 from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 
 def _prompt(db, owner, *, shared: bool = False) -> SummaryPrompt:

@@ -275,3 +275,44 @@ class StoreBackedTaskLocks:
 
     def is_locked(self, lock_key: str) -> bool:
         return lock_key in self.store
+
+
+def persist_speaker_status(db, speaker_id: int) -> bool:
+    """Write a speaker's policy-free computed status columns, as legacy rows carry them.
+
+    Production only decorates responses (``add_computed_status``); the stored columns are
+    seeded here so a test can prove a response recomputes them under the active policy.
+    """
+    from app.models.speaker import Speaker
+    from app.services.speaker_status_service import SpeakerStatusService
+
+    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    if speaker is None:
+        return False
+    info = SpeakerStatusService.compute_speaker_status(speaker, voiceprint_names=True)
+    speaker.computed_status = info["computed_status"]
+    speaker.status_text = info["status_text"]
+    speaker.status_color = info["status_color"]
+    speaker.resolved_display_name = info["resolved_display_name"]
+    db.commit()
+    return True
+
+
+def segment_embedding(service, audio_path: str, segment: dict):
+    """Embedding of one ``{"start", "end"}`` segment, the way production extracts them.
+
+    ``extract_embeddings_for_segments`` decodes the file once (``_load_audio``) and slices each
+    segment from that waveform with ``extract_embedding_from_waveform``; this does the same for
+    a single segment.
+    """
+    waveform, sample_rate = service._load_audio(audio_path)
+    return service.extract_embedding_from_waveform(waveform, sample_rate, segment)
+
+
+def estimate_wordpieces(text: str) -> int:
+    """The digest sizing estimate of a text's wordpiece count (deliberately over-counts)."""
+    import math
+
+    from app.services.ingest_artifacts.sizing import MEASURED_WORDPIECES_PER_WORD
+
+    return math.ceil(len(text.split()) * MEASURED_WORDPIECES_PER_WORD)

@@ -26,7 +26,7 @@ def test_path_stream_bytes_match_package(tmp_path):
     f.write_bytes(data)
 
     from_path = svc.compute_from_path(str(f))
-    from_bytes = svc.compute_from_bytes(data)
+    from_bytes = svc.compute_from_stream(io.BytesIO(data))
     from_stream = svc.compute_from_stream(io.BytesIO(data))
     pkg = imohash.hashfile(
         str(f),
@@ -89,15 +89,24 @@ def _pattern(n: int) -> bytes:
 def test_browser_fingerprint_vectors_are_reproducible():
     """Pin the exact digests the browser implementation asserts."""
     for data, expected in _BROWSER_VECTORS.items():
-        assert svc.compute_from_bytes(data) == expected
+        assert svc.compute_from_stream(io.BytesIO(data)) == expected
 
-    assert svc.compute_from_bytes(bytes(i % 256 for i in range(4096))) == (
+    assert svc.compute_from_stream(io.BytesIO(bytes(i % 256 for i in range(4096)))) == (
         "8020a803a564957a836898c60fbb77bb"
     )
     # Exactly at, and above, the sampling threshold.
-    assert svc.compute_from_bytes(_pattern(128 * 1024)) == "80800833394f6067f0a5e566b8d64210"
-    assert svc.compute_from_bytes(_pattern(200 * 1024)) == "80c00c33394f6067f0a5e566b8d64210"
-    assert svc.compute_from_bytes(_pattern(8 * 1024 * 1024)) == "80808004394f6067f0a5e566b8d64210"
+    assert (
+        svc.compute_from_stream(io.BytesIO(_pattern(128 * 1024)))
+        == "80800833394f6067f0a5e566b8d64210"
+    )
+    assert (
+        svc.compute_from_stream(io.BytesIO(_pattern(200 * 1024)))
+        == "80c00c33394f6067f0a5e566b8d64210"
+    )
+    assert (
+        svc.compute_from_stream(io.BytesIO(_pattern(8 * 1024 * 1024)))
+        == "80808004394f6067f0a5e566b8d64210"
+    )
 
 
 def test_compute_from_minio_propagates_a_storage_outage(monkeypatch):

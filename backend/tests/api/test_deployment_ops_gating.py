@@ -32,7 +32,7 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 from app.models.speaker import SpeakerProfile
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 SENTINEL = 418
 MODEL = next(iter(OPENSEARCH_EMBEDDING_MODELS))

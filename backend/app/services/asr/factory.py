@@ -459,21 +459,3 @@ class ASRProviderFactory:
                     return _capabilities(provider_entry, m)
 
         return _capabilities(provider_entry, None)
-
-    @staticmethod
-    def get_active_model_capabilities(user_id: int, db: Session) -> dict:
-        """Get capabilities for user's active ASR model.
-
-        Resolution is :meth:`resolve_active_config`: user DB ASR config -> a usable
-        ASR_PROVIDER env provider -> local with WHISPER_MODEL.
-        """
-        provider_id, model_id, _cfg = ASRProviderFactory.resolve_active_config(user_id, db)
-        return {
-            "provider": provider_id,
-            "model_id": model_id,
-            **ASRProviderFactory.get_model_capabilities(provider_id, model_id),
-        }
-
-    @staticmethod
-    def get_provider_catalog() -> dict:
-        return ASR_PROVIDER_CATALOG

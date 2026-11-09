@@ -249,6 +249,7 @@ celery_app = DemoAwareCelery(
         "app.tasks.directory_sync_task",
         "app.tasks.account_lifecycle",
         "app.tasks.session_cap",
+        "app.tasks.token_cleanup",
     ],
 )
 

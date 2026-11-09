@@ -24,10 +24,6 @@ class JobSpec:
     file_id: int = 0
     user_id: int = 0
 
-    @classmethod
-    def from_audio_path(cls, audio_path: str, task_id: str = "") -> JobSpec:
-        return cls(audio_path=audio_path, task_id=task_id)
-
 
 @dataclass
 class JobResult:

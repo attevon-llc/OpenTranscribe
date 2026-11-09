@@ -21,6 +21,7 @@ import pytest
 
 from app.services.search import chunking_service
 from app.services.search import sentence_splitter
+from tests import state_resets
 
 # ~480 words in one turn: comfortably over SEARCH_CHUNK_TARGET_WORDS (200), so
 # the turn reaches _split_long_turn and the sentence splitter actually decides
@@ -106,7 +107,7 @@ def test_regex_fallback_is_reported_at_warning_level(flaky_punkt, caplog):
     """
     monkeypatch_free_language = "english"
     with caplog.at_level(logging.WARNING, logger=sentence_splitter.__name__):
-        sentence_splitter.reset_sentence_splitter_state()
+        state_resets.reset_sentence_splitter_state()
         assert sentence_splitter._get_nltk_tokenizer(monkeypatch_free_language) is None
 
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
@@ -121,7 +122,7 @@ def test_punkt_unavailability_is_not_retried(flaky_punkt):
 
     Without this, the only thing stopping a flip is how much time passed.
     """
-    sentence_splitter.reset_sentence_splitter_state()
+    state_resets.reset_sentence_splitter_state()
 
     first = sentence_splitter._get_nltk_tokenizer("english")
     second = sentence_splitter._get_nltk_tokenizer("english")

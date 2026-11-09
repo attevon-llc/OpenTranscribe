@@ -100,7 +100,7 @@ def memory_store(monkeypatch) -> InMemoryLockoutStore:
     """
     store = lockout_store.InMemoryLockoutStore()
     # Both modules that read ``_get_store`` at call time: the counting path (``lockout``)
-    # and the admin surface (``lockout_admin``, e.g. ``cleanup_expired_lockouts``).
+    # and the admin surface (``lockout_admin``).
     monkeypatch.setattr(lockout, "_get_store", lambda: store)
     monkeypatch.setattr(lockout_admin, "_get_store", lambda: store)
     return store
@@ -346,7 +346,7 @@ class TestApplySuccessfulLoginFieldUpdates:
 class TestRecordAttemptAuditOnly:
     def test_the_clock_is_utc_aware_not_naive_local_time(self, memory_store) -> None:
         """``datetime.now(UTC)`` -> ``datetime.now(None)`` returns naive LOCAL time.
-        Every reader in this module (``cleanup_expired_lockouts`` in particular)
+        Every reader in this module
         compares timestamps against a tz-AWARE clock, which raises ``TypeError``
         the instant it reads a naive one back."""
         identifier = "audit-clock@example.com"
@@ -774,29 +774,3 @@ class TestGetLockoutInfoShape:
             info = lockout_admin.get_lockout_info(identifier)
 
         assert info["is_locked"] is False
-
-
-# ── cleanup_expired_lockouts: a record shape the existing suite never wrote ───────
-
-
-class TestCleanupHandlesFirstOnlyRecords:
-    def test_does_not_crash_on_a_record_with_only_a_first_attempt_timestamp(
-        self, memory_store
-    ) -> None:
-        """``last_activity``'s fallback branch reads ``first_failed_attempt`` only
-        when ``last_failed_attempt`` is falsy. A mutant nulling that argument turns
-        this reachable-but-rare record shape into an unhandled ``TypeError`` inside
-        the periodic Celery-beat sweep -- crashing the whole sweep, not just
-        skipping one record."""
-        identifier = "first-only@example.com"
-        record = lockout.LockoutRecord(
-            identifier=identifier,
-            failed_attempts=1,
-            first_failed_attempt=datetime.now(UTC).isoformat(),
-            last_failed_attempt=None,
-        )
-        memory_store.set(lockout._lockout_key(identifier), json.dumps(record.to_dict()))
-
-        cleaned = lockout_admin.cleanup_expired_lockouts()  # must not raise
-
-        assert cleaned == 0, "a record active moments ago must not be swept"

@@ -18,17 +18,17 @@ from fastapi import FastAPI
 from prometheus_client.parser import text_string_to_metric_families
 from starlette.testclient import TestClient
 
-from app.api import health
 from app.middleware.audit import AuditMiddleware
 from app.middleware.observability import ObservabilityMiddleware
+from tests import state_resets
 
 
 @pytest.fixture(autouse=True)
 def _fresh_readiness_snapshot():
     """/health/ready answers from a short-lived cached snapshot; no test may read another's."""
-    health.reset_readiness_state()
+    state_resets.reset_readiness_state()
     yield
-    health.reset_readiness_state()
+    state_resets.reset_readiness_state()
 
 
 @pytest.fixture

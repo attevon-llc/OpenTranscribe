@@ -3,8 +3,7 @@
 Inspection (:func:`get_lockout_info`, :func:`list_locked_accounts`,
 :func:`iter_lockout_records`, :func:`current_store_kind`), the admin unlock and counter reset
 (:func:`unlock_account`, :func:`reset_lockout_state`, which goes through the same
-compare-and-set write as the counting path), and the periodic in-memory sweep
-(:func:`cleanup_expired_lockouts`). The counting policy lives in ``auth/lockout.py``; the
+compare-and-set write as the counting path). The counting policy lives in ``auth/lockout.py``; the
 store in ``auth/lockout_store.py``.
 """
 
@@ -12,7 +11,6 @@ import json
 import logging
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
 from typing import TypedDict
 
 from app.auth import lockout_store
@@ -160,73 +158,6 @@ def identifier_has_record(identifier: str) -> bool:
     if not present and fallback is not None and store is not fallback:
         present = fallback.get(key) is not None
     return present
-
-
-def cleanup_expired_lockouts() -> int:
-    """Clean up expired lockout records to free memory.
-
-    For Redis backend, records have TTL and are cleaned automatically.
-    For in-memory backend, removes records where:
-    - Lockout has expired AND no failed attempts in the last 24 hours
-
-    This should be called periodically (e.g., via Celery beat task).
-
-    Returns:
-        Number of records cleaned up
-    """
-    if not get_process_auth_settings().account_lockout_enabled:
-        return 0
-
-    store = _get_store()
-
-    # Redis handles TTL-based cleanup automatically
-    if hasattr(store, "pipeline"):
-        return 0
-
-    # For in-memory store, manually clean up
-    now = datetime.now(UTC)
-    cleanup_threshold = now - timedelta(hours=24)
-    cleaned = 0
-
-    with store._lock:
-        keys_to_remove = []
-
-        for key in list(store._data.keys()):
-            if not key.startswith(LOCKOUT_PREFIX):
-                continue
-
-            data = store._data.get(key)
-            if not data:
-                continue
-
-            record = LockoutRecord.from_dict(json.loads(data))
-            locked_until_dt = record.get_locked_until_datetime()
-
-            # Only cleanup if:
-            # 1. Not currently locked
-            # 2. Last activity was more than 24 hours ago
-            is_expired = locked_until_dt is None or now >= locked_until_dt
-            last_activity = (
-                datetime.fromisoformat(record.last_failed_attempt)
-                if record.last_failed_attempt
-                else (
-                    datetime.fromisoformat(record.first_failed_attempt)
-                    if record.first_failed_attempt
-                    else None
-                )
-            )
-
-            if is_expired and (last_activity is None or last_activity < cleanup_threshold):
-                keys_to_remove.append(key)
-
-        for key in keys_to_remove:
-            del store._data[key]
-            cleaned += 1
-
-    if cleaned > 0:
-        logger.info(f"Cleaned up {cleaned} expired lockout records")
-
-    return cleaned
 
 
 def current_store_kind() -> str:

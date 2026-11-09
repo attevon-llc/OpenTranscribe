@@ -20,6 +20,7 @@ from app.api import health
 from app.core.config import settings
 from app.db.base import engine
 from app.main import app
+from tests import state_resets
 
 pytestmark = pytest.mark.asyncio
 
@@ -35,9 +36,9 @@ def _isolated(monkeypatch):
 
     monkeypatch.setattr(redis_module, "get_probe_redis", lambda: _Pong())
     monkeypatch.setattr(settings, "RUN_MIGRATIONS_ON_STARTUP", True)
-    health.reset_readiness_state()
+    state_resets.reset_readiness_state()
     yield
-    health.reset_readiness_state()
+    state_resets.reset_readiness_state()
 
 
 def _client() -> httpx.AsyncClient:

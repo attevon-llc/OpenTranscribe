@@ -244,8 +244,8 @@ def _asr_worker(db, user: User, cfg_uuid: str) -> bool:
 
     cfg = db.query(UserASRSettings).filter(UserASRSettings.uuid == cfg_uuid).one()
     _set_setting(db, user, "active_asr_config_id", str(cfg.id))
-    caps = ASRProviderFactory.get_active_model_capabilities(user.id, db)
-    return bool(caps.get("model_id") == cfg.model_name)
+    _provider_id, model_id, _cfg = ASRProviderFactory.resolve_active_config(user.id, db)
+    return bool(model_id == cfg.model_name)
 
 
 # --- Media sources (carry the owner's stored credentials) ------------------- #

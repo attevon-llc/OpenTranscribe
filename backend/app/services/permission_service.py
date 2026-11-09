@@ -192,33 +192,6 @@ class PermissionService:
         return None
 
     @staticmethod
-    def check_collection_access(
-        db: Session,
-        collection_id: int,
-        user_id: int,
-        min_permission: str = "viewer",
-        *,
-        organization_id: OrgScope = UNSCOPED,
-    ) -> str:
-        """Check user has minimum permission on collection, raise 403 if not.
-
-        Returns the user's effective permission level. ``organization_id`` is the
-        same default-deny tenant gate as ``get_collection_permission`` (UNSCOPED = none).
-
-        Raises:
-            AccessDeniedError: 403 if user lacks the required permission.
-        """
-        permission = PermissionService.get_collection_permission(
-            db, collection_id, user_id, organization_id=organization_id
-        )
-        if permission is None:
-            raise AccessDeniedError("Not authorized to access this collection")
-
-        if PERMISSION_LEVELS[permission] < PERMISSION_LEVELS[min_permission]:
-            raise AccessDeniedError(f"Requires {min_permission} permission on this collection")
-        return permission
-
-    @staticmethod
     def check_file_access(
         db: Session,
         file_id: int,

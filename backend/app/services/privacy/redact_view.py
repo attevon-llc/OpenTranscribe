@@ -43,7 +43,6 @@ from app.utils.speaker_identity_source import MACHINE_IDENTITY_SOURCES
 from app.utils.speaker_identity_source import VOICEPRINT
 from app.utils.speaker_identity_source import hides_link
 from app.utils.speaker_identity_source import hides_name
-from app.utils.speaker_labels import canonical_speaker_label_for_row
 from app.utils.speaker_labels import is_embedding_suggestion_source
 
 if TYPE_CHECKING:
@@ -198,10 +197,6 @@ class PrivacyView:
         ids = {int(f) for f in file_ids if f is not None}
         self.preload_files(ids)
         return {fid for fid in ids if not self.voiceprints(fid).enabled}
-
-    def label_for_row(self, row: Any) -> str:
-        """The canonical label for a speaker row, with this view's voiceprint answer applied."""
-        return canonical_speaker_label_for_row(row, self)
 
     def speaker_gender(self, speaker: Speaker) -> str | None:
         """The gender to ACT on or SHOW for a speaker: confirmed always, inferred if allowed."""

@@ -244,11 +244,6 @@ def configure_from_device(device_index: int = 0) -> VramBudget | None:
     return budget
 
 
-def current_budget() -> VramBudget | None:
-    """The configured budget, without configuring one."""
-    return _budget
-
-
 def _get_or_configure(device_index: int) -> VramBudget | None:
     if _configured:
         return _budget
@@ -276,9 +271,3 @@ def admit(
         stage, stage_estimate_mb(stage, batch_size=batch_size), timeout_s=admission_timeout_s()
     ) as granted:
         yield granted
-
-
-def reset_for_tests() -> None:
-    global _budget, _configured
-    with _config_lock:
-        _budget, _configured = None, False

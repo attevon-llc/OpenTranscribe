@@ -87,14 +87,14 @@ def test_speaker_embedding_loader_reads_first_track(two_track):
     assert _dominant_hz(wav[0].numpy(), sr) == pytest.approx(440, abs=5)
 
 
-def test_segment_and_full_loaders_read_first_track(two_track):
+def test_segment_and_production_loaders_read_first_track(two_track):
     from app.services.audio_segment_utils import extract_audio_segment_np
-    from app.services.audio_segment_utils import load_full_audio_np
+    from app.transcription.audio import load_audio
 
     seg = extract_audio_segment_np(two_track, 0.0, 2.0, SR)
     assert seg is not None
     assert _dominant_hz(seg) == pytest.approx(440, abs=5)
-    assert _dominant_hz(load_full_audio_np(two_track, SR)) == pytest.approx(440, abs=5)
+    assert _dominant_hz(load_audio(two_track)) == pytest.approx(440, abs=5)
 
 
 def test_wav_preparation_reads_first_track(two_track, tmp_path):

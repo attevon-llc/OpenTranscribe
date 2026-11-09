@@ -17,6 +17,7 @@ from app.models.user_asr_settings import UserASRSettings
 from app.schemas.asr_settings import ASRProvider
 from app.schemas.asr_settings import UserASRSettingsCreate
 from app.schemas.processing_request import VALID_LOCAL_WHISPER_MODELS
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.asr.factory import ASRProviderFactory
 
 # ---------------------------------------------------------------------------
@@ -598,9 +599,11 @@ class TestASRFactoryResolution:
         assert provider.provider_name == "local"
 
         # Capabilities should also resolve
-        caps = ASRProviderFactory.get_active_model_capabilities(normal_user.id, db_session)
-        assert caps["provider"] == "local"
-        assert caps["model_id"] == "large-v3"
+        provider_id, model_id, _cfg = ASRProviderFactory.resolve_active_config(
+            normal_user.id, db_session
+        )
+        assert provider_id == "local"
+        assert model_id == "large-v3"
 
     def test_create_from_config_local(self):
         provider = ASRProviderFactory.create_from_config(provider="local")
@@ -788,7 +791,7 @@ class TestASRModelCapabilities:
         faster-whisper's WhisperModel cannot load a transformers safetensors repo, so a
         catalog entry for it would crash on load.
         """
-        catalog = ASRProviderFactory.get_provider_catalog()
+        catalog = ASR_PROVIDER_CATALOG
         local_model_ids = {m["id"] for m in catalog["local"]["models"]}
         assert "nyrahealth/faster_CrisperWhisper" in local_model_ids
         assert "nyrahealth/CrisperWhisper" not in local_model_ids

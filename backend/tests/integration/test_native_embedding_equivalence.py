@@ -159,9 +159,9 @@ def in_process_service():
 @pytest.fixture(scope="module")
 def audio() -> np.ndarray:
     assert SAMPLE_WAV.exists(), f"fixture missing: {SAMPLE_WAV}"
-    from app.services.audio_segment_utils import load_full_audio_np
+    from app.transcription.audio import load_audio
 
-    samples = load_full_audio_np(str(SAMPLE_WAV), SAMPLE_RATE)
+    samples = load_audio(str(SAMPLE_WAV))
     assert samples.size > 0
     return samples
 

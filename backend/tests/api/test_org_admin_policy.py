@@ -23,7 +23,6 @@ from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.core.tenant_limits import RedactionFloor
-from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import set_redaction_floor_resolver
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
@@ -32,6 +31,7 @@ from app.models.organization import OrganizationMembership
 from app.models.organization_policy import OrganizationPolicy
 from app.models.prompt import UserSetting
 from tests.fixtures.privacy_switches import upsert_system_setting
+from tests.state_resets import reset_resolvers
 
 POLICY = "/api/org-admin/policy"
 SECRET_WORD = "Project-Nightingale"

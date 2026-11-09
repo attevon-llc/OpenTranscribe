@@ -1098,6 +1098,7 @@ TASK_EXEMPT: dict[str, str] = {
             "tasks/legal_retention.py::legal_acceptance_retention_sweep",
             "tasks/local_model_download.py::download_local_model_task",
             "tasks/session_cap.py::run_session_cap_sweep_task",
+            "tasks/token_cleanup.py::cleanup_expired_refresh_tokens_task",
             "tasks/telemetry.py::usage_report_task",
             "tasks/tenant_backfill_task.py::backfill_organization_id_task",
             "tasks/utility.py::update_gpu_stats",

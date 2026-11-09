@@ -43,6 +43,7 @@ import pytest
 
 from app.utils.url_validation import PinnedTarget
 from app.utils.url_validation import resolve_pinned_target
+from tests import state_resets
 
 # ── Loopback fixtures: two distinct addresses, both allowed under allow_private ──────
 #
@@ -306,7 +307,7 @@ class TestConnectionGoesToTheValidatedAddress:
         from app.auth.oidc import discovery as oidc_discovery
 
         port, calls = rebinding_dns
-        oidc_discovery.clear_discovery_caches()
+        state_resets.clear_discovery_caches()
         try:
             document = asyncio.run(
                 oidc_discovery._fetch_json(
@@ -316,7 +317,7 @@ class TestConnectionGoesToTheValidatedAddress:
                 )
             )
         finally:
-            oidc_discovery.clear_discovery_caches()
+            state_resets.clear_discovery_caches()
 
         assert document is not None, "the fetch must succeed against the pinned server"
         assert document["served_by"] == FIRST_ANSWER

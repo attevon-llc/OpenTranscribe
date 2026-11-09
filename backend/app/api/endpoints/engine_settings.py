@@ -12,7 +12,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from pydantic import BaseModel
 from pydantic import Field
-from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -253,50 +252,26 @@ def reset_engine_setting(
         logger.info("Admin %s reset engine setting %s to env/default", current_user.email, db_key)
 
 
-_METRICS_KEY_PREFIX = "engine:metrics:"
-
-
-def _text(value: bytes | str) -> str:
-    """Redis hands back ``bytes`` from the shared client (no ``decode_responses``)."""
-    return value.decode() if isinstance(value, bytes) else value
-
-
 @router.get("/metrics")
 def get_engine_metrics(
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
-    """Return live engine metrics from all active workers via Redis.
+    """Report whether per-worker engine metrics are collected (they are not).
 
-    Each Celery GPU worker publishes counters under ``engine:metrics:<hostname>``
-    with a 120-second TTL. Returns a dict keyed by hostname. An empty dict
-    means no workers have reported metrics recently; **503** means Redis could
-    not be read, which is not the same answer.
+    This route used to read ``engine:metrics:<hostname>`` hashes from Redis, but no worker
+    has ever written them (the publisher was removed as dead code), so it always answered
+    ``{}``, which looked like "no worker is reporting" rather than "nothing is collected".
+    The answer is now explicit: ``metrics_collected`` is ``false`` and ``workers`` is empty.
+
+    Live worker metrics are Prometheus metrics: the API's ``/metrics`` (queue depth and
+    runtime) and each Celery worker's ``WORKER_METRICS_PORT`` listener (per-task counts,
+    runtime and queue wait). See Operations > Monitoring. No part of the UI calls this route.
     """
-    try:
-        from app.core.redis import get_request_redis
-
-        r = get_request_redis()
-        keys = r.keys(f"{_METRICS_KEY_PREFIX}*")
-    except (RedisError, OSError) as exc:
-        logger.error("engine-metrics: Redis unavailable", exc_info=True)
-        raise HTTPException(status_code=503, detail="Engine metrics are unavailable.") from exc
-
-    result: dict[str, Any] = {}
-    for key in keys:
-        hostname = _text(key).removeprefix(_METRICS_KEY_PREFIX)
-        try:
-            raw = {_text(k): v for k, v in r.hgetall(key).items()}
-            stage_durations = {
-                k.removeprefix("last_").removesuffix("_s"): float(v)
-                for k, v in raw.items()
-                if k.startswith("last_") and k.endswith("_s")
-            }
-            result[hostname] = {
-                "gpu_ready_queue_depth": int(raw.get("gpu_ready_queue_depth", 0) or 0),
-                "gpu_in_flight": int(raw.get("gpu_in_flight", 0) or 0),
-                "gpu_idle_seconds": float(raw.get("gpu_idle_seconds", 0.0) or 0.0),
-                "last_stage_durations": stage_durations,
-            }
-        except Exception as exc:
-            logger.warning("engine-metrics: failed to read key %s: %s", key, exc)
-    return result
+    return {
+        "metrics_collected": False,
+        "workers": {},
+        "detail": (
+            "Per-worker engine metrics are not collected. Use the Prometheus endpoints "
+            "(API /metrics and the Celery worker WORKER_METRICS_PORT listener)."
+        ),
+    }

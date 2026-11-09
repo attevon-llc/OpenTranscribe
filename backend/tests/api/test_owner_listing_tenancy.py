@@ -742,21 +742,19 @@ def test_check_file_access_honours_an_explicit_tenant(world, relation, stamped, 
         assert exc.value.status_code == 403
 
 
-def test_check_collection_access_honours_an_explicit_tenant(world):
+def test_collection_sharing_gate_honours_an_explicit_tenant(world):
     from app.models.collection import Collection
-    from app.services.permission_service import PermissionService
+    from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 
     w = world
     coll = Collection(name=f"c-{uuid_pkg.uuid4().hex[:6]}", user_id=w.alice.id)
     w.db.add(coll)
     w.db.commit()
 
-    assert PermissionService.check_collection_access(w.db, coll.id, w.alice.id) == "owner"
+    assert get_collection_by_uuid_with_sharing(w.db, coll.uuid, w.alice.id)[1] == "owner"
     assert (
-        PermissionService.check_collection_access(w.db, coll.id, w.alice.id, organization_id=None)
+        get_collection_by_uuid_with_sharing(w.db, coll.uuid, w.alice.id, organization_id=None)[1]
         == "owner"
     )
     with pytest.raises(DomainError):
-        PermissionService.check_collection_access(
-            w.db, coll.id, w.alice.id, organization_id=w.org_a.id
-        )
+        get_collection_by_uuid_with_sharing(w.db, coll.uuid, w.alice.id, organization_id=w.org_a.id)

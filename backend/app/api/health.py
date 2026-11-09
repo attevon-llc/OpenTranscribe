@@ -38,15 +38,6 @@ _refresh_locks: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Loc
 _snapshot: tuple[dict[str, str], bool, float] | None = None
 
 
-def reset_readiness_state() -> None:
-    """Forget the cached snapshot and the schema result (tests, and nothing else)."""
-    global _snapshot
-    from app.db import probe_engine
-
-    _snapshot = None
-    probe_engine.reset_schema_cache()
-
-
 def _probe_limiter() -> anyio.CapacityLimiter:
     loop = asyncio.get_running_loop()
     limiter = _probe_limiters.get(loop)

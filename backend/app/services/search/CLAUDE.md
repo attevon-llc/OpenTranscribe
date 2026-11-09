@@ -74,7 +74,7 @@ The chunk plane in this package carries no voiceprint and is not gated.
     is one corpus chunked two ways in one pass. Never reintroduce a retry here. Unmapped
     languages also must NOT fall back to English punkt: it loads fine, runs fine, and
     returns a Chinese transcript as one sentence, so the regex fallback was never reached.
-    `reset_sentence_splitter_state()` exists for tests only.
+    `tests/state_resets.py::reset_sentence_splitter_state()` resets it for tests.
 - `index_schema.py` (body, `_INDEX_VERSION`: bump logs a "full reindex" warning, never migrates), `index_admin.py`
   (create/recreate/additive steps), `pipelines.py`, `plane_queries.py`; `indexing_service.py` +
   `indexing/` = `TranscriptIndexingService` (per-plane mixins) — see `indexing/CLAUDE.md`.

@@ -14,8 +14,8 @@ import pytest
 from fastapi import status
 
 from app.core.tenant_limits import TenantUploadLimits
-from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import set_upload_limits_resolver
+from tests.state_resets import reset_resolvers
 
 
 @pytest.fixture(autouse=True)

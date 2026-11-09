@@ -57,12 +57,6 @@ def get_pyannote_credential(user_id: int, db: Session) -> UserDiarizationSetting
     )
 
 
-def has_pyannote_credential(user_id: int, db: Session) -> bool:
-    """Whether the user has a stored pyannote.ai key (not checked against the vendor)."""
-    row = get_pyannote_credential(user_id, db)
-    return bool(row is not None and row.api_key)
-
-
 def get_diarizer_asr_config(
     db: Session, user_id: int, config_uuid: str | None, request: Request | None = None
 ) -> UserASRSettings | None:

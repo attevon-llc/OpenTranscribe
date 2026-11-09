@@ -88,19 +88,6 @@ def _cached_probe(kind: str, url: str, probe: Callable[[str], bool]) -> bool:
     return result
 
 
-def reset_readiness_cache() -> None:
-    """Clear the sidecar_ready() TTL cache.
-
-    Test-only hook. test_diar_native_readiness_gate.py stands up a real HTTP server and flips
-    it between states within a single test — without clearing the cache between phases, a
-    verdict cached before the flip would mask the new state until the TTL lapsed. Production
-    code has no reason to call this; the TTL is what keeps it honest there.
-    """
-    with _ready_cache_lock:
-        _ready_cache.clear()
-        _status_cache.clear()
-
-
 def default_base_url() -> str:
     """The configured sidecar URL (``DIAR_NATIVE_URL``)."""
     return _DEFAULT_URL

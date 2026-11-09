@@ -32,6 +32,7 @@ from unittest.mock import patch
 import pytest
 
 from app.utils.nltk_offline import NLTK_CORPUS_UNAVAILABLE
+from tests import state_resets
 
 #: The real message nltk >=3.10 pathsec raises. Reproduced verbatim so a test
 #: failure is recognisable as the production symptom.
@@ -181,7 +182,7 @@ def test_chunking_latches_and_degrades_rather_than_raising():
     """
     from app.services.search import sentence_splitter
 
-    sentence_splitter.reset_sentence_splitter_state()
+    state_resets.reset_sentence_splitter_state()
     try:
         with patch.object(
             sentence_splitter,
@@ -199,4 +200,4 @@ def test_chunking_latches_and_degrades_rather_than_raising():
             "the latch was not honoured — chunk boundaries could change mid-reindex (#449)"
         )
     finally:
-        sentence_splitter.reset_sentence_splitter_state()
+        state_resets.reset_sentence_splitter_state()

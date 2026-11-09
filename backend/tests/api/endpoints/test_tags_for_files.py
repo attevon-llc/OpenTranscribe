@@ -20,7 +20,7 @@ from fixtures.tag_world import word
 
 from app.core.config import settings
 from app.models.media import MediaFile
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 URL = "/api/tags/for-files"
 

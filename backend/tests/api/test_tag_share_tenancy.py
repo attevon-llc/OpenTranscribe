@@ -24,7 +24,7 @@ from app.models.group import UserGroupMember
 from app.models.organization import OrganizationMembership
 from app.models.sharing import TagShare
 from app.models.tag import Tag
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 
 @pytest.fixture

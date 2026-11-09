@@ -24,7 +24,6 @@ import pytest
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations
 from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
 from app.api.endpoints.search_helpers import _drop_quarantined_search_hits
 from app.services.chat.aggregation_queries import _unavailable_among
@@ -124,9 +123,6 @@ def _kept_by_every_caller(session: MagicMock, *file_uuids: str) -> dict[str, lis
     """What each caller keeps of ``file_uuids``."""
     evidence = _drop_quarantined_hits(session, [_chunk(u) for u in file_uuids])
     search = _drop_quarantined_search_hits(session, _search_response(*file_uuids))
-    citations = drop_quarantined_citations(
-        session, [_citation(u) for u in file_uuids], include_quarantined=False
-    )
     bulk = drop_quarantined_citations_bulk(
         session, [[_citation(u) for u in file_uuids]], include_quarantined=False
     )
@@ -134,7 +130,6 @@ def _kept_by_every_caller(session: MagicMock, *file_uuids: str) -> dict[str, lis
     return {
         "evidence": [hit.file_uuid for hit in evidence],
         "search": [hit.file_uuid for hit in search.results],
-        "citations": [c["file_uuid"] for c in citations],
         "citations_bulk": [c["file_uuid"] for c in bulk[0]],
         "aggregation": [u for u in file_uuids if u not in dropped],
     }
@@ -144,7 +139,7 @@ def test_every_caller_drops_what_the_predicate_reports():
     kept = _kept_by_every_caller(_session(quarantined={BLOCKED}), BLOCKED, VISIBLE)
 
     assert kept == dict.fromkeys(kept, [VISIBLE])
-    assert len(kept) == 5
+    assert len(kept) == 4
 
 
 def test_search_totals_drop_with_the_hits():
@@ -165,7 +160,6 @@ def test_no_caller_queries_for_an_input_without_uuids(file_uuids):
     response = _search_response(*file_uuids)
     assert _drop_quarantined_search_hits(session, response) is response
     citations = [_citation(u) for u in file_uuids]
-    assert drop_quarantined_citations(session, citations, include_quarantined=False) is citations
     assert drop_quarantined_citations_bulk(session, [citations], include_quarantined=False) == [
         citations
     ]
@@ -189,8 +183,6 @@ def test_a_query_error_fails_the_search_drop():
 
 
 def test_a_query_error_fails_the_citation_drop():
-    with pytest.raises(OperationalError):
-        drop_quarantined_citations(_broken(), [_citation(BLOCKED)], include_quarantined=False)
     with pytest.raises(OperationalError):
         drop_quarantined_citations_bulk(
             _broken(), [[_citation(BLOCKED)]], include_quarantined=False

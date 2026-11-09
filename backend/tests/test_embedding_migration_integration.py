@@ -115,24 +115,6 @@ class TestMigrationLockLive:
         assert lock.deactivate() is True
         assert lock.is_active() is False
 
-    def test_refresh_ttl(self):
-        from app.services.migration_lock_service import MigrationLockService
-
-        lock = MigrationLockService()
-        lock.deactivate()  # Clean slate
-
-        lock.activate()
-        assert lock.refresh_ttl(ttl=60) is True
-        lock.deactivate()
-
-    def test_refresh_ttl_fails_without_lock(self):
-        from app.services.migration_lock_service import MigrationLockService
-
-        lock = MigrationLockService()
-        lock.deactivate()
-
-        assert lock.refresh_ttl() is False
-
 
 class TestSkipLogicLive:
     """Test skip logic against live OpenSearch."""

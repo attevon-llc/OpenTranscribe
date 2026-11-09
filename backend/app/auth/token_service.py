@@ -23,15 +23,12 @@ import hashlib
 import logging
 import threading
 import time
-import uuid
 from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
 from typing import Any
 
 from joserfc import jwt
-from joserfc.errors import JoseError
 from joserfc.jwk import OctKey
 from sqlalchemy.orm import Session
 
@@ -46,12 +43,10 @@ from app.auth.revocation_error import RevocationError
 from app.auth.revocation_fallback import is_revoked_from_database
 from app.auth.session import InMemoryStore
 from app.auth.session import get_redis_client
-from app.core.auth_types import TOKEN_TYPE_ACCESS
 from app.core.auth_types import TOKEN_TYPE_REFRESH
 from app.core.config import settings
 from app.core.degradation import record_degradation
 from app.core.security import accepted_algorithms
-from app.core.security import signing_algorithm
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.utils.websocket_notify import publish_session_revocation
@@ -225,79 +220,6 @@ class TokenService(RefreshTokenOps):
         # automatically (unlike python-jose), so it's validated explicitly here.
         jwt.JWTClaimsRegistry(exp={"essential": True}).validate(token_obj.claims)
         return dict(token_obj.claims)
-
-    def create_token(
-        self,
-        data: dict,
-        expires_delta: timedelta | None = None,
-        token_type: str = "access",  # noqa: S107 - JWT type identifier, not a password  # nosec B107
-    ) -> str:
-        """
-        Create a JWT token, signed with ``core.security.signing_algorithm``.
-
-        Creates a JWT token with the provided data and appropriate claims.
-
-        **No production caller reaches this method** — every login path mints its
-        access token through ``auth.direct_auth.create_access_token``. It is kept
-        because the FIPS suite exercises it, and it is held to the same single-owner
-        rule so it cannot become the template for re-introducing a divergent copy.
-
-        Args:
-            data: Dictionary of claims to include in the token
-            expires_delta: Optional expiration time delta (default: 15 minutes)
-            token_type: Type of token ('access' or 'refresh')
-
-        Returns:
-            The encoded JWT token string
-        """
-        to_encode = data.copy()
-
-        if expires_delta:
-            expire = datetime.now(UTC) + expires_delta
-        else:
-            expire = datetime.now(UTC) + timedelta(minutes=15)
-
-        to_encode.update(
-            {
-                "exp": expire,
-                "iat": datetime.now(UTC),
-                "jti": str(uuid.uuid4()),
-                "type": token_type,
-            }
-        )
-
-        algorithm = signing_algorithm(token_type)
-
-        key = OctKey.import_key(settings.JWT_SECRET_KEY)
-        return jwt.encode({"alg": algorithm}, to_encode, key, algorithms=[algorithm])
-
-    def token_needs_upgrade(self, token: str) -> bool:
-        """
-        Check whether a token was signed with something other than the current
-        algorithm, and so should be re-issued.
-
-        Gated on ``settings.fips_140_3_active`` — i.e. on ``FIPS_MODE``, not on
-        ``FIPS_VERSION`` alone. ``FIPS_VERSION`` defaults to ``"140-3"`` on every
-        deployment, so the old form reported "needs upgrade" for perfectly current
-        tokens on ordinary non-FIPS installs. Same defect shape as
-        ``auth/mfa.py:needs_backup_code_regeneration``, fixed the same way.
-
-        Args:
-            token: The JWT token string to check
-
-        Returns:
-            True if the token is verifiable but was not signed with
-            :func:`~app.core.security.signing_algorithm`, on a FIPS 140-3
-            deployment. False otherwise.
-        """
-        if not settings.fips_140_3_active:
-            return False
-        try:
-            key = OctKey.import_key(settings.JWT_SECRET_KEY)
-            token_obj = jwt.decode(token, key, algorithms=accepted_algorithms(TOKEN_TYPE_ACCESS))
-        except JoseError:
-            return False
-        return bool(token_obj.header.get("alg") != signing_algorithm(TOKEN_TYPE_ACCESS))
 
     def revoke_token(self, db: Session, jti: str, expires_at: datetime | None = None) -> None:
         """
@@ -635,8 +557,9 @@ class TokenService(RefreshTokenOps):
         """
         Remove expired refresh tokens from database.
 
-        Should be called periodically (e.g., via Celery beat) to clean up
-        expired tokens that are no longer needed.
+        Run daily by the ``auth.cleanup_expired_refresh_tokens`` beat task
+        (``tasks/token_cleanup.py``). A failure propagates: returning 0 would make a
+        broken sweep look like "nothing was expired".
 
         Args:
             db: Database session
@@ -644,20 +567,14 @@ class TokenService(RefreshTokenOps):
         Returns:
             Number of tokens deleted
         """
-        try:
-            now = datetime.now(UTC)
-            result = (
-                db.query(RefreshToken)
-                .filter(RefreshToken.expires_at < now)
-                .delete(synchronize_session=False)
-            )
-            db.commit()
-            logger.info(f"Cleaned up {result} expired refresh tokens")
-            return result
-        except Exception as e:
-            logger.error(f"Error cleaning up expired tokens: {e}")
-            db.rollback()
-            return 0
+        deleted = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.expires_at < datetime.now(UTC))
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        logger.info("Cleaned up %d expired refresh tokens", deleted)
+        return int(deleted)
 
     def get_user_active_sessions(self, db: Session, user_id: int) -> list[dict]:
         """

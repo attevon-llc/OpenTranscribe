@@ -140,9 +140,8 @@ def silent_audit(monkeypatch) -> None:
 def _issuers() -> dict[str, tuple[str, Callable[[], str]]]:
     """Every JWT issuer in the codebase, keyed by name -> (token type, mint).
 
-    Includes the one that no production caller reaches (``token_service.create_token``)
-    on purpose: an unreachable issuer is exactly where a divergent copy survives long
-    enough to be treated as the pattern to follow.
+    An unreachable issuer is where a divergent copy survives long enough to be treated as the
+    pattern to follow, which is why ``token_service.create_token`` was deleted rather than kept.
     """
     from app.api.endpoints.auth.mfa_tokens import _create_mfa_token
     from app.auth.direct_auth import create_access_token as production_access_issuer
@@ -154,14 +153,6 @@ def _issuers() -> dict[str, tuple[str, Callable[[], str]]]:
         "auth.direct_auth.create_access_token": (
             TOKEN_TYPE_ACCESS,
             lambda: production_access_issuer({"sub": SUBJECT, "role": "user"}),
-        ),
-        "auth.token_service.create_token[access]": (
-            TOKEN_TYPE_ACCESS,
-            lambda: service.create_token({"sub": SUBJECT}, token_type=TOKEN_TYPE_ACCESS),
-        ),
-        "auth.token_service.create_token[refresh]": (
-            TOKEN_TYPE_REFRESH,
-            lambda: service.create_token({"sub": SUBJECT}, token_type=TOKEN_TYPE_REFRESH),
         ),
         "auth.token_service.create_refresh_token": (
             TOKEN_TYPE_REFRESH,

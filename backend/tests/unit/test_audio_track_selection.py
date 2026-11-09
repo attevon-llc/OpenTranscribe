@@ -171,14 +171,12 @@ def test_wav_preparation_reads_the_chosen_track(two_track, tmp_path):
     assert _hz(load_audio(default)) == pytest.approx(440, abs=5)
 
 
-def test_segment_and_full_loaders_read_the_chosen_track(two_track):
+def test_segment_loader_reads_the_chosen_track(two_track):
     from app.services.audio_segment_utils import extract_audio_segment_np
-    from app.services.audio_segment_utils import load_full_audio_np
 
     seg = extract_audio_segment_np(two_track, 0.0, 2.0, SR, audio_stream_index=1)
     assert seg is not None
     assert _hz(seg) == pytest.approx(880, abs=5)
-    assert _hz(load_full_audio_np(two_track, SR, audio_stream_index=1)) == pytest.approx(880, abs=5)
 
 
 def test_waveform_generator_reads_the_chosen_track(two_track):

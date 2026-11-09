@@ -123,7 +123,6 @@ WHITELIST = (
     _.find_missing_pieces,
     _.embedding_text_fits,
     _.ListTraceRecorder,
-    _.has_pyannote_credential,
     _.survey_speaker_id_coverage,
     _.extract_embedding_from_segment,
     _.export_word_reference,

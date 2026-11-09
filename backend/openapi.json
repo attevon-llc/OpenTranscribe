@@ -28495,7 +28495,7 @@
     },
     "/api/admin/engine-settings/metrics": {
       "get": {
-        "description": "Return live engine metrics from all active workers via Redis.\n\nEach Celery GPU worker publishes counters under ``engine:metrics:<hostname>``\nwith a 120-second TTL. Returns a dict keyed by hostname. An empty dict\nmeans no workers have reported metrics recently; **503** means Redis could\nnot be read, which is not the same answer.",
+        "description": "Report whether per-worker engine metrics are collected (they are not).\n\nThis route used to read ``engine:metrics:<hostname>`` hashes from Redis, but no worker\nhas ever written them (the publisher was removed as dead code), so it always answered\n``{}``, which looked like \"no worker is reporting\" rather than \"nothing is collected\".\nThe answer is now explicit: ``metrics_collected`` is ``false`` and ``workers`` is empty.\n\nLive worker metrics are Prometheus metrics: the API's ``/metrics`` (queue depth and\nruntime) and each Celery worker's ``WORKER_METRICS_PORT`` listener (per-task counts,\nruntime and queue wait). See Operations > Monitoring. No part of the UI calls this route.",
         "operationId": "get_engine_metrics_api_admin_engine_settings_metrics_get",
         "responses": {
           "200": {

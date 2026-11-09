@@ -18,7 +18,6 @@ backend/app/api/endpoints/embedding_migration.py::stop_migration#1	1	re-keyed pe
 backend/app/api/endpoints/embedding_migration.py::stop_migration#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/embedding_migration.py::stop_migration#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/engine_settings.py::_sidecar_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/api/endpoints/engine_settings.py::get_engine_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/__init__.py::upload_media_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/complete_upload.py::_fingerprint_object#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/complete_upload.py::complete_upload#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

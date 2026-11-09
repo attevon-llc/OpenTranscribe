@@ -34,8 +34,7 @@ def _revision_module():
     """Load the revision file by path.
 
     ``alembic/`` is not an importable package — the installed alembic library
-    shadows it (which is why ``_repair_skipped_v230`` carries a raw-SQL
-    fallback), so ``from alembic.versions... import`` does not work here.
+    shadows it, so ``from alembic.versions... import`` does not work here.
     """
     spec = importlib.util.spec_from_file_location(REVISION, _REVISION_PATH)
     assert spec is not None and spec.loader is not None

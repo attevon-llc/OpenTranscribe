@@ -1,5 +1,8 @@
 import logging
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.enums import TranscriptionStage
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
@@ -7,6 +10,9 @@ from app.models.media import MediaFile
 from app.utils.websocket_notify import send_ws_event_for_file
 
 logger = logging.getLogger(__name__)
+
+#: What a best-effort notification can hit: the DB read, the Redis pub/sub, a socket.
+_NOTIFY_ERRORS = (SQLAlchemyError, RedisError, OSError)
 
 
 def _invalidate_user_files(user_id: int) -> None:
@@ -22,8 +28,8 @@ def _invalidate_user_files(user_id: int) -> None:
         from app.services.redis_cache_service import redis_cache
 
         redis_cache.invalidate_user_files(user_id)
-    except Exception as cache_err:
-        logger.debug(f"Cache invalidation after status change failed: {cache_err}")
+    except _NOTIFY_ERRORS:
+        logger.debug("Cache invalidation after status change failed", exc_info=True)
 
 
 def get_file_metadata(file_id: int) -> dict:
@@ -38,8 +44,8 @@ def get_file_metadata(file_id: int) -> dict:
                     "content_type": media_file.content_type,
                     "file_size": media_file.file_size,
                 }
-    except Exception as e:
-        logger.warning(f"Failed to get file metadata for file {file_id}: {e}")
+    except SQLAlchemyError:
+        logger.warning("Failed to get file metadata for file %s", file_id, exc_info=True)
 
     # Return minimal data if query fails
     return {
@@ -120,8 +126,8 @@ def send_notification_via_redis(
 
         return result
 
-    except Exception as e:
-        logger.error(f"Failed to send notification via Redis for file {file_id}: {e}")
+    except _NOTIFY_ERRORS:
+        logger.error("Failed to send notification via Redis for file %s", file_id, exc_info=True)
         return False
 
 
@@ -183,8 +189,13 @@ def send_notification_with_retry(
                 return False
 
             logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries})")
-        except Exception as e:
-            logger.warning(f"Failed to send notification (attempt {retry + 1}/{max_retries}): {e}")
+        except _NOTIFY_ERRORS:
+            logger.warning(
+                "Failed to send notification (attempt %d/%d)",
+                retry + 1,
+                max_retries,
+                exc_info=True,
+            )
 
         if retry < max_retries - 1:  # Don't sleep on the last attempt
             import time
@@ -240,8 +251,8 @@ def send_transcript_ready_notification(user_id: int, file_id: int) -> None:
                 mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
                 active_task_id = str(mf.active_task_id) if mf and mf.active_task_id else None
             benchmark_timing.mark(active_task_id, "transcript_ready")
-    except Exception as e:
-        logger.debug(f"transcript_ready mark failed for file {file_id}: {e}")
+    except _NOTIFY_ERRORS:
+        logger.debug("transcript_ready mark failed for file %s", file_id, exc_info=True)
 
     try:
         # Checked before the metadata load, same as send_notification_via_redis —
@@ -262,8 +273,8 @@ def send_transcript_ready_notification(user_id: int, file_id: int) -> None:
             },
             file_id=file_id,
         )
-    except Exception as e:
-        logger.debug(f"transcript_ready notification failed for file {file_id}: {e}")
+    except _NOTIFY_ERRORS:
+        logger.debug("transcript_ready notification failed for file %s", file_id, exc_info=True)
 
 
 def send_completion_notification(
@@ -292,8 +303,8 @@ def send_completion_notification(
                 mf = db.query(MediaFile).filter(MediaFile.id == file_id).first()
                 active_task_id = str(mf.active_task_id) if mf and mf.active_task_id else None
             benchmark_timing.mark(active_task_id, "completion_notified")
-    except Exception as e:
-        logger.debug(f"completion_notified mark failed for file {file_id}: {e}")
+    except _NOTIFY_ERRORS:
+        logger.debug("completion_notified mark failed for file %s", file_id, exc_info=True)
 
     send_notification_with_retry(
         user_id,
@@ -371,8 +382,8 @@ def send_completion_notification(
                 )
                 logger.info(f"Sent file_updated notification for completed file {file_id}")
 
-    except Exception as e:
-        logger.error(f"Failed to send file_updated notification for file {file_id}: {e}")
+    except _NOTIFY_ERRORS:
+        logger.error("Failed to send file_updated notification for file %s", file_id, exc_info=True)
 
 
 def send_error_notification(user_id: int, file_id: int, error_message: str) -> None:

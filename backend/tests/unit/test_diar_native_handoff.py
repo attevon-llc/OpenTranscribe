@@ -31,6 +31,7 @@ import threading
 
 import numpy as np
 import pytest
+from sqlalchemy.exc import OperationalError
 
 import app.transcription.diar_sidecar_status as diar_sidecar_status
 import app.transcription.diarizer_native as diarizer_native
@@ -496,7 +497,7 @@ class TestSidecarFailureClassification:
 
 
 def _db_unavailable_for_require_sidecar() -> None:
-    raise RuntimeError("db unavailable in test")
+    raise OperationalError("select", {}, Exception("db unavailable in test"))
 
 
 class TestRequireSidecarPolicy:

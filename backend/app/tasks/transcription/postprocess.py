@@ -19,6 +19,10 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 import numpy as np
+from kombu.exceptions import KombuError
+from opensearchpy.exceptions import OpenSearchException
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import stage_timing
 from app.core.celery import celery_app
@@ -94,6 +98,9 @@ def finalize_transcription(self: Any, gpu_result: dict) -> dict:
     return result
 
 
+#: What ``apply_async`` raises when the broker cannot take the message.
+_DISPATCH_ERRORS = (KombuError, OSError)
+
 #: Payload statuses for which finalize only cleans up (no real work, so no lease).
 _NO_WORK_STATUSES = frozenset({"error", "cancelled", SUPERSEDED, "split_forwarded"})
 
@@ -105,8 +112,8 @@ def _run_completed(task_id: str) -> bool:
         with session_scope() as db:
             row = db.query(Task.status).filter(Task.id == task_id).first()
             return row is not None and row[0] == "completed"
-    except Exception as e:  # only decides whether to drop two Redis keys early
-        logger.debug("Could not read the status of run %s: %s", task_id, e)
+    except SQLAlchemyError:  # only decides whether to drop two Redis keys early
+        logger.warning("Could not read the status of run %s", task_id, exc_info=True)
         return False
 
 
@@ -134,8 +141,8 @@ def _record_postprocess_failure(gpu_result: dict, error: Exception) -> dict:
                 error_message=f"Post-processing error: {error}",
                 completed=True,
             )
-    except Exception as task_err:
-        logger.debug(f"Failed to mark task as failed: {task_err}")
+    except SQLAlchemyError:
+        logger.error("Failed to mark task %s as failed", task_id, exc_info=True)
     return {
         "status": "error",
         "file_id": file_id,
@@ -320,8 +327,8 @@ def _finalize(gpu_result: dict) -> dict:
             pipeline_task_id=task_id,
         )
 
-    except Exception as e:
-        logger.error(f"Postprocess failed for file {file_id}: {e}")
+    except Exception as e:  # boundary: postprocess task body; records the failure on the Task row
+        logger.exception("Postprocess failed for file %s", file_id)
         # Don't re-raise — segments are already saved by GPU task
         return _record_postprocess_failure(gpu_result, e)
 
@@ -394,8 +401,8 @@ def _dispatch_post_stage(gpu_result: dict, plan: PipelinePlan) -> bool:
             },
             queue=plan.diarization.queue,
         )
-    except Exception as e:
-        logger.warning(f"Failed to dispatch the speaker-detection post stage: {e}")
+    except _DISPATCH_ERRORS:
+        logger.warning("Failed to dispatch the speaker-detection post stage", exc_info=True)
         return False
     logger.info(
         "Dispatched %s speaker detection (%s) for file %s on %s; plan warnings: %s",
@@ -436,8 +443,8 @@ def _dispatch_embedding_stage(gpu_result: dict) -> bool:
             kwargs={"pipeline_task_id": gpu_result["task_id"]},
             queue=CeleryQueues.CPU,
         )
-    except Exception as e:
-        logger.warning(f"Failed to dispatch speaker embedding task: {e}")
+    except _DISPATCH_ERRORS:
+        logger.warning("Failed to dispatch speaker embedding task", exc_info=True)
         return False
     logger.info(f"Dispatched the voiceprint stage to the CPU queue for file {file_id}")
     return True
@@ -484,8 +491,10 @@ def _fire_completion_metering(
                 success=success,
             )
         )
-    except Exception as e:  # pragma: no cover - metering must never break the pipeline
-        logger.warning(f"Completion metering hook failed for file {file_id} (contained): {e}")
+    except SQLAlchemyError:  # pragma: no cover - metering must never break the pipeline
+        logger.warning(
+            "Completion metering read failed for file %s (contained)", file_id, exc_info=True
+        )
 
 
 def _schedule_timing_tail_flush(task_id: str, file_id: int, user_id: int) -> None:
@@ -497,8 +506,8 @@ def _schedule_timing_tail_flush(task_id: str, file_id: int, user_id: int) -> Non
             args=[task_id, file_id, user_id],
             countdown=TIMING_TAIL_FLUSH_DELAY_S,
         )
-    except Exception as e:  # pragma: no cover — instrumentation must not break the pipeline
-        logger.debug(f"Timing tail flush not scheduled for file {file_id}: {e}")
+    except _DISPATCH_ERRORS:  # instrumentation must not break the pipeline
+        logger.warning("Timing tail flush not scheduled for file %s", file_id, exc_info=True)
 
 
 @celery_app.task(name="pipeline_timing.flush_tail", priority=UtilityPriority.BACKGROUND)
@@ -525,8 +534,8 @@ def _persist_timing_row(task_id: str, file_id: int, user_id: int) -> None:
         from app.services.pipeline_timing_service import record_pipeline_timing
 
         record_pipeline_timing(task_id=task_id, file_id=file_id, user_id=user_id)
-    except Exception as e:
-        logger.debug(f"Failed to persist pipeline timing row for {task_id}: {e}")
+    except (SQLAlchemyError, RedisError, OSError):
+        logger.warning("Failed to persist pipeline timing row for %s", task_id, exc_info=True)
 
 
 def _process_native_embeddings(
@@ -622,8 +631,8 @@ def _store_v4_centroids(
 
     try:
         _store_native_centroids_in_v4_staging(ctx, native_embs, speaker_mapping)
-    except Exception as e:
-        logger.warning(f"v4 staging error (non-fatal): {e}")
+    except (OpenSearchException, SQLAlchemyError):
+        logger.warning("v4 staging error (non-fatal)", exc_info=True)
 
 
 def _cleanup_temp(file_uuid: str | None) -> None:
@@ -634,5 +643,5 @@ def _cleanup_temp(file_uuid: str | None) -> None:
         from app.services.minio_service import cleanup_temp_audio
 
         cleanup_temp_audio(file_uuid)
-    except Exception as e:
-        logger.debug(f"Temp cleanup failed (non-fatal): {e}")
+    except OSError:
+        logger.debug("Temp cleanup failed (non-fatal)", exc_info=True)

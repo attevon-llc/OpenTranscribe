@@ -8,9 +8,13 @@ looking busy after a stage raised.
 import contextlib
 import logging
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.db.session_utils import session_scope
 from app.models.media import FileStatus
+from app.models.media import MediaFile
 from app.utils.task_utils import update_media_file_status
 from app.utils.task_utils import update_task_status
 
@@ -134,8 +138,8 @@ def on_pipeline_error(file_uuid: str, task_id: str) -> None:
                         int(media_file.id),
                         user_error,
                     )
-    except Exception as e:
-        logger.error(f"Error in pipeline error handler: {e}")
+    except Exception:  # boundary: link_error safety-net task body, must not raise again
+        logger.exception("Error in pipeline error handler for %s", file_uuid)
     finally:
         _flush_error_timing(task_id, flushed_file_id, flushed_user_id)
 
@@ -147,14 +151,15 @@ def _cancelled_run_owner(file_uuid: str, task_id: str) -> tuple[int, int] | None
     proceeds as it always has.
     """
     from app.services.transcription_retry import run_cancel_requested
-    from app.services.uuid_helpers import get_file_by_uuid
 
     try:
         with session_scope() as db:
-            media_file = get_file_by_uuid(db, file_uuid)
+            media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
+            if media_file is None:
+                return None
             ids = (int(media_file.id), int(media_file.user_id))
-    except Exception as e:  # see docstring
-        logger.debug("Could not read file %s for the cancel check: %s", file_uuid, e)
+    except SQLAlchemyError:  # see docstring
+        logger.warning("Could not read file %s for the cancel check", file_uuid, exc_info=True)
         return None
     return ids if run_cancel_requested(task_id, ids[0]) else None
 
@@ -174,8 +179,8 @@ def _flush_error_timing(task_id: str, file_id: int | None, user_id: int | None) 
         from app.services.pipeline_timing_service import record_pipeline_timing
 
         record_pipeline_timing(task_id=task_id, file_id=file_id, user_id=user_id)
-    except Exception as e:
-        logger.debug(f"Error-path timing flush failed for {task_id}: {e}")
+    except (SQLAlchemyError, RedisError, OSError):
+        logger.warning("Error-path timing flush failed for %s", task_id, exc_info=True)
 
 
 def _log_oom_diagnostics(error_msg: str) -> None:
@@ -190,8 +195,9 @@ def _log_oom_diagnostics(error_msg: str) -> None:
                 logger.error(
                     f"GPU {i} VRAM: {free / 1024**2:.0f}MB free / {total / 1024**2:.0f}MB total"
                 )
-    except Exception as e:
-        logger.debug(f"Could not read GPU VRAM during OOM diagnostics: {e}")
+    except (ImportError, RuntimeError):
+        # torch.cuda.OutOfMemoryError and CUDA driver errors are RuntimeErrors.
+        logger.debug("Could not read GPU VRAM during OOM diagnostics", exc_info=True)
 
 
 def _get_pipeline_error_message(error_msg: str, is_oom: bool) -> str:

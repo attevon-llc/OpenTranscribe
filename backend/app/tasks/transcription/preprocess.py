@@ -10,9 +10,16 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 from typing import Any
+
+import urllib3.exceptions
+from kombu.exceptions import KombuError
+from minio.error import MinioException
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import stage_timing
 from app.core.celery import celery_app
@@ -38,6 +45,9 @@ from .metadata_extractor import probe_media_duration
 from .metadata_extractor import update_media_file_metadata
 from .notifications import send_progress_notification
 from .run_ownership import superseded_result
+
+#: What object storage raises: the MinIO client's own errors and urllib3's transport errors.
+_STORAGE_ERRORS = (MinioException, urllib3.exceptions.HTTPError, OSError)
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +124,8 @@ def stage_engine_shared_volume_wav(file_uuid: str, task_id: str, temp_audio_path
 
         logger.info("Engine shared-volume WAV: %s (%d bytes)", wav_dest, os.path.getsize(wav_dest))
         return wav_dest
-    except Exception as shv_err:
-        logger.warning("Shared-volume WAV write failed, GPU task will use MinIO: %s", shv_err)
+    except OSError:  # includes shutil.Error
+        logger.warning("Shared-volume WAV write failed, GPU task will use MinIO", exc_info=True)
         return ""
 
 
@@ -367,8 +377,8 @@ def _preprocess_video(
     presigned_url: str | None = None
     try:
         presigned_url = get_internal_presigned_url(storage_path, expires=3600)
-    except Exception as url_err:
-        logger.warning(f"Could not mint presigned URL, will fall back: {url_err}")
+    except _STORAGE_ERRORS:
+        logger.warning("Could not mint presigned URL, will fall back", exc_info=True)
 
     local_video_path: str | None = None
 
@@ -404,9 +414,10 @@ def _preprocess_video(
                 # window rather than racing into the next stage's markers.
                 metadata_future.result()
             return presigned_url
-        except Exception as url_err:
+        except (ValueError, subprocess.SubprocessError, *_STORAGE_ERRORS):
             logger.warning(
-                f"Parallel presigned-URL preprocess failed, falling back to download: {url_err}"
+                "Parallel presigned-URL preprocess failed, falling back to download",
+                exc_info=True,
             )
 
     # Fallback path: single download, then parallel local FFmpeg + metadata.
@@ -533,8 +544,10 @@ def _extract_metadata_best_effort(
                                 task_id, {"audio_duration_s": float(mf.duration)}
                             )
                         db.commit()
-        except Exception as e:
-            logger.warning(f"Metadata extraction failed for file {file_id} (non-fatal): {e}")
+        except (SQLAlchemyError, ValueError, subprocess.SubprocessError, *_STORAGE_ERRORS):
+            logger.warning(
+                "Metadata extraction failed for file %s (non-fatal)", file_id, exc_info=True
+            )
 
 
 def _dispatch_waveform_if_missing(
@@ -565,8 +578,8 @@ def _dispatch_waveform_if_missing(
             local_wav_path=local_wav_path or None,
         )
         logger.info(f"Dispatched waveform task for file {file_id} from preprocess")
-    except Exception as e:
-        logger.warning(f"Waveform dispatch from preprocess failed (non-fatal): {e}")
+    except (SQLAlchemyError, KombuError, OSError):
+        logger.warning("Waveform dispatch from preprocess failed (non-fatal)", exc_info=True)
 
 
 def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source: str) -> None:
@@ -595,8 +608,10 @@ def _dispatch_playback_rendition_if_needed(file_id: int, file_uuid: str, source:
 
         create_playback_rendition_task.delay(file_uuid=file_uuid)
         logger.info(f"Queued playback rendition ({need.value}) for file {file_id}")
-    except Exception as e:
-        logger.warning(f"Playback rendition dispatch failed for file {file_id} (non-fatal): {e}")
+    except (SQLAlchemyError, KombuError, subprocess.SubprocessError, ValueError, OSError):
+        logger.warning(
+            "Playback rendition dispatch failed for file %s (non-fatal)", file_id, exc_info=True
+        )
 
 
 def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> dict | None:
@@ -613,14 +628,13 @@ def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> dict |
     from app.services.error_categorization_service import ErrorCategorizationService
     from app.services.transcription_retry import RunOutcome
     from app.services.transcription_retry import finish_failed_run
-    from app.services.uuid_helpers import get_file_by_uuid
 
     from .context import cancelled_payload
 
     failure = ErrorCategorizationService.classify_failure(raw_error)
     try:
         with session_scope() as db:
-            media_file = get_file_by_uuid(db, file_uuid)
+            media_file = db.query(MediaFile).filter(MediaFile.uuid == file_uuid).first()
             file_id = int(media_file.id) if media_file else None
         if file_id is None:
             with session_scope() as db:
@@ -630,6 +644,6 @@ def _mark_pipeline_error(file_uuid: str, task_id: str, raw_error: str) -> dict |
             return None
         if finish_failed_run(task_id, file_id, failure) == RunOutcome.CANCELLED:
             return cancelled_payload(file_uuid, file_id, task_id)
-    except Exception as status_err:
-        logger.error(f"Failed to update error status: {status_err}")
+    except (SQLAlchemyError, RedisError):
+        logger.error("Failed to update error status for run %s", task_id, exc_info=True)
     return None

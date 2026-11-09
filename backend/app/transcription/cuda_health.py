@@ -104,8 +104,9 @@ def free_cached_vram() -> None:
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-    except Exception as exc:  # a failed cleanup must not mask the OOM path
-        logger.debug("empty_cache skipped: %s", exc)
+    except (ImportError, RuntimeError):  # a failed cleanup must not mask the OOM path
+        # torch.cuda.OutOfMemoryError and CUDA driver failures are RuntimeErrors.
+        logger.debug("empty_cache skipped", exc_info=True)
 
 
 def cuda_context_healthy(device_index: int = 0) -> bool:
@@ -170,5 +171,5 @@ def mark_context_poisoned(reason: str) -> None:
     mark_shutting_down()
     try:
         os.kill(os.getpid(), signal.SIGTERM)
-    except Exception as exc:  # the flag above already stops new work
-        logger.error("Could not signal worker exit after a poisoned CUDA context: %s", exc)
+    except OSError:  # the flag above already stops new work
+        logger.error("Could not signal worker exit after a poisoned CUDA context", exc_info=True)

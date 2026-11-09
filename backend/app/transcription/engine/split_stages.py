@@ -17,6 +17,7 @@ from app.core import stage_timing
 from app.core.enums import TranscriptionStage
 from app.core.task_cancellation import stand_down_if_requested
 from app.transcription.engine.diarization_overlap import _run_diarize
+from app.transcription.engine.gpu_stages import _reenable_tf32
 
 if TYPE_CHECKING:
     import numpy as np
@@ -204,13 +205,7 @@ class _DiarizerOnlyStage:
 
         # Re-enable TF32 after PyAnnote (its fix_reproducibility disables it)
         if tc.device == "cuda":
-            try:
-                import torch
-
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
-            except Exception as e:
-                logger.debug(f"TF32 re-enable skipped: {e}")
+            _reenable_tf32()
 
         hw.log_vram_usage("before final diarize-only cleanup")
         del audio

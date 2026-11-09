@@ -3,6 +3,8 @@ import uuid as uuid_module
 from datetime import UTC
 from typing import Any
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.models.speaker import Speaker
@@ -117,9 +119,12 @@ def create_or_get_speaker(
                 f"Created new speaker: {speaker_label} with UUID: {speaker_uuid} for file: {media_file_id}"
             )
 
-        except Exception as e:
+        except SQLAlchemyError:
             logger.error(
-                f"Error creating speaker {speaker_label} for file {media_file_id}: {str(e)}"
+                "Error creating speaker %s for file %s",
+                speaker_label,
+                media_file_id,
+                exc_info=True,
             )
             # The failed flush leaves the session's transaction marked for rollback,
             # and the likely cause is a concurrent insert of this exact
@@ -182,8 +187,8 @@ def create_speaker_mapping(
             from app.services.redis_cache_service import redis_cache
 
             redis_cache.invalidate_speakers(int(user_id))
-        except Exception as e:
-            logger.debug(f"Speaker cache invalidation failed (non-critical): {e}")
+        except (RedisError, OSError):
+            logger.debug("Speaker cache invalidation failed (non-critical)", exc_info=True)
 
     return speaker_mapping
 

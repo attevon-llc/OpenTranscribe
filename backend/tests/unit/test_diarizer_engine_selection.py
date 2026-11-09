@@ -28,6 +28,7 @@ import threading
 
 import numpy as np
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
@@ -137,7 +138,7 @@ def _db_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     def _boom() -> None:
-        raise RuntimeError("db unavailable in test")
+        raise OperationalError("select", {}, Exception("db unavailable in test"))
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _boom)
 

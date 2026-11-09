@@ -33,6 +33,7 @@ docs/INSTALL_NATIVE.md).
 from __future__ import annotations
 
 import contextlib
+import http.client
 import logging
 import os
 import threading
@@ -61,6 +62,10 @@ if TYPE_CHECKING:
     from app.transcription.diarizer import SpeakerDiarizer
 
 logger = logging.getLogger(__name__)
+
+#: What a sidecar POST can raise: transport (OSError covers URLError/HTTPError/timeouts), a torn
+#: response (HTTPException), a malformed JSON body (ValueError), or the classified refusal.
+_SIDECAR_JOB_ERRORS = (OSError, http.client.HTTPException, ValueError, DiarSidecarUnavailableError)
 
 # The model family the sidecar exports its ONNX/PLDA graphs from (issue #706) — recorded
 # alongside "native" as the resolved diarization_model whenever the sidecar actually served
@@ -584,7 +589,7 @@ class NativeSpeakerDiarizer:
             if reused:
                 try:
                     out = self._try_reused_wav(str(wav_path), timeout, want_gender)
-                except Exception as exc:  # timeout/connection loss, see above
+                except _SIDECAR_JOB_ERRORS as exc:  # timeout/connection loss, see above
                     return _refuse_or_fallback(exc)
 
             if out is None:
@@ -596,10 +601,13 @@ class NativeSpeakerDiarizer:
                 # of diarize() uncaught and hard-failed the whole transcription.
                 try:
                     out, own_wav = self._post_own_copy(audio, timeout, want_gender)
-                except Exception as exc:  # a sidecar loss must not fail the job
+                except (
+                    *_SIDECAR_JOB_ERRORS,
+                    wave.Error,
+                ) as exc:  # sidecar loss must not fail the job
                     logger.warning(
-                        "diar-native /diarize failed mid-job (%s); falling back to PyAnnote",
-                        exc,
+                        "diar-native /diarize failed mid-job; falling back to PyAnnote",
+                        exc_info=True,
                     )
                     return _refuse_or_fallback(exc)
         finally:

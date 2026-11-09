@@ -60,8 +60,9 @@ def write_wav_to_shared_volume(
             os.getuid(),
         )
         return None
-    except Exception as e:
-        logger.warning(f"Failed to write shared-volume WAV for task {task_id}: {e}")
+    except (OSError, ValueError):
+        # Disk full / path errors, or scipy rejecting the array; the pipeline re-decodes in Stage 2.
+        logger.warning("Failed to write shared-volume WAV for task %s", task_id, exc_info=True)
         return None
 
 
@@ -112,8 +113,9 @@ def load_from_shared_volume(wav_path: str) -> np.ndarray | None:
             audio[start:end] /= 32767.0
         logger.debug(f"mmap-loaded shared-volume WAV: {wav_path} ({len(audio)} samples)")
         return audio
-    except Exception as e:
-        logger.warning(f"Failed to mmap-load shared-volume WAV {wav_path}: {e}")
+    except (OSError, ValueError, MemoryError):
+        # Truncated/corrupt WAV (ValueError), I/O failure (OSError), or no room for the array.
+        logger.warning("Failed to mmap-load shared-volume WAV %s", wav_path, exc_info=True)
         return None
 
 
@@ -123,5 +125,5 @@ def cleanup_shared_volume_wav(wav_path: str | None) -> None:
         try:
             os.unlink(wav_path)
             logger.debug(f"Removed shared-volume WAV: {wav_path}")
-        except Exception as e:
-            logger.debug(f"Could not remove shared-volume WAV {wav_path}: {e}")
+        except OSError:
+            logger.debug("Could not remove shared-volume WAV %s", wav_path, exc_info=True)

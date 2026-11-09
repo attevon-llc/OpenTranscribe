@@ -66,27 +66,22 @@ class WaveformGenerator:
         Returns:
             Dictionary containing waveform data for all resolutions
         """
-        try:
-            # Generate waveforms for all standard resolutions
-            waveform_cache = {}
+        # Generate waveforms for all standard resolutions
+        waveform_cache = {}
 
-            for resolution_name, samples in WAVEFORM_RESOLUTIONS.items():
-                waveform_data = self._extract_single_waveform(file_path, samples)
-                if waveform_data:
-                    cache_key = f"waveform_{samples}"
-                    waveform_cache[cache_key] = waveform_data
-                    logger.debug(f"Generated {resolution_name} waveform: {samples} samples")
+        for resolution_name, samples in WAVEFORM_RESOLUTIONS.items():
+            waveform_data = self._extract_single_waveform(file_path, samples)
+            if waveform_data:
+                cache_key = f"waveform_{samples}"
+                waveform_cache[cache_key] = waveform_data
+                logger.debug(f"Generated {resolution_name} waveform: {samples} samples")
 
-            # If we got at least one waveform, return the cache
-            if waveform_cache:
-                logger.info(f"Generated waveform data for {len(waveform_cache)} resolutions")
-                return waveform_cache
-            else:
-                logger.warning(f"Failed to generate waveform data for {file_path}")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error generating waveform data: {e}")
+        # If we got at least one waveform, return the cache
+        if waveform_cache:
+            logger.info(f"Generated waveform data for {len(waveform_cache)} resolutions")
+            return waveform_cache
+        else:
+            logger.warning(f"Failed to generate waveform data for {file_path}")
             return None
 
     def _probe_audio_file(self, file_path: str) -> dict[str, Any] | None:
@@ -294,9 +289,11 @@ class WaveformGenerator:
                 )
 
             return waveform_cache if waveform_cache else None
-        except Exception as e:
+        except (OSError, ValueError):
+            # scipy raises ValueError for a malformed WAV and OSError for an unreadable file.
             logger.warning(
-                "numpy-resample waveform failed (%s), caller should fall back to FFmpeg", e
+                "numpy-resample waveform failed, caller should fall back to FFmpeg",
+                exc_info=True,
             )
             return None
 
@@ -363,6 +360,7 @@ class WaveformGenerator:
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg error processing file {file_path}: {e}")
             return None
-        except Exception as e:
-            logger.error(f"Error extracting waveform from {file_path}: {e}")
+        except (subprocess.TimeoutExpired, OSError, ValueError, KeyError):
+            # ffmpeg/ffprobe timeout or missing binary, unparsable ffprobe JSON, missing field.
+            logger.error("Error extracting waveform from %s", file_path, exc_info=True)
             return None

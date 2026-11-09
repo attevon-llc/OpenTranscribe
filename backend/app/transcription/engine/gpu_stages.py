@@ -25,6 +25,7 @@ from app.transcription.engine.diarization_overlap import _AsyncDiarization
 from app.transcription.engine.diarization_overlap import _collect_diarization
 from app.transcription.engine.diarization_overlap import _overlap_diarization_enabled
 from app.transcription.engine.diarization_overlap import _shutdown_join_timeout
+from app.transcription.errors import MODEL_LOAD_ERRORS
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -41,6 +42,25 @@ if TYPE_CHECKING:
     from app.utils.vram_profiler import VRAMProfiler
 
 logger = logging.getLogger(__name__)
+
+
+def _preload_diarizer(manager: Any, tc: Any) -> None:
+    """Warm the diarizer weights on a side thread; a failure is retried inline later."""
+    try:
+        manager.get_diarizer(tc)
+    except MODEL_LOAD_ERRORS:
+        logger.debug("Diarizer preload (non-fatal, will retry inline)", exc_info=True)
+
+
+def _reenable_tf32() -> None:
+    """Re-enable TF32 after diarization (PyAnnote's fix_reproducibility disables it)."""
+    try:
+        import torch
+
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    except (ImportError, RuntimeError, AttributeError):
+        logger.debug("TF32 re-enable skipped", exc_info=True)
 
 
 class _GpuStage:
@@ -89,7 +109,7 @@ class _GpuStage:
                 from app.transcription.audio import load_audio
 
                 audio_result[0] = load_audio(job.audio_path)
-            except Exception as e:
+            except (ValueError, OSError) as e:  # handed to the caller, re-raised below
                 audio_error[0] = e
 
         audio_thread = threading.Thread(target=_load_audio, name="audio-load", daemon=True)
@@ -122,17 +142,11 @@ class _GpuStage:
             # diarization is already running — there are no local weights to warm.
             diarizer_preload_thread: threading.Thread | None = None
             if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
-
-                def _preload_diarizer() -> None:
-                    try:
-                        manager.get_diarizer(tc)
-                    except Exception as preload_err:
-                        logger.debug(
-                            f"Diarizer preload (non-fatal, will retry inline): {preload_err}"
-                        )
-
                 diarizer_preload_thread = threading.Thread(
-                    target=_preload_diarizer, name="diarizer-preload", daemon=True
+                    target=_preload_diarizer,
+                    args=(manager, tc),
+                    name="diarizer-preload",
+                    daemon=True,
                 )
                 diarizer_preload_thread.start()
 
@@ -207,13 +221,7 @@ class _GpuStage:
 
         # Re-enable TF32 after diarization (PyAnnote's fix_reproducibility disables it)
         if tc.device == "cuda":
-            try:
-                import torch
-
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
-            except Exception as e:
-                logger.debug(f"TF32 re-enable skipped: {e}")
+            _reenable_tf32()
 
         # Cleanup
         hw.log_vram_usage("before final pipeline cleanup")
@@ -407,17 +415,11 @@ class _GpuRawStage:
         try:
             diarizer_preload_thread: threading.Thread | None = None
             if tc.enable_diarization and tc.concurrent_requests <= 1 and async_diarization is None:
-
-                def _preload_diarizer() -> None:
-                    try:
-                        manager.get_diarizer(tc)
-                    except Exception as preload_err:
-                        logger.debug(
-                            f"Diarizer preload (non-fatal, will retry inline): {preload_err}"
-                        )
-
                 diarizer_preload_thread = threading.Thread(
-                    target=_preload_diarizer, name="diarizer-preload", daemon=True
+                    target=_preload_diarizer,
+                    args=(manager, tc),
+                    name="diarizer-preload",
+                    daemon=True,
                 )
                 diarizer_preload_thread.start()
 
@@ -480,13 +482,7 @@ class _GpuRawStage:
                     }
 
             if tc.device == "cuda":
-                try:
-                    import torch
-
-                    torch.backends.cuda.matmul.allow_tf32 = True
-                    torch.backends.cudnn.allow_tf32 = True
-                except Exception as e:
-                    logger.debug(f"TF32 re-enable skipped: {e}")
+                _reenable_tf32()
 
             hw.log_vram_usage("before final pipeline cleanup")
             del audio

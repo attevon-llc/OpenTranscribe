@@ -15,6 +15,7 @@ from typing import NoReturn
 
 from celery.exceptions import Reject
 from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core import redis as redis_core
 from app.core.constants import DIAR_SIDECAR_MAX_RETRIES
@@ -344,7 +345,7 @@ def _handle_outer_exception(
     ctx: TranscriptionContext | None, task_id: str, error: Exception
 ) -> dict:
     """Handle top-level exception in transcription task (through the one retry policy)."""
-    logger.error(f"Error processing file {ctx.file_id if ctx else None}: {error}")
+    logger.error("Error processing file %s", ctx.file_id if ctx else None, exc_info=error)
     if ctx is not None:
         return _handle_transcription_failure(ctx, task_id, str(error), "processing_error")
     # Classified once from the raw exception; only the fixed sentence is stored (#959).
@@ -354,6 +355,6 @@ def _handle_outer_exception(
             update_task_status(
                 db, task_id, "failed", error_message=failure.user_message, completed=True
             )
-    except Exception as update_err:
-        logger.error(f"Error updating task status: {update_err}")
+    except SQLAlchemyError:
+        logger.error("Error updating task status for run %s", task_id, exc_info=True)
     return {"status": "error", "message": failure.user_message}

@@ -286,7 +286,8 @@ class _AsyncDiarization:
                 self._value = _run_diarize(
                     self._diarizer, audio, wav_path, allow_local_fallback=False, tc=tc
                 )
-            except BaseException as exc:  # handed to the caller, not swallowed
+            except BaseException as exc:  # boundary: diarize thread; result() re-surfaces it
+                logger.exception("Overlapped diarization thread failed")
                 self._error = exc
 
         self._thread = threading.Thread(target=_run, name="diarize-async", daemon=True)
@@ -416,6 +417,7 @@ def _get_total_vram_mb() -> int:
 
         if torch.cuda.is_available():
             return int(torch.cuda.get_device_properties(0).total_memory / (1024**2))
-    except Exception as e:
-        logger.debug(f"VRAM query failed: {e}")
+    except (ImportError, RuntimeError):
+        # torch.cuda.OutOfMemoryError and CUDA driver failures are RuntimeErrors.
+        logger.debug("VRAM query failed", exc_info=True)
     return 0

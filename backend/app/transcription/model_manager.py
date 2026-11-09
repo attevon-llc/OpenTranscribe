@@ -9,6 +9,7 @@ Pattern matches speaker_embedding_service.py::get_cached_embedding_service().
 
 from __future__ import annotations
 
+import http.client
 import logging
 import threading
 from typing import TYPE_CHECKING
@@ -17,6 +18,7 @@ from typing import ClassVar
 
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarizer import SpeakerDiarizer
+from app.transcription.errors import MODEL_LOAD_ERRORS
 from app.transcription.transcriber import Transcriber
 
 if TYPE_CHECKING:
@@ -122,7 +124,7 @@ class ModelManager:
                 native = NativeSpeakerDiarizer(config)
                 native.load_model()
                 return native
-            except Exception as exc:  # any failure means "use the fork"
+            except (*MODEL_LOAD_ERRORS, http.client.HTTPException) as exc:  # fall back to the fork
                 fallback_reason = self._native_unavailable_reason()
                 self._refuse_if_sidecar_required(fallback_reason, exc)
                 logger.warning(
@@ -301,5 +303,6 @@ class ModelManager:
 
             hw = detect_hardware()
             hw.optimize_memory_usage()
-        except Exception as e:
-            logger.debug(f"GPU cleanup skipped: {e}")
+        except (ImportError, RuntimeError):
+            # torch.cuda.OutOfMemoryError and CUDA driver failures are RuntimeErrors.
+            logger.debug("GPU cleanup skipped", exc_info=True)

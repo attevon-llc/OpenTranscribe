@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Broad-except lane B4b (`backend/app/transcription/**` and `backend/app/tasks/transcription/**`): every one of the remaining 93 handlers now narrows to what its try body can raise (Redis, SQLAlchemy, broker, OpenSearch, MinIO, subprocess, torch/CUDA `RuntimeError`) or is a marked boundary that calls `logger.exception`; each absorbed outage logs a traceback, and a programming error in those bodies is no longer swallowed. The waveform generator's outer catch-all was removed (the Celery task already logs and retries). Model-load error types live in `app/transcription/errors.py`.
+
 - Broad-except lane B8 (`backend/app/services/*.py` after `opensearch_erasure.py`): 110 of 111 handlers now log with a traceback (`logger.exception` or `exc_info=True`) or narrow to the exception they handle. Fixed on the way: deleting a file's cached burned-in videos treated a storage listing outage as "no renders exist" and reported the delete complete; it now raises `StorageDeleteIncompleteError`. OpenSearch snapshot repository lookup now treats only "not found" as "needs creating".
 - Broad `except Exception` handlers in `app/auth` and `app/core` (84) now catch only the failures their code can recover from (redis-py, kombu, SQLAlchemy, cryptography, ldap3, OpenSearch, ValueError/TypeError) and log with the traceback; anything else propagates instead of being read as "not found" or "not reused". The LDAP login and OIDC federated-logout catch-alls are gone, so an unexpected error there is now a logged 500 rather than a silent failed login. Metric-scrape and cache-warm failures that were logged at DEBUG are now WARNING with a traceback.
 

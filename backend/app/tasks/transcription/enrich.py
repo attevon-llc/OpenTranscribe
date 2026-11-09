@@ -81,8 +81,8 @@ def enrich_and_dispatch(
         plan.update(
             trigger_automatic_summarization(file_id, file_uuid, tasks_to_run=downstream_tasks)
         )
-    except Exception as e:
-        logger.warning(f"Summarization dispatch failed for file {file_id}: {e}")
+    except Exception:  # boundary: per-dispatch isolation, one failure must not starve the rest
+        logger.exception("Summarization dispatch failed for file %s", file_id)
 
     plan.update(_dispatch_speaker_attributes(file_uuid, user_id, downstream_tasks))
     clustering = _dispatch_speaker_clustering(file_uuid, user_id, downstream_tasks, file_id=file_id)
@@ -116,8 +116,8 @@ def _index_transcript(
         )
         logger.info(f"Dispatched search indexing task for file {file_uuid}")
         return PostProcessingState.QUEUED
-    except Exception as e:
-        logger.warning(f"Failed to dispatch search indexing: {e}")
+    except Exception:  # boundary: per-dispatch isolation, one failure must not starve the rest
+        logger.exception("Failed to dispatch search indexing")
         return PostProcessingState.FAILED
 
 
@@ -156,8 +156,8 @@ def _dispatch_redaction(
         )
         logger.info(f"Dispatched redaction detection for file {file_id}")
         return PostProcessingState.QUEUED
-    except Exception as e:
-        logger.warning(f"Failed to dispatch redaction detection: {e}")
+    except Exception:  # boundary: per-dispatch isolation, one failure must not starve the rest
+        logger.exception("Failed to dispatch redaction detection")
         return PostProcessingState.FAILED
 
 
@@ -179,8 +179,8 @@ def _dispatch_speaker_attributes(
             user_id,
             llm_requested=downstream_tasks is not None and "speaker_llm" in downstream_tasks,
         )
-    except Exception as e:
-        logger.warning(f"Failed to dispatch speaker attribute detection: {e}")
+    except Exception:  # boundary: per-dispatch isolation, one failure must not starve the rest
+        logger.exception("Failed to dispatch speaker attribute detection")
         return {PostProcessingTask.SPEAKER_ATTRIBUTES: PostProcessingState.FAILED}
     state = PostProcessingState.QUEUED if queued == "attributes" else PostProcessingState.SKIPPED
     return {PostProcessingTask.SPEAKER_ATTRIBUTES: state}
@@ -205,6 +205,6 @@ def _dispatch_speaker_clustering(
         cluster_speakers_for_file.delay(str(file_uuid), user_id)
         logger.info(f"Dispatched speaker clustering for {file_uuid}")
         return PostProcessingState.QUEUED
-    except Exception as e:
-        logger.warning(f"Failed to dispatch speaker clustering: {e}")
+    except Exception:  # boundary: per-dispatch isolation, one failure must not starve the rest
+        logger.exception("Failed to dispatch speaker clustering")
         return PostProcessingState.FAILED

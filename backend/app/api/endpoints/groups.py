@@ -61,7 +61,7 @@ UNKNOWN_TIMESTAMP = datetime(1970, 1, 1, tzinfo=UTC)
 def _group_in_scope(group: UserGroup, ctx: RequestContext) -> bool:
     """Is this group in the caller's ACTIVE tenant scope? (v388)
 
-    Mirrors ``deps_context.scope_to_context``: in org context only that org's groups, in
+    Mirrors ``tenant_scope.context_scope_criterion``: in org context only that org's groups, in
     personal scope only unstamped ones. Expressed as a predicate rather than a query filter
     because six of the eight routes resolve the group by UUID first.
     """
@@ -92,7 +92,7 @@ def _same_tenant(db: Session, user_id: int, ctx: RequestContext) -> bool:
     authorization reads the table, never the claim alone.
     """
     # Personal scope: only accounts with no org membership at all, mirroring
-    # `scope_to_context`'s personal branch and `GET /users/search`'s gate.
+    # `context_scope_criterion`'s personal branch and `GET /users/search`'s gate.
     return user_in_tenant(db, user_id, ctx.org_id)
 
 

@@ -21,7 +21,7 @@ business logic belongs in `app/services`, pipeline work in `app/tasks`.
   `__init__.py` includes in declaration order.
 - `deps_context.py` — tenant-aware DI: `get_current_context` → `RequestContext(user, org_id,
   org_role)`, `require_org_admin` (the **server-side** authority for org-admin actions — the
-  frontend capability check is cosmetic), `require_org_owner` (v468: the organization's single owner; 403 `org_owner_only` for another admin, 409 `org_owner_required` when there is none; used for the whole-organization erasure and the ownership transfer), and `scope_to_context(query, model, ctx)`.
+  frontend capability check is cosmetic), `require_org_owner` (v468: the organization's single owner; 403 `org_owner_only` for another admin, 409 `org_owner_required` when there is none; used for the whole-organization erasure and the ownership transfer), and, for queries, `services.tenant_scope.context_scope_criterion(model, ctx)`.
 - `websockets.py` — `/ws`, the in-process `ConnectionManager`, and the Redis subscriber on the
   `websocket_notifications` channel.
 - `endpoints/metrics.py` — `/metrics` and `/metrics/queues`, mounted at **root** (no `/api`),

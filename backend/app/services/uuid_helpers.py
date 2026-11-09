@@ -241,7 +241,7 @@ def require_resource_owner(
 def _resource_in_tenant_scope(resource: Any, organization_id: OrgScope) -> bool:
     """Default-deny tenant-scope check for a resource's ``organization_id``.
 
-    Mirrors ``scope_to_context``: in org context only same-org rows pass; in
+    Mirrors ``tenant_scope.context_scope_criterion``: in org context only same-org rows pass; in
     personal scope (``organization_id is None``) only org-less rows pass. The
     ``UNSCOPED`` sentinel means no context was threaded (legacy caller) — no gate
     is applied, preserving pre-cloud behavior. Community-edition invariance:

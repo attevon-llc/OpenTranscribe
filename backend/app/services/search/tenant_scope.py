@@ -2,7 +2,7 @@
 
 These build the org-aware ``filter`` clauses that every OpenSearch search plane
 (transcript chunks + speaker/voiceprint kNN) must apply, mirroring the SQL-plane
-``app.api.deps_context.scope_to_context`` default-deny semantics:
+``app.services.tenant_scope.context_scope_criterion`` default-deny semantics:
 
 * **Org context** (``organization_id`` is not None): only documents stamped with
   that exact ``organization_id`` are visible. Personal documents (no org) and

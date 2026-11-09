@@ -98,9 +98,6 @@ orm_call_in_api::backend/app/api/endpoints/redaction_settings.py	2	layering: rem
 orm_call_in_api::backend/app/api/endpoints/scim/groups.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/scim/users.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/search_reindex.py	3	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/speaker_clusters.py	8	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/speaker_profiles.py	10	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/speaker_profiles_collections.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/support_access.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tags/discovery.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tags/sharing.py	3	layering: removal planned

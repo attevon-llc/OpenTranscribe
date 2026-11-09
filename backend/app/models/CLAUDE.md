@@ -79,7 +79,7 @@ authority. See `backend/app/db/CLAUDE.md`.
 - Enums come from `app/core/enums.py`; `media.py` re-exports `FileStatus` for back-compat only.
 - Cross-module model imports go under `if TYPE_CHECKING:` with string relationship targets.
 - Tenancy: nullable `organization_id` FK (NULL = personal) on user-owned tables. Filter through
-  `utils/db_helpers.apply_tenant_scope` or `api/deps_context.scope_to_context` — never by hand.
+  `utils/db_helpers.apply_tenant_scope` or `services/tenant_scope.context_scope_criterion` — never by hand.
 - Secrets are stored in `encrypted_*` columns via `app/utils/encryption.py` (AES-256-GCM).
 
 ## Gotchas

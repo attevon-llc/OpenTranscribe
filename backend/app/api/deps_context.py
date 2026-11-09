@@ -8,19 +8,17 @@ organization for this request:
     and authorize against the **membership mirror**, never the token alone,
     so a removed member loses access before their token expires.
 
-``scope_to_context`` is the default-deny query helper every org-aware
-endpoint uses: org context -> filter by organization_id, else by user_id.
+``services.tenant_scope.context_scope_criterion`` is the default-deny criterion every org-aware
+query uses: org context -> filter by organization_id, else by user_id.
 """
 
 import logging
 from dataclasses import replace
-from typing import Any
 
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
-from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_user
@@ -275,18 +273,3 @@ def require_org_owner(
             "Only the owner of the organization can do this.",
         )
     return ctx
-
-
-def scope_to_context(query: Query, model: Any, ctx: RequestContext) -> Query:
-    """Default-deny tenancy filter: org scope when active, else personal.
-
-    Personal scope = the user's PERSONAL rows (``organization_id IS NULL``):
-    a file uploaded into an org belongs to the org space, not the uploader's
-    personal space. In the community edition ``organization_id`` is always
-    NULL, so this is behavior-identical to plain user_id filtering there.
-
-    ``model`` must expose ``organization_id`` and ``user_id`` columns.
-    """
-    if ctx.is_org_context:
-        return query.filter(model.organization_id == ctx.org_id)
-    return query.filter(model.user_id == ctx.user.id, model.organization_id.is_(None))

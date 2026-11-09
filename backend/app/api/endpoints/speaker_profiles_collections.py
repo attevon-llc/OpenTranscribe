@@ -10,16 +10,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
-from app.api.deps_context import scope_to_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.speaker import SpeakerCollection
-from app.models.speaker import SpeakerCollectionMember
 from app.models.user import User
 from app.services.request_context import RequestContext
-from app.utils.db_helpers import org_stamp_is
+from app.services.speaker_profile_queries import collection_by_exact_name
+from app.services.speaker_profile_queries import collection_member_counts
+from app.services.speaker_profile_queries import user_collections
 
 logger = logging.getLogger(__name__)
 
@@ -35,28 +35,11 @@ def list_speaker_collections(
     """List the caller's speaker collections in the active tenant."""
     try:
         # Speaker collections are owner-scoped: the caller's own, in this tenant.
-        collections = (
-            scope_to_context(db.query(SpeakerCollection), SpeakerCollection, ctx)
-            .filter(SpeakerCollection.user_id == current_user.id)
-            .all()
-        )
+        collections = user_collections(db, current_user.id, ctx)
 
         # Batch-fetch member counts (avoids N+1 per-collection queries)
-        from sqlalchemy import func as sa_func
-
         collection_ids = [c.id for c in collections]
-        count_rows = (
-            db.query(
-                SpeakerCollectionMember.collection_id,
-                sa_func.count().label("cnt"),
-            )
-            .filter(SpeakerCollectionMember.collection_id.in_(collection_ids))
-            .group_by(SpeakerCollectionMember.collection_id)
-            .all()
-            if collection_ids
-            else []
-        )
-        member_counts = {r.collection_id: r.cnt for r in count_rows}
+        member_counts = collection_member_counts(db, collection_ids)
 
         result = []
         for collection in collections:
@@ -106,15 +89,7 @@ def create_speaker_collection(
     """Create a new speaker collection (stamped with the active tenant)."""
     try:
         # Check for name conflicts
-        existing = (
-            db.query(SpeakerCollection)
-            .filter(
-                SpeakerCollection.user_id == current_user.id,
-                SpeakerCollection.name == name,
-                org_stamp_is(SpeakerCollection.organization_id, ctx.org_id),
-            )
-            .first()
-        )
+        existing = collection_by_exact_name(db, current_user.id, name, ctx.org_id)
 
         if existing:
             raise HTTPException(status_code=400, detail="Collection with this name already exists")

@@ -45,7 +45,7 @@ def org_scope_pred(column: Any, organization_id: OrgScope) -> Any:
     """NULL-safe tenant equality on ``column`` (``None`` for ``UNSCOPED`` = no gate).
 
     An int keeps rows of that org, ``None`` keeps org-less (personal) rows — the
-    same default-deny rule as ``scope_to_context``. A plain ``column == None``
+    same default-deny rule as ``tenant_scope.context_scope_criterion``. A plain ``column == None``
     would compile to ``= NULL`` and match nothing, hence the explicit ``IS NULL``.
     """
     if isinstance(organization_id, _Unscoped):

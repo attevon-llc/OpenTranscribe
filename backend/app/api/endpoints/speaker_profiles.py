@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
 from kombu.exceptions import KombuError
+from sqlalchemy import ColumnExpressionArgument
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -20,28 +21,29 @@ from app.api.error_handlers import ErrorHandler
 from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import MediaFile
-from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCollection
-from app.models.speaker import SpeakerCollectionMember
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
-from app.services.file_availability import available_pred
+from app.services import speaker_lookups
 from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import PermissionService
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
-from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import derived_profile_genders
 from app.services.request_context import RequestContext
 from app.services.speaker_matching_service import SpeakerMatchingService
 from app.services.speaker_profile_activity import touch_profile_interaction
+from app.services.speaker_profile_queries import clusters_promoted_to
+from app.services.speaker_profile_queries import list_profiles
+from app.services.speaker_profile_queries import profile_ids_owned_by
+from app.services.speaker_profile_queries import profile_media_instance_counts
+from app.services.speaker_profile_queries import speakers_linked_to
+from app.services.speaker_profile_queries import users_with_ids
 from app.services.speaker_profile_rename import apply_profile_name_to_speakers
 from app.services.speaker_profile_rename import held_member_count
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_resource_owner
-from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
@@ -55,56 +57,9 @@ def _owner_names_for_shared(
     owner_user_ids = {int(p.user_id) for p in profiles if int(p.user_id) != current_user_id}
     owner_names: dict[int, str] = {}
     if owner_user_ids:
-        owners = db.query(User).filter(User.id.in_(owner_user_ids)).all()
-        for owner in owners:
+        for owner in users_with_ids(db, owner_user_ids):
             owner_names[owner.id] = owner.full_name or owner.email or f"User {owner.id}"
     return owner_names
-
-
-def _profile_media_instance_counts(
-    db: Session, profile_ids: list[int], *, include_quarantined: bool = False
-) -> dict[int, tuple[int, int]]:
-    """Per-profile ``(media_count, instance_count)`` over available files only.
-
-    Hides voiceprint links the policy hides, and every speaker of an unavailable (trashed or
-    quarantined) file: the profile would otherwise report appearances no read surface shows.
-    ``include_quarantined`` is the list exemption (``unavailable_list_exempt``).
-    """
-    from sqlalchemy import func as sa_func
-
-    # A link a voiceprint made is not counted while its file's voiceprints are off
-    # (#1280): the profile would otherwise report appearances the speaker pages hide.
-    # Decided per speaker by its FILE's scope; a person's own link is always counted.
-    from sqlalchemy import select
-
-    from app.services.privacy.redact_view import machine_identity_clauses
-
-    _name_hidden, link_hidden = machine_identity_clauses(
-        PrivacyView(db),
-        select(Speaker.media_file_id).where(Speaker.profile_id.in_(profile_ids)),
-    )
-
-    # Batch query: media count and instance count per profile (1 query)
-    count_rows = (
-        db.query(
-            Speaker.profile_id,
-            sa_func.count(sa_func.distinct(Speaker.media_file_id)).label("media_count"),
-            sa_func.count(Speaker.id).label("instance_count"),
-        )
-        .join(MediaFile, MediaFile.id == Speaker.media_file_id)
-        .filter(
-            Speaker.profile_id.in_(profile_ids),
-            ~link_hidden,
-            available_pred(include_quarantined=include_quarantined),
-        )
-        .group_by(Speaker.profile_id)
-        .all()
-    )
-    counts_by_profile: dict[int, tuple[int, int]] = {
-        row.profile_id: (row.media_count, row.instance_count) for row in count_rows
-    }
-
-    return counts_by_profile
 
 
 def _profile_avatar_url(profile: SpeakerProfile, bypass: PlatformBypass) -> str | None:
@@ -173,11 +128,9 @@ def list_speaker_profiles(
         # A caller who sees all in scope gets every profile of the tenant; regular users
         # see own + shared
         sees_all = ctx.bypass.sees_all_in_scope
+        scope_pred: ColumnExpressionArgument[bool] | None
         if sees_all:
-            query = db.query(SpeakerProfile)
-            tenant_pred = org_scope_pred(SpeakerProfile.organization_id, ctx.org_id)
-            if tenant_pred is not None:
-                query = query.filter(tenant_pred)
+            scope_pred = org_scope_pred(SpeakerProfile.organization_id, ctx.org_id)
             owned_ids: set[int] = set()  # Will compute below for is_shared flag
         else:
             accessible = PermissionService.get_accessible_profile_ids_with_source(
@@ -187,8 +140,9 @@ def list_speaker_profiles(
                 return []
             accessible_ids = [pid for pid, _ in accessible]
             owned_ids = {pid for pid, is_own in accessible if is_own}
-            query = db.query(SpeakerProfile).filter(SpeakerProfile.id.in_(accessible_ids))
+            scope_pred = SpeakerProfile.id.in_(accessible_ids)
 
+        collection_id: int | None = None
         if collection_uuid:
             # Filter by collection - convert UUID to ID
             from app.services.uuid_helpers import get_by_uuid
@@ -203,25 +157,16 @@ def list_speaker_profiles(
             )
             collection_id = collection.id
 
-            query = query.join(SpeakerCollectionMember).filter(
-                SpeakerCollectionMember.collection_id == collection_id
-            )
-
-        profiles = query.all()
+        profiles = list_profiles(db, scope_pred, collection_id=collection_id)
 
         # For a see-all caller, compute owned_ids to mark is_shared correctly
         if sees_all:
-            owned_ids = {
-                row[0]
-                for row in db.query(SpeakerProfile.id)
-                .filter(SpeakerProfile.user_id == current_user.id)
-                .all()
-            }
+            owned_ids = profile_ids_owned_by(db, current_user.id)
 
         owner_names = _owner_names_for_shared(db, profiles, current_user.id)
         profile_ids = [p.id for p in profiles]
 
-        counts_by_profile = _profile_media_instance_counts(
+        counts_by_profile = profile_media_instance_counts(
             db, profile_ids, include_quarantined=unavailable_list_exempt(ctx.bypass)
         )
 
@@ -281,15 +226,7 @@ def create_speaker_profile(
     """Create a new speaker profile (org-stamped from the request context, #262e)."""
     try:
         # Names are unique per user per tenant (v430).
-        existing = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.user_id == current_user.id,
-                SpeakerProfile.name == name,
-                org_stamp_is(SpeakerProfile.organization_id, ctx.org_id),
-            )
-            .first()
-        )
+        existing = speaker_lookups.profile_by_exact_name(db, current_user.id, name, ctx.org_id)
 
         if existing:
             raise HTTPException(
@@ -396,15 +333,12 @@ def update_speaker_profile(
 
         if name:
             # Check for name conflicts
-            existing = (
-                db.query(SpeakerProfile)
-                .filter(
-                    SpeakerProfile.user_id == current_user.id,
-                    SpeakerProfile.name == name,
-                    SpeakerProfile.id != profile_id,
-                    org_stamp_is(SpeakerProfile.organization_id, profile.organization_id),
-                )
-                .first()
+            existing = speaker_lookups.profile_by_exact_name(
+                db,
+                current_user.id,
+                name,
+                profile.organization_id,
+                excluding_profile_id=profile_id,
             )
 
             if existing:
@@ -521,7 +455,6 @@ def delete_speaker_profile(
     promoted cluster is deleted with its centroid instead of being left listed with
     nobody in it (issue #1214). A display name the user set to something else survives.
     """
-    from app.models.speaker import SpeakerCluster
     from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
     from app.services.speaker_cleanup import capture_speaker_impact
     from app.services.speaker_cleanup import raise_if_incomplete
@@ -537,7 +470,7 @@ def delete_speaker_profile(
         profile_id = profile.id
         profile_name = str(profile.name)
 
-        speakers = db.query(Speaker).filter(Speaker.profile_id == profile_id).all()
+        speakers = speakers_linked_to(db, profile_id)
         # Deleting the profile unlinks (and may rename) a held file's speaker: refused while
         # any member's file is held (legal-hold freeze).
         refuse_if_frozen(
@@ -550,11 +483,7 @@ def delete_speaker_profile(
             db, [int(s.id) for s in speakers], removed=False, reindex=False
         )
         impact.owner_ids.add(int(profile.user_id))
-        promoted = (
-            db.query(SpeakerCluster)
-            .filter(SpeakerCluster.promoted_to_profile_id == profile_id)
-            .all()
-        )
+        promoted = clusters_promoted_to(db, profile_id)
         for cluster in promoted:
             impact.cluster_uuids.add(str(cluster.uuid))
             impact.owner_ids.add(int(cluster.user_id))

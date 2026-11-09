@@ -3,11 +3,10 @@
 import asyncio
 
 import pytest
-from fastapi import HTTPException
+from pydantic import ValidationError
 from starlette.requests import Request
 
 from app import schemas
-from app.api.endpoints.asr_settings import _apply_provider_update
 from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.validation_errors import validation_error_handler
 from app.schemas.user import AuthMethodsResponse
@@ -19,16 +18,41 @@ def _request() -> Request:
     )
 
 
-def test_explicit_null_provider_is_a_422_not_an_attribute_error():
-    class _Config:
-        provider = "openai"
-        api_key = "stored"
+@pytest.mark.parametrize("field", ["name", "provider", "model_name", "is_active", "is_shared"])
+def test_update_schema_rejects_explicit_null_for_not_null_columns(field):
+    with pytest.raises(ValidationError) as caught:
+        schemas.UserASRSettingsUpdate.model_validate({field: None})
+    assert caught.value.errors()[0]["loc"] == (field,)
 
-    update = schemas.UserASRSettingsUpdate.model_validate({"provider": None})
-    with pytest.raises(HTTPException) as caught:
-        _apply_provider_update(_Config(), update)
-    assert caught.value.status_code == 422
-    assert _Config.api_key == "stored"
+
+@pytest.mark.parametrize("field", ["api_key", "base_url", "region", "access_key_id"])
+def test_update_schema_still_accepts_null_for_nullable_columns(field):
+    assert schemas.UserASRSettingsUpdate.model_validate({field: None}).model_fields_set == {field}
+
+
+def test_a_verifier_written_against_request_still_works_on_a_websocket():
+    """A verifier only reads headers/cookies; annotations are not enforced at runtime, so one
+    written against ``Request`` before the ``HTTPConnection`` change behaves the same (its
+    parameter is left unannotated here because mypy would rightly reject the old annotation)."""
+    from app.auth.provider_registry import ExternalIdentity
+    from app.auth.provider_registry import register_verifier
+    from app.auth.provider_registry import unregister_verifier
+    from app.auth.provider_registry import verify_external_token
+    from tests.helpers import fake_websocket
+
+    seen = []
+
+    class _OldStyle:
+        def verify(self, token: str, request) -> ExternalIdentity | None:
+            seen.append((token, request.headers.get("x-test")))
+            return ExternalIdentity(provider="old", external_id="1", email="a@b.example")
+
+    register_verifier("old-style", _OldStyle())
+    try:
+        assert verify_external_token("tok", fake_websocket()) is not None
+    finally:
+        unregister_verifier("old-style")
+    assert seen == [("tok", None)]
 
 
 def test_exception_handlers_refuse_an_exception_they_were_not_registered_for():

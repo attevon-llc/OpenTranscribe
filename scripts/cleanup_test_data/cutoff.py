@@ -22,25 +22,22 @@ def default_testruns_dir() -> Path:
     directory hid a run in one worktree from a sweep started in another against the same
     stack. ``TESTRUN_REGISTRY_DIR`` overrides it, for tests that need a throwaway registry.
     """
-    repo_root: Path = (
-        _REPO_ROOT  # typed here: the package-relative import is opaque to the scripts mypy run
-    )
     override = os.environ.get('TESTRUN_REGISTRY_DIR')
     if override:
         return Path(override)
     git = shutil.which('git')
     if git is None:
-        return repo_root / '.testruns'
-    argv = [git, '-C', str(repo_root), 'rev-parse', '--path-format=absolute', '--git-common-dir']
+        return _REPO_ROOT / '.testruns'
+    argv = [git, '-C', str(_REPO_ROOT), 'rev-parse', '--path-format=absolute', '--git-common-dir']
     try:
         result = subprocess.run(  # fixed argv from a resolved binary, no shell
             argv, capture_output=True, text=True, timeout=10, check=False
         )
     except (OSError, subprocess.SubprocessError):
-        return repo_root / '.testruns'
+        return _REPO_ROOT / '.testruns'
     common = result.stdout.strip()
     if result.returncode != 0 or not common:
-        return repo_root / '.testruns'
+        return _REPO_ROOT / '.testruns'
     return Path(common).parent / '.testruns'
 
 

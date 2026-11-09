@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,22 @@ import check_hidden_mypy as hidden
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = ('guards', 'lib', 'audit_tests', 'model_download', 'cleanup_test_data')
+
+
+def _mypy_env(root: Path) -> dict[str, str]:
+    """The environment mypy runs in, with the import roots the tooling scripts rely on.
+
+    These scripts import each other as top-level modules (``cleanup_test_data.api``,
+    ``_baseline``), which works at run time because the interpreter puts the script's directory
+    on ``sys.path``. mypy does not know that, treats the import as missing and (with
+    ``ignore_missing_imports``) types it ``Any``, silently skipping every cross-module check.
+    ``MYPYPATH`` names those roots; see mypy docs, "Running mypy and managing imports" >
+    "How imports are found" (https://mypy.readthedocs.io/en/stable/running_mypy.html).
+    """
+    roots = [root / 'scripts', root / 'scripts' / 'guards']
+    existing = os.environ.get('MYPYPATH')
+    parts = [str(p) for p in roots] + ([existing] if existing else [])
+    return {**os.environ, 'MYPYPATH': os.pathsep.join(parts)}
 
 
 def scripts_errors(root: Path) -> dict[str, int]:
@@ -55,6 +72,7 @@ def scripts_errors(root: Path) -> dict[str, int]:
                 *targets,
             ],
             cwd=root,
+            env=_mypy_env(root),
             capture_output=True,
             text=True,
             check=False,

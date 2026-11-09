@@ -200,15 +200,15 @@ def scan_source(source: str, rel: str) -> list[Finding]:
                 )
             )
 
-        guard = conditional_skip(node)
-        if guard is not None:
+        skip_guard = conditional_skip(node)
+        if skip_guard is not None:
             found.append(
                 Finding(
                     'conditional-skip',
                     rel,
                     node.lineno,
                     node.name,
-                    f'all asserts under `if {guard}` whose else only skips',
+                    f'all asserts under `if {skip_guard}` whose else only skips',
                 )
             )
 

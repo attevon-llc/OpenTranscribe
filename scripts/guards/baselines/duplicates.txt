@@ -287,7 +287,7 @@ frontend/src/components/settings/LLMConfigModal.bedrockFields.test.ts	2	pre-exis
 frontend/src/components/settings/LLMConfigModal.contextWindow.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/LLMConfigModal.discovery.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/LLMConfigModal.discoveryDisclosure.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/LLMConfigModal.svelte	15	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/settings/LLMConfigModal.svelte	9	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/LLMSettings.actions.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/LLMSettings.statusRefresh.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/LLMSettings.summaryToggles.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -336,7 +336,7 @@ frontend/src/components/settings/TranscriptionAccuracySettings.locks.test.ts	6	p
 frontend/src/components/settings/TranscriptionAccuracySettings.test.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/TranscriptionDefaultsCard.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/TranscriptionLanguageSettings.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/settings/UserProfileSettings.svelte	13	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/settings/UserProfileSettings.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/WatchSourceModal.svelte	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/YouTubePolicySettings.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/settings/localModels/LocalModelLibrary.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -362,7 +362,6 @@ frontend/src/components/transcript/TranscriptSegmentList.svelte	1	pre-existing d
 frontend/src/components/ui/ConnectionStatusBanner.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/upload/UploadStepExtraction.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/upload/UploadStepSpeakers.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/users/PasswordResetModal.svelte	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/users/PasswordResetModal.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/api/admin.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/api/authConfig.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -371,12 +370,12 @@ frontend/src/lib/api/pyannoteCredential.test.ts	1	pre-existing duplicated blocks
 frontend/src/lib/api/redactionSettings.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/services/uploadService.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/supportAccess/wsHandlers.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/routes/accept-invite/+page.svelte	13	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/routes/accept-invite/+page.svelte	8	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/files/[id]/page.test.ts	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/forgot-password/+page.svelte	7	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/routes/login/+page.svelte	9	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/routes/register/+page.svelte	11	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/routes/reset-password/+page.svelte	6	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/routes/login/+page.svelte	6	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/routes/register/+page.svelte	7	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/routes/reset-password/+page.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/search/+page.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/search/collectionFilter.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/search/page.test.ts	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

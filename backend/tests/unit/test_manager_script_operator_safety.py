@@ -17,9 +17,12 @@ import pytest
 
 from tests.unit._shell_extract import COMMON
 from tests.unit._shell_extract import MANAGER
+from tests.unit._shell_extract import REPO_ROOT
 from tests.unit._shell_extract import extract_function
 
 pytestmark = pytest.mark.unit
+
+OPENTR = REPO_ROOT / "opentr.sh"
 
 
 def _bash(script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -142,3 +145,44 @@ def test_standalone_scratch_fallback_uses_the_same_project_scoping(tmp_path):
     log = (tmp_path / "docker.log").read_text()
     assert "label=com.docker.compose.project=other_proj" in log
     assert "label=com.docker.compose.volume=pipeline_scratch" in log
+
+
+def _watch_chown(tmp_path: Path, target: str) -> str:
+    script = "\n".join(
+        [
+            'chown() { echo "chown $*" >> chown.log; }',
+            f"HOME={tmp_path}/home",
+            f'mkdir -p "{tmp_path}/home" "{tmp_path}/data/watch"',
+            extract_function(OPENTR, "chown_watch_folder"),
+            f'chown_watch_folder "{target}"',
+        ]
+    )
+    _bash(script, tmp_path)
+    log = tmp_path / "chown.log"
+    return log.read_text() if log.exists() else ""
+
+
+def test_watch_folder_chown_refuses_root_home_and_top_level(tmp_path):
+    assert _watch_chown(tmp_path, "/") == ""
+    assert _watch_chown(tmp_path, str(tmp_path / "home")) == ""
+    assert _watch_chown(tmp_path, "/usr") == ""
+
+
+def test_watch_folder_chown_applies_to_a_dedicated_folder(tmp_path):
+    assert str(tmp_path / "data" / "watch") in _watch_chown(
+        tmp_path, str(tmp_path / "data" / "watch")
+    )
+
+
+def test_stack_build_and_up_exit_codes_are_checked():
+    needles = (
+        'docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"',
+        "docker compose $BENCH_COMPOSE up -d --build",
+        "docker compose $BENCH_COMPOSE build",
+        "docker compose $BENCH_COMPOSE up -d --no-build",
+    )
+    lines = OPENTR.read_text().splitlines()
+    sites = [ln.strip() for ln in lines if any(n in ln for n in needles)]
+    unchecked = [ln for ln in sites if "if ! " not in ln]
+    assert len(sites) == len(needles)
+    assert unchecked == []

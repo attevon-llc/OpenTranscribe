@@ -465,7 +465,7 @@ def test_transcribe_poll_error_is_retried_not_fatal(tmp_path, caplog):
         patch("httpx.post", side_effect=_dispatch_post(upload_url_resp, job_resp, job_capture)),
         patch("httpx.put", return_value=_FakeResponse()),
         patch(
-            "httpx.get", side_effect=[Exception("transient network blip"), succeeded_resp]
+            "httpx.get", side_effect=[httpx.ConnectError("transient network blip"), succeeded_resp]
         ) as mock_get,
         patch("time.sleep"),
         caplog.at_level(logging.WARNING),

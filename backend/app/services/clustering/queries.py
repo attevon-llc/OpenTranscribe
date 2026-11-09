@@ -6,6 +6,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 from typing import Any
 
+from minio.error import S3Error
 from sqlalchemy import case
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import subqueryload
@@ -172,8 +173,8 @@ def list_clusters(
                 from app.services.minio_service import get_file_url
 
                 promoted_avatar_url = get_file_url(promoted_profile.avatar_path, expires=3600)
-            except Exception as e:
-                logger.debug("Failed to get avatar URL for profile: %s", e)
+            except (S3Error, OSError):
+                logger.debug("Failed to get avatar URL for profile", exc_info=True)
 
         # Build gender composition from batch query
         cid = int(cluster.id)

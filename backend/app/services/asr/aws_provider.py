@@ -31,6 +31,7 @@ from typing import Any
 from app.core.config import settings
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
 from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 from .base import ASRProvider
 from .types import ASRConfig
@@ -40,6 +41,8 @@ from .types import ASRWord
 from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 # botocore ClientError codes that represent a transient throttle rather than a permanent
 # failure. LimitExceededException is Transcribe's concurrent-job cap — genuinely transient,
@@ -232,7 +235,8 @@ class AWSTranscribeProvider(ASRProvider):
             self._boto_client("transcribe").list_transcription_jobs(MaxResults=1)
             ms = (time.time() - start) * 1000
             return True, f"AWS Transcribe validated (region: {self._region})", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "AWS Transcribe", exc_info=True)
             ms = (time.time() - start) * 1000
             # Sanitize error — boto3 exceptions may reflect back credential values
             # in debug/error strings in some SDK versions.
@@ -472,8 +476,10 @@ class AWSTranscribeProvider(ASRProvider):
         for key in keys:
             try:
                 s3.delete_object(Bucket=bucket, Key=key, ExpectedBucketOwner=owner)
-            except Exception as del_exc:
-                logger.warning("Failed to clean up S3 object s3://%s/%s: %s", bucket, key, del_exc)
+            except Exception:  # per-object isolation: clean up the rest regardless
+                logger.warning(
+                    "Failed to clean up S3 object s3://%s/%s", bucket, key, exc_info=True
+                )
 
     @staticmethod
     def _word_from_item(item: dict) -> ASRWord:

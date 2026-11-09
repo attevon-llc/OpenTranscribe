@@ -133,20 +133,11 @@ def _on_fresh_thread(fn: Any) -> Any:
     A fresh thread is the only way to read or write the process default without touching
     the calling thread's own latched count.
     """
-    box: dict[str, Any] = {}
-
-    def body() -> None:
-        try:
-            box["value"] = fn()
-        except BaseException as exc:  # re-raised on the caller below
-            box["error"] = exc
-
-    thread = threading.Thread(target=body, name=HELPER_THREAD_NAME)
-    thread.start()
-    thread.join()
-    if "error" in box:
-        raise box["error"]
-    return box["value"]
+    # ThreadPoolExecutor stores whatever the callable raised (BaseException included) on the
+    # future and result() re-raises it in the caller (concurrent.futures docs), so no
+    # hand-written catch-and-forward is needed. A new executor starts a new thread.
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix=HELPER_THREAD_NAME) as helper:
+        return helper.submit(fn).result()
 
 
 def _latch(torch: Any, cap: int) -> None:
@@ -202,13 +193,12 @@ def _get_pool(cap: int) -> ThreadPoolExecutor | None:
             return None
         try:
             _pool = _build_pool(cap)
-        except Exception as exc:  # a thread-cap optimisation must not fail a chat
+        except (RuntimeError, OSError, ImportError, TimeoutError):  # a thread-cap optimisation
             _pool_unavailable = True
             logger.warning(
-                "Chat reranker scoring pool unavailable (%s: %s); scoring runs inline at "
+                "Chat reranker scoring pool unavailable; scoring runs inline at "
                 "torch's own thread count",
-                type(exc).__name__,
-                exc,
+                exc_info=True,
             )
             return None
         return _pool

@@ -25,6 +25,7 @@ from app.services.erasure_receipt.inventory import stores_for
 from app.services.erasure_receipt.measure import Measurement
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
     from app.models.erasure import ErasureReceipt
 
 logger = logging.getLogger(__name__)
+# Subject identifiers can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 #: The only text the receipt API returns about WHY a store keeps data: a fixed code.
 RETAINED_REASONS: dict[str, str] = {
@@ -141,9 +144,9 @@ def persist_receipt(
         db.add(row)
         db.commit()
         db.refresh(row)
-    except Exception as e:
+    except Exception:  # receipt-write boundary: the erasure itself stands, the failure is logged
         db.rollback()
-        logger.error("Erasure receipt write FAILED for entry %s: %s", entry.uuid, type(e).__name__)
+        logger.exception("Erasure receipt write FAILED for entry %s", entry.uuid)
         return None
     ledger.append_receipt_line(entry, row)
     return row

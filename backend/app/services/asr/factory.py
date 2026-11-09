@@ -6,8 +6,11 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.core.exceptions import ASRConfigurationError
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 from .base import ASRProvider
 from .catalog import ASR_PROVIDER_CATALOG
@@ -20,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.user_asr_settings import UserASRSettings
 
 logger = logging.getLogger(__name__)
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 def _guard_local_allowed() -> None:
@@ -188,11 +192,11 @@ class ASRProviderFactory:
                 )
                 .first()
             )
-        except Exception as exc:
+        except SQLAlchemyError:
             logger.warning(
-                "Failed to load ASR config for user %d: %s — falling back to env/local",
+                "Failed to load ASR config for user %d — falling back to env/local",
                 user_id,
-                exc,
+                exc_info=True,
             )
             return None
         if cfg is None:
@@ -266,11 +270,11 @@ class ASRProviderFactory:
                 # Not a config-loading failure — a deliberate refusal to silently fall
                 # back to a local provider this deployment cannot run. Let it propagate.
                 raise
-            except Exception as exc:
+            except Exception:  # config-build boundary (decrypt/SDK); falls back, logged
                 logger.warning(
-                    "Failed to load ASR config for user %d: %s — falling back to env/local",
+                    "Failed to load ASR config for user %d — falling back to env/local",
                     user_id,
-                    exc,
+                    exc_info=True,
                 )
 
         env_provider = settings.ASR_PROVIDER.lower()

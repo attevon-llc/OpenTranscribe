@@ -24,8 +24,11 @@ from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
 from app.services.redaction.spans import map_char_span_to_words
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Detector and masking errors can quote the transcript text they were handed (issue #1022).
+logger.addFilter(MessageFreeTracebackFilter())
 
 # Presidio entity type → our entity_type label.
 _ENTITY_MAP = {
@@ -77,21 +80,21 @@ def _build_analyzer(use_gliner: bool) -> Any:
     # Presidio's built-in US_SSN recognizer scores the dashed format below typical
     # thresholds without strong context. SSN is high-value PII and xxx-xx-xxxx is
     # unambiguous, so register a high-confidence pattern recognizer for it.
-    try:
-        from presidio_analyzer import Pattern
-        from presidio_analyzer import PatternRecognizer
+    # Not wrapped: an analyzer without the SSN recogniser would pass SSNs through as clean
+    # text. A failure here fails the load, which `_get_analyzer` records (PII detection reported
+    # unavailable, so masking withholds rather than skips).
+    from presidio_analyzer import Pattern
+    from presidio_analyzer import PatternRecognizer
 
-        ssn = PatternRecognizer(
-            supported_entity="US_SSN",
-            patterns=[
-                Pattern(name="ssn-dashed", regex=r"\b\d{3}-\d{2}-\d{4}\b", score=0.85),
-                Pattern(name="ssn-spaced", regex=r"\b\d{3} \d{2} \d{4}\b", score=0.6),
-            ],
-            context=["ssn", "social security", "social security number"],
-        )
-        analyzer.registry.add_recognizer(ssn)
-    except Exception as exc:
-        logger.warning("Could not register SSN pattern recognizer: %s", exc)
+    ssn = PatternRecognizer(
+        supported_entity="US_SSN",
+        patterns=[
+            Pattern(name="ssn-dashed", regex=r"\b\d{3}-\d{2}-\d{4}\b", score=0.85),
+            Pattern(name="ssn-spaced", regex=r"\b\d{3} \d{2} \d{4}\b", score=0.6),
+        ],
+        context=["ssn", "social security", "social security number"],
+    )
+    analyzer.registry.add_recognizer(ssn)
 
     # Names/orgs/locations come from spaCy NER by default (fast: ~10-20 ms/segment).
     # GLiNER is a higher-accuracy but ~7x slower enhancement (~130 ms/segment CPU) —
@@ -125,8 +128,8 @@ def _build_analyzer(use_gliner: bool) -> Any:
             redaction_defaults.REDACTION_PII_GLINER_MODEL,
             map_location,
         )
-    except Exception as exc:  # optional enhancement
-        logger.warning("GLiNER recognizer unavailable, using spaCy NER for names: %s", exc)
+    except (ImportError, OSError, RuntimeError, ValueError):  # optional enhancement
+        logger.warning("GLiNER recognizer unavailable, using spaCy NER for names", exc_info=True)
 
     return analyzer
 
@@ -165,8 +168,8 @@ def _get_analyzer(use_gliner: bool) -> Any:
             _analyzer = _build_analyzer(use_gliner)
             _analyzer_gliner = use_gliner
             _load_failed = False
-        except Exception as exc:
-            logger.error("Presidio analyzer failed to load — PII detection disabled: %s", exc)
+        except Exception:  # model-load boundary: _load_failed makes callers report PII unavailable
+            logger.exception("Presidio analyzer failed to load - PII detection disabled")
             _load_failed = True
             return _analyzer  # may be None
         return _analyzer

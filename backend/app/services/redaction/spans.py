@@ -8,10 +8,14 @@ every read surface (API, subtitle/export, search snippet, LLM builder) calls.
 from __future__ import annotations
 
 import html
+import logging
 from typing import Any
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 # Category priority — when two spans overlap, the higher-priority label survives.
 _CATEGORY_PRIORITY: dict[str, int] = {
@@ -37,15 +41,33 @@ class RedactionSpan(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
+class MalformedSpanError(ValueError):
+    """A cached span claims a character range but cannot be read.
+
+    Dropping it would send the text it covered out unmasked, so masking fails closed
+    instead: the caller withholds or rejects the text.
+    """
+
+
 def _coerce(span: Any) -> RedactionSpan | None:
-    """Coerce a dict or RedactionSpan into a RedactionSpan (None on bad data)."""
+    """Coerce a dict or RedactionSpan into a RedactionSpan.
+
+    Returns None for an entry that is not a span at all (no character range: a score
+    blob or foreign data).
+
+    Raises:
+        MalformedSpanError: the entry has a character range but fails validation.
+    """
     if isinstance(span, RedactionSpan):
         return span
     if isinstance(span, dict):
+        if "char_start" not in span and "char_end" not in span:
+            return None
         try:
             return RedactionSpan(**span)
-        except Exception:
-            return None
+        except (ValidationError, TypeError) as exc:
+            logger.exception("Unreadable cached redaction span; failing closed")
+            raise MalformedSpanError("unreadable cached redaction span") from exc
     return None
 
 

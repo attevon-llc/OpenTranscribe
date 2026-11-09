@@ -273,7 +273,7 @@ def reassignment_env(db_session, monkeypatch):
         lambda: _FakeCached(),
     )
 
-    def _get_doc(uuid):
+    def _get_doc(uuid, **_kw):
         tracker.observe("opensearch_get")
         return None
 

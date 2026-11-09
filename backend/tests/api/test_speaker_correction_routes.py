@@ -162,7 +162,7 @@ def test_the_speaker_list_never_suggests_an_identity_the_user_unassigned(
     monkeypatch.setattr("app.services.opensearch_service.opensearch_client", object())
     monkeypatch.setattr(
         "app.services.opensearch_service.get_speaker_embeddings_batch",
-        lambda uuids: {u: speaker_os_seams["voiceprints"][u] for u in uuids},
+        lambda uuids, **_kw: {u: speaker_os_seams["voiceprints"][u] for u in uuids},
     )
     monkeypatch.setattr("app.services.opensearch_service.msearch_profile_knn_batch", knn)
     monkeypatch.setattr(

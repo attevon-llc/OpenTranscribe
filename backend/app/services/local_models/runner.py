@@ -27,8 +27,10 @@ import sys
 
 from app.core import local_whisper_catalog
 from app.services.local_models import downloader
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger("local_model_runner")
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 def _emit(payload: dict) -> None:
@@ -66,7 +68,7 @@ def main(argv: list[str]) -> int:
         downloader.download_blocking(entry, token, args.revision)
     except Exception as exc:  # a child must always report, whatever the failure
         status = getattr(getattr(exc, "response", None), "status_code", None)
-        logger.warning("download failed: %s status=%s", type(exc).__name__, status)
+        logger.warning("download failed: status=%s", status, exc_info=True)
         _emit({"ok": False, "code": downloader.classify_error(exc)})
         return 1
     _emit({"ok": True})

@@ -134,7 +134,7 @@ def _match_against_bob(db, user, speaker, bob, seams, monkeypatch) -> None:
     monkeypatch.setattr(svc, "_get_speaker_embedding_for_propagation", lambda sid: (None, None))
     monkeypatch.setattr(
         "app.services.opensearch_service.get_profile_embedding",
-        lambda u: seams["profiles"].get(str(u)),
+        lambda u, **_kw: seams["profiles"].get(str(u)),
     )
     monkeypatch.setattr(
         "app.services.speaker_matching.match_handling.add_speaker_embedding", lambda **kw: True

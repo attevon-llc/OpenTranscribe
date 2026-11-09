@@ -17,6 +17,8 @@ import time
 from typing import TYPE_CHECKING
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.services.chat import planner
 from app.services.chat.settings import ChatSettings
 from app.services.chat.trace import Outcome as TraceOutcome
@@ -124,8 +126,8 @@ def _validate_plan_speakers(
                 organization_id=organization_id,
                 file_uuids=file_uuids,
             )
-    except Exception as exc:  # an enhancement, never a dependency
-        logger.info(f"Chat plan speaker validation could not build a roster: {exc}")
+    except SQLAlchemyError:  # an enhancement, never a dependency
+        logger.warning("Chat plan speaker validation could not build a roster", exc_info=True)
         return []
     if roster.declined:
         return []

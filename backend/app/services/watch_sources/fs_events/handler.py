@@ -70,8 +70,8 @@ class WatchEventHandler:
         """Called by watchdog for every raw event on the watched tree."""
         try:
             self._dispatch(event)
-        except Exception as e:  # an emitter thread must not die
-            logger.debug("Ignoring malformed FS event for source %s: %s", self.source_id, e)
+        except Exception:  # emitter-thread boundary: the thread must not die
+            logger.debug("Ignoring malformed FS event for source %s", self.source_id, exc_info=True)
 
     def _dispatch(self, event: object) -> None:
         paths = [

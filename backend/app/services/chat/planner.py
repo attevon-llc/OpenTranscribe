@@ -328,8 +328,8 @@ def build_plan(
     ]
     try:
         response = llm.chat_completion(messages, max_tokens=max_tokens, temperature=0)
-    except Exception as exc:  # an enhancement, never a dependency
-        logger.info(f"Chat planner call failed, routing by rules: {exc}")
+    except Exception:  # LLM-provider boundary; the planner is an enhancement
+        logger.warning("Chat planner call failed, routing by rules", exc_info=True)
         return FAILED_PLAN, 1
 
     raw = getattr(response, "content", "") or ""

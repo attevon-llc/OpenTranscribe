@@ -101,7 +101,7 @@ def matching_service(db_session, monkeypatch):
     monkeypatch.setattr(match_handling, "add_speaker_embedding", lambda **kw: None)
     monkeypatch.setattr(
         "app.services.opensearch_service.get_profile_embedding",
-        lambda _uuid: [1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),
+        lambda _uuid, **_kw: [1.0] + [0.0] * (EMBEDDING_DIMENSION - 1),
     )
     monkeypatch.setattr(
         "app.services.opensearch_service.store_profile_embedding",

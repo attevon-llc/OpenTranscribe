@@ -84,6 +84,7 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.services.chat import context_expansion
@@ -93,11 +94,14 @@ from app.services.chat.redactor_chunk_plans import _SegmentSpans
 from app.services.chat.redactor_digest_plans import _DigestPlan
 from app.services.chat.redactor_digest_plans import _gather_digest_plans
 from app.services.search.chunk_retrieval import ChunkHit
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 if TYPE_CHECKING:
     from app.services.redaction.config import EffectiveRedactionConfig
 
 logger = logging.getLogger(__name__)
+# Detector and masking errors can quote the transcript text they were handed (issue #1022).
+logger.addFilter(MessageFreeTracebackFilter())
 
 #: A callable returning a session context manager — ``db.session_utils.session_scope``
 #: in production, the test's own session in the suites. Same contract as
@@ -323,7 +327,7 @@ def _mask_inline(text: str, cfg: EffectiveRedactionConfig) -> str:
             text, spans, None, _egress_style(cfg), set()
         )
         return masked
-    except Exception:
+    except Exception:  # per-chunk fail-closed boundary: detectors raise arbitrary library errors
         logger.exception("Inline chunk masking failed; dropping chunk content")
         # Failing closed: an unmaskable chunk must not reach the provider.
         return ""
@@ -362,7 +366,7 @@ def _apply_chunk_plan(plan: _ChunkPlan, chunk: ChunkHit) -> tuple[str, bool, boo
         return _mask_inline(chunk.content, plan.cfg), True, True
     try:
         text = _mask_from_spans(plan.segments, plan.cfg)
-    except Exception:
+    except Exception:  # per-chunk fail-closed boundary: an unmaskable chunk is withheld
         logger.exception("Cached-span masking failed for chunk; withholding content")
         # Fail CLOSED — an unmaskable chunk contributes nothing.
         return "", True, False
@@ -444,7 +448,7 @@ def mask_chunks(
         try:
             with session_factory() as db:
                 chunks = context_expansion.expand_chunks(db, chunks)
-        except Exception:  # an enhancement, never a dependency
+        except SQLAlchemyError:  # an enhancement, never a dependency
             logger.exception("Context expansion failed; masking the un-expanded chunks instead")
 
     try:
@@ -455,7 +459,7 @@ def mask_chunks(
             chunks=chunks,
             unmask_for_local=unmask_for_local,
         )
-    except Exception:
+    except Exception:  # fail-closed boundary: any failure to resolve policy withholds the text
         logger.exception("Could not resolve redaction config; masking all chunk content")
         # Fail CLOSED: if we cannot tell whether masking is required, don't send text.
         return [MaskedChunk(source=c, content="", was_masked=True) for c in chunks]
@@ -541,7 +545,7 @@ def mask_digests(
             digests=digests,
             unmask_for_local=unmask_for_local,
         )
-    except Exception:
+    except Exception:  # fail-closed boundary: any failure to resolve policy withholds the text
         logger.exception("Could not resolve redaction config; withholding all digest content")
         return [MaskedChunk(source=d, content="", was_masked=True) for d in digests]
 
@@ -581,7 +585,7 @@ def mask_digests(
                 continue
             try:
                 text = _mask_from_spans(segments, plan.cfg)
-            except Exception:
+            except Exception:  # per-sentence fail-closed boundary
                 logger.exception("Digest sentence masking failed; dropping that sentence")
                 text = ""
             if text:

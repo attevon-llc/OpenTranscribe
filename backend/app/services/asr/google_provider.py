@@ -14,6 +14,8 @@ import os
 import time
 from collections.abc import Callable
 
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
+
 from .base import ASRProvider
 from .locales import to_locale
 from .types import ASRConfig
@@ -22,6 +24,8 @@ from .types import ASRSegment
 from .types import ASRWord
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 class GoogleASRProvider(ASRProvider):
@@ -68,7 +72,8 @@ class GoogleASRProvider(ASRProvider):
             speech.SpeechClient()
             ms = (time.time() - start) * 1000
             return True, "Google Cloud Speech validated", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "Google Speech", exc_info=True)
             ms = (time.time() - start) * 1000
             # Sanitize — Google ADC errors can expose service-account tokens in some SDK versions.
             sanitized = self._sanitize_error(str(e), self._api_key)

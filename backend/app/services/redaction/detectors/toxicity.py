@@ -28,8 +28,11 @@ from typing import Any
 
 from app.core import redaction_defaults
 from app.services.redaction.detectors import DetectorUnavailableError
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Detector and masking errors can quote the transcript text they were handed (issue #1022).
+logger.addFilter(MessageFreeTracebackFilter())
 
 _pipes: dict[str, object] = {}
 _load_failed: set[str] = set()
@@ -78,8 +81,8 @@ def _get_pipe(model_name: str) -> Any:
                 "Toxicity model loaded: %s (device=cpu, auto-moves to GPU when free)", model_name
             )
             return pipe
-        except Exception as exc:
-            logger.error("Toxicity model %s failed to load: %s", model_name, exc)
+        except Exception:  # model-load boundary: _load_failed makes callers report it unavailable
+            logger.exception("Toxicity model %s failed to load", model_name)
             _load_failed.add(model_name)
             return None
 
@@ -100,8 +103,8 @@ def _place_on_device(pipe: Any, target: str) -> None:
         pipe.model.to(want)
         pipe.device = want
         logger.info("Toxicity model moved to %s", target)
-    except Exception as exc:
-        logger.warning("Could not move toxicity model to %s: %s", target, exc)
+    except (ImportError, RuntimeError):
+        logger.warning("Could not move toxicity model to %s", target, exc_info=True)
 
 
 def _run_pipe(model_name: str, pipe: Any, payload: Any, **kwargs: Any) -> Any:

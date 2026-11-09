@@ -37,6 +37,8 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
+
 from .base import ASRProvider
 from .base import normalize_speaker_label
 from .types import ASRConfig
@@ -50,6 +52,8 @@ if TYPE_CHECKING:
     from openai.types.audio import TranslationVerbose
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 _MAX_MB = 25
 
 
@@ -84,7 +88,8 @@ class OpenAIASRProvider(ASRProvider):
             OpenAI(api_key=self._api_key).models.list()
             ms = (time.time() - start) * 1000
             return True, "OpenAI connection successful", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "OpenAI", exc_info=True)
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 

@@ -169,3 +169,43 @@ def test_reprocess_clear_erases_voiceprints_and_rebuilds_clusters(
 
     assert speaker_os_seams["erased_speakers"] == [victim]
     assert cosine(speaker_os_seams["clusters"][str(cluster.uuid)], VOICE_A) >= MATCH
+
+
+@pytest.mark.parametrize("operation", ["merge", "split", "promote"])
+def test_a_database_failure_in_a_cluster_operation_raises_after_rolling_back(
+    db_session, normal_user, speaker_os_seams, monkeypatch, operation
+):
+    """It used to return None, which the router reported as a client error."""
+    from sqlalchemy.exc import OperationalError
+
+    _fa, _fb, sa, _sb, cluster = make_pair(db_session, normal_user, speaker_os_seams)
+    other = make_cluster(
+        db_session,
+        normal_user,
+        make_speaker(db_session, normal_user, make_file(db_session, normal_user)),
+    )
+    service = _service(db_session)
+    calls = {
+        "merge": lambda: service.merge_clusters(str(cluster.uuid), str(other.uuid), normal_user.id),
+        "split": lambda: service.split_cluster(str(cluster.uuid), [str(sa.uuid)], normal_user.id),
+        "promote": lambda: service.promote_cluster_to_profile(
+            str(cluster.uuid), "N", normal_user.id
+        ),
+    }
+    rolled_back: list[int] = []
+    real_rollback = db_session.rollback
+
+    def counting_rollback() -> None:
+        rolled_back.append(1)
+        real_rollback()
+
+    monkeypatch.setattr(db_session, "rollback", counting_rollback)
+    monkeypatch.setattr(
+        db_session,
+        "commit",
+        lambda: (_ for _ in ()).throw(OperationalError("COMMIT", {}, Exception("db down"))),
+    )
+
+    with pytest.raises(OperationalError):
+        calls[operation]()
+    assert rolled_back

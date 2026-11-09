@@ -308,11 +308,11 @@ class FsEventSupervisor:
             observer = observers.native_observer()
             observer.schedule(handler, plan.path, recursive=plan.recursive)
             observer.start()
-        except Exception as e:  # any native failure means polling
+        except (OSError, RuntimeError, ImportError) as e:  # any native failure means polling
             logger.warning(
-                "Native observer unavailable for source %s (%s) — using the polling observer",
+                "Native observer unavailable for source %s — using the polling observer",
                 plan.source_id,
-                e,
+                exc_info=True,
             )
             reason = f"native observer failed to start ({type(e).__name__})"
             fallback, mode, detail = self._start_polling(plan, handler, reason)
@@ -460,8 +460,8 @@ def stop_supervisor(timeout: float = 10.0) -> None:
     if current is not None:
         try:
             current.stop(timeout)
-        except Exception as e:  # shutdown is best-effort
-            logger.debug("Error stopping the FS-event supervisor: %s", e)
+        except Exception:  # shutdown boundary: best-effort
+            logger.warning("Error stopping the FS-event supervisor", exc_info=True)
 
 
 def get_supervisor() -> FsEventSupervisor | None:

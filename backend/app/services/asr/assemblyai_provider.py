@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
 from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
@@ -25,6 +26,8 @@ from .types import ASRWord
 from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 class AssemblyAIProvider(ASRProvider):
@@ -79,7 +82,8 @@ class AssemblyAIProvider(ASRProvider):
                     ms,
                 )
             return True, "AssemblyAI connection successful", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "AssemblyAI", exc_info=True)
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 

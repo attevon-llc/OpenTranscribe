@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 from typing import Any
 
 import numpy as np
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
@@ -208,6 +210,6 @@ def match_speaker_to_profiles(
 
     except OpenSearchUnavailableError:
         raise
-    except Exception as e:
-        logger.error(f"Error matching speaker to profiles: {e}")
+    except (OpenSearchException, SQLAlchemyError, KeyError, ValueError, TypeError):
+        logger.exception("Error matching speaker to profiles")
         return None

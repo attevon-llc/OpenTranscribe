@@ -35,8 +35,11 @@ from app.models.user import User
 from app.schemas.takedown_notice import NotifyResponse
 from app.services.email_service import email_service
 from app.services.takedown_notice_queries import file_titles
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# A mail-transport error names the recipient address: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 _IN_FORCE = (
     TakedownLinkStatus.OPEN.value,

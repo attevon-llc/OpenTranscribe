@@ -21,8 +21,11 @@ from app.services.opensearch_erasure import _erase_cluster_docs
 from app.services.opensearch_erasure import _erase_profile_docs
 from app.services.opensearch_erasure import _erase_speaker_docs
 from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Subject paths can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 @dataclass(frozen=True)
@@ -181,8 +184,8 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
     for file_plan in plan.files:
         try:
             residual.extend(_purge_external_copies(file_plan))
-        except Exception as e:  # one file must never block the rest
-            logger.exception("Account purge: external copies of a file were not removed")
+        except Exception as e:  # per-file isolation boundary: recorded as residual, never blocks
+            logger.exception("account purge: external copies of one file could not be erased")
             residual.append(
                 {
                     "stage": "storage",
@@ -218,8 +221,8 @@ def purge_account_external_copies(plan: AccountPurgePlan) -> list[dict[str, Any]
                         "error": UNVERIFIED_VERSIONS_ERROR,
                     }
                 )
-        except Exception as e:  # one avatar must never block the rest
-            logger.exception("Account purge: avatar object was not removed")
+        except Exception as e:  # per-avatar isolation boundary: recorded as residual
+            logger.exception("account purge: one avatar could not be erased")
             residual.append({"stage": "avatar", "avatar_path": avatar_path, "error": str(e)})
 
     return residual

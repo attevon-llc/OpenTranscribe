@@ -361,8 +361,8 @@ class BatchReducer:
         ]
         try:
             response = self.llm.chat_completion(messages, max_tokens=400, temperature=0.1)
-        except Exception as exc:  # one failed batch must not lose the rest
-            logger.info(f"Overview batch condense failed, using the composed form: {exc}")
+        except Exception:  # LLM-provider boundary: one failed batch must not lose the rest
+            logger.warning("Overview batch condense failed, using the composed form", exc_info=True)
             return None
         text = str(getattr(response, "content", "") or "").strip()
         return text or None

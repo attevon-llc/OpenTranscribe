@@ -10,6 +10,8 @@ import os
 import time
 from collections.abc import Callable
 
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
+
 from .base import ASRProvider
 from .errors import ASRRateLimitedError
 from .errors import http_status_of
@@ -22,6 +24,8 @@ from .types import ASRWord
 from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
+# Provider SDK errors can quote credentials in their message: log frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 _MAX_SEGMENT_DURATION = 30.0  # seconds — cap for no-diarization grouping
 _MIN_PAUSE_SPLIT = 0.5  # seconds — pause gap that forces a new segment
@@ -106,7 +110,8 @@ class DeepgramProvider(ASRProvider):
             client.manage.v1.projects.list()
             ms = (time.time() - start) * 1000
             return True, "Deepgram connection successful", ms
-        except Exception as e:
+        except Exception as e:  # provider-SDK boundary: the probe reports, never raises
+            logger.warning("%s connection test failed", "Deepgram", exc_info=True)
             ms = (time.time() - start) * 1000
             return False, self._sanitize_error(str(e), self._api_key), ms
 

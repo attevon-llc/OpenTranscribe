@@ -313,8 +313,10 @@ def _run_enrichment(
     ]
     try:
         response = llm.chat_completion(messages, max_tokens=500, temperature=0)
-    except Exception as exc:  # an enhancement, never a dependency
-        logger.info(f"Chat enrichment call failed, continuing without a synthesis block: {exc}")
+    except Exception:  # LLM-provider boundary (providers raise bare Exception); enhancement only
+        logger.warning(
+            "Chat enrichment call failed, continuing without a synthesis block", exc_info=True
+        )
         return "", 1
 
     text = (getattr(response, "content", "") or "").strip()[:3000]

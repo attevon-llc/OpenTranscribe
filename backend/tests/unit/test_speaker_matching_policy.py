@@ -205,7 +205,7 @@ def profile_world(db_session, normal_user, monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.opensearch_service.get_speaker_embeddings_batch",
-        lambda uuids: {u: [1.0, 0.0] for u in uuids},
+        lambda uuids, **_kw: {u: [1.0, 0.0] for u in uuids},
     )
     monkeypatch.setattr(
         "app.services.profile_embedding_service._process_profile_with_embeddings",

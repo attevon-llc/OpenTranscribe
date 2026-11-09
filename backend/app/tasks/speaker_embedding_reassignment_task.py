@@ -19,12 +19,15 @@ from app.db.session_utils import session_scope
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.privacy.gates import voiceprints_allowed
 
 if TYPE_CHECKING:
     import numpy as np
 
 logger = logging.getLogger(__name__)
+
+_INDEX_RETRY_COUNTDOWN_S = 30
 
 
 @celery_app.task(
@@ -80,7 +83,7 @@ def update_speaker_embedding_on_reassignment(
 
         # Phase 3 — OpenSearch only; needs no DB session at all.
         target = plan["target_speaker"]
-        existing_doc = get_speaker_document(target_speaker_uuid)
+        existing_doc = get_speaker_document(target_speaker_uuid, strict=True)
 
         if existing_doc is None:
             # New speaker with no existing embedding — store directly
@@ -127,7 +130,7 @@ def update_speaker_embedding_on_reassignment(
         # voiceprint by the exact inverse of the weighted add above, so the source's
         # clusters and profile stop averaging audio the user moved to someone else.
         if source_speaker_uuid and plan["source_speaker_exists"]:
-            source_doc = get_speaker_document(source_speaker_uuid)
+            source_doc = get_speaker_document(source_speaker_uuid, strict=True)
             if source_doc and source_doc["segment_count"] > 1:
                 _remove_segment_from_voiceprint(
                     source_speaker_uuid,
@@ -154,10 +157,21 @@ def update_speaker_embedding_on_reassignment(
         )
         return {"status": "success", "target_speaker_uuid": target_speaker_uuid}
 
-    except Exception as e:
-        logger.error(f"Error updating speaker embedding on reassignment: {type(e).__name__}: {e}")
-        logger.error("Full traceback:", exc_info=True)
-        return {"status": "error", "message": str(e)}
+    except OpenSearchUnavailableError as e:
+        # Nothing was written for the failed lookup; reading the outage as "no document"
+        # would store this one segment as the speaker's whole voiceprint.
+        if self.request.retries < self.max_retries:
+            countdown = _INDEX_RETRY_COUNTDOWN_S * 2**self.request.retries
+            logger.warning(
+                "Voiceprint index unavailable for segment %s; retry in %ss", segment_uuid, countdown
+            )
+            raise self.retry(exc=e, countdown=countdown) from e
+        logger.exception("Voiceprint index still unavailable for segment %s", segment_uuid)
+        raise
+    except Exception:
+        # Task boundary: record the traceback and re-raise so Celery marks the task failed.
+        logger.exception("Error updating speaker embedding on reassignment")
+        raise
 
 
 def _remove_segment_from_voiceprint(

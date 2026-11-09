@@ -23,6 +23,7 @@ from app.services.erasure_receipt.receipt import persist_receipt
 from app.services.erasure_receipt.receipt import summary_receipt
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
     from app.models.erasure import ErasureLedgerEntry
 
 logger = logging.getLogger(__name__)
+# Subject identifiers can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 #: The same reason as ``privacy.purge.SECOND_PASS_DELAY_SECONDS``: a debounced reindex or a late
 #: write can land after the first measurement.
@@ -58,8 +61,8 @@ def _schedule_reverify(entry: ErasureLedgerEntry, scope: ErasureScope, captured:
             kwargs={"ledger_uuid": str(entry.uuid), **reverify_payload(scope, captured)},
             countdown=REVERIFY_DELAY_SECONDS,
         )
-    except Exception as e:  # the immediate receipt stands; the sweep still runs
-        logger.error("Could not schedule the erasure receipt re-check: %s", type(e).__name__)
+    except Exception:  # broker boundary: the immediate receipt stands; the sweep still runs
+        logger.exception("Could not schedule the erasure receipt re-check")
 
 
 def finish(

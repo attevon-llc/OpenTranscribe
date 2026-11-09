@@ -30,7 +30,7 @@ CLUSTERS = "/api/speaker-clusters"
 def knn_off(monkeypatch):
     """The list endpoint asks OpenSearch for suggestions; there is no cluster here."""
     monkeypatch.setattr(
-        "app.services.opensearch_service.get_speaker_embeddings_batch", lambda uuids: {}
+        "app.services.opensearch_service.get_speaker_embeddings_batch", lambda uuids, **_kw: {}
     )
 
 

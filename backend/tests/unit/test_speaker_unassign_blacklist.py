@@ -555,7 +555,7 @@ def test_a_re_matched_speaker_is_not_linked_to_a_profile_it_was_unassigned_from(
     monkeypatch.setattr(svc, "_get_speaker_embedding_for_propagation", lambda sid: (None, None))
     monkeypatch.setattr(
         "app.services.opensearch_service.get_profile_embedding",
-        lambda u: speaker_os_seams["profiles"].get(str(u)),
+        lambda u, **_kw: speaker_os_seams["profiles"].get(str(u)),
     )
     # Imported by name at module scope there.
     monkeypatch.setattr(

@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from app.core.exceptions import ServiceUnavailableError
+
 if TYPE_CHECKING:
     from app.models.media import MediaFile
     from app.models.user import User
@@ -31,6 +33,10 @@ def audit_unredacted_reveal(
         surface: Which read surface (``transcript`` | ``subtitle_export`` | ``transcript_export``
             | ``transcript_document_export``). Admin-forced categories never appear here; they
             cannot be revealed on any surface.
+
+    Raises:
+        ServiceUnavailableError: The audit write failed. A reveal without its compliance
+            record is refused (fail closed), so callers must call this BEFORE returning text.
     """
     if not reveal:
         return
@@ -61,6 +67,8 @@ def audit_unredacted_reveal(
                 "surface": surface,
             },
         )
-    except Exception as e:
-        # Audit failure must never turn a permitted read into an error; it is logged loudly.
-        logger.warning("Audit log for an unredacted reveal failed: %s", type(e).__name__)
+    except Exception as exc:  # audit-sink boundary: no audit record means no reveal
+        logger.exception("Audit log for an unredacted reveal failed; reveal refused")
+        raise ServiceUnavailableError(
+            "Revealing redacted content is unavailable because the audit record could not be written."
+        ) from exc

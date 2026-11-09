@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 from opensearchpy.exceptions import OpenSearchException
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.tenancy import UNSCOPED
@@ -114,9 +115,12 @@ def create_speaker_match_record(
         self.db.add(speaker_match)
         self.db.flush()
         return True
-    except Exception as e:
+    except SQLAlchemyError:
         logger.warning(
-            f"Failed to create speaker match between {speaker1_id} and {speaker2_id}: {e}"
+            "Failed to create speaker match between %s and %s",
+            speaker1_id,
+            speaker2_id,
+            exc_info=True,
         )
         self.db.rollback()
         return False

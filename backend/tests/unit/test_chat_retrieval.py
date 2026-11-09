@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.services.chat.settings import ChatSettings
 from app.services.search.chunk_retrieval import ChunkHit
@@ -804,7 +805,7 @@ def test_corpus_bump_failure_never_breaks_indexing():
     from app.services.chat import retrieval_cache
 
     with patch(
-        "app.core.redis.get_request_redis", side_effect=RuntimeError("redis down")
+        "app.core.redis.get_request_redis", side_effect=RedisConnectionError("redis down")
     ) as get_redis:
         with does_not_raise("a Redis outage must not fail transcription indexing"):
             retrieval_cache.bump_corpus_version()
@@ -815,7 +816,7 @@ def test_corpus_bump_failure_never_breaks_indexing():
 def test_corpus_version_degrades_to_zero_without_redis():
     from app.services.chat import retrieval_cache
 
-    with patch("app.core.redis.get_request_redis", side_effect=RuntimeError("no redis")):
+    with patch("app.core.redis.get_request_redis", side_effect=RedisConnectionError("no redis")):
         assert retrieval_cache.corpus_version() == "0"
 
 

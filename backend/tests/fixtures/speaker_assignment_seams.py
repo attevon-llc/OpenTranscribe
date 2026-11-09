@@ -110,7 +110,7 @@ def speaker_assignment_seams(
         staticmethod(similarity_search),
     )
 
-    def get_speaker_document(speaker_uuid):
+    def get_speaker_document(speaker_uuid, **_kw):
         voice = rec["voiceprints"].get(str(speaker_uuid))
         if voice is None:
             return None

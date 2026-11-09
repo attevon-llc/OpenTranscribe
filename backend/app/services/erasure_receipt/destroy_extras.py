@@ -17,8 +17,11 @@ from typing import Any
 from app.services.erasure_receipt.types import Captured
 from app.services.erasure_receipt.types import ErasureScope
 from app.services.erasure_receipt.types import object_prefixes
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Subject identifiers can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 def _fail(errors: list[dict[str, Any]], stage: str, exc: Exception) -> None:
@@ -32,7 +35,8 @@ def erase_lockout(captured: Captured, errors: list[dict[str, Any]]) -> None:
         from app.auth.lockout_admin import erase_identifier
 
         erase_identifier(captured.email)
-    except Exception as e:  # recorded, never raised
+    except Exception as e:  # per-store isolation boundary: recorded, never raised
+        logger.exception("Erasure cleanup stage lockout failed")
         _fail(errors, "lockout", e)
 
 
@@ -57,6 +61,7 @@ def erase_object_prefixes(
         try:
             remove_completely(minio_client, settings.MEDIA_BUCKET_NAME, prefix=prefix)
         except Exception as e:
+            logger.exception("Erasure cleanup stage object_prefix failed")
             _fail(errors, "object_prefix", e)
 
 
@@ -82,6 +87,7 @@ def erase_derived_cache(captured: Captured, errors: list[dict[str, Any]]) -> Non
                 prefix=f"{VideoProcessingService.DERIVED_CACHE_PREFIX}{file_id}_",
             )
         except Exception as e:
+            logger.exception("Erasure cleanup stage derived_cache failed")
             _fail(errors, "derived_cache", e)
 
 
@@ -99,6 +105,7 @@ def erase_temp_objects(captured: Captured, errors: list[dict[str, Any]]) -> None
                 prefix=f"{TEMP_PREPROCESS_PREFIX}/{file_uuid}/",
             )
         except Exception as e:
+            logger.exception("Erasure cleanup stage temp_objects failed")
             _fail(errors, "temp_objects", e)
 
 
@@ -116,6 +123,7 @@ def abort_multipart(scope: ErasureScope, captured: Captured, errors: list[dict[s
                 if not abort_upload(str(upload.object_name), str(upload.upload_id)):
                     raise RuntimeError("abort refused")
         except Exception as e:
+            logger.exception("Erasure cleanup stage multipart failed")
             _fail(errors, "multipart", e)
 
 
@@ -125,6 +133,7 @@ def erase_mirror(scope: ErasureScope, captured: Captured, errors: list[dict[str,
 
         erase_mirrored(object_prefixes(scope, captured))
     except Exception as e:
+        logger.exception("Erasure cleanup stage mirror failed")
         _fail(errors, "mirror", e)
 
 

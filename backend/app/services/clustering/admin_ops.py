@@ -4,6 +4,8 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.models.speaker import Speaker
@@ -132,7 +134,7 @@ def merge_clusters(
         organization_id: Tenant both clusters must belong to.
 
     Returns:
-        The target cluster after merge, or None on error.
+        The target cluster after merge, or None when not found or not permitted.
 
     Raises:
         SpeakerCleanupIncompleteError: The merge committed, but a centroid could be
@@ -182,12 +184,12 @@ def merge_clusters(
         self.db.commit()
         self._rename_tracker.flush(self.db)
 
-    except Exception as e:
-        logger.error("Error merging clusters: %s", e)
+    except SQLAlchemyError:
+        logger.exception("Error merging clusters")
         self.db.rollback()
         self._rename_tracker.discard()
         self._assigned = SpeakerImpact()
-        return None
+        raise
 
     # The source is empty now (unless it kept blocked members): the shared cleanup
     # deletes it with its centroid and rebuilds the target's from the merged membership.
@@ -224,7 +226,7 @@ def split_cluster(
         organization_id: Tenant the source cluster must belong to.
 
     Returns:
-        The newly created cluster, or None on error.
+        The newly created cluster, or None when not found or not permitted.
 
     Raises:
         SpeakerCleanupIncompleteError: The split committed, but a centroid could be
@@ -299,11 +301,11 @@ def split_cluster(
         self.db.commit()
         self._rename_tracker.flush(self.db)
 
-    except Exception as e:
-        logger.error("Error splitting cluster: %s", e)
+    except SQLAlchemyError:
+        logger.exception("Error splitting cluster")
         self.db.rollback()
         self._rename_tracker.discard()
-        return None
+        raise
 
     # Both centroids change: the source loses the moved voices (and is deleted with
     # its centroid if nobody is left), the new cluster is built from them; a promoted

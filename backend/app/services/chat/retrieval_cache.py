@@ -30,6 +30,9 @@ import hashlib
 import json
 import logging
 
+from opensearchpy.exceptions import OpenSearchException
+from redis.exceptions import RedisError
+
 from app.services.search.chunk_retrieval import ChunkHit
 
 logger = logging.getLogger(__name__)
@@ -67,8 +70,8 @@ def corpus_version() -> str:
 
         raw = get_request_redis().get(_CORPUS_VERSION_KEY)
         return raw.decode() if isinstance(raw, bytes) else str(raw or "0")
-    except Exception as exc:
-        logger.debug(f"Chat corpus version read failed: {exc}")
+    except RedisError:
+        logger.warning("Chat corpus version read failed; using the default version", exc_info=True)
         return "0"
 
 
@@ -95,8 +98,11 @@ def bump_corpus_version() -> None:
         from app.core.redis import get_request_redis
 
         get_request_redis().incr(_CORPUS_VERSION_KEY)
-    except Exception as exc:
-        logger.debug(f"Chat corpus version bump failed: {exc}")
+    except RedisError:
+        logger.warning(
+            "Chat corpus version bump failed; cached retrievals may be stale for up to the TTL",
+            exc_info=True,
+        )
 
 
 def scope_hash(file_uuids: list[str] | None, speakers: list[str] | None = None) -> str:
@@ -155,8 +161,8 @@ def get_cached(key: str) -> list[ChunkHit] | None:
         from app.core.redis import get_request_redis
 
         raw = get_request_redis().get(key)
-    except Exception as exc:
-        logger.debug(f"Chat retrieval cache read failed: {exc}")
+    except RedisError:
+        logger.debug("Chat retrieval cache read failed", exc_info=True)
         return None
 
     if not raw:
@@ -164,8 +170,8 @@ def get_cached(key: str) -> list[ChunkHit] | None:
     try:
         payload = json.loads(raw)
         return [ChunkHit.from_cache_dict(item) for item in payload]
-    except Exception as exc:  # a corrupt entry is just a miss
-        logger.debug(f"Discarding unreadable chat retrieval cache entry: {exc}")
+    except (ValueError, KeyError, TypeError):  # a corrupt entry is just a miss
+        logger.debug("Discarding unreadable chat retrieval cache entry", exc_info=True)
         return None
 
 
@@ -178,8 +184,8 @@ def set_cached(key: str, hits: list[ChunkHit], ttl_seconds: int) -> None:
 
         payload = json.dumps([hit.to_cache_dict() for hit in hits])
         get_request_redis().setex(key, ttl_seconds, payload)
-    except Exception as exc:
-        logger.debug(f"Chat retrieval cache write failed: {exc}")
+    except (RedisError, TypeError, ValueError):
+        logger.debug("Chat retrieval cache write failed", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -239,8 +245,8 @@ def _embed_query(text: str) -> list[float] | None:
             data = item.get("data")
             if isinstance(data, list) and data:
                 return [float(x) for x in data]
-    except Exception as exc:  # an enhancement, never a dependency
-        logger.debug(f"Chat semantic cache embedding failed: {exc}")
+    except (OpenSearchException, TypeError, ValueError):  # an enhancement, never a dependency
+        logger.debug("Chat semantic cache embedding failed", exc_info=True)
     return None
 
 
@@ -293,8 +299,8 @@ def find_semantic_match(
         )
         raw = get_request_redis().get(redis_key)
         entries = json.loads(raw) if raw else []
-    except Exception as exc:
-        logger.debug(f"Chat semantic cache read failed: {exc}")
+    except (RedisError, ValueError):
+        logger.debug("Chat semantic cache read failed", exc_info=True)
         return None
 
     best_key: str | None = None
@@ -395,5 +401,5 @@ def remember_semantic(
         get_request_redis().eval(
             _REMEMBER_SCRIPT, 1, redis_key, ttl_seconds, entry, _SEMANTIC_HISTORY
         )
-    except Exception as exc:
-        logger.debug(f"Chat semantic cache write failed: {exc}")
+    except RedisError:
+        logger.debug("Chat semantic cache write failed", exc_info=True)

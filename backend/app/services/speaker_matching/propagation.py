@@ -3,6 +3,9 @@
 import logging
 from typing import TYPE_CHECKING
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.constants import SPEAKER_CONFIDENCE_HIGH
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
@@ -215,6 +218,6 @@ def propagate_profile_assignment(
         reconcile_speaker_impact(self.db, impact)
         logger.info(f"Propagated profile {profile_id} to {len(updated_speakers)} similar speakers")
 
-    except Exception as e:
-        logger.error(f"Error propagating profile assignment: {e}")
+    except (SQLAlchemyError, OpenSearchException):
+        logger.exception("Error propagating profile assignment")
         self.db.rollback()

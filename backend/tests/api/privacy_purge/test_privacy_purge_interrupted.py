@@ -56,7 +56,7 @@ def status_record(monkeypatch) -> dict[str, str]:
         lambda: SimpleNamespace(
             set=lambda key, value, ex=None: store.__setitem__(key, value),
             get=store.get,
-            zrem=lambda *_args: 0,
+            zrem=lambda *_a, **_k: 0,  # the after-commit infra-requeue reset
         ),
     )
     return store

@@ -12,12 +12,14 @@ from typing import NamedTuple
 from uuid import uuid4
 
 import numpy as np
+from opensearchpy.exceptions import OpenSearchException
 
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCannotLink
 from app.models.speaker import SpeakerCluster
 from app.services.clustering.centroids import cluster_geometry_scores
 from app.services.clustering.thresholds import GENDER_OUTLIER_EVICT_THRESHOLD
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 if TYPE_CHECKING:
     from app.services.speaker_clustering_service import SpeakerClusteringService
@@ -267,12 +269,8 @@ def _store_centroid(
             refresh=False,
             organization_id=cluster_org,
         )
-    except Exception as e:
-        logger.warning(
-            "Could not store centroid for cluster %s: %s",
-            cluster.uuid,
-            e,
-        )
+    except (OpenSearchException, OpenSearchUnavailableError):
+        logger.warning("Could not store centroid for cluster %s", cluster.uuid, exc_info=True)
         return False
     return True
 

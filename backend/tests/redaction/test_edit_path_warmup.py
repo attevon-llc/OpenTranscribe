@@ -28,6 +28,9 @@ from app.services.redaction.service import RedactionService
 
 
 class _FakePipe:
+    # A transformers Pipeline always carries `.model`; device placement relies on it.
+    model = SimpleNamespace(to=lambda _device: None)
+
     def __call__(self, _text, **_kw):
         return [[{"label": "toxic", "score": 0.01}]]
 

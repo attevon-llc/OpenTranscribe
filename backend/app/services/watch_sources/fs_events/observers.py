@@ -19,8 +19,8 @@ def watchdog_available() -> bool:
     """True when the watchdog package can be imported in this image."""
     try:
         import watchdog.observers  # noqa: F401 - import-availability probe
-    except Exception as e:  # missing/broken dep must not raise
-        logger.debug("watchdog is not available: %s", e)
+    except (ImportError, OSError):  # missing/broken dep must not raise
+        logger.debug("watchdog is not available", exc_info=True)
         return False
     return True
 
@@ -45,9 +45,9 @@ def stop_observer(observer: Any, timeout: float = 5.0) -> None:
         return
     try:
         observer.stop()
-    except Exception as e:  # shutdown is best-effort
-        logger.debug("Error stopping FS observer: %s", e)
+    except (RuntimeError, OSError):  # shutdown is best-effort
+        logger.debug("Error stopping FS observer", exc_info=True)
     try:
         observer.join(timeout)
-    except Exception as e:  # shutdown is best-effort
-        logger.debug("Error joining FS observer: %s", e)
+    except (RuntimeError, OSError):  # shutdown is best-effort
+        logger.debug("Error joining FS observer", exc_info=True)

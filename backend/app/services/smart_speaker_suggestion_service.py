@@ -28,6 +28,7 @@ from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +306,15 @@ class SmartSpeakerSuggestionService:
                 )
 
         # Phase 2: Batch-fetch all speaker embeddings (1 mget)
-        embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys())) if uuid_to_id else {}
+        # Advisory: an index outage degrades to LLM-only suggestions, but loudly.
+        embeddings_map: dict[str, list[float]] = {}
+        if uuid_to_id:
+            try:
+                embeddings_map = get_speaker_embeddings_batch(list(uuid_to_id.keys()), strict=True)
+            except OpenSearchUnavailableError:
+                logger.exception(
+                    "Speaker embedding lookup failed; suggestions fall back to LLM-only"
+                )
 
         # Phase 3: Check if profiles exist at all (1 search, same for all speakers)
         profiles_exist = False

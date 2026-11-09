@@ -14,8 +14,22 @@ from datetime import datetime
 
 from app.services.watch_sources.base import BaseWatchSourceClient
 from app.services.watch_sources.base import RemoteFileInfo
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Endpoints and UNC paths can sit in exception text: frames only.
+logger.addFilter(MessageFreeTracebackFilter())
+
+
+def _smb_errors(*extra: type[Exception]) -> tuple[type[Exception], ...]:
+    """What an SMB call raises. ``smbprotocol`` is absent from the lite image, so it is
+    imported when an error is being classified, not at module import."""
+    try:
+        from smbprotocol.exceptions import SMBException
+    except ImportError:
+        return (OSError, *extra)
+    return (SMBException, OSError, *extra)
+
 
 _CHUNK = 64 * 1024
 
@@ -74,14 +88,14 @@ class SMBWatchClient(BaseWatchSourceClient):
             # Listing the root path validates auth + path existence.
             smbclient.listdir(self._base_unc)
             return True, f"OK — \\\\{self._server}\\{self._share} reachable"
-        except Exception as e:
+        except _smb_errors(ValueError, ImportError) as e:
             # Returned directly as the response body of
             # POST /watch-sources/{uuid}/test -- the OUTER handler in
             # api/endpoints/watch_sources.py only sanitizes an exception that
             # escapes this method, not this already-caught one (#859's
             # residual half, #914). smbprotocol can quote the server/share/UNC
             # path; only the class of failure is returned.
-            logger.warning("SMB watch source connection test failed: %s", e)
+            logger.warning("SMB watch source connection test failed", exc_info=True)
             return False, f"SMB connection failed ({type(e).__name__})"
 
     def list_files(
@@ -104,8 +118,8 @@ class SMBWatchClient(BaseWatchSourceClient):
                 full = dirpath.rstrip("\\") + "\\" + fname
                 try:
                     st = smbclient.stat(full)
-                except Exception as e:
-                    logger.debug("smb stat failed for %s: %s", full, e)
+                except _smb_errors():
+                    logger.debug("smb stat failed for %s", full, exc_info=True)
                     continue
                 modified = datetime.fromtimestamp(st.st_mtime, tz=UTC)
                 if min_modified and modified < min_modified:
@@ -137,12 +151,12 @@ class SMBWatchClient(BaseWatchSourceClient):
         # exists for servers where stat() is unavailable (issue #293).
         try:
             expected = int(smbclient.stat(remote_path).st_size)
-        except Exception as e:
+        except _smb_errors():
             logger.warning(
-                "smb size verification skipped for %s (stat failed: %s) — "
+                "smb size verification skipped for %s (stat failed) — "
                 "a truncated download cannot be detected for this file",
                 remote_path,
-                e,
+                exc_info=True,
             )
         else:
             if written != expected:
@@ -168,7 +182,7 @@ class SMBWatchClient(BaseWatchSourceClient):
             import smbclient
 
             smbclient.delete_session(self._server, port=self._port)
-        except Exception as e:
-            logger.debug("smb delete_session failed: %s", e)
+        except _smb_errors():
+            logger.debug("smb delete_session failed", exc_info=True)
         finally:
             self._registered = False

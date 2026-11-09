@@ -288,9 +288,15 @@ def iter_speaker_embeddings(
     Yields:
         Lists of dicts with keys: speaker_uuid, embedding, speaker_id,
         profile_id, display_name.
+
+    Raises:
+        OpenSearchUnavailableError: OpenSearch is enabled but has no client, so an empty
+            iterator would hand clustering a partial (empty) set that reads as complete.
     """
     os_client = _client.opensearch_client
     if not os_client:
+        if settings.OPENSEARCH_ENABLED:
+            raise OpenSearchUnavailableError("OpenSearch client unavailable")
         return
 
     active_index = get_active_speaker_index()

@@ -191,7 +191,7 @@ def get_all_configs(
                 "created_at": config.created_at,
                 "updated_at": config.updated_at,
             }
-            result[category].append(AuthConfigResponse(**config_dict))  # type: ignore[arg-type]
+            result[category].append(AuthConfigResponse(**config_dict))
 
     return result
 
@@ -416,7 +416,7 @@ def get_audit_log(
             change_type=audit.change_type,
             changed_by_email=actor_emails.get(audit.changed_by),  # type: ignore[arg-type]
             ip_address=audit.ip_address,
-            created_at=audit.created_at,  # type: ignore[arg-type]
+            created_at=audit.created_at,
         )
         for audit in audits
     ]

@@ -293,7 +293,7 @@ def get_prompts_by_content_type(
         system_prompts=cast(list[schemas.SummaryPrompt], system_prompts),
         user_prompts=cast(list[schemas.SummaryPrompt], user_prompts),
         shared_prompts=cast(list[schemas.SummaryPrompt], shared_prompts),
-        active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
+        active_prompt_id=active_prompt_uuid,
     )
 
 

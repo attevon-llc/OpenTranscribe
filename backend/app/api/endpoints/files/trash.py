@@ -50,8 +50,8 @@ def _row(file: MediaFile, users: dict[int, User], held: bool, ctx: RequestContex
         title=file.title,
         owner_uuid=str(owner.uuid) if owner else None,
         owner_name=(owner.full_name or owner.email) if owner else None,
-        deleted_at=file.deleted_at,  # type: ignore[arg-type]  # trash rows always carry it
-        purge_after=file.purge_after,  # type: ignore[arg-type]
+        deleted_at=file.deleted_at,
+        purge_after=file.purge_after,
         trash_origin=str(file.trash_origin),
         deleted_by_uuid=str(deleter.uuid) if deleter else None,
         deleted_by_name=(deleter.full_name or deleter.email) if deleter else None,

@@ -138,7 +138,7 @@ def set_file_voiceprint_consent(
 
     return FileVoiceprintConsent(
         state=body.state,
-        previous_state=change.previous,  # type: ignore[arg-type]
+        previous_state=change.previous,
         changed=change.changed,
         purge_task_id=purge_task_id,
         reprocess_to_create_voiceprints=(body.state == "granted" and change.previous == "declined"),

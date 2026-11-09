@@ -193,7 +193,7 @@ def list_messages(
         message["citations"] = citations
 
     return MessageList(
-        messages=serialized,  # type: ignore[arg-type]
+        messages=serialized,
         total=total,
         limit=limit,
         offset=offset,

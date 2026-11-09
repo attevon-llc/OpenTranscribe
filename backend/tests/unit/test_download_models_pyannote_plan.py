@@ -18,6 +18,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -51,10 +52,7 @@ IN_PROCESS_LOAD_SITES = {
 @pytest.fixture
 def downloader():
     """``download-models.py`` loaded as a module (torch.load restored if torch is present)."""
-    try:
-        import torch
-    except ImportError:
-        torch = None
+    torch: Any = importlib.import_module("torch") if importlib.util.find_spec("torch") else None
     saved = (torch.load, torch.mps.empty_cache) if torch is not None else None
     spec = importlib.util.spec_from_file_location("download_models_plan", DOWNLOADER_PY)
     assert spec is not None and spec.loader is not None

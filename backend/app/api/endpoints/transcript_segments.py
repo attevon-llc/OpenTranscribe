@@ -378,7 +378,7 @@ def update_segment_speaker(
         end_time=float(segment.end_time),
         text=str(segment.text),
         speaker_id=segment.speaker.uuid if segment.speaker else None,
-        speaker=segment.speaker,  # type: ignore[arg-type]  # ORM Speaker coerced via from_attributes
+        speaker=segment.speaker,
         formatted_timestamp=format_timestamp(float(segment.start_time)),
         display_timestamp=format_timestamp(float(segment.start_time)),
         speaker_label=(segment.speaker.name if segment.speaker else None),  # Original speaker ID

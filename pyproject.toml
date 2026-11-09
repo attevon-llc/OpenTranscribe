@@ -69,6 +69,9 @@ line-ending = "auto"
 
 [tool.mypy]
 python_version = "3.12"
+# Pydantic model __init__ signatures and field types (docs: pydantic mypy integration). Needs
+# pydantic importable where mypy runs; the pre-commit mypy hook lists it in additional_dependencies.
+plugins = ["pydantic.mypy"]
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

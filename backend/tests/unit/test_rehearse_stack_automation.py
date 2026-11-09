@@ -82,10 +82,14 @@ def test_the_restart_is_guarded_and_runs_even_on_failure_or_interrupt():
     """
     source = REHEARSE.read_text(encoding="utf-8")
 
-    assert "trap restore_live_stack EXIT INT TERM" in source, (
-        "restore must run from an EXIT/INT/TERM trap — on the happy path only, a failed "
-        "scenario or a Ctrl-C leaves the operator's stack down with no hint why"
+    assert "trap restore_live_stack EXIT\n" in source, (
+        "restore must run from the EXIT trap — on the happy path only, a failed "
+        "scenario leaves the operator's stack down with no hint why"
     )
+    # INT/TERM must END the run (a returning handler resumes the rehearsal against the
+    # torn-down stack) and, by exiting, hand control to the EXIT trap that restores.
+    assert "trap 'exit 130' INT\n" in source, "Ctrl-C must exit, so the EXIT trap restores"
+    assert "trap 'exit 143' TERM\n" in source, "SIGTERM must exit, so the EXIT trap restores"
     assert "STACK_STOPPED_BY_US=false" in source
     assert '[[ "$STACK_STOPPED_BY_US" == "true" ]] || return 0' in source, (
         "restore must be guarded: starting a stack the operator had deliberately stopped "

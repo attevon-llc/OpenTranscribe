@@ -60,6 +60,7 @@ ALLOWED: dict[str, str] = {
     "tasks/playback_rendition.py::_quarantined": _REVOCATION,
     "services/media_revocation_cache.py::any_quarantined": _REVOCATION,
     "api/endpoints/admin_quarantine.py::list_quarantined_files": _REVIEW,
+    "services/admin_file_queries.py::list_quarantined_files": _REVIEW,
     "api/endpoints/admin_quarantine.py::release_media_file": _REVIEW,
     "api/endpoints/org_admin_takedown.py::list_org_quarantined_files": _REVIEW,
     "api/endpoints/org_admin_takedown.py::release_org_file": _REVIEW,

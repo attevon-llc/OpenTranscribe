@@ -35,6 +35,7 @@ ALLOWED: dict[str, str] = {
     "services/takedown_authority.py::current_origin": _PLATFORM_TAKEDOWN,
     "services/takedown_authority.py::origin_after_release": _PLATFORM_TAKEDOWN,
     "api/endpoints/admin_quarantine.py::list_quarantined_files": _PLATFORM_TAKEDOWN,
+    "services/admin_file_queries.py::list_quarantined_files": _PLATFORM_TAKEDOWN,
     "api/endpoints/admin_quarantine.py::quarantine_media_file": _PLATFORM_TAKEDOWN,
     "api/endpoints/admin_quarantine.py::release_media_file": _PLATFORM_TAKEDOWN,
     "api/endpoints/org_admin_takedown.py::list_org_quarantined_files": _ORG_TAKEDOWN,

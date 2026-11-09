@@ -393,9 +393,14 @@ TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     # Both only decide; trash_access.trash_query applies org_stamp_is beside the widening.
     "services/trash_access.py::_sees_whole_trash": (),
     "services/trash_access.py::row_flags": (),
-    "api/endpoints/files/listing.py::list_media_files": ("org_pred",),
+    # The sees_all branch lives in services/file_route_queries.py::gallery_base_query, which
+    # applies org_pred itself; the route must keep calling it (behaviour is pinned by
+    # test_an_org_grant_widens_lists_only_inside_its_tenant).
+    "api/endpoints/files/listing.py::list_media_files": ("gallery_base_query",),
     "services/file_list_filters.py::get_accessible_owners": ("org_pred",),
-    "api/endpoints/search_reindex.py::get_degraded_embeddings": ("org_scope_pred",),
+    # The tenant gate (org_scope_pred) is applied inside services/search_reindex_queries.py::
+    # titles_for_uuids, the route's only listing query; the route must keep calling it.
+    "api/endpoints/search_reindex.py::get_degraded_embeddings": ("titles_for_uuids",),
     "api/endpoints/speaker_profiles.py::list_speaker_profiles": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::update_speaker_profile": ("require_profile_in_scope",),
     "api/endpoints/speakers_occurrences.py::_get_display_name_based_occurrences": (

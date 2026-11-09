@@ -183,6 +183,67 @@ def _fingerprint_object(task_id: str | None, storage_path: str, size: int) -> st
         return None
 
 
+def _verify_object_landed(
+    request: CompleteUploadRequest, db: Session, db_file: MediaFile, storage_path: str
+) -> int:
+    """Confirm the uploaded object exists in storage and return its observed size.
+
+    Assembles a multipart upload first when the object is absent. Raises 503 on a
+    storage outage (the row survives for a retry of /complete) and 400, after
+    dropping the orphan row, when the presigned PUT never completed.
+    """
+    from minio.error import S3Error
+    from urllib3.exceptions import MaxRetryError
+
+    from app.services.minio_service import object_exists_and_size
+
+    # Verify the object actually landed in MinIO — trust but verify. A confirmed
+    # NoSuchKey (None) means the presigned PUT never completed; anything else
+    # (MinIO restart, network hiccup) must NOT be treated the same way (B1) — a
+    # transient storage outage is not proof the bytes are missing, and the row
+    # must survive for the documented idempotent retry of /complete.
+    #
+    # Two distinct failure shapes both count as "storage outage" here: minio-py
+    # raises S3Error for a server-side error response (5xx/malformed XML), but
+    # when MinIO is unreachable entirely (container down, network partition) the
+    # request never gets an HTTP response at all — urllib3's PoolManager retries
+    # internally and then raises urllib3.exceptions.MaxRetryError, which is NOT
+    # an S3Error and previously propagated as an unhandled 500 instead of the
+    # intended 503-please-retry.
+    try:
+        minio_size = object_exists_and_size(storage_path)
+
+        # A multipart upload has no object until its parts are assembled. Doing this
+        # only when the object is absent makes a retried /complete idempotent: the
+        # second call sees the finished object and skips straight to verification.
+        if minio_size is None and request.upload_id:
+            _assemble_multipart(request, storage_path)
+            minio_size = object_exists_and_size(storage_path)
+    except (S3Error, MaxRetryError) as e:
+        logger.error(f"Storage outage verifying upload {storage_path}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not verify the upload against storage. Please retry.",
+        ) from e
+    if minio_size is None:
+        # The presigned PUT never completed, so the prepared row is an orphan.
+        # Drop it (parity with the legacy path's failure cleanup) so it doesn't
+        # linger in the gallery as a stuck PENDING upload.
+        db.delete(db_file)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"No MinIO object at {storage_path} — presigned PUT did not complete successfully"
+            ),
+        )
+    if request.file_size and abs(minio_size - int(request.file_size)) > 0:
+        logger.warning(
+            f"size mismatch for {request.file_id}: client={request.file_size} server={minio_size}"
+        )
+    return minio_size
+
+
 @router.post(
     "/complete", response_model=dict[str, Any], dependencies=[Depends(refuse_under_support_grant)]
 )
@@ -201,12 +262,8 @@ def complete_upload(
     transaction open. All of it used to sit inside the request's read
     transaction — multipart assembly of a 15 GB upload included.
     """
-    from minio.error import S3Error
-    from urllib3.exceptions import MaxRetryError
-
     from app.api.endpoints.files.upload import _update_file_hash
     from app.api.endpoints.files.upload_dispatch import dispatch_upload_pipeline_or_mark_error
-    from app.services.minio_service import object_exists_and_size
 
     benchmark_timing.mark(request.task_id, "http_request_received")
     _record_client_markers(request.task_id, request)
@@ -253,50 +310,7 @@ def complete_upload(
     organization_id = db_file.organization_id
     db.commit()
 
-    # Verify the object actually landed in MinIO — trust but verify. A confirmed
-    # NoSuchKey (None) means the presigned PUT never completed; anything else
-    # (MinIO restart, network hiccup) must NOT be treated the same way (B1) — a
-    # transient storage outage is not proof the bytes are missing, and the row
-    # must survive for the documented idempotent retry of /complete.
-    #
-    # Two distinct failure shapes both count as "storage outage" here: minio-py
-    # raises S3Error for a server-side error response (5xx/malformed XML), but
-    # when MinIO is unreachable entirely (container down, network partition) the
-    # request never gets an HTTP response at all — urllib3's PoolManager retries
-    # internally and then raises urllib3.exceptions.MaxRetryError, which is NOT
-    # an S3Error and previously propagated as an unhandled 500 instead of the
-    # intended 503-please-retry.
-    try:
-        minio_size = object_exists_and_size(storage_path)
-
-        # A multipart upload has no object until its parts are assembled. Doing this
-        # only when the object is absent makes a retried /complete idempotent: the
-        # second call sees the finished object and skips straight to verification.
-        if minio_size is None and request.upload_id:
-            _assemble_multipart(request, storage_path)
-            minio_size = object_exists_and_size(storage_path)
-    except (S3Error, MaxRetryError) as e:
-        logger.error(f"Storage outage verifying upload {storage_path}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not verify the upload against storage. Please retry.",
-        ) from e
-    if minio_size is None:
-        # The presigned PUT never completed, so the prepared row is an orphan.
-        # Drop it (parity with the legacy path's failure cleanup) so it doesn't
-        # linger in the gallery as a stuck PENDING upload.
-        db.delete(db_file)
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"No MinIO object at {storage_path} — presigned PUT did not complete successfully"
-            ),
-        )
-    if request.file_size and abs(minio_size - int(request.file_size)) > 0:
-        logger.warning(
-            f"size mismatch for {request.file_id}: client={request.file_size} server={minio_size}"
-        )
+    minio_size = _verify_object_landed(request, db, db_file, storage_path)
 
     # Enforce the upload ceiling against the size MinIO ACTUALLY observed, not the size
     # the client declared at /prepare. The declared value only gates minting the

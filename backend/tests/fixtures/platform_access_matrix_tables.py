@@ -325,7 +325,7 @@ SCOPE_WIDENER_SITES: dict[str, str] = {
     "api/endpoints/files/listing.py::list_media_files": (
         "widens a list to every user's rows; the gallery list drops the owner filter but keeps the organization predicate"
     ),
-    "api/endpoints/files/filtering.py::get_accessible_owners": (
+    "services/file_list_filters.py::get_accessible_owners": (
         "widens a list to every user's rows; the owner facet lists users of every file in the active organization scope, never beyond it"
     ),
     "api/endpoints/search_reindex.py::get_degraded_embeddings": (
@@ -394,7 +394,7 @@ TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     "services/trash_access.py::_sees_whole_trash": (),
     "services/trash_access.py::row_flags": (),
     "api/endpoints/files/listing.py::list_media_files": ("org_pred",),
-    "api/endpoints/files/filtering.py::get_accessible_owners": ("org_pred",),
+    "services/file_list_filters.py::get_accessible_owners": ("org_pred",),
     "api/endpoints/search_reindex.py::get_degraded_embeddings": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::list_speaker_profiles": ("org_scope_pred",),
     "api/endpoints/speaker_profiles.py::update_speaker_profile": ("require_profile_in_scope",),

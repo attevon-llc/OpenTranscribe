@@ -297,7 +297,9 @@ def test_speaker_identification_skips_quietly_without_an_llm(
     assert result["reason"] == "LLM not configured"
     errors = [r for r in caplog.records if r.levelname in ("ERROR", "CRITICAL")]
     assert errors == [], [r.getMessage() for r in errors]
-    assert not any(r.exc_info for r in caplog.records), "a traceback was logged"
+    assert not any(r.exc_info for r in caplog.records if r.name == sid.logger.name), (
+        "a traceback was logged"
+    )
     assert identification_env.depth == 0
 
     db_session.expire_all()

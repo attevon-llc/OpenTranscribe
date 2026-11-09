@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TypedDict
 
 from cryptography import x509
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 
@@ -197,8 +198,8 @@ def parse_certificate(cert_pem: str) -> CertificateInfo | None:
             not_after=metadata["not_after"],
             fingerprint=metadata["fingerprint"],
         )
-    except Exception as e:
-        logger.error(f"Failed to parse certificate: {e}")
+    except (ValueError, TypeError, UnsupportedAlgorithm) as e:
+        logger.error(f"Failed to parse certificate: {e}", exc_info=True)
         return None
 
 

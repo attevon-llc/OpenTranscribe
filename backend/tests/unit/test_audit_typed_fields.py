@@ -14,6 +14,7 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
+from opensearchpy.exceptions import RequestError
 
 from app.auth import audit as audit_module
 from app.auth.audit import AuditLogger
@@ -102,7 +103,9 @@ def test_an_existing_index_gains_the_fields_once_per_process():
 
 
 def test_a_mapping_conflict_is_logged_and_does_not_stop_indexing(caplog):
-    indices = _Indices(exists=True, put_error=RuntimeError("mapper conflict"))
+    indices = _Indices(
+        exists=True, put_error=RequestError(400, "mapper_parsing_exception", "mapper conflict")
+    )
     logger = AuditLogger()
 
     with caplog.at_level(logging.WARNING):

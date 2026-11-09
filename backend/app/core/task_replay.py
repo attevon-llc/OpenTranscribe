@@ -49,6 +49,8 @@ from collections.abc import Callable
 from collections.abc import Iterable
 from typing import Any
 
+import redis
+
 from app.core import redis as redis_core
 from app.core.task_config import task_recovery_config
 
@@ -136,8 +138,8 @@ def _beat_all() -> None:
         for task_id in ids:
             pipe.setex(HEARTBEAT_KEY.format(task_id=task_id), ttl, "1")
         pipe.execute()
-    except Exception as e:  # a missed beat must never fail the task itself
-        logger.warning("Task heartbeat failed for %d task(s): %s", len(ids), e)
+    except (redis.RedisError, OSError) as e:  # a missed beat must never fail the task itself
+        logger.warning("Task heartbeat failed for %d task(s): %s", len(ids), e, exc_info=True)
 
 
 def _beat_loop() -> None:
@@ -196,8 +198,10 @@ def on_task_start(task: Any, task_id: str, args: Iterable | None, kwargs: dict |
             HEARTBEAT_KEY.format(task_id=task_id), task_recovery_config.TASK_HEARTBEAT_TTL, "1"
         )
         pipe.execute()
-    except Exception as e:  # replay is a safety net; the task must still run
-        logger.warning("Could not record %s[%s] for replay: %s", task.name, task_id, e)
+    except (redis.RedisError, OSError) as e:  # replay is a safety net; the task must still run
+        logger.warning(
+            "Could not record %s[%s] for replay: %s", task.name, task_id, e, exc_info=True
+        )
         return
     with _running_lock:
         _running.add(task_id)
@@ -222,16 +226,18 @@ def on_task_end(task: Any, task_id: str) -> None:
         pipe.hdel(REPLAY_HASH, task_id)
         pipe.delete(HEARTBEAT_KEY.format(task_id=task_id))
         pipe.execute()
-    except Exception as e:
-        logger.warning("Could not clear the replay record of %s[%s]: %s", task.name, task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not clear the replay record of %s[%s]: %s", task.name, task_id, e, exc_info=True
+        )
 
 
 def is_alive(task_id: str) -> bool | None:
     """Whether ``task_id`` is heartbeating right now; None when Redis can't be read."""
     try:
         return bool(redis_core.get_request_redis().exists(HEARTBEAT_KEY.format(task_id=task_id)))
-    except Exception as e:
-        logger.warning("Could not read the heartbeat of %s: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning("Could not read the heartbeat of %s: %s", task_id, e, exc_info=True)
         return None
 
 
@@ -252,8 +258,8 @@ def replay_tracked_ids(task_ids: Iterable[str]) -> set[str]:
         for task_id in ids:
             pipe.hexists(REPLAY_HASH, task_id)
         recorded = pipe.execute()
-    except Exception as e:
-        logger.warning("Could not read replay state for %d task(s): %s", len(ids), e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning("Could not read replay state for %d task(s): %s", len(ids), e, exc_info=True)
         return set()
     return {t for t, beat, rec in zip(ids, beats, recorded, strict=True) if beat or rec}
 
@@ -298,8 +304,8 @@ def reclaim_lost_tasks(send_task: Callable[..., Any] | None = None) -> dict[str,
     try:
         client = redis_core.get_request_redis()
         records = client.hgetall(REPLAY_HASH)
-    except Exception as e:  # conclude nothing from an unreadable Redis
-        logger.warning("Lost-task sweep skipped, Redis unreadable: %s", e)
+    except (redis.RedisError, OSError) as e:  # conclude nothing from an unreadable Redis
+        logger.warning("Lost-task sweep skipped, Redis unreadable: %s", e, exc_info=True)
         summary["error"] = 1
         return summary
     if not records:
@@ -315,8 +321,8 @@ def reclaim_lost_tasks(send_task: Callable[..., Any] | None = None) -> dict[str,
     summary["records"] = len(ids)
     try:
         beats = client.mget([HEARTBEAT_KEY.format(task_id=t) for t in ids])
-    except Exception as e:
-        logger.warning("Lost-task sweep skipped, heartbeats unreadable: %s", e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning("Lost-task sweep skipped, heartbeats unreadable: %s", e, exc_info=True)
         summary["error"] = 1
         return summary
 

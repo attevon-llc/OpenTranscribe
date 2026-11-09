@@ -64,6 +64,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+import redis
+
 from app.core.worker_shutdown import raise_if_shutting_down
 
 logger = logging.getLogger(__name__)
@@ -177,8 +179,10 @@ def _flag_is_set(task_id: str) -> bool:
 
     try:
         return bool(get_request_redis().exists(CANCEL_KEY.format(task_id=task_id)))
-    except Exception as e:
-        logger.warning("Could not read the cancellation flag for task %s: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not read the cancellation flag for task %s: %s", task_id, e, exc_info=True
+        )
         return False
 
 
@@ -228,8 +232,10 @@ def clear_cancel(task_id: str) -> None:
 
     try:
         get_request_redis().delete(CANCEL_KEY.format(task_id=task_id))
-    except Exception as e:
-        logger.warning("Could not clear the cancellation flag for task %s: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not clear the cancellation flag for task %s: %s", task_id, e, exc_info=True
+        )
 
 
 @contextmanager

@@ -289,6 +289,3 @@ async def call_federated_logout(
     except httpx.HTTPError as e:
         logger.warning(f"OIDC logout HTTP error: {e} — local session still cleared")
         return False
-    except Exception as e:
-        logger.error(f"Unexpected error during OIDC logout: {type(e).__name__}: {e}")
-        return False

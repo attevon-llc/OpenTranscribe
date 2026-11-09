@@ -16,6 +16,7 @@ from datetime import timedelta
 import httpx
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import dsa
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -120,8 +121,8 @@ def _load_issuer_certificate() -> x509.Certificate | None:
     except FileNotFoundError:
         logger.error(f"CA certificate file not found: {ca_cert_path}")
         return None
-    except Exception as e:
-        logger.error(f"Failed to load CA certificate: {e}")
+    except (OSError, ValueError, UnsupportedAlgorithm) as e:
+        logger.error(f"Failed to load CA certificate: {e}", exc_info=True)
         return None
 
 
@@ -158,8 +159,8 @@ def _verify_crl_signature(
     except InvalidSignature:
         logger.warning("CRL signature verification failed: invalid signature")
         return False
-    except Exception as e:
-        logger.warning(f"CRL signature verification error: {e}")
+    except (ValueError, TypeError, UnsupportedAlgorithm) as e:
+        logger.warning(f"CRL signature verification error: {e}", exc_info=True)
         return False
 
 
@@ -239,7 +240,7 @@ def _parse_and_verify_crl(
         # Try DER format first (most common for CRL distribution points)
         try:
             crl = x509.load_der_x509_crl(crl_data, default_backend())
-        except Exception:
+        except ValueError:
             # Fall back to PEM format
             crl = x509.load_pem_x509_crl(crl_data, default_backend())
 
@@ -263,8 +264,8 @@ def _parse_and_verify_crl(
             return None
 
         return crl
-    except Exception as e:
-        logger.warning(f"Failed to parse CRL from {crl_url}: {e}")
+    except (ValueError, TypeError, UnsupportedAlgorithm) as e:
+        logger.warning(f"Failed to parse CRL from {crl_url}: {e}", exc_info=True)
         return None
 
 

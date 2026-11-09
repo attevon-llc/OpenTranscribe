@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 from ldap3.core.exceptions import LDAPException
+from ldap3.core.exceptions import LDAPSocketOpenError
 from ldap3.core.exceptions import LDAPSocketReceiveError
 
 from app.auth import ldap_directory
@@ -103,15 +104,15 @@ class TestServerObject:
 
 
 class TestUnexpectedFailures:
-    def test_a_non_ldap_exception_during_login_is_a_refusal(self, monkeypatch, caplog):
+    def test_a_socket_failure_during_login_is_a_refusal(self, monkeypatch, caplog):
         d = _directory(monkeypatch)
-        d.server_error = RuntimeError("socket library exploded")
+        d.server_error = LDAPSocketOpenError("socket library exploded")
         _use(monkeypatch, _cfg())
 
         with caplog.at_level(logging.ERROR):
             assert ldap_authenticate("alice", ALICE_PW) is None
 
-        assert "RuntimeError" in caplog.text
+        assert "LDAPSocketOpenError" in caplog.text
         assert d.binds() == []
 
     def test_an_ldap_exception_during_the_search_is_a_refusal(self, monkeypatch, caplog):
@@ -327,7 +328,7 @@ def _fail_search(d: FakeDirectory) -> None:
 
 
 def _fail_unexpectedly(d: FakeDirectory) -> None:
-    d.server_error = RuntimeError("boom")
+    d.server_error = LDAPSocketOpenError("boom")
 
 
 #: scenario -> (directory change, config overrides, whether the login succeeds)

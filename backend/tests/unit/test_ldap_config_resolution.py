@@ -17,6 +17,7 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.auth.ldap_auth import LdapConfig
@@ -285,7 +286,7 @@ class TestLoginConfigSource:
         d = self._directory(monkeypatch)
 
         def _broken(cls, db):
-            raise RuntimeError("auth_config unreadable")
+            raise OperationalError("SELECT", {}, Exception("auth_config unreadable"))
 
         monkeypatch.setattr(LdapConfig, "from_db", classmethod(_broken))
         monkeypatch.setattr(LdapConfig, "from_env", classmethod(lambda cls: self._env_cfg()))

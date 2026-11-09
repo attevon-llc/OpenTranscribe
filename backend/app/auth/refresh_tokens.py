@@ -354,11 +354,11 @@ class RefreshTokenOps:
         except JoseError as e:
             logger.warning(f"Token verification failed: JWT error - {e}")
             return None, None
-        except Exception as e:
+        except SQLAlchemyError as e:
             # A busy database is not an invalid refresh token: answering "invalid" signs
             # the user out. The overload is answered 503 (core/db_overload) instead.
             reraise_db_overload(e)
-            logger.error(f"Token verification error: {e}")
+            logger.error(f"Token verification error: {e}", exc_info=True)
             return None, None
 
     @staticmethod

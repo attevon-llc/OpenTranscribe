@@ -13,13 +13,11 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 from typing import Any
 
-from app.core.config import settings
+import redis
 
-if TYPE_CHECKING:
-    import redis
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +30,6 @@ def _get_redis_client() -> redis.Redis | None:
         Optional[redis.Redis]: Redis client or None if unavailable.
     """
     try:
-        import redis
-
         client = redis.Redis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
@@ -43,11 +39,8 @@ def _get_redis_client() -> redis.Redis | None:
         # Test connection
         client.ping()
         return client
-    except ImportError:
-        logger.warning("Redis package not available for lockout storage, using in-memory")
-        return None
-    except Exception as e:
-        logger.warning(f"Redis connection failed for lockout storage: {e}")
+    except (redis.RedisError, OSError, ValueError) as e:
+        logger.warning(f"Redis connection failed for lockout storage: {e}", exc_info=True)
         return None
 
 

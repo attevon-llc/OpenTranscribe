@@ -25,8 +25,10 @@ from urllib.parse import urlencode
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
+import redis
 from fastapi import Request
 from fastapi import Response
+from limits.errors import ConfigurationError
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.responses import JSONResponse
@@ -47,17 +49,16 @@ def _redis_reachable() -> bool:
         True if Redis answered a PING.
     """
     try:
-        import redis
-
         client = redis.from_url(settings.REDIS_URL, socket_timeout=2)
         client.ping()
         logger.info("Rate limiter using Redis backend: %s", settings.REDIS_HOST)
         return True
-    except Exception as e:
+    except (redis.RedisError, OSError, ValueError) as e:
         logger.warning(
             "Redis unreachable at rate-limiter startup; limiting will run per-process "
             "until it recovers: %s",
             str(e),
+            exc_info=True,
         )
         return False
 
@@ -232,11 +233,12 @@ def _create_limiter() -> Limiter:
         # Redis lands here happily and degrades at first use. This only catches a
         # genuinely unusable URI or a missing redis client library.
         limiter = _new_limiter(_with_request_timeouts(settings.REDIS_URL))
-    except Exception as e:
+    except (ConfigurationError, ValueError, ImportError) as e:
         logger.error(
             "Cannot build a Redis-backed rate limiter (%s); falling back to per-process "
             "counting. Rate limits will NOT be shared across replicas.",
             e,
+            exc_info=True,
         )
         record_degradation("rate_limit", "local")
         limiter = _new_limiter(None)

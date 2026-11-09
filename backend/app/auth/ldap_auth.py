@@ -17,6 +17,7 @@ from typing import TypedDict
 
 from ldap3.core.exceptions import LDAPException
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.auth.account_linking import assert_email_link_permitted
@@ -304,11 +305,12 @@ def _resolve_login_config(db: Session | None) -> LdapConfig:
         return LdapConfig.from_env()
     try:
         return LdapConfig.from_db(db)
-    except Exception as exc:
+    except SQLAlchemyError as exc:
         reraise_db_overload(exc)
         logger.warning(
             "Could not read the LDAP settings from the database (%s); using the environment",
             type(exc).__name__,
+            exc_info=True,
         )
         return LdapConfig.from_env()
 
@@ -389,11 +391,8 @@ def ldap_authenticate(
             groups=groups,
         )
     except LDAPException as exc:
-        logger.error("LDAP login for %s failed: %s: %s", username, type(exc).__name__, exc)
-        return None
-    except Exception as exc:
         logger.error(
-            "Unexpected error during LDAP login for %s: %s: %s", username, type(exc).__name__, exc
+            "LDAP login for %s failed: %s: %s", username, type(exc).__name__, exc, exc_info=True
         )
         return None
     finally:

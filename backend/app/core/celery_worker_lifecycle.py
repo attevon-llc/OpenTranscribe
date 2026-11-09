@@ -41,7 +41,7 @@ def start_watch_source_fs_events(**kwargs):
 
         start_supervisor()
     except Exception as e:  # beat must start regardless
-        logger.error(f"Watch-source FS-event supervisor could not be started: {e}")
+        logger.error(f"Watch-source FS-event supervisor could not be started: {e}", exc_info=True)
 
 
 def publish_hf_token_to_environment() -> bool:
@@ -104,8 +104,8 @@ def _cap_torch_threads_to_cpu_quota() -> None:
     threads = max(1, effective_cpu_count() // _pool_concurrency())
     try:
         torch_mod.set_num_threads(threads)
-    except Exception as exc:  # never block fork init
-        logger.debug("Could not cap torch threads: %s", exc)
+    except (RuntimeError, ValueError) as exc:  # never block fork init
+        logger.warning("Could not cap torch threads: %s", exc, exc_info=True)
         return
     logger.info("torch intra-op threads set to %d (CPU quota / pool concurrency)", threads)
 
@@ -321,8 +321,8 @@ def preload_models(**kwargs):
                 )
         else:
             logger.info("Skipping GPU model preload (PRELOAD_GPU_MODELS not set)")
-    except Exception as e:
-        logger.debug(f"GPU model preloading skipped: {e}")
+    except Exception as e:  # preload only warms a cache; the first task loads the model
+        logger.warning(f"GPU model preloading skipped: {e}", exc_info=True)
 
     # CPU lightweight model preloading
     if env_bool("PRELOAD_CPU_WHISPER", False):
@@ -383,8 +383,8 @@ def preload_models(**kwargs):
             )
             del _model
             logger.info(f"CPU lightweight model '{cpu_config.model_name}' preloaded successfully")
-        except Exception as e:
-            logger.warning(f"CPU lightweight model preloading failed: {e}")
+        except Exception as e:  # preload only warms a cache; the first task loads the model
+            logger.warning(f"CPU lightweight model preloading failed: {e}", exc_info=True)
 
     # Content-redaction model preloading — ONLY on the dedicated celery-redaction
     # worker (PRELOAD_REDACTION_MODELS=true). Loads Presidio+GLiNER (PII) and the
@@ -422,5 +422,5 @@ def preload_models(**kwargs):
                 ok_tox,
                 ok_pool,
             )
-        except Exception as e:
-            logger.warning(f"Redaction model preloading failed: {e}")
+        except Exception as e:  # preload only warms a cache; the first scan loads the models
+            logger.warning(f"Redaction model preloading failed: {e}", exc_info=True)

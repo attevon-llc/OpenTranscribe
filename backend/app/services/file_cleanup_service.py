@@ -173,6 +173,33 @@ def scrub_chat_citations(db: Session, file_uuids: list[str]) -> int:
     """
     if not file_uuids:
         return 0
+    from sqlalchemy import or_
+    from sqlalchemy import select
+
+    from app.models.chat import ChatMessage
+
+    # Probe first, through the GIN index (JSONB ``@>`` via ``.contains``): the UPDATE's EXISTS
+    # scanned every message and matched nothing on 54 of 54 profiled calls (#1337). One OR arm
+    # per file, so a big batch is chunked rather than building an unbounded statement.
+    rewritten = 0
+    for start in range(0, len(file_uuids), _CITATION_PROBE_CHUNK):
+        chunk = [str(u) for u in file_uuids[start : start + _CITATION_PROBE_CHUNK]]
+        probe = (
+            select(ChatMessage.id)
+            .where(or_(*(ChatMessage.citations.contains([{"file_uuid": u}]) for u in chunk)))
+            .limit(1)
+        )
+        if db.execute(probe).first():
+            rewritten += _rewrite_citations(db, chunk)
+    return rewritten
+
+
+#: File uuids per probe statement.
+_CITATION_PROBE_CHUNK = 200
+
+
+def _rewrite_citations(db: Session, file_uuids: list[str]) -> int:
+    """The set-based UPDATE behind :func:`scrub_chat_citations`; only called once a probe hit."""
     from sqlalchemy import text
 
     result = db.execute(

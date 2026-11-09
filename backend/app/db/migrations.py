@@ -154,6 +154,7 @@ def _retry_concurrent_indexes() -> None:
         return
     _concurrent_index_retry_done = True
     from app.db import concurrent_indexes
+    from app.db.chat_indexes import CHAT_INDEXES
     from app.db.hold_indexes import HOLD_INDEXES
     from app.db.speaker_indexes import SPEAKER_INDEXES
     from app.db.trash_indexes import TRASH_INDEXES
@@ -167,6 +168,7 @@ def _retry_concurrent_indexes() -> None:
                 ("speaker", SPEAKER_INDEXES, "identity_source"),
                 ("media_file", TRASH_INDEXES, "deleted_at"),
                 ("content_hold", HOLD_INDEXES, "authority"),
+                ("chat_message", CHAT_INDEXES, "citations"),
             ):
                 if not _check_column_exists(conn, table, column):
                     continue

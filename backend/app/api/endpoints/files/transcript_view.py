@@ -34,7 +34,7 @@ def _get_transcript_segments(
         Tuple of (list of transcript segments, total count)
     """
     from sqlalchemy import func
-    from sqlalchemy.orm import joinedload
+    from sqlalchemy.orm import selectinload
 
     total_segments = (
         db.query(func.count(TranscriptSegment.id))
@@ -44,10 +44,13 @@ def _get_transcript_segments(
 
     # Eager-load each segment's speaker AND that speaker's linked profile so the
     # downstream add_computed_status (which reads speaker.profile) never triggers a
-    # lazy SELECT per distinct speaker.
+    # lazy SELECT per distinct speaker. selectinload, not joinedload: a JOINed speaker
+    # repeats its wide row (three JSONB detail columns) for every segment, a page of
+    # hundreds of segments by a handful of speakers; selectinload fetches each distinct
+    # speaker once (SQLAlchemy 2.0, "Relationship Loading Techniques", #1337).
     segment_query = (
         db.query(TranscriptSegment)
-        .options(joinedload(TranscriptSegment.speaker).selectinload(Speaker.profile))
+        .options(selectinload(TranscriptSegment.speaker).selectinload(Speaker.profile))
         .filter(TranscriptSegment.media_file_id == file_id)
         .order_by(
             TranscriptSegment.start_time,

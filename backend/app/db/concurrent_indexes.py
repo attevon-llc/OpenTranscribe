@@ -33,20 +33,26 @@ BUILD_LOCK_TIMEOUT_SECONDS = 120
 
 @dataclass(frozen=True)
 class IndexSpec:
-    """A (possibly partial, possibly unique) btree index. Names are code constants, never input."""
+    """A (possibly partial, possibly unique) index. Names are code constants, never input.
+
+    ``method`` is the access method (``gin`` for JSONB containment); a column entry may carry
+    its operator class (``"citations jsonb_path_ops"``). Default is btree.
+    """
 
     name: str
     table: str
     columns: tuple[str, ...]
     where: str | None = None
     unique: bool = False
+    method: str | None = None
 
     def create_sql(self) -> str:
         unique = "UNIQUE " if self.unique else ""
         where = f" WHERE {self.where}" if self.where else ""
+        using = f" USING {self.method}" if self.method else ""
         return (
             f"CREATE {unique}INDEX CONCURRENTLY {self.name} "
-            f"ON {self.table} ({', '.join(self.columns)}){where}"
+            f"ON {self.table}{using} ({', '.join(self.columns)}){where}"
         )
 
 

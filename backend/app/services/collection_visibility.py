@@ -105,6 +105,55 @@ def _share_rank(user_id: int) -> Any:
     return func.coalesce(best, 0)
 
 
+def _may_hold_rank_pred(user_id: int) -> ColumnElement[bool]:
+    """Index-addressable superset of the rows on which ``_org_base_rank``/``_share_rank`` can be > 0.
+
+    A caller holds a rank only on their own collection, an organization collection of an
+    organization they belong to, or one shared with them or a group of theirs. Stating those
+    three arms lets PostgreSQL drive the scan from the indexes on ``collection.user_id`` /
+    ``organization_id`` / ``collection_share`` instead of evaluating the six correlated
+    subplans of the rank CASE against every collection row (issue #1337, measured 29.6 ms mean
+    over 2,634 calls). It only narrows candidates: the rank predicate still decides.
+    """
+    groups = select(UserGroupMember.group_id).where(UserGroupMember.user_id == user_id)
+    # A UNION of id selects, not an OR of IN-subqueries: PostgreSQL cannot BitmapOr an OR that
+    # holds a subquery, but it plans a top-level ``IN (subquery)`` as a semi-join driven by
+    # each arm's index.
+    return Collection.id.in_(
+        select(Collection.id)
+        .where(Collection.user_id == user_id)
+        .union(
+            select(Collection.id).where(
+                Collection.organization_id.in_(
+                    select(OrganizationMembership.organization_id).where(
+                        OrganizationMembership.user_id == user_id
+                    )
+                )
+            ),
+            select(CollectionShare.collection_id).where(
+                or_(
+                    CollectionShare.target_user_id == user_id,
+                    CollectionShare.target_group_id.in_(groups),
+                )
+            ),
+        )
+    )
+
+
+def _member_org_pred(user_id: int) -> ColumnElement[bool]:
+    """``collection.organization_id`` is an organization the caller belongs to.
+
+    ``_org_base_rank`` is 0 for an organization collection whose org the caller is not a member
+    of, so this only narrows the candidates the rank CASE (a correlated subplan per row) is
+    evaluated on, letting PostgreSQL start from ``organization_membership`` (issue #1337).
+    """
+    return Collection.organization_id.in_(
+        select(OrganizationMembership.organization_id).where(
+            OrganizationMembership.user_id == user_id
+        )
+    )
+
+
 def collection_permission_ranks(db: Session, user_id: int) -> dict[int, str]:
     """Permission name by collection id, for every collection ``user_id`` may see (any tenant).
 
@@ -112,7 +161,9 @@ def collection_permission_ranks(db: Session, user_id: int) -> dict[int, str]:
     ``get_accessible_collection_ids``. Callers apply their own tenant predicate.
     """
     rank: ColumnElement[int] = func.greatest(_org_base_rank(user_id), _share_rank(user_id))
-    rows = db.execute(select(Collection.id, rank).where(rank > 0)).all()
+    rows = db.execute(
+        select(Collection.id, rank).where(_may_hold_rank_pred(user_id), rank > 0)
+    ).all()
     return {cid: PERMISSION_NAMES[r] for cid, r in rows}
 
 
@@ -193,7 +244,11 @@ def org_collection_file_ids_stmt(user_id: int, organization_id: OrgScope) -> Sel
                 MediaFile.organization_id == Collection.organization_id,
             ),
         )
-        .where(Collection.organization_id.is_not(None), _org_base_rank(user_id) > 0)
+        .where(
+            Collection.organization_id.is_not(None),
+            _member_org_pred(user_id),
+            _org_base_rank(user_id) > 0,
+        )
     )
     gate = org_scope_pred(Collection.organization_id, organization_id)
     return stmt.where(gate) if gate is not None else stmt
@@ -215,7 +270,9 @@ def org_readable_collection_ids(db: Session, user_id: int, organization_id: int)
     """
     rows = db.execute(
         select(Collection.id).where(
-            Collection.organization_id == organization_id, _org_base_rank(user_id) > 0
+            Collection.organization_id == organization_id,
+            _member_org_pred(user_id),
+            _org_base_rank(user_id) > 0,
         )
     ).scalars()
     return [int(cid) for cid in rows]

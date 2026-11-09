@@ -239,7 +239,6 @@ frontend/src/components/transcript/TranscriptSegmentList.svelte::svelte/no-at-ht
 frontend/src/components/transcript/TranscriptSegmentList.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/transcript/TranscriptViewModal.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/transcript/TranscriptViewModal.svelte::no-useless-assignment	1	lint: burn-down planned
-frontend/src/components/transcript/TranscriptViewModal.svelte::svelte/no-useless-mustaches	1	lint: burn-down planned
 frontend/src/components/ui/CardGridSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/ui/ConnectionStatusBanner.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/ui/ExpandableSection.svelte::no-useless-assignment	1	lint: burn-down planned

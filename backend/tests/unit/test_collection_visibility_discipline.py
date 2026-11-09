@@ -119,7 +119,7 @@ ALLOWLIST: dict[str, str] = {
         "caller just submitted (Q6); the collection itself was authorized by "
         "get_collection_by_uuid_with_sharing"
     ),
-    "api/endpoints/prompts.py::get_prompts": (
+    "api/endpoints/prompts.py::_linked_collections_by_prompt": (
         "O: lists the collections linked to the caller's own prompts and filters on "
         "Collection.user_id == the caller, so it can only show collections they created"
     ),

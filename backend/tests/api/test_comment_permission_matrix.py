@@ -278,3 +278,33 @@ class TestCommentMatrix:
             assert [c["uuid"] for c in listed.json()] == [created.json()["uuid"]]
             single = client.get(f"{COMMENTS}/{created.json()['uuid']}")
             assert single.status_code == 200, single.text
+
+
+def test_each_comment_write_commits_exactly_once_per_request(client, db_session):
+    """Transaction boundaries: create, edit and delete each commit once, in the request."""
+    from sqlalchemy import event
+    from sqlalchemy.orm import Session
+
+    cell = _cell(db_session, "personal_own_file")
+    base = f"{COMMENTS}/files/{cell.media_file.uuid}/comments"
+    commits: list[int] = []
+
+    def count(_session):
+        commits.append(1)
+
+    event.listen(Session, "after_commit", count)
+    try:
+        with _acting_as(cell.actor, cell.org_id, cell.org_role):
+            commits.clear()
+            created = client.post(base, json={"text": "once", "timestamp": 1.0})
+            after_create = len(commits)
+            commits.clear()
+            edited = client.put(f"{COMMENTS}/{created.json()['uuid']}", json={"text": "twice"})
+            after_edit = len(commits)
+            commits.clear()
+            deleted = client.delete(f"{COMMENTS}/{created.json()['uuid']}")
+            after_delete = len(commits)
+    finally:
+        event.remove(Session, "after_commit", count)
+    assert (created.status_code, edited.status_code, deleted.status_code) == (200, 200, 204)
+    assert (after_create, after_edit, after_delete) == (1, 1, 1)

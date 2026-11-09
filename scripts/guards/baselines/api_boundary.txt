@@ -51,7 +51,6 @@ orm_call_in_api::backend/app/api/endpoints/chat/export.py	1	layering: removal pl
 orm_call_in_api::backend/app/api/endpoints/chat/messages.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/chat/projects.py	5	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/chat/user_settings.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/comments.py	9	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/custom_vocabulary.py	8	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/diarization_settings.py	2	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/embedding_migration.py	3	layering: removal planned

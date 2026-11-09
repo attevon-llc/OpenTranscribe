@@ -9,7 +9,6 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -25,6 +24,13 @@ from app.schemas.media import CommentCreate
 from app.schemas.media import CommentCreateStandalone
 from app.schemas.media import CommentUpdate
 from app.services import audit_outbox
+from app.services.comment_queries import add_comment
+from app.services.comment_queries import file_org_and_owner
+from app.services.comment_queries import file_organization_id
+from app.services.comment_queries import file_owner_id
+from app.services.comment_queries import get_comment_file
+from app.services.comment_queries import list_file_comments
+from app.services.comment_queries import load_comment
 from app.services.content_hold_service import record_hold_annotation
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
@@ -76,13 +82,7 @@ def get_comments_for_file_nested(
     file_id = media_file.id
 
     # Get comments for this file with user relationship loaded
-    comments = (
-        db.query(Comment)
-        .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.media_file_id == file_id)
-        .all()
-    )
-    return comments
+    return list_file_comments(db, file_id, order_by_timestamp=False)
 
 
 def _annotate_if_held(
@@ -125,26 +125,20 @@ def create_comment_for_file_nested(
     file_id = media_file.id
 
     # Create comment with file_id from URL
-    db_comment = Comment(
-        text=comment.text,
-        timestamp=comment.timestamp,
+    db_comment = add_comment(
+        db,
         media_file_id=file_id,
         user_id=current_user.id,
+        text=comment.text,
+        timestamp=comment.timestamp,
     )
-    db.add(db_comment)
-    db.flush()
     _annotate_if_held(db, request, current_user, media_file, db_comment, ctx)
     db.commit()
     db.refresh(db_comment)
     audit_outbox.deliver_staged(db)
 
     # Reload with relationships for UUID mapping
-    db_comment_reloaded = (
-        db.query(Comment)
-        .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.id == db_comment.id)
-        .first()
-    )
+    db_comment_reloaded = load_comment(db, db_comment.id)
 
     return CommentSchema.model_validate(db_comment_reloaded)
 
@@ -175,15 +169,7 @@ def get_comments_for_file(
     media_file_pk = media_file.id
 
     # Get comments for this file (eager-load relationships to avoid N+1)
-    comments = (
-        db.query(Comment)
-        .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.media_file_id == media_file_pk)
-        .order_by(Comment.timestamp)
-        .all()
-    )
-
-    return comments
+    return list_file_comments(db, media_file_pk, order_by_timestamp=True)
 
 
 @router.post("", response_model=CommentSchema)
@@ -210,27 +196,20 @@ def create_comment_standalone(
     file_id = media_file.id
 
     # Create new comment
-    db_comment = Comment(
+    db_comment = add_comment(
+        db,
         media_file_id=file_id,
         user_id=current_user.id,  # Always use the authenticated user's ID
         text=comment.text,
         timestamp=comment.timestamp,
     )
-
-    db.add(db_comment)
-    db.flush()
     _annotate_if_held(db, request, current_user, media_file, db_comment, ctx)
     db.commit()
     db.refresh(db_comment)
     audit_outbox.deliver_staged(db)
 
     # Reload with relationships for UUID mapping
-    db_comment_reloaded = (
-        db.query(Comment)
-        .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.id == db_comment.id)
-        .first()
-    )
+    db_comment_reloaded = load_comment(db, db_comment.id)
 
     return CommentSchema.model_validate(db_comment_reloaded)
 
@@ -268,7 +247,7 @@ def _assert_comment_file_in_scope(
     """
     from app.services.file_availability import is_unavailable
 
-    media_file = db.query(MediaFile).filter(MediaFile.id == comment.media_file_id).first()
+    media_file = get_comment_file(db, comment.media_file_id)
     if media_file is not None and ctx.bypass.allows(
         org_id=media_file.organization_id,
         owner_id=media_file.user_id,
@@ -335,9 +314,7 @@ def update_comment(
         need="write",
     )
 
-    comment_file_org = (
-        db.query(MediaFile.organization_id).filter(MediaFile.id == comment.media_file_id).scalar()
-    )
+    comment_file_org = file_organization_id(db, comment.media_file_id)
     require_resource_owner(
         comment,
         current_user,
@@ -356,12 +333,7 @@ def update_comment(
 
     # Reload with relationships for UUID mapping
     db.refresh(comment)
-    comment_reloaded = (
-        db.query(Comment)
-        .options(joinedload(Comment.user), joinedload(Comment.media_file))
-        .filter(Comment.id == comment.id)
-        .first()
-    )
+    comment_reloaded = load_comment(db, comment.id)
 
     # Use model_validate to handle UUID conversion automatically
     return CommentSchema.model_validate(comment_reloaded)
@@ -393,11 +365,7 @@ def delete_comment(
     _refuse_if_comment_frozen(db, comment, current_user, action="comment_delete")
 
     # Allow deletion by the platform role (single-tenant mode), on the comment's file
-    file_row = (
-        db.query(MediaFile.organization_id, MediaFile.user_id)
-        .filter(MediaFile.id == comment.media_file_id)
-        .first()
-    )
+    file_row = file_org_and_owner(db, comment.media_file_id)
     if file_row is not None and ctx.bypass.allows(
         org_id=file_row[0],
         owner_id=file_row[1],
@@ -416,8 +384,7 @@ def delete_comment(
         return None
 
     # Allow deletion by file owner (project only user_id, not full ORM object)
-    owner_row = db.query(MediaFile.user_id).filter(MediaFile.id == comment.media_file_id).first()
-    if owner_row and owner_row[0] == current_user.id:
+    if file_owner_id(db, comment.media_file_id) == current_user.id:
         db.delete(comment)
         db.commit()
         return None

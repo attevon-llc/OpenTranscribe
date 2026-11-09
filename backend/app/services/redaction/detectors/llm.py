@@ -19,11 +19,14 @@ from app.services.llm_budget import LLMBudgetExceededError
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import build_word_offsets
 from app.services.redaction.spans import map_char_span_to_words
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 if TYPE_CHECKING:
     from app.services.llm_service import LLMService
 
 logger = logging.getLogger(__name__)
+# Detector and masking errors can quote the transcript text they were handed (issue #1022).
+logger.addFilter(MessageFreeTracebackFilter())
 
 _PROMPT = (
     "You are a content-moderation assistant. Identify spans of text that are "
@@ -77,8 +80,8 @@ def detect_with_llm(
         service = LLMService.create_from_settings(user_id)
     except SQLAlchemyError:
         raise
-    except Exception as exc:
-        logger.info("LLM redaction detector: no LLM service for user %s (%s)", user_id, exc)
+    except Exception:  # optional-detector boundary: recorded through _report(failures)
+        logger.warning("LLM redaction detector: no LLM service for user %s", user_id, exc_info=True)
         _report(failures)
         return {}
     if service is None:
@@ -123,8 +126,8 @@ def _detect_one(
     except LLMBudgetExceededError:
         # Every later segment would be refused too: stop the scan here.
         raise
-    except Exception as exc:
-        logger.debug("LLM redaction detection failed for a segment: %s", exc)
+    except Exception:  # per-segment detector isolation: recorded through _report(failures)
+        logger.warning("LLM redaction detection failed for a segment", exc_info=True)
         _report(failures)
         return []
 

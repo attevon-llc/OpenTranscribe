@@ -58,7 +58,10 @@ def _cuda_available() -> bool:
         import torch
 
         return bool(torch.cuda.is_available())
-    except Exception:
+    except ImportError:
+        return False
+    except (RuntimeError, OSError):
+        logger.warning("torch.cuda.is_available() raised; redaction runs on CPU", exc_info=True)
         return False
 
 
@@ -79,8 +82,8 @@ def _best_gpu() -> tuple[int, float] | None:
             return None
         best = max(range(n), key=lambda i: _free_gb(i))
         return best, _free_gb(best)
-    except Exception as exc:
-        logger.debug("GPU probe failed: %s", exc)
+    except (ImportError, RuntimeError, OSError):
+        logger.warning("GPU probe failed; redaction runs on CPU this scan", exc_info=True)
         return None
 
 
@@ -122,8 +125,8 @@ def resolve_device() -> str:
                 need,
             )
         return "cpu"
-    except Exception as exc:
-        logger.warning("Redaction device probe failed (%s) — using CPU", exc)
+    except (RuntimeError, ValueError, IndexError, OSError):
+        logger.warning("Redaction device probe failed - using CPU", exc_info=True)
         return "cpu"
 
 

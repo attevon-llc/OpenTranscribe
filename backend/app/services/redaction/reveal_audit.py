@@ -61,6 +61,5 @@ def audit_unredacted_reveal(
                 "surface": surface,
             },
         )
-    except Exception as e:
-        # Audit failure must never turn a permitted read into an error; it is logged loudly.
-        logger.warning("Audit log for an unredacted reveal failed: %s", type(e).__name__)
+    except Exception:  # audit-sink boundary: a failed audit write must not fail the read
+        logger.exception("Audit log for an unredacted reveal failed")

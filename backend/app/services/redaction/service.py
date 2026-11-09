@@ -26,8 +26,11 @@ from app.services.redaction.detectors import DetectorUnavailableError
 from app.services.redaction.detectors import wordlist
 from app.services.redaction.spans import RedactionSpan
 from app.services.redaction.spans import apply_redactions
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+# Detector and masking errors can quote the transcript text they were handed (issue #1022).
+logger.addFilter(MessageFreeTracebackFilter())
 
 
 class RedactionService:
@@ -145,8 +148,8 @@ class RedactionService:
                     failures.append("pii")
                 if unavailable is not None:
                     unavailable.append("pii")
-            except Exception as exc:
-                logger.warning("PII detection skipped for a segment: %s", exc)
+            except Exception:  # per-segment detector isolation: recorded in `failures` below
+                logger.warning("PII detection skipped for a segment", exc_info=True)
                 if failures is not None:
                     failures.append("pii")
         # Toxicity score (per-segment). Recorded in the same two sinks as PII, but
@@ -166,10 +169,10 @@ class RedactionService:
                     failures.append("toxicity")
                 if unavailable is not None:
                     unavailable.append("toxicity")
-            except Exception as exc:
+            except Exception:  # per-segment detector isolation: recorded in `failures` below
                 # Was ``logger.debug`` and nothing else, so a toxicity-only fault
                 # reached neither sink and marked nothing — invisible by construction.
-                logger.warning("Toxicity scoring failed for a segment: %s", exc)
+                logger.warning("Toxicity scoring failed for a segment", exc_info=True)
                 if failures is not None:
                     failures.append("toxicity")
 
@@ -234,7 +237,11 @@ class RedactionService:
             det_cfg["pii_use_gliner"] = get_setting_bool(
                 db, "redaction.pii_use_gliner", settings.REDACTION_PII_USE_GLINER
             )
-        except Exception:
+        except SQLAlchemyError:
+            logger.warning(
+                "Could not read redaction.pii_use_gliner; using the configured default",
+                exc_info=True,
+            )
             det_cfg["pii_use_gliner"] = settings.REDACTION_PII_USE_GLINER
         # Language gating: skip detectors that don't support this transcript's language.
         supported, skipped = detector_language_support(media.language)
@@ -322,9 +329,9 @@ class RedactionService:
                         )
                         detector_failures.append("toxicity")
                         detector_unavailable.append("toxicity")
-                    except Exception as exc:
+                    except Exception:  # per-detector isolation: recorded in detector_failures
                         # It ran and threw. Worth re-running, so this one IS a failure.
-                        logger.warning("Batch toxicity failed for file %s: %s", file_id, exc)
+                        logger.warning("Batch toxicity failed for file %s", file_id, exc_info=True)
                         detector_failures.append("toxicity")
 
                 pii_batch, run_pii = RedactionService._batch_pii(
@@ -398,11 +405,11 @@ class RedactionService:
             media.redaction_model_version = redaction_defaults.REDACTION_MODEL_VERSION
             media.redaction_coverage = ran
             db.commit()
-        except Exception as exc:
+        except Exception as exc:  # scan-body boundary: marks the file FAILED and reports it
             db.rollback()
             media.redaction_status = redaction_defaults.REDACTION_STATUS_FAILED
             db.commit()
-            logger.error("Redaction detection failed for file %s: %s", file_id, exc)
+            logger.exception("Redaction detection failed for file %s", file_id)
             return {"status": "failed", "error": str(exc)}
 
         return {
@@ -485,11 +492,11 @@ class RedactionService:
                 det_cfg,
                 failures=failures,
             )
-        except Exception as exc:
+        except Exception:  # edit-time boundary: the segment is marked stale below
             # Not just one detector — the whole re-detection. Nothing was
             # examined, and the segment's cached spans still describe the text it
             # had before the edit.
-            logger.warning("Re-detection after a segment edit raised: %s", exc)
+            logger.warning("Re-detection after a segment edit raised", exc_info=True)
             return RedactionService._mark_redaction_stale(db, media_file, ["*"])
 
         blocking: list[str] = []
@@ -594,8 +601,8 @@ class RedactionService:
             )
             failures.append("llm")
             return {}
-        except Exception as exc:
-            logger.warning("LLM redaction detection failed for file %s: %s", media.id, exc)
+        except Exception:  # optional-detector boundary: recorded in `failures`
+            logger.warning("LLM redaction detection failed for file %s", media.id, exc_info=True)
             failures.append("llm")
             return {}
         return {idx: [sp.model_dump() for sp in spans] for idx, spans in detected.items()}

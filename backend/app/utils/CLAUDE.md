@@ -64,7 +64,7 @@ so keep heavy imports lazy.
   False without a support-access grant → takedown 404 → public → tenant gate → owner → shares, in
   that order), `require_resource_owner`.
 - `db_helpers.py` — `apply_tenant_scope` (SQL-plane default-deny tenant filter mirroring
-  `api/deps_context.scope_to_context`), user file/tag/speaker query builders, tag-cache busting.
+  `services/tenant_scope.context_scope_criterion`), user file/tag/speaker query builders, tag-cache busting.
 - `stats_helpers.py`'s `get_queue_depths()` (the admin Statistics API) is a thin caller of
   `app.core.celery_metrics.queue_snapshot` — the single source for Celery queue measurement
   (issue #892). Do not re-add a local `LLEN`/pipeline here; call that function instead.

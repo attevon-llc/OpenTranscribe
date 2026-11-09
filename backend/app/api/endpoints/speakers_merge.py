@@ -15,10 +15,9 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.speakers_profile_workflow import _clear_video_cache_for_speaker
 from app.db.base import get_db
-from app.models.media import MediaFile
-from app.models.media import TranscriptSegment
 from app.models.user import User
 from app.schemas.speaker import Speaker as SpeakerSchema
+from app.services import speaker_lookups
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
@@ -109,9 +108,7 @@ def merge_speakers(
     source_speaker_id = source_speaker.id
 
     # Update all transcript segments from source to target
-    db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == source_speaker.id).update(
-        {"speaker_id": target_speaker.id}
-    )
+    speaker_lookups.reassign_transcript_segments(db, source_speaker.id, target_speaker.id)
 
     # Get media file IDs that are affected
     affected_media_files = {int(source_speaker.media_file_id), int(target_speaker.media_file_id)}
@@ -161,7 +158,7 @@ def merge_speakers(
     from app.services.search.reindex_dispatch import dispatch_transcript_reindex
 
     for media_file_id in affected_media_files:
-        merged_file = db.query(MediaFile).filter(MediaFile.id == media_file_id).first()
+        merged_file = speaker_lookups.file_by_id(db, media_file_id)
         if merged_file:
             dispatch_transcript_reindex(
                 file_id=merged_file.id,

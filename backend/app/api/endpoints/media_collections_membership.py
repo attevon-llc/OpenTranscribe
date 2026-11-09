@@ -131,7 +131,7 @@ def add_media_to_collection(
     # member could pull another scope's file into this collection, exposing it via
     # the collection detail (cross-scope leak). In the personal workspace they must
     # also be the caller's own; in an organization every org file is already
-    # visible to every member (scope_to_context), so any of them may go into the
+    # visible to every member (context_scope_criterion), so any of them may go into the
     # org's collection (v422). Community invariance: ctx.org_id is None and rows
     # are org-less, so this is the caller's-own-files rule.
     if ctx.org_id is not None:

@@ -3,7 +3,7 @@
 Kept dependency-free (stdlib only) so any layer — utils, services, endpoints —
 can import the ``UNSCOPED`` sentinel and ``OrgScope`` type without pulling in the
 FastAPI/auth chain. ``app.api.deps_context`` re-exports these for the plan's
-"reuse ``scope_to_context``" intent.
+"reuse ``context_scope_criterion``" intent.
 """
 
 

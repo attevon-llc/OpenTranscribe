@@ -22,14 +22,12 @@ from app.api.endpoints.speaker_match_notify import (
 )
 from app.api.endpoints.speakers_profile_workflow import _update_profile_embedding
 from app.core.db_overload import reraise_db_overload
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerMatch
-from app.models.speaker import SpeakerProfile
+from app.services import speaker_label_queries
+from app.services import speaker_lookups
 from app.services.embedding_mode_service import voiceprint_model_id
-from app.services.hold_guard import unheld_file_ids
 from app.services.opensearch_service import get_speaker_embedding
-from app.services.permission_service import file_ids_in_scope
 from app.services.privacy import policy as privacy_policy
 from app.services.speaker_match_errors import SuggestionSyncIncompleteError
 from app.services.speaker_profile_activity import touch_profile_interaction
@@ -75,8 +73,7 @@ def _get_profile_uuid(db: Session, profile_id: int | None) -> str | None:
     """Get the UUID string for a profile by its ID."""
     if not profile_id:
         return None
-    profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
-    return str(profile.uuid) if profile else None
+    return speaker_lookups.profile_uuid(db, profile_id)
 
 
 def _speaker_sync_document(db: Session, speaker: Speaker) -> dict[str, Any]:
@@ -277,10 +274,7 @@ def _persist_match_results(
     if not scored:
         return auto_applied_count, suggested_count, documents
 
-    rows = {
-        int(row.id): row
-        for row in db.query(Speaker).filter(Speaker.id.in_([m["id"] for m in scored])).all()
-    }
+    rows = speaker_lookups.speakers_by_id(db, [m["id"] for m in scored])
 
     for match in scored:
         speaker = rows.get(match["id"])
@@ -332,17 +326,8 @@ def _load_suggestion_speaker_documents(
     the filter below.
     A Postgres error propagates: ``[]`` means "nothing to sync".
     """
-    suggestion_speakers = (
-        db.query(Speaker)
-        .filter(
-            Speaker.user_id == trigger["user_id"],
-            Speaker.media_file_id.in_(file_ids_in_scope(trigger["organization_id"])),
-            Speaker.suggested_name == trigger["display_name"],
-            Speaker.confidence >= 0.5,
-            Speaker.confidence < 0.75,
-            Speaker.verified.is_(False),
-        )
-        .all()
+    suggestion_speakers = speaker_label_queries.medium_confidence_suggestions(
+        db, trigger["user_id"], trigger["organization_id"], trigger["display_name"]
     )
     return [_speaker_sync_document(db, speaker) for speaker in suggestion_speakers]
 
@@ -386,9 +371,7 @@ def _snapshot_trigger(db: Session, updated_speaker: Speaker) -> dict[str, Any]:
         "display_name": str(updated_speaker.display_name) if updated_speaker.display_name else None,
         "profile_id": int(updated_speaker.profile_id) if updated_speaker.profile_id else None,
         # Candidates are confined to the tenant of the labeled speaker's file.
-        "organization_id": db.query(MediaFile.organization_id)
-        .filter(MediaFile.id == updated_speaker.media_file_id)
-        .scalar(),
+        "organization_id": speaker_lookups.file_organization_id(db, updated_speaker.media_file_id),
         "profile_uuid": _get_profile_uuid(
             db, int(updated_speaker.profile_id) if updated_speaker.profile_id else None
         ),
@@ -406,22 +389,9 @@ def _load_candidates(db: Session, trigger: dict[str, Any]) -> list[dict[str, Any
             "display_name": row.display_name,
             "verified": bool(row.verified),
         }
-        for row in db.query(
-            Speaker.id,
-            Speaker.uuid,
-            Speaker.name,
-            Speaker.display_name,
-            Speaker.verified,
+        for row in speaker_label_queries.candidate_speaker_rows(
+            db, trigger["user_id"], trigger["id"], trigger["organization_id"]
         )
-        .filter(
-            Speaker.user_id == trigger["user_id"],
-            Speaker.id != trigger["id"],
-            Speaker.media_file_id.in_(file_ids_in_scope(trigger["organization_id"])),
-            # A held file's speakers keep the identity they had when held: no auto-applied
-            # name and no new suggestion (legal-hold freeze, plan §3.5).
-            Speaker.media_file_id.in_(unheld_file_ids()),
-        )
-        .all()
     ]
     blocked = _blocked_candidate_ids(db, trigger, [c["id"] for c in candidates])
     return [c for c in candidates if c["id"] not in blocked]
@@ -596,14 +566,7 @@ def store_speaker_match(speaker1_id: int, speaker2_id: int, confidence: float, d
     larger_id = max(speaker1_id, speaker2_id)
 
     # Check if match already exists
-    existing_match = (
-        db.query(SpeakerMatch)
-        .filter(
-            SpeakerMatch.speaker1_id == smaller_id,
-            SpeakerMatch.speaker2_id == larger_id,
-        )
-        .first()
-    )
+    existing_match = speaker_lookups.speaker_match_for_pair(db, smaller_id, larger_id)
 
     if existing_match:
         # Update confidence if higher

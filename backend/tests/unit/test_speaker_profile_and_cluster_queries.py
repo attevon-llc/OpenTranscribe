@@ -1,0 +1,122 @@
+"""Service-level behaviour of the speaker profile, collection and cluster queries."""
+
+from __future__ import annotations
+
+import uuid
+
+from app.models.media import MediaFile
+from app.models.media import TranscriptSegment
+from app.models.speaker import Speaker
+from app.models.speaker import SpeakerCluster
+from app.models.speaker import SpeakerCollection
+from app.models.speaker import SpeakerCollectionMember
+from app.models.speaker import SpeakerProfile
+from app.services import speaker_cluster_queries as clusters
+from app.services import speaker_profile_queries as profiles
+
+
+def _file(db, owner, **kw) -> MediaFile:
+    mf = MediaFile(
+        user_id=owner.id,
+        filename=f"{uuid.uuid4().hex[:6]}.wav",
+        storage_path=f"test/{uuid.uuid4().hex}.wav",
+        file_size=1,
+        content_type="audio/wav",
+        status=kw.pop("status", "completed"),
+        **kw,
+    )
+    db.add(mf)
+    db.flush()
+    return mf
+
+
+def _speaker(db, owner, mf, **kw) -> Speaker:
+    spk = Speaker(
+        user_id=owner.id,
+        media_file_id=mf.id,
+        name=kw.pop("name", f"S_{uuid.uuid4().hex[:6]}"),
+        **kw,
+    )
+    db.add(spk)
+    db.flush()
+    return spk
+
+
+def _segments(db, mf, speaker, starts_and_lengths):
+    rows = [
+        TranscriptSegment(
+            media_file_id=mf.id,
+            speaker_id=speaker.id,
+            start_time=start,
+            end_time=start + length,
+            text="t",
+        )
+        for start, length in starts_and_lengths
+    ]
+    db.add_all(rows)
+    db.flush()
+    return rows
+
+
+def test_profile_counts_cover_available_files_only(db_session, normal_user):
+    prof = SpeakerProfile(user_id=normal_user.id, name=f"P{uuid.uuid4().hex[:6]}")
+    db_session.add(prof)
+    db_session.flush()
+    one, two = _file(db_session, normal_user), _file(db_session, normal_user)
+    for mf in (one, one, two):
+        _speaker(db_session, normal_user, mf, profile_id=prof.id)
+    _speaker(
+        db_session,
+        normal_user,
+        _file(db_session, normal_user, is_quarantined=True),
+        profile_id=prof.id,
+    )
+    counts = profiles.profile_media_instance_counts(db_session, [prof.id])
+    assert counts == {prof.id: (2, 3)}
+    assert profiles.speakers_linked_to(db_session, prof.id).__len__() == 4
+
+
+def test_collection_counts_and_names(db_session, normal_user):
+    col = SpeakerCollection(user_id=normal_user.id, name="Team")
+    prof = SpeakerProfile(user_id=normal_user.id, name=f"P{uuid.uuid4().hex[:6]}")
+    db_session.add_all([col, prof])
+    db_session.flush()
+    db_session.add(SpeakerCollectionMember(collection_id=col.id, speaker_profile_id=prof.id))
+    db_session.flush()
+    assert profiles.collection_member_counts(db_session, [col.id]) == {col.id: 1}
+    assert profiles.collection_member_counts(db_session, []) == {}
+    assert profiles.collection_by_exact_name(db_session, normal_user.id, "Team", None) is col
+    assert (
+        profiles.collection_by_exact_name(db_session, normal_user.id, "Team", 2_000_000_000) is None
+    )
+    assert profiles.list_profiles(
+        db_session, SpeakerProfile.user_id == normal_user.id, collection_id=col.id
+    ) == [prof]
+    assert profiles.profile_ids_owned_by(db_session, normal_user.id) == {prof.id}
+
+
+def test_cluster_helpers_count_dissolve_and_match(db_session, normal_user):
+    mf = _file(db_session, normal_user)
+    cluster = SpeakerCluster(user_id=normal_user.id, label="c")
+    db_session.add(cluster)
+    db_session.flush()
+    spk = _speaker(db_session, normal_user, mf, cluster_id=cluster.id)
+    assert clusters.speaker_totals(db_session, [Speaker.user_id == normal_user.id]) == (1, 1)
+    assert clusters.count_clusters(db_session, [SpeakerCluster.user_id == normal_user.id]) == 1
+    assert clusters.cluster_matching(db_session, [SpeakerCluster.uuid == cluster.uuid]) is cluster
+    clusters.dissolve_cluster_membership(db_session, cluster.id)
+    db_session.refresh(spk)
+    assert spk.cluster_id is None
+    assert clusters.speaker_totals(db_session, [Speaker.user_id == normal_user.id]) == (1, 0)
+
+
+def test_longest_segment_breaks_ties_by_id(db_session, normal_user):
+    mf = _file(db_session, normal_user)
+    spk = _speaker(db_session, normal_user, mf)
+    short, tied_first, tied_second = _segments(
+        db_session, mf, spk, [(0.0, 1.0), (5.0, 3.0), (9.0, 3.0)]
+    )
+    assert clusters.longest_segment_of_speaker(db_session, spk.id) is tied_first
+    assert clusters.speaker_of_user_by_uuid(db_session, str(spk.uuid), normal_user.id) is spk
+    assert clusters.speaker_of_user_by_uuid(db_session, str(spk.uuid), normal_user.id + 1) is None
+    assert short is not tied_first

@@ -8,12 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
-from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.file_availability import file_is_available
-from app.services.permission_service import PermissionService
 from app.services.permission_service import file_ids_in_scope
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
@@ -21,6 +19,9 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import machine_identity_clauses
 from app.services.privacy.redact_view import visible_display_name_expr
 from app.services.privacy.redact_view import visible_profile_id_expr
+from app.services.speaker_list_queries import accessible_file_scope
+from app.services.speaker_list_queries import profile_id_for_uuid
+from app.services.speaker_list_queries import speaker_picker_groups
 from app.utils.speaker_name_rules import PLACEHOLDER_SPEAKER_NAME_PATTERN
 
 logger = logging.getLogger(__name__)
@@ -28,40 +29,6 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 # --- Helper functions for list_speakers ---
-
-
-def _filter_speakers_query(query: Any, verified_only: bool, file_id: int | None) -> Any:
-    """Apply filters to the speakers query.
-
-    Note there is no ``for_filter`` branch here any more: it held a second copy
-    of the placeholder predicate (see :data:`PLACEHOLDER_SPEAKER_NAME_PATTERN`)
-    that the only caller has always passed ``False`` for, because the
-    ``for_filter=True`` fast path never reaches this function. Two definitions
-    of "is this a real name" is exactly the drift that would let one of them
-    silently stop matching the other.
-    """
-    if verified_only:
-        query = query.filter(Speaker.verified)
-
-    if file_id is not None:
-        query = query.filter(Speaker.media_file_id == file_id)
-
-    return query
-
-
-def _speaker_number_order() -> list[Any]:
-    """SQL form of :func:`_sort_speakers` (SPEAKER_nn first by number, others after) so a
-    page is cut in the database; ``id`` makes the order total, which paging needs."""
-    from sqlalchemy import Integer
-    from sqlalchemy import case
-    from sqlalchemy import cast
-    from sqlalchemy import func
-
-    number = case(
-        (Speaker.name.op("~")(r"^SPEAKER_\d+$"), cast(func.substr(Speaker.name, 9), Integer)),
-        else_=999,
-    )
-    return [number, Speaker.id]
 
 
 def _sort_speakers(speakers: list[Speaker]) -> list[Speaker]:
@@ -108,14 +75,13 @@ def _resolve_profile_filter_id(
     """
     if not profile_uuid:
         return None
-    query = db.query(SpeakerProfile.id).filter(SpeakerProfile.uuid == profile_uuid)
-    if not bypass.sees_all_in_scope:
-        query = query.filter(SpeakerProfile.user_id == current_user.id)
     tenant_pred = org_scope_pred(SpeakerProfile.organization_id, organization_id)
-    if tenant_pred is not None:
-        query = query.filter(tenant_pred)
-    found = query.scalar()
-    return int(found) if found is not None else None
+    return profile_id_for_uuid(
+        db,
+        profile_uuid,
+        owner_user_id=None if bypass.sees_all_in_scope else current_user.id,
+        tenant_pred=tenant_pred,
+    )
 
 
 def _get_unique_speakers_for_filter(
@@ -191,18 +157,13 @@ def _get_unique_speakers_for_filter(
     from sqlalchemy import and_
     from sqlalchemy import func
     from sqlalchemy import not_
-    from sqlalchemy import select
 
     # The files this caller may list speakers of: a caller who sees all in scope gets the
     # tenant's speakers, others see accessible files only.
     if bypass.sees_all_in_scope:
         scope_files = file_ids_in_scope(organization_id)
     else:
-        scope_files = select(
-            PermissionService.get_accessible_file_ids_subquery(
-                db, current_user.id, organization_id=organization_id
-            )
-        )
+        scope_files = accessible_file_scope(db, current_user.id, organization_id)
 
     # A name or link a voiceprint made is not offered while that file's voiceprints are off
     # (issue #1280): the row is listed under its diarizer label like any unnamed speaker, and
@@ -238,60 +199,32 @@ def _get_unique_speakers_for_filter(
         base_filter.append(visible_profile.is_(None))
 
     bounded_limit = max(1, min(limit, SPEAKER_FILTER_MAX_LIMIT))
-    media_count_col = func.count(func.distinct(Speaker.media_file_id))
     # A group counts as unlabeled only when EVERY row in it is — a label shared
     # with a real name is a person's entry, not a review bucket.
     unnamed_col = func.bool_and(not_(has_human_name))
-    grouped = (
-        db.query(
-            label_col.label("label"),
-            unnamed_col.label("is_unnamed"),
-            media_count_col.label("media_count"),
-            func.min(Speaker.id).label("rep_id"),
-            func.min(visible_profile).label("profile_id"),
-        )
-        .filter(*base_filter)
-        .group_by(label_col)
-        .order_by(unnamed_col.asc(), media_count_col.desc(), label_col)
-        .limit(bounded_limit)
-        .all()
+    groups = speaker_picker_groups(
+        db,
+        base_filter,
+        label=label_col,
+        is_unnamed=unnamed_col,
+        visible_profile=visible_profile,
+        limit=bounded_limit,
     )
-    if not grouped:
-        return []
 
-    rep_ids = [row.rep_id for row in grouped]
-    rep_rows = db.query(Speaker.id, Speaker.uuid, Speaker.name).filter(Speaker.id.in_(rep_ids))
-    reps_by_id = {row.id: row for row in rep_rows}
-
-    profile_ids = {row.profile_id for row in grouped if row.profile_id is not None}
-    profile_uuids: dict[int, str] = {}
-    if profile_ids:
-        profile_uuids = {
-            pid: str(puuid)
-            for pid, puuid in db.query(SpeakerProfile.id, SpeakerProfile.uuid).filter(
-                SpeakerProfile.id.in_(profile_ids)
-            )
+    # An unlabeled group is projected with display_name=None so that the
+    # caller's `display_name || name` fallback yields the grouping label
+    # even when the label came from a display_name holding "SPEAKER_02".
+    return [
+        {
+            "uuid": group.representative_uuid,
+            "name": group.label if group.is_unnamed else group.representative_name,
+            "display_name": None if group.is_unnamed else group.label,
+            "media_count": group.media_count,
+            "is_unnamed": group.is_unnamed,
+            "profile_id": group.profile_uuid,
         }
-
-    results: list[dict[str, Any]] = []
-    for row in grouped:
-        rep = reps_by_id.get(row.rep_id)
-        if rep is None:
-            continue
-        # An unlabeled group is projected with display_name=None so that the
-        # caller's `display_name || name` fallback yields the grouping label
-        # even when the label came from a display_name holding "SPEAKER_02".
-        results.append(
-            {
-                "uuid": str(rep.uuid),
-                "name": row.label if row.is_unnamed else rep.name,
-                "display_name": None if row.is_unnamed else row.label,
-                "media_count": row.media_count,
-                "is_unnamed": bool(row.is_unnamed),
-                "profile_id": profile_uuids.get(row.profile_id) if row.profile_id else None,
-            }
-        )
-    return results
+        for group in groups
+    ]
 
 
 def _resolve_file_uuid_to_id(
@@ -315,80 +248,3 @@ def _resolve_file_uuid_to_id(
         organization_id=organization_id,
     )
     return media_file.id
-
-
-def _get_segment_counts_for_speakers(speaker_ids: list[int], db: Session) -> dict[int, int]:
-    """Pre-calculate segment counts for all speakers in one query."""
-    from sqlalchemy import func
-
-    if not speaker_ids:
-        return {}
-
-    count_results = (
-        db.query(TranscriptSegment.speaker_id, func.count(TranscriptSegment.id))
-        .filter(TranscriptSegment.speaker_id.in_(speaker_ids))
-        .group_by(TranscriptSegment.speaker_id)
-        .all()
-    )
-    return {speaker_id: count for speaker_id, count in count_results if speaker_id is not None}
-
-
-def _get_first_segment_timestamps_for_speakers(
-    speaker_ids: list[int], file_id: int, db: Session
-) -> dict[int, list[dict[str, Any]]]:
-    """Get the first 4 segment timestamps per speaker with global segment index.
-
-    Uses SQL window functions for efficient single-pass computation:
-    - ROW_NUMBER() OVER (PARTITION BY speaker_id ORDER BY start_time) for per-speaker rank
-    - ROW_NUMBER() OVER (ORDER BY start_time) for global segment position
-
-    Returns:
-        Dict mapping speaker_id to list of timestamp dicts with uuid, start_time,
-        and segment_index (0-based global position within the file).
-    """
-    from sqlalchemy import text
-
-    if not speaker_ids:
-        return {}
-
-    # Use a raw SQL query with window functions for efficiency
-    # This gets all segments for the file, ranks them per-speaker and globally,
-    # then filters to only the first 4 per speaker
-    sql = text("""
-        WITH ranked AS (
-            SELECT
-                ts.speaker_id,
-                ts.uuid,
-                ts.start_time,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ts.speaker_id ORDER BY ts.start_time
-                ) AS speaker_rank,
-                ROW_NUMBER() OVER (
-                    ORDER BY ts.start_time
-                ) - 1 AS segment_index
-            FROM transcript_segment ts
-            WHERE ts.media_file_id = :file_id
-              AND ts.speaker_id = ANY(:speaker_ids)
-        )
-        SELECT speaker_id, uuid, start_time, segment_index
-        FROM ranked
-        WHERE speaker_rank <= 4
-        ORDER BY speaker_id, start_time
-    """)
-
-    results = db.execute(sql, {"file_id": file_id, "speaker_ids": speaker_ids}).fetchall()
-
-    timestamps: dict[int, list[dict[str, Any]]] = {}
-    for row in results:
-        sid = row[0]
-        if sid not in timestamps:
-            timestamps[sid] = []
-        timestamps[sid].append(
-            {
-                "uuid": str(row[1]),
-                "start_time": float(row[2]),
-                "segment_index": int(row[3]),
-            }
-        )
-
-    return timestamps

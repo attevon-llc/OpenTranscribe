@@ -40,8 +40,14 @@ from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.services.request_context import RequestContext
+from app.services.summary_prompt_queries import clear_active_prompt_settings
+from app.services.summary_prompt_queries import get_active_prompt_setting
+from app.services.summary_prompt_queries import linked_collection_rows
+from app.services.summary_prompt_queries import list_prompts_page
+from app.services.summary_prompt_queries import prompt_by_id_matching
+from app.services.summary_prompt_queries import prompts_for_content_type
+from app.services.summary_prompt_queries import users_by_id
 from app.services.uuid_helpers import get_prompt_by_uuid
-from app.utils.pagination import paginate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -51,21 +57,10 @@ def _linked_collections_by_prompt(
     db: Session, prompt_ids: list[int], user_id: int
 ) -> dict[int, list[schemas.LinkedCollection]]:
     """Collections of the current user that use each prompt as their default."""
-    from app.models.collection import Collection
-
     collection_map: dict[int, list[schemas.LinkedCollection]] = {}
     if not prompt_ids:
         return collection_map
-    collection_rows = (
-        db.query(Collection.default_summary_prompt_id, Collection.uuid, Collection.name)
-        .filter(
-            Collection.default_summary_prompt_id.in_(prompt_ids),
-            Collection.user_id == user_id,
-        )
-        .order_by(Collection.name)
-        .all()
-    )
-    for row in collection_rows:
+    for row in linked_collection_rows(db, prompt_ids, user_id):
         pid = row[0]
         if pid is None:
             continue
@@ -85,11 +80,7 @@ def _with_collections_and_authors(
     # Batch-fetch users referenced for attribution: creators + sharers
     referenced_ids = {p.user_id for p in prompts if p.user_id and p.user_id != user_id}
     referenced_ids |= {p.shared_by for p in prompts if p.shared_by}
-    users = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(referenced_ids)).all()}
-        if referenced_ids
-        else {}
-    )
+    users = users_by_id(db, referenced_ids)
 
     prompt_list = []
     for p in prompts:
@@ -170,19 +161,7 @@ def get_prompts(
     # Only active prompts
     conditions.append(models.SummaryPrompt.is_active.is_(True))
 
-    # Get prompts
-    query = db.query(models.SummaryPrompt)
-    if conditions:
-        query = query.filter(and_(*conditions))
-
-    prompts, total = paginate(
-        query.order_by(
-            models.SummaryPrompt.is_system_default.desc(),  # System prompts first
-            models.SummaryPrompt.name,
-        ),
-        skip,
-        limit,
-    )
+    prompts, total = list_prompts_page(db, conditions, skip, limit)
 
     collection_map = _linked_collections_by_prompt(db, [p.id for p in prompts], current_user.id)
     prompt_list = _with_collections_and_authors(db, prompts, collection_map, current_user.id)
@@ -233,73 +212,29 @@ def get_prompts_by_content_type(
             detail=f"Invalid content type. Must be one of: {valid_types}",
         )
 
-    # Get system prompts for this content type
-    system_prompts = (
-        db.query(models.SummaryPrompt)
-        .filter(
-            and_(
-                models.SummaryPrompt.content_type == content_type,
-                models.SummaryPrompt.is_system_default,
-                models.SummaryPrompt.is_active,
-            )
-        )
-        .order_by(models.SummaryPrompt.name)
-        .all()
+    system_prompts = prompts_for_content_type(
+        db, content_type, models.SummaryPrompt.is_system_default
+    )
+    user_prompts = prompts_for_content_type(
+        db,
+        content_type,
+        and_(
+            models.SummaryPrompt.user_id == current_user.id,
+            not_(models.SummaryPrompt.is_system_default),
+        ),
     )
 
-    # Get user's custom prompts for this content type
-    user_prompts = (
-        db.query(models.SummaryPrompt)
-        .filter(
-            and_(
-                models.SummaryPrompt.content_type == content_type,
-                models.SummaryPrompt.user_id == current_user.id,
-                not_(models.SummaryPrompt.is_system_default),
-                models.SummaryPrompt.is_active,
-            )
-        )
-        .order_by(models.SummaryPrompt.name)
-        .all()
-    )
-
-    # Get active prompt ID for this user
-    active_prompt_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            and_(
-                models.UserSetting.user_id == current_user.id,
-                models.UserSetting.setting_key == "active_summary_prompt_id",
-            )
-        )
-        .first()
-    )
+    active_prompt_setting = get_active_prompt_setting(db, current_user.id)
 
     active_prompt_uuid = None
     if active_prompt_setting and active_prompt_setting.setting_value:
         with contextlib.suppress(ValueError, TypeError):
-            # Get the prompt by internal ID and extract its UUID
             active_prompt_id = int(active_prompt_setting.setting_value)
-            active_prompt = (
-                db.query(models.SummaryPrompt)
-                .filter(models.SummaryPrompt.id == active_prompt_id, _usable_by(ctx))
-                .first()
-            )
+            active_prompt = prompt_by_id_matching(db, active_prompt_id, _usable_by(ctx))
             if active_prompt:
                 active_prompt_uuid = str(active_prompt.uuid)
 
-    # Get shared prompts for this content type (from other users)
-    shared_prompts = (
-        db.query(models.SummaryPrompt)
-        .filter(
-            and_(
-                models.SummaryPrompt.content_type == content_type,
-                _shared_in_tenant(ctx),
-                models.SummaryPrompt.is_active,
-            )
-        )
-        .order_by(models.SummaryPrompt.name)
-        .all()
-    )
+    shared_prompts = prompts_for_content_type(db, content_type, _shared_in_tenant(ctx))
 
     return schemas.ContentTypePromptsResponse(
         content_type=content_type,
@@ -427,10 +362,7 @@ def delete_prompt(
         )
 
     # Clean up ALL users who had this prompt set as active (owner + non-owners for shared)
-    db.query(models.UserSetting).filter(
-        models.UserSetting.setting_key == "active_summary_prompt_id",
-        models.UserSetting.setting_value == str(prompt_id),
-    ).delete(synchronize_session=False)
+    clear_active_prompt_settings(db, prompt_id)
 
     db.delete(prompt)
     db.commit()

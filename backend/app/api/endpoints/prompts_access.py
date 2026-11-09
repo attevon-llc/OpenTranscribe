@@ -17,6 +17,9 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.services.request_context import RequestContext
+from app.services.summary_prompt_queries import active_prompt_matches_uuid
+from app.services.summary_prompt_queries import count_active_user_prompts
+from app.services.summary_prompt_queries import prompt_matches
 from app.utils.tenant_sharing import owner_in_tenant
 from app.utils.tenant_sharing import shared_visible_in_tenant
 
@@ -68,26 +71,12 @@ def _usable_by(ctx: RequestContext) -> Any:
 
 
 def _is_usable(db: Session, prompt: models.SummaryPrompt, ctx: RequestContext) -> bool:
-    return (
-        db.query(models.SummaryPrompt.id)
-        .filter(models.SummaryPrompt.id == prompt.id, _usable_by(ctx))
-        .first()
-        is not None
-    )
+    return prompt_matches(db, prompt.id, _usable_by(ctx))
 
 
 def require_usable_prompt_uuid(db: Session, prompt_uuid: str, ctx: RequestContext) -> None:
     """404 unless ``prompt_uuid`` names an active prompt the caller may use."""
-    found = (
-        db.query(models.SummaryPrompt.id)
-        .filter(
-            models.SummaryPrompt.uuid == prompt_uuid,
-            models.SummaryPrompt.is_active.is_(True),
-            _usable_by(ctx),
-        )
-        .first()
-    )
-    if found is None:
+    if not active_prompt_matches_uuid(db, prompt_uuid, _usable_by(ctx)):
         raise HTTPException(status_code=404, detail="Prompt not found")
 
 
@@ -96,17 +85,7 @@ def _assert_under_prompt_limit(db: Session, user_id: int) -> None:
 
     Counts active, user-owned prompts. Clones count toward this limit too.
     """
-    user_prompt_count = (
-        db.query(models.SummaryPrompt)
-        .filter(
-            and_(
-                models.SummaryPrompt.user_id == user_id,
-                models.SummaryPrompt.is_active,
-            )
-        )
-        .count()
-    )
-    if user_prompt_count >= MAX_USER_PROMPTS:
+    if count_active_user_prompts(db, user_id) >= MAX_USER_PROMPTS:
         raise HTTPException(
             status_code=400,
             detail=f"Maximum number of custom prompts reached ({MAX_USER_PROMPTS})",

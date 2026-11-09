@@ -16,7 +16,6 @@ from fastapi import Request
 from sqlalchemy.exc import OperationalError
 
 from app.api.deps_context import get_base_context
-from app.api.deps_context import scope_to_context
 from app.auth.external_sync import sync_external_user_to_db
 from app.auth.provider_registry import ExternalIdentity
 from app.core.capabilities import COMMUNITY_CAPABILITIES
@@ -30,6 +29,7 @@ from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.services.request_context import RequestContext
+from app.services.tenant_scope import context_scope_criterion
 from app.services.usage_service import record_event
 from app.tasks.transcription.hooks import CompletionContext
 from app.tasks.transcription.hooks import DispatchBlockedError
@@ -358,7 +358,7 @@ class TestRequestContext:
         assert ctx.org_id == org.id
         assert ctx.is_org_admin
 
-    def test_scope_to_context_filters(self, db_session):
+    def test_context_scope_criterion_filters(self, db_session):
         ident = _identity()
         user = self._user(db_session, ident)
         org = Organization(external_org_id=ident.org_id, name="Acme")
@@ -386,8 +386,10 @@ class TestRequestContext:
         personal_ctx = RequestContext(user=user)
         org_ctx = RequestContext(user=user, org_id=org.id, org_role="org:member")
 
-        personal_q = scope_to_context(db_session.query(MediaFile), MediaFile, personal_ctx)
-        org_q = scope_to_context(db_session.query(MediaFile), MediaFile, org_ctx)
+        personal_q = db_session.query(MediaFile).filter(
+            context_scope_criterion(MediaFile, personal_ctx)
+        )
+        org_q = db_session.query(MediaFile).filter(context_scope_criterion(MediaFile, org_ctx))
 
         personal_ids = {f.id for f in personal_q.all()}
         org_ids = {f.id for f in org_q.all()}

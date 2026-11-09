@@ -52,6 +52,7 @@ from app.schemas.summary import SpeakerIdentificationResponse
 from app.schemas.summary import SummaryResponse
 from app.schemas.summary import SummaryTaskRequest
 from app.services.content_audit import record_file_event
+from app.services.file_summary_writes import clear_summary_columns
 from app.services.hold_guard import DESTROY_DERIVED_REFUSAL
 from app.services.llm_service import is_llm_available
 from app.services.llm_settings_outage import llm_settings_outage_as_503
@@ -694,21 +695,17 @@ def delete_summary(
         db, file_id, actor=current_user, action="summary_delete", message=DESTROY_DERIVED_REFUSAL
     )
 
-    # ``dict[Any, Any]`` because ``Query.update`` accepts string OR column keys
-    # and its parameter type is invariant in the key.
-    updates: dict[Any, Any] = {}
+    columns: list[str] = []
     if media_file.summary_data:
-        updates["summary_data"] = None
+        columns.append("summary_data")
     if media_file.summary_opensearch_id:
-        updates["summary_opensearch_id"] = None
+        columns.append("summary_opensearch_id")
 
-    if not updates:
+    if not columns:
         raise HTTPException(status_code=404, detail="No summary found to delete")
 
     try:
-        db.query(MediaFile).filter(MediaFile.id == file_id).update(
-            updates, synchronize_session=False
-        )
+        clear_summary_columns(db, file_id, columns)
         db.commit()
     except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. Nothing in the block above

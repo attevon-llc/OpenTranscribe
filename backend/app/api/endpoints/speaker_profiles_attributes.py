@@ -19,10 +19,8 @@ from app.api.error_handlers import ErrorHandler
 from app.core.constants import MAX_AVATAR_SIZE
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.speaker import Speaker
 from app.models.user import User
-from app.services.hold_guard import unheld_file_ids
-from app.services.permission_service import file_ids_in_scope
+from app.services import speaker_label_queries
 from app.services.request_context import RequestContext
 from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.uuid_helpers import require_profile_in_scope
@@ -182,19 +180,8 @@ def confirm_profile_gender(
     profile.predicted_gender = gender
 
     # Bulk-update the caller's linked speakers in this tenant
-    updated_count = (
-        db.query(Speaker)
-        .filter(
-            Speaker.profile_id == profile.id,
-            Speaker.user_id == current_user.id,
-            Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
-            # A held file's speaker keeps the gender it had when held (legal-hold freeze).
-            Speaker.media_file_id.in_(unheld_file_ids()),
-        )
-        .update(
-            {"predicted_gender": gender, "gender_confirmed_by_user": True},
-            synchronize_session="fetch",
-        )
+    updated_count = speaker_label_queries.set_gender_on_profile_speakers(
+        db, profile.id, current_user.id, ctx.org_id, gender
     )
 
     touch_profile_interaction(db, int(profile.id), "human_edit")

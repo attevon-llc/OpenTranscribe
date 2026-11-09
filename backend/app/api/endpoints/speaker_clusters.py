@@ -8,7 +8,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -17,7 +16,6 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
-from app.models.speaker import SpeakerClusterMember
 from app.models.user import User
 from app.schemas.speaker_cluster import BatchVerifyRequest
 from app.schemas.speaker_cluster import ClusterPromoteRequest
@@ -36,6 +34,12 @@ from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerImpact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.speaker_cluster_queries import cluster_matching
+from app.services.speaker_cluster_queries import count_clusters
+from app.services.speaker_cluster_queries import dissolve_cluster_membership
+from app.services.speaker_cluster_queries import longest_segment_of_speaker
+from app.services.speaker_cluster_queries import speaker_of_user_by_uuid
+from app.services.speaker_cluster_queries import speaker_totals
 from app.services.speaker_clustering_service import SpeakerClusteringService
 from app.utils.uuid_parse import parse_uuid_or_none
 
@@ -224,11 +228,7 @@ def get_speaker_media_preview(
     for this speaker so the player can seek directly to their voice.
     """
     _require_uuid(speaker_uuid, not_found_detail="Speaker not found")
-    speaker = (
-        db.query(Speaker)
-        .filter(Speaker.uuid == speaker_uuid, Speaker.user_id == current_user.id)
-        .first()
-    )
+    speaker = speaker_of_user_by_uuid(db, speaker_uuid, current_user.id)
     if not speaker:
         raise HTTPException(status_code=404, detail="Speaker not found")
 
@@ -271,20 +271,7 @@ def get_speaker_media_preview(
         except Exception:  # get_file_url wraps every failure in a bare Exception
             logger.exception("Failed to generate presigned URL for %s", source.object_name)
 
-    # Longest transcript segment for this speaker
-    from app.models.media import TranscriptSegment
-
-    best_seg = (
-        db.query(TranscriptSegment)
-        .filter(TranscriptSegment.speaker_id == speaker.id)
-        .order_by(
-            (TranscriptSegment.end_time - TranscriptSegment.start_time).desc(),
-            # Equal-duration segments would otherwise rank in physical storage order,
-            # which a delete-then-bulk-insert reshuffles (issue #433).
-            TranscriptSegment.id,
-        )
-        .first()
-    )
+    best_seg = longest_segment_of_speaker(db, speaker.id)
     seg_start = float(best_seg.start_time) if best_seg else 0.0
     seg_end = float(best_seg.end_time) if best_seg else 0.0
 
@@ -323,18 +310,13 @@ def get_clustering_stats(
         Speaker.user_id == user_id,
         Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
     ]
-    total_speakers, clustered = (
-        db.query(func.count(Speaker.id), func.count(Speaker.cluster_id))
-        .filter(*speaker_filters)
-        .one()
-    )
-    total_clusters = (
-        db.query(SpeakerCluster)
-        .filter(
+    total_speakers, clustered = speaker_totals(db, speaker_filters)
+    total_clusters = count_clusters(
+        db,
+        [
             SpeakerCluster.user_id == user_id,
             org_scope_pred(SpeakerCluster.organization_id, ctx.org_id),
-        )
-        .count()
+        ],
     )
 
     if not PrivacyView(db).voiceprints_for_scope(user_id, ctx.org_id).enabled:
@@ -429,14 +411,13 @@ def update_cluster(
     """Update cluster label and description."""
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
-        cluster = (
-            db.query(SpeakerCluster)
-            .filter(
+        cluster = cluster_matching(
+            db,
+            [
                 SpeakerCluster.uuid == cluster_uuid,
                 SpeakerCluster.user_id == current_user.id,
                 org_scope_pred(SpeakerCluster.organization_id, ctx.org_id),
-            )
-            .first()
+            ],
         )
         if not cluster:
             raise HTTPException(status_code=404, detail="Cluster not found")
@@ -488,22 +469,18 @@ def delete_cluster(
     """
     _require_uuid(cluster_uuid, not_found_detail="Cluster not found")
     try:
-        cluster = (
-            db.query(SpeakerCluster)
-            .filter(
+        cluster = cluster_matching(
+            db,
+            [
                 SpeakerCluster.uuid == cluster_uuid,
                 SpeakerCluster.user_id == current_user.id,
                 org_scope_pred(SpeakerCluster.organization_id, ctx.org_id),
-            )
-            .first()
+            ],
         )
         if not cluster:
             raise HTTPException(status_code=404, detail="Cluster not found")
 
-        db.query(Speaker).filter(Speaker.cluster_id == cluster.id).update({"cluster_id": None})
-        db.query(SpeakerClusterMember).filter(SpeakerClusterMember.cluster_id == cluster.id).delete(
-            synchronize_session=False
-        )
+        dissolve_cluster_membership(db, cluster.id)
         db.commit()
 
     except (HTTPException, DomainError):

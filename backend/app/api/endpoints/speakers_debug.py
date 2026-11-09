@@ -8,7 +8,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import load_only
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -16,14 +15,18 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.api.error_handlers import ErrorHandler
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
-from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hide_machine_identities
 from app.services.request_context import RequestContext
+from app.services.speaker_list_queries import speakers_linked_to_profile
+from app.services.speaker_list_queries import speakers_named
+from app.services.speaker_list_queries import speakers_with_display_name
+from app.services.speaker_list_queries import user_media_file_summaries
+from app.services.speaker_list_queries import user_profiles
+from app.services.speaker_list_queries import user_speakers_for_diagnostics
 from app.utils.speaker_identity_source import VOICEPRINT
 
 logger = logging.getLogger(__name__)
@@ -169,11 +172,7 @@ def debug_cross_media_data(
         }
 
         # Get all media files for this user (project only needed fields)
-        media_rows = (
-            db.query(MediaFile.id, MediaFile.filename, MediaFile.title, MediaFile.status)
-            .filter(MediaFile.user_id == current_user.id)
-            .all()
-        )
+        media_rows = user_media_file_summaries(db, current_user.id)
         for mf in media_rows:
             debug_info["media_files"].append(
                 {
@@ -187,24 +186,7 @@ def debug_cross_media_data(
         # Get all speakers for this user (project only needed fields)
         # Entities (not bare columns) so the privacy view can withhold what a voiceprint
         # made: a name or link of a file whose voiceprints are off is not reported (#1280).
-        speaker_rows = (
-            db.query(Speaker)
-            .options(
-                load_only(
-                    Speaker.id,
-                    Speaker.name,
-                    Speaker.display_name,
-                    Speaker.profile_id,
-                    Speaker.media_file_id,
-                    Speaker.verified,
-                    Speaker.confidence,
-                    Speaker.identity_source,
-                )
-            )
-            .filter(Speaker.user_id == current_user.id)
-            .order_by(Speaker.media_file_id, Speaker.id)
-            .all()
-        )
+        speaker_rows = user_speakers_for_diagnostics(db, current_user.id)
         # id -> identity_source, read now: the commit below expires the loaded rows.
         withheld = {
             int(s.id): s.identity_source
@@ -225,7 +207,7 @@ def debug_cross_media_data(
             )
 
         # Get all speaker profiles
-        profiles = db.query(SpeakerProfile).filter(SpeakerProfile.user_id == current_user.id).all()
+        profiles = user_profiles(db, current_user.id)
         for profile in profiles:
             debug_info["profiles"].append(
                 {
@@ -292,14 +274,13 @@ def debug_cross_media_by_name(
     try:
         in_scope = Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id))
         # Find all matching speakers
-        query = db.query(Speaker).filter(Speaker.display_name == speaker_name)
-        if not ctx.bypass.sees_all_in_scope:
-            query = query.filter(Speaker.user_id == current_user.id)
-        query = query.filter(in_scope)
+        owner_user_id = None if ctx.bypass.sees_all_in_scope else current_user.id
         # Matching is on the name and link the caller may see (issue #1280): each row is
         # judged by its own file's switch, and a voiceprint-made name is not a match.
         privacy = PrivacyView(db)
-        matching_speakers = query.all()
+        matching_speakers = speakers_with_display_name(
+            db, speaker_name, owner_user_id=owner_user_id, tenant_pred=in_scope
+        )
         hide_machine_identities(privacy, matching_speakers)
         matching_speakers = [s for s in matching_speakers if s.display_name == speaker_name]
 
@@ -322,17 +303,13 @@ def debug_cross_media_by_name(
             # Replicate the cross-media logic
             if speaker.profile_id:
                 # Speaker has a profile - find all instances of this profile
-                profile_q = (
-                    db.query(Speaker)
-                    .join(MediaFile)
-                    .filter(
-                        Speaker.profile_id == speaker.profile_id,
-                    )
+                profile_speakers = speakers_linked_to_profile(
+                    db,
+                    speaker.profile_id,
+                    owner_user_id=owner_user_id,
+                    tenant_pred=in_scope,
+                    include_quarantined=None,
                 )
-                if not ctx.bypass.sees_all_in_scope:
-                    profile_q = profile_q.filter(Speaker.user_id == current_user.id)
-                profile_q = profile_q.filter(in_scope)
-                profile_speakers = profile_q.all()
                 hide_machine_identities(privacy, profile_speakers)
                 profile_speakers = [
                     p for p in profile_speakers if p.profile_id == speaker.profile_id
@@ -354,18 +331,14 @@ def debug_cross_media_by_name(
 
             else:
                 # Speaker has no profile - search by display_name
-                similar_q = (
-                    db.query(Speaker)
-                    .join(MediaFile)
-                    .filter(
-                        Speaker.display_name == speaker.display_name,
-                        Speaker.id != speaker.id,  # Exclude self
-                    )
+                similar_speakers = speakers_named(
+                    db,
+                    speaker.display_name,
+                    excluding_speaker_id=speaker.id,
+                    owner_user_id=owner_user_id,
+                    tenant_pred=in_scope,
+                    include_quarantined=None,
                 )
-                if not ctx.bypass.sees_all_in_scope:
-                    similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-                similar_q = similar_q.filter(in_scope)
-                similar_speakers = similar_q.all()
                 hide_machine_identities(privacy, similar_speakers)
                 similar_speakers = [
                     p for p in similar_speakers if p.display_name == speaker.display_name

@@ -62,7 +62,6 @@ frontend/src/components/TopicsList.svelte::svelte/no-at-html-tags	3	lint: burn-d
 frontend/src/components/TopicsList.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/TranscriptDisplay.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/TranscriptDisplay.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
-frontend/src/components/TranscriptDisplay.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/TranscriptDisplay.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/TranscriptSearch.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/components/TranscriptSearch.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
@@ -133,7 +132,6 @@ frontend/src/components/settings/ASRSettings.svelte::no-restricted-imports	4	lin
 frontend/src/components/settings/ASRSettings.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/ActiveSessionsPanel.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/AudioExtractionSettings.svelte::no-restricted-imports	1	lint: burn-down planned
-frontend/src/components/settings/AuditLogViewer.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/settings/AuthMailDesignation.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/AuthenticationSettings.svelte::@typescript-eslint/no-explicit-any	22	lint: burn-down planned
 frontend/src/components/settings/AuthenticationSettings.svelte::no-useless-assignment	1	lint: burn-down planned
@@ -198,12 +196,10 @@ frontend/src/components/settings/SessionSettings.svelte::svelte/require-each-key
 frontend/src/components/settings/SettingsModalFrame.svelte::svelte/no-unused-svelte-ignore	1	lint: burn-down planned
 frontend/src/components/settings/SettingsModalShell.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/SpeakerIdentificationSection.svelte::no-useless-assignment	1	lint: burn-down planned
-frontend/src/components/settings/SpeakerIdentificationSection.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/settings/SystemStatisticsPanel.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/settings/SystemStatisticsPanel.svelte::svelte/require-each-key	3	lint: burn-down planned
 frontend/src/components/settings/TakedownNoticesPanel.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/TranscriptionSection.svelte::no-useless-assignment	1	lint: burn-down planned
-frontend/src/components/settings/TranscriptionSection.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/settings/UserProfileSettings.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/WatchSourceModal.svelte::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/WatchSourceModal.svelte::no-useless-assignment	1	lint: burn-down planned
@@ -218,7 +214,6 @@ frontend/src/components/settings/watchSources/WatchSourceFilesModal.svelte::svel
 frontend/src/components/settings/watchSources/WatchSourceFilesModal.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
 frontend/src/components/settings/watchSources/WatchSourceFilesTable.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/sharing/PermissionLevelSelect.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/sharing/ShareCollectionModal.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/speakers/ClusterMemberList.svelte::svelte/infinite-reactive-loop	6	lint: burn-down planned
 frontend/src/components/speakers/SpeakerClusterCard.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/speakers/SpeakerInboxItem.svelte::svelte/require-each-key	1	lint: burn-down planned
@@ -256,7 +251,6 @@ frontend/src/components/ui/SortDropdown.svelte::svelte/require-each-key	1	lint: 
 frontend/src/components/ui/SortDropdown.test.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
 frontend/src/components/ui/SortDropdown.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/ui/Tabs.svelte::no-useless-assignment	1	lint: burn-down planned
-frontend/src/components/ui/Tabs.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/ui/TagInput.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/upload/MediaFilePanel.svelte::svelte/no-unused-svelte-ignore	1	lint: burn-down planned
 frontend/src/components/upload/MediaRecordPanel.svelte::svelte/require-each-key	2	lint: burn-down planned

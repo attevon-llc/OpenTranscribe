@@ -49,7 +49,7 @@
 
   const dispatch = createEventDispatcher<{ change: string }>();
 
-  let tabEls: HTMLButtonElement[] = [];
+  const tabEls: HTMLButtonElement[] = [];
   let sentinel: HTMLDivElement | undefined;
   let stuck = false;
 

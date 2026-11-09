@@ -86,7 +86,7 @@
     sharing = true;
     try {
       let successCount = 0;
-      let errors: string[] = [];
+      const errors: string[] = [];
 
       for (const target of pendingTargets) {
         try {

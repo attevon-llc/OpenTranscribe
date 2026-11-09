@@ -16,7 +16,7 @@
   let auditLogs: AuditLogEntry[] = [];
   let loading = false;
   let loadingMore = false;
-  let backendNotReady = false; // Backend is fully implemented
+  const backendNotReady = false; // Backend is fully implemented
   let totalLogs = 0;
   $: hasMore = auditLogs.length < totalLogs;
   const PAGE_SIZE = 50;

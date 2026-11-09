@@ -93,7 +93,7 @@
   }
 
   // Handle segment speaker change
-  let updatingSegments = new Set<string>();
+  const updatingSegments = new Set<string>();
 
   async function handleSegmentSpeakerChange(event: CustomEvent) {
     const { segmentUuid, speakerUuid, speaker: createdSpeaker } = event.detail;

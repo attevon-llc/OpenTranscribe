@@ -60,7 +60,7 @@
 
   let privacyCard: UserPrivacyCard | undefined;
 
-  let dirty = { detection: false, attributes: false, engine: false };
+  const dirty = { detection: false, attributes: false, engine: false };
   $: settingsModalStore.setDirty('speaker-identification', Object.values(dirty).some(Boolean));
 
   const labelKey: Record<SpeakerIdTabId, string> = {

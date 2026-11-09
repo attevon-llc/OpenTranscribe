@@ -51,8 +51,10 @@ export default tseslint.config(
       },
     },
     rules: {
-      // typescript-eslint's no-unused-vars crashes on svelte-eslint-parser nodes;
-      // svelte's own compiler warnings cover unused props. Disable here.
+      // typescript-eslint's no-unused-vars crashes on svelte-eslint-parser nodes (a bare
+      // `$: x = 1` is enough; still true on typescript-eslint 8.72.1 + eslint-plugin-svelte
+      // 3.24.1). Unused locals in .svelte are ratcheted by scripts/guards/check_svelte_unused.py
+      // (tsconfig.unused.json) instead. Re-test upstream before removing this block.
       '@typescript-eslint/no-unused-vars': 'off',
       'no-unused-vars': 'off',
     },
@@ -114,14 +116,25 @@ export default tseslint.config(
     },
   },
   {
+    // Function-size gates (code-debt plan G-b). Thresholds: complexity 15 matches the backend
+    // ratchet (ESLint's own default is 20), max-depth 4 is the ESLint default, and
+    // max-lines-per-function 150 counts code only. `warn` + scripts/guards/check_eslint_ratchet.py
+    // means no new finding can appear; each rule flips to 'error' when its count reaches 0.
+    rules: {
+      complexity: ['warn', 15],
+      'max-depth': ['warn', 4],
+      'max-lines-per-function': ['warn', { max: 150, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
     // Test files: allow test globals and looser typing.
     files: ['**/*.{test,spec}.{ts,js}', 'src/test-setup.ts'],
     languageOptions: { globals: { ...globals.node } },
     rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
   {
-    // MUST be last: typescript-eslint's no-unused-vars crashes on svelte-eslint-parser
-    // nodes. Keep it disabled for svelte files (svelte's compiler covers unused props).
+    // MUST be last: re-asserts the disable above after the lenient block re-enables it.
+    // See check_svelte_unused.py for what covers .svelte files.
     files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',

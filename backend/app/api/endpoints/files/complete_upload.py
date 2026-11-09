@@ -186,6 +186,27 @@ def _fingerprint_object(task_id: str | None, storage_path: str, size: int) -> st
         return None
 
 
+def _read_header_or_503(file_id: str, storage_path: str) -> bytes:
+    """Range-read the object header for signature validation; storage failure is a 503.
+
+    Content that could not be validated is not accepted (OWASP file upload guidance).
+    The row survives so the documented idempotent retry of /complete can validate it.
+    """
+    from app.api.overload_response import retry_after_headers
+    from app.services.minio_service import range_read
+    from app.utils.file_validation import HEADER_READ_SIZE
+
+    try:
+        return range_read(storage_path, 0, HEADER_READ_SIZE)
+    except (S3Error, HTTPError, OSError) as read_err:
+        logger.error(f"header read for validation of {file_id} failed: {read_err}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not validate the upload against storage. Please retry.",
+            headers=retry_after_headers(),
+        ) from read_err
+
+
 def _verify_object_landed(
     request: CompleteUploadRequest, db: Session, db_file: MediaFile, storage_path: str
 ) -> int:
@@ -341,21 +362,9 @@ def complete_upload(
     # browser→MinIO directly, so verify the object's real signature matches
     # its declared content_type before dispatching it to the GPU pipeline.
     # We range-read only a small header (never the whole object). Fail closed
-    # on a CONFIRMED mismatch (delete object + row, 400); on a transient read
-    # error, log and proceed — the object verified-exists, so we don't reject
-    # a legitimate upload over a MinIO hiccup.
-    header_bytes: bytes | None = None
-    try:
-        from app.services.minio_service import range_read
-        from app.utils.file_validation import HEADER_READ_SIZE
-
-        header_bytes = range_read(storage_path, 0, HEADER_READ_SIZE)
-    except (S3Error, HTTPError, OSError) as read_err:
-        logger.warning(
-            f"header read for validation of {request.file_id} failed "
-            f"(non-fatal, proceeding): {read_err}",
-            exc_info=True,
-        )
+    # on a CONFIRMED mismatch (delete object + row, 400), and on a header we could
+    # not read (retryable 503, row kept): unvalidated content is not accepted.
+    header_bytes = _read_header_or_503(request.file_id, storage_path)
     if header_bytes is not None and declared_content_type:
         from app.utils.file_validation import validate_uploaded_file
 

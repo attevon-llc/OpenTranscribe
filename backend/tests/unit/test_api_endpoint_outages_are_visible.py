@@ -258,3 +258,27 @@ def test_health_probe_failure_is_in_response_and_logged_with_traceback(caplog):
         health._run_probe(checks, "db", _boom)
     assert checks == {"db": "error: RuntimeError"}
     assert _traceback_logged(caplog, health.__name__)
+
+
+def test_upload_header_read_outage_is_retryable_503_not_skipped_validation(monkeypatch, caplog):
+    import app.services.minio_service as minio_service
+    from app.api.endpoints.files import complete_upload
+
+    def _down(*_a, **_k):
+        raise OSError("storage down")
+
+    monkeypatch.setattr(minio_service, "range_read", _down)
+    with caplog.at_level(logging.ERROR, logger=complete_upload.__name__):
+        with pytest.raises(HTTPException) as exc:
+            complete_upload._read_header_or_503("f-1", "p")
+    assert exc.value.status_code == 503
+    assert "Retry-After" in (exc.value.headers or {})
+    assert _traceback_logged(caplog, complete_upload.__name__)
+
+
+def test_upload_header_read_returns_bytes_when_storage_is_up(monkeypatch):
+    import app.services.minio_service as minio_service
+    from app.api.endpoints.files import complete_upload
+
+    monkeypatch.setattr(minio_service, "range_read", lambda *_a, **_k: b"abc")
+    assert complete_upload._read_header_or_503("f-1", "p") == b"abc"

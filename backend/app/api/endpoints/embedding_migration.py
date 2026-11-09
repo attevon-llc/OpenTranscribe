@@ -23,6 +23,9 @@ from app.core.redis import get_request_redis
 from app.db.base import get_db
 from app.models.user import User
 from app.services.embedding_mode_service import EmbeddingModeService
+from app.services.migration_file_queries import completed_file_count
+from app.services.migration_file_queries import completed_file_id_uuid_rows
+from app.services.migration_file_queries import completed_file_ids
 from app.services.migration_lock_service import LockState
 from app.services.migration_lock_service import migration_lock
 from app.services.migration_progress_service import MigrationStatus
@@ -45,15 +48,10 @@ def _compute_ground_truth_status(db: Session) -> dict | None:
     Returns dict with stalled info or None if not stalled. Raises when the database or
     OpenSearch cannot be read: "not stalled" is a verdict, an outage is not one.
     """
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
     from app.tasks.embedding_migration_v4_scope import _count_embeddable_speakers_per_file
     from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
-    completed_ids = [
-        int(row[0])
-        for row in db.query(MediaFile.id).filter(MediaFile.status == FileStatus.COMPLETED).all()
-    ]
+    completed_ids = completed_file_ids(db)
 
     if not completed_ids:
         return None
@@ -122,12 +120,7 @@ def get_migration_status(
         # (speaker DOCUMENTS) by a per-file constant, as if they were files -
         # overcounting by however many speakers the average file has.
         # completed_file_count is the actual unit the ETA formula needs.
-        from app.models.media import FileStatus
-        from app.models.media import MediaFile
-
-        status["completed_file_count"] = (
-            db.query(MediaFile).filter(MediaFile.status == FileStatus.COMPLETED).count()
-        )
+        status["completed_file_count"] = completed_file_count(db)
 
         # Privacy policy (#1280, plan Q3): the scopes this run will skip, shown BEFORE it starts.
         status["policy_skipped"] = summarize_migration_scopes(db).to_dict()
@@ -500,8 +493,6 @@ def retry_failed_files(
     Computes truly-missing files from DB + OpenSearch ground truth
     (does not rely on stale Redis failed_files list).
     """
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
     from app.tasks.embedding_migration_v4 import extract_v4_embeddings_batch_task
     from app.tasks.embedding_migration_v4_scope import _get_already_migrated_file_ids
 
@@ -518,11 +509,7 @@ def retry_failed_files(
         from app.tasks.embedding_migration_v4_scope import _count_embeddable_speakers_per_file
 
         # Compute truly-missing files from ground truth (project only id + uuid)
-        completed_rows = (
-            db.query(MediaFile.id, MediaFile.uuid)
-            .filter(MediaFile.status == FileStatus.COMPLETED)
-            .all()
-        )
+        completed_rows = completed_file_id_uuid_rows(db)
         already_migrated = _get_already_migrated_file_ids()
 
         # Only retry files that have embeddable speakers (>= 0.5s segments)

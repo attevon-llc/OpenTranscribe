@@ -20,6 +20,7 @@ from app.api.endpoints.chat.common import read_user_chat_settings
 from app.db.base import get_db
 from app.schemas.chat import ChatUserSettings
 from app.schemas.chat import ChatUserSettingsUpdate
+from app.services.chat.conversation_queries import delete_settings
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +58,6 @@ def reset_chat_user_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Reset the caller's chat preferences to defaults."""
-    db.query(models.UserSetting).filter(
-        models.UserSetting.user_id == current_user.id,
-        models.UserSetting.setting_key.in_(list(USER_SETTING_KEYS.values())),
-    ).delete(synchronize_session=False)
+    delete_settings(db, current_user.id, USER_SETTING_KEYS.values())
     db.commit()
     return {"message": "Chat settings reset to defaults"}

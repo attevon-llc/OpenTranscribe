@@ -22,6 +22,10 @@ from app.schemas.chat import ChatScope
 from app.schemas.chat import ConversationDetail
 from app.schemas.chat import ConversationSettings
 from app.schemas.chat import ConversationSummary
+from app.services.chat.conversation_queries import find_user_conversation
+from app.services.chat.conversation_queries import llm_config_uuid_for_id
+from app.services.chat.conversation_queries import setting_rows
+from app.services.chat.conversation_queries import usable_llm_config_id
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
@@ -47,14 +51,7 @@ def get_owned_conversation(
         HTTPException: 404 when it doesn't exist, isn't theirs, or belongs to a
             different tenant — all indistinguishable by design.
     """
-    conversation = (
-        db.query(ChatConversation)
-        .filter(
-            ChatConversation.uuid == conversation_uuid,
-            ChatConversation.user_id == ctx.user.id,
-        )
-        .first()
-    )
+    conversation = find_user_conversation(db, conversation_uuid, ctx.user.id)
     if conversation is None or conversation.organization_id != ctx.org_id:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
@@ -116,16 +113,7 @@ def conversation_settings(conversation: ChatConversation) -> ConversationSetting
 
 def read_user_chat_settings(db: Session, user_id: int) -> dict:
     """Load the user's chat preferences, with coded defaults for unset keys."""
-    from app import models
-
-    rows = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key.in_(list(USER_SETTING_KEYS.values())),
-        )
-        .all()
-    )
+    rows = setting_rows(db, user_id, USER_SETTING_KEYS.values())
     stored = {str(row.setting_key): str(row.setting_value) for row in rows}
 
     use_context_raw = stored.get(USER_SETTING_KEYS["use_context_default"])
@@ -199,15 +187,7 @@ def to_detail(
     """Full conversation record, including the resolved use-context value."""
     llm_config_uuid = None
     if conversation.llm_config_id is not None:
-        from app.models.user_llm_settings import UserLLMSettings
-
-        row = (
-            db.query(UserLLMSettings.uuid)
-            .filter(UserLLMSettings.id == conversation.llm_config_id)
-            .first()
-        )
-        if row is not None:
-            llm_config_uuid = str(row[0])
+        llm_config_uuid = llm_config_uuid_for_id(db, conversation.llm_config_id)
 
     return ConversationDetail(
         uuid=str(conversation.uuid),
@@ -235,19 +215,7 @@ def resolve_llm_config_id(
     if not llm_config_uuid:
         return None
 
-    from app.models.user_llm_settings import UserLLMSettings
-    from app.utils.tenant_sharing import shared_visible_in_tenant
-
-    row = (
-        db.query(UserLLMSettings.id)
-        .filter(
-            UserLLMSettings.uuid == llm_config_uuid,
-            shared_visible_in_tenant(
-                UserLLMSettings.user_id, UserLLMSettings.is_shared, ctx.user.id, ctx.org_id
-            ),
-        )
-        .first()
-    )
-    if row is None:
+    config_id = usable_llm_config_id(db, llm_config_uuid, ctx.user.id, ctx.org_id)
+    if config_id is None:
         raise HTTPException(status_code=404, detail="LLM configuration not found")
-    return int(row[0])
+    return config_id

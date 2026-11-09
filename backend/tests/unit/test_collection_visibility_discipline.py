@@ -88,36 +88,44 @@ ALLOWLIST: dict[str, str] = {
         "W: account deletion removes the user's personal collections and de-attributes the "
         "organization ones; it deletes rows, it names no collection to anyone"
     ),
-    "api/endpoints/media_collections_listing.py::_explicitly_shared_entries": (
-        "A: the id set comes from PermissionService.get_accessible_collection_ids, which is "
-        "collection_visibility's statement; this only narrows it to one tenant"
+    "services/collection_queries.py::ids_in_tenant_of_user": (
+        "A: narrows ids PermissionService.get_accessible_collection_ids already derived from "
+        "collection_visibility to the caller's own tenant"
     ),
-    "api/endpoints/media_collections.py::create_collection": (
+    "services/collection_queries.py::ids_matching": (
+        "A: narrows ids PermissionService.get_accessible_collection_ids already derived from "
+        "collection_visibility to the request's tenant"
+    ),
+    "services/collection_queries.py::page_own_collection_ids": (
+        "A: pages the caller's accessible ids from collection_visibility, intersected with the "
+        "tenant"
+    ),
+    "services/collection_queries.py::page_matching_ids": (
+        "A: pages the caller's accessible ids from collection_visibility, intersected with the "
+        "tenant"
+    ),
+    "services/collection_queries.py::collections_for_listing": (
+        "A: loads the page of ids list_collections derived from collection_visibility, "
+        "re-gated by the tenant predicate"
+    ),
+    "services/collection_queries.py::collections_with_owners": (
+        "A: loads only the ids _explicitly_shared_entries derived from the predicate"
+    ),
+    "services/collection_queries.py::collections_holding_files": (
+        "A: restricted to visible_collection_ids in the same statement"
+    ),
+    "services/collection_queries.py::collection_name_taken_for_creator": (
         "W: the same-name check inside the tenant before an insert; the 400 echoes the name the "
         "caller just submitted and no other field (the accepted name-exists residual, Q6)"
     ),
-    "api/endpoints/media_collections.py::get_collection": (
-        "A: reloads, with its members, the collection get_collection_by_uuid_with_permission "
-        "already authorized for this caller"
-    ),
-    "api/endpoints/media_collections_listing.py::list_collections": (
-        "A: every id set it queries by is the caller's accessible ids from "
-        "collection_visibility, intersected with the tenant"
-    ),
-    "api/endpoints/media_collections_listing.py::_ownership_page": (
-        "A: list_collections' page of ids: the caller's accessible ids from "
-        "collection_visibility, intersected with the tenant"
-    ),
-    "api/endpoints/media_collections_listing.py::list_collections_on_files": (
-        "A: restricted to visible_collection_ids in the same statement"
-    ),
-    "api/endpoints/media_collections_listing.py::list_shared_collections": (
-        "A: queries only the ids _explicitly_shared_entries derived from the predicate"
-    ),
-    "api/endpoints/media_collections.py::update_collection": (
+    "services/collection_queries.py::collection_name_taken_in_tenant_of": (
         "W: the same-name check inside the tenant before a rename; the 400 echoes the name the "
         "caller just submitted (Q6); the collection itself was authorized by "
         "get_collection_by_uuid_with_sharing"
+    ),
+    "services/collection_queries.py::load_collection_detail": (
+        "A: reloads, with its members, the collection get_collection_by_uuid_with_permission "
+        "already authorized for this caller"
     ),
     "api/endpoints/prompts.py::_linked_collections_by_prompt": (
         "O: lists the collections linked to the caller's own prompts and filters on "

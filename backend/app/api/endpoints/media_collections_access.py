@@ -10,14 +10,13 @@ from datetime import datetime
 from fastapi import HTTPException
 from fastapi import status
 from sqlalchemy import ColumnElement
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth.audit_events import TENANT_SCOPE_ORG
 from app.auth.audit_events import TENANT_SCOPE_PERSONAL
 from app.models.collection import Collection
-from app.models.prompt import SummaryPrompt
 from app.schemas.content_hold import HoldSummary
+from app.services.collection_queries import find_usable_prompt
 from app.services.content_audit import AuditedResource
 from app.services.content_hold_queries import collection_hold_states
 from app.services.content_hold_queries import collection_hold_summaries
@@ -43,15 +42,7 @@ def _resolve_prompt_uuid(db: Session, prompt_uuid: str | None, user_id: int) -> 
     if prompt_uuid is None:
         return None
 
-    prompt = (
-        db.query(SummaryPrompt)
-        .filter(
-            SummaryPrompt.uuid == prompt_uuid,
-            SummaryPrompt.is_active,
-            or_(SummaryPrompt.is_system_default, SummaryPrompt.user_id == user_id),
-        )
-        .first()
-    )
+    prompt = find_usable_prompt(db, prompt_uuid, user_id)
 
     if not prompt:
         raise HTTPException(

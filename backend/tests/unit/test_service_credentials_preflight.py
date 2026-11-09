@@ -138,4 +138,3 @@ def test_rehearsal_envs_carry_both_settings() -> None:
     assert (
         "$(et_service_credentials)" in (REPO / "scripts/release-tests/test-upgrade.sh").read_text()
     )
-    assert "$(et_service_credentials)" in tmpl

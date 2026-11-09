@@ -307,9 +307,6 @@ def test_update_full_mentions_the_model_cache():
 PROD_COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
 
 
-ENV_TEMPLATE = REPO_ROOT / "scripts" / "release-tests" / "lib" / "env-template.sh"
-
-
 UPGRADE_SCENARIO = REPO_ROOT / "scripts" / "release-tests" / "test-upgrade.sh"
 
 
@@ -342,7 +339,7 @@ def test_every_prod_service_image_is_tag_pinnable():
 
 
 def test_generated_test_env_pins_the_image_tag():
-    assert "OT_IMAGE_TAG=" in ENV_TEMPLATE.read_text(), (
+    assert "OT_IMAGE_TAG=${OT_TEST_IMAGE_TAG" in UPGRADE_SCENARIO.read_text(), (
         "the release-test .env must pin OT_IMAGE_TAG or the stack mixes versions"
     )
 

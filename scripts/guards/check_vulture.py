@@ -10,7 +10,8 @@ Only the kinds ``function``, ``method``, ``class`` and ``import`` are ratcheted.
 attributes and properties are out of scope: at this confidence vulture cannot tell an ORM
 column assignment, a settings constant or a pydantic field from a dead name, so those
 findings are noise rather than debt. A reviewed false positive goes into
-``scripts/guards/vulture_whitelist.py`` with a reason on its line; that file is passed to
+``scripts/guards/vulture_whitelist.py`` under a comment block tagged ``[extension-seam]``, ``[test-observation]`` or
+``[framework-dispatch]`` plus a written reason (enforced by ``whitelist_problems``); that file is passed to
 vulture as an extra path so its names count as used.
 
 Findings that existed when the guard landed live in ``baselines/vulture.txt`` as
@@ -41,6 +42,9 @@ IGNORE_DECORATORS = (
     # Locust (scripts/perf/load/locustfile.py) registers tasks and event hooks by decorator.
     '@task,@tag,@events.*'
 )
+TAGS = ('[extension-seam]', '[test-observation]', '[framework-dispatch]')
+_MIN_REASON_CHARS = 20
+_ENTRY = re.compile(r'^\s*_\.\w+,\s*$')
 KINDS = frozenset({'function', 'method', 'class', 'import'})
 _FINDING = re.compile(r"^(?P<path>.+?):(?P<line>\d+): unused (?P<kind>[\w ]+?) '(?P<name>.+)' \(")
 
@@ -62,6 +66,45 @@ def check_vulture_version(root: Path) -> None:
     if proc.returncode != 0 or found != f'vulture {PINNED_VULTURE}':
         msg = f'vulture {PINNED_VULTURE} required, got {found or proc.stderr.strip()!r}'
         raise _baseline.ScanError(msg)
+
+
+def whitelist_problems(text: str) -> list[str]:
+    """Return one message per whitelist block lacking a tag or a written reason.
+
+    A block is the run of ``#`` comment lines directly above one or more ``_.name,`` entries
+    (a blank line or a new comment run after entries starts the next block). The comment text
+    must contain one of ``TAGS`` followed by at least ``_MIN_REASON_CHARS`` characters of
+    reason; an entry with no comment above it has neither.
+    """
+    problems: list[str] = []
+    comment: list[str] = []
+    seen_entry = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith('#'):
+            if seen_entry:
+                comment, seen_entry = [], False
+            comment.append(stripped.lstrip('#').strip())
+        elif _ENTRY.match(line):
+            if not seen_entry:
+                reason = _tagged_reason(' '.join(comment))
+                if reason is None:
+                    problems.append(
+                        f'{WHITELIST}:{number}: block at {stripped!r} needs a comment with one of '
+                        f'{", ".join(TAGS)} and a written reason (>= {_MIN_REASON_CHARS} chars)'
+                    )
+            seen_entry = True
+        elif not stripped:
+            comment, seen_entry = [], False
+    return problems
+
+
+def _tagged_reason(comment: str) -> str | None:
+    for tag in TAGS:
+        _, found, after = comment.partition(tag)
+        if found and len(after.strip()) >= _MIN_REASON_CHARS:
+            return after.strip()
+    return None
 
 
 def findings(root: Path) -> dict[str, int]:
@@ -113,6 +156,13 @@ def main(argv: list[str] | None = None) -> int:
     except (_baseline.ScanError, SyntaxError, OSError) as exc:
         sys.stderr.write(f'ERROR: {exc}\n')
         return 2
+    wl = args.root / WHITELIST
+    problems = whitelist_problems(wl.read_text(encoding='utf-8')) if wl.is_file() else []
+    if problems:
+        sys.stderr.write('ERROR: untagged vulture whitelist block(s).\n')
+        for p in problems:
+            sys.stderr.write(f'  {p}\n')
+        return 1
     if args.write_baseline:
         code: int = _baseline.run_write_baseline(args, args.baseline, found)
         return code

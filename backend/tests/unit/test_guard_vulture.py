@@ -30,6 +30,11 @@ guard = _load_guard()
 
 UNUSED = "def _unused_probe_function():\n    pass\n"
 KEY = "backend/app/_probe.py::function::_unused_probe_function"
+TAGGED_WHITELIST = (
+    "from types import SimpleNamespace\n_ = SimpleNamespace()\nW = (\n"
+    "    # [test-observation] a unit test asserts the invariant through this helper\n"
+    "    _._unused_probe_function,\n)\n"
+)
 REASON = "residual after the dead-code pass; delete or whitelist when touched"
 
 
@@ -67,7 +72,7 @@ def test_whitelisted_name_passes(tmp_path: Path) -> None:
         tmp_path,
         {
             "backend/app/_probe.py": UNUSED,
-            guard.WHITELIST: "from types import SimpleNamespace\n_ = SimpleNamespace()\nW = (_._unused_probe_function,)\n",
+            guard.WHITELIST: TAGGED_WHITELIST,
         },
     )
     assert _run(root) == 0
@@ -112,3 +117,42 @@ def test_tests_directory_is_not_scanned(tmp_path: Path) -> None:
 
 def test_missing_targets_fail_closed(tmp_path: Path) -> None:
     assert _run(tmp_path) == 2
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "    _._unused_probe_function,\n",
+        "    # a plain comment with a long enough explanation but no tag at all\n"
+        "    _._unused_probe_function,\n",
+        "    # [extension-seam]\n    _._unused_probe_function,\n",
+        "    # [extension-seam] too short\n    _._unused_probe_function,\n",
+        "    # [other-tag] a long enough reason that names an unknown class of entry\n"
+        "    _._unused_probe_function,\n",
+    ],
+    ids=["no-comment", "no-tag", "no-reason", "short-reason", "unknown-tag"],
+)
+def test_whitelist_block_without_tag_and_reason_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], block: str
+) -> None:
+    whitelist = f"from types import SimpleNamespace\n_ = SimpleNamespace()\nW = (\n{block})\n"
+    root = _tree(tmp_path, {"backend/app/_probe.py": UNUSED, guard.WHITELIST: whitelist})
+    assert _run(root) == 1
+    assert "untagged vulture whitelist block" in capsys.readouterr().err
+
+
+def test_second_block_is_checked_independently(tmp_path: Path) -> None:
+    whitelist = (
+        "from types import SimpleNamespace\n_ = SimpleNamespace()\nW = (\n"
+        "    # [extension-seam] the cloud edition registers this at startup\n"
+        "    _._unused_probe_function,\n"
+        "    # no tag on this one even though it has a comment\n"
+        "    _._another,\n)\n"
+    )
+    root = _tree(tmp_path, {"backend/app/_probe.py": UNUSED, guard.WHITELIST: whitelist})
+    assert _run(root) == 1
+
+
+def test_shipped_whitelist_is_fully_tagged() -> None:
+    path = _GUARD_PATH.parent / "vulture_whitelist.py"
+    assert guard.whitelist_problems(path.read_text(encoding="utf-8")) == []

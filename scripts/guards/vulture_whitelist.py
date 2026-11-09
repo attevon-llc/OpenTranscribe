@@ -1,7 +1,9 @@
 """Names vulture must treat as used, each with the reason it stays.
 
 Vulture matches by NAME, so every entry below is a name that production code never calls but
-that is kept on purpose. Delete an entry when its name gains a production caller, or when the
+that is kept on purpose. Every block of entries sits under a comment carrying a tag
+(``[extension-seam]``, ``[test-observation]`` or ``[framework-dispatch]``) plus a written
+reason; ``check_vulture.py`` fails on a block without both. Delete an entry when its name gains a production caller, or when the
 function goes.
 
 The usual ``vulture --make-whitelist`` shape is a bare ``_.name`` expression statement. That
@@ -16,47 +18,47 @@ from typing import Any
 _: Any = SimpleNamespace()
 
 WHITELIST = (
-    # Stage 4's citation builder is the documented caller (document digests have no timestamp,
+    # [test-observation] Stage 4's citation builder is the documented caller (document digests have no timestamp,
     # so None selects a file-level citation); the provenance tests pin both arms of the contract.
     _.provenance_timespan,
-    # The embedding-window tests assert real digest sizing through it (integration and digest
+    # [test-observation] The embedding-window tests assert real digest sizing through it (integration and digest
     # unit tests); removing it would remove those assertions, not just the helper.
     _.fits_embedding_window,
-    # Its test pins that failure text is sanitised before it is stored and notified, through
+    # [test-observation] Its test pins that failure text is sanitised before it is stored and notified, through
     # the real retry-policy path (#959); the only coverage of that outer-exception shape.
     _._handle_outer_exception,
-    # Reader half of the infra-requeue budget; the orphaned-delivery live test uses it to prove
+    # [test-observation] Reader half of the infra-requeue budget; the orphaned-delivery live test uses it to prove
     # a user-cancelled run spends none of the budget.
     _.infra_requeues,
-    # Observation point for the cancellation scope; the cooperative-cancel tests use it to
+    # [test-observation] Observation point for the cancellation scope; the cooperative-cancel tests use it to
     # prove the scope neither leaks across threads nor outlives its context manager.
     _.current_cancellation_task_id,
-    # Read-only view of the poisoned-CUDA-context flag; the poisoned-exit tests assert it.
+    # [test-observation] Read-only view of the poisoned-CUDA-context flag; the poisoned-exit tests assert it.
     _.context_poisoned,
-    # State accessors the VRAM and host-memory admission tests use to observe reservations
+    # [test-observation] State accessors the VRAM and host-memory admission tests use to observe reservations
     # against the real singleton.
     _.current_budget,
     _.current_gate,
-    # Used only inside a quoted cast("CursorResult[Any]", ...) annotation on the same module,
+    # [framework-dispatch] Used only inside a quoted cast("CursorResult[Any]", ...) annotation on the same module,
     # which vulture does not read as a use; ruff would flag removing the import.
     _.CursorResult,
-    # Re-export kept for the PKI suite, which imports this name from app.auth.pki_auth
+    # [test-observation] Re-export kept for the PKI suite, which imports this name from app.auth.pki_auth
     # (tests/pki_auth/ and test_proxy_header_auth.py assert it is header_trust.ip_in_networks).
     _._is_pki_trusted_proxy,
-    # http.server.BaseHTTPRequestHandler dispatches do_GET, do_POST and log_message by name
+    # [framework-dispatch] http.server.BaseHTTPRequestHandler dispatches do_GET, do_POST and log_message by name
     # (the mock LLM and mock ASR servers); nothing calls them directly.
     _.do_GET,
     _.do_POST,
     _.log_message,
-    # torch.nn.Module.__call__ dispatches forward by name (the ONNX export spike module).
+    # [framework-dispatch] torch.nn.Module.__call__ dispatches forward by name (the ONNX export spike module).
     _.forward,
-    # PEP 562 module-level __getattr__: the interpreter calls it on a missing attribute of
+    # [framework-dispatch] PEP 562 module-level __getattr__: the interpreter calls it on a missing attribute of
     # app.services.opensearch_service, never a visible call site.
     _.__getattr__,
-    # Called by the v456 migration (backend/alembic/versions/v456_unique_object_keys.py), which
+    # [framework-dispatch] Called by the v456 migration (backend/alembic/versions/v456_unique_object_keys.py), which
     # this guard does not scan; the runner never imports it by name.
     _.clear_regenerable_duplicates,
-    # The Locust load test (scripts/perf/load/): Locust discovers every User subclass and the
+    # [framework-dispatch] The Locust load test (scripts/perf/load/): Locust discovers every User subclass and the
     # LoadTestShape subclass in the locustfile's namespace, instantiates them by class, and
     # calls on_start/on_stop around each simulated user; nothing calls them by name.
     _.ProfileShape,
@@ -101,7 +103,7 @@ WHITELIST = (
     _.unauthorized_error,
     # [extension-seam] Mechanism built for the BM25 no-stem preset (#506); adoption by the router layer is a documented, measurement-gated decision (services/chat/language.py module docstring).
     _.resolve_text_field_preset_for_locale,
-    # [test-observation] Test-only state resets of process-wide singletons and caches; the tests need a reset between cases and production never resets them. Moving each into a fixture would touch 20+ test files.
+    # [extension-seam] Restore-default counterparts of set_capability_resolver / set_privacy_ceiling_resolver; both are listed in tests/fixtures/extension_surface.txt, so an out-of-tree extension may call them and they are not test-only.
     _.reset_capability_resolver,
     _.reset_privacy_ceiling_resolver,
     # [test-observation] A test asserts a production invariant through it (security, tenancy, audit or lifecycle); deleting it would delete the only assertion of that invariant, not just a helper.

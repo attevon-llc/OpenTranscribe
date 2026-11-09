@@ -95,7 +95,8 @@ def test_setup_opentranscribe_torch_device_env_write_is_untouched() -> None:
     """
     text = SETUP_SCRIPT.read_text(encoding="utf-8")
     for value in ("cuda", "mps", "cpu"):
-        assert re.search(rf"TORCH_DEVICE={value}", text), (
+        # The installer writes .env keys through its anchored _upsert_env helper.
+        assert re.search(rf"_upsert_env TORCH_DEVICE {value}\b", text), (
             f"setup-opentranscribe.sh lost its TORCH_DEVICE={value} .env write"
         )
     assert ".env" in text

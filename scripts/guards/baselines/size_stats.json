@@ -1,103 +1,103 @@
 {
-  "date": "2026-11-02",
+  "date": "2026-11-09",
   "version": 1,
   "groups": {
     "Python (non-test)": {
-      "files": 1328,
-      "median": 212,
-      "p90": 501,
-      "p95": 610,
-      "max": 1647,
-      "over_soft": 133,
-      "over_hard": 6,
+      "files": 1489,
+      "median": 205,
+      "p90": 497,
+      "p95": 600,
+      "max": 1457,
+      "over_soft": 145,
+      "over_hard": 4,
       "debt": {
-        "files_over_hard": 6,
-        "lines_above_hard": 2312,
-        "lines_above_soft": 19953
+        "files_over_hard": 4,
+        "lines_above_hard": 1093,
+        "lines_above_soft": 20513
       }
     },
     "TypeScript/JS (non-test)": {
-      "files": 302,
-      "median": 90,
-      "p90": 270,
-      "p95": 353,
+      "files": 357,
+      "median": 78,
+      "p90": 260,
+      "p95": 383,
       "max": 1400,
-      "over_soft": 11,
+      "over_soft": 12,
       "over_hard": 1,
       "debt": {
         "files_over_hard": 1,
         "lines_above_hard": 400,
-        "lines_above_soft": 2384
+        "lines_above_soft": 2649
       }
     },
     "Shell (non-test)": {
-      "files": 120,
-      "median": 252,
-      "p90": 899,
-      "p95": 1326,
-      "max": 4905,
+      "files": 147,
+      "median": 199,
+      "p90": 853,
+      "p95": 1282,
+      "max": 4892,
       "over_soft": 27,
       "over_hard": 11,
       "debt": {
         "files_over_hard": 11,
-        "lines_above_hard": 11732,
-        "lines_above_soft": 20547
+        "lines_above_hard": 11944,
+        "lines_above_soft": 20832
       }
     },
     "Tests (py/ts/js/sh)": {
-      "files": 2464,
-      "median": 185,
-      "p90": 501,
-      "p95": 652,
-      "max": 1430,
-      "over_soft": 16,
+      "files": 2906,
+      "median": 173,
+      "p90": 475,
+      "p95": 628,
+      "max": 1490,
+      "over_soft": 18,
       "over_hard": 0,
       "debt": {
         "files_over_hard": 0,
         "lines_above_hard": 0,
-        "lines_above_soft": 3148
+        "lines_above_soft": 4004
       }
     },
     "Svelte <script> logic": {
-      "files": 397,
-      "median": 58,
-      "p90": 257,
-      "p95": 379,
-      "max": 1464,
-      "over_soft": 10,
+      "files": 436,
+      "median": 54,
+      "p90": 228,
+      "p95": 339,
+      "max": 1362,
+      "over_soft": 11,
       "over_hard": 4,
       "debt": {
         "files_over_hard": 4,
-        "lines_above_hard": 1645,
-        "lines_above_soft": 3039
+        "lines_above_hard": 1521,
+        "lines_above_soft": 2976
       }
     },
     "Svelte total file": {
-      "files": 397,
-      "median": 232,
-      "p90": 685,
-      "p95": 991,
-      "max": 1950,
+      "files": 436,
+      "median": 210,
+      "p90": 643,
+      "p95": 924,
+      "max": 1965,
+      "over_soft": 18,
+      "over_hard": 0,
+      "debt": {
+        "files_over_hard": 0,
+        "lines_above_hard": 0,
+        "lines_above_soft": 6118
+      }
+    },
+    "CLAUDE.md": {
+      "files": 83,
+      "median": 98,
+      "p90": 377,
+      "p95": 394,
+      "max": 400,
       "over_soft": 17,
       "over_hard": 0,
       "debt": {
         "files_over_hard": 0,
         "lines_above_hard": 0,
-        "lines_above_soft": 6126
-      }
-    },
-    "CLAUDE.md": {
-      "files": 57,
-      "median": 106,
-      "p90": 731,
-      "p95": 958,
-      "max": 1254,
-      "over_soft": 13,
-      "over_hard": 10,
-      "debt": {
-        "files_over_hard": 10,
-        "lines_above_hard": 3952,
-        "lines_above_soft": 5003
+        "lines_above_soft": 1107
       }
     }
   }

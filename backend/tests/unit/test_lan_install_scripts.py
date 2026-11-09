@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._shell_extract import extract_functions
+
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -266,11 +268,18 @@ def test_unattended_install_without_a_server_name_only_records_the_loopback_bind
 # ─── opentranscribe.sh setup-ssl ─────────────────────────────────────────────────────
 
 
-def _setup_ssl_arm() -> str:
-    text = MANAGER.read_text(encoding="utf-8")
-    start = text.index("    setup-ssl)\n")
-    end = text.index("    version)\n", start)
-    return text[start:end]
+_SETUP_SSL_FUNCTIONS = [
+    "setup_ssl_check_prereqs",
+    "setup_ssl_prompt_hostname",
+    "setup_ssl_issue_certs",
+    "setup_ssl_write_env",
+    "setup_ssl_print_next_steps",
+    "cmd_setup_ssl",
+]
+
+
+def _setup_ssl_command() -> str:
+    return extract_functions(MANAGER, _SETUP_SSL_FUNCTIONS)
 
 
 def _run_setup_ssl(tmp_path: Path, stdin: str) -> subprocess.CompletedProcess[str]:
@@ -285,9 +294,8 @@ def _run_setup_ssl(tmp_path: Path, stdin: str) -> subprocess.CompletedProcess[st
             "RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''",
             "check_environment() { :; }",
             f"source {COMMON}",
-            'case "setup-ssl" in',
-            _setup_ssl_arm(),
-            "esac",
+            _setup_ssl_command(),
+            "cmd_setup_ssl",
         ]
     )
     return _bash(script, cwd=tmp_path, stdin=stdin)

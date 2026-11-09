@@ -234,35 +234,33 @@ def test_amd64_full_deployment_never_gets_the_lite_pin_control(tmp_path: Path):
 # --------------------------------------------------------------------------- #
 
 
-def _case_arms(source: str) -> dict[str, str]:
-    """Split the `case "${1:-help}" in ... esac` dispatch block into {label: body}.
+def _command_bodies(source: str) -> dict[str, str]:
+    """Return {name: body} for every command implementation in the script.
 
-    Labels are 4-space-indented lines like `    start)` / `    backup|restore)`; nested
-    case statements inside an arm's own body (e.g. `update)`'s argument parser) are
-    indented further and so are never mistaken for a top-level label.
+    The `case "${1:-help}" in` dispatcher only forwards to `cmd_<name>` functions (it must
+    keep forwarding — checked below, so this cannot silently scan nothing); each command's
+    own body is what resolves the compose chain. `update_check_rollback_compat` is the one
+    helper that resolves a chain of its own, before the stack is torn down.
     """
     marker = '\ncase "${1:-help}" in\n'
     assert marker in source, (
         "the top-level case dispatch block was not found — this structural guard would "
         "scan nothing and every assertion below would be vacuous"
     )
-    start = source.index(marker) + len(marker)
-    end = source.index("\nesac", start)
-    body = source[start:end]
+    dispatch = source[source.index(marker) :]
+    forwarded = set(re.findall(r"^\s+(cmd_\w+) \"\$@\"$", dispatch, re.MULTILINE))
+    assert len(forwarded) >= 12, f"the dispatcher forwards to only {sorted(forwarded)}"
 
-    label_re = re.compile(r"^    ([A-Za-z][A-Za-z0-9_|-]*)\)$", re.MULTILINE)
-    labels = list(label_re.finditer(body))
-    assert labels, "no case-arm labels matched — the splitter regex is not reaching them"
-
-    arms: dict[str, str] = {}
-    for i, m in enumerate(labels):
-        arm_start = m.end()
-        arm_end = labels[i + 1].start() if i + 1 < len(labels) else len(body)
-        arms[m.group(1)] = body[arm_start:arm_end]
-    return arms
+    bodies: dict[str, str] = {}
+    for name in sorted(forwarded) + ["update_check_rollback_compat"]:
+        fn_marker = f"\n{name}() {{\n"
+        assert fn_marker in source, f"{name}() is not defined at top level"
+        start = source.index(fn_marker) + len(fn_marker)
+        bodies[name] = source[start : source.index("\n}\n", start)]
+    return bodies
 
 
-_EXEMPT_ARMS = {"backup|restore"}
+_EXEMPT_ARMS = {"cmd_backup_restore"}
 
 
 def _strip_comment_lines(text: str) -> str:
@@ -280,11 +278,11 @@ def _strip_comment_lines(text: str) -> str:
 
 def test_every_compose_chain_consumer_applies_the_deployment_pins_first():
     source = MANAGER.read_text(encoding="utf-8")
-    arms = {label: _strip_comment_lines(body) for label, body in _case_arms(source).items()}
+    arms = {label: _strip_comment_lines(body) for label, body in _command_bodies(source).items()}
 
     consumers = [label for label, body in arms.items() if "get_compose_files" in body]
     assert len(consumers) >= 12, (
-        f"expected at least 12 case arms to consume get_compose_files(), found only "
+        f"expected at least 12 commands to consume get_compose_files(), found only "
         f"{len(consumers)}: {consumers} — either the splitter is not matching correctly "
         "(making this whole test vacuous) or a consumer arm was removed"
     )
@@ -299,8 +297,8 @@ def test_every_compose_chain_consumer_applies_the_deployment_pins_first():
         if pins_idx == -1 or pins_idx > gcf_idx:
             offenders.append(label)
     assert not offenders, (
-        f"these case arms resolve get_compose_files() without an earlier "
-        f"apply_deployment_pins call in the same arm: {offenders}"
+        f"these commands resolve get_compose_files() without an earlier "
+        f"apply_deployment_pins call in the same command: {offenders}"
     )
 
     # The exemption set must be EXACTLY {"backup|restore"} — a second silent exemption

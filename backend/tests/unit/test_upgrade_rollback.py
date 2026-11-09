@@ -5,17 +5,33 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.unit._shell_extract import MANAGER
-from tests.unit._shell_extract import extract_case_block
+from tests.unit._shell_extract import extract_functions
 from tests.unit._shell_extract import requires_install_scripts
 from tests.unit._shell_extract import run_shell
 
 pytestmark = requires_install_scripts
 
 
+_UPDATE_FUNCTIONS = [
+    "update_parse_args",
+    "update_resolve_rollback_target",
+    "update_refuse_unforced_downgrade",
+    "update_pin_image_tag",
+    "update_check_rollback_compat",
+    "run_upgrade_sequence",
+    "cmd_update",
+]
+
+
+def _update_command_body() -> str:
+    """The REAL `update` command (extracted, not re-typed), invoked with the shell's `$@`."""
+    return extract_functions(MANAGER, _UPDATE_FUNCTIONS) + '\ncmd_update "$@"\n'
+
+
 def test_rollback_refuses_without_a_recorded_target(tmp_path: Path):
     """Behavioral: `update --rollback` against a .env with no recorded target.
 
-    Runs the REAL `update)` case body (extracted, not re-typed) with
+    Runs the REAL `update` command (extracted, not re-typed) with
     `check_environment`/`fix_model_cache_permissions` stubbed — the real
     versions require a live `.env`/`docker-compose.yml` and can shell out to
     Docker to fix cache ownership, neither of which this fast unit test should
@@ -25,7 +41,7 @@ def test_rollback_refuses_without_a_recorded_target(tmp_path: Path):
     stubbed here — an uncaught call to it would itself fail the snippet).
     """
     (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.5.0\n")
-    body = extract_case_block(MANAGER, r"    update)", r"    update-full)")
+    body = _update_command_body()
     snippet = f"""
 YELLOW='\\033[1;33m'; GREEN='\\033[0;32m'; RED='\\033[0;31m'; BLUE='\\033[0;34m'; NC='\\033[0m'
 cd {tmp_path}
@@ -77,7 +93,7 @@ def test_rollback_refuses_when_target_image_does_not_know_the_live_head(tmp_path
     nothing, i.e. the target image does NOT know it.
     """
     (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.5.0\n# OT_PREVIOUS_IMAGE_TAG=v0.4.1\n")
-    body = extract_case_block(MANAGER, r"    update)", r"    update-full)")
+    body = _update_command_body()
     docker_stub = """
 docker() {
   if [ "$1" = "compose" ]; then
@@ -105,7 +121,7 @@ def test_rollback_proceeds_when_target_image_knows_the_live_head(tmp_path: Path)
     for the wrong reason too).
     """
     (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.5.0\n# OT_PREVIOUS_IMAGE_TAG=v0.4.1\n")
-    body = extract_case_block(MANAGER, r"    update)", r"    update-full)")
+    body = _update_command_body()
     docker_stub = """
 docker() {
   if [ "$1" = "compose" ]; then
@@ -130,7 +146,7 @@ def test_rollback_force_downgrade_skips_the_preflight_check(tmp_path: Path):
     read or the target-image check — fails this test.
     """
     (tmp_path / ".env").write_text("OT_IMAGE_TAG=v0.5.0\n# OT_PREVIOUS_IMAGE_TAG=v0.4.1\n")
-    body = extract_case_block(MANAGER, r"    update)", r"    update-full)")
+    body = _update_command_body()
     docker_stub = """
 docker() { echo "DOCKER_SHOULD_NOT_BE_CALLED_UNDER_FORCE_DOWNGRADE"; return 1; }
 """

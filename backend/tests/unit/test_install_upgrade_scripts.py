@@ -552,19 +552,21 @@ def test_upgrade_refuses_before_teardown_when_secrets_are_missing():
     source = MANAGER.read_text()
     assert "preflight_upgrade_env" in source
 
-    fn = source.split("preflight_upgrade_env() {", 1)[1].split("\n}", 1)[0]
-    assert "REDIS_PASSWORD" in fn
+    fn = extract_function(MANAGER, "preflight_upgrade_env")
+    assert "REDIS_PASSWORD" in extract_function(MANAGER, "preflight_check_secrets")
     assert "development" in fn, "must honour the relaxed-environment opt-out"
 
-    # Ordering is the whole point: the check must precede the teardown each time.
-    for path in source.split("preflight_upgrade_env || exit 1")[1:]:
-        head = path.lstrip().splitlines()[0]
-        assert "compose_down_for_upgrade" in head, (
-            f"teardown does not immediately follow the gate: {head!r}"
+    # Ordering is the whole point: the check must precede the teardown. `update` and
+    # `update-full` share one sequence, so gating that sequence gates both.
+    sequence = extract_function(MANAGER, "run_upgrade_sequence")
+    assert sequence.index("preflight_upgrade_env || exit 1") < sequence.index(
+        "compose_down_for_upgrade"
+    ), "the gate must run before the teardown"
+    assert source.count("preflight_upgrade_env || exit 1") == 1
+    for command in ("cmd_update", "cmd_update_full"):
+        assert "run_upgrade_sequence" in extract_function(MANAGER, command), (
+            f"{command} must be gated by the shared upgrade sequence"
         )
-    assert source.count("preflight_upgrade_env || exit 1") == 2, (
-        "both `update` and `update-full` must be gated"
-    )
 
 
 def test_base_compose_does_not_blank_the_baked_version():

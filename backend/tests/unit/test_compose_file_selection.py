@@ -811,15 +811,23 @@ def test_all_overlays_covers_every_overlay_the_selector_can_choose():
     # documentation and zero code — which made `referenced` empty and every entry in
     # ALL_OVERLAYS look dead. A guard that resolves to an empty set is the failure mode this
     # whole module exists to catch, so it gets an explicit anchor and the control below.
-    marker = "\nget_compose_files() {\n"
-    assert marker in source, (
-        "opentranscribe.sh no longer defines get_compose_files() at top level; this guard "
-        "would silently scan nothing"
+    # The selector is get_compose_files() plus one compose_overlay_<name>() step per overlay.
+    names = ["get_compose_files", *re.findall(r"^(compose_overlay_\w+)\(\) \{", source, re.M)]
+    assert len(names) > 1, (
+        "opentranscribe.sh defines no compose_overlay_* steps; this guard would scan only "
+        "the base chain and every overlay in ALL_OVERLAYS would look dead"
     )
-    start = source.index(marker)
-    end = source.index("\n}", start + len(marker))
-    body = source[start:end]
-    body = "\n".join(line.split("#", 1)[0] for line in body.splitlines())
+    body = ""
+    for name in names:
+        marker = f"\n{name}() {{\n"
+        assert marker in source, (
+            f"opentranscribe.sh no longer defines {name}() at top level; this guard "
+            "would silently scan nothing"
+        )
+        start = source.index(marker)
+        end = source.index("\n}", start + len(marker))
+        body += "\n".join(line.split("#", 1)[0] for line in source[start:end].splitlines())
+        body += "\n"
 
     referenced = set(re.findall(r"docker-compose[a-z0-9.-]*\.yml", body))
     assert len(referenced) >= len(ALL_OVERLAYS), (

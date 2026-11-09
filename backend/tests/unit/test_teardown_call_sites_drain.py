@@ -11,7 +11,7 @@ bridge for that window, and this file is the regression guard that a new call si
 edit to an existing one) does not silently drop back to docker's bare 10s default.
 
 This is a **scanner**, not a hand-maintained list: it regexes every
-`docker compose $VAR (down|stop|restart)`, the `docker compose (-f ...)+ "$@"`
+`docker compose $VAR (down|stop|restart)` (or the quoted array form `"${VAR[@]}"`), the `docker compose (-f ...)+ "$@"`
 argv-forwarding idiom `stop_all_containers()` uses, every `restart_compose <verb>` call
 (the wrapper `opentr.sh`'s restart-* commands go through), and every bare `docker stop` —
 across the four shell files — and checks each one is covered by:
@@ -61,7 +61,9 @@ _SCOPE_BOUNDARY_RES = (
 )
 
 # The four call-site shapes that can reach a torn-down container.
-_PATTERN_A = re.compile(r"docker compose\s+\$\{?[A-Za-z_]\w*\}?\s+(down|stop|restart)\b")
+_PATTERN_A = re.compile(
+    r'docker compose\s+(?:\$\{?[A-Za-z_]\w*\}?|"\$\{[A-Za-z_]\w*\[@\]\}")\s+(down|stop|restart)\b'
+)
 _PATTERN_B = re.compile(r'docker compose\s+(?:-f\s+\S+\s+)+"\$@"')
 _PATTERN_C = re.compile(r"\brestart_compose\s+(restart|down|stop)\b")
 _PATTERN_D = re.compile(r"\bdocker\s+stop\b")
@@ -400,3 +402,29 @@ def test_all_four_scripts_are_syntactically_valid_bash():
             continue
         proc = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True, timeout=15)
         assert proc.returncode == 0, f"{relative_path} failed `bash -n`: {proc.stderr}"
+
+
+@pytest.mark.unit
+def test_scanner_fires_on_an_array_expanded_chain():
+    """The installers pass the -f chain as a quoted array (`"${chain[@]}"`), not as an
+    unquoted word-split string. A scanner that only knew `$chain` would report every such
+    teardown covered because it could not see it at all."""
+    synthetic = (
+        "some_func() {\n"
+        "  echo hi\n"
+        '  docker compose "${compose_chain[@]}" down --remove-orphans\n'
+        "}\n"
+    )
+    offenders = _run_scan_on_synthetic_script(synthetic)
+    assert len(offenders) == 1, f"expected exactly one offender, got {offenders}"
+
+
+@pytest.mark.unit
+def test_scanner_stays_clean_for_an_array_chain_after_a_drain():
+    synthetic = (
+        "some_func() {\n"
+        '  ot_drain_gpu_workers "$chain"\n'
+        '  docker compose "${compose_chain[@]}" down --remove-orphans\n'
+        "}\n"
+    )
+    assert _run_scan_on_synthetic_script(synthetic) == []

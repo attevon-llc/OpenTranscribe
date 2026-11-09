@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+# ===== constants and common.sh bootstrap =====
+
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -33,6 +35,9 @@ if [ -f ./scripts/common.sh ]; then
     # shellcheck source=scripts/common.sh
     . ./scripts/common.sh
 fi
+
+# ===== common.sh companions and standalone fallbacks =====
+
 # Production credential preflight (FLOWER_PASSWORD, MinIO encryption); optional like common.sh.
 # shellcheck source=scripts/lib/service-credentials.sh
 [ -f ./scripts/lib/service-credentials.sh ] && . ./scripts/lib/service-credentials.sh
@@ -51,9 +56,9 @@ fi
 # CONTAINER_UID_GID/read_env_value above.
 if ! declare -F ot_drain_gpu_workers >/dev/null 2>&1; then
     ot_drain_gpu_workers() {
-        local chain="$1"
-        # shellcheck disable=SC2086
-        COMPOSE_PROFILES="*" docker compose $chain stop -t "$OT_STOP_GRACE_GPU" \
+        local -a chain
+        read -r -a chain <<< "$1"
+        COMPOSE_PROFILES="*" docker compose "${chain[@]}" stop -t "$OT_STOP_GRACE_GPU" \
             celery-worker celery-worker-gpu-transcribe celery-worker-gpu-diarize \
             celery-worker-gpu-scaled celery-redaction celery-cpu-worker diar-native \
             2>/dev/null || true
@@ -110,6 +115,8 @@ if ! declare -F ot_detect_lan_ip >/dev/null 2>&1; then
         return 0
     }
 fi
+
+# ===== ref and URL resolution =====
 
 # The repo's default branch, asked for at runtime rather than written down.
 #
@@ -201,47 +208,7 @@ resolve_config_ref() {
     printf '%s\n' "$ref"
 }
 
-function show_help {
-    echo -e "${BLUE}OpenTranscribe Management Script${NC}"
-    echo ""
-    echo "Usage: ./opentranscribe.sh [command]"
-    echo ""
-    echo "Commands:"
-    echo "  start         Start all services"
-    echo "  stop          Stop all services"
-    echo "  restart       Restart all services"
-    echo "  status        Show container status"
-    echo "  compose-files Print the resolved 'docker compose -f ...' chain"
-    echo "  download-models [group]"
-    echo "                Fetch model assets not bundled in the images. 'diar-native'"
-    echo "                provisions the native diarizer's weights; 'password-blocklist' installs the"
-    echo "                breached-password list (a few hours, needs internet); omit for the models."
-    echo "  logs [svc]    View logs (all or specific service)"
-    echo "  update        Pull latest Docker images and restart (run 'backup' first)"
-    echo "  update-full   Update images AND configuration files"
-    echo "  clean         Remove all volumes and data (CAUTION)"
-    echo "  backup        Backup the database (optional --encrypt)"
-    echo "  restore       Restore the database from a backup file (see --help below)"
-    echo "  shell [svc]   Open shell in container (default: backend)"
-    echo "  config        Show current configuration"
-    echo "  health        Check service health"
-    echo "  setup-ssl     Set up HTTPS (local CA + server certificate)"
-    echo "  version       Show version and check for updates"
-    echo "  help          Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  ./opentranscribe.sh start"
-    echo "  ./opentranscribe.sh logs backend"
-    echo "  ./opentranscribe.sh compose-files    # which overlays did it pick?"
-    echo "  ./opentranscribe.sh download-models diar-native  # provision native diarizer weights"
-    echo "  ./opentranscribe.sh download-models password-blocklist  # breached-password list"
-    echo "  ./opentranscribe.sh update           # Update containers only"
-    echo "  ./opentranscribe.sh update-full      # Update everything"
-    echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
-    echo "  ./opentranscribe.sh restore --yes ./backups/opentranscribe_backup_....sql"
-    echo "  ./opentranscribe.sh setup-ssl"
-    echo ""
-}
+# ===== environment checks =====
 
 check_environment() {
     if [ ! -f .env ]; then
@@ -425,6 +392,8 @@ fix_model_cache_permissions() {
     return 0
 }
 
+# ===== hardware detection =====
+
 detect_nvidia_runtime() {
     # ⚠️ THIS `| grep -q` IS SAFE ONLY BECAUSE THIS FILE DOES NOT SET `pipefail`.
     # DO NOT ADD `set -o pipefail` TO THIS SCRIPT WITHOUT REWRITING THIS PROBE.
@@ -475,6 +444,7 @@ if ! declare -F host_architecture >/dev/null 2>&1; then
         esac
     }
 fi
+
 if ! declare -F effective_deployment_mode >/dev/null 2>&1; then
     effective_deployment_mode() {
         local mode="${DEPLOYMENT_MODE:-}"
@@ -596,6 +566,8 @@ force_cpu_mode_requested() {
     fi
     return 1
 }
+
+# ===== deployment pins =====
 
 # Pin DIAR_NATIVE_IMAGE to the Blackwell tag when this deployment will load
 # docker-compose.blackwell.yml, so docker-compose.diar-native.yml's own
@@ -812,6 +784,8 @@ apply_deployment_pins() {
     pin_frontend_bind_host
 }
 
+# ===== compose file selection (incl. diar-native) =====
+
 # Resolve where the diar-native ONNX/PLDA export lives (or will land), from .env alone.
 #
 # This is the shipped, standalone script, so — unlike opentr.sh's dev-only same-named
@@ -849,31 +823,6 @@ diar_native_marker_present() {
     return 0
 }
 
-get_compose_files() {
-    local compose_files="-f docker-compose.yml"
-
-    # Architecture preflight FIRST, because it can change DEPLOYMENT_MODE and every
-    # decision below reads it. Called here rather than only at the `start` case arm
-    # so that stop/restart/status/compose-files resolve the SAME chain start did —
-    # a teardown that resolves a different overlay set than the bring-up addresses
-    # a different set of services. Its banners go to stderr like every other banner
-    # in this function, so `compose-files` still prints only the chain on stdout.
-    #
-    # Belt-and-braces, not the primary fix: every case arm below now calls
-    # apply_deployment_pins() (which runs this same preflight) as a plain statement
-    # BEFORE resolving `compose_files=$(get_compose_files)`, so DEPLOYMENT_MODE=lite
-    # is already exported in the calling shell by the time this function's own call
-    # runs. This call keeps get_compose_files() correct on its own even if some
-    # future caller forgets apply_deployment_pins — it just can no longer be the
-    # ONLY thing propagating the export, since a call from inside this subshell can
-    # never escape it (issue #896's remaining gap).
-    arm64_deployment_preflight
-
-    # Production deployment always uses prod overrides
-    if [ -f docker-compose.prod.yml ]; then
-        compose_files="$compose_files -f docker-compose.prod.yml"
-    fi
-
     # Lite (CPU-only) overlay. Before issue #680 this branch did not exist at all:
     # DEPLOYMENT_MODE=lite was read by four other places in this script but could
     # never actually select docker-compose.lite.yml, so a production install had no
@@ -881,11 +830,11 @@ get_compose_files() {
     # says so in its own header and hand-assembles the chain instead. That gap is
     # what made "default arm64 to lite" impossible to honour, since there was
     # nowhere for the default to point.
-    local deployment_mode
-    deployment_mode=$(effective_deployment_mode)
+compose_overlay_lite() {
+    local deployment_mode="$1"
     if [ "$deployment_mode" = "lite" ]; then
         if [ -f docker-compose.lite.yml ]; then
-            compose_files="$compose_files -f docker-compose.lite.yml"
+            printf ' -f %s' docker-compose.lite.yml
             echo -e "${BLUE}☁️  Lite overlay enabled (DEPLOYMENT_MODE=lite) — CPU-only image, cloud ASR${NC}" >&2
         else
             echo -e "${YELLOW}⚠️  DEPLOYMENT_MODE=lite but docker-compose.lite.yml is missing${NC}" >&2
@@ -893,6 +842,8 @@ get_compose_files() {
             echo -e "${YELLOW}   Run './opentranscribe.sh update-full' to fetch it, or the full image will be used.${NC}" >&2
         fi
     fi
+    return 0
+}
 
     # Add the GPU overlay when the NVIDIA Container Toolkit runtime is present,
     # unless the user explicitly chose CPU-only mode at install time, or this is
@@ -906,7 +857,9 @@ get_compose_files() {
     # CUDA device, and flipped DIAR_MODE to `cuda`, inside a CPU-only image. That is
     # exactly the invariant #660 states: the sidecar can never claim a device the rest
     # of the stack decided not to use.
-    local docker_runtime gpu_overlay_selected=false
+compose_overlay_gpu() {
+    local deployment_mode="$1"
+    local docker_runtime
     docker_runtime=$(detect_nvidia_runtime)
     if [ "$deployment_mode" = "lite" ]; then
         if [ "$docker_runtime" = "nvidia" ]; then
@@ -918,31 +871,35 @@ get_compose_files() {
         fi
     elif [ "$docker_runtime" = "nvidia" ]; then
         if is_blackwell_gpu && [ -f docker-compose.blackwell.yml ]; then
-            compose_files="$compose_files -f docker-compose.blackwell.yml"
-            gpu_overlay_selected=true
+            printf ' -f %s' docker-compose.blackwell.yml
             echo -e "${BLUE}Blackwell GPU overlay enabled (SM_12x detected)${NC}" >&2
         elif [ -f docker-compose.gpu.yml ]; then
-            compose_files="$compose_files -f docker-compose.gpu.yml"
-            gpu_overlay_selected=true
+            printf ' -f %s' docker-compose.gpu.yml
             echo -e "${BLUE}GPU acceleration enabled (NVIDIA Container Toolkit detected)${NC}" >&2
         fi
     fi
+    return 0
+}
 
     # Optional database role split: auto-load when POSTGRES_APP_USER is set in .env or the
     # shell, so workers run without the owner password (docs: Audit record integrity).
+compose_overlay_db_roles() {
     local db_app_user="${POSTGRES_APP_USER:-}"
     [ -n "$db_app_user" ] || db_app_user=$(read_env_value POSTGRES_APP_USER)
     if [ -n "$db_app_user" ] && [ -f docker-compose.db-roles.yml ]; then
-        compose_files="$compose_files -f docker-compose.db-roles.yml"
+        printf ' -f %s' docker-compose.db-roles.yml
         echo -e "${BLUE}🔒 DB role split overlay AUTO-LOADED (POSTGRES_APP_USER is set)${NC}" >&2
     fi
+    return 0
+}
 
     # Add NGINX overlay if NGINX_SERVER_NAME is configured
+compose_overlay_nginx() {
     local nginx_server_name=""
     nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
     if nginx_overlay_ready; then
-        compose_files="$compose_files -f docker-compose.nginx.yml"
+        printf ' -f %s' docker-compose.nginx.yml
         echo -e "${BLUE}🔒 HTTPS enabled (NGINX reverse proxy with SSL)${NC}" >&2
         echo -e "${BLUE}   Server name: $nginx_server_name${NC}" >&2
     elif [ -n "$nginx_server_name" ] && [ -f docker-compose.nginx.yml ]; then
@@ -951,6 +908,8 @@ get_compose_files() {
         echo -e "${YELLOW}   Generate with: ./opentranscribe.sh setup-ssl${NC}" >&2
         echo -e "${YELLOW}   Continuing without HTTPS...${NC}" >&2
     fi
+    return 0
+}
 
     # Add the scheduled-backup overlay when explicitly opted into. Deliberately keyed on a
     # DEDICATED toggle, not on BACKUP_HOST_PATH being non-empty: .env.example ships
@@ -959,14 +918,17 @@ get_compose_files() {
     # service, so that would force-recreate OpenSearch on every existing deployment's
     # next `update`. Same trap .env.example already documents for MEDIA_NAS_PATH (#597).
     # BACKUP_HOST_PATH stays what it has always been: WHERE the mount points, not WHETHER.
+compose_overlay_backup() {
     local backup_overlay_enabled=""
     backup_overlay_enabled=$(read_env_value BACKUP_OVERLAY_ENABLED)
     if [ "$backup_overlay_enabled" = "true" ] && [ -f docker-compose.backup.yml ]; then
-        compose_files="$compose_files -f docker-compose.backup.yml"
+        printf ' -f %s' docker-compose.backup.yml
         echo -e "${BLUE}💾 Scheduled-backup overlay enabled (BACKUP_OVERLAY_ENABLED=true)${NC}" >&2
         echo -e "${BLUE}   Destination: ${BACKUP_HOST_PATH:-./backups} → /backups${NC}" >&2
         echo -e "${YELLOW}   Note: this also sets path.repo on OpenSearch — the opensearch container will be recreated.${NC}" >&2
     fi
+    return 0
+}
 
     # Add the native diarization sidecar when its weights have been exported, OR when
     # they can still be — i.e. a HUGGINGFACE_TOKEN is on file for the backend's own
@@ -993,6 +955,8 @@ get_compose_files() {
     # literally and passes this non-empty check without being a usable token. That is
     # the same limitation every other read_env_value call in this file already lives
     # with; not new here.
+compose_overlay_diar_native() {
+    local gpu_overlay_selected="$1"
     local diar_models_dir=""
     diar_models_dir=$(resolve_diar_native_models_dir)
 
@@ -1035,7 +999,7 @@ get_compose_files() {
     if [ "${diar_backend:-native}" = "native" ] \
        && { [ "$diar_weights_present" = "1" ] || [ -n "$diar_hf_token" ]; }; then
         if [ -f docker-compose.diar-native.yml ]; then
-            compose_files="$compose_files -f docker-compose.diar-native.yml"
+            printf ' -f %s' docker-compose.diar-native.yml
             if [ "$diar_weights_present" = "1" ]; then
                 echo -e "${BLUE}🎙️  Native diarization sidecar enabled (weights present)${NC}" >&2
                 echo -e "${BLUE}   Weights: ${diar_models_dir} → /models${NC}" >&2
@@ -1054,7 +1018,7 @@ get_compose_files() {
             # would have put a CUDA reservation and DIAR_MODE=cuda on the CPU-only image.
             if [ "$gpu_overlay_selected" = true ] \
                && [ -f docker-compose.diar-native-gpu.yml ]; then
-                compose_files="$compose_files -f docker-compose.diar-native-gpu.yml"
+                printf ' -f %s' docker-compose.diar-native-gpu.yml
                 echo -e "${BLUE}   Holds ~2.2 GB of GPU memory on device ${DIAR_NATIVE_GPU:-${GPU_DEVICE_ID:-0}} while up.${NC}" >&2
             else
                 # "identical output" was RETRACTED upstream (#679), and the replacement
@@ -1080,23 +1044,79 @@ get_compose_files() {
             echo -e "${YELLOW}   Run './opentranscribe.sh update-full' to fetch it.${NC}" >&2
         fi
     fi
+    return 0
+}
 
     # GPU split overlay (issue #708): separate GPUs for transcription vs diarization.
     # gpu_split_active() is the single gate; pin_gpu_split_profile() (called earlier, as
     # a plain statement, by every arm that reaches here) already exported
     # COMPOSE_PROFILES=gpu-split so the profile-gated services in docker-compose.yml
     # actually come up alongside this overlay's GPU reservations for them.
+compose_overlay_gpu_split() {
     if gpu_split_active; then
-        compose_files="$compose_files -f docker-compose.gpu-split.yml"
+        printf ' -f %s' docker-compose.gpu-split.yml
         echo -e "${BLUE}🔀 GPU split overlay enabled (ENGINE_GPU_SPLIT=true) — transcription and diarization run on separate GPUs${NC}" >&2
         echo -e "${BLUE}   GPU_TRANSCRIBE_DEVICE_ID / GPU_DIARIZE_DEVICE_ID default to 0/1 — set both in .env if that is wrong for this host.${NC}" >&2
     fi
+    return 0
+}
 
-    if [ "$(read_env_value DEMO_MODE)" = "true" ]; then # #628, last so its refusals win over every overlay above
-        [ -f docker-compose.demo.yml ] && compose_files="$compose_files -f docker-compose.demo.yml" ||
-            echo -e "${RED}❌ DEMO_MODE=true but docker-compose.demo.yml is missing: run './opentranscribe.sh update-full'${NC}" >&2
-        [[ " $compose_files " == *" -f docker-compose.nginx.yml "* && -f docker-compose.demo-cloudflare.yml && -f nginx/cloudflare-real-ip.conf ]] && compose_files="$compose_files -f docker-compose.demo-cloudflare.yml"
+compose_overlay_demo() {
+    local compose_files="$1"
+    # #628, last so its refusals win over every overlay above
+    [ "$(read_env_value DEMO_MODE)" = "true" ] || return 0
+    if [ -f docker-compose.demo.yml ]; then
+        printf ' -f %s' docker-compose.demo.yml
+    else
+        echo -e "${RED}❌ DEMO_MODE=true but docker-compose.demo.yml is missing: run './opentranscribe.sh update-full'${NC}" >&2
     fi
+    if [[ " $compose_files " == *" -f docker-compose.nginx.yml "* && -f docker-compose.demo-cloudflare.yml && -f nginx/cloudflare-real-ip.conf ]]; then
+        printf ' -f %s' docker-compose.demo-cloudflare.yml
+    fi
+    return 0
+}
+
+get_compose_files() {
+    local compose_files="-f docker-compose.yml"
+
+    # Architecture preflight FIRST, because it can change DEPLOYMENT_MODE and every
+    # decision below reads it. Called here rather than only at the `start` case arm
+    # so that stop/restart/status/compose-files resolve the SAME chain start did —
+    # a teardown that resolves a different overlay set than the bring-up addresses
+    # a different set of services. Its banners go to stderr like every other banner
+    # in this function, so `compose-files` still prints only the chain on stdout.
+    #
+    # Belt-and-braces, not the primary fix: every case arm below now calls
+    # apply_deployment_pins() (which runs this same preflight) as a plain statement
+    # BEFORE resolving `compose_files=$(get_compose_files)`, so DEPLOYMENT_MODE=lite
+    # is already exported in the calling shell by the time this function's own call
+    # runs. This call keeps get_compose_files() correct on its own even if some
+    # future caller forgets apply_deployment_pins — it just can no longer be the
+    # ONLY thing propagating the export, since a call from inside this subshell can
+    # never escape it (issue #896's remaining gap).
+    arm64_deployment_preflight
+
+    # Production deployment always uses prod overrides
+    if [ -f docker-compose.prod.yml ]; then
+        compose_files="$compose_files -f docker-compose.prod.yml"
+    fi
+
+    local deployment_mode
+    deployment_mode=$(effective_deployment_mode)
+    compose_files="$compose_files$(compose_overlay_lite "$deployment_mode")"
+
+    local gpu_overlay gpu_overlay_selected=false
+    gpu_overlay=$(compose_overlay_gpu "$deployment_mode")
+    compose_files="$compose_files$gpu_overlay"
+    if [ -n "$gpu_overlay" ]; then gpu_overlay_selected=true; fi
+
+    compose_files="$compose_files$(compose_overlay_db_roles)"
+    compose_files="$compose_files$(compose_overlay_nginx)"
+    compose_files="$compose_files$(compose_overlay_backup)"
+    compose_files="$compose_files$(compose_overlay_diar_native "$gpu_overlay_selected")"
+    compose_files="$compose_files$(compose_overlay_gpu_split)"
+    # #628: last, so its refusals win over every overlay above
+    compose_files="$compose_files$(compose_overlay_demo "$compose_files")"
 
     echo "$compose_files"
 }
@@ -1116,6 +1136,8 @@ get_compose_files() {
 # in an operator-facing status line — conflating the two caused a live outage on this branch.
 print_diar_native_status() {
     local compose_files="$1"
+    local -a compose_chain
+    read -r -a compose_chain <<< "$compose_files"
 
     case "$compose_files" in
         *docker-compose.diar-native.yml*) ;;
@@ -1129,11 +1151,9 @@ print_diar_native_status() {
     configured=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
     echo "  configured  ${configured:-native}            (ENGINE_DIARIZER_BACKEND / engine.diarizer_backend)"
 
-    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
     local health_json ready_code
-    health_json=$(docker compose $compose_files exec -T diar-native curl -sf localhost:8701/healthz 2>/dev/null)
-    # shellcheck disable=SC2086
-    ready_code=$(docker compose $compose_files exec -T diar-native \
+    health_json=$(docker compose "${compose_chain[@]}" exec -T diar-native curl -sf localhost:8701/healthz 2>/dev/null)
+    ready_code=$(docker compose "${compose_chain[@]}" exec -T diar-native \
         curl -s -o /dev/null -w '%{http_code}' localhost:8701/readyz 2>/dev/null)
 
     if [ -z "$health_json" ]; then
@@ -1180,6 +1200,8 @@ print_diar_native_status() {
     echo "  timeout     ${timeout_s:-1800}s ceiling    DIAR_NATIVE_TIMEOUT_S"
 }
 
+# ===== upgrade (backup advice, pull/down, phased restart) =====
+
 # Refuse an upgrade that the new backend will reject, BEFORE tearing anything down.
 #
 # v0.5.0 flipped security enforcement from fail-open to fail-closed (#284 A0.3):
@@ -1191,38 +1213,34 @@ print_diar_native_status() {
 #
 # Checking first turns that into a refusal with a remedy, while the old stack is
 # still running.
-preflight_upgrade_env() {
-    local problems=()
-
-    # Relaxed environments opt out of all of this, exactly as the backend does.
-    local env_name
-    env_name=$(read_env_value ENVIRONMENT | tr '[:upper:]' '[:lower:]')
-    case "$env_name" in
-        development|dev|testing|test|local) return 0 ;;
-    esac
-
+preflight_check_secrets() {
     # REDIS_PASSWORD / JWT_SECRET_KEY / ENCRYPTION_KEY deliberately keep the raw
     # `cut -d= -f2-` form rather than read_env_value: a secret may legitimately
     # contain a `#` (even ` #`), and read_env_value's inline-comment stripping
     # would silently truncate it.
     local redis_pw
     redis_pw=$(grep -E '^REDIS_PASSWORD=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
-    [ -z "$redis_pw" ] && problems+=("REDIS_PASSWORD is empty or missing")
+    PREFLIGHT_REDIS_MISSING=false
+    if [ -z "$redis_pw" ]; then
+        PREFLIGHT_PROBLEMS+=("REDIS_PASSWORD is empty or missing")
+        PREFLIGHT_REDIS_MISSING=true
+    fi
 
     local jwt
     jwt=$(grep -E '^JWT_SECRET_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
     case "$jwt" in
-        ""|*change_me*|*CHANGE_ME*) problems+=("JWT_SECRET_KEY is unset or still a placeholder") ;;
+        ""|*change_me*|*CHANGE_ME*) PREFLIGHT_PROBLEMS+=("JWT_SECRET_KEY is unset or still a placeholder") ;;
     esac
 
     local enc
     enc=$(grep -E '^ENCRYPTION_KEY=' .env 2>/dev/null | cut -d= -f2- | tr -d ' "' | head -1)
     case "$enc" in
-        ""|*change_me*|*CHANGE_ME*) problems+=("ENCRYPTION_KEY is unset or still a placeholder") ;;
+        ""|*change_me*|*CHANGE_ME*) PREFLIGHT_PROBLEMS+=("ENCRYPTION_KEY is unset or still a placeholder") ;;
     esac
+}
 
-    declare -F ot_require_service_credentials >/dev/null && { ot_require_service_credentials .env || return 1; }
-
+preflight_check_diar_native() {
+    local diar_backend="$1"
     # issue #670: engine.diarizer_backend's coded (and DB-configured) default is `native`,
     # and backend/app/transcription/native_provision.py deliberately never aborts startup
     # over a failed export — a degraded diarizer is a supported configuration, not a crash
@@ -1254,13 +1272,10 @@ preflight_upgrade_env() {
     # Already lowercases internally, so the separate `tr` this used to need is gone too.
     local deployment_mode
     deployment_mode=$(effective_deployment_mode)
-
     # Same case-fold as get_compose_files' identical gate above: the backend resolves
     # this value case-insensitively (config.py:357-366) and fail-safes unknowns to
     # "native", so a case-sensitive compare here ('Native', 'NATIVE') would silently
     # skip the #670 preflight guard for a backend that is about to run native anyway.
-    local diar_backend
-    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
     if [ "${diar_backend:-native}" = "native" ]; then
         local diar_dir diar_token
         diar_dir=$(resolve_diar_native_models_dir)
@@ -1274,11 +1289,13 @@ preflight_upgrade_env() {
                 echo -e "${YELLOW}   HUGGINGFACE_TOKEN and it will export on next startup, same as a full install.${NC}"
                 echo -e "${YELLOW}   Diarization will use the in-process PyAnnote engine until then; not blocking the upgrade.${NC}"
             else
-                problems+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
+                PREFLIGHT_PROBLEMS+=("engine.diarizer_backend resolves to native, but $diar_dir has never been provisioned and no HUGGINGFACE_TOKEN is set to provision it on next startup — run './opentranscribe.sh download-models diar-native' first, or set HUGGINGFACE_TOKEN in .env")
             fi
         fi
     fi
+}
 
+preflight_fix_scratch_permissions() {
     # Issue #661 E2: production installs have NEVER had a pipeline_scratch chown.
     # `fix_pipeline_scratch_permissions` (scripts/common.sh) is opentr.sh-only; this curl-style
     # installer sources scripts/common.sh only conditionally (see the `if [ -f
@@ -1300,7 +1317,10 @@ preflight_upgrade_env() {
                 || echo -e "${YELLOW}⚠️  Could not fix pipeline_scratch permissions — scratch handoff may fall back to MinIO${NC}"
         fi
     fi
+}
 
+preflight_print_notices() {
+    local diar_backend="$1"
     # A sidecar container created before this consolidation keeps its OLD mount set until it
     # is RECREATED, not merely restarted (diarizer_native.py documents the identical failure
     # in reverse for the original transcription-temp mount). A sidecar left on the old mounts
@@ -1324,24 +1344,51 @@ preflight_upgrade_env() {
         echo -e "${YELLOW}   Your .env was NOT modified — update these manually before/after upgrading.${NC}"
         echo ""
     fi
+}
 
-    [ ${#problems[@]} -eq 0 ] && return 0
-
+preflight_print_refusal() {
     echo -e "${RED}❌ This release enforces production secrets that your .env does not satisfy.${NC}"
     echo -e "${RED}   Refusing to upgrade — your current stack is untouched and still running.${NC}"
     echo ""
-    for p in "${problems[@]}"; do echo "   • $p"; done
+    for p in "${PREFLIGHT_PROBLEMS[@]}"; do echo "   • $p"; done
     echo ""
     echo -e "${YELLOW}Why now:${NC} security enforcement moved from fail-open to fail-closed."
     echo "  Previously ENVIRONMENT defaulted to \"development\", so these checks were skipped"
     echo "  on any deployment that never set it. They now apply by default."
     echo ""
     echo -e "${YELLOW}To fix:${NC}"
-    [ -z "$redis_pw" ] && echo "  echo \"REDIS_PASSWORD=\$(openssl rand -hex 16)\" >> .env"
+    if [ "$PREFLIGHT_REDIS_MISSING" = true ]; then echo "  echo \"REDIS_PASSWORD=\$(openssl rand -hex 16)\" >> .env"; fi
     echo "  # then re-run: ./opentranscribe.sh update"
     echo ""
     echo "  A single-user install on a trusted network can instead set ENVIRONMENT=development,"
     echo "  but that disables every hardening control."
+}
+
+preflight_upgrade_env() {
+    PREFLIGHT_PROBLEMS=()
+
+    # Relaxed environments opt out of all of this, exactly as the backend does.
+    local env_name
+    env_name=$(read_env_value ENVIRONMENT | tr '[:upper:]' '[:lower:]')
+    case "$env_name" in
+        development|dev|testing|test|local) return 0 ;;
+    esac
+    local diar_backend
+    diar_backend=$(read_env_value ENGINE_DIARIZER_BACKEND | tr '[:upper:]' '[:lower:]')
+
+    preflight_check_secrets
+
+    declare -F ot_require_service_credentials >/dev/null && { ot_require_service_credentials .env || return 1; }
+
+    preflight_check_diar_native "$diar_backend"
+
+    preflight_fix_scratch_permissions
+
+    preflight_print_notices "$diar_backend"
+
+    [ ${#PREFLIGHT_PROBLEMS[@]} -eq 0 ] && return 0
+
+    preflight_print_refusal
     return 1
 }
 
@@ -1390,16 +1437,16 @@ recommend_pre_upgrade_backup() {
 # operator notice one.
 compose_pull_for_upgrade() {
     local compose_files="$1"
+    local -a compose_chain
+    read -r -a compose_chain <<< "$compose_files"
 
-    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-    if docker compose $compose_files pull; then
+    if docker compose "${compose_chain[@]}" pull; then
         return 0
     fi
 
     local images missing=() img
     # Captured, never piped into a short-circuiting reader (SIGPIPE/pipefail rule).
-    # shellcheck disable=SC2086
-    if ! images="$(docker compose $compose_files config --images 2>/dev/null)"; then
+    if ! images="$(docker compose "${compose_chain[@]}" config --images 2>/dev/null)"; then
         echo -e "${RED}❌ Image pull failed and the compose chain's image list could not be${NC}"
         echo -e "${RED}   read, so it cannot be shown that the images are present locally.${NC}"
         return 1
@@ -1442,6 +1489,8 @@ compose_pull_for_upgrade() {
 # empty, and continue. Any other failure is still fatal.
 compose_down_for_upgrade() {
     local compose_files="$1"
+    local -a compose_chain
+    read -r -a compose_chain <<< "$compose_files"
 
     # Both upgrade arms reach this only after preflight_upgrade_env passed and before
     # anything is torn down: the last point where the advice can still be acted on.
@@ -1451,8 +1500,7 @@ compose_down_for_upgrade() {
     # path this function exists for is exactly the case named in that issue.
     ot_drain_gpu_workers "$compose_files"
 
-    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-    if docker compose $compose_files down; then
+    if docker compose "${compose_chain[@]}" down; then
         return 0
     fi
 
@@ -1464,8 +1512,7 @@ compose_down_for_upgrade() {
     # failed all three v0.6.0 upgrade rehearsal hops. `compose ps -a` is scoped to the project and
     # still sees every service after a partial teardown.
     local remaining
-    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-    remaining=$(docker compose $compose_files ps -aq 2>/dev/null | wc -l)
+    remaining=$(docker compose "${compose_chain[@]}" ps -aq 2>/dev/null | wc -l)
     if [ "$remaining" -ne 0 ]; then
         echo -e "${RED}❌ Teardown failed and $remaining container(s) remain${NC}"
         return 1
@@ -1503,6 +1550,8 @@ compose_down_for_upgrade() {
 # Usage: perform_phased_restart "$compose_files"   (returns non-zero on failure)
 perform_phased_restart() {
     local compose_files="$1"
+    local -a compose_chain
+    read -r -a compose_chain <<< "$compose_files"
     local backend_port waited max_wait state
 
     backend_port=$(read_env_value BACKEND_PORT)
@@ -1511,11 +1560,9 @@ perform_phased_restart() {
     # Phase 1: infrastructure + backend only, no dependents.
     echo -e "${BLUE}▶ Starting infrastructure + backend (phase 1/2)...${NC}"
     # `up backend` runs the one-shot `migrate` first; if it fails, backend is never created.
-    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-    if ! docker compose $compose_files up -d postgres redis minio opensearch backend; then
+    if ! docker compose "${compose_chain[@]}" up -d postgres redis minio opensearch backend; then
         echo -e "${RED}❌ Could not start the backend. Migrate step log (exit 1 = migration failed, 3 = lock wait timed out, 4 = database unreachable):${NC}"
-        # shellcheck disable=SC2086
-        docker compose $compose_files logs --tail 40 migrate 2>&1 || true
+        docker compose "${compose_chain[@]}" logs --tail 40 migrate 2>&1 || true
         return 1
     fi
 
@@ -1557,8 +1604,7 @@ perform_phased_restart() {
 
     # Phase 3: backend is healthy — safe to start everything else.
     echo -e "${BLUE}▶ Starting remaining services (phase 2/2)...${NC}"
-    # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-    docker compose $compose_files up -d
+    docker compose "${compose_chain[@]}" up -d
 
     # Report what actually came up, so an upgrade that silently ran the wrong
     # image is visible at the point of upgrade rather than weeks later.
@@ -1573,48 +1619,7 @@ perform_phased_restart() {
     return 0
 }
 
-show_access_info() {
-    # Source .env to get port values
-    source .env 2>/dev/null || true
-
-    # Check if NGINX/HTTPS is configured
-    local nginx_server_name=""
-    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
-
-    local https_enabled=false
-    if nginx_overlay_ready; then
-        https_enabled=true
-    fi
-
-    echo -e "${GREEN}🌐 Access Information:${NC}"
-
-    if [ "$https_enabled" = true ]; then
-        echo "  🔒 HTTPS Mode (via NGINX reverse proxy)"
-        echo "  • Web Interface:     https://$nginx_server_name"
-        echo "  • Documentation:     https://$nginx_server_name/docs/"
-        echo "  • API:               https://$nginx_server_name/api"
-        echo "  • API Documentation: https://$nginx_server_name/api/docs"
-        echo "  • Flower Dashboard:  https://$nginx_server_name/flower/"
-        echo "  • MinIO Console:     https://$nginx_server_name/minio/"
-        echo ""
-        echo -e "${YELLOW}📝 Note: Add '$nginx_server_name' to your DNS or /etc/hosts${NC}"
-        echo -e "${YELLOW}   Install nginx/ssl/ca.crt on client devices once to avoid browser warnings${NC}"
-    else
-        echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
-        echo "  • Documentation:     http://localhost:${FRONTEND_PORT:-5173}/docs/"
-        echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
-        echo "  • API Endpoint:      http://localhost:${BACKEND_PORT:-5174}/api"
-        echo "  • Flower Dashboard:  http://localhost:${FLOWER_PORT:-5175}/flower"
-        echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
-        if [ -z "$nginx_server_name" ]; then
-            echo ""
-            echo -e "${YELLOW}💡 For HTTPS (required for mic recording from other devices):${NC}"
-            echo -e "${YELLOW}   Run: ./opentranscribe.sh setup-ssl${NC}"
-        fi
-    fi
-    echo ""
-    echo -e "${YELLOW}⏳ Please wait a moment for all services to initialize...${NC}"
-}
+# ===== model download =====
 
 # The image whose diar-server binary should perform the export. Same reasoning as
 # scripts/download-models.sh's resolve_downloader_image(): the export MUST come from
@@ -1671,6 +1676,53 @@ resolve_diar_native_downloader_image() {
 # environment (never the command line — visible to any `ps` on the host), the
 # HuggingFace cache mounted so a re-run does not re-fetch the underlying weights, and
 # the pinned deployment image via resolve_diar_native_downloader_image() above.
+diar_native_print_token_help() {
+    echo -e "${RED}❌ HUGGINGFACE_TOKEN not set in .env.${NC}"
+    echo ""
+    echo "   1. Create a token (Read access): https://huggingface.co/settings/tokens"
+    echo "   2. Signed in as that account, accept the terms at:"
+    echo "      https://huggingface.co/pyannote/speaker-diarization-community-1"
+    echo "   3. Add it to .env:  HUGGINGFACE_TOKEN=your_token_here"
+    echo ""
+    echo "   Then re-run: ./opentranscribe.sh download-models diar-native"
+}
+
+# Stable exit codes from crates/diar-core/src/provision/mod.rs::exit — branched on
+# rather than parsed out of diar-server's own message text, which it also prints
+# above this. 0/2/3/4/5/6/7/9 are the whole contract; anything else is unexpected.
+diar_native_print_failure_remedy() {
+    local rc="$1" models_dir="$2"
+    echo ""
+    echo -e "${RED}❌ diar-native provisioning failed (exit ${rc}).${NC}"
+    case "$rc" in
+        5)
+            echo -e "${YELLOW}   Token denied. The gate is per-account and auto-approved — a valid${NC}"
+            echo -e "${YELLOW}   token whose account never accepted the terms fails identically.${NC}"
+            echo -e "${YELLOW}   Confirm at: https://huggingface.co/pyannote/speaker-diarization-community-1${NC}"
+            ;;
+        7)
+            echo -e "${YELLOW}   ${models_dir} is not writable by the container. Run:${NC}"
+            echo -e "${YELLOW}     ./scripts/fix-model-permissions.sh${NC}"
+            ;;
+        6)
+            echo -e "${YELLOW}   This image has no Python exporter environment. That should not happen${NC}"
+            echo -e "${YELLOW}   on a published backend image — please report it.${NC}"
+            ;;
+        3)
+            echo -e "${YELLOW}   The export completed but failed its own smoke test — see the output above.${NC}"
+            ;;
+        4)
+            echo -e "${YELLOW}   The export itself failed — see the output above.${NC}"
+            ;;
+        9)
+            echo -e "${YELLOW}   Device unavailable. This step runs on CPU and needs no GPU; please report this.${NC}"
+            ;;
+        *)
+            echo -e "${YELLOW}   See diar-server's own output above for detail.${NC}"
+            ;;
+    esac
+}
+
 download_models_diar_native() {
     check_environment
     # arm64_deployment_preflight, as a plain statement (never `$(...)`, same subshell hazard
@@ -1694,14 +1746,7 @@ download_models_diar_native() {
     local token
     token=$(read_env_value HUGGINGFACE_TOKEN)
     if [ -z "$token" ]; then
-        echo -e "${RED}❌ HUGGINGFACE_TOKEN not set in .env.${NC}"
-        echo ""
-        echo "   1. Create a token (Read access): https://huggingface.co/settings/tokens"
-        echo "   2. Signed in as that account, accept the terms at:"
-        echo "      https://huggingface.co/pyannote/speaker-diarization-community-1"
-        echo "   3. Add it to .env:  HUGGINGFACE_TOKEN=your_token_here"
-        echo ""
-        echo "   Then re-run: ./opentranscribe.sh download-models diar-native"
+        diar_native_print_token_help
         exit 1
     fi
 
@@ -1761,835 +1806,1052 @@ download_models_diar_native() {
         return 0
     fi
 
-    # Stable exit codes from crates/diar-core/src/provision/mod.rs::exit — branched on
-    # rather than parsed out of diar-server's own message text, which it also prints
-    # above this. 0/2/3/4/5/6/7/9 are the whole contract; anything else is unexpected.
+    diar_native_print_failure_remedy "$rc" "$models_dir"
+    exit 1
+}
+
+# ===== access info =====
+
+show_access_info() {
+    # Source .env to get port values
+    # shellcheck source=/dev/null
+    source .env 2>/dev/null || true
+
+    # Check if NGINX/HTTPS is configured
+    local nginx_server_name=""
+    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
+
+    local https_enabled=false
+    if nginx_overlay_ready; then
+        https_enabled=true
+    fi
+
+    echo -e "${GREEN}🌐 Access Information:${NC}"
+
+    if [ "$https_enabled" = true ]; then
+        echo "  🔒 HTTPS Mode (via NGINX reverse proxy)"
+        echo "  • Web Interface:     https://$nginx_server_name"
+        echo "  • Documentation:     https://$nginx_server_name/docs/"
+        echo "  • API:               https://$nginx_server_name/api"
+        echo "  • API Documentation: https://$nginx_server_name/api/docs"
+        echo "  • Flower Dashboard:  https://$nginx_server_name/flower/"
+        echo "  • MinIO Console:     https://$nginx_server_name/minio/"
+        echo ""
+        echo -e "${YELLOW}📝 Note: Add '$nginx_server_name' to your DNS or /etc/hosts${NC}"
+        echo -e "${YELLOW}   Install nginx/ssl/ca.crt on client devices once to avoid browser warnings${NC}"
+    else
+        echo "  • Web Interface:     http://localhost:${FRONTEND_PORT:-5173}"
+        echo "  • Documentation:     http://localhost:${FRONTEND_PORT:-5173}/docs/"
+        echo "  • API Documentation: http://localhost:${BACKEND_PORT:-5174}/docs"
+        echo "  • API Endpoint:      http://localhost:${BACKEND_PORT:-5174}/api"
+        echo "  • Flower Dashboard:  http://localhost:${FLOWER_PORT:-5175}/flower"
+        echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
+        if [ -z "$nginx_server_name" ]; then
+            echo ""
+            echo -e "${YELLOW}💡 For HTTPS (required for mic recording from other devices):${NC}"
+            echo -e "${YELLOW}   Run: ./opentranscribe.sh setup-ssl${NC}"
+        fi
+    fi
     echo ""
-    echo -e "${RED}❌ diar-native provisioning failed (exit ${rc}).${NC}"
-    case "$rc" in
-        5)
-            echo -e "${YELLOW}   Token denied. The gate is per-account and auto-approved — a valid${NC}"
-            echo -e "${YELLOW}   token whose account never accepted the terms fails identically.${NC}"
-            echo -e "${YELLOW}   Confirm at: https://huggingface.co/pyannote/speaker-diarization-community-1${NC}"
+    echo -e "${YELLOW}⏳ Please wait a moment for all services to initialize...${NC}"
+}
+
+# ===== command dispatch =====
+
+function show_help {
+    echo -e "${BLUE}OpenTranscribe Management Script${NC}"
+    echo ""
+    echo "Usage: ./opentranscribe.sh [command]"
+    echo ""
+    echo "Commands:"
+    echo "  start         Start all services"
+    echo "  stop          Stop all services"
+    echo "  restart       Restart all services"
+    echo "  status        Show container status"
+    echo "  compose-files Print the resolved 'docker compose -f ...' chain"
+    echo "  download-models [group]"
+    echo "                Fetch model assets not bundled in the images. 'diar-native'"
+    echo "                provisions the native diarizer's weights; 'password-blocklist' installs the"
+    echo "                breached-password list (a few hours, needs internet); omit for the models."
+    echo "  logs [svc]    View logs (all or specific service)"
+    echo "  update        Pull latest Docker images and restart (run 'backup' first)"
+    echo "  update-full   Update images AND configuration files"
+    echo "  clean         Remove all volumes and data (CAUTION)"
+    echo "  backup        Backup the database (optional --encrypt)"
+    echo "  restore       Restore the database from a backup file (see --help below)"
+    echo "  shell [svc]   Open shell in container (default: backend)"
+    echo "  config        Show current configuration"
+    echo "  health        Check service health"
+    echo "  setup-ssl     Set up HTTPS (local CA + server certificate)"
+    echo "  version       Show version and check for updates"
+    echo "  help          Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ./opentranscribe.sh start"
+    echo "  ./opentranscribe.sh logs backend"
+    echo "  ./opentranscribe.sh compose-files    # which overlays did it pick?"
+    echo "  ./opentranscribe.sh download-models diar-native  # provision native diarizer weights"
+    echo "  ./opentranscribe.sh download-models password-blocklist  # breached-password list"
+    echo "  ./opentranscribe.sh update           # Update containers only"
+    echo "  ./opentranscribe.sh update-full      # Update everything"
+    echo "  ./opentranscribe.sh backup           # Dump the database to ./backups"
+    echo "  ./opentranscribe.sh restore --yes ./backups/opentranscribe_backup_....sql"
+    echo "  ./opentranscribe.sh setup-ssl"
+    echo ""
+}
+
+cmd_start() {
+    check_environment
+    declare -F ot_require_service_credentials >/dev/null && { ot_require_service_credentials .env || exit 1; }
+    # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+    # call above — a failed fix here must not abort this command before the actual
+    # `docker compose` step runs and reports its own, more specific error.
+    fix_model_cache_permissions || true
+    # Same first-run fix as opentr.sh's start_app()/reset_and_init() (issue #614):
+    # a genuinely fresh `cp .env.example .env` ships MINIO_KMS_SECRET_KEY as an
+    # unusable placeholder, which crash-loops MinIO on its very first boot. #613
+    # promoted this script to the real production entry point, so it needs the
+    # same first-run protection -- guarded (not require_db_helpers' hard failure)
+    # because an install whose scripts/common.sh predates this fix should still be
+    # able to `start`; it just doesn't get the auto-fix and hits the pre-existing
+    # MinIO KMS error, exactly as it did before common.sh was ever sourced here.
+    if declare -F ensure_minio_kms_secret >/dev/null; then
+        ensure_minio_kms_secret ".env" || exit 1
+    fi
+    # Unconditional owner-only lock (issue #857) -- not reachable via
+    # ensure_minio_kms_secret alone once a real key is already in place.
+    # Same guard rationale as above: an install whose scripts/common.sh
+    # predates this fix should still be able to `start`, just without it.
+    if declare -F ensure_env_permissions >/dev/null; then
+        ensure_env_permissions ".env"
+    fi
+    echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
+    # Plain statement, not `$(...)`: get_compose_files() calls arm64_deployment_preflight
+    # too, but from inside a command substitution, where the DEPLOYMENT_MODE export dies
+    # with the subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
+    # ${DEPLOYMENT_MODE} itself, so the export has to exist in THIS shell as well.
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    docker compose "${compose_chain[@]}" up -d
+    echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
+    show_access_info
+}
+
+cmd_stop() {
+    check_environment
+    echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    ot_drain_gpu_workers "$compose_files"
+    docker compose "${compose_chain[@]}" down
+    echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
+}
+
+cmd_restart() {
+    check_environment
+    # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+    # call above — a failed fix here must not abort this command before the actual
+    # `docker compose` step runs and reports its own, more specific error.
+    fix_model_cache_permissions || true
+    echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    ot_drain_gpu_workers "$compose_files"
+    docker compose "${compose_chain[@]}" down
+    docker compose "${compose_chain[@]}" up -d
+    echo -e "${GREEN}✅ OpenTranscribe restarted!${NC}"
+    show_access_info
+}
+
+cmd_status() {
+    check_environment
+    echo -e "${BLUE}📊 Container Status:${NC}"
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    docker compose "${compose_chain[@]}" ps
+    print_diar_native_status "$compose_files"
+}
+
+cmd_compose_files() {
+    # Print the resolved `-f` chain on stdout, and nothing else.
+    #
+    # get_compose_files() is the SINGLE owner of overlay selection — GPU vs
+    # Blackwell vs CPU-only, nginx, scheduled backup — but every other arm
+    # consumed it internally, so there was no way to ASK what it chose. Two
+    # consequences this arm exists to remove:
+    #
+    #   * A support request ("why is my GPU not being used?") had to be
+    #     answered by inference. Now: `./opentranscribe.sh compose-files`.
+    #   * The release rehearsal hand-built its own parallel `-f` list rather
+    #     than driving this one, so the whole selection layer was never
+    #     exercised by a release gate and had already drifted. See
+    #     scripts/release-tests/REHEARSAL_ALIGNMENT_PLAN.md.
+    #
+    # The selection banners get_compose_files() prints go to stderr, so stdout
+    # is exactly the chain and stays composable:
+    #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
+    check_environment
+    apply_deployment_pins
+    get_compose_files
+}
+
+cmd_download_models() {
+    check_environment
+    model_group="${2:-}"
+    case "$model_group" in
+        ""|all)
+            if [ ! -f scripts/download-models.sh ]; then
+                echo -e "${RED}❌ scripts/download-models.sh not found.${NC}"
+                echo -e "${YELLOW}   Fix with: ./opentranscribe.sh update-full${NC}"
+                exit 1
+            fi
+            dl_cache_dir=$(read_env_value MODEL_CACHE_DIR)
+            bash scripts/download-models.sh "${dl_cache_dir:-./models}"
             ;;
-        7)
-            echo -e "${YELLOW}   ${models_dir} is not writable by the container. Run:${NC}"
-            echo -e "${YELLOW}     ./scripts/fix-model-permissions.sh${NC}"
+        diar-native)
+            download_models_diar_native
             ;;
-        6)
-            echo -e "${YELLOW}   This image has no Python exporter environment. That should not happen${NC}"
-            echo -e "${YELLOW}   on a published backend image — please report it.${NC}"
-            ;;
-        3)
-            echo -e "${YELLOW}   The export completed but failed its own smoke test — see the output above.${NC}"
-            ;;
-        4)
-            echo -e "${YELLOW}   The export itself failed — see the output above.${NC}"
-            ;;
-        9)
-            echo -e "${YELLOW}   Device unavailable. This step runs on CPU and needs no GPU; please report this.${NC}"
+        password-blocklist)
+            if [ ! -f scripts/download-password-blocklist.sh ]; then
+                echo -e "${RED}❌ scripts/download-password-blocklist.sh not found.${NC}"
+                echo -e "${YELLOW}   Fix with: ./opentranscribe.sh update-full${NC}"
+                exit 1
+            fi
+            dl_cache_dir=$(read_env_value MODEL_CACHE_DIR)
+            bash scripts/download-password-blocklist.sh "${dl_cache_dir:-./models}"
             ;;
         *)
-            echo -e "${YELLOW}   See diar-server's own output above for detail.${NC}"
+            echo -e "${RED}❌ Unknown model group: '${model_group}'${NC}"
+            echo "   Known groups: diar-native, password-blocklist"
+            echo "   Omit the group to download the full model set."
+            exit 1
             ;;
     esac
-    exit 1
+}
+
+cmd_logs() {
+    check_environment
+    service=${2:-}
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+
+    if [ -z "$service" ]; then
+        echo -e "${BLUE}📋 Showing all logs (Ctrl+C to exit):${NC}"
+        docker compose "${compose_chain[@]}" logs -f
+    else
+        echo -e "${BLUE}📋 Showing logs for $service (Ctrl+C to exit):${NC}"
+        docker compose "${compose_chain[@]}" logs -f "$service"
+    fi
+}
+
+update_parse_args() {
+    UPDATE_TARGET_VERSION=""
+    UPDATE_ROLLBACK=false
+    UPDATE_FORCE_DOWNGRADE=false
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --version) UPDATE_TARGET_VERSION="${2:-}"; shift 2 ;;
+            --rollback) UPDATE_ROLLBACK=true; shift ;;
+            --force-downgrade) UPDATE_FORCE_DOWNGRADE=true; shift ;;
+            *) echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"; shift ;;
+        esac
+    done
+}
+
+update_resolve_rollback_target() {
+    # Deliberately NOT read_env_value: that helper anchors on `^KEY=`, and this
+    # key is written commented-out (`^# *OT_PREVIOUS_IMAGE_TAG=`) by design (it's a
+    # rollback marker, not an active setting) -- not worth a second helper parameter
+    # for this one caller.
+    UPDATE_TARGET_VERSION=$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
+    if [ -z "$UPDATE_TARGET_VERSION" ]; then
+        echo -e "${RED}❌ No previous version recorded — nothing to roll back to.${NC}"
+        echo -e "${YELLOW}   A rollback target is only recorded by a prior 'update --version'.${NC}"
+        echo -e "${YELLOW}   Use: ./opentranscribe.sh update --version vX.Y.Z${NC}"
+        exit 1
+    fi
+    echo -e "${YELLOW}⏪ Rolling back: $UPDATE_CURRENT_TAG → $UPDATE_TARGET_VERSION${NC}"
+    echo -e "${YELLOW}⚠️  The migration chain is ONE-WAY. Rolling the images back does NOT${NC}"
+    echo -e "${YELLOW}   revert the database. Restore a backup taken before the upgrade if${NC}"
+    echo -e "${YELLOW}   the newer schema is not readable by $UPDATE_TARGET_VERSION.${NC}"
+}
+
+# Refuse a downgrade unless asked twice. Newer releases add columns
+# and tables the older image does not know about; the chain does not
+# go backwards.
+update_refuse_unforced_downgrade() {
+    if [ "$UPDATE_ROLLBACK" = false ] && [ "$UPDATE_FORCE_DOWNGRADE" = false ] && [ "$UPDATE_CURRENT_TAG" != "latest" ]; then
+        local older
+        older=$(printf '%s\n%s\n' "${UPDATE_CURRENT_TAG#v}" "${UPDATE_TARGET_VERSION#v}" | sort -V | head -1)
+        if [ "$older" = "${UPDATE_TARGET_VERSION#v}" ] && [ "$UPDATE_TARGET_VERSION" != "$UPDATE_CURRENT_TAG" ]; then
+            echo -e "${RED}❌ Refusing to downgrade $UPDATE_CURRENT_TAG → $UPDATE_TARGET_VERSION${NC}"
+            echo -e "${YELLOW}   The migration chain is one-way. Use --rollback (which warns${NC}"
+            echo -e "${YELLOW}   about the database) or --force-downgrade if you are certain.${NC}"
+            exit 1
+        fi
+    fi
+}
+
+# Record where we came from so --rollback has a target, then pin the new tag.
+update_pin_image_tag() {
+    if grep -q '^# *OT_PREVIOUS_IMAGE_TAG=' .env; then
+        sed -i.bak "s|^# *OT_PREVIOUS_IMAGE_TAG=.*|# OT_PREVIOUS_IMAGE_TAG=${UPDATE_CURRENT_TAG}|" .env
+    else
+        echo "# OT_PREVIOUS_IMAGE_TAG=${UPDATE_CURRENT_TAG}" >> .env
+    fi
+    if grep -q '^OT_IMAGE_TAG=' .env; then
+        sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${UPDATE_TARGET_VERSION}|" .env
+    else
+        echo "OT_IMAGE_TAG=${UPDATE_TARGET_VERSION}" >> .env
+    fi
+    rm -f .env.bak
+    echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${UPDATE_TARGET_VERSION} (was ${UPDATE_CURRENT_TAG})${NC}"
+    echo -e "${YELLOW}📥 Updating to ${UPDATE_TARGET_VERSION}...${NC}"
+}
+
+# --rollback preflight (issue #610's companion, the mirror-image gap): an
+# OLDER image booting against a NEWER schema it cannot read fails with a
+# cryptic "Can't locate revision identified by '<head>'" -> SystemExit(1).
+# Alembic's migration chain has no forward-compat story, so check BEFORE
+# tearing anything down, not after. Read the live head now, while postgres
+# is still up — compose_down_for_upgrade takes the WHOLE stack
+# down, postgres included, so this is the last point a plain
+# `docker compose exec postgres` can reach it.
+update_check_rollback_compat() {
+    apply_deployment_pins
+    local rollback_compose_files rollback_live_head
+    local -a rollback_chain
+    rollback_compose_files=$(get_compose_files)
+    read -r -a rollback_chain <<< "$rollback_compose_files"
+    rollback_live_head=$(docker compose "${rollback_chain[@]}" exec -T postgres psql -tA \
+        -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-opentranscribe}" \
+        -c 'SELECT version_num FROM alembic_version;' 2>/dev/null | tr -d '[:space:]')
+
+    if [ -z "$rollback_live_head" ]; then
+        echo -e "${YELLOW}⚠️  Could not read the live database's alembic head — skipping the${NC}"
+        echo -e "${YELLOW}   rollback-compatibility check (postgres may not be running).${NC}"
+    # Ask the TARGET image whether it knows that revision — no Python imports,
+    # no env, no DB: every published backend image ships its own
+    # alembic/versions/ tree (backend/Dockerfile.prod:229, COPY --chown into /app).
+    elif ! docker run --rm --entrypoint sh "davidamacey/opentranscribe-backend:${UPDATE_TARGET_VERSION}" -c \
+            "grep -lq 'revision = \"${rollback_live_head}\"' /app/alembic/versions/*.py" \
+            >/dev/null 2>&1; then
+        echo -e "${RED}❌ Refusing to roll back to ${UPDATE_TARGET_VERSION}: the database is at${NC}"
+        echo -e "${RED}   ${rollback_live_head}, which ${UPDATE_TARGET_VERSION} does not know.${NC}"
+        echo -e "${YELLOW}   Restore a pre-upgrade backup first — it leaves services stopped for${NC}"
+        echo -e "${YELLOW}   you to choose the image (issue #610):${NC}"
+        echo -e "${YELLOW}     ./opentranscribe.sh restore <backup>${NC}"
+        echo -e "${YELLOW}   then re-run this command. Override with --force-downgrade if certain.${NC}"
+        exit 1
+    fi
+}
+
+# The teardown/pull/restart sequence shared by `update` and `update-full`.
+run_upgrade_sequence() {
+    local compose_files="$1"
+
+    preflight_upgrade_env || exit 1
+    compose_down_for_upgrade "$compose_files" || exit 1
+    compose_pull_for_upgrade "$compose_files" || exit 1
+
+    if ! perform_phased_restart "$compose_files"; then
+        echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
+        echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
+        echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
+        exit 1
+    fi
+}
+
+cmd_update() {
+    check_environment
+    # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+    # call above — a failed fix here must not abort this command before the actual
+    # `docker compose` step runs and reports its own, more specific error.
+    fix_model_cache_permissions || true
+
+    # Optional target: `update --version vX.Y.Z` moves this install to a
+    # specific release; `--rollback` returns it to the previous one. Both
+    # work by rewriting OT_IMAGE_TAG in .env, which the compose files read as
+    # ${OT_IMAGE_TAG:-latest}. With no argument, behaviour is unchanged.
+    shift || true
+    update_parse_args "$@"
+
+    UPDATE_CURRENT_TAG=$(read_env_value OT_IMAGE_TAG)
+    UPDATE_CURRENT_TAG="${UPDATE_CURRENT_TAG:-latest}"
+
+    if [ "$UPDATE_ROLLBACK" = true ]; then
+        update_resolve_rollback_target
+    fi
+
+    if [ -n "$UPDATE_TARGET_VERSION" ]; then
+        case "$UPDATE_TARGET_VERSION" in v*) ;; *) UPDATE_TARGET_VERSION="v${UPDATE_TARGET_VERSION}" ;; esac
+        update_refuse_unforced_downgrade
+        update_pin_image_tag
+        if [ "$UPDATE_ROLLBACK" = true ] && [ "$UPDATE_FORCE_DOWNGRADE" = false ]; then
+            update_check_rollback_compat
+        fi
+    else
+        echo -e "${YELLOW}📥 Updating to the newest images for tag '${UPDATE_CURRENT_TAG}'...${NC}"
+    fi
+
+    apply_deployment_pins
+    local compose_files
+    compose_files=$(get_compose_files)
+    run_upgrade_sequence "$compose_files"
+
+    echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"
+    echo ""
+    echo -e "${YELLOW}💡 Tip: Run './opentranscribe.sh update-full' to also update scripts and config files${NC}"
+    show_access_info
+}
+
+# Fetch release-manifest.txt for $1 (the config ref). Sets MANIFEST_BORROWED=1 when the file had
+# to come from the default branch because the pinned ref predates it.
+#
+# The artifact list comes from release-manifest.txt, not from a list
+# hardcoded here. See that file's header for the two silent-breakage bugs
+# the old duplicated lists caused (missing docker-compose.yml on upgrade,
+# missing blackwell overlay on fresh install).
+# Releases published before release-manifest.txt existed have no list to read, and
+# following the pin means we now ask them for one. Borrow the list from the
+# default branch in that case — the ARTIFACTS still come from $GITHUB_RAW, i.e. the
+# pinned release, so this cannot un-pin the install. Same fallback as
+# setup-opentranscribe.sh's download_release_manifest_artifacts(); see issue #683.
+#
+# issue #723: a borrowed manifest is NEWER than $BRANCH, so it can list a REQUIRED
+# entry that tag never shipped (NOTICE, added required in 91128ecb). `optional`
+# alone does not absorb that — it only helps entries someone remembered to flag,
+# and a required-on-principle file is deliberately never flagged optional. So once
+# the manifest is known to be borrowed, a download failure for ANY entry means
+# "this tag predates the file" and is skipped rather than fatal.
+update_fetch_manifest() {
+    local branch="$1" github_raw="$2" fallback_branch
+    MANIFEST_BORROWED=0
+    echo "  Downloading release-manifest.txt..."
+    if ! curl -fsSL "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
+        rm -f release-manifest.txt.new
+        fallback_branch=$(resolve_default_branch)
+
+        if [ -n "$fallback_branch" ] && [ "$fallback_branch" != "$branch" ] &&
+            curl -fsSL "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${fallback_branch}/release-manifest.txt" \
+                -o release-manifest.txt.new; then
+            MANIFEST_BORROWED=1
+            echo -e "  ${YELLOW}⚠️${NC}  $branch predates release-manifest.txt — using the file list from '${fallback_branch}'."
+            echo -e "     Config files are still downloaded from $branch; files that release"
+            echo -e "     does not have are skipped, whether or not the manifest marks them optional."
+        else
+            rm -f release-manifest.txt.new
+            echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $branch"
+            echo -e "  ${YELLOW}Refusing to update config files from an unknown artifact list.${NC}"
+            echo -e "  ${YELLOW}Use './opentranscribe.sh update' to update images only.${NC}"
+            exit 1
+        fi
+    fi
+    mv release-manifest.txt.new release-manifest.txt
+}
+
+# Download one manifest artifact ($1 path, $2 flags) from $3 (raw base URL). Echoes the result line and
+# returns 1 only for a REQUIRED artifact that failed. Download to .new first so a failed fetch never
+# truncates a working file.
+update_download_artifact() {
+    local artifact_path="$1" artifact_flags="$2" github_raw="$3" branch="$4"
+    local artifact_dir
+    artifact_dir=$(dirname "$artifact_path")
+    [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
+
+    if curl -fsSL "$github_raw/$artifact_path" -o "${artifact_path}.new"; then
+        mv "${artifact_path}.new" "$artifact_path"
+        case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
+        echo -e "  ${GREEN}✓${NC} $artifact_path"
+        return 0
+    fi
+    rm -f "${artifact_path}.new"
+    case ",$artifact_flags," in
+        *,optional,*)
+            echo -e "  ${YELLOW}⚠️${NC} $artifact_path (optional, not in this release)"
+            ;;
+        *)
+            if [ "$MANIFEST_BORROWED" -eq 1 ]; then
+                echo -e "  ${YELLOW}⚠️${NC} $artifact_path (required by a newer manifest, but $branch predates it — skipped)"
+            else
+                echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
+                return 1
+            fi
+            ;;
+    esac
+    return 0
+}
+
+# Walk release-manifest.txt and download every non-`preserve` artifact. Exits 1 when a required one
+# failed: a partial config set is worse than the old one.
+update_download_manifest_artifacts() {
+    local branch="$1" github_raw="$2"
+    local update_failed=0 manifest_line artifact_path artifact_flags
+    while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
+        # Strip comments and blanks.
+        case "$manifest_line" in ''|'#'*) continue ;; esac
+
+        artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
+        artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
+        [ -n "$artifact_path" ] || continue
+
+        case ",$artifact_flags," in *,preserve,*) continue ;; esac
+
+        update_download_artifact "$artifact_path" "$artifact_flags" "$github_raw" "$branch" || update_failed=1
+    done < release-manifest.txt
+
+    if [ "$update_failed" -ne 0 ]; then
+        echo ""
+        echo -e "${RED}❌ One or more required files failed to download.${NC}"
+        echo -e "${YELLOW}Not restarting: a partial config set is worse than the old one.${NC}"
+        echo -e "${YELLOW}Your previous docker-compose.yml is at docker-compose.yml.bak${NC}"
+        exit 1
+    fi
+}
+
+# Report new .env keys rather than touching the user's .env. A release that
+# adds a required setting is otherwise invisible: Settings uses
+# extra="ignore", so a missing var is silently defaulted, not an error.
+#
+# issue #709: that report only sees a key that is ABSENT. Also flag a key
+# that is PRESENT but whose VALUE has rotted (see check_stale_env_values()'s
+# docstring for the seeded cases). Same warn-only, never-rewrite contract;
+# run before teardown.
+update_report_env_drift() {
+    local new_keys stale_findings
+    if [ -f .env ] && [ -f .env.example ]; then
+        new_keys=$(grep -oE '^[A-Z_][A-Z0-9_]*=' .env.example 2>/dev/null | tr -d '=' | sort -u \
+            | while read -r key; do
+                grep -qE "^${key}=" .env || echo "  • $key"
+            done)
+        if [ -n "$new_keys" ]; then
+            echo ""
+            echo -e "${YELLOW}📋 New settings in this release (your .env was NOT modified):${NC}"
+            echo "$new_keys"
+            echo -e "${YELLOW}   Defaults apply unless you add them to .env (FLOWER_PASSWORD and MinIO encryption are required in production) — see .env.example.${NC}"
+        fi
+    fi
+
+    if [ -f .env ]; then
+        stale_findings=$(check_stale_env_values .env)
+        if [ -n "$stale_findings" ]; then
+            echo ""
+            echo -e "${YELLOW}⚠️  Settings in .env whose VALUE has gone stale (your .env was NOT modified):${NC}"
+            echo "$stale_findings"
+        fi
+    fi
+}
+
+# A release can introduce a NEW model (v0.5.0 adds the chat reranker and
+# the content-redaction weights). Nothing in the upgrade path fetches it:
+#
+#   * Online deployments self-heal — the model lazy-downloads from
+#     HuggingFace on first use, so the only symptom is a long pause the
+#     first time someone touches that feature.
+#   * OFFLINE deployments do not. docker-compose.offline.yml sets
+#     HF_HUB_OFFLINE=1, so a newly-required model that is not already in
+#     the cache is a hard failure with no network to recover from.
+#
+# So say so, and make refreshing the cache one command rather than
+# something the user has to know about.
+update_print_model_cache_note() {
+    if [ -f scripts/download-models.sh ]; then
+        echo ""
+        echo -e "${BLUE}🧠 Model cache${NC}"
+        echo "  This release may require models your cache does not have yet."
+        echo "  Online: they download on first use (one slow request)."
+        echo "  Offline/air-gapped: pre-fetch them now, or the feature will fail:"
+        echo "    bash scripts/download-models.sh \"\${MODEL_CACHE_DIR:-./models}\""
+    fi
+}
+
+cmd_update_full() {
+    check_environment
+    echo -e "${YELLOW}📥 Full update: Updating configuration files and Docker images...${NC}"
+    echo ""
+
+    local branch encoded_branch github_raw
+    branch=$(resolve_config_ref) || exit 1
+
+    # URL-encode the branch name (replace / with %2F for feature branches)
+    encoded_branch="${branch//\//%2F}"
+    github_raw="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}"
+
+    # Backup current opentranscribe.sh
+    cp opentranscribe.sh opentranscribe.sh.bak 2>/dev/null || true
+
+    echo -e "${BLUE}📄 Updating configuration files...${NC}"
+
+    # Back up the base compose file too — it is now updated, so a bad release
+    # should be recoverable without re-running the installer.
+    cp docker-compose.yml docker-compose.yml.bak 2>/dev/null || true
+
+    update_fetch_manifest "$branch" "$github_raw"
+    update_download_manifest_artifacts "$branch" "$github_raw"
+    update_report_env_drift
+
+    echo ""
+    echo -e "${BLUE}🐳 Updating Docker images...${NC}"
+    # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
+    # call above — a failed fix here must not abort this command before the actual
+    # `docker compose` step runs and reports its own, more specific error.
+    fix_model_cache_permissions || true
+    apply_deployment_pins
+    local compose_files
+    compose_files=$(get_compose_files)
+    # Same gate as `update` and the same phased startup: a bare `up -d` lets compose's dependency
+    # resolver give up on the backend's health wait and SIGTERM it mid-Alembic, and update-full is
+    # the MORE likely of the two to run a long migration chain (#410).
+    run_upgrade_sequence "$compose_files"
+
+    update_print_model_cache_note
+
+    echo ""
+    echo -e "${GREEN}✅ Full update complete!${NC}"
+    echo ""
+    echo -e "${YELLOW}📝 Notes:${NC}"
+    echo "  • Your .env configuration was preserved"
+    echo "  • SSL certificates were preserved (if configured)"
+    echo "  • Database and transcriptions were preserved"
+    echo "  • Old script backed up to opentranscribe.sh.bak"
+    echo "  • Old base compose backed up to docker-compose.yml.bak"
+    echo ""
+    show_access_info
+}
+
+cmd_clean() {
+    check_environment
+    echo -e "${RED}⚠️  WARNING: This will remove ALL data including transcriptions!${NC}"
+    read -p "Are you sure you want to continue? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}🗑️  Removing all data...${NC}"
+        apply_deployment_pins
+        compose_files=$(get_compose_files)
+        read -r -a compose_chain <<< "$compose_files"
+        ot_drain_gpu_workers "$compose_files"
+        docker compose "${compose_chain[@]}" down -v
+        echo -e "${GREEN}✅ All data removed${NC}"
+    else
+        echo -e "${GREEN}✅ Operation cancelled${NC}"
+    fi
+}
+
+cmd_shell() {
+    check_environment
+    service=${2:-backend}
+    echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    docker compose "${compose_chain[@]}" exec "$service" /bin/bash || docker compose "${compose_chain[@]}" exec "$service" /bin/sh
+}
+
+cmd_backup_restore() {
+    check_environment
+    require_db_helpers
+    # No apply_deployment_pins here, deliberately: this arm never starts or pulls the
+    # diar-native sidecar — backup_database/restore_database only `docker compose exec`
+    # into containers that are already running — so DIAR_NATIVE_IMAGE is not read by
+    # anything this arm does. This is the ONE case arm below `case "${1:-help}" in` that
+    # resolves `compose_files=$(get_compose_files)` without a preceding
+    # apply_deployment_pins call, and it is exempt for that reason, not an oversight —
+    # backend/tests/unit/test_opentranscribe_arm64_pin_ordering.py asserts this arm is
+    # the ONLY exemption in the structural "every get_compose_files() consumer applies
+    # the pins first" check, by name, so a second silent exemption would fail loudly.
+    compose_files=$(get_compose_files)
+
+    # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
+    # deliberately has no such prologue (it greps individual keys — see
+    # preflight_upgrade_env). Without these explicit reads a restore would DROP/CREATE
+    # the DEFAULT database name on any install that customised them (issue #613).
+    POSTGRES_USER=$(read_env_value POSTGRES_USER)
+    POSTGRES_DB=$(read_env_value POSTGRES_DB)
+    BACKUP_HOST_PATH=$(read_env_value BACKUP_HOST_PATH)
+    export POSTGRES_USER POSTGRES_DB BACKUP_HOST_PATH
+
+    cmd="$1"; shift
+    # The shared functions are written for opentr.sh's execution semantics, which
+    # deliberately omit `set -e` (many `|| true` paths). They contain several statements
+    # of the form `[ -n "$x" ] && rm -f "$x"`, which return 1 when $x is empty and would
+    # abort THIS script mid-restore under the `set -e` at the top of this file. Rather
+    # than retrofit `set -e` correctness across ~350 lines of a DROP DATABASE path —
+    # exactly where a subtle retrofit bug is unrecoverable — match the semantics the
+    # code was written for, for the duration of this one call.
+    set +e
+    if [ "$cmd" = "backup" ]; then
+        backup_database "$compose_files" "./opentranscribe.sh" "$@"
+    else
+        restore_database "$compose_files" "./opentranscribe.sh" "$@"
+    fi
+    rc=$?
+    set -e
+    exit $rc
+}
+
+cmd_config() {
+    check_environment
+    echo -e "${BLUE}⚙️  Current Configuration:${NC}"
+    echo "Environment file (.env):"
+    grep -E "^[A-Z]" .env | head -20
+    echo ""
+    echo "Docker Compose configuration:"
+    if docker compose config > /dev/null 2>&1; then
+        echo "  ✅ Valid"
+    else
+        echo "  ❌ Invalid"
+    fi
+}
+
+cmd_health() {
+    check_environment
+    echo -e "${BLUE}🩺 Health Check:${NC}"
+
+    # Check container status
+    echo "Container Status:"
+    apply_deployment_pins
+    compose_files=$(get_compose_files)
+    read -r -a compose_chain <<< "$compose_files"
+    docker compose "${compose_chain[@]}" ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
+
+    echo ""
+    echo "Service Health:"
+
+    # Source .env to get port values
+    # shellcheck source=/dev/null
+    source .env 2>/dev/null || true
+
+    # Backend health
+    if curl -s "http://localhost:${BACKEND_PORT:-5174}/health" > /dev/null 2>&1; then
+        echo "  ✅ Backend: Healthy"
+    else
+        echo "  ❌ Backend: Unhealthy"
+    fi
+
+    # Frontend health
+    if curl -s "http://localhost:${FRONTEND_PORT:-5173}" > /dev/null 2>&1; then
+        echo "  ✅ Frontend: Healthy"
+    else
+        echo "  ❌ Frontend: Unhealthy"
+    fi
+
+    # Database health
+    if docker compose "${compose_chain[@]}" exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
+        echo "  ✅ Database: Healthy"
+    else
+        echo "  ❌ Database: Unhealthy"
+    fi
+
+    # NGINX health (only if configured)
+    nginx_server_name=""
+    nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
+
+    if [ -n "$nginx_server_name" ]; then
+        if curl -s -k "https://localhost:${NGINX_HTTPS_PORT:-443}/health" > /dev/null 2>&1 || \
+           curl -s "http://localhost:${NGINX_HTTP_PORT:-80}/health" > /dev/null 2>&1; then
+            echo "  ✅ NGINX: Healthy (https://$nginx_server_name)"
+        else
+            # Check if container is running but not responding
+            if docker compose "${compose_chain[@]}" ps nginx 2>/dev/null | grep -q "Up"; then
+                echo "  ⚠️  NGINX: Running but not responding"
+            else
+                echo "  ❌ NGINX: Not running"
+            fi
+        fi
+    fi
+}
+
+setup_ssl_check_prereqs() {
+    if [ ! -f scripts/generate-ssl-cert.sh ]; then
+        echo -e "${RED}❌ SSL certificate generation script not found${NC}"
+        echo "   Expected: scripts/generate-ssl-cert.sh"
+        echo ""
+        echo "   Download it from:"
+        echo "   curl -fsSL $(raw_url_for scripts/generate-ssl-cert.sh) -o scripts/generate-ssl-cert.sh"
+        echo "   chmod +x scripts/generate-ssl-cert.sh"
+        exit 1
+    fi
+
+    # Check if docker-compose.nginx.yml exists
+    if [ ! -f docker-compose.nginx.yml ]; then
+        echo -e "${RED}❌ NGINX docker-compose file not found${NC}"
+        echo "   Expected: docker-compose.nginx.yml"
+        echo ""
+        echo "   Download it from:"
+        echo "   curl -fsSL $(raw_url_for docker-compose.nginx.yml) -o docker-compose.nginx.yml"
+        exit 1
+    fi
+
+    # Check if nginx/site.conf.template exists
+    if [ ! -f nginx/site.conf.template ]; then
+        echo -e "${YELLOW}⚠️  NGINX configuration template not found${NC}"
+        echo "   Downloading nginx/site.conf.template..."
+        mkdir -p nginx/ssl
+        # A REAL fetch, not a printed remedy: this pulled the nginx template from
+        # tip-of-development onto a pinned deployment, so an HTTPS install could get
+        # a proxy config written for a backend it is not running.
+        curl -fsSL "$(raw_url_for nginx/site.conf.template)" -o nginx/site.conf.template || {
+            echo -e "${RED}❌ Failed to download nginx configuration${NC}"
+            echo -e "${YELLOW}   Or run:  ./opentranscribe.sh update-full${NC}"
+            exit 1
+        }
+    fi
+}
+
+# Asks for the hostname; leaves the validated answer in SSL_HOSTNAME.
+setup_ssl_prompt_hostname() {
+    local current_hostname user_hostname hostname
+    echo "Enter a hostname for your OpenTranscribe installation:"
+    echo "(e.g., opentranscribe.local, transcribe.home, your-hostname.lan)"
+    echo ""
+
+    # Get current NGINX_SERVER_NAME from .env if exists
+    current_hostname=""
+    current_hostname=$(read_env_value NGINX_SERVER_NAME)
+
+    if [ -n "$current_hostname" ]; then
+        read -r -p "Hostname [$current_hostname]: " user_hostname
+        hostname="${user_hostname:-$current_hostname}"
+    else
+        read -r -p "Hostname [opentranscribe.local]: " user_hostname
+        hostname="${user_hostname:-opentranscribe.local}"
+    fi
+
+    # The hostname is spliced into a sed replacement and an openssl config below.
+    if ! ot_is_valid_hostname "$hostname"; then
+        echo ""
+        echo -e "${RED}❌ '$hostname' is not a valid hostname${NC}"
+        echo "   Use letters, digits, dots and hyphens only (e.g. opentranscribe.local)."
+        exit 1
+    fi
+
+    echo ""
+    echo -e "${GREEN}✓ Using hostname: $hostname${NC}"
+    echo ""
+
+    SSL_HOSTNAME="$hostname"
+}
+
+setup_ssl_issue_certs() {
+    local hostname="$SSL_HOSTNAME" keep_certs=""
+    if [ -f "nginx/ssl/server.crt" ] && [ -f "nginx/ssl/server.key" ]; then
+        echo -e "${YELLOW}⚠️  Existing SSL certificates detected!${NC}"
+        echo "   nginx/ssl/server.crt and nginx/ssl/server.key already exist."
+        echo ""
+        read -p "Issue a new server certificate (the CA is kept)? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${GREEN}✓ Keeping existing certificates${NC}"
+            keep_certs=true
+        fi
+        echo ""
+    fi
+
+    if [ "${keep_certs:-}" != true ]; then
+        echo -e "${BLUE}Generating SSL certificates...${NC}"
+        if bash scripts/generate-ssl-cert.sh "$hostname" --auto-ip; then
+            echo ""
+            echo -e "${GREEN}✓ SSL certificates generated successfully!${NC}"
+        else
+            echo -e "${RED}❌ Failed to generate SSL certificates${NC}"
+            exit 1
+        fi
+    fi
+}
+
+setup_ssl_write_env() {
+    local hostname="$SSL_HOSTNAME"
+    if [ -f .env ]; then
+        if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
+            sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$hostname|g" .env
+            rm -f .env.bak
+        else
+            {
+                echo ""
+                echo "# HTTPS/SSL Configuration"
+                echo "NGINX_SERVER_NAME=$hostname"
+            } >> .env
+        fi
+        echo -e "${GREEN}✓ Updated .env with NGINX_SERVER_NAME=$hostname${NC}"
+    fi
+}
+
+setup_ssl_print_next_steps() {
+    local hostname="$SSL_HOSTNAME" lan_ip
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}📋 HTTPS Setup Complete - Next Steps${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    lan_ip="$(ot_detect_lan_ip)"
+    echo "1. Configure DNS (choose one):"
+    echo "   • Router DNS: Add $hostname → ${lan_ip:-your server IP}"
+    echo "   • /etc/hosts: Add '${lan_ip:-YOUR_SERVER_IP}  $hostname'"
+    echo "   (Skip this step to use the server's IP address instead; the certificate covers it.)"
+    echo ""
+    echo "2. Trust the CA once on each device (a renewed server certificate needs nothing more):"
+    echo "   • Copy nginx/ssl/ca.crt (not server.crt) to the device and import it; keep ca.key here only"
+    echo ""
+    echo "3. Restart OpenTranscribe:"
+    echo "   ./opentranscribe.sh restart"
+    echo ""
+    echo "4. Access at: https://$hostname"
+    if [ -n "$lan_ip" ]; then
+        echo "   or by address: https://$lan_ip"
+    fi
+    echo "   (Use this port-443 address, not the plain http://...:5173 one:"
+    echo "   browsers refuse sign-in cookies and microphone access over plain HTTP.)"
+    echo ""
+}
+
+cmd_setup_ssl() {
+    check_environment
+    echo -e "${BLUE}🔒 HTTPS/SSL Setup${NC}"
+    echo ""
+
+    # Check if generate-ssl-cert.sh exists
+    setup_ssl_check_prereqs
+    # Prompt for hostname
+    setup_ssl_prompt_hostname
+    # Check for existing certificates
+    setup_ssl_issue_certs
+    # Update .env file with NGINX_SERVER_NAME
+    setup_ssl_write_env
+    echo ""
+    setup_ssl_print_next_steps
+}
+
+version_detect_local() {
+    local local_version
+    # Ask the running backend what it is. /api/version is unauthenticated and
+    # needs no DB, so it answers even on a degraded stack.
+    #
+    # This replaced `docker compose exec -T backend python -c "from
+    # app.core.version import VERSION"`, which had never worked: the module
+    # exports APP_VERSION, not VERSION, so the import always raised and the
+    # command always fell through to "unknown". The version check was dead
+    # code from the day it was written.
+    local_version="unknown"
+    local_version=$(curl -fsS --connect-timeout 3 \
+        "http://localhost:${BACKEND_PORT:-5174}/api/version" 2>/dev/null \
+        | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' \
+        | head -1 | cut -d'"' -f4 || echo "")
+    [ -n "$local_version" ] || local_version="unknown"
+
+    # Fallback: ask the container directly (backend up, port not published).
+    if [ "$local_version" = "unknown" ] && docker compose ps 2>/dev/null | grep -q "backend.*Up"; then
+        local_version=$(docker compose exec -T backend printenv APP_VERSION 2>/dev/null | tr -d '\r' || echo "unknown")
+        [ -n "$local_version" ] || local_version="unknown"
+    fi
+
+    # Last resort: the VERSION file the installer wrote next to the compose files.
+    if [ "$local_version" = "unknown" ] && [ -f VERSION ]; then
+        local_version=$(tr -d '[:space:]' < VERSION)
+    fi
+    echo "$local_version"
+}
+
+version_report_updates() {
+    local local_version="$1" latest_version
+    # Check for latest version from GitHub
+    echo ""
+    echo -e "${BLUE}Checking for updates...${NC}"
+    latest_version=$(curl -fsSL --connect-timeout 5 "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | sed -E 's/.*"v?([^"]+)".*/\1/' || echo "")
+
+    if [ -n "$latest_version" ]; then
+        echo "  Latest release: $latest_version"
+        echo ""
+
+        if [ "$local_version" != "unknown" ] && [ "$local_version" != "$latest_version" ]; then
+            echo -e "${YELLOW}📦 Update available!${NC}"
+            echo ""
+            echo "  To update containers only:"
+            echo "    ./opentranscribe.sh update"
+            echo ""
+            echo "  To update everything (recommended):"
+            echo "    ./opentranscribe.sh update-full"
+        elif [ "$local_version" = "$latest_version" ]; then
+            echo -e "${GREEN}✅ You are running the latest version${NC}"
+        else
+            echo -e "${YELLOW}💡 Run './opentranscribe.sh update-full' to ensure you have the latest version${NC}"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Could not check for updates (no internet or GitHub API limit)${NC}"
+        echo ""
+        echo "  To update manually:"
+        echo "    ./opentranscribe.sh update-full"
+    fi
+}
+
+cmd_version() {
+    echo -e "${BLUE}OpenTranscribe Version Information${NC}"
+    echo ""
+
+    local local_version
+    local_version=$(version_detect_local)
+
+    echo "  Local version: ${local_version:-unknown}"
+
+    version_report_updates "$local_version"
+
+    echo ""
+    echo -e "${BLUE}Container Images:${NC}"
+    docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedSince}}" 2>/dev/null | grep -E "opentranscribe|REPOSITORY" || echo "  No OpenTranscribe images found"
+    echo ""
 }
 
 case "${1:-help}" in
     start)
-        check_environment
-        declare -F ot_require_service_credentials >/dev/null && { ot_require_service_credentials .env || exit 1; }
-        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
-        # call above — a failed fix here must not abort this command before the actual
-        # `docker compose` step runs and reports its own, more specific error.
-        fix_model_cache_permissions || true
-        # Same first-run fix as opentr.sh's start_app()/reset_and_init() (issue #614):
-        # a genuinely fresh `cp .env.example .env` ships MINIO_KMS_SECRET_KEY as an
-        # unusable placeholder, which crash-loops MinIO on its very first boot. #613
-        # promoted this script to the real production entry point, so it needs the
-        # same first-run protection -- guarded (not require_db_helpers' hard failure)
-        # because an install whose scripts/common.sh predates this fix should still be
-        # able to `start`; it just doesn't get the auto-fix and hits the pre-existing
-        # MinIO KMS error, exactly as it did before common.sh was ever sourced here.
-        if declare -F ensure_minio_kms_secret >/dev/null; then
-            ensure_minio_kms_secret ".env" || exit 1
-        fi
-        # Unconditional owner-only lock (issue #857) -- not reachable via
-        # ensure_minio_kms_secret alone once a real key is already in place.
-        # Same guard rationale as above: an install whose scripts/common.sh
-        # predates this fix should still be able to `start`, just without it.
-        if declare -F ensure_env_permissions >/dev/null; then
-            ensure_env_permissions ".env"
-        fi
-        echo -e "${YELLOW}🚀 Starting OpenTranscribe...${NC}"
-        # Plain statement, not `$(...)`: get_compose_files() calls arm64_deployment_preflight
-        # too, but from inside a command substitution, where the DEPLOYMENT_MODE export dies
-        # with the subshell. `docker compose up` below interpolates ${BACKEND_LITE_IMAGE}/
-        # ${DEPLOYMENT_MODE} itself, so the export has to exist in THIS shell as well.
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        docker compose $compose_files up -d
-        echo -e "${GREEN}✅ OpenTranscribe started!${NC}"
-        show_access_info
+        cmd_start "$@"
         ;;
     stop)
-        check_environment
-        echo -e "${YELLOW}🛑 Stopping OpenTranscribe...${NC}"
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        ot_drain_gpu_workers "$compose_files"
-        docker compose $compose_files down
-        echo -e "${GREEN}✅ OpenTranscribe stopped${NC}"
+        cmd_stop "$@"
         ;;
     restart)
-        check_environment
-        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
-        # call above — a failed fix here must not abort this command before the actual
-        # `docker compose` step runs and reports its own, more specific error.
-        fix_model_cache_permissions || true
-        echo -e "${YELLOW}🔄 Restarting OpenTranscribe...${NC}"
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        ot_drain_gpu_workers "$compose_files"
-        docker compose $compose_files down
-        docker compose $compose_files up -d
-        echo -e "${GREEN}✅ OpenTranscribe restarted!${NC}"
-        show_access_info
+        cmd_restart "$@"
         ;;
     status)
-        check_environment
-        echo -e "${BLUE}📊 Container Status:${NC}"
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        docker compose $compose_files ps
-        print_diar_native_status "$compose_files"
+        cmd_status "$@"
         ;;
     compose-files)
-        # Print the resolved `-f` chain on stdout, and nothing else.
-        #
-        # get_compose_files() is the SINGLE owner of overlay selection — GPU vs
-        # Blackwell vs CPU-only, nginx, scheduled backup — but every other arm
-        # consumed it internally, so there was no way to ASK what it chose. Two
-        # consequences this arm exists to remove:
-        #
-        #   * A support request ("why is my GPU not being used?") had to be
-        #     answered by inference. Now: `./opentranscribe.sh compose-files`.
-        #   * The release rehearsal hand-built its own parallel `-f` list rather
-        #     than driving this one, so the whole selection layer was never
-        #     exercised by a release gate and had already drifted. See
-        #     scripts/release-tests/REHEARSAL_ALIGNMENT_PLAN.md.
-        #
-        # The selection banners get_compose_files() prints go to stderr, so stdout
-        # is exactly the chain and stays composable:
-        #   docker compose $(./opentranscribe.sh compose-files 2>/dev/null) ps
-        check_environment
-        apply_deployment_pins
-        get_compose_files
+        cmd_compose_files "$@"
         ;;
     download-models)
-        check_environment
-        model_group="${2:-}"
-        case "$model_group" in
-            ""|all)
-                if [ ! -f scripts/download-models.sh ]; then
-                    echo -e "${RED}❌ scripts/download-models.sh not found.${NC}"
-                    echo -e "${YELLOW}   Fix with: ./opentranscribe.sh update-full${NC}"
-                    exit 1
-                fi
-                dl_cache_dir=$(read_env_value MODEL_CACHE_DIR)
-                bash scripts/download-models.sh "${dl_cache_dir:-./models}"
-                ;;
-            diar-native)
-                download_models_diar_native
-                ;;
-            password-blocklist)
-                if [ ! -f scripts/download-password-blocklist.sh ]; then
-                    echo -e "${RED}❌ scripts/download-password-blocklist.sh not found.${NC}"
-                    echo -e "${YELLOW}   Fix with: ./opentranscribe.sh update-full${NC}"
-                    exit 1
-                fi
-                dl_cache_dir=$(read_env_value MODEL_CACHE_DIR)
-                bash scripts/download-password-blocklist.sh "${dl_cache_dir:-./models}"
-                ;;
-            *)
-                echo -e "${RED}❌ Unknown model group: '${model_group}'${NC}"
-                echo "   Known groups: diar-native, password-blocklist"
-                echo "   Omit the group to download the full model set."
-                exit 1
-                ;;
-        esac
+        cmd_download_models "$@"
         ;;
     logs)
-        check_environment
-        service=${2:-}
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-
-        if [ -z "$service" ]; then
-            echo -e "${BLUE}📋 Showing all logs (Ctrl+C to exit):${NC}"
-            docker compose $compose_files logs -f
-        else
-            echo -e "${BLUE}📋 Showing logs for $service (Ctrl+C to exit):${NC}"
-            docker compose $compose_files logs -f "$service"
-        fi
+        cmd_logs "$@"
         ;;
     update)
-        check_environment
-        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
-        # call above — a failed fix here must not abort this command before the actual
-        # `docker compose` step runs and reports its own, more specific error.
-        fix_model_cache_permissions || true
-
-        # Optional target: `update --version vX.Y.Z` moves this install to a
-        # specific release; `--rollback` returns it to the previous one. Both
-        # work by rewriting OT_IMAGE_TAG in .env, which the compose files read as
-        # ${OT_IMAGE_TAG:-latest}. With no argument, behaviour is unchanged.
-        target_version=""
-        do_rollback=false
-        force_downgrade=false
-        shift || true
-        while [ $# -gt 0 ]; do
-            case "$1" in
-                --version) target_version="${2:-}"; shift 2 ;;
-                --rollback) do_rollback=true; shift ;;
-                --force-downgrade) force_downgrade=true; shift ;;
-                *) echo -e "${YELLOW}⚠️  Unknown argument: $1 (ignored)${NC}"; shift ;;
-            esac
-        done
-
-        current_tag=$(read_env_value OT_IMAGE_TAG)
-        current_tag="${current_tag:-latest}"
-
-        if [ "$do_rollback" = true ]; then
-            # Deliberately NOT read_env_value: that helper anchors on `^KEY=`, and this
-            # key is written commented-out (`^# *OT_PREVIOUS_IMAGE_TAG=`) by design (it's a
-            # rollback marker, not an active setting) -- not worth a second helper parameter
-            # for this one caller.
-            target_version=$(grep -E '^# *OT_PREVIOUS_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 | tr -d ' "' | head -1)
-            if [ -z "$target_version" ]; then
-                echo -e "${RED}❌ No previous version recorded — nothing to roll back to.${NC}"
-                echo -e "${YELLOW}   A rollback target is only recorded by a prior 'update --version'.${NC}"
-                echo -e "${YELLOW}   Use: ./opentranscribe.sh update --version vX.Y.Z${NC}"
-                exit 1
-            fi
-            echo -e "${YELLOW}⏪ Rolling back: $current_tag → $target_version${NC}"
-            echo -e "${YELLOW}⚠️  The migration chain is ONE-WAY. Rolling the images back does NOT${NC}"
-            echo -e "${YELLOW}   revert the database. Restore a backup taken before the upgrade if${NC}"
-            echo -e "${YELLOW}   the newer schema is not readable by $target_version.${NC}"
-        fi
-
-        if [ -n "$target_version" ]; then
-            case "$target_version" in v*) ;; *) target_version="v${target_version}" ;; esac
-
-            # Refuse a downgrade unless asked twice. Newer releases add columns
-            # and tables the older image does not know about; the chain does not
-            # go backwards.
-            if [ "$do_rollback" = false ] && [ "$force_downgrade" = false ] && [ "$current_tag" != "latest" ]; then
-                older=$(printf '%s\n%s\n' "${current_tag#v}" "${target_version#v}" | sort -V | head -1)
-                if [ "$older" = "${target_version#v}" ] && [ "$target_version" != "$current_tag" ]; then
-                    echo -e "${RED}❌ Refusing to downgrade $current_tag → $target_version${NC}"
-                    echo -e "${YELLOW}   The migration chain is one-way. Use --rollback (which warns${NC}"
-                    echo -e "${YELLOW}   about the database) or --force-downgrade if you are certain.${NC}"
-                    exit 1
-                fi
-            fi
-
-            # Record where we came from so --rollback has a target.
-            if grep -q '^# *OT_PREVIOUS_IMAGE_TAG=' .env; then
-                sed -i.bak "s|^# *OT_PREVIOUS_IMAGE_TAG=.*|# OT_PREVIOUS_IMAGE_TAG=${current_tag}|" .env
-            else
-                echo "# OT_PREVIOUS_IMAGE_TAG=${current_tag}" >> .env
-            fi
-            if grep -q '^OT_IMAGE_TAG=' .env; then
-                sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${target_version}|" .env
-            else
-                echo "OT_IMAGE_TAG=${target_version}" >> .env
-            fi
-            rm -f .env.bak
-            echo -e "${GREEN}✓ Pinned OT_IMAGE_TAG=${target_version} (was ${current_tag})${NC}"
-            echo -e "${YELLOW}📥 Updating to ${target_version}...${NC}"
-
-            # --rollback preflight (issue #610's companion, the mirror-image gap): an
-            # OLDER image booting against a NEWER schema it cannot read fails with a
-            # cryptic "Can't locate revision identified by '<head>'" -> SystemExit(1).
-            # Alembic's migration chain has no forward-compat story, so check BEFORE
-            # tearing anything down, not after. Read the live head now, while postgres
-            # is still up — compose_down_for_upgrade (below) takes the WHOLE stack
-            # down, postgres included, so this is the last point a plain
-            # `docker compose exec postgres` can reach it.
-            if [ "$do_rollback" = true ] && [ "$force_downgrade" = false ]; then
-                apply_deployment_pins
-                rollback_compose_files=$(get_compose_files)
-                # shellcheck disable=SC2086  # intentional word-splitting of the -f chain
-                rollback_live_head=$(docker compose $rollback_compose_files exec -T postgres psql -tA \
-                    -U "${POSTGRES_USER:-postgres}" "${POSTGRES_DB:-opentranscribe}" \
-                    -c 'SELECT version_num FROM alembic_version;' 2>/dev/null | tr -d '[:space:]')
-
-                if [ -z "$rollback_live_head" ]; then
-                    echo -e "${YELLOW}⚠️  Could not read the live database's alembic head — skipping the${NC}"
-                    echo -e "${YELLOW}   rollback-compatibility check (postgres may not be running).${NC}"
-                # Ask the TARGET image whether it knows that revision — no Python imports,
-                # no env, no DB: every published backend image ships its own
-                # alembic/versions/ tree (backend/Dockerfile.prod:229, COPY --chown into /app).
-                elif ! docker run --rm --entrypoint sh "davidamacey/opentranscribe-backend:${target_version}" -c \
-                        "grep -lq 'revision = \"${rollback_live_head}\"' /app/alembic/versions/*.py" \
-                        >/dev/null 2>&1; then
-                    echo -e "${RED}❌ Refusing to roll back to ${target_version}: the database is at${NC}"
-                    echo -e "${RED}   ${rollback_live_head}, which ${target_version} does not know.${NC}"
-                    echo -e "${YELLOW}   Restore a pre-upgrade backup first — it leaves services stopped for${NC}"
-                    echo -e "${YELLOW}   you to choose the image (issue #610):${NC}"
-                    echo -e "${YELLOW}     ./opentranscribe.sh restore <backup>${NC}"
-                    echo -e "${YELLOW}   then re-run this command. Override with --force-downgrade if certain.${NC}"
-                    exit 1
-                fi
-            fi
-        else
-            echo -e "${YELLOW}📥 Updating to the newest images for tag '${current_tag}'...${NC}"
-        fi
-
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-
-        preflight_upgrade_env || exit 1
-        compose_down_for_upgrade "$compose_files" || exit 1
-        compose_pull_for_upgrade "$compose_files" || exit 1
-
-        if ! perform_phased_restart "$compose_files"; then
-            echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
-            echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
-            echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
-            exit 1
-        fi
-
-        echo -e "${GREEN}✅ OpenTranscribe containers updated!${NC}"
-        echo ""
-        echo -e "${YELLOW}💡 Tip: Run './opentranscribe.sh update-full' to also update scripts and config files${NC}"
-        show_access_info
+        cmd_update "$@"
         ;;
     update-full)
-        check_environment
-        echo -e "${YELLOW}📥 Full update: Updating configuration files and Docker images...${NC}"
-        echo ""
-
-        BRANCH=$(resolve_config_ref) || exit 1
-
-        # URL-encode the branch name (replace / with %2F for feature branches)
-        ENCODED_BRANCH=$(echo "$BRANCH" | sed 's|/|%2F|g')
-        GITHUB_RAW="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${ENCODED_BRANCH}"
-
-        # Backup current opentranscribe.sh
-        cp opentranscribe.sh opentranscribe.sh.bak 2>/dev/null || true
-
-        echo -e "${BLUE}📄 Updating configuration files...${NC}"
-
-        # Back up the base compose file too — it is now updated, so a bad release
-        # should be recoverable without re-running the installer.
-        cp docker-compose.yml docker-compose.yml.bak 2>/dev/null || true
-
-        # The artifact list comes from release-manifest.txt, not from a list
-        # hardcoded here. See that file's header for the two silent-breakage bugs
-        # the old duplicated lists caused (missing docker-compose.yml on upgrade,
-        # missing blackwell overlay on fresh install).
-        # Releases published before release-manifest.txt existed have no list to read, and
-        # following the pin (above) means we now ask them for one. Borrow the list from the
-        # default branch in that case — the ARTIFACTS still come from $GITHUB_RAW, i.e. the
-        # pinned release, so this cannot un-pin the install. Same fallback as
-        # setup-opentranscribe.sh's download_release_manifest_artifacts(); see issue #683.
-        #
-        # issue #723: a borrowed manifest is NEWER than $BRANCH, so it can list a REQUIRED
-        # entry that tag never shipped (NOTICE, added required in 91128ecb). `optional`
-        # alone does not absorb that — it only helps entries someone remembered to flag,
-        # and a required-on-principle file is deliberately never flagged optional. So once
-        # the manifest is known to be borrowed, a download failure for ANY entry means
-        # "this tag predates the file" and is skipped rather than fatal.
-        MANIFEST_BORROWED=0
-        echo "  Downloading release-manifest.txt..."
-        if ! curl -fsSL "$GITHUB_RAW/release-manifest.txt" -o release-manifest.txt.new; then
-            rm -f release-manifest.txt.new
-            MANIFEST_FALLBACK_BRANCH=$(resolve_default_branch)
-
-            if [ -n "$MANIFEST_FALLBACK_BRANCH" ] && [ "$MANIFEST_FALLBACK_BRANCH" != "$BRANCH" ] &&
-                curl -fsSL "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${MANIFEST_FALLBACK_BRANCH}/release-manifest.txt" \
-                    -o release-manifest.txt.new; then
-                MANIFEST_BORROWED=1
-                echo -e "  ${YELLOW}⚠️${NC}  $BRANCH predates release-manifest.txt — using the file list from '${MANIFEST_FALLBACK_BRANCH}'."
-                echo -e "     Config files are still downloaded from $BRANCH; files that release"
-                echo -e "     does not have are skipped, whether or not the manifest marks them optional."
-            else
-                rm -f release-manifest.txt.new
-                echo -e "  ${RED}✗${NC} could not fetch release-manifest.txt from $BRANCH"
-                echo -e "  ${YELLOW}Refusing to update config files from an unknown artifact list.${NC}"
-                echo -e "  ${YELLOW}Use './opentranscribe.sh update' to update images only.${NC}"
-                exit 1
-            fi
-        fi
-        mv release-manifest.txt.new release-manifest.txt
-
-        update_failed=0
-        while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
-            # Strip comments and blanks.
-            case "$manifest_line" in ''|'#'*) continue ;; esac
-
-            artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
-            artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
-            [ -n "$artifact_path" ] || continue
-
-            case ",$artifact_flags," in *,preserve,*) continue ;; esac
-
-            artifact_dir=$(dirname "$artifact_path")
-            [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
-
-            # Download to .new first so a failed fetch never truncates a working file.
-            if curl -fsSL "$GITHUB_RAW/$artifact_path" -o "${artifact_path}.new"; then
-                mv "${artifact_path}.new" "$artifact_path"
-                case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
-                echo -e "  ${GREEN}✓${NC} $artifact_path"
-            else
-                rm -f "${artifact_path}.new"
-                case ",$artifact_flags," in
-                    *,optional,*)
-                        echo -e "  ${YELLOW}⚠️${NC} $artifact_path (optional, not in this release)"
-                        ;;
-                    *)
-                        if [ "$MANIFEST_BORROWED" -eq 1 ]; then
-                            echo -e "  ${YELLOW}⚠️${NC} $artifact_path (required by a newer manifest, but $BRANCH predates it — skipped)"
-                        else
-                            echo -e "  ${RED}✗${NC} $artifact_path (REQUIRED — download failed)"
-                            update_failed=1
-                        fi
-                        ;;
-                esac
-            fi
-        done < release-manifest.txt
-
-        if [ "$update_failed" -ne 0 ]; then
-            echo ""
-            echo -e "${RED}❌ One or more required files failed to download.${NC}"
-            echo -e "${YELLOW}Not restarting: a partial config set is worse than the old one.${NC}"
-            echo -e "${YELLOW}Your previous docker-compose.yml is at docker-compose.yml.bak${NC}"
-            exit 1
-        fi
-
-        # Report new .env keys rather than touching the user's .env. A release that
-        # adds a required setting is otherwise invisible: Settings uses
-        # extra="ignore", so a missing var is silently defaulted, not an error.
-        if [ -f .env ] && [ -f .env.example ]; then
-            new_keys=$(grep -oE '^[A-Z_][A-Z0-9_]*=' .env.example 2>/dev/null | tr -d '=' | sort -u \
-                | while read -r key; do
-                    grep -qE "^${key}=" .env || echo "  • $key"
-                done)
-            if [ -n "$new_keys" ]; then
-                echo ""
-                echo -e "${YELLOW}📋 New settings in this release (your .env was NOT modified):${NC}"
-                echo "$new_keys"
-                echo -e "${YELLOW}   Defaults apply unless you add them to .env (FLOWER_PASSWORD and MinIO encryption are required in production) — see .env.example.${NC}"
-            fi
-        fi
-
-        # issue #709: the report above only sees a key that is ABSENT. Also flag a key
-        # that is PRESENT but whose VALUE has rotted (see check_stale_env_values()'s
-        # docstring above check_environment() for the two seeded cases). Same
-        # warn-only, never-rewrite contract; run before teardown below.
-        if [ -f .env ]; then
-            stale_findings=$(check_stale_env_values .env)
-            if [ -n "$stale_findings" ]; then
-                echo ""
-                echo -e "${YELLOW}⚠️  Settings in .env whose VALUE has gone stale (your .env was NOT modified):${NC}"
-                echo "$stale_findings"
-            fi
-        fi
-
-        echo ""
-        echo -e "${BLUE}🐳 Updating Docker images...${NC}"
-        # `|| true`: same set -e / exit-7-remedy hazard as download_models_diar_native's
-        # call above — a failed fix here must not abort this command before the actual
-        # `docker compose` step runs and reports its own, more specific error.
-        fix_model_cache_permissions || true
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        # Same gate as `update`: refuse while the old stack is still running
-        # rather than after it is torn down (#410).
-        preflight_upgrade_env || exit 1
-        compose_down_for_upgrade "$compose_files" || exit 1
-        compose_pull_for_upgrade "$compose_files" || exit 1
-
-        # Same phased startup `update` uses. This path previously did a bare
-        # `up -d`, which lets compose's dependency resolver give up on the
-        # backend's health wait and SIGTERM it mid-Alembic — and update-full is
-        # the MORE likely of the two to run a long migration chain, since it is
-        # what people run when moving across releases.
-        if ! perform_phased_restart "$compose_files"; then
-            echo -e "${RED}❌ Upgrade did not complete successfully.${NC}"
-            echo -e "${YELLOW}   See https://docs.opentranscribe.app/docs/operations/upgrading#common-upgrade-issues${NC}"
-            echo -e "${YELLOW}   for recovery steps, or run './opentranscribe.sh logs backend' for details.${NC}"
-            exit 1
-        fi
-
-        # A release can introduce a NEW model (v0.5.0 adds the chat reranker and
-        # the content-redaction weights). Nothing in the upgrade path fetches it:
-        #
-        #   * Online deployments self-heal — the model lazy-downloads from
-        #     HuggingFace on first use, so the only symptom is a long pause the
-        #     first time someone touches that feature.
-        #   * OFFLINE deployments do not. docker-compose.offline.yml sets
-        #     HF_HUB_OFFLINE=1, so a newly-required model that is not already in
-        #     the cache is a hard failure with no network to recover from.
-        #
-        # So say so, and make refreshing the cache one command rather than
-        # something the user has to know about.
-        if [ -f scripts/download-models.sh ]; then
-            echo ""
-            echo -e "${BLUE}🧠 Model cache${NC}"
-            echo "  This release may require models your cache does not have yet."
-            echo "  Online: they download on first use (one slow request)."
-            echo "  Offline/air-gapped: pre-fetch them now, or the feature will fail:"
-            echo "    bash scripts/download-models.sh \"\${MODEL_CACHE_DIR:-./models}\""
-        fi
-
-        echo ""
-        echo -e "${GREEN}✅ Full update complete!${NC}"
-        echo ""
-        echo -e "${YELLOW}📝 Notes:${NC}"
-        echo "  • Your .env configuration was preserved"
-        echo "  • SSL certificates were preserved (if configured)"
-        echo "  • Database and transcriptions were preserved"
-        echo "  • Old script backed up to opentranscribe.sh.bak"
-        echo "  • Old base compose backed up to docker-compose.yml.bak"
-        echo ""
-        show_access_info
+        cmd_update_full "$@"
         ;;
     clean)
-        check_environment
-        echo -e "${RED}⚠️  WARNING: This will remove ALL data including transcriptions!${NC}"
-        read -p "Are you sure you want to continue? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            echo -e "${YELLOW}🗑️  Removing all data...${NC}"
-            apply_deployment_pins
-            compose_files=$(get_compose_files)
-            ot_drain_gpu_workers "$compose_files"
-            docker compose $compose_files down -v
-            echo -e "${GREEN}✅ All data removed${NC}"
-        else
-            echo -e "${GREEN}✅ Operation cancelled${NC}"
-        fi
+        cmd_clean "$@"
         ;;
     shell)
-        check_environment
-        service=${2:-backend}
-        echo -e "${BLUE}🔧 Opening shell in $service container...${NC}"
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        docker compose $compose_files exec "$service" /bin/bash || docker compose $compose_files exec "$service" /bin/sh
+        cmd_shell "$@"
         ;;
     backup|restore)
-        check_environment
-        require_db_helpers
-        # No apply_deployment_pins here, deliberately: this arm never starts or pulls the
-        # diar-native sidecar — backup_database/restore_database only `docker compose exec`
-        # into containers that are already running — so DIAR_NATIVE_IMAGE is not read by
-        # anything this arm does. This is the ONE case arm below `case "${1:-help}" in` that
-        # resolves `compose_files=$(get_compose_files)` without a preceding
-        # apply_deployment_pins call, and it is exempt for that reason, not an oversight —
-        # backend/tests/unit/test_opentranscribe_arm64_pin_ordering.py asserts this arm is
-        # the ONLY exemption in the structural "every get_compose_files() consumer applies
-        # the pins first" check, by name, so a second silent exemption would fail loudly.
-        compose_files=$(get_compose_files)
-
-        # opentr.sh gets these from its prologue `set -a; source ./.env`; this script
-        # deliberately has no such prologue (it greps individual keys — see
-        # preflight_upgrade_env). Without these explicit reads a restore would DROP/CREATE
-        # the DEFAULT database name on any install that customised them (issue #613).
-        POSTGRES_USER=$(read_env_value POSTGRES_USER)
-        POSTGRES_DB=$(read_env_value POSTGRES_DB)
-        BACKUP_HOST_PATH=$(read_env_value BACKUP_HOST_PATH)
-        export POSTGRES_USER POSTGRES_DB BACKUP_HOST_PATH
-
-        cmd="$1"; shift
-        # The shared functions are written for opentr.sh's execution semantics, which
-        # deliberately omit `set -e` (many `|| true` paths). They contain several statements
-        # of the form `[ -n "$x" ] && rm -f "$x"`, which return 1 when $x is empty and would
-        # abort THIS script mid-restore under the `set -e` at the top of this file. Rather
-        # than retrofit `set -e` correctness across ~350 lines of a DROP DATABASE path —
-        # exactly where a subtle retrofit bug is unrecoverable — match the semantics the
-        # code was written for, for the duration of this one call.
-        set +e
-        if [ "$cmd" = "backup" ]; then
-            backup_database "$compose_files" "./opentranscribe.sh" "$@"
-        else
-            restore_database "$compose_files" "./opentranscribe.sh" "$@"
-        fi
-        rc=$?
-        set -e
-        exit $rc
+        cmd_backup_restore "$@"
         ;;
     config)
-        check_environment
-        echo -e "${BLUE}⚙️  Current Configuration:${NC}"
-        echo "Environment file (.env):"
-        grep -E "^[A-Z]" .env | head -20
-        echo ""
-        echo "Docker Compose configuration:"
-        if docker compose config > /dev/null 2>&1; then
-            echo "  ✅ Valid"
-        else
-            echo "  ❌ Invalid"
-        fi
+        cmd_config "$@"
         ;;
     health)
-        check_environment
-        echo -e "${BLUE}🩺 Health Check:${NC}"
-
-        # Check container status
-        echo "Container Status:"
-        apply_deployment_pins
-        compose_files=$(get_compose_files)
-        docker compose $compose_files ps --format "table {{.Service}}\t{{.Status}}\t{{.Ports}}"
-
-        echo ""
-        echo "Service Health:"
-
-        # Source .env to get port values
-        source .env 2>/dev/null || true
-
-        # Backend health
-        if curl -s http://localhost:${BACKEND_PORT:-5174}/health > /dev/null 2>&1; then
-            echo "  ✅ Backend: Healthy"
-        else
-            echo "  ❌ Backend: Unhealthy"
-        fi
-
-        # Frontend health
-        if curl -s http://localhost:${FRONTEND_PORT:-5173} > /dev/null 2>&1; then
-            echo "  ✅ Frontend: Healthy"
-        else
-            echo "  ❌ Frontend: Unhealthy"
-        fi
-
-        # Database health
-        if docker compose $compose_files exec -T postgres pg_isready -U postgres > /dev/null 2>&1; then
-            echo "  ✅ Database: Healthy"
-        else
-            echo "  ❌ Database: Unhealthy"
-        fi
-
-        # NGINX health (only if configured)
-        nginx_server_name=""
-        nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
-
-        if [ -n "$nginx_server_name" ]; then
-            if curl -s -k https://localhost:${NGINX_HTTPS_PORT:-443}/health > /dev/null 2>&1 || \
-               curl -s http://localhost:${NGINX_HTTP_PORT:-80}/health > /dev/null 2>&1; then
-                echo "  ✅ NGINX: Healthy (https://$nginx_server_name)"
-            else
-                # Check if container is running but not responding
-                if docker compose $compose_files ps nginx 2>/dev/null | grep -q "Up"; then
-                    echo "  ⚠️  NGINX: Running but not responding"
-                else
-                    echo "  ❌ NGINX: Not running"
-                fi
-            fi
-        fi
+        cmd_health "$@"
         ;;
     setup-ssl)
-        check_environment
-        echo -e "${BLUE}🔒 HTTPS/SSL Setup${NC}"
-        echo ""
-
-        # Check if generate-ssl-cert.sh exists
-        if [ ! -f scripts/generate-ssl-cert.sh ]; then
-            echo -e "${RED}❌ SSL certificate generation script not found${NC}"
-            echo "   Expected: scripts/generate-ssl-cert.sh"
-            echo ""
-            echo "   Download it from:"
-            echo "   curl -fsSL $(raw_url_for scripts/generate-ssl-cert.sh) -o scripts/generate-ssl-cert.sh"
-            echo "   chmod +x scripts/generate-ssl-cert.sh"
-            exit 1
-        fi
-
-        # Check if docker-compose.nginx.yml exists
-        if [ ! -f docker-compose.nginx.yml ]; then
-            echo -e "${RED}❌ NGINX docker-compose file not found${NC}"
-            echo "   Expected: docker-compose.nginx.yml"
-            echo ""
-            echo "   Download it from:"
-            echo "   curl -fsSL $(raw_url_for docker-compose.nginx.yml) -o docker-compose.nginx.yml"
-            exit 1
-        fi
-
-        # Check if nginx/site.conf.template exists
-        if [ ! -f nginx/site.conf.template ]; then
-            echo -e "${YELLOW}⚠️  NGINX configuration template not found${NC}"
-            echo "   Downloading nginx/site.conf.template..."
-            mkdir -p nginx/ssl
-            # A REAL fetch, not a printed remedy: this pulled the nginx template from
-            # tip-of-development onto a pinned deployment, so an HTTPS install could get
-            # a proxy config written for a backend it is not running.
-            curl -fsSL "$(raw_url_for nginx/site.conf.template)" -o nginx/site.conf.template || {
-                echo -e "${RED}❌ Failed to download nginx configuration${NC}"
-                echo -e "${YELLOW}   Or run:  ./opentranscribe.sh update-full${NC}"
-                exit 1
-            }
-        fi
-
-        # Prompt for hostname
-        echo "Enter a hostname for your OpenTranscribe installation:"
-        echo "(e.g., opentranscribe.local, transcribe.home, your-hostname.lan)"
-        echo ""
-
-        # Get current NGINX_SERVER_NAME from .env if exists
-        current_hostname=""
-        current_hostname=$(read_env_value NGINX_SERVER_NAME)
-
-        if [ -n "$current_hostname" ]; then
-            read -p "Hostname [$current_hostname]: " user_hostname
-            hostname="${user_hostname:-$current_hostname}"
-        else
-            read -p "Hostname [opentranscribe.local]: " user_hostname
-            hostname="${user_hostname:-opentranscribe.local}"
-        fi
-
-        # The hostname is spliced into a sed replacement and an openssl config below.
-        if ! ot_is_valid_hostname "$hostname"; then
-            echo ""
-            echo -e "${RED}❌ '$hostname' is not a valid hostname${NC}"
-            echo "   Use letters, digits, dots and hyphens only (e.g. opentranscribe.local)."
-            exit 1
-        fi
-
-        echo ""
-        echo -e "${GREEN}✓ Using hostname: $hostname${NC}"
-        echo ""
-
-        # Check for existing certificates
-        if [ -f "nginx/ssl/server.crt" ] && [ -f "nginx/ssl/server.key" ]; then
-            echo -e "${YELLOW}⚠️  Existing SSL certificates detected!${NC}"
-            echo "   nginx/ssl/server.crt and nginx/ssl/server.key already exist."
-            echo ""
-            read -p "Issue a new server certificate (the CA is kept)? (y/N) " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                echo -e "${GREEN}✓ Keeping existing certificates${NC}"
-                keep_certs=true
-            fi
-            echo ""
-        fi
-
-        if [ "${keep_certs:-}" != true ]; then
-            echo -e "${BLUE}Generating SSL certificates...${NC}"
-            if bash scripts/generate-ssl-cert.sh "$hostname" --auto-ip; then
-                echo ""
-                echo -e "${GREEN}✓ SSL certificates generated successfully!${NC}"
-            else
-                echo -e "${RED}❌ Failed to generate SSL certificates${NC}"
-                exit 1
-            fi
-        fi
-
-        # Update .env file with NGINX_SERVER_NAME
-        if [ -f .env ]; then
-            if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-                sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$hostname|g" .env
-                rm -f .env.bak
-            else
-                echo "" >> .env
-                echo "# HTTPS/SSL Configuration" >> .env
-                echo "NGINX_SERVER_NAME=$hostname" >> .env
-            fi
-            echo -e "${GREEN}✓ Updated .env with NGINX_SERVER_NAME=$hostname${NC}"
-        fi
-
-        echo ""
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo -e "${YELLOW}📋 HTTPS Setup Complete - Next Steps${NC}"
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        echo ""
-        lan_ip="$(ot_detect_lan_ip)"
-        echo "1. Configure DNS (choose one):"
-        echo "   • Router DNS: Add $hostname → ${lan_ip:-your server IP}"
-        echo "   • /etc/hosts: Add '${lan_ip:-YOUR_SERVER_IP}  $hostname'"
-        echo "   (Skip this step to use the server's IP address instead; the certificate covers it.)"
-        echo ""
-        echo "2. Trust the CA once on each device (a renewed server certificate needs nothing more):"
-        echo "   • Copy nginx/ssl/ca.crt (not server.crt) to the device and import it; keep ca.key here only"
-        echo ""
-        echo "3. Restart OpenTranscribe:"
-        echo "   ./opentranscribe.sh restart"
-        echo ""
-        echo "4. Access at: https://$hostname"
-        if [ -n "$lan_ip" ]; then
-            echo "   or by address: https://$lan_ip"
-        fi
-        echo "   (Use this port-443 address, not the plain http://...:5173 one:"
-        echo "   browsers refuse sign-in cookies and microphone access over plain HTTP.)"
-        echo ""
+        cmd_setup_ssl "$@"
         ;;
     version)
-        echo -e "${BLUE}OpenTranscribe Version Information${NC}"
-        echo ""
-
-        # Ask the running backend what it is. /api/version is unauthenticated and
-        # needs no DB, so it answers even on a degraded stack.
-        #
-        # This replaced `docker compose exec -T backend python -c "from
-        # app.core.version import VERSION"`, which had never worked: the module
-        # exports APP_VERSION, not VERSION, so the import always raised and the
-        # command always fell through to "unknown". The version check was dead
-        # code from the day it was written.
-        local_version="unknown"
-        local_version=$(curl -fsS --connect-timeout 3 \
-            "http://localhost:${BACKEND_PORT:-5174}/api/version" 2>/dev/null \
-            | grep -o '"version"[[:space:]]*:[[:space:]]*"[^"]*"' \
-            | head -1 | cut -d'"' -f4 || echo "")
-        [ -n "$local_version" ] || local_version="unknown"
-
-        # Fallback: ask the container directly (backend up, port not published).
-        if [ "$local_version" = "unknown" ] && docker compose ps 2>/dev/null | grep -q "backend.*Up"; then
-            local_version=$(docker compose exec -T backend printenv APP_VERSION 2>/dev/null | tr -d '\r' || echo "unknown")
-            [ -n "$local_version" ] || local_version="unknown"
-        fi
-
-        # Last resort: the VERSION file the installer wrote next to the compose files.
-        if [ "$local_version" = "unknown" ] && [ -f VERSION ]; then
-            local_version=$(tr -d '[:space:]' < VERSION)
-        fi
-
-        echo "  Local version: ${local_version:-unknown}"
-
-        # Check for latest version from GitHub
-        echo ""
-        echo -e "${BLUE}Checking for updates...${NC}"
-        latest_version=$(curl -fsSL --connect-timeout 5 "https://api.github.com/repos/attevon-llc/OpenTranscribe/releases/latest" 2>/dev/null | grep '"tag_name"' | head -1 | sed -E 's/.*"v?([^"]+)".*/\1/' || echo "")
-
-        if [ -n "$latest_version" ]; then
-            echo "  Latest release: $latest_version"
-            echo ""
-
-            if [ "$local_version" != "unknown" ] && [ "$local_version" != "$latest_version" ]; then
-                echo -e "${YELLOW}📦 Update available!${NC}"
-                echo ""
-                echo "  To update containers only:"
-                echo "    ./opentranscribe.sh update"
-                echo ""
-                echo "  To update everything (recommended):"
-                echo "    ./opentranscribe.sh update-full"
-            elif [ "$local_version" = "$latest_version" ]; then
-                echo -e "${GREEN}✅ You are running the latest version${NC}"
-            else
-                echo -e "${YELLOW}💡 Run './opentranscribe.sh update-full' to ensure you have the latest version${NC}"
-            fi
-        else
-            echo -e "${YELLOW}⚠️  Could not check for updates (no internet or GitHub API limit)${NC}"
-            echo ""
-            echo "  To update manually:"
-            echo "    ./opentranscribe.sh update-full"
-        fi
-
-        echo ""
-        echo -e "${BLUE}Container Images:${NC}"
-        docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedSince}}" 2>/dev/null | grep -E "opentranscribe|REPOSITORY" || echo "  No OpenTranscribe images found"
-        echo ""
+        cmd_version "$@"
         ;;
     help|--help|-h)
         show_help

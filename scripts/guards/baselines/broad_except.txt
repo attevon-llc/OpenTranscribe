@@ -255,17 +255,6 @@ backend/app/services/embedding_mode_service.py::EmbeddingModeService._set_cached
 backend/app/services/embedding_mode_service.py::EmbeddingModeService.clear_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/embedding_mode_service.py::EmbeddingModeService.detect_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/erasure_index_reconcile.py::check_subjects#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::_append_journal#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::_audit#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::_file_journal_records#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::_object_journal_records#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::_object_journal_records.<locals>._fetch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::append_receipt_line#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::record_outcome#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::record_request#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::record_resurrection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::reopen_entry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/erasure_ledger_service.py::restore_from_journal#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/erasure_receipt/destroy_extras.py::abort_multipart#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/erasure_receipt/destroy_extras.py::erase_derived_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/erasure_receipt/destroy_extras.py::erase_lockout#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

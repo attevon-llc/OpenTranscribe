@@ -11,6 +11,8 @@ is backend-specific. Package-level `CLAUDE.md` files add detail where you're wor
 `app/tasks` (Celery tasks — the processing pipeline) · `app/transcription` (ASR/diarization
 engine) · `app/utils` (shared helpers) · `app/middleware`.
 
+New middleware must be pure ASGI (`__call__(scope, receive, send)`), never `BaseHTTPMiddleware`: under load it was 21% of GIL samples (scale_foundations_plan.md 3.4).
+
 ## Commands
 
 Prefer running inside the container (`./opentr.sh shell backend`). The host venv at

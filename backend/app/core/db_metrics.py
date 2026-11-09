@@ -22,9 +22,12 @@ the same dict object, so the listeners' in-place ``["n"] += 1`` mutations are
 visible to the middleware after ``call_next``. Listeners only ever MUTATE the
 dict; they never ``set()`` the ContextVar.
 
-Pool gauges (``db_pool_capacity``, ``db_pool_checked_out``, ``db_pool_overflow``) are a
-custom collector read at scrape time (prometheus_client, "Custom Collectors"), so nothing has
-to keep them current.
+Pool gauges (``db_pool_capacity``, ``db_pool_checked_out``, ``db_pool_overflow``) are plain
+Gauges refreshed from the pool's own events (SQLAlchemy "Pool Events": ``connect``,
+``checkout``, ``checkin``, ``close``), not a scrape-time custom collector, because
+prometheus_client's multiprocess mode does not support custom collectors. The same events time
+each checkout-to-checkin hold into the request's counter dict, which the observability
+middleware observes once per request as ``db_connection_hold_seconds{route}``.
 
 When the ContextVar is ``None`` (Celery workers, startup tasks, scripts — all
 import the same engine), the per-request counter is a no-op, but
@@ -33,13 +36,11 @@ toward latency).
 """
 
 import time
-from collections.abc import Iterator
 from contextvars import ContextVar
 from contextvars import Token
 from typing import Any
 
-from prometheus_client import REGISTRY
-from prometheus_client.core import GaugeMetricFamily
+from sqlalchemy import event
 from sqlalchemy.engine import Connection
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.interfaces import DBAPICursor
@@ -47,11 +48,15 @@ from sqlalchemy.engine.interfaces import ExecutionContext
 from sqlalchemy.pool import QueuePool
 
 from app.core.config import settings
+from app.core.metrics import db_connection_hold_seconds
+from app.core.metrics import db_pool_capacity
+from app.core.metrics import db_pool_checked_out
+from app.core.metrics import db_pool_overflow
 from app.core.metrics import db_queries_per_request
 from app.core.metrics import db_query_duration_seconds
 
 # Holds a mutable dict ``{"n": <int>}`` while inside an HTTP request, else None.
-_query_counter: ContextVar[dict[str, int] | None] = ContextVar("db_query_counter", default=None)
+_query_counter: ContextVar[dict[str, float] | None] = ContextVar("db_query_counter", default=None)
 
 # Per-statement start time is stashed on the execution context, which is unique
 # to each cursor execution — safe under threads and the async event loop.
@@ -64,13 +69,13 @@ def start_request_counter() -> Token:
     Returns a token to pass to :func:`reset`. The stored object is a mutable
     dict so context copies (child task / threadpool) share the same counter.
     """
-    return _query_counter.set({"n": 0})
+    return _query_counter.set({"n": 0, "hold": 0.0})
 
 
 def get_request_query_count() -> int:
     """Return the number of DB statements observed for the current request."""
     counter = _query_counter.get()
-    return counter["n"] if counter is not None else 0
+    return int(counter["n"]) if counter is not None else 0
 
 
 def reset(token: Token) -> None:
@@ -143,46 +148,53 @@ def observe_request_query_count(method: str, route: str) -> None:
     db_queries_per_request.labels(method=method, route=route).observe(get_request_query_count())
 
 
-class _PoolCollector:
-    """Scrape-time view of one engine's connection pool.
+def observe_request_connection_hold(route: str) -> None:
+    """Record the finished request's total connection hold time, if it used the database."""
+    counter = _query_counter.get()
+    if counter is not None and counter["hold"] > 0.0:
+        db_connection_hold_seconds.labels(route=route).observe(counter["hold"])
+
+
+_HOLD_START = "ot_checkout_at"
+_pool_metrics_registered = False
+
+
+def register_pool_metrics(engine: Engine, capacity: int) -> None:
+    """Keep the ``db_pool_*`` gauges and request hold times current from ``engine``'s pool.
 
     With ``db_pool_checked_out`` at ``db_pool_capacity``, a request that needs a connection
-    waits up to the pool timeout (30 s) and then fails with ``QueuePool limit ... reached``:
-    the saturation a concurrent-user load test watches for (``scripts/perf/load/README.md``).
+    waits up to the pool timeout and then fails with ``QueuePool limit ... reached``: the
+    saturation a concurrent-user load test watches for (``scripts/perf/load/README.md``).
+    Once per process.
     """
-
-    def __init__(self, engine: Engine, capacity: int) -> None:
-        self._engine = engine
-        self._capacity = capacity
-
-    def collect(self) -> Iterator[GaugeMetricFamily]:
-        pool = self._engine.pool
-        if not isinstance(pool, QueuePool):
-            return
-        yield GaugeMetricFamily(
-            "db_pool_capacity",
-            "Connections this process's database pool may hold (pool_size + max_overflow).",
-            value=self._capacity,
-        )
-        yield GaugeMetricFamily(
-            "db_pool_checked_out",
-            "Pooled database connections currently in use by this process.",
-            value=pool.checkedout(),
-        )
-        yield GaugeMetricFamily(
-            "db_pool_overflow",
-            "Connections open beyond pool_size (negative while the pool is still filling).",
-            value=pool.overflow(),
-        )
-
-
-_pool_collector_registered = False
-
-
-def register_pool_collector(engine: Engine, capacity: int) -> None:
-    """Expose ``engine``'s pool on the default registry, once per process."""
-    global _pool_collector_registered
-    if _pool_collector_registered:
+    global _pool_metrics_registered
+    if _pool_metrics_registered:
         return
-    REGISTRY.register(_PoolCollector(engine, capacity))
-    _pool_collector_registered = True
+    _pool_metrics_registered = True
+    pool = engine.pool
+    if not isinstance(pool, QueuePool):
+        return
+    db_pool_capacity.set(capacity)
+
+    def refresh() -> None:
+        db_pool_checked_out.set(pool.checkedout())
+        db_pool_overflow.set(pool.overflow())
+
+    def on_checkout(_dbapi: Any, record: Any, _proxy: Any) -> None:
+        record.info[_HOLD_START] = time.perf_counter()
+        refresh()
+
+    def on_checkin(_dbapi: Any, record: Any) -> None:
+        started = record.info.pop(_HOLD_START, None)
+        counter = _query_counter.get()
+        if started is not None and counter is not None:
+            counter["hold"] += time.perf_counter() - started
+        refresh()
+
+    def on_connect_or_close(_dbapi: Any, _record: Any) -> None:
+        refresh()
+
+    event.listen(engine, "checkout", on_checkout)
+    event.listen(engine, "checkin", on_checkin)
+    event.listen(engine, "connect", on_connect_or_close)
+    event.listen(engine, "close", on_connect_or_close)

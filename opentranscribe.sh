@@ -831,6 +831,7 @@ diar_native_marker_present() {
     # what made "default arm64 to lite" impossible to honour, since there was
     # nowhere for the default to point.
 compose_overlay_lite() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local deployment_mode="$1"
     if [ "$deployment_mode" = "lite" ]; then
         if [ -f docker-compose.lite.yml ]; then
@@ -858,6 +859,7 @@ compose_overlay_lite() {
     # exactly the invariant #660 states: the sidecar can never claim a device the rest
     # of the stack decided not to use.
 compose_overlay_gpu() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local deployment_mode="$1"
     local docker_runtime
     docker_runtime=$(detect_nvidia_runtime)
@@ -884,6 +886,7 @@ compose_overlay_gpu() {
     # Optional database role split: auto-load when POSTGRES_APP_USER is set in .env or the
     # shell, so workers run without the owner password (docs: Audit record integrity).
 compose_overlay_db_roles() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local db_app_user="${POSTGRES_APP_USER:-}"
     [ -n "$db_app_user" ] || db_app_user=$(read_env_value POSTGRES_APP_USER)
     if [ -n "$db_app_user" ] && [ -f docker-compose.db-roles.yml ]; then
@@ -895,6 +898,7 @@ compose_overlay_db_roles() {
 
     # Add NGINX overlay if NGINX_SERVER_NAME is configured
 compose_overlay_nginx() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local nginx_server_name=""
     nginx_server_name=$(read_env_value NGINX_SERVER_NAME)
 
@@ -919,6 +923,7 @@ compose_overlay_nginx() {
     # next `update`. Same trap .env.example already documents for MEDIA_NAS_PATH (#597).
     # BACKUP_HOST_PATH stays what it has always been: WHERE the mount points, not WHETHER.
 compose_overlay_backup() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local backup_overlay_enabled=""
     backup_overlay_enabled=$(read_env_value BACKUP_OVERLAY_ENABLED)
     if [ "$backup_overlay_enabled" = "true" ] && [ -f docker-compose.backup.yml ]; then
@@ -956,6 +961,7 @@ compose_overlay_backup() {
     # the same limitation every other read_env_value call in this file already lives
     # with; not new here.
 compose_overlay_diar_native() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local gpu_overlay_selected="$1"
     local diar_models_dir=""
     diar_models_dir=$(resolve_diar_native_models_dir)
@@ -1053,6 +1059,7 @@ compose_overlay_diar_native() {
     # COMPOSE_PROFILES=gpu-split so the profile-gated services in docker-compose.yml
     # actually come up alongside this overlay's GPU reservations for them.
 compose_overlay_gpu_split() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     if gpu_split_active; then
         printf ' -f %s' docker-compose.gpu-split.yml
         echo -e "${BLUE}🔀 GPU split overlay enabled (ENGINE_GPU_SPLIT=true) — transcription and diarization run on separate GPUs${NC}" >&2
@@ -1062,6 +1069,7 @@ compose_overlay_gpu_split() {
 }
 
 compose_overlay_demo() {
+    set -e  # runs in $(...): errexit is not inherited (bash 3.2 has no inherit_errexit)
     local compose_files="$1"
     # #628, last so its refusals win over every overlay above
     [ "$(read_env_value DEMO_MODE)" = "true" ] || return 0

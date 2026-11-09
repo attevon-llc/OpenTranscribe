@@ -220,3 +220,19 @@ def test_real_repo_matches_committed_snapshot_without_growth() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.unit
+def test_allowlisted_file_is_reported_separately_from_debt(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"backend/app/a.py": 1100, "backend/app/b.py": 1200})
+    plain = guard.build_stats(guard.collect(root))["Python (non-test)"]
+    split = guard.build_stats(guard.collect(root, allowlist=frozenset({"backend/app/b.py"})))[
+        "Python (non-test)"
+    ]
+    assert plain["debt"]["files_over_hard"] == 2 and "allowlisted" not in plain
+    assert split["debt"]["files_over_hard"] == 1
+    assert split["allowlisted"]["files"] == 1
+    assert (
+        split["allowlisted"]["lines_above_hard"]
+        == plain["debt"]["lines_above_hard"] - split["debt"]["lines_above_hard"]
+    )

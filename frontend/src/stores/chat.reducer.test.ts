@@ -23,58 +23,26 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import type { ChatStreamEvent } from '$lib/types/chat';
 
-/** Frames the mocked stream will emit, set per test. */
-let scriptedFrames: ChatStreamEvent[] = [];
-/** Set to make the stream throw instead of completing. */
-let streamError: Error | null = null;
-/** The signal the store handed to the stream, for abort assertions. */
-let lastSignal: AbortSignal | null = null;
-
-const streamChatMessage = vi.fn(
-  async (
-    _uuid: string,
-    _payload: unknown,
-    onEvent: (e: ChatStreamEvent) => void,
-    signal: AbortSignal
-  ) => {
-    lastSignal = signal;
-    for (const frame of scriptedFrames) {
-      if (signal.aborted) break;
-      onEvent(frame);
-    }
-    if (streamError) throw streamError;
-  }
+vi.mock('$lib/api/chatStream', async () =>
+  (await import('../test-mocks/chatStreamHarness')).chatStreamMock()
 );
-
-vi.mock('$lib/api/chatStream', () => ({
-  streamChatMessage: (...args: Parameters<typeof streamChatMessage>) => streamChatMessage(...args),
-  streamEditMessage: vi.fn(),
-  streamRegenerate: vi.fn(),
-}));
-
-vi.mock('$lib/api/chatApi', () => ({
-  createConversation: vi.fn(),
-  updateConversation: vi.fn(),
-  cancelMessage: vi.fn().mockResolvedValue(undefined),
-  exportConversation: vi.fn(),
-  listConversations: vi.fn(),
-  getConversation: vi.fn(),
-}));
+vi.mock('$lib/api/chatApi', async () =>
+  (await import('../test-mocks/chatStreamHarness')).chatApiMock()
+);
 
 import * as chatApi from '$lib/api/chatApi';
 import { chatStore } from './chat';
+import {
+  START,
+  ASSISTANT_UUID,
+  USER_UUID,
+  script,
+  streamChatMessage,
+  createChatHarness,
+} from '../test-mocks/chatStreamHarness';
 
-const ASSISTANT_UUID = 'server-assistant-1';
-const USER_UUID = 'server-user-1';
-
-const START: ChatStreamEvent = {
-  type: 'start',
-  conversation_uuid: 'conv-1',
-  user_message_uuid: USER_UUID,
-  assistant_message_uuid: ASSISTANT_UUID,
-};
+const { stream, prepare } = createChatHarness(chatStore, chatApi);
 
 function state() {
   return get(chatStore);
@@ -86,30 +54,7 @@ function assistant() {
   return message;
 }
 
-/** Run one turn through the reducer with the given frame script. */
-async function stream(frames: ChatStreamEvent[], error: Error | null = null) {
-  scriptedFrames = frames;
-  streamError = error;
-  await chatStore.sendMessage('What did they decide?');
-}
-
-beforeEach(() => {
-  chatStore.reset();
-  scriptedFrames = [];
-  streamError = null;
-  lastSignal = null;
-  vi.clearAllMocks();
-  // The store creates the conversation on the first send (the real production
-  // path for a new chat). `goto` is the `$app/navigation` test stub.
-  vi.mocked(chatApi.createConversation).mockResolvedValue({
-    uuid: 'conv-1',
-    title: '',
-    is_archived: false,
-    message_count: 0,
-    scope: { file_uuids: null, collection_uuids: null, tag_names: null },
-  } as never);
-  vi.mocked(chatApi.cancelMessage).mockResolvedValue(undefined as never);
-});
+beforeEach(prepare);
 
 describe('chat reducer — start frame reconciliation', () => {
   it('swaps the optimistic local ids for the server uuids', async () => {
@@ -475,13 +420,13 @@ describe('chat store — send guards and stopGeneration', () => {
   });
 
   it('stopGeneration aborts the stream signal', async () => {
-    scriptedFrames = [START, { type: 'delta', text: 'partial' }];
-    streamError = null;
+    script.frames = [START, { type: 'delta', text: 'partial' }];
+    script.error = null;
 
     // Abort from inside the stream, at the point Stop would be pressed.
-    const scripted = scriptedFrames;
+    const scripted = script.frames;
     streamChatMessage.mockImplementationOnce(async (_u, _p, onEvent, signal) => {
-      lastSignal = signal;
+      script.signal = signal;
       onEvent(scripted[0]);
       onEvent(scripted[1]);
       chatStore.stopGeneration();
@@ -491,7 +436,7 @@ describe('chat store — send guards and stopGeneration', () => {
 
     await chatStore.sendMessage('stop me');
 
-    expect(lastSignal?.aborted).toBe(true);
+    expect(script.signal?.aborted).toBe(true);
     expect(state().streamStatus).toBe('aborted');
     // Cancelling must keep what already streamed — the server persists the same
     // partial content, so discarding it here would disagree with a reload.

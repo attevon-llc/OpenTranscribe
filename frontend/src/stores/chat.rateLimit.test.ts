@@ -2,69 +2,21 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
-import type { ChatStreamEvent } from '$lib/types/chat';
 
-let scriptedFrames: ChatStreamEvent[] = [];
-
-const streamChatMessage = vi.fn(
-  async (
-    _uuid: string,
-    _payload: unknown,
-    onEvent: (e: ChatStreamEvent) => void,
-    _signal: AbortSignal
-  ) => {
-    for (const frame of scriptedFrames) {
-      onEvent(frame);
-    }
-  }
+vi.mock('$lib/api/chatStream', async () =>
+  (await import('../test-mocks/chatStreamHarness')).chatStreamMock()
 );
-
-vi.mock('$lib/api/chatStream', () => ({
-  streamChatMessage: (...args: Parameters<typeof streamChatMessage>) => streamChatMessage(...args),
-  streamEditMessage: vi.fn(),
-  streamRegenerate: vi.fn(),
-}));
-
-vi.mock('$lib/api/chatApi', () => ({
-  createConversation: vi.fn(),
-  updateConversation: vi.fn(),
-  cancelMessage: vi.fn().mockResolvedValue(undefined),
-  exportConversation: vi.fn(),
-  listConversations: vi.fn(),
-  getConversation: vi.fn(),
-}));
+vi.mock('$lib/api/chatApi', async () =>
+  (await import('../test-mocks/chatStreamHarness')).chatApiMock()
+);
 
 import * as chatApi from '$lib/api/chatApi';
 import { chatStore } from './chat';
+import { START, createChatHarness } from '../test-mocks/chatStreamHarness';
 
-const ASSISTANT_UUID = 'server-assistant-1';
-const USER_UUID = 'server-user-1';
+const { stream, prepare } = createChatHarness(chatStore, chatApi);
 
-const START: ChatStreamEvent = {
-  type: 'start',
-  conversation_uuid: 'conv-1',
-  user_message_uuid: USER_UUID,
-  assistant_message_uuid: ASSISTANT_UUID,
-};
-
-async function stream(frames: ChatStreamEvent[]) {
-  scriptedFrames = frames;
-  await chatStore.sendMessage('What did they decide?');
-}
-
-beforeEach(() => {
-  chatStore.reset();
-  scriptedFrames = [];
-  vi.clearAllMocks();
-  vi.mocked(chatApi.createConversation).mockResolvedValue({
-    uuid: 'conv-1',
-    title: '',
-    is_archived: false,
-    message_count: 0,
-    scope: { file_uuids: null, collection_uuids: null, tag_names: null },
-  } as never);
-  vi.mocked(chatApi.cancelMessage).mockResolvedValue(undefined as never);
-});
+beforeEach(prepare);
 
 describe('chat store — rate limit deadline', () => {
   it("records a deadline from the error frame's retryAfter and keeps the conversation", async () => {

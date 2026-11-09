@@ -7,6 +7,7 @@ M2 tool bugs T2, T3, T9: a snapshot whose sequences sat behind ``max(id)`` made 
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import Column
 from sqlalchemy import Integer
 from sqlalchemy import MetaData
@@ -19,6 +20,11 @@ from app.scripts.scale_dataset.pg_governance import seed_activity_only
 from app.scripts.scale_dataset.pg_governance import seed_all
 from app.scripts.scale_dataset.pg_synthetic import SEEDED_TABLES
 from app.scripts.scale_dataset.pg_synthetic import realign_sequences
+
+# Seeds write fixed natural keys (perf-N@loadtest.invalid) into uncommitted rows, so two of
+# these open on different workers block on each other's unique index while each still holds the
+# shared DDL lock, which stalls every ddl_exclusive test queued behind them. One group, one worker.
+pytestmark = pytest.mark.xdist_group("scale_dataset_seed")
 
 SHAPE = pg.Shape(
     users=24,

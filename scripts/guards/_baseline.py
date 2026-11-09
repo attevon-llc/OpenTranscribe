@@ -20,6 +20,7 @@ refuses to overwrite a non-empty baseline unless ``--force`` is given.
 from __future__ import annotations
 
 import importlib
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,11 +77,77 @@ def load(path: Path) -> dict[str, Entry]:
     return entries
 
 
-def compare(current: dict[str, int], baseline: dict[str, Entry], *, unit: str) -> list[str]:
-    """Error lines for ``current`` (key -> value of every violation) against ``baseline``."""
+#: Class tags an allowlist reason must start with. An allowlist holds only what is legitimate
+#: forever; debt lives in the baseline and only shrinks.
+ALLOWLIST_CLASSES = (
+    'applied-history',
+    'stub-gap',
+    'extension-seam',
+    'test-observation',
+    'bootstrap-before-settings',
+    'single-file-installer',
+    'intentional-parallel',
+)
+_URL = re.compile(r'https?://\S+')
+
+
+def load_allowlist(path: Path, classes: tuple[str, ...] = ALLOWLIST_CLASSES) -> dict[str, Entry]:
+    """Parse an allowlist (same TSV as a baseline); a missing file is empty.
+
+    Every reason must be a real written reason (``audit_tests.allowlist.is_real_reason``) that
+    starts with one of ``classes``; ``stub-gap`` must also carry the upstream issue URL.
+    Raises ``ValueError`` otherwise.
+    """
+    entries = load(path)
+    for key, entry in entries.items():
+        if not _is_real_reason(entry.reason):
+            msg = f'{path}: allowlist entry {key!r} has no real reason: {entry.reason!r}'
+            raise ValueError(msg)
+        tag = next(
+            (
+                c
+                for c in classes
+                if entry.reason == c or entry.reason.startswith((c + ' ', c + ':'))
+            ),
+            None,
+        )
+        if tag is None:
+            msg = f'{path}: allowlist entry {key!r} reason must start with one of {classes}'
+            raise ValueError(msg)
+        if tag == 'stub-gap' and _URL.search(entry.reason) is None:
+            msg = f'{path}: stub-gap entry {key!r} must cite an upstream issue URL'
+            raise ValueError(msg)
+    return entries
+
+
+def compare(
+    current: dict[str, int],
+    baseline: dict[str, Entry],
+    *,
+    unit: str,
+    allowlist: dict[str, Entry] | None = None,
+) -> list[str]:
+    """Error lines for ``current`` (key -> value of every violation) against ``baseline``.
+
+    A key in ``allowlist`` is accepted as legitimate up to its recorded value (more is an error)
+    and must not also be in the baseline. An allowlist entry with no violation is stale and
+    fails: nothing else would ever remove it, because ``--tighten`` never edits allowlists.
+    """
+    allowed = allowlist or {}
     errors: list[str] = []
     for key in sorted(current):
         value = current[key]
+        if key in allowed:
+            if key in baseline:
+                errors.append(f'{key}: in both the baseline and the allowlist (keep one)')
+            elif value > allowed[key].value:
+                errors.append(f'{key}: {value} {unit} grew past the allowlist {allowed[key].value}')
+            elif value < allowed[key].value:
+                errors.append(
+                    f'{key}: {value} {unit} is below the allowlist {allowed[key].value}; '
+                    'edit the allowlist by hand (--tighten never touches it)'
+                )
+            continue
         if key not in baseline:
             errors.append(f'{key}: {value} {unit} (new violation, not in the baseline)')
         elif value > baseline[key].value:
@@ -93,6 +160,11 @@ def compare(current: dict[str, int], baseline: dict[str, Entry], *, unit: str) -
     errors.extend(
         f'{key}: stale baseline entry, no violation left (delete the line or run --tighten)'
         for key in sorted(baseline)
+        if key not in current
+    )
+    errors.extend(
+        f'{key}: stale allowlist entry, no violation left (delete the line by hand)'
+        for key in sorted(allowed)
         if key not in current
     )
     return errors

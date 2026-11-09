@@ -113,7 +113,8 @@ jobs:
       # rewrite files here too.
       #
       # backend/tests/unit/test_precommit_stage_ci_parity.py fails the build if any stage a
-      # hook is assigned to has no CI invocation.
+      # hook is assigned to has no CI invocation. That includes guard-hidden-mypy (the errors a
+      # `type: ignore` hides, whole-tree mypy over a stripped copy), which only runs here.
       - name: Run pre-commit (pre-push stage)
         if: matrix.stage == 'pre-push'
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure

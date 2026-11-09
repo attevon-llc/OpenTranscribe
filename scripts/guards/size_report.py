@@ -68,6 +68,8 @@ class Group:
     soft: int
     hard: int
     sizes: list[int] = field(default_factory=list)
+    #: sizes of files accepted as legitimate (``allowlists/file_size.txt``); not debt
+    allowlisted: list[int] = field(default_factory=list)
 
 
 def group_of(key: str, cap: int, soft: int) -> str:
@@ -78,8 +80,13 @@ def group_of(key: str, cap: int, soft: int) -> str:
     return _CODE_BY_SUFFIX[key[key.rfind('.') :]]
 
 
-def collect(repo_root: Path, files: list[str] | None = None) -> dict[str, Group]:
-    """Measure every in-scope file and bucket the sizes by group."""
+def collect(
+    repo_root: Path, files: list[str] | None = None, allowlist: frozenset[str] = frozenset()
+) -> dict[str, Group]:
+    """Measure every in-scope file and bucket the sizes by group.
+
+    A file whose baseline key is in ``allowlist`` is recorded as allowlisted, not as debt.
+    """
     groups: dict[str, Group] = {}
     for rel in files if files is not None else cfs.tracked_files(repo_root):
         if not cfs.metrics_for(rel, 0, 0):
@@ -89,7 +96,8 @@ def collect(repo_root: Path, files: list[str] | None = None) -> dict[str, Group]
             continue
         for key, value, cap, soft in cfs.metrics_for(rel, got[0], got[1]):
             name = group_of(key, cap, soft)
-            groups.setdefault(name, Group(soft=soft, hard=cap)).sizes.append(value)
+            group = groups.setdefault(name, Group(soft=soft, hard=cap))
+            (group.allowlisted if key in allowlist and value > cap else group.sizes).append(value)
     return groups
 
 
@@ -103,7 +111,7 @@ def percentile(sorted_sizes: list[int], pct: int) -> int:
 
 def stats_for(group: Group) -> dict[str, Any]:
     sizes = sorted(group.sizes)
-    return {
+    stats: dict[str, Any] = {
         'files': len(sizes),
         'median': percentile(sizes, 50),
         'p90': percentile(sizes, 90),
@@ -117,6 +125,12 @@ def stats_for(group: Group) -> dict[str, Any]:
             'lines_above_soft': sum(s - group.soft for s in sizes if s > group.soft),
         },
     }
+    if group.allowlisted:
+        stats['allowlisted'] = {
+            'files': len(group.allowlisted),
+            'lines_above_hard': sum(s - group.hard for s in group.allowlisted),
+        }
+    return stats
 
 
 def build_stats(groups: dict[str, Group]) -> dict[str, dict[str, Any]]:
@@ -158,6 +172,13 @@ def format_table(groups: dict[str, Group], stats: dict[str, dict[str, Any]]) -> 
         out.append(
             f'  {name}: {d["files_over_hard"]} file(s) over hard, '
             f'{d["lines_above_hard"]} lines above hard, {d["lines_above_soft"]} lines above soft'
+        )
+    allowed = [(n, st['allowlisted']) for n, st in stats.items() if 'allowlisted' in st]
+    if allowed:
+        out.append('allowlisted (legitimate, not debt; excluded from the figures above)')
+        out.extend(
+            f'  {n}: {a["files"]} file(s), {a["lines_above_hard"]} lines above hard'
+            for n, a in allowed
         )
     out.append('')
     out.append('suggested limits (advice only; soft near p95, hard about 2x soft)')
@@ -232,7 +253,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        groups = collect(args.root)
+        allowlist = frozenset(
+            _baseline.load_allowlist(
+                args.root / 'scripts' / 'guards' / 'allowlists' / 'file_size.txt'
+            )
+        )
+        groups = collect(args.root, allowlist=allowlist)
         stats = build_stats(groups)
         old = load_snapshot(args.snapshot)
     except (_baseline.ScanError, ValueError) as exc:

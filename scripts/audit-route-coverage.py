@@ -345,8 +345,10 @@ def _getattr_verbs(node: ast.expr, env: _Env) -> set[str | None] | None:
         return None
     if node.func.id != 'getattr' or len(node.args) < 2:
         return None
-    resolved = {v.upper() for v in _strings(node.args[1], env) if v.upper() in _METHODS}
-    return resolved or {None}  # type: ignore[return-value]
+    resolved: set[str | None] = {
+        v.upper() for v in _strings(node.args[1], env) if v.upper() in _METHODS
+    }
+    return resolved or {None}
 
 
 def _argument(call: ast.Call, index: int, keyword: str) -> ast.expr | None:
@@ -368,9 +370,11 @@ def _call_target(call: ast.Call, env: _Env) -> tuple[set[str | None], ast.expr |
             return {_WEBSOCKET}, _argument(call, 0, 'url')
         if func.attr == 'request':
             method_node = _argument(call, 0, 'method')
-            verbs = {v.upper() for v in _strings(method_node, env) if v.upper() in _METHODS}
+            requested: set[str | None] = {
+                v.upper() for v in _strings(method_node, env) if v.upper() in _METHODS
+            }
             url = call.args[1] if len(call.args) > 1 else _argument(call, 99, 'url')
-            return (verbs or {None}), url  # type: ignore[return-value]
+            return (requested or {None}), url
         return None
     verbs = _getattr_verbs(func, env)
     if verbs is not None:  # getattr(client, method)("/api/x")

@@ -9,8 +9,10 @@ from ruff run with ``--isolated --ignore-noqa`` so neither a config ignore nor a
   file, in source order), value = McCabe score. A function over 15 must be in
   ``baselines/complexity.txt``; it may not grow. The repo's own ``max-complexity``
   setting is deliberately left alone: this cap is stricter and independent of it.
-* ``BLE001`` (broad ``except``): key ``path``, value = count in the file, in
-  ``baselines/broad_except.txt``; it may not grow.
+* ``BLE001`` (broad ``except``): key ``path::qualname#n`` (the enclosing function or class, or
+  ``<module>``; ``#n`` counts the handlers inside it in source order), value 1, in
+  ``baselines/broad_except.txt``. Keyed per handler, so fixing one handler and adding another in
+  the same file can no longer cancel out.
 
 Baselines can only shrink (see ``_baseline.py``); ``--tighten`` lowers them and
 ``--write-baseline --reason TEXT`` creates them. Any ruff failure, a version other than
@@ -90,6 +92,15 @@ def run_ruff(root: Path, *rule_args: str) -> list[dict[str, object]]:
     return diagnostics
 
 
+def _row(diagnostic: dict[str, object]) -> int:
+    """Start line of a ruff JSON diagnostic; fails closed on an unexpected shape."""
+    location = diagnostic.get('location')
+    if not isinstance(location, dict) or not isinstance(location.get('row'), int):
+        msg = f'ruff diagnostic without a location row: {diagnostic!r}'
+        raise _baseline.ScanError(msg)
+    return int(location['row'])
+
+
 def _rel(root: Path, filename: object) -> str:
     return Path(str(filename)).resolve().relative_to(root.resolve()).as_posix()
 
@@ -121,7 +132,7 @@ def complexity_violations(root: Path) -> dict[str, int]:
         '--config',
         f'lint.mccabe.max-complexity={MAX_COMPLEXITY}',
     )
-    rows.sort(key=lambda d: (str(d['filename']), d['location']['row']))  # type: ignore[index]
+    rows.sort(key=lambda d: (str(d['filename']), _row(d)))
     names: dict[str, dict[tuple[int, str], str]] = {}
     found: dict[str, int] = {}
     for d in rows:
@@ -132,7 +143,7 @@ def complexity_violations(root: Path) -> dict[str, int]:
         filename = str(d['filename'])
         if filename not in names:
             names[filename] = _qualnames(Path(filename))
-        row = d['location']['row']  # type: ignore[index]
+        row = _row(d)
         qual = names[filename].get((row, match['name']), match['name'])
         base = f'{_rel(root, filename)}::{qual}'
         key, n = base, 1
@@ -143,12 +154,43 @@ def complexity_violations(root: Path) -> dict[str, int]:
     return found
 
 
-def broad_except_counts(root: Path) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for d in run_ruff(root, '--select', 'BLE001'):
-        rel = _rel(root, d['filename'])
-        counts[rel] = counts.get(rel, 0) + 1
-    return counts
+def _scopes(path: Path) -> list[tuple[int, int, str]]:
+    """``(first line, last line, dotted name)`` of every function and class in ``path``."""
+    tree = ast.parse(path.read_text(encoding='utf-8'))
+    found: list[tuple[int, int, str]] = []
+
+    def walk(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+                name = f'{prefix}{child.name}'
+                found.append((child.lineno, child.end_lineno or child.lineno, name))
+                inner = '.<locals>.' if not isinstance(child, ast.ClassDef) else '.'
+                walk(child, f'{name}{inner}')
+            else:
+                walk(child, prefix)
+
+    walk(tree, '')
+    return found
+
+
+def broad_except_keys(root: Path) -> dict[str, int]:
+    """One entry per BLE001 handler: ``path::qualname#n`` -> 1."""
+    rows = run_ruff(root, '--select', 'BLE001')
+    rows.sort(key=lambda d: (str(d['filename']), _row(d)))
+    scopes: dict[str, list[tuple[int, int, str]]] = {}
+    seen: dict[str, int] = {}
+    found: dict[str, int] = {}
+    for d in rows:
+        filename = str(d['filename'])
+        if filename not in scopes:
+            scopes[filename] = _scopes(Path(filename))
+        row = _row(d)
+        containing = [sc for sc in scopes[filename] if sc[0] <= row <= sc[1]]
+        qual = max(containing, key=lambda sc: sc[0])[2] if containing else '<module>'
+        base = f'{_rel(root, filename)}::{qual}'
+        seen[base] = seen.get(base, 0) + 1
+        found[f'{base}#{seen[base]}'] = 1
+    return found
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -170,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         check_ruff_version(args.root)
         complexity = complexity_violations(args.root)
-        broad = broad_except_counts(args.root)
+        broad = broad_except_keys(args.root)
     except (_baseline.ScanError, SyntaxError, OSError) as exc:
         sys.stderr.write(f'ERROR: {exc}\n')
         return 2

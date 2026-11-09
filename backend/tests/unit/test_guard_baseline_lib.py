@@ -394,3 +394,60 @@ def test_reason_check_fails_closed_when_audit_tests_cannot_be_loaded(tmp_path, m
     with pytest.raises(ImportError, match="cannot load"):
         bl.write_initial(tmp_path / "g.tsv", FINDINGS, REASON)
     assert not (tmp_path / "g.tsv").exists()
+
+
+def _allowlist(tmp_path, reason, key="a.py", value=1):
+    path = tmp_path / "allow.tsv"
+    path.write_text(f"{key}\t{value}\t{reason}\n")
+    return path
+
+
+def test_load_allowlist_accepts_declared_class(tmp_path):
+    path = _allowlist(tmp_path, "applied-history: released revision, immutable")
+    assert set(bl.load_allowlist(path)) == {"a.py"}
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "legacy code nobody has touched",  # real sentence, no class tag
+        "applied-historyish but not the tag",  # prefix of a tag is not the tag
+        "stub-gap no url is cited here",  # stub-gap needs an upstream URL
+        "todo",
+    ],
+)
+def test_load_allowlist_rejects_untagged_or_placeholder_reason(tmp_path, reason):
+    with pytest.raises(ValueError):
+        bl.load_allowlist(_allowlist(tmp_path, reason))
+
+
+def test_load_allowlist_stub_gap_with_url_passes(tmp_path):
+    path = _allowlist(tmp_path, "stub-gap https://github.com/python/typeshed/issues/1 missing stub")
+    assert "a.py" in bl.load_allowlist(path)
+
+
+def test_load_allowlist_missing_file_is_empty(tmp_path):
+    assert bl.load_allowlist(tmp_path / "none.tsv") == {}
+
+
+def test_compare_passes_allowlisted_key_and_fails_stale_allowlist_entry():
+    allow = {"a.py": bl.Entry(2, "applied-history x")}
+    assert bl.compare({"a.py": 2}, {}, unit="u", allowlist=allow) == []
+    stale = bl.compare({}, {}, unit="u", allowlist=allow)
+    assert len(stale) == 1 and "stale allowlist entry" in stale[0]
+
+
+def test_compare_allowlisted_key_cannot_grow_and_is_not_baselined_too():
+    allow = {"a.py": bl.Entry(1, "applied-history x")}
+    assert "grew past the allowlist" in bl.compare({"a.py": 2}, {}, unit="u", allowlist=allow)[0]
+    both = bl.compare({"a.py": 1}, {"a.py": bl.Entry(1, "r")}, unit="u", allowlist=allow)
+    assert "both the baseline and the allowlist" in both[0]
+
+
+def test_tighten_never_edits_allowlist_file(tmp_path):
+    allow = _allowlist(tmp_path, "applied-history x")
+    before = allow.read_text()
+    base = tmp_path / "b.tsv"
+    base.write_text("z.py\t5\treason\n")
+    bl.tighten(base, {"z.py": 3}, bl.load(base))
+    assert allow.read_text() == before

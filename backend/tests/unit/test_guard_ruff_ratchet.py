@@ -102,13 +102,32 @@ def test_noqa_does_not_hide_an_extra_broad_except(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = _tree(tmp_path, {"scripts/tool.py": BROAD})
-    _write(root, be="scripts/tool.py\t1\tratchet: may only go down\n")
+    _write(root, be="scripts/tool.py::f#1\t1\tratchet: may only go down\n")
     assert _run(root)[0] == 0
     (root / "scripts/tool.py").write_text(
         BROAD + "\n\n" + BROAD.replace("def f", "def g"), encoding="utf-8"
     )
     assert _run(root)[0] == 1
-    assert "scripts/tool.py: 2 handler(s) grew past the baseline 1" in capsys.readouterr().err
+    assert "scripts/tool.py::g#1: 1 handler(s) (new violation" in capsys.readouterr().err
+
+
+def test_fixing_one_handler_cannot_cancel_a_new_one_in_the_same_file(tmp_path: Path) -> None:
+    """The old per-file count passed this swap (1 handler before, 1 after)."""
+    root = _tree(tmp_path, {"scripts/tool.py": BROAD.replace("def f", "def fixed")})
+    _write(root, be="scripts/tool.py::fixed#1\t1\tratchet: may only go down\n")
+    assert _run(root)[0] == 0
+    swapped = BROAD.replace("def f", "def added")
+    (root / "scripts/tool.py").write_text(swapped, encoding="utf-8")
+    assert _run(root)[0] == 1
+
+
+def test_two_handlers_in_one_function_get_numbered_keys(tmp_path: Path) -> None:
+    two = (
+        BROAD
+        + "    try:\n        return 3\n    except Exception:  # noqa: BLE001\n        return 4\n"
+    )
+    root = _tree(tmp_path, {"scripts/tool.py": two})
+    assert set(guard.broad_except_keys(root)) == {"scripts/tool.py::f#1", "scripts/tool.py::f#2"}
 
 
 def test_broad_except_in_unbaselined_file_fails(tmp_path: Path) -> None:
@@ -126,7 +145,7 @@ def test_tests_directory_is_not_scanned(tmp_path: Path) -> None:
 def test_stale_and_loosened_entries_fail_and_tighten_repairs(tmp_path: Path) -> None:
     root = _tree(tmp_path, {"scripts/tool.py": BROAD})
     stale = "backend/app/gone.py::f\t20\tcomplexity: decomposition planned\n"
-    _write(root, cx=stale, be="scripts/tool.py\t5\tratchet: may only go down\n")
+    _write(root, cx=stale, be="scripts/tool.py::f#1\t5\tratchet: may only go down\n")
     assert _run(root)[0] == 1
     assert _run(root, "--tighten")[0] == 0
     assert (root / "cx.txt").read_text(encoding="utf-8") == ""

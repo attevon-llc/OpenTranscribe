@@ -664,6 +664,26 @@ Look at the slowest "Backend test shard N/8" (it sets the wall clock), the time 
 To add a shard, change `--splits`, the `group` list and the manifest names in the workflow
 together; `test_ci_sharding.py` fails if they disagree.
 
+## Python ratchet guards
+
+The guards in `scripts/guards/` count one class of problem and compare it with a committed file.
+Debt lives in `scripts/guards/baselines/<guard>.txt` and only shrinks (`--tighten` lowers it;
+never raise a value). What is legitimate forever lives in `scripts/guards/allowlists/<guard>.txt`
+(same `key<TAB>value<TAB>reason` format): the reason must be a real sentence that starts with a
+class tag (`applied-history`, `stub-gap <upstream issue URL>`, `extension-seam`,
+`test-observation`, `bootstrap-before-settings`, `single-file-installer`, `intentional-parallel`),
+a stale entry fails, and `--tighten` never edits an allowlist.
+
+- **Broad except** is keyed `path::qualname#n` (one entry per handler), so fixing one swallow and
+  adding another in the same file cannot cancel out.
+- **`type: ignore`**: `check_suppressions.py` counts reasoned ignores per `path::code`
+  (`baselines/type_ignore.txt`), and `check_hidden_mypy.py` (push stage, whole-tree, about three
+  minutes) strips every ignore from a temporary copy of `backend/`, runs the pinned mypy and
+  ratchets the errors they hide (`baselines/hidden_mypy.txt`). One ignore can hide many errors.
+- **`scripts/` tooling** (guards, lib, audit_tests) is type-checked by `check_scripts_mypy.py`
+  against `baselines/scripts_mypy.txt`.
+- The mypy plugin `pydantic.mypy` is enabled in the root config.
+
 ## Debugging Tips
 
 1. **Use `--headed` flag** to watch browser tests

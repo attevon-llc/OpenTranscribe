@@ -280,3 +280,65 @@ def test_each_kind_on_disk_fires_alone_and_stays_clean_when_written_properly(
     assert guard.scan(tmp_path, files) == {f"{kind}::{rel}": 1}
     (tmp_path / rel).write_text(good, encoding="utf-8")
     assert guard.scan(tmp_path, files) == {}
+
+
+@pytest.mark.unit
+def test_type_ignore_codes_counts_each_code_and_ignores_strings() -> None:
+    src = (
+        "a = f()  # type: ignore[arg-type]\n"
+        "b = g()  # type: ignore[attr-defined, misc]\n"
+        "c = h()  # type: ignore[arg-type]  # why\n"
+        's = "# type: ignore[assignment]"\n'
+        "d = k()  # type: ignore\n"
+    )
+    assert guard.type_ignore_codes(src, "f.py") == {"arg-type": 2, "attr-defined": 1, "misc": 1}
+
+
+def _git_tree(tmp_path: Path, body: str) -> Path:
+    import subprocess
+
+    (tmp_path / "backend" / "app").mkdir(parents=True)
+    (tmp_path / "backend" / "app" / "m.py").write_text(body, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    return tmp_path
+
+
+@pytest.mark.unit
+def test_new_type_ignore_fails_and_baselined_one_passes_but_cannot_grow(tmp_path: Path) -> None:
+    root = _git_tree(tmp_path, "x = f()  # type: ignore[arg-type]\n")
+    base, ti = root / "s.txt", root / "ti.txt"
+    base.write_text("")
+    ti.write_text("")
+    argv = ["--root", str(root), "--baseline", str(base), "--type-ignore-baseline", str(ti)]
+    assert guard.main(argv) == 1
+    ti.write_text("backend/app/m.py::arg-type\t1\treasoned ignore existing at landing\n")
+    assert guard.main(argv) == 0
+    (root / "backend/app/m.py").write_text(
+        "x = f()  # type: ignore[arg-type]\ny = f()  # type: ignore[arg-type]\n", encoding="utf-8"
+    )
+    assert guard.main(argv) == 1
+
+
+@pytest.mark.unit
+def test_type_ignore_allowlist_entry_passes_and_stale_one_fails(tmp_path: Path) -> None:
+    root = _git_tree(tmp_path, "x = f()  # type: ignore[import-untyped]\n")
+    base, ti, allow = root / "s.txt", root / "ti.txt", root / "allow.txt"
+    base.write_text("")
+    ti.write_text("")
+    allow.write_text(
+        "backend/app/m.py::import-untyped\t1\tstub-gap https://github.com/o/r/issues/1 no stubs\n"
+    )
+    argv = [
+        "--root",
+        str(root),
+        "--baseline",
+        str(base),
+        "--type-ignore-baseline",
+        str(ti),
+        "--type-ignore-allowlist",
+        str(allow),
+    ]
+    assert guard.main(argv) == 0
+    (root / "backend/app/m.py").write_text("x = 1\n", encoding="utf-8")
+    assert guard.main(argv) == 1

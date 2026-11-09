@@ -11,8 +11,9 @@ an attribute load as a use of the name either way.
 """
 
 from types import SimpleNamespace
+from typing import Any
 
-_ = SimpleNamespace()
+_: Any = SimpleNamespace()
 
 WHITELIST = (
     # Stage 4's citation builder is the documented caller (document digests have no timestamp,

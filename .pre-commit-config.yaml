@@ -68,7 +68,10 @@ repos:
     hooks:
       - id: mypy
         files: ^backend/
-        additional_dependencies:
+        # Anchored so guard-hidden-mypy below runs in the SAME typed world (a second copy of
+        # this list would drift from backend/requirements*.txt).
+        additional_dependencies: &mypy_env
+          - mypy==2.4.1
           - types-passlib==1.7.7.20260211
           - types-python-dateutil==2.9.0.20261029
           - types-PyYAML==6.0.12.20260906
@@ -387,6 +390,28 @@ repos:
         additional_dependencies: ['vulture==2.16']
         pass_filenames: false
         files: ^((backend/app|scripts)/.*\.py|scripts/guards/.*)$
+      # mypy over the tooling packages under scripts/ (the guards, shared libraries and audit
+      # tooling the `mypy` hook above never saw, since that one is `files: ^backend/`). Ratcheted
+      # because the packages were never type-checked; seconds, so commit stage.
+      - id: guard-scripts-mypy
+        name: mypy over scripts/ tooling packages (baselined)
+        entry: python scripts/guards/check_scripts_mypy.py
+        language: python
+        additional_dependencies: *mypy_env
+        pass_filenames: false
+        files: ^(scripts/(guards|lib|audit_tests|model_download|cleanup_test_data)/.*\.py|pyproject\.toml|backend/requirements-dev\.txt)$
+      # What `type: ignore` hides (plan: code_debt_plan.md G-c). Strips every ignore from a temp
+      # copy of backend/ and runs the pinned mypy over it, so it needs the mypy hook's typed
+      # world: the `*mypy_env` alias is that hook's dependency list. Whole-tree mypy takes about
+      # three minutes, a push-stage cost like the frontend build; CI runs this stage too.
+      - id: guard-hidden-mypy
+        name: errors hidden by type-ignore comments (stripped copy, pinned mypy, baselined)
+        entry: python scripts/guards/check_hidden_mypy.py
+        language: python
+        additional_dependencies: *mypy_env
+        pass_filenames: false
+        files: ^(backend/.*\.py|pyproject\.toml|scripts/guards/.*)$
+        stages: [pre-push]
       # eslint takes about a minute, so this is a push-stage cost like the frontend build;
       # CI runs both stages. `[ -d node_modules ] || npm ci` for the same reason as docs-build.
       - id: guard-eslint-ratchet

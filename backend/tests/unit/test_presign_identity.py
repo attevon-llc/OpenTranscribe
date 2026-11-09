@@ -218,7 +218,7 @@ def _mutated_policy(bucket: str, **overrides) -> str:
 
 class TestBucketPolicyDetection:
     def test_the_documented_policy_is_recognised(self):
-        assert pid.bucket_policy_denies_quarantined_reads(_documented_s3_policy("media"), "media")
+        assert pid.classify_quarantine_policy(_documented_s3_policy("media"), "media") == "enforced"
 
     def test_it_is_recognised_alongside_unrelated_statements(self):
         policy = json.loads(_documented_s3_policy("media"))
@@ -232,7 +232,7 @@ class TestBucketPolicyDetection:
                 "Condition": {"Bool": {"aws:SecureTransport": "false"}},
             },
         )
-        assert pid.bucket_policy_denies_quarantined_reads(json.dumps(policy), "media")
+        assert pid.classify_quarantine_policy(json.dumps(policy), "media") == "enforced"
 
     @pytest.mark.parametrize(
         "policy_json",
@@ -267,7 +267,7 @@ class TestBucketPolicyDetection:
         ],
     )
     def test_near_misses_are_not_counted_as_enforced(self, policy_json):
-        assert pid.bucket_policy_denies_quarantined_reads(policy_json, "media") is False
+        assert (pid.classify_quarantine_policy(policy_json, "media") == "enforced") is False
 
 
 class _PolicyClient:

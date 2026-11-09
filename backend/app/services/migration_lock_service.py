@@ -84,13 +84,6 @@ class MigrationLockService:
         val = client.get(_LOCK_KEY)
         return val is not None and int(val) > 0
 
-    def refresh_ttl(self, ttl: int | None = None) -> bool:
-        """Reset the lock TTL (call periodically during long migrations)."""
-        client = self._redis
-        if not client:
-            return False
-        return bool(client.expire(_LOCK_KEY, ttl or _LOCK_TTL_SECONDS))
-
 
 # Singleton instance
 migration_lock = MigrationLockService()

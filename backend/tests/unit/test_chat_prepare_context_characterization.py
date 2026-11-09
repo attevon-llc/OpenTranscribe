@@ -49,8 +49,8 @@ from app.services.chat.router import TIER_CHUNK
 from app.services.chat.router import TIER_DIGEST
 from app.services.chat.router import Route
 from app.services.chat.settings import ChatSettings
-from app.services.chat.trace import ListTraceRecorder
 from app.services.search.chunk_retrieval import ChunkHit
+from tests.fixtures.list_trace_recorder import ListTraceRecorder
 
 pytestmark = pytest.mark.unit
 

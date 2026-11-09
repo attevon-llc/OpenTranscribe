@@ -79,7 +79,7 @@ def _wait_until(predicate, timeout: float = 2.0) -> None:
 
 
 def _gate() -> ham.SlotGate:
-    gate = ham.current_gate()
+    gate = state_resets.current_host_memory_gate()
     assert gate is not None
     return gate
 
@@ -199,7 +199,7 @@ def test_the_decision_is_exported_as_gauges(host, monkeypatch):
 def test_tasks_beyond_the_cap_wait_for_a_slot(host):
     host(mem_total_mb=64 * 1024, cgroup_v2=str(GIB * 7))  # (7168 - 2560) // 2048 = 2
     ham.configure(configured=8)
-    gate = ham.current_gate()
+    gate = state_resets.current_host_memory_gate()
     assert gate is not None and gate.capacity == 2
     release = threading.Event()
     third_admitted = threading.Event()
@@ -255,7 +255,7 @@ def _hold_until(event: threading.Event) -> None:
 def test_the_gate_is_a_no_op_until_configured():
     with ham.task_slot("gpu") as granted:
         assert granted == 0
-    assert ham.current_gate() is None
+    assert state_resets.current_host_memory_gate() is None
 
 
 def test_the_gate_can_be_turned_off(host, monkeypatch):
@@ -264,7 +264,7 @@ def test_the_gate_can_be_turned_off(host, monkeypatch):
 
     ham.configure(configured=4)
 
-    assert ham.current_gate() is None
+    assert state_resets.current_host_memory_gate() is None
     with ham.task_slot("gpu") as granted:
         assert granted == 0
 

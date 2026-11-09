@@ -18,6 +18,7 @@ from app.services.ingest_artifacts.digest import build_digest
 from app.services.ingest_artifacts.digest import candidate_sentences
 from app.services.ingest_artifacts.digest import digest_text
 from app.services.ingest_artifacts.provenance import validate_provenance
+from tests.helpers import estimate_wordpieces
 
 _SCRIPT = [
     ("Dana", "Let us start with the quarterly budget review for the new product line."),
@@ -88,7 +89,10 @@ def test_every_section_fits_the_measured_embedding_window():
             f"section {section['index']} is {section['word_count']} words; the measured "
             f"128-wordpiece window allows {sizing.DIGEST_SECTION_MAX_WORDS}"
         )
-        assert sizing.fits_embedding_window(section["text"])
+        assert (
+            estimate_wordpieces(section["text"]) + sizing.HEADER_WORDPIECE_RESERVE
+            <= sizing.EMBEDDING_CONTENT_WORDPIECES
+        )
 
 
 def test_a_long_transcript_gets_more_sections_than_a_short_one():

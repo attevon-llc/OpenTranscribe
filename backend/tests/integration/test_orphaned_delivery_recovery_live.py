@@ -560,8 +560,9 @@ def test_a_dead_workers_stage_for_a_file_being_cancelled_is_discarded_not_requeu
     queue, ahead of every live submission -- re-running work the user asked to stop.
     """
     from app.core.broker_orphans import reclaim_orphaned_deliveries
+    from app.core.redis import get_request_redis
     from app.core.task_config import task_recovery_config
-    from app.core.task_liveness import infra_requeues
+    from app.core.task_liveness import INFRA_REQUEUES_KEY
 
     monkeypatch.setattr(task_recovery_config, "BROKER_ORPHAN_STALE", _STALE)
     monkeypatch.setattr(
@@ -595,7 +596,9 @@ def test_a_dead_workers_stage_for_a_file_being_cancelled_is_discarded_not_requeu
     assert summary["discarded"] == 1, summary
     assert broker.hlen(Channel.unacked_key) == 0  # gone from unacked: no 6 h redelivery either
     assert broker.llen(_priority_key(_PRIORITY)) == 0  # and NOT back on the queue
-    assert infra_requeues(str(media_file.uuid)) == 0  # no infrastructure budget spent
+    assert (
+        int(get_request_redis().zscore(INFRA_REQUEUES_KEY, str(media_file.uuid)) or 0) == 0
+    )  # no infrastructure budget spent
     db_session.expire_all()
     # The cancellation is left to its own backstop (reconcile_cancellation), untouched here.
     assert db_session.query(Task).filter(Task.id == run.id).one().status == "in_progress"

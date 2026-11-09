@@ -33,6 +33,7 @@ from app.services.delete_permissions import DELETE_FORBIDDEN_DETAIL
 from app.services.delete_permissions import get_deletable_file
 from app.services.permission_service import PermissionService
 from app.services.platform_bypass import PlatformBypass
+from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 
 REFUSAL = (HTTPException, DomainError)
 NOT_FOUND_BODY = json.dumps({"detail": "File not found"}, separators=(",", ":")).encode()
@@ -140,28 +141,28 @@ def test_check_file_access_refuses_a_viewer_who_needs_editor(db_session, normal_
     )
 
 
-def test_check_collection_access_refuses_no_access_and_low_permission(
+def test_collection_sharing_gate_refuses_no_access_and_low_permission(
     db_session, normal_user, other_user
 ):
     coll = _collection(db_session, normal_user)
     exc = _refusal(
-        lambda: PermissionService.check_collection_access(
-            db_session, coll.id, other_user.id, organization_id=None
+        lambda: get_collection_by_uuid_with_sharing(
+            db_session, coll.uuid, other_user.id, organization_id=None
         )
     )
     assert _pin(exc, 403, "Not authorized to access this collection")
 
     _share(db_session, coll, normal_user, other_user, "viewer")
     exc = _refusal(
-        lambda: PermissionService.check_collection_access(
-            db_session, coll.id, other_user.id, "editor", organization_id=None
+        lambda: get_collection_by_uuid_with_sharing(
+            db_session, coll.uuid, other_user.id, "editor", organization_id=None
         )
     )
     assert _pin(exc, 403, "Requires editor permission on this collection")
     assert (
-        PermissionService.check_collection_access(
-            db_session, coll.id, other_user.id, "viewer", organization_id=None
-        )
+        get_collection_by_uuid_with_sharing(
+            db_session, coll.uuid, other_user.id, "viewer", organization_id=None
+        )[1]
         == "viewer"
     )
 

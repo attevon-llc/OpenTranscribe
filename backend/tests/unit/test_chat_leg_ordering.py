@@ -31,12 +31,12 @@ from app.services.chat.legs import CHUNK_LEG_KINDS
 from app.services.chat.legs import LEG_MAIN
 from app.services.chat.legs import LEG_SUBQUESTION
 from app.services.chat.legs import Leg
-from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceEvent
 from app.services.search.chunk_retrieval import ChunkHit
 from tests import state_resets
+from tests.fixtures.list_trace_recorder import ListTraceRecorder
 
 pytestmark = pytest.mark.unit
 

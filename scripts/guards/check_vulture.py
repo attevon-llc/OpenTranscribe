@@ -10,8 +10,8 @@ Only the kinds ``function``, ``method``, ``class`` and ``import`` are ratcheted.
 attributes and properties are out of scope: at this confidence vulture cannot tell an ORM
 column assignment, a settings constant or a pydantic field from a dead name, so those
 findings are noise rather than debt. A reviewed false positive goes into
-``scripts/guards/vulture_whitelist.py`` under a comment block tagged ``[extension-seam]``, ``[test-observation]`` or
-``[framework-dispatch]`` plus a written reason (enforced by ``whitelist_problems``); that file is passed to
+``scripts/guards/vulture_whitelist.py`` under a comment block tagged ``[extension-seam]``, ``[test-observation]``,
+``[framework-dispatch]`` or ``[operator-entrypoint]`` plus a written reason (enforced by ``whitelist_problems``); that file is passed to
 vulture as an extra path so its names count as used.
 
 Findings that existed when the guard landed live in ``baselines/vulture.txt`` as
@@ -42,7 +42,12 @@ IGNORE_DECORATORS = (
     # Locust (scripts/perf/load/locustfile.py) registers tasks and event hooks by decorator.
     '@task,@tag,@events.*'
 )
-TAGS = ('[extension-seam]', '[test-observation]', '[framework-dispatch]')
+TAGS = (
+    '[extension-seam]',
+    '[test-observation]',
+    '[framework-dispatch]',
+    '[operator-entrypoint]',
+)
 _MIN_REASON_CHARS = 20
 _ENTRY = re.compile(r'^\s*_\.\w+,\s*$')
 KINDS = frozenset({'function', 'method', 'class', 'import'})

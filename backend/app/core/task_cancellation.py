@@ -249,12 +249,6 @@ def cancellation_scope(task_id: str, file_uuid: str = "") -> Iterator[None]:
         _CURRENT_SCOPE.reset(token)
 
 
-def current_cancellation_task_id() -> str | None:
-    """The run bound to this thread, or ``None`` outside a scope. Diagnostics and tests."""
-    scope = _CURRENT_SCOPE.get()
-    return scope.task_id if scope else None
-
-
 def raise_if_cancelled(where: str) -> None:
     """Cooperative-cancel checkpoint for the run bound to this thread.
 

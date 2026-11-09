@@ -28,6 +28,7 @@ import pytest
 
 from app.services.ingest_artifacts import sizing
 from app.services.ingest_artifacts.index_mapping import build_embedding_text
+from tests.helpers import estimate_wordpieces
 
 _OPENSEARCH_ABSENT = os.environ.get("SKIP_OPENSEARCH", "True").lower() == "true"
 
@@ -214,11 +215,8 @@ def test_the_wordpiece_estimate_is_conservative_on_real_transcript_prose(embedde
         "engineering confirms the date, because the awareness campaign only pays for "
         "itself if it runs into the launch window itself."
     )
-    estimated = sizing.estimate_wordpieces(sample)
+    estimated = estimate_wordpieces(sample)
     assert estimated >= len(sample.split()), "the estimate is below one piece per word"
-    assert sizing.fits_embedding_window(sample) is (
-        estimated + sizing.HEADER_WORDPIECE_RESERVE <= sizing.EMBEDDING_CONTENT_WORDPIECES
-    )
     # And the model agrees this length is inside the window.
     a, b = embedder([sample, f"{sample} {TAIL}"])
     assert _cosine(a, b) < 0.999999

@@ -33,36 +33,10 @@ from sqlalchemy.orm import Session
 from app.services.file_availability import unavailable_among
 
 
-def drop_quarantined_citations(
-    db: Session, citations: list[dict], *, include_quarantined: bool
-) -> list[dict]:
-    """Drop citations naming a currently-quarantined file.
-
-    Args:
-        db: Database session.
-        citations: A message's persisted citation payloads.
-        include_quarantined: Whether this request keeps quarantined files for takedown
-            review; pass ``unavailable_list_exempt(ctx.bypass)``, never the bare admin role.
-
-    Returns:
-        ``citations`` unchanged when none names an unavailable file; otherwise a new list
-        without them. A trashed file is unavailable even with ``include_quarantined``.
-    """
-    if not citations:
-        return citations
-
-    uuids = {c["file_uuid"] for c in citations if c.get("file_uuid")}
-    quarantined = unavailable_among(db, uuids, include_quarantined=include_quarantined)
-    if not quarantined:
-        return citations
-
-    return [c for c in citations if str(c.get("file_uuid")) not in quarantined]
-
-
 def drop_quarantined_citations_bulk(
     db: Session, list_of_citation_lists: list[list[dict]], *, include_quarantined: bool
 ) -> list[list[dict]]:
-    """The multi-message sibling of :func:`drop_quarantined_citations`.
+    """Drop citations naming a currently-quarantined file, across many messages.
 
     Resolves the quarantined-uuid set with ONE query across every list rather
     than one query per message — the shape ``list_messages`` needs, replaying
@@ -72,11 +46,13 @@ def drop_quarantined_citations_bulk(
         db: Database session.
         list_of_citation_lists: One citations list per message, in the same
             order they must be returned in.
-        include_quarantined: As for :func:`drop_quarantined_citations`.
+        include_quarantined: Whether this request keeps quarantined files for takedown
+            review; pass ``unavailable_list_exempt(ctx.bypass)``, never the bare admin role.
+            A trashed file is unavailable even with ``include_quarantined``.
 
     Returns:
-        A new list of citation lists, each filtered exactly as
-        :func:`drop_quarantined_citations` would filter it alone.
+        The input unchanged when none names an unavailable file; otherwise a new list of
+        citation lists without them.
     """
     if not list_of_citation_lists:
         return list_of_citation_lists

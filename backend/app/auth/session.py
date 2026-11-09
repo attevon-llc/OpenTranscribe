@@ -422,22 +422,6 @@ class OIDCStateStore:
         logger.warning(f"OIDC state not found or expired: {state[:8]}...")
         return None
 
-    def delete_state(self, state: str) -> bool:
-        """
-        Explicitly delete an OIDC state.
-
-        Args:
-            state: State parameter to delete
-
-        Returns:
-            True if deleted, False if not found
-        """
-        key = f"{OIDC_STATE_PREFIX}{state}"
-        deleted = self.store.delete(key)
-        if deleted:
-            logger.debug(f"Deleted OIDC state: {state[:8]}...")
-        return bool(deleted)
-
 
 # Module-level singleton for convenience
 oidc_state_store = OIDCStateStore()

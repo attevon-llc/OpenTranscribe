@@ -168,10 +168,6 @@ def configure(configured: int) -> AdmissionDecision:
     return decision
 
 
-def current_gate() -> SlotGate | None:
-    return _gate
-
-
 @contextmanager
 def task_slot(stage: str) -> Iterator[int]:
     """Hold one host-memory slot for the block. A no-op until configured or when disabled."""

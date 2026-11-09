@@ -466,11 +466,6 @@ def _statement_verdict(stmt: object, bucket: str) -> PolicyVerdict | None:
     return "unknown"
 
 
-def bucket_policy_denies_quarantined_reads(policy_json: str | None, bucket: str) -> bool:
-    """True only when :func:`classify_quarantine_policy` proves the Deny (``enforced``)."""
-    return classify_quarantine_policy(policy_json, bucket) == "enforced"
-
-
 class BucketPolicyReader(Protocol):
     """The one storage-client call the revocation-posture check makes (``Minio`` satisfies it)."""
 

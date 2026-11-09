@@ -52,8 +52,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from . import sizing
-
 #: ``_INDEX_VERSION`` after Stage 3's single bump.
 TARGET_INDEX_VERSION = 6
 
@@ -178,8 +176,7 @@ def build_embedding_text(
 
     The roster is truncated because the header shares a 128-wordpiece window with the
     digest text (:mod:`.sizing`); an eleven-person meeting would otherwise spend the whole
-    budget on names. Caller keeps within :data:`sizing.HEADER_WORDPIECE_RESERVE`; check
-    with :func:`embedding_text_fits`.
+    budget on names. Caller keeps within :data:`sizing.HEADER_WORDPIECE_RESERVE`.
 
     Args:
         title: File title.
@@ -204,15 +201,6 @@ def build_embedding_text(
         header_parts.append(f"participants: {names}")
     header = " | ".join(header_parts)
     return f"{header}\n\n{body}" if header else body
-
-
-def embedding_text_fits(embedding_text: str) -> bool:
-    """True when the composed text fits the measured embedding window.
-
-    Uses the whole window rather than subtracting the header reserve a second time — the
-    header is already inside *embedding_text* here.
-    """
-    return sizing.estimate_wordpieces(embedding_text) <= sizing.EMBEDDING_CONTENT_WORDPIECES
 
 
 def build_digest_documents(

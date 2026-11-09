@@ -150,10 +150,6 @@ def recurring_context_error(now: float | None = None) -> bool:
         return len(_recent_errors) >= RECURRING_ERROR_LIMIT
 
 
-def context_poisoned() -> bool:
-    return _POISONED.is_set()
-
-
 def mark_context_poisoned(reason: str) -> None:
     """Take this worker out of service and ask it to exit so it is restarted. Idempotent."""
     if _POISONED.is_set():

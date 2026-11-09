@@ -2,7 +2,7 @@
 
 Vulture matches by NAME, so every entry below is a name that production code never calls but
 that is kept on purpose. Every block of entries sits under a comment carrying a tag
-(``[extension-seam]``, ``[test-observation]`` or ``[framework-dispatch]``) plus a written
+(``[extension-seam]``, ``[test-observation]``, ``[framework-dispatch]`` or ``[operator-entrypoint]``) plus a written
 reason; ``check_vulture.py`` fails on a block without both. Delete an entry when its name gains a production caller, or when the
 function goes.
 
@@ -23,22 +23,16 @@ WHITELIST = (
     _.provenance_timespan,
     # [test-observation] The embedding-window tests assert real digest sizing through it (integration and digest
     # unit tests); removing it would remove those assertions, not just the helper.
-    _.fits_embedding_window,
     # [test-observation] Its test pins that failure text is sanitised before it is stored and notified, through
     # the real retry-policy path (#959); the only coverage of that outer-exception shape.
     _._handle_outer_exception,
     # [test-observation] Reader half of the infra-requeue budget; the orphaned-delivery live test uses it to prove
     # a user-cancelled run spends none of the budget.
-    _.infra_requeues,
     # [test-observation] Observation point for the cancellation scope; the cooperative-cancel tests use it to
     # prove the scope neither leaks across threads nor outlives its context manager.
-    _.current_cancellation_task_id,
     # [test-observation] Read-only view of the poisoned-CUDA-context flag; the poisoned-exit tests assert it.
-    _.context_poisoned,
     # [test-observation] State accessors the VRAM and host-memory admission tests use to observe reservations
     # against the real singleton.
-    _.current_budget,
-    _.current_gate,
     # [framework-dispatch] Used only inside a quoted cast("CursorResult[Any]", ...) annotation on the same module,
     # which vulture does not read as a use; ruff would flag removing the import.
     _.CursorResult,
@@ -106,29 +100,21 @@ WHITELIST = (
     # [extension-seam] Restore-default counterparts of set_capability_resolver / set_privacy_ceiling_resolver; both are listed in tests/fixtures/extension_surface.txt, so an out-of-tree extension may call them and they are not test-only.
     _.reset_capability_resolver,
     _.reset_privacy_ceiling_resolver,
-    # [test-observation] A test asserts a production invariant through it (security, tenancy, audit or lifecycle); deleting it would delete the only assertion of that invariant, not just a helper.
+    # [test-observation] Retained pending a decision, not because they are right as they are: a test asserts the invariant through each, and no production path was found that does the same job differently (reviewed in L04b).
     _.assert_real_timings,
-    _.bucket_policy_denies_quarantined_reads,
-    _.check_collection_access,
     _.cleanup_expired_lockouts,
     _.cleanup_expired_tokens,
     _.needs_rehash_for_fips_v3,
-    _.delete_state,
-    _.drop_quarantined_citations,
     _.extract_display_name_from_gov_dn,
-    _.generate_encryption_key,
     _.generic_guard_tables,
     _.trigger_arguments,
-    _.refresh_ttl,
     _.find_missing_pieces,
-    _.embedding_text_fits,
-    _.ListTraceRecorder,
-    _.survey_speaker_id_coverage,
-    _.extract_embedding_from_segment,
-    _.export_word_reference,
     _.ChatWarningCode,
-    _._digest_sentences,
-    # [test-observation] Offline benchmark/maintenance script helpers whose logic is pinned by a unit test but whose only caller is a script entry point that vulture does not follow.
+    # [operator-entrypoint] Run by a person or a script, never imported by app code: generate_encryption_key is the command the security docs and the entropy error message tell an operator to run; export_word_reference is the in-container reference exporter (issue #193); survey_speaker_id_coverage is the measurement instrument services/search/CLAUDE.md names.
+    _.generate_encryption_key,
+    _.export_word_reference,
+    _.survey_speaker_id_coverage,
+    # [operator-entrypoint] Offline benchmark/maintenance script helpers whose logic is pinned by a unit test but whose only caller is a script entry point that vulture does not follow.
     _.pick_cap,
     _.declared_component_license,
     _.UserRow,

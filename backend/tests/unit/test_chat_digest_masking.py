@@ -662,10 +662,10 @@ def test_section_zero_resolves_because_zero_is_falsy_not_absent():
     applied, but by re-detecting rather than from cached spans, silently and on
     the request path.
     """
-    from app.services.chat.redactor_digest_plans import _digest_sentences
+    from app.services.chat.redactor_digest_plans import _digest_sentences_from_row
 
-    db = _facts_db([_sentence("We agreed the budget.", [1])])
-    found = _digest_sentences(db, _digest_hit())
+    digest = {"sections": [{"index": 0, "sentences": [_sentence("We agreed the budget.", [1])]}]}
+    found = _digest_sentences_from_row(digest, _digest_hit())
 
     assert found is not None, "section 0 must resolve like any other section"
     assert len(found) == 1

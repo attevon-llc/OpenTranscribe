@@ -16,7 +16,6 @@ from datetime import datetime
 from datetime import timedelta
 from types import SimpleNamespace
 
-from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations
 from app.api.endpoints.chat.citation_takedown import drop_quarantined_citations_bulk
 from app.api.endpoints.search_helpers import _drop_quarantined_search_hits
 from app.models.media import MediaFile
@@ -80,12 +79,10 @@ def test_citations_drop_a_trashed_file_for_an_exempt_reviewer(db_session, normal
     trashed = _file(db_session, normal_user, trashed=True)
     citations = [{"file_uuid": str(f.uuid)} for f in (live, quarantined, trashed)]
 
-    single = drop_quarantined_citations(db_session, citations, include_quarantined=True)
     bulk = drop_quarantined_citations_bulk(db_session, [citations], include_quarantined=True)
 
     expected = [{"file_uuid": str(live.uuid)}, {"file_uuid": str(quarantined.uuid)}]
-    assert single == expected
     assert bulk == [expected]
-    assert drop_quarantined_citations(db_session, citations, include_quarantined=False) == [
-        {"file_uuid": str(live.uuid)}
+    assert drop_quarantined_citations_bulk(db_session, [citations], include_quarantined=False) == [
+        [{"file_uuid": str(live.uuid)}]
     ]

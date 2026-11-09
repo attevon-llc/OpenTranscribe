@@ -39,7 +39,7 @@ from app.services.chat.trace import TraceEvent
 
 logger = logging.getLogger(__name__)
 
-#: Matches ``ListTraceRecorder``'s default. Far above any real turn — a fully
+#: Matches the in-memory recorder's default (tests/fixtures/list_trace_recorder.py). Far above any real turn — a fully
 #: fanned-out turn produces roughly 22 events — so reaching it means something
 #: is looping, and the client is told rather than shown a silently short tree.
 DEFAULT_TRACE_CAP = 200

@@ -141,7 +141,6 @@ backend/app/core/task_liveness.py::_release#1	1	re-keyed per handler so a fix an
 backend/app/core/task_liveness.py::clear_infra_requeues#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/core/task_liveness.py::clear_run_markers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/core/task_liveness.py::files_requeued_at_least#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/core/task_liveness.py::infra_requeues#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/core/task_liveness.py::mark_queued#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/core/task_liveness.py::probe_runs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/core/task_liveness.py::record_infra_requeue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -544,7 +543,6 @@ backend/app/services/speaker_analysis_models.py::MultiModelRunner.cleanup#1	1	re
 backend/app/services/speaker_cleanup.py::_invalidate_caches#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService._load_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embedding_from_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embedding_from_segment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embedding_from_waveform#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embeddings_for_segments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/match_handling.py::handle_speaker_match#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

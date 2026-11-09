@@ -1,4 +1,4 @@
-"""Test-only resets of process-wide singletons and caches in ``app``.
+"""Test-only resets and observers of process-wide singletons and caches in ``app``.
 
 Production never resets these (each is built once per process, or self-expires), so the reset
 lives with the tests that need isolation between cases instead of as an ``app`` function that
@@ -6,6 +6,12 @@ only tests call. Each function restores exactly the state its former ``app`` hel
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.transcription.host_memory_admission import SlotGate
+    from app.transcription.vram_budget import VramBudget
 
 
 def reset_resolvers() -> None:
@@ -120,3 +126,32 @@ def clear_bucket_owner_cache() -> None:
 
     with aws_provider._owner_cache_lock:
         aws_provider._owner_cache.clear()
+
+
+def current_vram_budget() -> VramBudget | None:
+    """The configured VRAM budget, without configuring one."""
+    from app.transcription import vram_budget
+
+    return vram_budget._budget
+
+
+def current_host_memory_gate() -> SlotGate | None:
+    """The host-memory admission gate, without creating one."""
+    from app.transcription import host_memory_admission as ham
+
+    return ham._gate
+
+
+def cuda_context_poisoned() -> bool:
+    """Whether this process has been marked as holding a poisoned CUDA context."""
+    from app.transcription import cuda_health
+
+    return cuda_health._POISONED.is_set()
+
+
+def current_cancellation_task_id() -> str | None:
+    """The run bound to this thread's cancellation scope, or ``None`` outside one."""
+    from app.core import task_cancellation
+
+    scope = task_cancellation._CURRENT_SCOPE.get()
+    return scope.task_id if scope else None

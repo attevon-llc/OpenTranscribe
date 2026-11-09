@@ -58,12 +58,12 @@ from app.core import task_cancellation as tcancel
 from app.core import worker_shutdown as ws
 from app.core.task_cancellation import TranscriptionCancelledError
 from app.core.task_cancellation import cancellation_scope
-from app.core.task_cancellation import current_cancellation_task_id
 from app.core.task_cancellation import request_cancel
 from app.core.task_cancellation import stand_down_if_requested
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task
+from tests.state_resets import current_cancellation_task_id
 
 _CANCELLATION = "app.tasks.transcription.cancellation"
 _GET_REDIS = "app.core.redis.get_request_redis"

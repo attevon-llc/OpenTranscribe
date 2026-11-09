@@ -371,69 +371,6 @@ class SpeakerEmbeddingService:
             logger.error(f"Error extracting embedding from {audio_path}: {e}")
             return None
 
-    @staticmethod
-    def _load_audio_segment(
-        audio_source: str,
-        start: float,
-        duration: float,
-        target_sr: int = 16000,
-    ) -> torch.Tensor | None:
-        """Load only a specific segment of audio using ffmpeg seeking.
-
-        Delegates to audio_segment_utils.extract_audio_segment_np() and
-        wraps the result as a torch tensor for PyAnnote compatibility.
-
-        Args:
-            audio_source: Local file path or HTTP/presigned URL.
-            start: Segment start time in seconds.
-            duration: Segment duration in seconds.
-            target_sr: Target sample rate.
-
-        Returns:
-            Waveform tensor [1, samples] or None on failure.
-        """
-        import torch
-
-        from app.services.audio_segment_utils import extract_audio_segment_np
-
-        audio_np = extract_audio_segment_np(audio_source, start, duration, target_sr)
-        if audio_np is None:
-            return None
-        return torch.from_numpy(audio_np).unsqueeze(0)
-
-    def extract_embedding_from_segment(
-        self,
-        audio_source: str,
-        segment: dict[str, float],
-    ) -> np.ndarray | None:
-        """Extract embedding for a single segment using fast ffmpeg seeking.
-
-        Unlike extract_embedding_from_file which decodes the entire file,
-        this only decodes the specific time range needed — critical for
-        large video files where full decode takes 10-20 seconds.
-
-        Args:
-            audio_source: Local file path or presigned MinIO URL.
-            segment: Dict with 'start' and 'end' keys (seconds).
-
-        Returns:
-            L2-normalized embedding array, or None on failure.
-        """
-        start = segment["start"]
-        duration = segment["end"] - start
-        if duration < 0.5:
-            return None
-
-        waveform = self._load_audio_segment(audio_source, start, duration)
-        if waveform is None or waveform.shape[1] == 0:
-            return None
-
-        try:
-            return self._embed(waveform, 16000)
-        except Exception as e:
-            logger.error(f"Error extracting embedding from segment: {e}")
-            return None
-
     def extract_embedding_from_waveform(
         self,
         waveform: torch.Tensor,

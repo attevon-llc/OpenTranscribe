@@ -61,6 +61,7 @@ import pytest
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.constants import SPEAKER_SEGMENT_MIN_DURATION
+from tests.helpers import segment_embedding
 
 #: Cross-speaker pairs must stay decisively below the app's own "worth attention" floor —
 #: half of it, not just under it — so the bound stays meaningful rather than a coin flip.
@@ -170,8 +171,8 @@ def embeddings(
     for speaker, segs in ground_truth_segments.items():
         vectors = []
         for seg in segs:
-            embedding = service.extract_embedding_from_segment(
-                str(AUDIO_PATH), {"start": seg["start"], "end": seg["end"]}
+            embedding = segment_embedding(
+                service, str(AUDIO_PATH), {"start": seg["start"], "end": seg["end"]}
             )
             assert embedding is not None, (
                 f"embedding extraction returned None for {speaker} turn "

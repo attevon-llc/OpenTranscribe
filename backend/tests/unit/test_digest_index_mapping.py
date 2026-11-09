@@ -19,6 +19,7 @@ from app.services.ingest_artifacts import sizing
 from app.services.ingest_artifacts.digest import build_digest
 from app.services.search.index_schema import _INDEX_VERSION
 from app.services.search.index_schema import TRANSCRIPT_CHUNKS_INDEX_BODY
+from tests.helpers import estimate_wordpieces
 
 
 def _digest():
@@ -257,8 +258,10 @@ def test_the_composed_embedding_text_fits_the_measured_window():
         "no digest documents to check — the loop below would pass vacuously"
     )
     for document in documents:
-        assert target.embedding_text_fits(document["embedding_text"]), (
-            f"{sizing.estimate_wordpieces(document['embedding_text'])} estimated wordpieces "
+        assert (
+            estimate_wordpieces(document["embedding_text"]) <= sizing.EMBEDDING_CONTENT_WORDPIECES
+        ), (
+            f"{estimate_wordpieces(document['embedding_text'])} estimated wordpieces "
             f"exceeds the measured {sizing.EMBEDDING_CONTENT_WORDPIECES}-piece content budget"
         )
 
@@ -271,7 +274,7 @@ def test_a_huge_roster_is_elided_rather_than_eating_the_window():
         body="We agreed to ship on Friday.",
     )
     assert "+34 more" in text
-    assert target.embedding_text_fits(text)
+    assert estimate_wordpieces(text) <= sizing.EMBEDDING_CONTENT_WORDPIECES
 
 
 def test_the_header_stays_inside_the_reserve_stage_2_sized_the_body_against():
@@ -282,7 +285,7 @@ def test_the_header_stays_inside_the_reserve_stage_2_sized_the_body_against():
         roster=["Dana", "Marcus", "Priya", "Sam", "Alex", "Robin"],
         body="",
     )
-    assert sizing.estimate_wordpieces(header_only) <= sizing.HEADER_WORDPIECE_RESERVE
+    assert estimate_wordpieces(header_only) <= sizing.HEADER_WORDPIECE_RESERVE
 
 
 def test_content_is_the_digest_text_so_bm25_scores_the_summary_not_the_header():

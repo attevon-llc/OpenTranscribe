@@ -218,7 +218,7 @@ class TestAdmit:
         monkeypatch.setitem(sys.modules, "torch", _fake_torch(total_mb=24000, free_mb=19000))
         with vram_budget.admit("asr", device="cpu", batch_size=16) as granted:
             assert granted == 0
-        assert vram_budget.current_budget() is None
+        assert state_resets.current_vram_budget() is None
 
     def test_admission_can_be_switched_off(self, monkeypatch):
         monkeypatch.setenv("GPU_VRAM_ADMISSION", "false")
@@ -231,7 +231,7 @@ class TestAdmit:
         expected = vram_budget.stage_estimate_mb("asr", batch_size=8)
         with vram_budget.admit("asr", device="cuda", batch_size=8) as granted:
             assert granted == expected
-            budget = vram_budget.current_budget()
+            budget = state_resets.current_vram_budget()
             assert budget is not None
             assert budget.reserved_mb == expected
         assert budget.reserved_mb == 0

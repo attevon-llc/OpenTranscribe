@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 async def get_ollama_models(
     request: Request,
     base_url: str,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """
@@ -232,9 +232,9 @@ def _get_http_error_message(status_code: int, models_url: str, error_text: str =
 async def get_openai_compatible_models(
     request: Request,
     base_url: str,
+    response: Response,
     api_key: str | None = None,
     config_id: str | None = None,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:

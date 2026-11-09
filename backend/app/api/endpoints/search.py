@@ -115,7 +115,7 @@ def search_transcripts(
             "explicitly empty or unknown value is a 400."
         ),
     ),
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
     _active: User = Depends(get_current_active_user),  # preserve the is_active gate

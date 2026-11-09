@@ -148,7 +148,7 @@ def list_local_models(
 def start_local_model_download(
     request: Request,
     body: LocalModelDownloadRequest,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> LocalModelDownloadState:
@@ -204,7 +204,7 @@ def start_local_model_download(
 @limiter.limit("10/minute", key_func=user_or_ip_key)
 def cancel_local_model_download(
     request: Request,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> LocalModelDownloadState:
     """Stop the download in flight; its partial files are removed and the lock is released."""

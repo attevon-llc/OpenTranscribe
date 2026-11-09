@@ -78,7 +78,7 @@ def test_llm_connection(
     *,
     request: Request,
     test_request: schemas.ConnectionTestRequest,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:

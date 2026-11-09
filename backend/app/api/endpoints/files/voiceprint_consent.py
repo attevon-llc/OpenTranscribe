@@ -63,7 +63,7 @@ def set_file_voiceprint_consent(
     file_uuid: UUID,
     body: FileVoiceprintConsentUpdate,
     request: Request,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> FileVoiceprintConsent:

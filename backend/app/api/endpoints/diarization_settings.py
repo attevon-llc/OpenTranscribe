@@ -226,8 +226,8 @@ def delete_pyannote_credential(
 @limiter.limit(get_api_rate_limit(), key_func=user_or_ip_key)
 def test_pyannote_credential(
     request: Request,
+    response: Response,
     body: PyannoteConnectionTestRequest | None = None,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_user),
 ) -> PyannoteConnectionTestResult:

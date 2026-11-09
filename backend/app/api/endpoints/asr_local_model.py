@@ -111,7 +111,7 @@ class _SetLocalModelRequest(BaseModel):
 def set_active_local_model(
     request: Request,
     body: _SetLocalModelRequest,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:
@@ -187,7 +187,7 @@ def set_active_local_model(
 @limiter.limit("5/minute", key_func=user_or_ip_key)
 def restart_gpu_worker(
     request: Request,
-    response: Response = None,  # type: ignore[assignment]  # required by slowapi
+    response: Response,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_active_superuser),
 ) -> Any:

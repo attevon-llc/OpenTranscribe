@@ -1,5 +1,5 @@
 {
-  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; `license_verified: false` marks a licence page that could not be fetched on 2026-11-08. The owner approves the final item list.",
+  "_comment": "Candidate sources for the public demo's seed bundle (issue #628). Each seeded file lands in the named `collection` (ids in app.scripts.demo_seed.bundle.COLLECTIONS). Every item built from these must pass `python -m app.scripts.demo_seed validate`, and each source's licence page must be re-read and dated in license_checked_on at bundle build (docs-site/docs/operations/public-demo.md). Only the speech of people speaking in an official or professional public capacity is used; no private individual. `exclusions` are rules the curator applies when choosing recordings; FCC and OSHA were dropped on 2026-11-08 because their licence pages could not be read (see `excluded`); every remaining source's licence page was re-read that day except LibriVox, which stays out pending the owner's decision. The owner approves the final item list.",
   "collections": [
     {
       "id": "news",
@@ -45,28 +45,7 @@
         "keyword and semantic search"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
-    },
-    {
-      "name": "FCC open commission meetings",
-      "collection": "government-meetings",
-      "url": "https://www.fcc.gov/news-events/events",
-      "license": "US-GOV-PD",
-      "license_url": "https://www.usa.gov/government-copyright",
-      "attribution": "Federal Communications Commission",
-      "why_allowed": "Work of a US federal agency, so not subject to copyright (17 U.S.C. 105). The FCC's own website-policies page returned 403 to the automated fetch on 2026-11-08, so its wording is NOT yet confirmed; re-read https://www.fcc.gov/about/website-policies by hand at bundle build and replace license_url with it.",
-      "exclusions": [
-        "Exclude the public-comment portion and any speaker who is a private citizen; keep commissioners and FCC staff.",
-        "Exclude any segment containing licensed third-party video or audio clips."
-      ],
-      "shows": [
-        "multi-speaker diarization",
-        "agenda-style summaries",
-        "cross-meeting questions"
-      ],
-      "contains_private_individuals": false,
-      "license_checked_on": null,
-      "license_verified": false
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "NTSB board meetings",
@@ -86,7 +65,7 @@
         "who-said-what questions"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "FDA advisory committee meetings",
@@ -106,10 +85,10 @@
         "voting and decision summaries"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
-      "name": "Federal Reserve FOMC press conferences",
+      "name": "Federal Reserve FOMC introductory statements (Chair's prepared remarks)",
       "collection": "business-finance",
       "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
       "license": "US-GOV-PD",
@@ -117,8 +96,8 @@
       "attribution": "Board of Governors of the Federal Reserve System",
       "why_allowed": "Board website: its information \"is in the public domain and may be copied and distributed without permission\"; credit the Board. Checked 2026-11-08.",
       "exclusions": [
-        "Exclude any photo, graphic or material the Board marks as from a non-Board source.",
-        "Press-conference questions come from journalists (private persons working for outlets): use the Chair's opening statement and answers, with the questions dropped, or the transcript's reporter turns anonymised; do not name reporters."
+        "Only the Chair's prepared introductory statement is used (a single public official speaking); the reporter Q&A is not part of the clip, so no journalist is named or heard.",
+        "Exclude any photo, graphic or material the Board marks as from a non-Board source."
       ],
       "shows": [
         "numbers and dates",
@@ -126,7 +105,7 @@
         "summaries"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "SEC open meetings",
@@ -135,7 +114,7 @@
       "license": "US-GOV-PD",
       "license_url": "https://www.sec.gov/about/privacy-information",
       "attribution": "US Securities and Exchange Commission",
-      "why_allowed": "SEC website dissemination policy: content \"may be copied or further distributed by users of the web site without the SEC's permission\"; cite the SEC. Checked 2026-11-08. The page names no third-party exception, so Commission-produced recordings only.",
+      "why_allowed": "The SEC's website dissemination policy is the 'Website Dissemination' section of the page titled Privacy Information (there is no separate copyright page): information may be copied or further distributed without the SEC's permission, cite the SEC as the source, and do not use the SEC seal or other logos and artwork. Re-read 2026-11-08. Commission-produced recordings only.",
       "exclusions": [
         "Exclude any segment from a non-SEC source and the SEC seal, logos and EDGAR marks as artwork.",
         "Exclude public-comment speakers; keep Commissioners and staff."
@@ -145,7 +124,7 @@
         "votes and rulemaking summaries"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "NASA education videos and podcasts",
@@ -165,7 +144,7 @@
         "summaries"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "FEMA training and preparedness videos",
@@ -174,7 +153,7 @@
       "license": "US-GOV-PD",
       "license_url": "https://www.fema.gov/about/website-information",
       "attribution": "Federal Emergency Management Agency",
-      "why_allowed": "FEMA website information page: most FEMA.gov material is free of copyright and may be copied without permission; FEMA sometimes uses licensed or restricted images, shown by a copyright notice or credit. Source found by search 2026-11-08; the page itself was not fetched, so re-read at bundle build.",
+      "why_allowed": "FEMA website information page, re-read 2026-11-08: 'Most material on FEMA.gov is free of copyright and may be copied and distributed without permission'; licensed or restricted photos and graphics carry a credit or copyright notice and need the source's permission; use of the DHS seal and marks is restricted.",
       "exclusions": [
         "Exclude anything with a copyright notice or photo credit (licensed or restricted).",
         "Exclude survivor and community interviews (private individuals); keep FEMA staff and instructors.",
@@ -185,28 +164,7 @@
         "step-by-step summaries"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null,
-      "license_verified": false
-    },
-    {
-      "name": "OSHA training and safety videos",
-      "collection": "training-education",
-      "url": "https://www.osha.gov/video",
-      "license": "US-GOV-PD",
-      "license_url": "https://www.usa.gov/government-copyright",
-      "attribution": "Occupational Safety and Health Administration",
-      "why_allowed": "Work of a US federal agency, so not subject to copyright (17 U.S.C. 105). OSHA's own copyright page was not reachable (osha.gov/copyright and /privacy-policy returned 404 on 2026-11-08), so the exact wording is NOT confirmed; locate OSHA's disclaimer page at bundle build and replace license_url.",
-      "exclusions": [
-        "Exclude videos produced by a contractor, partner or employer (workers, companies, trade bodies) and any with a copyright notice.",
-        "Exclude workers or victims' families on camera (private individuals); keep OSHA staff."
-      ],
-      "shows": [
-        "safety instruction",
-        "summaries"
-      ],
-      "contains_private_individuals": false,
-      "license_checked_on": null,
-      "license_verified": false
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "LibriVox public-domain audiobook readings",
@@ -247,7 +205,7 @@
         "science vocabulary search"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "NOAA and National Weather Service briefings",
@@ -266,7 +224,7 @@
         "topic extraction"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     },
     {
       "name": "Redaction showcase: a scripted clip voiced by the project team with invented names, numbers and addresses",
@@ -283,7 +241,7 @@
         "PII redaction"
       ],
       "contains_private_individuals": false,
-      "license_checked_on": null
+      "license_checked_on": "2026-11-08"
     }
   ],
   "excluded": [
@@ -302,6 +260,14 @@
     {
       "name": "Public-comment and open-hearing segments (FCC, FDA, SEC, NTSB)",
       "reason": "Private citizens speak; cut them from every meeting."
+    },
+    {
+      "name": "FCC open commission meetings",
+      "reason": "Dropped 2026-11-08: the agency's own copyright/use page could not be read (FCC returned 403, OSHA's disclaimer and privacy URLs returned 404). 17 U.S.C. 105 would normally cover agency works, but the demo's rule is to cite and re-read the agency's own terms, so the source stays out until a person reads the page. Reinstate by reading the page and adding a source entry."
+    },
+    {
+      "name": "OSHA training and safety videos",
+      "reason": "Dropped 2026-11-08: the agency's own copyright/use page could not be read (FCC returned 403, OSHA's disclaimer and privacy URLs returned 404). 17 U.S.C. 105 would normally cover agency works, but the demo's rule is to cite and re-read the agency's own terms, so the source stays out until a person reads the page. Reinstate by reading the page and adding a source entry."
     }
   ]
 }

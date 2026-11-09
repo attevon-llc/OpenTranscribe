@@ -21,19 +21,17 @@ from app.main import app
 METADATA = "/api/auth/saml/metadata"
 
 
-def _valid_cfg(**overrides) -> SAMLConfig:
-    base: dict[str, object] = {
-        "enabled": True,
-        "sp_entity_id": "https://sp.example.com",
-        "sp_acs_url": "https://sp.example.com/api/auth/saml/acs",
-        "sp_sls_url": "https://sp.example.com/api/auth/saml/sls",
-        "idp_entity_id": "https://idp.example.com",
-        "idp_sso_url": "https://idp.example.com/sso",
-        "idp_slo_url": "https://idp.example.com/slo",
-        "idp_x509_cert": "MIICfakecert",
-    }
-    base.update(overrides)
-    return SAMLConfig(**base)  # type: ignore[arg-type]
+def _valid_cfg(*, idp_sso_url: str = "https://idp.example.com/sso") -> SAMLConfig:
+    return SAMLConfig(
+        enabled=True,
+        sp_entity_id="https://sp.example.com",
+        sp_acs_url="https://sp.example.com/api/auth/saml/acs",
+        sp_sls_url="https://sp.example.com/api/auth/saml/sls",
+        idp_entity_id="https://idp.example.com",
+        idp_sso_url=idp_sso_url,
+        idp_slo_url="https://idp.example.com/slo",
+        idp_x509_cert="MIICfakecert",
+    )
 
 
 @pytest.fixture

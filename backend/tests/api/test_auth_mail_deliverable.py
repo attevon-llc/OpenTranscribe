@@ -18,9 +18,11 @@ from __future__ import annotations
 
 import uuid as uuid_pkg
 from typing import Any
+from typing import cast
 
 import pytest
 from fastapi import status
+from sqlalchemy.orm import Session
 
 from app.api.endpoints import auth_email_delivery
 from app.core.constants import AUTH_EMAIL_CONFIG_SETTING_KEY
@@ -107,7 +109,9 @@ def test_deliverable_agrees_with_what_the_sender_does(db_session, monkeypatch, s
     _arrange(db_session, state)
 
     sent: list[str] = []
-    service = EmailService(session_factory=lambda: _KeepOpen(db_session))  # type: ignore[arg-type,return-value]
+    # _KeepOpen forwards every Session attribute to db_session and only swallows close(),
+    # so the cast names the type the service really receives.
+    service = EmailService(session_factory=lambda: cast(Session, _KeepOpen(db_session)))
     monkeypatch.setattr(service, "_send_via_config", lambda *a, **k: sent.append("config"))
     monkeypatch.setattr(service, "_send_via_env_smtp", lambda *a, **k: sent.append("env"))
 

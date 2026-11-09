@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import socket
+import types
 from collections.abc import Iterator
 from typing import Any
 
@@ -127,6 +128,19 @@ def stub_pinned_session(monkeypatch: pytest.MonkeyPatch, target: str, session: o
         yield session
 
     monkeypatch.setattr(f"{target}.pinned_requests_session", _fake_pinned_requests_session)
+
+
+def make_stub_module(name: str, **attributes: object) -> types.ModuleType:
+    """A module object standing in for an optional dependency the test does not install.
+
+    The attributes are whatever the test supplies, so they are set from kwargs: mypy cannot
+    know the surface of a module that is not installed, and a bare ``types.ModuleType`` has
+    no declared attributes to assign to.
+    """
+    module = types.ModuleType(name)
+    for attribute, value in attributes.items():
+        setattr(module, attribute, value)
+    return module
 
 
 @contextlib.contextmanager

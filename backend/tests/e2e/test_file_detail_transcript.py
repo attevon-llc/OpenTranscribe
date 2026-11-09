@@ -41,6 +41,7 @@ from typing import Any
 import pytest
 import requests
 from conftest import E2E_STORAGE_STATE_PREFIX
+from page_state import console_errors
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
@@ -191,7 +192,7 @@ def auth_storage_state(browser, base_url: str):
 def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, Any], base_url: str):
     """A pre-authenticated page on a real file-detail view with a transcript.
 
-    Exposes captured console errors on ``page._console_errors``.
+    Exposes captured console errors through the ``console_errors`` registry.
     """
     context = browser.new_context(
         storage_state=auth_storage_state,
@@ -201,7 +202,7 @@ def detail_page(browser, auth_storage_state: str, transcribed_file: dict[str, An
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors
+    console_errors.attach(page, errors)
 
     uuid = transcribed_file["uuid"]
     page.goto(f"{base_url}/files/{uuid}")
@@ -223,7 +224,7 @@ class TestTranscriptRenders:
         # can auto-wait for (issue #431).
         detail_page.wait_for_load_state("networkidle")
         assert "/files/" in detail_page.url
-        unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
+        unexpected = _unexpected_console_errors(console_errors.of(detail_page))
         assert not unexpected, f"Unexpected console errors on file detail: {unexpected}"
 
     def test_transcript_region_renders_segments(self, detail_page: Page) -> None:
@@ -455,7 +456,7 @@ class TestSpeakerRenameRepaint:
             detail_page.locator(".transcript-display").get_by_text(new_name).first
         ).to_be_visible(timeout=10000)
 
-        assert _unexpected_console_errors(detail_page._console_errors) == []  # type: ignore[attr-defined]
+        assert _unexpected_console_errors(console_errors.of(detail_page)) == []
 
 
 @pytest.fixture(scope="module")
@@ -650,7 +651,7 @@ class TestTranscriptSearch:
         # resolve. networkidle can return before a debounced request has even started, and
         # the assertion is the absence of console errors from it (issue #431).
         detail_page.wait_for_timeout(3500)
-        unexpected = _unexpected_console_errors(detail_page._console_errors)  # type: ignore[attr-defined]
+        unexpected = _unexpected_console_errors(console_errors.of(detail_page))
         assert not unexpected, f"Unexpected console errors during transcript search: {unexpected}"
 
 

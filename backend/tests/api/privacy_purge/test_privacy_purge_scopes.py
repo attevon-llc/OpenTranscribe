@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+from typing import cast
 
 import pytest
 from fastapi import status
@@ -273,7 +274,8 @@ def test_a_scope_cannot_be_built_without_what_it_needs():
     with pytest.raises(ValueError):
         purge.PurgeScope("instance_all", organization_id=1)
     with pytest.raises(ValueError):
-        purge.PurgeScope("everyone")  # type: ignore[arg-type]
+        # Off-contract kind on purpose: the constructor must refuse a scope it does not know.
+        purge.PurgeScope(cast(purge.ScopeKind, "everyone"))
 
 
 # --------------------------------------------------------------------------- #

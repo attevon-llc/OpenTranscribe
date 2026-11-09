@@ -15,10 +15,12 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from typing import Any
+from typing import cast
 from unittest.mock import patch
 
 import pytest
 from fastapi import status
+from starlette.requests import Request
 
 from app.auth.audit import AuditEventType
 from app.auth.audit import audit_logger
@@ -594,7 +596,8 @@ def test_a_hold_refusal_no_route_caught_is_still_a_409_with_the_freeze_text():
     assert app.exception_handlers[HoldRefusedError] is hold_refused_handler
     exc = HoldRefusedError({7: HoldState(platform_flag=False, org_hold_uuids=("h-1",))})
 
-    response = asyncio.run(hold_refused_handler(None, exc))  # type: ignore[arg-type]
+    # The handler never reads the request, so only the exception matters here.
+    response = asyncio.run(hold_refused_handler(cast("Request", None), exc))
 
     assert response.status_code == status.HTTP_409_CONFLICT
     assert json.loads(bytes(response.body)) == {

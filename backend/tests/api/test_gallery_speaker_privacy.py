@@ -10,6 +10,7 @@ link a voiceprint made is not counted; a typed name, and a person's link, are. E
 from __future__ import annotations
 
 import uuid as uuid_pkg
+from dataclasses import dataclass
 
 import pytest
 from fastapi import status
@@ -21,6 +22,7 @@ from tests.fixtures.privacy_switches import set_instance_switch
 from tests.fixtures.provenance_world import ALICE
 from tests.fixtures.provenance_world import BOB
 from tests.fixtures.provenance_world import CAROL
+from tests.fixtures.provenance_world import World
 from tests.fixtures.provenance_world import build_world
 
 pytestmark = pytest.mark.usefixtures("speaker_os_seams")
@@ -33,6 +35,13 @@ def _reset_ceiling():
     policy.reset_privacy_ceiling_resolver()
 
 
+@dataclass
+class _GalleryWorld(World):
+    """The provenance world plus the one collection this file's gallery tests browse."""
+
+    collection: Collection
+
+
 @pytest.fixture
 def world(db_session, normal_user):
     built = build_world(db_session, normal_user)
@@ -43,8 +52,15 @@ def world(db_session, normal_user):
     db_session.flush()
     db_session.add(CollectionMember(collection_id=collection.id, media_file_id=built.file.id))
     db_session.commit()
-    built.collection = collection  # type: ignore[attr-defined]
-    return built
+    return _GalleryWorld(
+        file=built.file,
+        alice=built.alice,
+        carol=built.carol,
+        bob=built.bob,
+        profiles=built.profiles,
+        segments=built.segments,
+        collection=collection,
+    )
 
 
 def _off(db_session) -> None:

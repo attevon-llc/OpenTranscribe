@@ -37,6 +37,7 @@ from media_player import CONTROL_NAMES
 from media_player import MediaPlayer
 from media_player import app_label
 from media_player import speed_name
+from page_state import console_errors
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import APP_SHELL_READY_MS
@@ -125,7 +126,7 @@ def owned_late_speech_audio(backend_url: str, admin_token: str) -> Iterator[dict
 
 @pytest.fixture
 def browser_page(browser: Any, shared_auth_state: str) -> Iterator[Page]:
-    """A fresh signed-in page that records console errors (``page._console_errors``)."""
+    """A fresh signed-in page that records console errors (through the ``console_errors`` registry)."""
     context = browser.new_context(
         storage_state=shared_auth_state,
         viewport={"width": 1920, "height": 1080},
@@ -135,7 +136,7 @@ def browser_page(browser: Any, shared_auth_state: str) -> Iterator[Page]:
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
-    page._console_errors = errors
+    console_errors.attach(page, errors)
     try:
         yield page
     finally:
@@ -153,7 +154,7 @@ def _open_file(page: Page, base_url: str, file_uuid: str, query: str = "") -> Me
 
 
 def _no_console_errors(page: Page) -> None:
-    errors = page._console_errors  # type: ignore[attr-defined]
+    errors = console_errors.of(page)
     assert errors == [], errors
 
 

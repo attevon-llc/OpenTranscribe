@@ -15,7 +15,6 @@ change, not a refactor. The global ``OpenTranscribeError`` handler in
 
 from collections.abc import Mapping
 from typing import Any
-from typing import ClassVar
 
 
 class OpenTranscribeError(Exception):
@@ -121,7 +120,9 @@ class DomainError(OpenTranscribeError):
     retried.
     """
 
-    status_code: ClassVar[int] = 500
+    # An instance attribute with a class default: a subclass sets it per class, and a hook
+    # refusal (DispatchBlockedError) lets its raiser pick the code per instance.
+    status_code: int = 500
 
     def __init__(
         self, detail: str | dict[str, Any] | list[Any], *, headers: Mapping[str, str] | None = None

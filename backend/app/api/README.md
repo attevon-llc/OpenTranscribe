@@ -294,7 +294,7 @@ Some routes return a structured `detail` such as `{"code": "...", "message": "..
   ]
 }
 ```
-Validation errors are scrubbed (`app/core/validation_errors.py`) so a rejected credential is never echoed back.
+Validation errors are scrubbed (`app/api/validation_errors.py`) so a rejected credential is never echoed back.
 
 ## 🔄 WebSocket Integration (`websockets.py`)
 

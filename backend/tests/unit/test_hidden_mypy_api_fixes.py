@@ -7,8 +7,8 @@ from pydantic import ValidationError
 from starlette.requests import Request
 
 from app import schemas
+from app.api.validation_errors import validation_error_handler
 from app.auth.rate_limit import rate_limit_exceeded_handler
-from app.core.validation_errors import validation_error_handler
 from app.schemas.user import AuthMethodsResponse
 
 

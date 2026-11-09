@@ -437,7 +437,7 @@ def admin_search_users(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, Any]:
     """Advanced user search with filtering and pagination."""
-    from app.utils.pagination import paginate
+    from app.api.pagination import paginate
 
     q = db.query(User)
 

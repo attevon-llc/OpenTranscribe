@@ -33,6 +33,7 @@ from app.api.endpoints.prompts_access import _assert_under_prompt_limit
 from app.api.endpoints.prompts_access import _is_usable
 from app.api.endpoints.prompts_access import _shared_in_tenant
 from app.api.endpoints.prompts_access import _usable_by
+from app.api.pagination import paginate
 from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
 from app.auth.audit_events import AuditEventType
@@ -41,7 +42,6 @@ from app.db.base import get_db
 from app.middleware.audit import get_request_context
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_prompt_by_uuid
-from app.utils.pagination import paginate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

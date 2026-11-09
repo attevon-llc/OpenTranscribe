@@ -25,6 +25,7 @@ from app import schemas
 from app.api.deps_context import get_current_context
 from app.api.endpoints.prompts_access import _in_tenant
 from app.api.endpoints.prompts_access import _shared_in_tenant
+from app.api.pagination import paginate
 from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
 from app.auth.audit_events import AuditEventType
@@ -35,7 +36,6 @@ from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_prompt_by_uuid
-from app.utils.pagination import paginate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

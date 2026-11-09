@@ -268,7 +268,7 @@ def _dispatch_facts_backfill(
         MediaFile.status == FileStatus.COMPLETED, has_segments, ~has_facts
     )
     # order_by(None): a COUNT does not need the ORDER BY the id list below uses —
-    # same reasoning as `utils/pagination.paginate()`.
+    # same reasoning as `api/pagination.paginate()`.
     stats["missing_facts_files"] = base_query.order_by(None).count()
     stats["facts_backfill_dispatched"] = 0
     if not stats["missing_facts_files"]:

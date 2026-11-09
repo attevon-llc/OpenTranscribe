@@ -2,7 +2,7 @@
 
 The same tenant-scoped read as ``GET /org-admin/audit-logs`` (the scope and the member guards
 live once, in ``org_admin.org_audit_query``), rendered by the writer the super-admin export also
-uses (``auth/audit_export``). It sits on its own router because it is gated by its own
+uses (``api/audit_export``). It sits on its own router because it is gated by its own
 capability, ``org.audit_logs``, mounted in ``api/router.py`` with no platform-admin bypass: a
 platform account gets the same 404 as anyone while the key is off, and is not an organization
 admin, so it never reaches the body.
@@ -24,6 +24,9 @@ from fastapi import Request
 from fastapi import Response
 from sqlalchemy.orm import Session
 
+from app.api.audit_export import DISPLAY_COLUMNS
+from app.api.audit_export import EXPORT_COLUMNS
+from app.api.audit_export import audit_export_response
 from app.api.deps_context import require_org_admin
 from app.api.endpoints.org_admin import org_audit_query
 from app.api.endpoints.org_admin import org_id_of
@@ -31,9 +34,6 @@ from app.auth.audit import audit_logger
 from app.auth.audit_events import TENANT_SCOPE_ORG
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.audit_export import DISPLAY_COLUMNS
-from app.auth.audit_export import EXPORT_COLUMNS
-from app.auth.audit_export import audit_export_response
 from app.auth.audit_query import query_audit_logs
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key

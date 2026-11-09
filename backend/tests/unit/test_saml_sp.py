@@ -13,9 +13,9 @@ import pytest
 from starlette.datastructures import Headers
 from starlette.requests import Request
 
+from app.api.saml_request import saml_request_data
 from app.auth.saml.config import SAMLConfig
 from app.auth.saml.sp import build_settings
-from app.auth.saml.sp import saml_request_data
 
 
 def _cfg(

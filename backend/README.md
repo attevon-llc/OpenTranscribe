@@ -295,7 +295,7 @@ Endpoints return their own Pydantic response models (`app/schemas/`), not a shar
 }
 ```
 
-Request-validation failures (422) return `detail` as a list of scrubbed field errors (`app/core/validation_errors.py`).
+Request-validation failures (422) return `detail` as a list of scrubbed field errors (`app/api/validation_errors.py`).
 
 ## Database Management
 

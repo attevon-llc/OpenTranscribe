@@ -237,9 +237,9 @@ frontend/src/components/gallery/GalleryPrimaryActions.svelte	1	pre-existing dupl
 frontend/src/components/gallery/GallerySelectionActions.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/QuarantineModal.basis.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/QuarantineModal.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/gallery/VirtualGrid.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/gallery/VirtualGrid.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/VirtualGrid.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/gallery/VirtualList.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/gallery/VirtualList.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/VirtualList.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/groups/GroupMemberSearch.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/groups/GroupMemberSearch.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

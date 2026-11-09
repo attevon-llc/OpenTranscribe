@@ -39,6 +39,7 @@ ALLOWED: dict[str, str] = {
     "api/endpoints/admin_quarantine.py::quarantine_media_file": _PLATFORM_TAKEDOWN,
     "api/endpoints/admin_quarantine.py::release_media_file": _PLATFORM_TAKEDOWN,
     "api/endpoints/org_admin_takedown.py::list_org_quarantined_files": _ORG_TAKEDOWN,
+    "services/org_takedown_queries.py::list_taken_down_files": _ORG_TAKEDOWN,
     "schemas/admin.py::from_action": (
         "The quarantine/release response built for both takedown routes (platform and "
         "organization): it REPORTS the platform flag of the file just acted on. Not a destroy "

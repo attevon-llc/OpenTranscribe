@@ -419,5 +419,5 @@ TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     "services/task_endpoint_queries.py::find_task_row": (),
     "services/task_endpoint_queries.py::visible_in_tenant": ("org_scope_pred",),
     "api/endpoints/tasks.py::get_active_progress": ("get_active_tasks",),
-    "api/endpoints/watch_sources.py::list_watch_sources": ("org_filter",),
+    "api/endpoints/watch_sources.py::list_watch_sources": ("list_sources",),
 }

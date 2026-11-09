@@ -15,7 +15,6 @@ leak check). No real GPU worker or Redis is exercised.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
@@ -335,21 +334,23 @@ def test_reset_float_setting_round_trip(client, super_admin_token_headers, db_se
 # ---------------------------------------------------------------------------
 
 
-def test_metrics_returns_dict(client, super_admin_token_headers):
-    """The metrics reader returns a dict (empty when no workers reported)."""
-    redis = MagicMock()
-    redis.keys.return_value = []
-    with patch("app.core.redis.get_request_redis", return_value=redis):
-        resp = client.get(f"{_BASE}/metrics", headers=super_admin_token_headers)
+def test_metrics_says_plainly_that_nothing_is_collected(client, super_admin_token_headers):
+    """No worker publishes engine metrics; the route says so instead of answering a bare ``{}``."""
+    resp = client.get(f"{_BASE}/metrics", headers=super_admin_token_headers)
     assert resp.status_code == status.HTTP_200_OK
-    assert resp.json() == {}
+    body = resp.json()
+    assert body["metrics_collected"] is False
+    assert body["workers"] == {}
+    assert "Prometheus" in body["detail"]
 
 
-def test_metrics_answers_503_when_redis_is_unreachable(client, super_admin_token_headers):
-    """An unreadable store is an outage, not "no workers reported"."""
+def test_metrics_does_not_depend_on_redis(client, super_admin_token_headers):
+    """The 503-on-unreachable-Redis behaviour was removed with the Redis read: an outage of
+    the store can no longer change this answer."""
     with patch("app.core.redis.get_request_redis", side_effect=ConnectionError("refused")):
         resp = client.get(f"{_BASE}/metrics", headers=super_admin_token_headers)
-    assert resp.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert resp.status_code == status.HTTP_200_OK
+    assert resp.json()["metrics_collected"] is False
 
 
 def test_metrics_unauthorized(client):

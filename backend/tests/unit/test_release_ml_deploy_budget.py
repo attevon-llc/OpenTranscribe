@@ -129,7 +129,9 @@ def test_no_scenario_still_carries_a_180_second_ml_wait() -> None:
 
 @pytest.mark.unit
 def test_helper_reports_the_deployed_count_and_succeeds(tmp_path: Path) -> None:
-    rc, out, log = _run_helper(tmp_path, deployed="1")
+    # The helper returns on its first poll, so the budget is never consumed; a generous one
+    # keeps the first loop-condition `date +%s` from racing a 1 s deadline on a loaded host.
+    rc, out, log = _run_helper(tmp_path, deployed="1", timeout=60)
 
     assert "RC=0" in out, out
     assert "DEPLOYED=1" in out, f"the count must be echoed for the caller's as_assert_ge: {out!r}"

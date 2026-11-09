@@ -3728,12 +3728,8 @@ reset_and_init() {
     return 0
   fi
 
-  echo "🛑 Stopping all containers and removing volumes..."
-  # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
-  ot_drain_gpu_workers "$COMPOSE_FILES"
-  # shellcheck disable=SC2086
-  docker compose $COMPOSE_FILES down -v
-
+  # Everything that can fail runs BEFORE `down -v`: a failed precondition must leave the
+  # current stack and its data untouched, not abort halfway with the volumes already gone.
   # Create necessary directories
   create_required_dirs
 
@@ -3746,6 +3742,12 @@ reset_and_init() {
   # Unconditional owner-only lock (issue #857) -- not reachable via
   # ensure_minio_kms_secret alone once a real key is already in place.
   ensure_env_permissions ".env"
+
+  echo "🛑 Stopping all containers and removing volumes..."
+  # Drain CUDA-holding workers before the destructive `down -v` below (issue #782).
+  ot_drain_gpu_workers "$COMPOSE_FILES"
+  # shellcheck disable=SC2086
+  docker compose $COMPOSE_FILES down -v
 
   # Fetch the NLTK corpora BEFORE de-hardlinking them (issue #491).
   ensure_nltk_corpora

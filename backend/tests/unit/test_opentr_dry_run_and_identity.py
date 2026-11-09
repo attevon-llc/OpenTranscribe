@@ -213,3 +213,20 @@ def test_suite_exports_the_env_link_opt_out_and_opentr_honours_it(tmp_path: Path
     env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "OPENTR_NO_ENV_LINK": "1"}
     subprocess.run(["bash", "opentr.sh", "help"], cwd=wt, env=env, capture_output=True, text=True)
     assert not (wt / ".env").exists() and not (wt / ".env").is_symlink()
+
+
+def test_reset_runs_every_failable_precondition_before_down_v() -> None:
+    """A failed precondition must abort ``reset`` with the stack and its data untouched.
+
+    ``ensure_minio_kms_secret`` exits the script on failure; it used to run AFTER
+    ``docker compose ... down -v``, so a failure there left the volumes already destroyed.
+    """
+    body = extract_function(OPENTR, "reset_and_init")
+    wipe = body.index("down -v\n")
+    for step in (
+        "create_required_dirs",
+        "fix_model_cache_permissions",
+        'ensure_minio_kms_secret ".env" || exit 1',
+        'ensure_env_permissions ".env"',
+    ):
+        assert body.index(step) < wipe, f"{step} runs after down -v in reset_and_init"

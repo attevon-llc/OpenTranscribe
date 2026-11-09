@@ -27,13 +27,19 @@
   let failed = false;
   let loadedFor: string | null = null;
 
-  $: if (isOpen && grant && loadedFor !== grant.uuid) {
-    loadedFor = grant.uuid;
+  function syncOpenGrant(open: boolean, grantUuid: string | undefined) {
+    if (!open) {
+      loadedFor = null;
+      return;
+    }
+    if (!grantUuid || loadedFor === grantUuid) return;
+    loadedFor = grantUuid;
     uses = [];
     total = 0;
     void load(0);
   }
-  $: if (!isOpen) loadedFor = null;
+
+  $: syncOpenGrant(isOpen, grant?.uuid);
 
   async function load(offset: number) {
     if (!grant) return;

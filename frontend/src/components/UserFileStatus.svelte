@@ -98,10 +98,13 @@
   // fetch, and the block used to re-run on that flip and request the identical page again.
   $: tasksFilterKey = [taskFilter, taskTypeFilter, taskAgeFilter, taskDateFrom, taskDateTo].join('|');
   let fetchedFilterKey: string | null = null;
-  $: if (filtersReady && tasksFilterKey !== fetchedFilterKey) {
+  function refetchOnFilterChange(filterKey: string) {
+    if (!filtersReady || filterKey === fetchedFilterKey) return;
     taskPage = 1;
     fetchTasks(true);
   }
+
+  $: refetchOnFilterChange(tasksFilterKey);
 
   async function fetchFileStatus(silent = false) {
     if (!silent) {

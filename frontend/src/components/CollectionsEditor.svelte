@@ -221,9 +221,6 @@
     }
   }
 
-  let suggestedCollections: Collection[] = [];
-  let dropdownCollections: Array<{ id: string; name: string; count: number }> = [];
-
   // Get top 5 most used collections as chips
   $: suggestedCollections = allCollections
     .filter(collection => {

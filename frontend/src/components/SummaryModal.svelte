@@ -52,7 +52,7 @@
   let summaryEnabledSystem: boolean = true;
 
   // Get LLM availability from centralized store
-  let llmAvailable = false;
+  let llmAvailable: boolean;
   $: llmAvailable = $isLLMAvailable;
   let llmSettingsUnavailable = false;
 
@@ -77,10 +77,13 @@
     currentMatchIndex = 0;
   }
 
-  $: if (!loading && pendingKeyPathScroll && summary) {
+  function flushPendingKeyPathScroll(isLoading: boolean, hasSummary: boolean) {
+    if (isLoading || !pendingKeyPathScroll || !hasSummary) return;
     pendingKeyPathScroll = false;
     scrollToCurrentMatch();
   }
+
+  $: flushPendingKeyPathScroll(loading, !!summary);
 
   async function loadSummary() {
     if (!fileId) return;

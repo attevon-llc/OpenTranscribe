@@ -225,11 +225,12 @@
   }
 
   // Reset state and fetch ASR status when modal opens
-  $: if (showModal) {
+  function handleOpen(open: boolean, target: typeof file) {
+    if (!open) return;
     resetState();
     selectedReprocessModel = null;
     selectedLanguage = null;
-    selectedAudioTrack = file?.audio_stream_index ?? file?.audio_streams?.[0]?.index ?? null;
+    selectedAudioTrack = target?.audio_stream_index ?? target?.audio_streams?.[0]?.index ?? null;
     void loadSpeakerPrefill();
     // Ensure LLM status is loaded (may not be ready if user navigated quickly)
     llmStatusStore.initialize();
@@ -248,6 +249,8 @@
       adminDefaultModel = 'large-v3-turbo';
     });
   }
+
+  $: handleOpen(showModal, file);
 
   function handleClose() {
     dispatch('close');

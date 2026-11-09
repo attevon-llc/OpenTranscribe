@@ -45,13 +45,17 @@
   $: locked = $sessionLock.phase === 'locked' ? $sessionLock : null;
 
   // A 1 s countdown only while the warning is up.
-  $: if (warning && clock === null) {
-    now = Date.now();
-    clock = setInterval(() => (now = Date.now()), 1000);
-  } else if (!warning && clock !== null) {
-    clearInterval(clock);
-    clock = null;
+  function syncCountdown(warningUp: boolean) {
+    if (warningUp && clock === null) {
+      now = Date.now();
+      clock = setInterval(() => (now = Date.now()), 1000);
+    } else if (!warningUp && clock !== null) {
+      clearInterval(clock);
+      clock = null;
+    }
   }
+
+  $: syncCountdown(warning !== null);
 
   $: remaining = warning ? formatClock(Math.max(0, Math.ceil((warning.deadline - now) / 1000))) : '';
 

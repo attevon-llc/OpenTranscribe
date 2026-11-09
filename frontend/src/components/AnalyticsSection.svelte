@@ -44,9 +44,6 @@
   export let transcriptStore: { speakers: Speaker[] } = { speakers: [] };
   export let diarizationDisabled: boolean = false;
 
-  // Simple refresh counter to force re-rendering
-  let refreshCounter = 0;
-
   // Use speakerList prop (gets updated immediately) or fallback to transcript store
   $: activeSpeakers = speakerList?.length > 0 ? speakerList : (transcriptStore?.speakers || []);
 
@@ -64,17 +61,7 @@
       interruptions: analyticsData.interruptions,
       questions: analyticsData.questions
     }) : '';
-  $: combinedKey = `${speakerKey}-${analyticsKey}-${refreshCounter}`;
-
-  // Watch for changes and force refresh when analytics data OR speaker names change
-  $: if ((file?.analytics?.overall_analytics || file?.overall_analytics) && analyticsKey) {
-    refreshCounter++;
-  }
-
-  // Force refresh when speaker names change (for immediate frontend updates)
-  $: if (speakerKey) {
-    refreshCounter++;
-  }
+  $: combinedKey = `${speakerKey}-${analyticsKey}`;
 
   function toggleAnalytics() {
     isAnalyticsExpanded = !isAnalyticsExpanded;

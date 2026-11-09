@@ -41,10 +41,13 @@
 
   // Start clean each time it opens; a half-typed reason from last time is a leak of intent.
   let wasOpen = false;
-  $: if (isOpen !== wasOpen) {
-    wasOpen = isOpen;
-    if (isOpen) reset();
+  function resetOnOpen(open: boolean) {
+    if (open === wasOpen) return;
+    wasOpen = open;
+    if (open) reset();
   }
+
+  $: resetOnOpen(isOpen);
 
   async function submit() {
     if (!target || !canSubmit) return;

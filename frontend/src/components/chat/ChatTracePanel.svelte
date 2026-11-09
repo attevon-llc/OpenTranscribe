@@ -81,11 +81,14 @@
 
   // A new turn starts a clean reveal; without this the previous turn's nodes
   // stay "already revealed" and the new tree appears fully-formed.
-  $: if (turnId !== lastTurnId) {
-    lastTurnId = turnId;
+  function resetForNewTurn(id: string | null) {
+    if (id === lastTurnId) return;
+    lastTurnId = id;
     pacer.reset();
     visible = new Set();
   }
+
+  $: resetForNewTurn(turnId);
 
   $: nodes = flattenTrace(trace);
   $: pacer.offer(nodes.map((node) => ({ key: node.key, parent: node.nodeId })));

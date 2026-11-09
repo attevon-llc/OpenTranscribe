@@ -6,10 +6,8 @@ frontend/src/components/SettingsModal.svelte::script	976	oversize: split by conc
 frontend/src/lib/services/uploadService.ts	1400	v0.6.1 merge: release growth; split by concern planned
 frontend/src/routes/+page.svelte::script	1311	v0.7.0: #1101 moved delete logic to lib/trash (-53), #1102 wires the hidden-files mode (+4), legal holds moved query building to lib/gallery/galleryQuery (-44 net); split by concern planned
 opentr.sh	4892	v0.6.1 merge: release growth; +1 for #628 (--demo sets the lite flag; the lite/demo overlay moved to scripts/lib/lite-demo-overlay.sh, deduplicating start and reset); +1 for reset_and_init declaring DEMO_FLAG, which it now passes to that overlay; +5 for its --demo arm (flag parity with start_app); split by concern planned; +5 for the migrate one-shot (verify_stack_health accepts an exited-0 one-shot; --fresh re-pins migrate)
-scripts/cleanup-test-data.py	1171	cohesive: one signature-scoped sweep (cutoff, shapes, finders, API deletes, planes) sharing one safety model; +13 for #1101: an API delete now only trashes, so the same delete path must also purge
 scripts/common.sh	1941	v0.6.1 merge: release growth; split by concern planned; +17 for the migrate one-shot (compose_run_migrate, called by restore before compose start)
 scripts/docker-build-push.sh	1562	oversize: split by concern planned
-scripts/download-models.py	1367	v0.6.1 merge: release growth; split by concern planned
 scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
 scripts/release-tests/lib/guardrails.sh	1281	oversize: split by concern planned

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `scripts/download-models.py` and `scripts/cleanup-test-data.py` are now thin entry points over the `scripts/model_download/` and `scripts/cleanup_test_data/` packages. The downloader package is listed file by file in `release-manifest.txt`, and every container that runs the downloader mounts it beside the script.
+
 ### Added
 
 - Frontend guards: push-stage `guard-svelte-unused` (svelte-check `noUnusedLocals`/`noUnusedParameters` over `.svelte`, about 50 s) and `guard-duplicates` (jscpd, `--min-tokens 100`), both baselined; eslint `complexity` 15, `max-depth` 4 and `max-lines-per-function` 150 at `warn` with existing offenders baselined. The file-size guard now reads `scripts/guards/allowlists/file_size.txt`, where the two single-file installers (`opentranscribe.sh`, `setup-opentranscribe.sh`) are allowlisted as legitimate, no longer baselined debt. See `scripts/notes/ratchet-guards.md`.

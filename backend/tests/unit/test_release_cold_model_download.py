@@ -39,6 +39,8 @@ from types import ModuleType
 import pytest
 import yaml
 
+from tests.unit._downloader_package import downloader_source
+
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -117,7 +119,7 @@ def test_groups_reader_refuses_what_it_cannot_read_literally(tmp_path: Path, sou
 def test_every_model_the_oracle_names_is_named_by_the_downloader_and_its_consumer() -> None:
     """The oracle is a second opinion, so it must not invent model ids — nor keep a stale one."""
     oracle = _oracle_module()
-    downloader = DOWNLOADER_PY.read_text()
+    downloader = downloader_source()
     app_text = "\n".join(p.read_text() for p in (REPO_ROOT / "backend" / "app").rglob("*.py"))
     names = [repo_id for repos in oracle.HF_REPOS.values() for repo_id, _, _ in repos]
     assert len(names) >= 6

@@ -3,7 +3,7 @@
 
 The mypy pre-commit hook only sees ``backend/``; the guards, shared libraries and audit tooling
 that decide whether a commit may land were never type-checked. This runs the pinned mypy with the
-repo config over ``scripts/{guards,lib,audit_tests}`` (the ones
+repo config over ``scripts/{guards,lib,audit_tests,model_download,cleanup_test_data}`` (the ones
 that exist) and ratchets the ``path::error-code`` counts against
 ``baselines/scripts_mypy.txt``. The baseline only shrinks (``--tighten``); a mypy crash or a
 version other than the ``backend/requirements-dev.txt`` pin exits 2.
@@ -28,7 +28,7 @@ import _baseline
 import check_hidden_mypy as hidden
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-PACKAGES = ('guards', 'lib', 'audit_tests')
+PACKAGES = ('guards', 'lib', 'audit_tests', 'model_download', 'cleanup_test_data')
 
 
 def scripts_errors(root: Path) -> dict[str, int]:

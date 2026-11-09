@@ -25,6 +25,7 @@ import pytest
 
 from app.utils import nltk_offline
 from app.utils.nltk_offline import ensure_nltk_data_private
+from tests.unit._downloader_package import downloader_source
 
 BACKEND = Path(__file__).resolve().parents[2]
 
@@ -155,7 +156,10 @@ def test_nltk_can_read_the_tree_after_the_helper_runs(tmp_path):
 )
 def test_every_process_that_touches_the_cache_calls_the_helper(relative, needle):
     """Wiring guard: the helper is worthless if the entry points never call it."""
-    source = (BACKEND / relative).read_text()
+    if relative.endswith("download-models.py"):
+        source = downloader_source()
+    else:
+        source = (BACKEND / relative).read_text()
 
     calls = [
         line

@@ -109,6 +109,20 @@ scripts/generate-ssl-cert.sh	exec
 scripts/fix-model-permissions.sh	exec
 scripts/download-models.sh	exec
 scripts/download-models.py
+# The downloader's per-group modules; download-models.py imports them and download-models.sh
+# mounts the directory beside it, so a missing file breaks every model download.
+scripts/model_download/__init__.py
+scripts/model_download/diar_native.py
+scripts/model_download/embeddings.py
+scripts/model_download/groups.py
+scripts/model_download/manifest.py
+scripts/model_download/nltk.py
+scripts/model_download/opensearch.py
+scripts/model_download/pyannote.py
+scripts/model_download/redaction.py
+scripts/model_download/torch_compat.py
+scripts/model_download/ui.py
+scripts/model_download/whisper.py
 # Builds the breached-password list (download-models password-blocklist). `optional`: releases
 # before it shipped have no such script; opentranscribe.sh reports it missing and says how to fix.
 scripts/download-password-blocklist.sh	optional,exec

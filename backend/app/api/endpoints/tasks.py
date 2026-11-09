@@ -22,7 +22,6 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
-from sqlalchemy import true
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -35,39 +34,26 @@ from app.core.tenancy import OrgScope
 from app.db.base import get_db
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.schemas.media import PaginatedTaskResponse
 from app.schemas.media import Task
-from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
-from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.request_context import RequestContext
+from app.services.task_endpoint_queries import find_task_row
+from app.services.task_endpoint_queries import find_visible_media_file
+from app.services.task_endpoint_queries import task_rows_with_active_id
+from app.services.task_endpoint_queries import visible_file_uuids
+from app.services.task_endpoint_queries import visible_in_tenant
 from app.services.task_filtering_service import TaskFilteringService
 from app.services.task_list_query import TaskListFilters
 from app.services.task_list_query import list_task_page
 from app.services.task_list_query import visible_files_query
-from app.utils.db_helpers import owned_in_tenant
 from app.utils.uuid_parse import parse_uuid_or_none
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _visible_in_tenant(
-    current_user: User, organization_id: OrgScope, bypass: PlatformBypass
-) -> Any:
-    """Row predicate for the task surfaces: the caller's own files in the active tenant.
-
-    A bypass that sees every user's rows widens only the owner half; the tenant stamp
-    still applies, so it never reaches another tenant's files.
-    """
-    if bypass.sees_all_in_scope:
-        tenant = org_scope_pred(MediaFile.organization_id, organization_id)
-        return true() if tenant is None else tenant
-    return owned_in_tenant(MediaFile, user_id=current_user.id, organization_id=organization_id)
 
 
 def _latest_task_by_file(
@@ -87,31 +73,10 @@ def _latest_task_by_file(
     Joins through ``MediaFile`` rather than passing an ``IN`` list of file ids so
     the query cost does not scale with the caller's library size.
     """
-    query = (
-        db.query(
-            TaskModel.id,
-            TaskModel.media_file_id,
-            TaskModel.task_type,
-            TaskModel.status,
-            TaskModel.progress,
-            TaskModel.error_message,
-            TaskModel.created_at,
-            TaskModel.updated_at,
-            TaskModel.completed_at,
-            MediaFile.active_task_id,
-        )
-        .join(MediaFile, TaskModel.media_file_id == MediaFile.id)
-        .filter(_visible_in_tenant(current_user, organization_id, bypass))
-        .order_by(TaskModel.media_file_id, TaskModel.created_at)
-    )
-    # Same quarantine exclusion as `visible_files_query` — this query is joined
-    # through `MediaFile` independently, so it needs its own copy of the filter.
-    query = exclude_unavailable(query, include_quarantined=unavailable_list_exempt(bypass))
-    if file_id is not None:
-        query = query.filter(TaskModel.media_file_id == file_id)
+    rows = task_rows_with_active_id(db, current_user, organization_id, bypass, file_id)
 
     best: dict[int, Any] = {}
-    for row in query.all():
+    for row in rows:
         incumbent = best.get(row.media_file_id)
         if incumbent is None or row.id == row.active_task_id:
             best[row.media_file_id] = row
@@ -251,13 +216,7 @@ def get_active_progress(
     referenced = {u for state in states for u in state.get("failed_items") or []}
     visible: set[str] = set()
     if referenced:
-        visible = {
-            str(row.uuid)
-            for row in db.query(MediaFile.uuid).filter(
-                MediaFile.uuid.in_(_valid_uuids(referenced)),
-                _visible_in_tenant(ctx.user, ctx.org_id, ctx.bypass),
-            )
-        }
+        visible = visible_file_uuids(db, _valid_uuids(referenced), ctx.user, ctx.org_id, ctx.bypass)
     for state in states:
         state["failed_items"] = [u for u in state.get("failed_items") or [] if u in visible]
     return states
@@ -295,7 +254,7 @@ def list_tasks(
     try:
         base = visible_files_query(
             db,
-            _visible_in_tenant(current_user, ctx.org_id, ctx.bypass),
+            visible_in_tenant(current_user, ctx.org_id, ctx.bypass),
             include_quarantined=unavailable_list_exempt(ctx.bypass),
         )
         rows, total = list_task_page(
@@ -370,12 +329,9 @@ def _get_task_row_by_id(
     through to the legacy id path rather than trying to build a file-shaped
     response with no file.
     """
-    query = db.query(TaskModel).filter(TaskModel.id == task_id)
     # The row is only a pointer: `_get_media_file_by_id` applies the tenant gate on the
     # file it names, so a widened owner filter here cannot reach another tenant.
-    if not bypass.sees_all_in_scope:
-        query = query.filter(TaskModel.user_id == current_user.id)
-    task = query.first()
+    task = find_task_row(db, task_id, current_user, bypass)
     return task if task is not None and task.media_file_id is not None else None
 
 
@@ -397,15 +353,9 @@ def _get_media_file_by_id(
     bypass: PlatformBypass = PlatformBypass.none(),
 ) -> MediaFile:
     """Get media file by ID with proper permission checking."""
-    query = db.query(MediaFile).filter(
-        MediaFile.id == file_id,
-        _visible_in_tenant(current_user, organization_id, bypass),
-    )
     # A quarantined file must 404 on this surface too — see the matching
     # exclusion on `visible_files_query`/`_latest_task_by_file` above.
-    media_file = exclude_unavailable(
-        query, include_quarantined=unavailable_list_exempt(bypass)
-    ).first()
+    media_file = find_visible_media_file(db, file_id, current_user, organization_id, bypass)
 
     if not media_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")

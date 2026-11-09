@@ -30,6 +30,8 @@ from app.core.tenancy import _Unscoped  # noqa: F401 — re-exported for callers
 from app.db.base import get_db
 from app.models.user import User
 from app.services import organization_owner
+from app.services.organization_service import find_active_org_by_external_id
+from app.services.organization_service import find_membership
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
 from app.services.platform_bypass import PlatformBypass
@@ -56,28 +58,14 @@ def resolve_org_context(request: Request, db: Session, user: User) -> tuple[int 
     if identity is None or not getattr(identity, "org_id", None):
         return None, None
 
-    from app.models.organization import Organization
-    from app.models.organization import OrganizationMembership
-
-    org = (
-        db.query(Organization)
-        .filter(Organization.external_org_id == identity.org_id, Organization.is_active.is_(True))
-        .first()
-    )
+    org = find_active_org_by_external_id(db, identity.org_id)
     if org is None:
         # Org not mirrored (webhook lag) — fall back to personal scope rather
         # than failing the request; the next webhook/login sync repairs it.
         logger.warning(f"Unknown org in token: {identity.org_id} (falling back to personal)")
         return None, None
 
-    membership = (
-        db.query(OrganizationMembership)
-        .filter(
-            OrganizationMembership.organization_id == org.id,
-            OrganizationMembership.user_id == user.id,
-        )
-        .first()
-    )
+    membership = find_membership(db, org.id, user.id)
     if membership is None:
         # Token claims an org the mirror doesn't confirm (e.g. member just
         # removed). Authorization follows the mirror: personal scope only.

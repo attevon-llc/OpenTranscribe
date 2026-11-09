@@ -25,16 +25,14 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
-from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.request_context import RequestContext
 from app.services.task_detection_service import task_detection_service
+from app.services.task_endpoint_queries import open_tasks_of_file
 from app.services.task_recovery_service import task_recovery_service
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.utils.task_utils import TASK_STATUS_FAILED
-from app.utils.task_utils import TASK_STATUS_IN_PROGRESS
-from app.utils.task_utils import TASK_STATUS_PENDING
 
 logger = logging.getLogger(__name__)
 
@@ -185,14 +183,7 @@ def retry_file_processing(
         media_file.retry_count = int(media_file.retry_count or 0) + 1
 
         # Clear old tasks or mark them as failed
-        old_tasks = (
-            db.query(TaskModel)
-            .filter(
-                TaskModel.media_file_id == file_id,
-                TaskModel.status.in_([TASK_STATUS_PENDING, TASK_STATUS_IN_PROGRESS]),
-            )
-            .all()
-        )
+        old_tasks = open_tasks_of_file(db, int(file_id))
 
         for task in old_tasks:
             task.status = TASK_STATUS_FAILED

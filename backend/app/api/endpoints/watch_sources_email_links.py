@@ -10,19 +10,22 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.watch_sources_access import _get_source_or_404
 from app.db.base import get_db
-from app.models.email_notification_config import EmailNotificationConfig
 from app.models.email_notification_config import WatchSourceEmail
 from app.models.user import User
 from app.schemas.watch_source import EmailConfigOption
 from app.schemas.watch_source import EmailLinkCreate
 from app.schemas.watch_source import EmailLinkResponse
 from app.services.request_context import RequestContext
+from app.services.watch_email_queries import find_email_config
+from app.services.watch_email_queries import find_link
+from app.services.watch_email_queries import linked_config_ids
+from app.services.watch_email_queries import links_of_source
+from app.services.watch_email_queries import list_all_configs_by_name
 
 router = APIRouter()
 
@@ -49,12 +52,7 @@ def list_email_links(
     error, so ``notify_on_error`` means "a scan in which at least one file failed".
     """
     source = _get_source_or_404(db, source_uuid, ctx, need="read")
-    links = (
-        db.query(WatchSourceEmail)
-        .options(selectinload(WatchSourceEmail.email_config))
-        .filter(WatchSourceEmail.watch_source_id == source.id)
-        .all()
-    )
+    links = links_of_source(db, source.id)
     return [
         EmailLinkResponse(
             email_config_uuid=str(link.email_config.uuid),
@@ -100,13 +98,8 @@ def list_available_email_configs(
     usernames, and every authenticated user can read this.
     """
     source = _get_source_or_404(db, source_uuid, ctx, need="read")
-    linked_ids = {
-        link.email_config_id
-        for link in db.query(WatchSourceEmail)
-        .filter(WatchSourceEmail.watch_source_id == source.id)
-        .all()
-    }
-    configs = db.query(EmailNotificationConfig).order_by(EmailNotificationConfig.name).all()
+    linked_ids = linked_config_ids(db, source.id)
+    configs = list_all_configs_by_name(db)
     return [
         EmailConfigOption(
             uuid=str(cfg.uuid),
@@ -140,21 +133,10 @@ def link_email_config(
     safe to re-run.
     """
     source = _get_source_or_404(db, source_uuid, ctx)
-    cfg = (
-        db.query(EmailNotificationConfig)
-        .filter(EmailNotificationConfig.uuid == data.email_config_uuid)
-        .first()
-    )
+    cfg = find_email_config(db, data.email_config_uuid)
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
-    existing = (
-        db.query(WatchSourceEmail)
-        .filter(
-            WatchSourceEmail.watch_source_id == source.id,
-            WatchSourceEmail.email_config_id == cfg.id,
-        )
-        .first()
-    )
+    existing = find_link(db, source.id, cfg.id)
     if existing:
         existing.additional_recipients = data.additional_recipients
         existing.notify_on_success = data.notify_on_success
@@ -191,21 +173,10 @@ def unlink_email_config(
     is a caller mistake rather than an already-applied delete.
     """
     source = _get_source_or_404(db, source_uuid, ctx)
-    cfg = (
-        db.query(EmailNotificationConfig)
-        .filter(EmailNotificationConfig.uuid == config_uuid)
-        .first()
-    )
+    cfg = find_email_config(db, config_uuid)
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
-    link = (
-        db.query(WatchSourceEmail)
-        .filter(
-            WatchSourceEmail.watch_source_id == source.id,
-            WatchSourceEmail.email_config_id == cfg.id,
-        )
-        .first()
-    )
+    link = find_link(db, source.id, cfg.id)
     if link:
         db.delete(link)
         db.commit()

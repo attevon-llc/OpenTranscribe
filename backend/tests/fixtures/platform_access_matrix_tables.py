@@ -359,10 +359,10 @@ SCOPE_WIDENER_SITES: dict[str, str] = {
     "api/endpoints/speakers_list.py::list_speakers": (
         "widens a list to every user's rows; every speaker of files in the active scope; the owner filter is the only thing dropped"
     ),
-    "api/endpoints/tasks.py::_get_task_row_by_id": (
+    "services/task_endpoint_queries.py::find_task_row": (
         "widens a list to every user's rows; the task row is only a pointer: the tenant gate is applied to the media file it names by the caller"
     ),
-    "api/endpoints/tasks.py::_visible_in_tenant": (
+    "services/task_endpoint_queries.py::visible_in_tenant": (
         "widens a list to every user's rows; the owner half widens, the tenant stamp always applies"
     ),
     "api/endpoints/tasks.py::get_active_progress": (
@@ -411,8 +411,8 @@ TENANT_MARKERS: dict[str, tuple[str, ...]] = {
     "api/endpoints/speakers_list_filters.py::_resolve_profile_filter_id": ("org_scope_pred",),
     "api/endpoints/speakers_debug.py::debug_cross_media_by_name": ("file_ids_in_scope",),
     "api/endpoints/speakers_list.py::list_speakers": ("file_ids_in_scope",),
-    "api/endpoints/tasks.py::_get_task_row_by_id": (),
-    "api/endpoints/tasks.py::_visible_in_tenant": ("org_scope_pred",),
+    "services/task_endpoint_queries.py::find_task_row": (),
+    "services/task_endpoint_queries.py::visible_in_tenant": ("org_scope_pred",),
     "api/endpoints/tasks.py::get_active_progress": ("get_active_tasks",),
     "api/endpoints/watch_sources.py::list_watch_sources": ("org_filter",),
 }

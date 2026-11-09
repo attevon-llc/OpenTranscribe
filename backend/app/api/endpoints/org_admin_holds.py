@@ -33,7 +33,6 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import require_org_admin
@@ -44,7 +43,6 @@ from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import ORG_HOLD_RATE_LIMIT
 from app.db.base import get_db
 from app.models.content_hold import ContentHold
-from app.models.media import MediaFile
 from app.schemas.content_hold import AdminFileSearchResult
 from app.schemas.content_hold import HoldCreate
 from app.schemas.content_hold import HoldList
@@ -55,7 +53,9 @@ from app.services.admin_file_search import ADMIN_FILE_SEARCH_MAX
 from app.services.admin_file_search import admin_file_search_result
 from app.services.admin_file_search import search_files_for_admin
 from app.services.collection_visibility import visible_collections_by_uuid
+from app.services.content_hold_queries import find_org_hold
 from app.services.content_hold_queries import list_holds
+from app.services.content_hold_queries import org_files_by_uuid
 from app.services.content_hold_records import hold_records
 from app.services.content_hold_records import people_of
 from app.services.org_audit_view import member_labels
@@ -85,11 +85,7 @@ def _http(error: holds.HoldRequestError) -> HTTPException:
 
 
 def _find_hold(db: Session, org_id: int, hold_uuid: UUID) -> ContentHold:
-    hold = db.execute(
-        select(ContentHold).where(
-            ContentHold.uuid == hold_uuid, ContentHold.organization_id == org_id
-        )
-    ).scalar_one_or_none()
+    hold = find_org_hold(db, org_id, hold_uuid)
     if hold is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Hold not found")
     return hold
@@ -159,13 +155,7 @@ def place_org_hold(
     try:
         if body.scope == "file":
             wanted = {str(u) for u in body.file_uuids}
-            files = list(
-                db.execute(
-                    select(MediaFile).where(
-                        MediaFile.uuid.in_(wanted), MediaFile.organization_id == org_id
-                    )
-                ).scalars()
-            )
+            files = org_files_by_uuid(db, org_id, wanted)
             if len(files) != len(wanted):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
             change = holds.place_file_hold(

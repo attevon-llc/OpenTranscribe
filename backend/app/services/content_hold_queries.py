@@ -8,6 +8,7 @@ collection routes ask, and the list the administrator's screen shows.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from uuid import UUID
 
 from sqlalchemy import ColumnElement
 from sqlalchemy import func
@@ -18,6 +19,7 @@ from app.models.content_hold import AUTHORITY_ORGANIZATION
 from app.models.content_hold import AUTHORITY_PLATFORM
 from app.models.content_hold import ContentHold
 from app.models.content_hold import ContentHoldFile
+from app.models.media import MediaFile
 from app.schemas.content_hold import HoldSummary
 from app.services.hold_guard import HoldState
 from app.services.hold_guard import hold_state
@@ -176,3 +178,23 @@ def collection_hold_summaries(
         )
         for collection_id, state in collection_hold_states(db, collection_ids).items()
     }
+
+
+def find_org_hold(db: Session, org_id: int, hold_uuid: UUID) -> ContentHold | None:
+    """The hold with this uuid that belongs to organization ``org_id``, or ``None``."""
+    return db.execute(
+        select(ContentHold).where(
+            ContentHold.uuid == hold_uuid, ContentHold.organization_id == org_id
+        )
+    ).scalar_one_or_none()
+
+
+def org_files_by_uuid(db: Session, org_id: int, file_uuids: Iterable[str]) -> list[MediaFile]:
+    """The files of organization ``org_id`` among ``file_uuids`` (a stranger's uuid is absent)."""
+    return list(
+        db.execute(
+            select(MediaFile).where(
+                MediaFile.uuid.in_(list(file_uuids)), MediaFile.organization_id == org_id
+            )
+        ).scalars()
+    )

@@ -18,9 +18,9 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services.task_detection_service import task_detection_service
+from app.services.task_endpoint_queries import get_task
 from app.services.task_recovery_service import task_recovery_service
 from app.services.uuid_helpers import get_user_by_uuid
 
@@ -258,7 +258,7 @@ def recover_task(
     """
     try:
         # Find the task
-        task = db.query(TaskModel).filter(TaskModel.id == task_id).first()
+        task = get_task(db, task_id)
         if not task:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
 

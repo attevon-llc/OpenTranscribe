@@ -16,10 +16,7 @@ from fastapi import BackgroundTasks
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import status
-from sqlalchemy import func
-from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import defer
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -29,19 +26,21 @@ from app.db.base import get_db
 from app.legal.processing_gate import require_processing_allowed_for_file
 from app.models.media import FileStatus
 from app.models.media import MediaFile
-from app.models.media import Task as TaskModel
 from app.models.user import User
 from app.services import system_settings_service
 from app.services.error_categorization_service import ErrorCategorizationService
-from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
 from app.services.file_provenance_view import build_processing_steps
 from app.services.formatting_service import FormattingService
-from app.services.hidden_media_service import exclude_hidden_for
 from app.services.request_context import RequestContext
 from app.services.task_recovery_service import task_recovery_service
+from app.services.user_file_queries import latest_task_created_since
+from app.services.user_file_queries import problem_files
+from app.services.user_file_queries import recent_files
+from app.services.user_file_queries import status_count_rows
+from app.services.user_file_queries import tasks_in_status
+from app.services.user_file_queries import tasks_of_file
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
-from app.utils.db_helpers import owned_in_tenant
 from app.utils.task_utils import get_task_summary_for_media_file
 
 logger = logging.getLogger(__name__)
@@ -94,21 +93,13 @@ def get_user_file_status(
     try:
         now = datetime.now(UTC)
         user_id = current_user.id
-        own_in_tenant = owned_in_tenant(MediaFile, user_id=user_id, organization_id=ctx.org_id)
-
-        # --- Status counts via SQL GROUP BY (single aggregation query) ---
-        # Quarantine exclusion applied BEFORE the GROUP BY, not by filtering the
-        # resulting dict after — a quarantined file must not inflate `total` either.
-        # Explicitly typed as the plain `Query` `exclude_unavailable` takes/returns —
-        # without it mypy infers the narrower `RowReturningQuery[tuple[...]]` from the
-        # multi-column `db.query(...)` below and rejects the reassignment.
-        status_query: Query = db.query(MediaFile.status, func.count(MediaFile.id)).filter(
-            own_in_tenant
+        include_quarantined = unavailable_list_exempt(ctx.bypass)
+        status_rows = status_count_rows(
+            db,
+            user_id=user_id,
+            organization_id=ctx.org_id,
+            include_quarantined=include_quarantined,
         )
-        status_query = exclude_unavailable(
-            status_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
-        )
-        status_rows = status_query.group_by(MediaFile.status).all()
 
         status_counts: dict[str, int] = {
             "total": 0,
@@ -123,51 +114,22 @@ def get_user_file_status(
                 status_counts[key] = count
             status_counts["total"] += count
 
-        # --- Problem files via SQL (filtered query, no full table scan) ---
-        one_hour_ago = now - timedelta(hours=1)
-        two_hours_ago = now - timedelta(hours=2)
-
-        # Defer heavy JSON columns not needed for status display
-        problem_query = (
-            db.query(MediaFile)
-            .options(
-                defer(MediaFile.metadata_raw),
-                defer(MediaFile.waveform_data),
-                defer(MediaFile.metadata_important),
-                defer(MediaFile.summary_data),
-            )
-            .filter(
-                own_in_tenant,
-                (
-                    (MediaFile.status == FileStatus.PROCESSING)
-                    & (MediaFile.upload_time < one_hour_ago)
-                )
-                | (
-                    (MediaFile.status == FileStatus.PENDING)
-                    & (MediaFile.upload_time < two_hours_ago)
-                )
-                | (MediaFile.status == FileStatus.ERROR),
-            )
-            .order_by(MediaFile.upload_time.desc())
+        # --- Problem files (filtered query, no full table scan) ---
+        problem_rows = problem_files(
+            db,
+            user_id=user_id,
+            organization_id=ctx.org_id,
+            include_quarantined=include_quarantined,
+            now=now,
         )
-        # Not actually reachable today — quarantine overwrites `status` to the distinct
-        # `QUARANTINED` value, which matches none of the three arms above — but applied
-        # for uniformity with the other two queries in this handler, and so it stays
-        # correct if that filter is ever loosened.
-        problem_query = exclude_unavailable(
-            problem_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
-        )
-        # A file the caller hid stays out of their dashboard lists too (issue #1102); the
-        # status counts above stay whole, because hiding is not deleting.
-        problem_query = exclude_hidden_for(problem_query, user_id)
 
-        problem_files = []
-        for file in problem_query.all():
+        problem_payload = []
+        for file in problem_rows:
             # `upload_time` is nullable and the ERROR arm of the filter above places NO
             # predicate on it, so a NULL row genuinely reaches this loop. An unknown
             # upload time means an unknown age — reported as null, not raised.
             file_age = now - file.upload_time if file.upload_time is not None else None
-            problem_files.append(
+            problem_payload.append(
                 {
                     "uuid": str(file.uuid),
                     "filename": file.filename,
@@ -185,42 +147,23 @@ def get_user_file_status(
                 }
             )
 
-        # --- Recent files via SQL (last 24 hours, limited, pre-sorted) ---
-        twenty_four_hours_ago = now - timedelta(hours=24)
-
-        # Defer heavy JSON columns not needed for recent file list
-        recent_query = (
-            db.query(MediaFile)
-            .options(
-                defer(MediaFile.metadata_raw),
-                defer(MediaFile.waveform_data),
-                defer(MediaFile.metadata_important),
-                defer(MediaFile.summary_data),
-            )
-            .filter(
-                own_in_tenant,
-                MediaFile.upload_time >= twenty_four_hours_ago,
-            )
-            .order_by(MediaFile.upload_time.desc())
+        # --- Recent files (last 24 hours, limited, pre-sorted) ---
+        recent_rows = recent_files(
+            db,
+            user_id=user_id,
+            organization_id=ctx.org_id,
+            include_quarantined=include_quarantined,
+            now=now,
         )
-        # The real leak this item fixes: a file quarantined within the last 24h of
-        # upload would otherwise still report its filename/status/duration here.
-        # Applied BEFORE `.limit()` — SQLAlchemy refuses `.filter()` after a LIMIT.
-        recent_query = exclude_hidden_for(
-            exclude_unavailable(
-                recent_query, include_quarantined=unavailable_list_exempt(ctx.bypass)
-            ),
-            user_id,
-        ).limit(10)
 
-        recent_files = []
-        for file in recent_query.all():
+        recent_payload = []
+        for file in recent_rows:
             # `upload_time >= ...` above excludes NULL by SQL three-valued logic, so unlike
             # the problem-files loop a NULL row cannot reach here. Guarded identically all
             # the same: the two loops build the same payload and a reader must not have to
             # re-derive which one the filter happens to protect.
             file_age = now - file.upload_time if file.upload_time is not None else None
-            recent_files.append(
+            recent_payload.append(
                 {
                     "uuid": str(file.uuid),
                     "filename": file.filename,
@@ -240,12 +183,12 @@ def get_user_file_status(
 
         return {
             "status_counts": status_counts,
-            "problem_files": {"count": len(problem_files), "files": problem_files},
+            "problem_files": {"count": len(problem_payload), "files": problem_payload},
             "recent_files": {
-                "count": len(recent_files),
-                "files": recent_files,
+                "count": len(recent_payload),
+                "files": recent_payload,
             },
-            "has_problems": len(problem_files) > 0,
+            "has_problems": len(problem_payload) > 0,
             "timestamp": now,
         }
 
@@ -287,7 +230,7 @@ def get_file_detailed_status(
         task_summary = get_task_summary_for_media_file(db, file_id)
 
         # Get all tasks for this file
-        tasks = db.query(TaskModel).filter(TaskModel.media_file_id == file_id).all()
+        tasks = tasks_of_file(db, file_id)
 
         task_details = []
         for task in tasks:
@@ -425,15 +368,7 @@ def retry_file_processing(
         # attempt (not just a count) so a 429 can carry a real Retry-After —
         # derived from the SAME row, not a separate query.
         retry_window = timedelta(minutes=5)
-        most_recent_task = (
-            db.query(TaskModel)
-            .filter(
-                TaskModel.media_file_id == file_id,
-                TaskModel.created_at > datetime.now(UTC) - retry_window,
-            )
-            .order_by(TaskModel.created_at.desc())
-            .first()
-        )
+        most_recent_task = latest_task_created_since(db, file_id, datetime.now(UTC) - retry_window)
 
         # `created_at` is a nullable column, but the `>` filter above cannot be
         # satisfied by SQL NULL, so a row reaching here always has one — the
@@ -491,14 +426,7 @@ def retry_file_processing(
             media_file.retry_count = int(media_file.retry_count or 0) + 1
 
             # Mark old tasks as failed
-            old_tasks = (
-                db.query(TaskModel)
-                .filter(
-                    TaskModel.media_file_id == file_id,
-                    TaskModel.status.in_(["pending", "in_progress"]),
-                )
-                .all()
-            )
+            old_tasks = tasks_in_status(db, file_id, ["pending", "in_progress"])
 
             for task in old_tasks:
                 task.status = "failed"

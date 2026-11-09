@@ -25,7 +25,6 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
@@ -39,7 +38,6 @@ from app.auth.audit_events import AuditOutcome
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import Task
-from app.models.organization import Organization
 from app.schemas.privacy import AdminPurgeRequest
 from app.schemas.privacy import EffectivePrivacy
 from app.schemas.privacy import InstancePrivacyPolicy
@@ -165,11 +163,7 @@ def get_effective_privacy(
         db, user_id=owner_id, organization_id=organization_id, media_file_id=file_id
     )
     gender = gender_decision(db, user_id=owner_id, organization_id=organization_id)
-    organization_uuid = (
-        db.scalar(select(Organization.uuid).where(Organization.id == organization_id))
-        if organization_id is not None
-        else None
-    )
+    organization_uuid = policy_admin.organization_uuid(db, organization_id)
     return EffectivePrivacy(
         organization_uuid=organization_uuid,
         voiceprint_matching=PrivacyDecision(

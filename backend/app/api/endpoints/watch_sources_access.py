@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.watch_source import WatchSource
 from app.services.request_context import RequestContext
+from app.services.watch_source_queries import find_source
 
 
 def _source_in_tenant(source: WatchSource, ctx: RequestContext) -> bool:
@@ -31,9 +32,7 @@ def _get_source_or_404(
     need: Literal["read", "write"] = "write",
 ) -> WatchSource:
     current_user = ctx.user
-    source: WatchSource | None = (
-        db.query(WatchSource).filter(WatchSource.uuid == source_uuid).first()
-    )
+    source = find_source(db, source_uuid)
     if not source:
         raise HTTPException(status_code=404, detail="Watch source not found")
     # The platform role operates every tenant's sources in single-tenant mode only; it

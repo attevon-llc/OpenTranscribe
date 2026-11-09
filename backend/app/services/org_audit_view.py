@@ -45,6 +45,16 @@ def member_id_for_uuid(db: Session, org_id: int, user_uuid: UUID | str) -> int |
     return int(row[0]) if row else None
 
 
+def org_member_user_ids(db: Session, org_id: int) -> list[int]:
+    """The user ids of every member of ``org_id`` (the audit-scope set)."""
+    rows = (
+        db.query(OrganizationMembership.user_id)
+        .filter(OrganizationMembership.organization_id == org_id)
+        .all()
+    )
+    return [int(r[0]) for r in rows]
+
+
 def member_labels(db: Session, org_id: int, user_ids: set[int]) -> dict[int, str]:
     if not user_ids:
         return {}

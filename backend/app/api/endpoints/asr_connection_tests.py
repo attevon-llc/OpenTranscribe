@@ -30,6 +30,7 @@ from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services.asr.base import ASRProvider
 from app.services.request_context import RequestContext
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 
 router = APIRouter()
@@ -153,10 +154,14 @@ def test_saved_asr_config(
     # the transcription-job path cannot drift apart (issue #300).
     api_key = None
     if config.api_key:
-        api_key = decrypt_api_key(str(config.api_key))
-        if api_key is None:
+        try:
+            api_key = decrypt_api_key(str(config.api_key))
+        except SecretDecryptionError:
             logger.error("Failed to decrypt API key for ASR config %s", config_uuid)
-            raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
+            raise HTTPException(
+                status_code=409,
+                detail="Stored API key cannot be decrypted. Re-enter it.",
+            ) from None
 
     start_time = time.time()
     try:

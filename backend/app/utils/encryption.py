@@ -39,7 +39,27 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-class EncryptionKeyConfigError(RuntimeError):
+# Stable machine-readable code for the 409 an undecryptable stored secret produces.
+STORED_VALUE_UNREADABLE_CODE = "secret_undecryptable"
+
+
+class EncryptionError(RuntimeError):
+    """Base for failures of the encryption layer, distinct from an absent secret.
+
+    Deliberately NOT a ``ValueError``: callers that narrow bad-input handling to
+    ``ValueError`` must not swallow these into "no secret stored".
+    """
+
+
+class SecretDecryptionError(EncryptionError):
+    """A stored secret exists but cannot be decrypted (wrong key or AAD, corrupt or tampered).
+
+    Never carries the ciphertext or plaintext. Absence (an empty/None input) is not this
+    error: ``decrypt_*`` returns ``None`` for that.
+    """
+
+
+class EncryptionKeyConfigError(EncryptionError):
     """``ENCRYPTION_KEY`` is missing or unusable.
 
     Deliberately NOT a ``ValueError``: callers narrow bad-ciphertext handling to
@@ -213,7 +233,7 @@ def _get_fernet_key() -> bytes:
     return key_string.encode("utf-8")
 
 
-def _decrypt_fernet_legacy(encrypted_data: str) -> str | None:
+def _decrypt_fernet_legacy(encrypted_data: str) -> str:
     """
     Decrypt legacy Fernet-encrypted data.
 
@@ -221,7 +241,10 @@ def _decrypt_fernet_legacy(encrypted_data: str) -> str | None:
         encrypted_data: Base64-encoded Fernet ciphertext
 
     Returns:
-        Decrypted plaintext string, or None if decryption fails
+        Decrypted plaintext string
+
+    Raises:
+        SecretDecryptionError: wrong key, or corrupt/tampered data
     """
     try:
         key = _get_fernet_key()
@@ -234,12 +257,8 @@ def _decrypt_fernet_legacy(encrypted_data: str) -> str | None:
         decrypted_data = fernet.decrypt(encrypted_bytes)
         return decrypted_data.decode("utf-8")
 
-    except InvalidToken:
-        logger.debug("Fernet token invalid - may not be legacy format")
-        return None
-    except ValueError as e:  # malformed base64 / non-UTF-8 plaintext: corrupt stored value
-        logger.error(f"Failed to decrypt legacy Fernet data: {e}", exc_info=True)
-        return None
+    except (InvalidToken, ValueError) as e:  # ValueError: malformed base64 / non-UTF-8
+        raise SecretDecryptionError("stored secret cannot be decrypted") from e
 
 
 def encrypt_api_key(api_key: str) -> str | None:
@@ -261,6 +280,12 @@ def encrypt_api_key(api_key: str) -> str | None:
         return None
 
     return _encrypt_v3(api_key.encode("utf-8"))
+
+
+def _decryption_failed() -> SecretDecryptionError:
+    """Log once, without the ciphertext/plaintext/exception text, and build the error."""
+    logger.error("Stored secret could not be decrypted (wrong key, corrupt or tampered)")
+    return SecretDecryptionError("stored secret cannot be decrypted")
 
 
 @overload
@@ -290,10 +315,11 @@ def decrypt_api_key(
 
     Returns:
         If auto_upgrade=False: Decrypted API key as plain text, or None if the stored value
-        is empty or cannot be decrypted (wrong key, corrupt or tampered data)
+        is empty (absence)
         If auto_upgrade=True: Tuple of (decrypted_key, new_v3_encrypted_key or None)
 
     Raises:
+        SecretDecryptionError: wrong key, corrupt or tampered data (never None).
         EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured (an outage, not a
             missing value).
     """
@@ -303,33 +329,18 @@ def decrypt_api_key(
         return None
 
     try:
-        # Check for v3 encryption
         if encrypted_api_key.startswith(ENCRYPTION_V3_PREFIX):
             decrypted = _decrypt_v3(encrypted_api_key).decode("utf-8")
             if auto_upgrade:
                 return decrypted, None  # Already v3, no upgrade needed
             return decrypted
 
-        # Try legacy Fernet decryption
         legacy_decrypted = _decrypt_fernet_legacy(encrypted_api_key)
-
-        if legacy_decrypted is None:
-            if auto_upgrade:
-                return None, None
-            return None
-
         if auto_upgrade:
-            # Re-encrypt with v3 for upgrade
-            new_encrypted = encrypt_api_key(legacy_decrypted)
-            return legacy_decrypted, new_encrypted
-
+            return legacy_decrypted, encrypt_api_key(legacy_decrypted)
         return legacy_decrypted
-
     except (InvalidTag, ValueError) as e:
-        logger.error(f"Failed to decrypt API key: {e}", exc_info=True)
-        if auto_upgrade:
-            return None, None
-        return None
+        raise _decryption_failed() from e
 
 
 def generate_encryption_key() -> str:
@@ -376,7 +387,7 @@ def test_encryption() -> bool:
         logger.info("V3 encryption test passed")
         return True
 
-    except (EncryptionKeyConfigError, InvalidTag, ValueError) as e:
+    except (EncryptionError, InvalidTag, ValueError) as e:
         logger.error(f"Encryption test failed: {e}", exc_info=True)
         return False
 
@@ -407,24 +418,19 @@ def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
         aad: Optional associated authenticated data (must match encryption)
 
     Returns:
-        Decrypted value as plain text, or None if the stored value is empty or cannot be
-        decrypted (wrong key or AAD, corrupt or tampered data)
+        Decrypted value as plain text, or None if the stored value is empty (absence)
 
     Raises:
+        SecretDecryptionError: wrong key or AAD, corrupt or tampered data.
         EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured.
     """
     if not encrypted_value or not encrypted_value.strip():
         return None
 
     try:
-        # Check for v3 encryption with custom AAD
         if encrypted_value.startswith(ENCRYPTION_V3_PREFIX):
             effective_aad = aad if aad is not None else DEFAULT_AAD
             return _decrypt_v3(encrypted_value, effective_aad).decode("utf-8")
-
-        # Legacy Fernet decryption (doesn't support custom AAD)
         return _decrypt_fernet_legacy(encrypted_value)
-
     except (InvalidTag, ValueError) as e:
-        logger.error(f"Failed to decrypt value: {e}", exc_info=True)
-        return None
+        raise _decryption_failed() from e

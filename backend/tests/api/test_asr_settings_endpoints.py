@@ -25,6 +25,8 @@ from unittest.mock import patch
 
 from fastapi import status
 
+from app.utils.encryption import SecretDecryptionError
+
 _BASE = "/api/asr-settings"
 _ENC = "app.api.endpoints.asr_settings"
 
@@ -128,13 +130,16 @@ def test_the_key_reveal_route_is_removed_for_every_kind_of_config(client, user_t
         assert "dg_fixture_key_xyz" not in resp.text
 
 
-def test_test_saved_config_decrypt_failure_500(client, user_token_headers):
-    """test-config decrypt failure → 'Failed to decrypt stored API key'."""
+def test_test_saved_config_decrypt_failure_409(client, user_token_headers):
+    """test-config decrypt failure is a 409 telling the user to re-enter the key."""
     created = _create_cloud_config(client, user_token_headers, name="DecryptStored").json()
-    with patch("app.api.endpoints.asr_connection_tests.decrypt_api_key", return_value=None):
+    with patch(
+        "app.api.endpoints.asr_connection_tests.decrypt_api_key",
+        side_effect=SecretDecryptionError("x"),
+    ):
         resp = client.post(f"{_BASE}/test-config/{created['uuid']}", headers=user_token_headers)
-    assert resp.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
-    assert resp.json()["detail"] == "Failed to decrypt stored API key"
+    assert resp.status_code == status.HTTP_409_CONFLICT
+    assert resp.json()["detail"] == "Stored API key cannot be decrypted. Re-enter it."
 
 
 # ---------------------------------------------------------------------------

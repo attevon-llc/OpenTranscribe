@@ -106,6 +106,7 @@ class ASRProviderFactory:
         Raises:
             ValueError: If a stored credential is present but fails to decrypt.
         """
+        from app.utils.encryption import SecretDecryptionError
         from app.utils.encryption import decrypt_api_key
 
         if cfg.provider == "local":
@@ -116,7 +117,13 @@ class ASRProviderFactory:
 
         api_key: str | None = None
         if cfg.api_key:
-            api_key = decrypt_api_key(str(cfg.api_key))
+            try:
+                api_key = decrypt_api_key(str(cfg.api_key))
+            except SecretDecryptionError as exc:
+                raise ValueError(
+                    f"Stored API key cannot be decrypted for ASR config id={cfg.id} "
+                    f"(provider={cfg.provider}); ENCRYPTION_KEY changed or the value is corrupt"
+                ) from exc
             if not api_key:
                 raise ValueError(
                     f"Decryption of stored API key returned empty for ASR config id={cfg.id} "
@@ -125,7 +132,13 @@ class ASRProviderFactory:
 
         access_key_id: str | None = None
         if getattr(cfg, "access_key_id", None):
-            access_key_id = decrypt_api_key(str(cfg.access_key_id))
+            try:
+                access_key_id = decrypt_api_key(str(cfg.access_key_id))
+            except SecretDecryptionError as exc:
+                raise ValueError(
+                    f"Stored access key ID cannot be decrypted for ASR config id={cfg.id} "
+                    f"(provider={cfg.provider})"
+                ) from exc
             if not access_key_id:
                 raise ValueError(
                     f"Decryption of stored access key ID returned empty for ASR config "

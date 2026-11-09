@@ -199,8 +199,8 @@
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="stat-card stat-card-clickable" on:click={() => openProcessingDetails('queues')}>
         <h4>{$t('settings.statistics.queueDepths')}</h4>
-        <div class="stat-value">{stats.queues?.total || 0} <span class="stat-unit">{$t('settings.statistics.queueTotal')}</span></div>
-        {#if stats.queues?.total > 0}
+        <div class="stat-value">{stats.queues_available === false ? '—' : stats.queues?.total || 0} <span class="stat-unit">{$t('settings.statistics.queueTotal')}</span></div>
+        {#if (stats.queues?.total ?? 0) > 0}
           <div class="queue-bars">
             {#each [
               { key: 'gpu', label: $t('settings.statistics.queueGpu') },
@@ -209,8 +209,8 @@
               { key: 'embedding', label: $t('settings.statistics.queueEmbedding') },
               { key: 'cpu', label: $t('settings.statistics.queueCpu') }
             ] as queue (queue.key)}
-              {#if stats.queues?.[queue.key] > 0}
-                <div class="stat-detail">{queue.label}: {stats.queues[queue.key]}</div>
+              {#if (stats.queues?.[queue.key] ?? 0) > 0}
+                <div class="stat-detail">{queue.label}: {stats.queues?.[queue.key]}</div>
               {/if}
             {/each}
           </div>

@@ -42,6 +42,7 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 
@@ -248,7 +249,11 @@ class MFAService:
         Raises:
             ValueError: If decryption fails
         """
-        decrypted = decrypt_api_key(encrypted_secret)
+        try:
+            decrypted = decrypt_api_key(encrypted_secret)
+        except SecretDecryptionError as exc:
+            logger.error("Failed to decrypt TOTP secret")
+            raise ValueError("Failed to decrypt TOTP secret") from exc
         if decrypted is None:
             logger.error("Failed to decrypt TOTP secret")
             raise ValueError("Failed to decrypt TOTP secret")

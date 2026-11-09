@@ -94,7 +94,9 @@ export interface SystemStats {
     max_secs: number;
     avg_mins: number;
   };
-  queues: Record<string, number>;
+  /** null when the broker could not be read: unknown, not zero. */
+  queues: Record<string, number> | null;
+  queues_available?: boolean;
 }
 
 export interface SearchIndexStatus {

@@ -1145,6 +1145,7 @@
   "settings.statistics.queueEmbedding": "Эмбеддинги",
   "settings.statistics.queueCpu": "CPU",
   "settings.statistics.queueTotal": "В очереди и в работе",
+  "settings.statistics.queuesUnavailable": "Длины очередей сейчас недоступны (брокер задач недоступен).",
   "settings.statistics.fileTimingAvg": "В среднем на файл",
   "settings.statistics.fileTimingMin": "Быстрее всего",
   "settings.statistics.fileTimingMax": "Медленнее всего",

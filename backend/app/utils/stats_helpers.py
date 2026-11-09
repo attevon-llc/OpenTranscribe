@@ -400,7 +400,7 @@ def get_throughput_and_eta(db: Session) -> tuple[dict[str, Any], dict[str, Any]]
     return throughput, eta_from_counts(row.last_3h, row.remaining)
 
 
-def get_queue_depths() -> dict[str, int]:
+def get_queue_depths() -> dict[str, int] | None:
     """Get Celery queue depths (pending + reserved) per queue.
 
     Backed by ``app.core.celery_metrics.queue_snapshot`` — the single source
@@ -413,10 +413,11 @@ def get_queue_depths() -> dict[str, int]:
     queue depth 0 while every worker was fully loaded.
 
     Returns:
-        Dictionary mapping queue name to task count, plus a ``"total"`` key.
+        Dictionary mapping queue name to task count, plus a ``"total"`` key, or ``None``
+        when the broker cannot be read. ``None`` is "unknown", never zeros: an outage must
+        not look like an idle fleet.
     """
     from app.core.celery_metrics import queue_snapshot
-    from app.core.queues import CeleryQueues
 
     try:
         snapshot = queue_snapshot()
@@ -427,7 +428,7 @@ def get_queue_depths() -> dict[str, int]:
         return depths
     except (RedisError, OSError) as e:
         logger.error(f"Error getting queue depths: {e}", exc_info=True)
-        return {q: 0 for q in CeleryQueues.ALL} | {"total": 0}
+        return None
 
 
 def get_models_info() -> dict[str, dict[str, Any]]:

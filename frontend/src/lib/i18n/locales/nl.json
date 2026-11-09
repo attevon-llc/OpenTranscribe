@@ -1143,6 +1143,7 @@
   "settings.statistics.queueEmbedding": "Embedding",
   "settings.statistics.queueCpu": "CPU",
   "settings.statistics.queueTotal": "In wachtrij + actief",
+  "settings.statistics.queuesUnavailable": "De wachtrijlengtes zijn momenteel niet beschikbaar (de taakbroker is niet bereikbaar).",
   "settings.statistics.fileTimingAvg": "Gem. per bestand",
   "settings.statistics.fileTimingMin": "Snelste",
   "settings.statistics.fileTimingMax": "Traagste",

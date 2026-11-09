@@ -1147,6 +1147,7 @@
   "settings.statistics.queueEmbedding": "المتجهات",
   "settings.statistics.queueCpu": "CPU",
   "settings.statistics.queueTotal": "في الانتظار + قيد التنفيذ",
+  "settings.statistics.queuesUnavailable": "أطوال قوائم الانتظار غير متاحة حاليًا (تعذر الوصول إلى وسيط المهام).",
   "settings.statistics.fileTimingAvg": "متوسط لكل ملف",
   "settings.statistics.fileTimingMin": "الأسرع",
   "settings.statistics.fileTimingMax": "الأبطأ",

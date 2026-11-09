@@ -55,6 +55,7 @@ class MediaSourceResolver:
         """
         try:
             from app.db.base import SessionLocal
+            from app.utils.encryption import SecretDecryptionError
             from app.utils.encryption import decrypt_api_key
 
             db = SessionLocal()
@@ -65,7 +66,15 @@ class MediaSourceResolver:
                 for s in sources:
                     password = None
                     if s.password:
-                        password = decrypt_api_key(str(s.password))
+                        try:
+                            password = decrypt_api_key(str(s.password))
+                        except SecretDecryptionError:
+                            # Skip rather than offer the host with an empty password.
+                            logger.warning(
+                                "Skipping media source %s: stored password cannot be decrypted",
+                                s.hostname,
+                            )
+                            continue
                     result.append(
                         {
                             "hostname": s.hostname,

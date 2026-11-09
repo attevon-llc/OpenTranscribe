@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Security: a stored secret that cannot be decrypted (rotated or wrong `ENCRYPTION_KEY`, corrupt or tampered ciphertext) now raises `SecretDecryptionError` instead of returning `None`, which callers could not tell from "no secret stored". Provider and ASR credentials, SMTP/Exchange/M365 and watch-source S3/SMB secrets, scheduled-job S3 secrets and Bedrock credentials now fail visibly rather than connecting without credentials or overwriting the stored value; the API answers `409` with code `stored_value_unreadable` and a fixed message; the media-source resolver skips an undecryptable source; the admin Statistics queue view reports "unavailable" on a broker outage instead of zeros.
+
 ### Changed
 
 - Broad-except lane B4b (`backend/app/transcription/**` and `backend/app/tasks/transcription/**`): every one of the remaining 93 handlers now narrows to what its try body can raise (Redis, SQLAlchemy, broker, OpenSearch, MinIO, subprocess, torch/CUDA `RuntimeError`) or is a marked boundary that calls `logger.exception`; each absorbed outage logs a traceback, and a programming error in those bodies is no longer swallowed. The waveform generator's outer catch-all was removed (the Celery task already logs and retries). Model-load error types live in `app/transcription/errors.py`.

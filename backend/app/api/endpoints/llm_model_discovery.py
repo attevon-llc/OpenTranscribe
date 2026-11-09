@@ -18,6 +18,7 @@ from app.auth.rate_limit import get_llm_outbound_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.url_validation import PinnedTarget
 
@@ -159,6 +160,8 @@ def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None
         )
         if config and config.api_key and str(config.provider) != "bedrock":
             return decrypt_api_key(str(config.api_key))
+    except SecretDecryptionError:
+        raise  # an unreadable stored key is a 409 for the caller, not "no key"
     except (ValueError, Exception) as e:
         logger.warning(f"Could not retrieve stored API key for config {config_id}: {e}")
     return None

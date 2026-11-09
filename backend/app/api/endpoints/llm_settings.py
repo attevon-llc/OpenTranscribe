@@ -33,6 +33,7 @@ from app.services import llm_reasoning
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_llm_config_by_uuid
 from app.services.uuid_helpers import require_resource_owner
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
@@ -536,7 +537,13 @@ def get_config_api_key(
         return {"api_key": None}
 
     # Decrypt API key
-    api_key = decrypt_api_key(str(user_config.api_key))
+    try:
+        api_key = decrypt_api_key(str(user_config.api_key))
+    except SecretDecryptionError:
+        raise HTTPException(
+            status_code=409,
+            detail="The stored API key cannot be decrypted. Re-enter it.",
+        ) from None
     if not api_key:
         raise HTTPException(status_code=500, detail="Failed to decrypt stored API key")
 

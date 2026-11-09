@@ -110,8 +110,8 @@ def get_active_prompt(
         active_prompt_uuid = str(active_prompt.uuid) if active_prompt else None
 
     return schemas.ActivePromptResponse(
-        active_prompt_id=active_prompt_uuid,  # type: ignore[arg-type]
-        active_prompt=active_prompt,  # type: ignore[arg-type]  # ORM coerced via from_attributes
+        active_prompt_id=active_prompt_uuid,
+        active_prompt=active_prompt,
     )
 
 
@@ -169,4 +169,4 @@ def set_active_prompt(
     db.commit()
     db.refresh(prompt)
 
-    return schemas.ActivePromptResponse(active_prompt_id=str(prompt.uuid), active_prompt=prompt)  # type: ignore[arg-type]
+    return schemas.ActivePromptResponse(active_prompt_id=str(prompt.uuid), active_prompt=prompt)

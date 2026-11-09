@@ -27,5 +27,5 @@ def get_bedrock_server_credentials(
     """Whether the server's AWS credential chain resolves, plus its deployment region."""
     return BedrockServerCredentialStatus(
         region=bedrock_settings.env_region() or None,
-        **bedrock_settings.server_credential_status(),  # type: ignore[arg-type]
+        **bedrock_settings.server_credential_status(),
     )

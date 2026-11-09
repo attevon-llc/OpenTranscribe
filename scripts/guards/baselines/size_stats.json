@@ -3,7 +3,7 @@
   "version": 1,
   "groups": {
     "Python (non-test)": {
-      "files": 1489,
+      "files": 1493,
       "median": 205,
       "p90": 497,
       "p95": 600,
@@ -13,7 +13,7 @@
       "debt": {
         "files_over_hard": 4,
         "lines_above_hard": 1093,
-        "lines_above_soft": 20513
+        "lines_above_soft": 20522
       }
     },
     "TypeScript/JS (non-test)": {
@@ -31,23 +31,27 @@
       }
     },
     "Shell (non-test)": {
-      "files": 147,
-      "median": 199,
-      "p90": 853,
-      "p95": 1282,
+      "files": 145,
+      "median": 190,
+      "p90": 785,
+      "p95": 1173,
       "max": 4892,
-      "over_soft": 27,
-      "over_hard": 11,
+      "over_soft": 25,
+      "over_hard": 9,
       "debt": {
-        "files_over_hard": 11,
-        "lines_above_hard": 12168,
-        "lines_above_soft": 21056
+        "files_over_hard": 9,
+        "lines_above_hard": 8548,
+        "lines_above_soft": 16436
+      },
+      "allowlisted": {
+        "files": 2,
+        "lines_above_hard": 3620
       }
     },
     "Tests (py/ts/js/sh)": {
-      "files": 2906,
+      "files": 2912,
       "median": 173,
-      "p90": 475,
+      "p90": 474,
       "p95": 628,
       "max": 1490,
       "over_soft": 18,

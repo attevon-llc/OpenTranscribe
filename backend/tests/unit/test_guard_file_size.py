@@ -148,6 +148,25 @@ def test_baselined_file_passes_and_growth_fails(tmp_path: Path) -> None:
     assert _run(root, _baseline(tmp_path, ("backend/app/big.py", 1199))) == 1
 
 
+def _allowlist(tmp_path: Path, key: str, value: int) -> Path:
+    path = tmp_path / "allowlist.txt"
+    reason = "single-file-installer: user-downloaded installer kept as one self-contained file"
+    path.write_text(f"{key}\t{value}\t{reason}\n", "utf-8")
+    return path
+
+
+@pytest.mark.unit
+def test_allowlisted_file_passes_and_growth_or_staleness_fails(tmp_path: Path) -> None:
+    root = _make_repo(tmp_path, {"setup.sh": 1200})
+    base = _baseline(tmp_path)
+    assert _run(root, base) == 1  # must fire without the allowlist
+    assert _run(root, base, "--allowlist", str(_allowlist(tmp_path, "setup.sh", 1200))) == 0
+    assert _run(root, base, "--allowlist", str(_allowlist(tmp_path, "setup.sh", 1199))) == 1
+    (tmp_path / "s").mkdir()
+    small = _make_repo(tmp_path / "s", {"setup.sh": 10})
+    assert _run(small, base, "--allowlist", str(_allowlist(tmp_path, "setup.sh", 1200))) == 1
+
+
 @pytest.mark.unit
 def test_stale_baseline_entry_fails(tmp_path: Path) -> None:
     root = _make_repo(tmp_path, {"backend/app/small.py": 10})

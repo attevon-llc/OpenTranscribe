@@ -132,7 +132,7 @@ def get_user_configurations(
 
     return schemas.UserLLMConfigurationsList(
         configurations=public_configs,
-        shared_configurations=public_shared,  # type: ignore[arg-type]
+        shared_configurations=public_shared,
         active_configuration_id=active_config_uuid,
         reasoning_off_switch=reasoning_verdicts,
         total=len(public_configs),

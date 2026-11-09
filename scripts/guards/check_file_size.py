@@ -38,6 +38,7 @@ import _baseline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = REPO_ROOT / 'scripts' / 'guards' / 'baselines' / 'file_size.txt'
+ALLOWLIST_PATH = REPO_ROOT / 'scripts' / 'guards' / 'allowlists' / 'file_size.txt'
 
 SCOPE_DIRS = (
     'backend/',
@@ -163,6 +164,7 @@ def scan(repo_root: Path, files: list[str] | None = None) -> tuple[dict[str, int
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline', type=Path, default=BASELINE_PATH)
+    parser.add_argument('--allowlist', type=Path, default=None, help='allowlist file')
     parser.add_argument('--tighten', action='store_true', help='Lower baseline values, drop stale.')
     parser.add_argument('--root', type=Path, default=REPO_ROOT)
     _baseline.add_baseline_args(parser)
@@ -174,11 +176,14 @@ def main(argv: list[str] | None = None) -> int:
             written: int = _baseline.run_write_baseline(args, args.baseline, violations)
             return written
         baseline = _baseline.load(args.baseline)
+        allowlist = _baseline.load_allowlist(
+            args.allowlist or args.root / ALLOWLIST_PATH.relative_to(REPO_ROOT)
+        )
     except (_baseline.ScanError, ValueError) as exc:
         sys.stderr.write(f'error: {exc}\n')
         return 2
 
-    errors = _baseline.compare(violations, baseline, unit='lines')
+    errors = _baseline.compare(violations, baseline, unit='lines', allowlist=allowlist)
     if args.tighten:
         changed = _baseline.tighten(args.baseline, violations, baseline)
         sys.stderr.write(f'tightened {changed} baseline line(s)\n')

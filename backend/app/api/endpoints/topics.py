@@ -235,9 +235,7 @@ def get_retroactive_auto_label_status(
     dependencies=[Depends(refuse_under_support_grant)],
 )
 def retroactive_auto_label(
-    request_data: RetroactiveAutoLabelRequest = Body(
-        default=RetroactiveAutoLabelRequest()  # type: ignore[call-arg]  # file_uuids defaults to None
-    ),
+    request_data: RetroactiveAutoLabelRequest = Body(default=RetroactiveAutoLabelRequest()),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_current_context),
 ) -> dict:
@@ -391,7 +389,7 @@ def get_topic_suggestions(
         auto_apply_completed_at=suggestion.auto_apply_completed_at,
         created_at=datetime.fromisoformat(str(suggestion.created_at))
         if isinstance(suggestion.created_at, str)
-        else suggestion.created_at,  # type: ignore[arg-type]
+        else suggestion.created_at,
     )
 
 

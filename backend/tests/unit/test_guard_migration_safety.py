@@ -358,3 +358,38 @@ def test_write_baseline_requires_real_reason(tmp_path):
 def test_real_repo_passes_with_committed_baseline():
     assert (_REAL_ROOT / "backend" / "alembic" / "versions").is_dir()
     assert guard.main(["--root", str(_REAL_ROOT)]) == 0
+
+
+def _allowlist(root: Path, reason: str) -> None:
+    (root / "allow.txt").write_text(f"{KEY}\t1\t{reason}\n")
+
+
+def _run_allow(root: Path) -> int:
+    code: int = guard.main(
+        [
+            "--root",
+            str(root),
+            "--baseline",
+            str(root / "baseline.txt"),
+            "--allowlist",
+            str(root / "allow.txt"),
+        ]
+    )
+    return code
+
+
+def test_allowlisted_finding_passes_with_an_empty_baseline(tmp_path):
+    root = _repo(tmp_path, {PROBE: DROP_ONE})
+    (root / "baseline.txt").write_text("")
+    assert _run(root) == 1
+    _allowlist(root, "applied-history: revision already applied, never edited")
+    assert _run_allow(root) == 0
+
+
+def test_stale_allowlist_entry_fails_and_untagged_reason_is_refused(tmp_path):
+    root = _repo(tmp_path, {PROBE: _up("    pass\n")})
+    (root / "baseline.txt").write_text("")
+    _allowlist(root, "applied-history: revision already applied, never edited")
+    assert _run_allow(root) == 1
+    _allowlist(root, "just because we said so")
+    assert _run_allow(root) == 2

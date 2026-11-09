@@ -23,9 +23,9 @@ into statements on ``;``. Findings are counted per ``<revision path>::<rule>``:
   still checked, but a human has to read what the variables add.
 
 R3-R5 on a table created in the same revision (``op.create_table`` or ``CREATE TABLE``) are
-exempt: nothing else can be touching it yet. Applied history is frozen in the baseline
-(``scripts/guards/baselines/migration_safety.txt``), so only new revisions can fail. A missing or
-empty versions directory, or a revision that does not parse, exits 2: a guard that scanned
+exempt: nothing else can be touching it yet. Applied history is frozen in the allowlist
+(``scripts/guards/allowlists/migration_safety.txt``, class ``applied-history``), so only new
+revisions can fail. A missing or empty versions directory, or a revision that does not parse, exits 2: a guard that scanned
 nothing must not look green.
 
 HEURISTIC, not proof. Invisible to it: SQL returned by a function or loaded from a file, helpers
@@ -52,6 +52,7 @@ from types import ModuleType
 _HERE = Path(__file__).resolve().parent
 _VERSIONS = Path('backend') / 'alembic' / 'versions'
 _DEFAULT_BASELINE = _HERE / 'baselines' / 'migration_safety.txt'
+_ALLOWLIST_REL = Path('scripts') / 'guards' / 'allowlists' / 'migration_safety.txt'
 
 
 def _load_baseline_lib() -> ModuleType:
@@ -363,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         '--root', type=Path, default=None, help='repository root (default: found from this file)'
     )
     parser.add_argument('--baseline', type=Path, default=None, help='baseline file')
+    parser.add_argument('--allowlist', type=Path, default=None, help='allowlist file')
     parser.add_argument('--tighten', action='store_true', help='lower values / drop stale entries')
     bl.add_baseline_args(parser)
     args = parser.parse_args(argv)
@@ -374,6 +376,7 @@ def main(argv: list[str] | None = None) -> int:
             written: int = bl.run_write_baseline(args, baseline_path, findings)
             return written
         baseline = bl.load(baseline_path)
+        allowlist = bl.load_allowlist(args.allowlist or root / _ALLOWLIST_REL)
     except (bl.ScanError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
@@ -381,11 +384,11 @@ def main(argv: list[str] | None = None) -> int:
         changed = bl.tighten(baseline_path, findings, baseline) if baseline_path.exists() else 0
         print(f'tightened {changed} baseline lines in {baseline_path}')
         baseline = bl.load(baseline_path)
-    errors = bl.compare(findings, baseline, unit='risky ops')
+    errors = bl.compare(findings, baseline, unit='risky ops', allowlist=allowlist)
     if errors:
         print(
             'migration safety: use CONCURRENTLY, NOT VALID, a server_default, expand/contract and a\n'
-            "short SET LOCAL lock_timeout (see v449), or baseline the line with a reason that says why it's safe:",
+            'short SET LOCAL lock_timeout (see v449), or allowlist it with a class-tagged reason:',
             file=sys.stderr,
         )
         for line in errors:

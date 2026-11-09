@@ -15,7 +15,6 @@ from app.api.endpoints.auth import get_current_active_user
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
 from app.models.user import User
@@ -27,6 +26,9 @@ from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import capture_speaker_impact
 from app.services.speaker_cleanup import raise_if_incomplete
 from app.services.speaker_cleanup import reconcile_speaker_impact
+from app.services.transcript_segment_queries import count_speaker_segments
+from app.services.transcript_segment_queries import get_segment_media_file
+from app.services.transcript_segment_queries import get_speaker
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.services.uuid_helpers import get_by_uuid
 from app.services.uuid_helpers import require_resource_owner
@@ -62,13 +64,10 @@ def _cleanup_orphaned_speaker(db: Session, speaker_id: int) -> tuple[bool, list[
         return False, []
 
     # Check if speaker has any remaining segments
-    segment_count = (
-        db.query(TranscriptSegment).filter(TranscriptSegment.speaker_id == speaker_id).count()
-    )
-    if segment_count:
+    if count_speaker_segments(db, speaker_id):
         return False, []
 
-    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    speaker = get_speaker(db, speaker_id)
     if not speaker:
         return False, []
     speaker_uuid = str(speaker.uuid)
@@ -178,14 +177,14 @@ def _handle_speaker_change(
     # Capture source speaker UUID before orphan cleanup might delete it
     source_speaker_uuid: str | None = None
     if original_speaker_id:
-        original_speaker = db.query(Speaker).filter(Speaker.id == original_speaker_id).first()
+        original_speaker = get_speaker(db, original_speaker_id)
         if original_speaker:
             source_speaker_uuid = str(original_speaker.uuid)
 
     # Capture target speaker UUID for embedding task
     target_speaker_uuid: str | None = None
     if new_speaker_id:
-        target_speaker = db.query(Speaker).filter(Speaker.id == new_speaker_id).first()
+        target_speaker = get_speaker(db, new_speaker_id)
         if target_speaker:
             target_speaker_uuid = str(target_speaker.uuid)
 
@@ -286,7 +285,7 @@ def update_segment_speaker(
     )
 
     # Get the media file to verify ownership
-    media_file = db.query(MediaFile).filter(MediaFile.id == segment.media_file_id).first()
+    media_file = get_segment_media_file(db, segment.media_file_id)
     if not media_file:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
 

@@ -22,7 +22,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import re
 import subprocess
@@ -30,28 +29,14 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _baseline as bl
+
 _HERE = Path(__file__).resolve().parent
 _DEFAULT_BASELINE = _HERE / 'baselines' / 'svelte_unused.txt'
 _UNUSED_CODES = frozenset({6133, 6192, 6196, 6198})
 _LINE = re.compile(r'^\d+ (?P<body>\{.*\})\s*$')
 _TIMEOUT_SECONDS = 900
-
-
-def _load_baseline_lib():
-    path = _HERE / '_baseline.py'
-    spec = importlib.util.spec_from_file_location('_guard_baseline_svelte_unused', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise RuntimeError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return module
-
-
-bl = _load_baseline_lib()
 
 
 def parse(text: str) -> dict[str, int]:

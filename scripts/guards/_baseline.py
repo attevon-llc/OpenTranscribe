@@ -253,3 +253,28 @@ def run_write_baseline(args: argparse.Namespace, path: Path, findings: dict[str,
         return 2
     print(f'wrote {count} baseline entries to {path}')
     return 0
+
+
+def finish_ratchet(
+    args: argparse.Namespace,
+    path: Path,
+    findings: dict[str, int],
+    baseline: dict[str, Entry],
+    *,
+    unit: str,
+    heading: str,
+    ok_message: str,
+) -> int:
+    """Shared tail of a per-key ratchet guard: optional ``--tighten``, compare, print, exit code."""
+    if args.tighten:
+        changed = tighten(path, findings, baseline) if path.exists() else 0
+        print(f'tightened {changed} baseline lines in {path}')
+        baseline = load(path)
+    errors = compare(findings, baseline, unit=unit)
+    if errors:
+        print(heading, file=sys.stderr)
+        for line in errors:
+            print(f'  {line}', file=sys.stderr)
+        return 1
+    print(ok_message)
+    return 0

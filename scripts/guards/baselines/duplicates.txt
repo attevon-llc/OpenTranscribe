@@ -443,8 +443,4 @@ frontend/src/stores/websocket.test.ts	1	pre-existing duplicated blocks of 100+ t
 frontend/src/styles/consistency.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/styles/noPurple.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 scripts/audit_tests/cli.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/diarization-der-compare.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/diarization-der.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/guards/check_raw_env.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-scripts/guards/check_style_literals.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 scripts/session_lifetime_audit/cli.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

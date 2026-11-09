@@ -24,13 +24,15 @@ duplicate-code burn-down lanes.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import subprocess
 import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _baseline as bl
 
 _HERE = Path(__file__).resolve().parent
 _DEFAULT_BASELINE = _HERE / 'baselines' / 'duplicates.txt'
@@ -48,23 +50,6 @@ IGNORE = ','.join(
     )
 )
 _TIMEOUT_SECONDS = 600
-
-
-def _load_baseline_lib():
-    path = _HERE / '_baseline.py'
-    spec = importlib.util.spec_from_file_location('_guard_baseline_duplicates', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise RuntimeError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return module
-
-
-bl = _load_baseline_lib()
 
 
 def _rel(name: str, root: Path) -> str:

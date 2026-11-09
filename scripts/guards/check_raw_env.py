@@ -26,9 +26,11 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib.util
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _baseline as bl
 
 _HERE = Path(__file__).resolve().parent
 _APP = Path('backend') / 'app'
@@ -49,23 +51,6 @@ EXEMPT: dict[str, str] = {
 
 # Attributes of the ``os`` module that read or mutate the process environment.
 _ENV_NAMES = frozenset({'getenv', 'getenvb', 'environ', 'environb', 'putenv', 'unsetenv'})
-
-
-def _load_baseline_lib():
-    path = _HERE / '_baseline.py'
-    spec = importlib.util.spec_from_file_location('_guard_baseline_raw_env', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise RuntimeError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return module
-
-
-bl = _load_baseline_lib()
 
 
 def count_sites(tree: ast.AST) -> int:
@@ -139,18 +124,15 @@ def main(argv: list[str] | None = None) -> int:
     except (bl.ScanError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
-    if args.tighten:
-        changed = bl.tighten(baseline_path, findings, baseline) if baseline_path.exists() else 0
-        print(f'tightened {changed} baseline lines in {baseline_path}')
-        baseline = bl.load(baseline_path)
-    errors = bl.compare(findings, baseline, unit='raw env reads')
-    if errors:
-        print('raw environment reads outside app/core/config.py:', file=sys.stderr)
-        for line in errors:
-            print(f'  {line}', file=sys.stderr)
-        return 1
-    print(f'raw env: {sum(findings.values())} sites in {len(findings)} files, within the baseline')
-    return 0
+    return bl.finish_ratchet(
+        args,
+        baseline_path,
+        findings,
+        baseline,
+        unit='raw env reads',
+        heading='raw environment reads outside app/core/config.py:',
+        ok_message=f'raw env: {sum(findings.values())} sites in {len(findings)} files, within the baseline',
+    )
 
 
 if __name__ == '__main__':

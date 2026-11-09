@@ -48,29 +48,9 @@ import sys
 import time
 from pathlib import Path
 
+from rttm_io import read_rttm
+
 DEFAULT_APP_ROOT = '/app'
-
-
-def read_rttm(path: Path):
-    """Parse an RTTM into an Annotation.
-
-    Speaker labels in the committed reference contain SPACES ("Andrej Karpathy"), so the
-    label is everything from field 8 on — splitting on whitespace and taking ``parts[7]``
-    silently truncates it. DER uses an optimal label mapping so a truncation would not
-    change the score, but it would make the printed speaker list wrong.
-    """
-    from pyannote.core import Annotation, Segment
-
-    ann = Annotation(uri=path.stem)
-    with path.open(encoding='utf-8') as fh:
-        for line in fh:
-            parts = line.split()
-            if not parts or parts[0] != 'SPEAKER':
-                continue
-            start, dur = float(parts[3]), float(parts[4])
-            label = ' '.join(parts[7:]).replace('<NA>', '').strip() or parts[7]
-            ann[Segment(start, start + dur)] = label
-    return ann
 
 
 def to_annotation(result):

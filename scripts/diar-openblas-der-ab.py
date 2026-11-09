@@ -48,6 +48,8 @@ import uuid
 import wave
 from pathlib import Path
 
+from rttm_io import read_rttm
+
 #: Both arms run on CPU: it is the bit-reproducible device, so a difference is the library's.
 BASE_ENV = {
     'DIAR_MODE': 'cpu',
@@ -157,23 +159,11 @@ def diarize(port: int, wav: str) -> dict:
     return json.loads(proc.stdout)
 
 
-def read_rttm(path: Path, seconds: float):
-    """Parse an RTTM and crop it to the clip length — see the module docstring's trap note.
+def read_rttm_cropped(path: Path, seconds: float):
+    """Parse an RTTM and crop it to the clip length — see the module docstring's trap note."""
+    from pyannote.core import Segment
 
-    Speaker labels in the committed reference contain SPACES ("Andrej Karpathy"), so the label
-    is everything from field 8 on; taking ``parts[7]`` alone silently truncates it.
-    """
-    from pyannote.core import Annotation, Segment
-
-    ann = Annotation(uri=path.stem)
-    for line in path.open(encoding='utf-8'):
-        parts = line.split()
-        if not parts or parts[0] != 'SPEAKER':
-            continue
-        start, dur = float(parts[3]), float(parts[4])
-        label = ' '.join(parts[7:]).replace('<NA>', '').strip() or parts[7]
-        ann[Segment(start, start + dur)] = label
-    return ann.crop(Segment(0.0, seconds), mode='intersection')
+    return read_rttm(path).crop(Segment(0.0, seconds), mode='intersection')
 
 
 def to_annotation(segments: list[dict], uri: str):
@@ -289,7 +279,7 @@ def main() -> int:
     print(f'host architecture: {arch}   <-- this result is a claim about THIS arch only')
     print('QEMU cannot substitute: OpenBLAS picks kernels by runtime CPU detection.\n')
 
-    reference = read_rttm(Path(args.reference), args.seconds)
+    reference = read_rttm_cropped(Path(args.reference), args.seconds)
     print(f'reference: {len(reference)} segments, speakers={sorted(reference.labels())}')
     print(f'crop:      0..{args.seconds}s\n')
 

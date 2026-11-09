@@ -15,8 +15,8 @@ import re
 import sys
 from pathlib import Path
 
-from pyannote.core import Annotation, Segment
 from pyannote.metrics.diarization import DiarizationErrorRate
+from rttm_io import read_rttm
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 log = logging.getLogger('der')
@@ -31,21 +31,6 @@ def require_container() -> None:
         return
     sys.stderr.write('Refusing to run outside container. See A.0.0 post-mortem.\n')
     sys.exit(2)
-
-
-def read_rttm(path: Path) -> Annotation:
-    """Parse an RTTM file into a pyannote Annotation."""
-    ann = Annotation(uri=path.stem)
-    with open(path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if not parts or parts[0] != 'SPEAKER':
-                continue
-            start = float(parts[3])
-            dur = float(parts[4])
-            speaker = parts[7]
-            ann[Segment(start, start + dur)] = speaker
-    return ann
 
 
 def classify(der: float, spk_match: bool) -> str:

@@ -195,7 +195,7 @@ def test_chat_scope_refuses_restricted_collection_for_unnamed_member(gov, restri
 
 def test_upload_into_hidden_collection_is_skipped_exactly_like_a_missing_one(gov, restricted):
     """The import is not refused, so the answer carries no existence signal either way."""
-    from app.api.endpoints.files.prepare_upload import add_file_to_collections
+    from app.services.upload_prepare_queries import add_file_to_collections
 
     new_file = gov.file(gov.bob)
     add_file_to_collections(gov.db, new_file.id, gov.bob.id, [restricted.collection.uuid])

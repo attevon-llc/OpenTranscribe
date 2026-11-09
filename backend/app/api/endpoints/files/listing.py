@@ -31,6 +31,12 @@ from app.schemas.user import UserSearchResult
 from app.services.content_hold_queries import list_hold_summaries
 from app.services.delete_permissions import can_delete_file
 from app.services.file_availability import unavailable_list_exempt
+from app.services.file_list_filters import LIST_SPEAKER_COLUMNS
+from app.services.file_list_filters import apply_all_filters
+from app.services.file_list_filters import get_accessible_owners
+from app.services.file_list_filters import get_metadata_filters
+from app.services.file_list_filters import hidden_speaker_name_clause
+from app.services.file_list_filters import resolve_owner_user_ids
 from app.services.file_route_queries import gallery_base_query
 from app.services.formatting_service import FormattingService
 from app.services.hidden_media_service import HIDDEN_MODE_PATTERN
@@ -40,12 +46,6 @@ from app.services.privacy.redact_view import PrivacyView
 from app.services.request_context import RequestContext
 
 from .detail_response import set_file_urls
-from .filtering import LIST_SPEAKER_COLUMNS
-from .filtering import apply_all_filters
-from .filtering import get_accessible_owners
-from .filtering import get_metadata_filters
-from .filtering import hidden_speaker_name_clause
-from .filtering import resolve_owner_user_ids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

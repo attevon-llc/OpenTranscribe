@@ -169,8 +169,8 @@ def _apply_single_video_options(
 
     # Assign to collections and apply tags immediately for single videos
     if request_data.collection_ids or request_data.tag_names:
-        from app.api.endpoints.files.prepare_upload import add_file_to_collections
-        from app.api.endpoints.files.prepare_upload import add_tags_to_file
+        from app.services.upload_prepare_queries import add_file_to_collections
+        from app.services.upload_prepare_queries import add_tags_to_file
 
         if request_data.collection_ids:
             from uuid import UUID as _UUID

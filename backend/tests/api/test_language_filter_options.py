@@ -42,7 +42,7 @@ def _make_file(db, user, *, language: str | None) -> MediaFile:
 
 def test_distinct_languages_are_offered(db_session, normal_user) -> None:
     """The defect: no endpoint exposed the languages, so no filter could be built."""
-    from app.api.endpoints.files.filtering import get_metadata_filters
+    from app.services.file_list_filters import get_metadata_filters
 
     for language in ("en", "es", "en", "ja"):
         _make_file(db_session, normal_user, language=language)
@@ -62,7 +62,7 @@ def test_files_without_a_language_do_not_produce_an_empty_option(db_session, nor
     ``language`` is nullable — a file that failed before detection, or was imported
     without transcription, has none.
     """
-    from app.api.endpoints.files.filtering import get_metadata_filters
+    from app.services.file_list_filters import get_metadata_filters
 
     _make_file(db_session, normal_user, language="en")
     _make_file(db_session, normal_user, language=None)
@@ -81,7 +81,7 @@ def test_another_users_languages_are_not_offered(db_session, normal_user, admin_
     It is small, but it is still information about a library the user cannot see —
     and the same query feeds `ownership="all"`, so the scoping has to be right here.
     """
-    from app.api.endpoints.files.filtering import get_metadata_filters
+    from app.services.file_list_filters import get_metadata_filters
 
     _make_file(db_session, normal_user, language="en")
     _make_file(db_session, admin_user, language="ko")
@@ -100,7 +100,7 @@ def test_the_existing_options_still_come_back(db_session, normal_user) -> None:
     Adding a third `array_agg` to that query is where they could have been dropped,
     and nothing else asserts the shape of this response.
     """
-    from app.api.endpoints.files.filtering import get_metadata_filters
+    from app.services.file_list_filters import get_metadata_filters
 
     _make_file(db_session, normal_user, language="en")
     db_session.flush()

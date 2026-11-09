@@ -16,13 +16,13 @@ from contextlib import contextmanager
 import pytest
 from sqlalchemy import event
 
-from app.api.endpoints.files.prepare_upload import add_file_to_collections
-from app.api.endpoints.files.prepare_upload import add_tags_to_file
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.tag import FileTag
 from app.models.tag import Tag
+from app.services.upload_prepare_queries import add_file_to_collections
+from app.services.upload_prepare_queries import add_tags_to_file
 
 
 @contextmanager

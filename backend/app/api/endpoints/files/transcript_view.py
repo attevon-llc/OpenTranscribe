@@ -11,19 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
-from app.services.file_route_queries import page_transcript_segments
 from app.services.formatting_service import FormattingService
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.speaker_provenance_view import ProvenanceViewer
 from app.services.speaker_provenance_view import attach_speaker_provenance
-
-
-def _get_transcript_segments(
-    db: Session, file_id: int, segment_limit: int | None, segment_offset: int
-) -> tuple[list[TranscriptSegment], int]:
-    """One page of a file's transcript segments and the file's total segment count."""
-    return page_transcript_segments(db, file_id, segment_limit, segment_offset)
 
 
 def _build_grouped_segments(formatted_segments: list[Any], index_offset: int = 0) -> list[Any]:

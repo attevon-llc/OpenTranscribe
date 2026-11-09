@@ -12,13 +12,13 @@ import time
 import uuid as uuid_pkg
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-from app.api.endpoints.files.prepare_upload import get_or_create_upload_batch
-from app.api.endpoints.files.prepare_upload import increment_upload_batch_file_count
 from app.models.upload_batch import UploadBatch
+from app.services.upload_prepare_queries import UploadBatchInUseError
+from app.services.upload_prepare_queries import bump_upload_batch_file_count
+from app.services.upload_prepare_queries import get_or_create_upload_batch
 from tests.conftest import engine
 from tests.user_owned_rows import make_user
 
@@ -56,7 +56,7 @@ def test_concurrent_create_same_uuid_yields_single_batch(two_users):
         s = Session()
         try:
             b = get_or_create_upload_batch(s, batch_uuid, user_id)
-            increment_upload_batch_file_count(s, b.id)
+            bump_upload_batch_file_count(s, b.id)
             s.commit()
             result["id"] = b.id
         except Exception as e:
@@ -76,7 +76,7 @@ def test_concurrent_create_same_uuid_yields_single_batch(two_users):
         if blocked or "error" in result:
             break
         time.sleep(0.05)
-    increment_upload_batch_file_count(
+    bump_upload_batch_file_count(
         holder, holder.query(UploadBatch.id).filter_by(uuid=batch_uuid).scalar()
     )
     holder.commit()
@@ -100,9 +100,8 @@ def test_existing_batch_of_another_user_is_rejected(two_users):
     s.commit()
 
     s2 = Session()
-    with pytest.raises(HTTPException) as exc:
+    with pytest.raises(UploadBatchInUseError):
         get_or_create_upload_batch(s2, batch_uuid, other)
-    assert exc.value.status_code == 409
     s2.rollback()
     assert s2.query(UploadBatch).filter_by(uuid=batch_uuid).count() == 1
     s.close()

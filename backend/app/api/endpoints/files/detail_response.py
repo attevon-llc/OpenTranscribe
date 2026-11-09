@@ -35,6 +35,7 @@ from app.services.file_route_queries import count_speaker_turns
 from app.services.file_route_queries import get_file_analytics
 from app.services.file_route_queries import list_file_speakers_with_profile
 from app.services.file_route_queries import list_file_tags
+from app.services.file_route_queries import page_transcript_segments
 from app.services.formatting_service import FormattingService
 from app.services.platform_bypass import PlatformBypass
 from app.services.speaker_provenance_view import ProvenanceViewer
@@ -49,7 +50,6 @@ from .redaction_gate import _redaction_pending
 from .redaction_gate import _resolve_redaction_for_request
 from .transcript_view import _build_grouped_segments
 from .transcript_view import _format_transcript_segments
-from .transcript_view import _get_transcript_segments
 from .transcript_view import redact_response_speakers
 
 logger = logging.getLogger(__name__)
@@ -462,7 +462,7 @@ def get_media_file_detail(
         speakers = _load_file_speakers(db, file_id)
 
         # Get transcript segments with pagination
-        transcript_segments, total_segments = _get_transcript_segments(
+        transcript_segments, total_segments = page_transcript_segments(
             db, file_id, segment_limit, segment_offset
         )
 

@@ -150,8 +150,8 @@ def _apply_collections_and_tags(
         return
     from uuid import UUID as _UUID
 
-    from app.api.endpoints.files.prepare_upload import add_file_to_collections
-    from app.api.endpoints.files.prepare_upload import add_tags_to_file
+    from app.services.upload_prepare_queries import add_file_to_collections
+    from app.services.upload_prepare_queries import add_tags_to_file
 
     if collection_ids:
         add_file_to_collections(db, file_id, user_id, [_UUID(c) for c in collection_ids])

@@ -21,7 +21,7 @@ import pytest
 from starlette.testclient import TestClient
 
 import app.api.endpoints.auth.registration as registration_module
-import app.api.endpoints.files.prepare_upload as prepare_upload_module
+import app.services.upload_prepare_queries as prepare_upload_module
 from app.db.base import SessionLocal
 from app.main import app
 from app.models.media import MediaFile

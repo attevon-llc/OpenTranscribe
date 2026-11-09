@@ -7,10 +7,10 @@ import uuid as uuid_pkg
 
 import pytest
 
-from app.api.endpoints.files.transcript_view import _get_transcript_segments
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.speaker import Speaker
+from app.services.file_route_queries import page_transcript_segments
 from tests.query_budget import count_statements
 
 pytestmark = pytest.mark.unit
@@ -58,11 +58,11 @@ def test_speaker_is_not_joined_per_segment_and_statements_stay_constant(db_sessi
     big_id = _file_with_segments(db_session, normal_user, 30)
     db_session.expire_all()
     with count_statements(db_session.connection()) as small:
-        rows, total = _get_transcript_segments(db_session, small_id, None, 0)
+        rows, total = page_transcript_segments(db_session, small_id, None, 0)
         assert all(r.speaker is not None for r in rows) and total == 3
     db_session.expire_all()
     with count_statements(db_session.connection()) as big:
-        rows, total = _get_transcript_segments(db_session, big_id, None, 0)
+        rows, total = page_transcript_segments(db_session, big_id, None, 0)
         names = {r.speaker.name for r in rows if r.speaker is not None}
         assert names == {"SPEAKER_00", "SPEAKER_01"} and total == 30
     assert big.count == small.count, big.describe()

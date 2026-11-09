@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 
 import * as keyMaps from './keyMaps';
 import * as pipelineKeys from '$lib/settings/pipelineKeys';
+import * as auditEventKeys from './auditEventKeys';
+import { ORG_AUDIT_EVENT_KEYS } from './auditEventKeys';
 import { keyFor, labelFor } from './keyMaps';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -57,7 +59,11 @@ describe('no dynamically built i18n keys', () => {
   });
 });
 
-const mapKeys = [...Object.values(keyMaps), ...Object.values(pipelineKeys)]
+const mapKeys = [
+  ...Object.values(keyMaps),
+  ...Object.values(pipelineKeys),
+  ...Object.values(auditEventKeys),
+]
   .filter((v): v is Record<string, string> => typeof v === 'object' && v !== null)
   .flatMap((m) => Object.values(m));
 
@@ -99,22 +105,16 @@ describe('keyFor / labelFor', () => {
 
 describe('ORG_AUDIT_EVENT_KEYS: owner change (#1105)', () => {
   it('labels the organization owner change', () => {
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['org.owner.change']).toBe('orgAudit.event.ownerChange');
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['org.content.transfer']).toBe(
-      'orgAudit.event.contentTransfer'
-    );
+    expect(ORG_AUDIT_EVENT_KEYS['org.owner.change']).toBe('orgAudit.event.ownerChange');
+    expect(ORG_AUDIT_EVENT_KEYS['org.content.transfer']).toBe('orgAudit.event.contentTransfer');
   });
 });
 
 describe('ORG_AUDIT_EVENT_KEYS: scheduled erasure events (#1105)', () => {
   it('labels the three scheduled-erasure events an organization admin now reads', () => {
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.scheduled']).toBe(
-      'orgAudit.event.erasureScheduled'
-    );
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.cancelled']).toBe(
-      'orgAudit.event.erasureCancelled'
-    );
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['gdpr.erasure.execution_started']).toBe(
+    expect(ORG_AUDIT_EVENT_KEYS['gdpr.erasure.scheduled']).toBe('orgAudit.event.erasureScheduled');
+    expect(ORG_AUDIT_EVENT_KEYS['gdpr.erasure.cancelled']).toBe('orgAudit.event.erasureCancelled');
+    expect(ORG_AUDIT_EVENT_KEYS['gdpr.erasure.execution_started']).toBe(
       'orgAudit.event.erasureStarted'
     );
   });
@@ -122,12 +122,10 @@ describe('ORG_AUDIT_EVENT_KEYS: scheduled erasure events (#1105)', () => {
 
 describe('ORG_AUDIT_EVENT_KEYS: legal-hold freeze events (v0.7.0)', () => {
   it('labels a comment on a held file, and keeps the historic transcript-edit label', () => {
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['content.hold.annotation']).toBe(
-      'orgAudit.event.holdAnnotation'
-    );
+    expect(ORG_AUDIT_EVENT_KEYS['content.hold.annotation']).toBe('orgAudit.event.holdAnnotation');
     // No longer emitted (a held file now refuses edits), but rows already in the log must
     // still read as words, not as a raw identifier.
-    expect(keyMaps.ORG_AUDIT_EVENT_KEYS['content.transcript.edit']).toBe(
+    expect(ORG_AUDIT_EVENT_KEYS['content.transcript.edit']).toBe(
       'orgAudit.event.transcriptEditedHeld'
     );
   });

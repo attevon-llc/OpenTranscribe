@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import shutil
 import tempfile
@@ -11,7 +12,10 @@ from types import ModuleType
 from typing import Any
 
 import requests
+import urllib3
+from minio.error import MinioException
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from cleanup_test_data.cutoff import _TESTRUNS_DIR, prune_stale_markers
 from cleanup_test_data.settings import _engine_url, _load_artifact_sweep, _resolve_port, _setting
@@ -23,6 +27,20 @@ PLANES = ('records', 'indexes', 'databases', 'buckets', 'tmp', 'docker')
 
 
 STORE_PLANES = ('indexes', 'databases', 'buckets')
+
+logger = logging.getLogger(__name__)
+
+#: What a store plane raises when its store cannot be read or written: OpenSearch over
+#: ``requests``, Postgres through SQLAlchemy, MinIO (``MinioException`` for server answers,
+#: ``urllib3`` errors when it cannot connect), the docker CLI wrapper (``RuntimeError``).
+_STORE_ERRORS = (
+    requests.RequestException,
+    SQLAlchemyError,
+    MinioException,
+    urllib3.exceptions.HTTPError,
+    RuntimeError,
+    OSError,
+)
 
 
 _MAX_LINES_PER_PLANE = 25
@@ -43,7 +61,8 @@ def _delete_artifacts(
             else:
                 any_failed = True
                 print(f'  REFUSED/FAILED  {finding.name} (re-check did not allow it)')
-        except Exception as exc:  # one bad artifact must not stop the plane
+        except _STORE_ERRORS as exc:  # per-item isolation: one bad artifact must not stop the plane
+            logger.exception('could not delete %s', finding.name)
             any_failed = True
             print(f'  FAILED  {finding.name}: {exc}')
     return deleted, any_failed
@@ -121,14 +140,16 @@ def _sweep_store_planes(args: argparse.Namespace, cutoff: int, report: dict[str,
 
     try:
         planes = _build_store_planes(sweep, args.planes)
-    except Exception as exc:  # a missing client library degrades, never crashes
+    except (ImportError, ValueError, *_STORE_ERRORS) as exc:  # a missing client library degrades
+        logger.exception('could not set up the store planes')
         print(f'  WARN  could not set up the store planes: {exc}')
         return 1
 
     for name, plane in planes.items():
         try:
             findings = plane.list_findings(cutoff)
-        except Exception as exc:  # an unreachable store degrades, never crashes
+        except _STORE_ERRORS as exc:  # an unreachable store degrades, never crashes
+            logger.exception('plane %s: could not list findings', name)
             print(f'\n{name}: UNAVAILABLE ({exc})')
             report['resources'][name] = {'error': str(exc)}
             exit_code = 1
@@ -217,8 +238,10 @@ def _report_orphan_profile_docs(plane: Any, report: dict[str, Any]) -> None:
         docs = resp.json().get('hits', {}).get('hits', [])
         with create_engine(_engine_url()).connect() as conn:
             live = {str(r[0]) for r in conn.execute(text('SELECT uuid FROM speaker_profile'))}
-    except Exception as exc:  # a report must not fail the sweep
+    except _STORE_ERRORS as exc:  # a report must not fail the sweep, but must say it did not run
+        logger.exception('speaker profile docs: could not compare against speaker_profile')
         print(f'\nspeaker profile docs: UNAVAILABLE ({exc})')
+        report['resources']['orphan_profile_docs'] = {'error': str(exc)}
         return
     orphans = find_orphan_profile_docs(docs, live)
     print(f'\nspeaker profile docs (report only): {len(orphans)} with no speaker_profile row')

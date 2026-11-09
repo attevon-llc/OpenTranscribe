@@ -5,10 +5,13 @@ Processes all OpenTranscribe screenshots with comprehensive mapping
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 # Configuration
 SOURCE_DIR = 'OpenTranscribe-Screenshots'
@@ -51,7 +54,8 @@ def optimize_image(input_path, output_path, max_width=MAX_WIDTH, quality=QUALITY
                 img.save(output_path, 'PNG', optimize=True, quality=adjusted_quality)
 
             return True, get_file_size_kb(output_path)
-    except Exception as e:
+    except (OSError, ValueError, Image.DecompressionBombError) as e:
+        logger.exception('could not optimize %s', input_path)
         return False, str(e)
 
 

@@ -19,6 +19,7 @@ Run inside the backend Docker image with the fork + models/onnx mounted:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import time
 from pathlib import Path
@@ -31,6 +32,8 @@ import numpy as np
 # CUDAExecutionProvider + TensorrtExecutionProvider both dlopen those same
 # libraries. Without torch-first, ORT silently falls back to CPU EP.
 import torch
+
+logger = logging.getLogger(__name__)
 
 
 def _run(sess, feeds, iters: int = 10) -> float:
@@ -48,7 +51,12 @@ def bench_segmentation(onnx_path: Path, providers: list, tag: str) -> float | No
 
     try:
         sess = ort.InferenceSession(str(onnx_path), providers=providers)
-    except Exception as exc:
+    except (
+        RuntimeError,
+        ValueError,
+        OSError,
+    ) as exc:  # onnxruntime errors derive from RuntimeError
+        logger.exception('[%s] session init failed', tag)
         print(f'  [{tag}] session init FAILED: {exc}')
         return None
     actual = sess.get_providers()
@@ -70,7 +78,12 @@ def bench_embedding(onnx_path: Path, providers: list, tag: str) -> float | None:
 
     try:
         sess = ort.InferenceSession(str(onnx_path), providers=providers)
-    except Exception as exc:
+    except (
+        RuntimeError,
+        ValueError,
+        OSError,
+    ) as exc:  # onnxruntime errors derive from RuntimeError
+        logger.exception('[%s] session init failed', tag)
         print(f'  [{tag}] session init FAILED: {exc}')
         return None
     actual = sess.get_providers()

@@ -22,11 +22,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import os
 import statistics
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import requests
 
 # Reuse the e2e_bench helpers (the package behind benchmark_e2e.py): same upload path.
 from e2e_bench.backend_api import (
@@ -40,6 +43,9 @@ from e2e_bench.formatting import fmt_duration
 DB_CONTAINER = 'opentranscribe-postgres'
 DB_USER = 'postgres'
 DB_NAME = 'opentranscribe'
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -69,9 +75,11 @@ def _db_query(sql: str) -> list[list[str]]:
             timeout=30,
         )
         if result.returncode != 0:
+            logger.warning('psql exited %s: %s', result.returncode, result.stderr.strip())
             return []
         return [line.split('\t') for line in result.stdout.strip().split('\n') if line.strip()]
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
+        logger.warning('psql query for timing rows failed', exc_info=True)
         return []
 
 
@@ -148,7 +156,8 @@ def _one_upload(
     started = time.time()
     try:
         _, upload_resp, _ = upload_file_via_api(backend_url, token, fixture_path, verify=verify)
-    except Exception as e:
+    except (requests.RequestException, OSError) as e:
+        logger.exception('upload of %s failed', fixture_path)
         return {
             'status': 'upload_failed',
             'error': str(e),

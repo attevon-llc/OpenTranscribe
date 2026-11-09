@@ -16,6 +16,7 @@ This script:
 """
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -24,6 +25,9 @@ import torch
 
 # Ensure HF token is available
 HF_TOKEN = os.environ.get('HUGGINGFACE_TOKEN', '')
+
+
+logger = logging.getLogger(__name__)
 
 
 def convert_segmentation_to_onnx(
@@ -116,7 +120,8 @@ def convert_segmentation_to_onnx(
                 )
             print(f'   ✓ Saved {int8_path.stat().st_size / (1024 * 1024):.1f} MB')
             int8_created = True
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, OSError) as e:
+            logger.warning('INT8 quantization failed; using FP32', exc_info=True)
             print(f'   ⚠ Quantization failed: {e}')
             print('   → Using FP32 model instead')
             int8_path = fp32_path
@@ -125,27 +130,23 @@ def convert_segmentation_to_onnx(
 
     # Verify models with ONNX Runtime
     print('\n[4/4] Verifying ONNX models...')
-    try:
-        import onnxruntime as ort
+    # A model that fails to load is a failed conversion: let it reach main()'s boundary.
+    import onnxruntime as ort
 
-        # Test FP32
-        sess_fp32 = ort.InferenceSession(str(fp32_path), ['CPUExecutionProvider'])
-        output_fp32 = sess_fp32.run(
+    # Test FP32
+    sess_fp32 = ort.InferenceSession(str(fp32_path), ['CPUExecutionProvider'])
+    output_fp32 = sess_fp32.run(
+        ['scores'], {'waveforms': dummy_input_cpu.numpy().astype('float32')}
+    )
+    print(f'   ✓ FP32 model verified (output shape: {output_fp32[0].shape})')
+
+    # Test INT8 if quantized
+    if int8_created and int8_path != fp32_path:
+        sess_int8 = ort.InferenceSession(str(int8_path), ['CPUExecutionProvider'])
+        output_int8 = sess_int8.run(
             ['scores'], {'waveforms': dummy_input_cpu.numpy().astype('float32')}
         )
-        print(f'   ✓ FP32 model verified (output shape: {output_fp32[0].shape})')
-
-        # Test INT8 if quantized
-        if int8_created and int8_path != fp32_path:
-            sess_int8 = ort.InferenceSession(str(int8_path), ['CPUExecutionProvider'])
-            output_int8 = sess_int8.run(
-                ['scores'], {'waveforms': dummy_input_cpu.numpy().astype('float32')}
-            )
-            print(f'   ✓ INT8 model verified (output shape: {output_int8[0].shape})')
-
-    except Exception as e:
-        print(f'   ⚠ Verification failed: {e}')
-        print('   → Models may still be valid, check manually')
+        print(f'   ✓ INT8 model verified (output shape: {output_int8[0].shape})')
 
     return fp32_path, int8_path
 
@@ -207,13 +208,11 @@ def main():
         print('No runtime conversion overhead!')
         return 0
 
-    except Exception as e:
+    except Exception as e:  # script boundary: reported, exits 1
+        logger.exception('ONNX conversion failed')
         print(f'\n{"=" * 70}')
         print(f'✗ Conversion failed: {e}')
         print(f'{"=" * 70}')
-        import traceback
-
-        traceback.print_exc()
         return 1
 
 

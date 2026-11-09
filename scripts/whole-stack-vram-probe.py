@@ -59,8 +59,8 @@ def _load_nvml() -> Any:
         lib = ctypes.CDLL('libnvidia-ml.so.1')
         lib.nvmlInit_v2()
         return lib
-    except Exception as e:
-        log.warning(f'NVML load failed: {e}')
+    except (OSError, AttributeError):
+        log.warning('NVML load failed', exc_info=True)
         return None
 
 
@@ -95,7 +95,8 @@ class Sampler:
                         _nvml_used_mb(self.lib, self.handle),
                     )
                 )
-            except Exception:
+            except (OSError, AttributeError, ctypes.ArgumentError):
+                log.debug('NVML sample failed', exc_info=True)
                 continue
 
     def set_stage(self, stage: str) -> None:
@@ -359,8 +360,8 @@ def run_sweep(args: argparse.Namespace) -> int:
                 write_result(result, out_dir)
                 if result.error:
                     fails += 1
-            except Exception as e:
-                log.error(f'Sweep run {idx} failed: {e}')
+            except Exception:  # per-run isolation boundary: counted in fails, sweep exits non-zero
+                log.exception(f'Sweep run {idx} failed')
                 fails += 1
             log.info(
                 f'Sweep {idx}/{total} fails={fails} elapsed={(time.perf_counter() - t0) / 60:.1f}min'

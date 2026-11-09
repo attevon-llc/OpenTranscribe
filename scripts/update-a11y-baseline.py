@@ -37,11 +37,16 @@ task states happen to be queued right now.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import time
 import uuid
 from pathlib import Path
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 E2E_DIR = REPO_ROOT / 'backend' / 'tests' / 'e2e'
@@ -242,12 +247,14 @@ def main() -> int:
             set_theme(page, theme)
             try:
                 page.wait_for_selector('[data-testid="chat-composer-input"]', timeout=15000)
-                _print_surface('chat', theme, page)
-            except Exception:  # report and move on, this tool must not crash
+            except PlaywrightTimeoutError:
+                logger.warning('chat composer never rendered (theme=%s)', theme, exc_info=True)
                 print(
                     f'# chat::{theme}: skipped — composer never rendered '
                     '(no LLM provider configured?)'
                 )
+            else:
+                _print_surface('chat', theme, page)
 
             # /files/{uuid} — needs a real completed recording, which this standalone script
             # uploads and deletes itself (never the ambient dev library — issue #785 §4.5).

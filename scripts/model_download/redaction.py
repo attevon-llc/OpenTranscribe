@@ -1,8 +1,16 @@
 """The content-redaction model download group."""
 
+import logging
 import os
 
+import httpx
+
 from model_download.ui import print_error, print_header, print_info, print_success
+
+logger = logging.getLogger(__name__)
+
+# What from_pretrained / a missing optional package can raise while fetching a model.
+_FETCH_ERRORS = (ImportError, OSError, ValueError, httpx.HTTPError)
 
 
 def download_redaction_models():
@@ -33,7 +41,8 @@ def download_redaction_models():
         GLiNER.from_pretrained(gliner_model)
         print_success(f'  Downloaded: {gliner_model}')
         models.append(gliner_model)
-    except Exception as e:
+    except _FETCH_ERRORS as e:
+        logger.warning('GLiNER PII model download failed', exc_info=True)
         print_error(f'  Failed GLiNER PII model: {e}')
         results['status'] = 'partial'
 
@@ -51,10 +60,12 @@ def download_redaction_models():
                 AutoModelForSequenceClassification.from_pretrained(tox_model)
                 print_success(f'  Downloaded: {tox_model}')
                 models.append(tox_model)
-            except Exception as e:
+            except _FETCH_ERRORS as e:
+                logger.warning('toxicity model %s download failed', tox_model, exc_info=True)
                 print_error(f'  Failed toxicity model {tox_model}: {e}')
                 results['status'] = 'partial'
-    except Exception as e:
+    except ImportError as e:
+        logger.warning('transformers unavailable for toxicity models', exc_info=True)
         print_error(f'  transformers unavailable for toxicity models: {e}')
         results['status'] = 'partial'
 

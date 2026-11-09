@@ -7,7 +7,7 @@ import sys
 import time
 from pathlib import Path
 
-from pyannote_direct.config import DEFAULT_MODEL, DEFAULT_OPTIMIZED_SRC, HF_TOKEN
+from pyannote_direct.config import DEFAULT_MODEL, DEFAULT_OPTIMIZED_SRC, HF_TOKEN, logger
 
 
 def resolve_device_str(device: str, gpu_index: int) -> str:
@@ -99,7 +99,8 @@ def load_pipeline(
                     pipeline._embedding.model_, mode='reduce-overhead'
                 )
             print('  torch.compile enabled (segmentation + embedding)')
-        except Exception as e:
+        except (RuntimeError, AttributeError, TypeError) as e:
+            logger.warning('torch.compile failed', exc_info=True)
             print(f'  torch.compile failed: {e}')
 
     # Embedding batch size is now pinned to 16 by the fork. Override only if the
@@ -114,8 +115,12 @@ def load_pipeline(
                 print(
                     f'  Embedding batch size: {old_bs} -> {new_bs} (PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE)'
                 )
-            except Exception:
-                pass
+            except ValueError:
+                logger.warning(
+                    'ignoring non-integer PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE=%r',
+                    forced,
+                    exc_info=True,
+                )
 
     if onnx_cpu and hasattr(pipeline, '_setup_onnx_cpu'):
         print('  Enabling ONNX CPU inference (quantized INT8)...')

@@ -1,6 +1,7 @@
 """The OpenSearch neural-model download group (artifacts.opensearch.org, no HF token)."""
 
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,8 @@ from model_download.ui import (
     print_success,
     print_warning,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _fetch_model_config(config_url, config_path):
@@ -35,7 +38,8 @@ def _fetch_model_config(config_url, config_path):
     try:
         urllib.request.urlretrieve(config_url, config_path)
         return config_path.exists() and config_path.stat().st_size > 0
-    except Exception as exc:  # any failure means "no config", reported here
+    except OSError as exc:  # URLError/HTTPError/write failure: "no config", reported here
+        logger.warning('config.json fetch failed: %s', config_url, exc_info=True)
         print_error(f'  config.json unavailable ({exc}); cannot register this model offline')
         return False
 
@@ -282,7 +286,8 @@ def download_opensearch_neural_models():
             print_error(f'  HTTP Error {e.code}: {e.reason}')
             print_error('  URL may not be available from OpenSearch artifacts')
             failed_models.append(model_name)
-        except Exception as e:
+        except OSError as e:  # URLError, ContentTooShortError, disk write errors
+            logger.warning('download of %s failed', model_name, exc_info=True)
             print_error(f'  Failed to download: {e}')
             failed_models.append(model_name)
 

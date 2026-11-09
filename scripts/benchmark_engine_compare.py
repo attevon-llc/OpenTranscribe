@@ -103,7 +103,8 @@ def _audio_duration_s(audio_path: Path) -> float:
     try:
         with wave.open(str(audio_path), 'rb') as wf:
             return wf.getnframes() / wf.getframerate()
-    except Exception:
+    except (wave.Error, OSError, EOFError, ZeroDivisionError):
+        logger.warning('could not read WAV duration of %s', audio_path, exc_info=True)
         return 0.0
 
 
@@ -159,8 +160,8 @@ def compare_file(audio_path: Path, config: Any, engine_config: Any) -> dict:
             row['notes'] = f'pipeline OOM: {exc}'
             return row
         raise
-    except Exception as exc:
-        logger.error('Pipeline failed on %s: %s', filename, exc)
+    except Exception as exc:  # per-file isolation boundary: recorded as result=FAIL
+        logger.exception('Pipeline failed on %s', filename)
         row['result'] = 'FAIL'
         row['notes'] = f'pipeline error: {exc}'
         return row
@@ -177,8 +178,8 @@ def compare_file(audio_path: Path, config: Any, engine_config: Any) -> dict:
             row['notes'] = f'engine OOM: {exc}'
             return row
         raise
-    except Exception as exc:
-        logger.error('Engine failed on %s: %s', filename, exc)
+    except Exception as exc:  # per-file isolation boundary: recorded as result=FAIL
+        logger.exception('Engine failed on %s', filename)
         row['result'] = 'FAIL'
         row['notes'] = f'engine error: {exc}'
         return row

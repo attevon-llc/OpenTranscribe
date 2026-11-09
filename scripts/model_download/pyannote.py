@@ -1,7 +1,11 @@
 """The PyAnnote diarization download group (gated Hugging Face repos)."""
 
+import logging
 import os
 from pathlib import Path
+
+import httpx
+from huggingface_hub.errors import HfHubHTTPError
 
 from model_download.ui import (
     print_error,
@@ -10,6 +14,10 @@ from model_download.ui import (
     print_success,
     print_warning,
 )
+
+logger = logging.getLogger(__name__)
+
+_HUB_ERRORS = (HfHubHTTPError, httpx.HTTPError, OSError)
 
 
 def validate_gated_model_access():
@@ -43,7 +51,8 @@ def validate_gated_model_access():
                 # Try to get model info - this will fail if user hasn't accepted the license
                 api.model_info(model_id, token=hf_token)
                 print_success(f'  ✓ Access confirmed: {model_id}')
-            except Exception as e:
+            except _HUB_ERRORS as e:
+                logger.warning('access check for %s failed', model_id, exc_info=True)
                 error_msg = str(e)
                 inaccessible_models.append(model_id)
                 access_errors[model_id] = error_msg
@@ -76,8 +85,9 @@ def validate_gated_model_access():
         print_info('  This is not recommended - validation may fail during download')
         print_info('')
         return True, None
-    except Exception as e:
-        # Unexpected error during validation - don't block but warn strongly
+    except _HUB_ERRORS as e:
+        # Hub unreachable during validation - don't block but warn strongly
+        logger.warning('gated model validation failed', exc_info=True)
         print_error(f'  ⚠️  Could not validate gated models: {e}')
         print_info('  Proceeding anyway, but download may fail...')
         print_info('')
@@ -200,7 +210,8 @@ def fetch_diarization_pipeline(hf_token):
     for repo_id in optional:
         try:
             fetched += _snapshot_with_dependencies(repo_id, hf_token, snapshot_download, fetched)
-        except Exception as exc:
+        except (*_HUB_ERRORS, ValueError) as exc:
+            logger.warning('optional repo %s not fetched', repo_id, exc_info=True)
             unavailable[repo_id] = f'{type(exc).__name__}: {str(exc)[:160]}'
             print_warning(
                 f'  Optional {repo_id} not fetched ({type(exc).__name__}); the path that '
@@ -299,7 +310,8 @@ def download_pyannote_models():
             }
         }
 
-    except Exception as e:
+    except Exception as e:  # group boundary: recorded as status=failed, download-models.py exits 1
+        logger.exception('PyAnnote download failed')
         error_msg = str(e)
         print_error(f'Failed to download PyAnnote models: {error_msg}')
 

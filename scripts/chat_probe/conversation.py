@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from typing import Any
 
-from chat_probe.config import logger
 from chat_probe.questions import Question, Result
+
+logger = logging.getLogger(__name__)
 
 #: Bounded retries for a 429 on the message POST. The app's concurrency cap is a
 #: real limit, not a failure, so the probe waits it out rather than recording a
@@ -208,6 +210,7 @@ def run_question(session: Any, base_url: str, question: Question) -> Result:
             if citation.get('file_uuid') or citation.get('fileUuid')
         }
         result.files_consulted_uuids = sorted(files)
-    except Exception as exc:  # probe script, capture everything and continue
+    except Exception as exc:  # per-question isolation boundary: recorded in Result.error
+        logger.exception('probe question %r failed', question.label)
         result.error = f'{type(exc).__name__}: {exc}'
     return result

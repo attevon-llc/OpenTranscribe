@@ -28,10 +28,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
+
+import requests
 
 # Reuse the proven helpers so we behave exactly like benchmark_e2e.py
 _SCRIPT_DIR = Path(__file__).resolve().parent
@@ -47,6 +51,8 @@ from e2e_bench.backend_api import (  # noqa: E402 - importable only after the sy
     upload_file_via_api,
 )
 from e2e_bench.config import DEFAULT_BACKEND_URL  # noqa: E402 - importable only after the sys.path insert above
+
+logger = logging.getLogger(__name__)
 
 
 def resolve_task_id_from_db(file_uuid: str) -> str:
@@ -191,8 +197,6 @@ def main() -> None:
         size = fp.stat().st_size
         duration = 0.0
         try:
-            import subprocess
-
             out = subprocess.check_output(
                 [
                     'ffprobe',
@@ -208,8 +212,8 @@ def main() -> None:
                 timeout=10,
             )
             duration = float(out.strip())
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError, ValueError):
+            logger.warning('ffprobe duration failed for %s', fp, exc_info=True)
         fixture_summaries.append((fp.name, size, duration))
 
     _print_header(fixture_summaries)
@@ -230,7 +234,8 @@ def main() -> None:
             hash_s, resp, put_s = upload_file_via_api(
                 args.backend_url, token, str(fp), verify=verify
             )
-        except Exception as e:
+        except (requests.RequestException, OSError) as e:
+            logger.exception('upload of %s failed', fp)
             print(f'  ✗ Upload failed: {e}')
             continue
 

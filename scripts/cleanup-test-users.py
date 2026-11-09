@@ -30,6 +30,7 @@ speaker-profile/conversation planes, which this script does not touch.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -40,6 +41,9 @@ from sqlalchemy import (
     create_engine,
     text,
 )
+from sqlalchemy.exc import SQLAlchemyError
+
+logger = logging.getLogger(__name__)
 
 # Build the DB URL from .env + dev-stack defaults directly — importing
 # app.core.config has filesystem side effects (creates data dirs).
@@ -279,7 +283,8 @@ def _delete_users(
             try:
                 with conn.begin_nested():
                     conn.execute(text('DELETE FROM "user" WHERE id = :id'), {'id': uid})
-            except Exception as exc:
+            except SQLAlchemyError as exc:  # per-item isolation: one row costs one savepoint
+                logger.exception('could not delete user %s', email)
                 failed.append(email)
                 print(f'  ERROR   {email}: {exc}')
             else:

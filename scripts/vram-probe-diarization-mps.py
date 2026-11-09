@@ -100,7 +100,8 @@ class MPSSampler:
             try:
                 used_mb = mps.driver_allocated_memory() / (1024**2)
                 self._samples.append((time.perf_counter() - self._t0, used_mb))
-            except Exception:
+            except (RuntimeError, AttributeError):
+                log.debug('MPS memory sample failed', exc_info=True)
                 continue
 
     def stop(self) -> list[tuple[float, float]]:
@@ -252,8 +253,8 @@ def run_small_batch_sweep(args: argparse.Namespace) -> int:
                 write_result(result, out_dir)
                 if result.error:
                     fails += 1
-            except Exception as e:
-                log.error(f'Sweep run {idx} failed: {e}')
+            except Exception:  # per-run isolation boundary: counted in fails, sweep exits non-zero
+                log.exception(f'Sweep run {idx} failed')
                 fails += 1
             log.info(
                 f'Sweep {idx}/{total} fails={fails} elapsed={(time.perf_counter() - t0) / 60:.1f}min'

@@ -73,7 +73,8 @@ def _probe_duration_ffprobe(audio_path: Path) -> float:
             timeout=15,
         )
         return float(result.stdout.strip())
-    except Exception:
+    except (subprocess.SubprocessError, OSError, ValueError):
+        logger.warning('ffprobe duration failed for %s', audio_path, exc_info=True)
         return 0.0
 
 
@@ -84,7 +85,8 @@ def _probe_duration_wave(audio_path: Path) -> float:
     try:
         with wave.open(str(audio_path), 'rb') as wf:
             return wf.getnframes() / wf.getframerate()
-    except Exception:
+    except (wave.Error, OSError, EOFError, ZeroDivisionError):
+        logger.warning('could not read WAV duration of %s', audio_path, exc_info=True)
         return 0.0
 
 

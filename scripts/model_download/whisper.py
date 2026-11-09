@@ -1,8 +1,11 @@
 """The WhisperX (local ASR) model download group."""
 
+import logging
 import os
 
 from model_download.ui import print_error, print_header, print_info, print_success
+
+logger = logging.getLogger(__name__)
 
 
 def download_whisperx_models():
@@ -43,7 +46,8 @@ def download_whisperx_models():
     print_info(f'Model: {entry.id} ({entry.repo_id})')
     try:
         download_blocking(entry, os.environ.get('HUGGINGFACE_TOKEN'))
-    except Exception as exc:
+    except Exception as exc:  # group boundary: classified, recorded as status=failed
+        logger.exception('local Whisper model download failed')
         code = classify_error(exc)
         print_error(f'Failed to download local Whisper model: {ERROR_MESSAGES[code]}')
         return {'whisperx': {'status': 'failed', 'error': code}}

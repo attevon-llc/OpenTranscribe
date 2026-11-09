@@ -25,8 +25,8 @@ def load_waveform(audio_path: str):
         loader = Audio(mono='downmix')
         waveform, sample_rate = loader({'audio': audio_path})
         return waveform, sample_rate
-    except Exception as e:
-        logger.debug('pyannote.Audio loader failed (%s); falling back to scipy', e)
+    except (ImportError, OSError, RuntimeError, ValueError):
+        logger.warning('pyannote.Audio loader failed; falling back to scipy', exc_info=True)
 
     # Fallback: scipy.io.wavfile — WAV-only, but zero extra deps.
     from scipy.io import wavfile
@@ -69,8 +69,8 @@ def annotation_to_rttm(annotation, uri: str) -> str:
         content = buf.getvalue()
         if content:
             return content
-    except Exception:
-        pass
+    except (AttributeError, TypeError, ValueError, OSError):
+        logger.warning('annotation.write_rttm failed; using the manual emitter', exc_info=True)
 
     # Manual fallback
     lines = []

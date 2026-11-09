@@ -154,7 +154,7 @@ def main() -> None:
 
     onnx_cpu = args.variant == 'optimized_cpu'
     device = 'cpu' if onnx_cpu else args.device
-    run_benchmark(
+    report = run_benchmark(
         args.variant,
         file_labels,
         device,
@@ -169,3 +169,5 @@ def main() -> None:
         torch_compile=args.torch_compile,
         segmentation_step=args.segmentation_step,
     )
+    if report['summary']['errors']:
+        sys.exit(1)

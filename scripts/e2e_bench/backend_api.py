@@ -1,5 +1,6 @@
 """Backend HTTP access: auth, file metadata, reprocess, upload and task polling."""
 
+import logging
 import os
 import sys
 import time
@@ -7,6 +8,8 @@ import time
 import requests
 
 from e2e_bench.config import POLL_INTERVAL, POLL_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 
 def get_auth_token(backend_url: str, email: str, password: str, verify: bool = True) -> str:
@@ -126,8 +129,8 @@ def get_task_id_for_file_via_api(
         )
         if resp.status_code == 200:
             return str(resp.json().get('active_task_id') or '')
-    except Exception:
-        pass
+    except (requests.RequestException, ValueError):
+        logger.warning('could not read active_task_id for %s', file_uuid, exc_info=True)
     return ''
 
 

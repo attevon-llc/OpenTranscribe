@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import urllib.request
 
@@ -85,6 +86,9 @@ MULTI_PIECE_FILLER = ['kaleidoscopic', 'marmalade', 'zephyrous', 'quixotic', 'bo
 
 #: Cosine at or above this counts as "identical" — i.e. the tail was truncated away.
 IDENTICAL = 0.999999
+
+
+logger = logging.getLogger(__name__)
 
 
 def _post(url: str, payload: dict) -> dict:
@@ -163,7 +167,8 @@ def main() -> int:
 
     try:
         corpus = real_corpus_words(args.opensearch, args.index)
-    except Exception as exc:  # the index may be empty on a fresh stack
+    except (OSError, ValueError, KeyError) as exc:  # unreachable index, bad JSON, or no hits
+        logger.warning('real corpus probe skipped', exc_info=True)
         print(f'real corpus probe skipped ({exc})')
         corpus = []
     if len(corpus) > single:

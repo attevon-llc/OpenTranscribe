@@ -29,6 +29,7 @@ so they sort by tier and are easily identifiable.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import re
 import shutil
@@ -39,6 +40,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BACKEND = os.environ.get('BENCHMARK_BACKEND_URL', 'http://localhost:5174')
 DEFAULT_EMAIL = os.environ.get('BENCHMARK_EMAIL', 'admin@example.com')
@@ -195,32 +198,35 @@ def download_many(
     picks: list[tuple[int, dict[str, Any]]],
     dest_dir: Path,
     workers: int,
-) -> None:
-    """Download (tier, file_record) pairs in parallel via ThreadPoolExecutor."""
+) -> int:
+    """Download (tier, file_record) pairs in parallel via ThreadPoolExecutor.
+
+    Returns the number of failed downloads (a failed one is reported, not fatal to the rest).
+    """
     if workers <= 1:
         for tier, f in picks:
             download_one(backend_url, token, f, dest_dir, tier)
-        return
+        return 0
     print(f'\nDownloading {len(picks)} files with {workers} parallel workers ...')
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futures = {
             ex.submit(download_one, backend_url, token, f, dest_dir, tier): (tier, f)
             for tier, f in picks
         }
+        failures = 0
         for done, fut in enumerate(as_completed(futures), start=1):
             tier, f = futures[fut]
             try:
                 fut.result()
-            except requests.RequestException as e:
+            except (requests.RequestException, OSError) as e:  # per-item isolation
+                failures += 1
+                logger.exception('download of %s failed', f['uuid'])
                 print(
-                    f'    [FAIL {done}/{len(picks)}] tier {tier} {f["uuid"][:8]}: {e}',
+                    f'    [FAIL {done}/{len(picks)}] tier {tier} {f["uuid"][:8]}: '
+                    f'{type(e).__name__}: {e}',
                     file=sys.stderr,
                 )
-            except Exception as e:
-                print(
-                    f'    [FAIL {done}/{len(picks)}] tier {tier} {f["uuid"][:8]}: {type(e).__name__}: {e}',
-                    file=sys.stderr,
-                )
+    return failures
 
 
 def main() -> int:
@@ -290,8 +296,11 @@ def main() -> int:
             all_picks.append((tier, f))
         summary[tier] = len(picks)
 
+    failed_downloads = 0
     if not args.dry_run and all_picks:
-        download_many(args.backend_url, token, all_picks, AUDIO_DIR, args.workers)
+        failed_downloads = download_many(
+            args.backend_url, token, all_picks, AUDIO_DIR, args.workers
+        )
 
     # Free-space check
     free = shutil.disk_usage(AUDIO_DIR).free
@@ -301,6 +310,9 @@ def main() -> int:
         f'benchmark/test_audio/ now contains {sum(1 for _ in AUDIO_DIR.iterdir())} files, '
         f'{total_in / 1e9:.1f} GB total. Free disk: {free / 1e9:.0f} GB.'
     )
+    if failed_downloads:
+        print(f'ERROR: {failed_downloads} download(s) failed', file=sys.stderr)
+        return 1
     return 0
 
 

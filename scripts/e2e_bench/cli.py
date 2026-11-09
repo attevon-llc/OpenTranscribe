@@ -2,11 +2,13 @@
 
 import argparse
 import csv
+import logging
 import os
 import sys
 import time
 
 import redis
+import requests
 
 from e2e_bench.backend_api import (
     get_auth_token,
@@ -26,6 +28,8 @@ from e2e_bench.db import find_benchmark_task_id, get_task_id_for_file
 from e2e_bench.formatting import fmt_duration, fmt_size
 from e2e_bench.reports import print_detailed_report, print_summary, print_vram_summary
 from e2e_bench.stages import calculate_stages, collect_benchmark_data, collect_vram_data
+
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -143,7 +147,8 @@ Examples:
                 client_hash_elapsed, upload_resp, put_elapsed = upload_file_via_api(
                     args.backend_url, token, args.fixture_file, verify=verify
                 )
-            except Exception as e:
+            except (requests.RequestException, OSError) as e:
+                logger.exception('upload failed')
                 print(f'  Upload failed: {e}', file=sys.stderr)
                 continue
             current_file_uuid = str(upload_resp.get('uuid') or upload_resp.get('id') or '')
@@ -241,35 +246,34 @@ Examples:
         else:
             print('  VRAM profile: None (enable ENABLE_VRAM_PROFILING=true)')
 
+    if not all_results:
+        print('ERROR: no iteration completed', file=sys.stderr)
+        sys.exit(1)
+
     # Refresh file metadata after processing (to get segment/speaker counts)
-    if all_results:
-        last_uuid = all_results[-1]['file_uuid']
-        file_meta = get_file_metadata(args.backend_url, last_uuid, token, verify=verify)
+    last_uuid = all_results[-1]['file_uuid']
+    file_meta = get_file_metadata(args.backend_url, last_uuid, token, verify=verify)
 
-    # Write CSV
-    if all_results:
-        stage_keys = set()
+    stage_keys = set()
+    for r_item in all_results:
+        stage_keys.update(r_item.get('stages', {}).keys())
+    stage_keys = sorted(stage_keys)
+
+    with open(args.output, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['iteration', 'task_id', 'file_uuid', 'wall_elapsed'] + stage_keys)
         for r_item in all_results:
-            stage_keys.update(r_item.get('stages', {}).keys())
-        stage_keys = sorted(stage_keys)
+            row = [
+                r_item['iteration'],
+                r_item['task_id'],
+                r_item.get('file_uuid', ''),
+                f'{r_item["wall_elapsed"]:.3f}',
+            ]
+            row += [r_item['stages'].get(k, '') for k in stage_keys]
+            writer.writerow(row)
 
-        with open(args.output, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['iteration', 'task_id', 'file_uuid', 'wall_elapsed'] + stage_keys)
-            for r_item in all_results:
-                row = [
-                    r_item['iteration'],
-                    r_item['task_id'],
-                    r_item.get('file_uuid', ''),
-                    f'{r_item["wall_elapsed"]:.3f}',
-                ]
-                row += [r_item['stages'].get(k, '') for k in stage_keys]
-                writer.writerow(row)
+    print(f'\nCSV written to {args.output}')
 
-        print(f'\nCSV written to {args.output}')
-
-    # Print report
-    last_uuid = all_results[-1]['file_uuid'] if all_results else (args.file_uuid or '')
     if args.detailed:
         print_detailed_report(all_results, all_vram, file_meta, last_uuid)
     else:

@@ -37,11 +37,12 @@ _groups, _manifest, _ui = _load_package()
 DOWNLOAD_GROUPS = _groups.DOWNLOAD_GROUPS
 GROUPS_WITHOUT_HF_TOKEN = _groups.GROUPS_WITHOUT_HF_TOKEN
 create_manifest = _manifest.create_manifest
-print_error, print_header, print_info, print_success = (
+print_error, print_header, print_info, print_success, print_warning = (
     _ui.print_error,
     _ui.print_header,
     _ui.print_info,
     _ui.print_success,
+    _ui.print_warning,
 )
 
 
@@ -84,6 +85,10 @@ def main():
 
     failed = [k for k, v in results.items() if v.get('status') == 'failed']
     succeeded = [k for k, v in results.items() if v.get('status') == 'downloaded']
+
+    partial = [k for k, v in results.items() if v.get('status') == 'partial']
+    if partial:
+        print_warning(f'Partially downloaded (some assets missing): {", ".join(partial)}')
 
     if failed:
         print_error(f'Failed to download: {", ".join(failed)}')

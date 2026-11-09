@@ -114,7 +114,7 @@ def summarization_env(db_session, monkeypatch):
     monkeypatch.setattr(summ, "LLMService", _Factory)
 
     tracker.recorded = recorded
-    tracker.llm_service = service  # type: ignore[attr-defined]
+    monkeypatch.setattr(tracker, "llm_service", service, raising=False)
     return tracker
 
 
@@ -219,7 +219,7 @@ def identification_env(db_session, monkeypatch):
     monkeypatch.setattr(sid, "_create_llm_service", lambda user_id: service)
 
     tracker.recorded = recorded
-    tracker.llm_service = service  # type: ignore[attr-defined]
+    monkeypatch.setattr(tracker, "llm_service", service, raising=False)
     return tracker
 
 
@@ -375,7 +375,7 @@ def topic_extraction_env(db_session, monkeypatch):
     monkeypatch.setattr(tes, "LLMService", _Factory)
 
     tracker.recorded = recorded
-    tracker.llm_service = service  # type: ignore[attr-defined]
+    monkeypatch.setattr(tracker, "llm_service", service, raising=False)
     return tracker
 
 

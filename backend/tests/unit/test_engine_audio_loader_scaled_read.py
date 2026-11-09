@@ -30,7 +30,8 @@ def _reference_scaled_read(wav_path: str) -> np.ndarray:
     import scipy.io.wavfile as wavfile
 
     _, data = wavfile.read(wav_path, mmap=True)
-    return data.astype(np.float32) / 32767.0  # type: ignore[no-any-return]
+    scaled: np.ndarray = data.astype(np.float32) / 32767.0
+    return scaled
 
 
 class TestScaledReadNumericalEquality:

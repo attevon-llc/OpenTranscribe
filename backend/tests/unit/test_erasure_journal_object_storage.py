@@ -33,6 +33,13 @@ from tests.audit_maintenance import audit_maintenance
 _S3_ABSENT = os.environ.get("SKIP_S3", "True").lower() == "true"
 
 
+class _ReleasableStream(io.BytesIO):
+    """A read stream carrying the ``release_conn`` hook the object-storage client calls."""
+
+    def release_conn(self) -> None:
+        return None
+
+
 class _InMemoryObjectStore:
     """put_object / list_objects / get_object with minio-py's call shapes."""
 
@@ -54,9 +61,7 @@ class _InMemoryObjectStore:
 
     def get_object(self, bucket, name):
         self.gets.append(name)
-        stream = io.BytesIO(self.objects[(bucket, name)])
-        stream.release_conn = lambda: None  # type: ignore[attr-defined]
-        return stream
+        return _ReleasableStream(self.objects[(bucket, name)])
 
 
 def _real_store(bucket: str) -> Any:

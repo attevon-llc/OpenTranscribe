@@ -32,8 +32,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
+from typing import cast
 
 import pytest
+from sqlalchemy.orm import Session
 
 _APP_ROOT = Path(__file__).resolve().parents[2] / "app"
 
@@ -1210,7 +1212,8 @@ def test_an_unknown_refusal_action_is_a_programming_error():
     from app.api.hold_refusal import refuse_if_frozen
 
     with pytest.raises(ValueError, match="FREEZE_ACTIONS"):
-        refuse_if_frozen(None, [], actor=None, action="not_an_action")  # type: ignore[arg-type]
+        # The session is never touched: the unknown action is rejected before any lookup.
+        refuse_if_frozen(cast("Session", None), [], actor=None, action="not_an_action")
 
 
 # ---------------------------------------------------------------------------

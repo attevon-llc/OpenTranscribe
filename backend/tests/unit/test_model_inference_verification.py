@@ -41,8 +41,8 @@ def service(monkeypatch):
 
     monkeypatch.setattr(ml_model_service, "get_opensearch_client", lambda: _Client())
     svc = ml_model_service.OpenSearchMLModelService()
-    svc.calls = calls  # type: ignore[attr-defined]
-    svc.responses = responses  # type: ignore[attr-defined]
+    monkeypatch.setattr(svc, "calls", calls, raising=False)
+    monkeypatch.setattr(svc, "responses", responses, raising=False)
     return svc
 
 

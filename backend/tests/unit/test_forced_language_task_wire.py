@@ -18,6 +18,7 @@ import pytest
 
 from app.services.asr.azure_provider import AzureASRProvider
 from app.services.asr.types import ASRConfig
+from tests.helpers import make_stub_module
 from tests.unit._asr_stubs import StubASRProvider
 from tests.unit._plan_contexts import make_plan
 
@@ -55,10 +56,12 @@ def _fake_azure_sdk(seen: dict) -> types.ModuleType:
         def __init__(self, filename):
             raise _StopError
 
-    sdk = types.ModuleType("azure.cognitiveservices.speech")
-    sdk.SpeechConfig = _SpeechConfig  # type: ignore[attr-defined]
-    sdk.OutputFormat = _OutputFormat  # type: ignore[attr-defined]
-    sdk.audio = types.SimpleNamespace(AudioConfig=_AudioConfig)  # type: ignore[attr-defined]
+    sdk = make_stub_module(
+        "azure.cognitiveservices.speech",
+        SpeechConfig=_SpeechConfig,
+        OutputFormat=_OutputFormat,
+        audio=types.SimpleNamespace(AudioConfig=_AudioConfig),
+    )
     return sdk
 
 

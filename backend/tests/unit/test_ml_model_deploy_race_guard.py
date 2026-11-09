@@ -49,7 +49,7 @@ def service(monkeypatch):
     monkeypatch.setattr(ml_model_service, "get_opensearch_client", lambda: _Client())
     svc = ml_model_service.OpenSearchMLModelService()
     monkeypatch.setattr(svc, "configure_ml_settings", lambda: True)
-    svc.sent = sent  # type: ignore[attr-defined]
+    monkeypatch.setattr(svc, "sent", sent, raising=False)
     return svc
 
 

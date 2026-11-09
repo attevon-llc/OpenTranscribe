@@ -20,9 +20,10 @@ word in it is "disputed" — i.e. carries a small top1-top2 overlap margin attac
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
+
+from app.core.env import env_raw
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class BoundarySmoothingConfig:
         defaults = cls()
 
         def _bool(key: str, env: str, default: bool) -> bool:
-            env_default = os.getenv(env)
+            env_default = env_raw(env)
             base = env_default.lower() == "true" if env_default is not None else default
             if db is None:
                 return base
@@ -83,7 +84,7 @@ class BoundarySmoothingConfig:
 
                 raw = get_setting(db, key)
             if raw is None:
-                raw = os.getenv(env)
+                raw = env_raw(env)
             if raw is None or raw == "":
                 return default
             try:

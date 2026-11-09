@@ -5,6 +5,8 @@ from pathlib import Path
 
 import ffmpeg
 
+from app.core.env import env_int
+from app.core.env import env_str
 from app.utils.audio_stream import audio_map_spec
 from app.utils.audio_stream import effective_audio_index
 from app.utils.cpu_budget import effective_cpu_count
@@ -33,17 +35,14 @@ def _ffmpeg_threads() -> int:
       "auto"          -> cores // CPU_WORKER_CONCURRENCY (>=1): no oversubscription
       <positive int>  -> explicit per-process cap (e.g. 2-4 on a laptop)
     """
-    raw = os.environ.get("FFMPEG_THREADS", "0").strip().lower()
+    raw = env_str("FFMPEG_THREADS", "0").lower()
     if raw in ("", "0"):
         return 0
     if raw.isdigit():
         return int(raw)
     if raw == "auto":
         cores = effective_cpu_count()
-        try:
-            concurrency = max(1, int(os.environ.get("CPU_WORKER_CONCURRENCY", "8")))
-        except ValueError:
-            concurrency = 8
+        concurrency = max(1, env_int("CPU_WORKER_CONCURRENCY", 8))
         return max(1, cores // concurrency)
     return 0  # unrecognized -> safe default (unbounded)
 

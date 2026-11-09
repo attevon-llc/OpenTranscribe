@@ -37,6 +37,20 @@ def _raw(name: str) -> str | None:
     return None if value is None else value.strip()
 
 
+def env_raw(name: str) -> str | None:
+    """Value exactly as set (unstripped), or None when unset; empty string is a real value."""
+    return os.environ.get(name)
+
+
+def env_publish(name: str, value: str) -> None:
+    """Set a variable in this process's environment for a library or child process to read.
+
+    The only sanctioned write: the process environment is the interface of torch, pyannote and
+    subprocesses, not a setting of ours.
+    """
+    os.environ[name] = value
+
+
 def env_is_set(name: str) -> bool:
     """True when the variable is set to a non-blank value."""
     return bool(_raw(name))

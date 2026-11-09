@@ -29,6 +29,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.core.config import settings
+from app.core.env import env_str
 from app.core.pipeline_constants import ASR_SEGMENT_MAX_DURATION_SECONDS
 from app.core.pipeline_constants import ASR_SEGMENT_MIN_GAP_SECONDS
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
@@ -162,7 +163,7 @@ class AWSTranscribeProvider(ASRProvider):
             RuntimeError: STS could not be reached or refused, or returned no account. A VPC
                 with no STS endpoint must set ``AWS_TRANSCRIBE_BUCKET_OWNER``.
         """
-        override = os.getenv(BUCKET_OWNER_ENV, "").strip()
+        override = env_str(BUCKET_OWNER_ENV)
         if override:
             return override
         key = (self._access_key_id or "", self._region)
@@ -405,7 +406,7 @@ class AWSTranscribeProvider(ASRProvider):
             settings_kw["MaxSpeakerLabels"] = max(2, min(config.max_speakers, 30))
         if config.vocabulary:
             # AWS Transcribe requires a pre-created custom vocabulary by name.
-            vocab_name = os.getenv("AWS_TRANSCRIBE_VOCABULARY_NAME")
+            vocab_name = env_str("AWS_TRANSCRIBE_VOCABULARY_NAME")
             if vocab_name:
                 settings_kw["VocabularyName"] = vocab_name
             else:

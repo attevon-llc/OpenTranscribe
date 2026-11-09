@@ -27,12 +27,12 @@ from __future__ import annotations
 
 import logging
 import multiprocessing as mp
-import os
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from typing import TYPE_CHECKING
 
 from app.core.env import env_int
+from app.core.env import env_publish
 from app.utils.cpu_budget import effective_cpu_count
 
 if TYPE_CHECKING:
@@ -89,7 +89,7 @@ def _init_worker() -> None:
     This must run before the first app import, because torch caches the device list on first use.
     """
     global _analyzer
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    env_publish("CUDA_VISIBLE_DEVICES", "")
     try:
         from app.services.redaction.detectors import pii_presidio
 

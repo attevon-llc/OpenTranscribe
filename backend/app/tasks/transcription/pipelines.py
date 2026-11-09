@@ -7,12 +7,12 @@ path, and the transcribe-only stage used by the multi-GPU split.
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from app.core.config import settings
 from app.core.enums import TranscriptionStage
+from app.core.env import env_str
 from app.db.session_utils import session_scope
 from app.services.privacy.gates import job_privacy_overrides
 from app.transcription.config import LIGHTWEIGHT_MODELS
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 # Deprecation warning for legacy TRANSCRIPTION_ENGINE env var
-_engine = os.getenv("TRANSCRIPTION_ENGINE", "")
+_engine = env_str("TRANSCRIPTION_ENGINE")
 if _engine and _engine.lower() != "native":
     logger.warning(
         f"TRANSCRIPTION_ENGINE={_engine} is deprecated and ignored. "
@@ -42,7 +42,7 @@ if _engine and _engine.lower() != "native":
     )
 
 # Deprecation warning for legacy ENABLE_ALIGNMENT env var
-_align = os.getenv("ENABLE_ALIGNMENT", "")
+_align = env_str("ENABLE_ALIGNMENT")
 if _align:
     logger.warning(
         "ENABLE_ALIGNMENT is deprecated and ignored. "

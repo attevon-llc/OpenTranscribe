@@ -11,12 +11,12 @@ Supports:
 """
 
 import logging
-import os
 import platform
 from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.config import settings
+from app.core.env import env_str
 from app.utils.cpu_budget import effective_cpu_count
 
 if TYPE_CHECKING:
@@ -173,7 +173,7 @@ class HardwareConfig:
                 "Using CUDA ordinal %d (GPU_DEVICE_ID=%s, CUDA_DEVICE_ORDER=%s): %s pci=%s",
                 self.device_index,
                 settings.GPU_DEVICE_ID,
-                os.getenv("CUDA_DEVICE_ORDER", "<unset — ordinals may not match nvidia-smi>"),
+                env_str("CUDA_DEVICE_ORDER", "<unset — ordinals may not match nvidia-smi>"),
                 props.name,
                 getattr(props, "pci_bus_id", "unknown"),
             )
@@ -314,7 +314,7 @@ class HardwareConfig:
 
         Override via WHISPER_HYBRID_MODE env var: "true", "false", or "auto" (default).
         """
-        override = os.getenv("WHISPER_HYBRID_MODE", "auto").lower()
+        override = env_str("WHISPER_HYBRID_MODE", "auto").lower()
         if override == "true":
             return True
         if override == "false":

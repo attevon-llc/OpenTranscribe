@@ -155,6 +155,7 @@ _ENV_READ_WRAPPER_NAMES = {
     "env_float",
     "env_bool",
     "env_str",
+    "env_raw",
     "_raw",
 }
 

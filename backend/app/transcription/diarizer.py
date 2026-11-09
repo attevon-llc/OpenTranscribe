@@ -6,7 +6,6 @@ speaker count parameters.
 
 import gc
 import logging
-import os
 import time
 from collections.abc import Callable
 from typing import Any
@@ -17,6 +16,8 @@ import numpy as np
 import torch
 
 from app.core import privacy_env  # noqa: F401  -- telemetry opt-outs before pyannote loads
+from app.core.env import env_publish
+from app.core.env import env_raw
 from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
@@ -170,7 +171,7 @@ class SpeakerDiarizer:
             return
 
         # Check env override first
-        env_batch = os.getenv("DIARIZATION_BATCH_SIZE")
+        env_batch = env_raw("DIARIZATION_BATCH_SIZE")
         if env_batch is not None:
             try:
                 batch_size = int(env_batch)
@@ -231,7 +232,7 @@ class SpeakerDiarizer:
         if self._pipeline is None:
             return
 
-        env_batch = os.getenv("DIARIZATION_EMBEDDING_BATCH_SIZE")
+        env_batch = env_raw("DIARIZATION_EMBEDDING_BATCH_SIZE")
         if env_batch is not None:
             try:
                 batch_size = int(env_batch)
@@ -246,7 +247,7 @@ class SpeakerDiarizer:
 
         # Force the fork to use the exact value we ask for, bypassing its
         # auto-scaler (which kicks in for values <= 32 on cuda/mps).
-        os.environ["PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE"] = str(batch_size)
+        env_publish("PYANNOTE_FORCE_EMBEDDING_BATCH_SIZE", str(batch_size))
         self._pipeline.embedding_batch_size = batch_size
         logger.info(f"Diarization embedding batch_size: {batch_size} (pinned)")
 

@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
 
+from app.core.env import env_str
 from app.core.exceptions import ASRConfigurationError
 from app.utils.exception_log_safety import MessageFreeTracebackFilter
 from app.utils.url_validation import pinned_requests_session
@@ -76,7 +77,7 @@ class GladiaProvider(ASRProvider):
                 rather than deep inside ``transcribe()``, so a bad config fails fast
                 instead of surfacing as an opaque connection error inside a Celery task.
         """
-        candidate = (configured_base_url or os.environ.get("GLADIA_API_BASE_URL") or "").strip()
+        candidate = (configured_base_url or env_str("GLADIA_API_BASE_URL") or "").strip()
         if not candidate:
             return DEFAULT_BASE_URL
         candidate = candidate.rstrip("/")

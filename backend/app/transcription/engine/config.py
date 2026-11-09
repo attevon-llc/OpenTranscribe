@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
 
 from app.core.env import env_bool
+from app.core.env import env_raw
+from app.core.env import env_str
 from app.core.env import is_truthy
 from app.core.queues import gpu_split_enabled
 from app.core.scratch_paths import ENGINE_SHARED_VOLUME_DEFAULT
@@ -61,7 +62,7 @@ class EngineConfig:
 
             raw = get_setting(db, key)
         if raw is None:
-            raw = os.getenv(env)
+            raw = env_raw(env)
         if raw is None or raw == "":
             return default
         try:
@@ -95,7 +96,7 @@ class EngineConfig:
         def _float(key: str, env: str, default: float) -> float:
             raw = vals.get(key)
             if raw is None:
-                raw = os.getenv(env)
+                raw = env_raw(env)
             if raw is None or raw == "":
                 return default
             try:
@@ -106,13 +107,10 @@ class EngineConfig:
         return cls(
             transcriber_backend=(
                 vals.get("engine.transcriber_backend")
-                or os.getenv("ENGINE_TRANSCRIBER_BACKEND")
-                or "faster_whisper"
+                or env_str("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper")
             ),
             diarizer_backend=(
-                vals.get("engine.diarizer_backend")
-                or os.getenv("ENGINE_DIARIZER_BACKEND")
-                or "native"
+                vals.get("engine.diarizer_backend") or env_str("ENGINE_DIARIZER_BACKEND", "native")
             ),
             # Deployment topology and a stub: no admin field writes these, so env only.
             gpu_split=gpu_split_enabled(),
@@ -147,7 +145,7 @@ class EngineConfig:
         tc = TranscriptionConfig.from_environment(**tc_overrides)
 
         engine = cls(
-            transcriber_backend=os.getenv("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
+            transcriber_backend=env_str("ENGINE_TRANSCRIBER_BACKEND", "faster_whisper"),
             # Mirrors tc.diarizer_backend below (single decision point: DB > env > default,
             # resolved once by TranscriptionConfig._resolve_diarizer_backend) rather than
             # re-resolving independently from env alone — this is what to_snapshot() serializes

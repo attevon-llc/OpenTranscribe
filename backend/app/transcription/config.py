@@ -6,7 +6,6 @@ with task-level overrides for per-file settings.
 
 import hashlib
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 from typing import ClassVar
@@ -15,7 +14,10 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.core.env import env_bool
+from app.core.env import env_float
 from app.core.env import env_int
+from app.core.env import env_raw
+from app.core.env import env_str
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +142,7 @@ class TranscriptionConfig:
         # Override via WHISPER_HYBRID_MODE=true|false|auto.
         hybrid = hw.should_use_hybrid_mode(resolved_model)
         if hybrid:
-            hybrid_model = os.getenv("WHISPER_HYBRID_CPU_MODEL", "small")
+            hybrid_model = env_str("WHISPER_HYBRID_CPU_MODEL", "small")
             transcription_device = "cpu"
             transcription_compute = "int8"
             transcription_model = hybrid_model
@@ -156,9 +158,7 @@ class TranscriptionConfig:
             )
         else:
             transcription_device = whisperx_config["device"]
-            transcription_compute = os.getenv(
-                "WHISPER_COMPUTE_TYPE", whisperx_config["compute_type"]
-            )
+            transcription_compute = env_str("WHISPER_COMPUTE_TYPE", whisperx_config["compute_type"])
             transcription_model = resolved_model
             diarization_device = hw.device
             batch_size_env = settings.BATCH_SIZE
@@ -172,7 +172,7 @@ class TranscriptionConfig:
         config = cls(
             model_name=transcription_model,
             compute_type=transcription_compute,
-            beam_size=int(os.getenv("WHISPER_BEAM_SIZE", "5")),
+            beam_size=env_int("WHISPER_BEAM_SIZE", 5),
             batch_size=batch_size,
             device=transcription_device,
             diarization_device=diarization_device,
@@ -185,7 +185,7 @@ class TranscriptionConfig:
             hf_token=get_hf_token(),
             enable_native_embeddings=env_bool("USE_NATIVE_SPEAKER_EMBEDDINGS", True),
             enable_overlap_detection=env_bool("ENABLE_OVERLAP_DETECTION", True),
-            overlap_min_duration=float(os.getenv("OVERLAP_MIN_DURATION", "0.25")),
+            overlap_min_duration=env_float("OVERLAP_MIN_DURATION", 0.25),
             # Language, VAD and accuracy settings are per job: the task supplies them as
             # overrides (user or deployment settings), so the dataclass defaults are only
             # a fallback for callers that never transcribe.
@@ -256,7 +256,7 @@ class TranscriptionConfig:
         Uses int8 quantization for optimal CPU throughput. Diarization is
         disabled because PyAnnote requires CUDA.
         """
-        model_name = os.getenv("WHISPER_LIGHTWEIGHT_MODEL", "base")
+        model_name = env_str("WHISPER_LIGHTWEIGHT_MODEL", "base")
         config = cls(
             model_name=model_name,
             compute_type="int8",
@@ -352,7 +352,7 @@ class TranscriptionConfig:
         name from a future backend that never got registered) fails safe to "native" with a
         loud warning instead of silently producing a diarizer nothing selected.
         """
-        raw = os.getenv("ENGINE_DIARIZER_BACKEND", "native")
+        raw = env_str("ENGINE_DIARIZER_BACKEND", "native")
         try:
             from app.db.session_utils import session_scope
             from app.models.system_settings import SystemSettings
@@ -386,7 +386,8 @@ class TranscriptionConfig:
     @staticmethod
     def _resolve_concurrent_requests() -> int:
         """Resolve GPU_CONCURRENT_REQUESTS from env, with auto-detection."""
-        raw = os.getenv("GPU_CONCURRENT_REQUESTS", "1").strip().lower()
+        unset_or_raw = env_raw("GPU_CONCURRENT_REQUESTS")
+        raw = "1" if unset_or_raw is None else unset_or_raw.strip().lower()
         if raw == "auto":
             return TranscriptionConfig._auto_concurrent()
         try:

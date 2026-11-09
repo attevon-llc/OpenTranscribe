@@ -405,8 +405,8 @@ backend/app/services/opensearch_service/speaker_metadata.py::update_speaker_segm
 backend/app/services/opensearch_service/speaker_read.py::get_all_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_read.py::get_speaker_document#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_read.py::get_speaker_embeddings_batch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::_iter_embeddings_by_uuid#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::_iter_user_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out

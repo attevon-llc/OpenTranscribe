@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Generator
+from collections.abc import Iterable
 from typing import Any
 
 from app.core.config import settings
@@ -155,6 +156,92 @@ def get_speaker_embeddings_batch(speaker_uuids: list[str]) -> dict[str, list[flo
         return {}
 
 
+def _embedding_record(source: dict[str, Any]) -> dict[str, Any] | None:
+    """The fields callers need from a speaker document, or None when it has no embedding."""
+    if "embedding" not in source or "speaker_uuid" not in source:
+        return None
+    return {
+        "speaker_uuid": source["speaker_uuid"],
+        "embedding": source["embedding"],
+        "speaker_id": source.get("speaker_id"),
+        "profile_id": source.get("profile_id"),
+        "display_name": source.get("display_name"),
+    }
+
+
+def _embedding_batch(sources: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    records = (_embedding_record(source) for source in sources)
+    return [record for record in records if record is not None]
+
+
+def _iter_embeddings_by_uuid(
+    os_client: Any, active_index: str, speaker_uuids: list[str], batch_size: int
+) -> Generator[list[dict[str, Any]], None, None]:
+    """Fetch the given speakers via mget in batches; a failed batch is skipped."""
+    for i in range(0, len(speaker_uuids), batch_size):
+        chunk = speaker_uuids[i : i + batch_size]
+        try:
+            response = os_client.mget(index=active_index, body={"ids": chunk})
+            batch = _embedding_batch(
+                doc["_source"]
+                for doc in response.get("docs", [])
+                if doc.get("found") and "_source" in doc
+            )
+            if batch:
+                yield batch
+        except Exception as e:
+            logger.warning("mget batch failed: %s", e)
+            continue
+
+
+def _iter_user_embeddings(
+    os_client: Any, active_index: str, user_id: int, batch_size: int
+) -> Generator[list[dict[str, Any]], None, None]:
+    """Page through every non-cluster speaker document of ``user_id``."""
+    search_after = None
+    while True:
+        query: dict = {
+            "size": batch_size,
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"term": {"user_id": user_id}},
+                        exclude_unavailable_clause(),
+                    ],
+                    "must_not": [{"exists": {"field": "document_type"}}],
+                }
+            },
+            "sort": [{"_id": "asc"}],
+            "_source": [
+                "speaker_uuid",
+                "embedding",
+                "speaker_id",
+                "profile_id",
+                "display_name",
+            ],
+        }
+        if search_after is not None:
+            query["search_after"] = search_after
+
+        try:
+            response = os_client.search(index=active_index, body=query)
+        except Exception as e:
+            logger.error("Scroll failed: %s", e)
+            break
+
+        hits = response["hits"]["hits"]
+        if not hits:
+            break
+
+        batch = _embedding_batch(hit["_source"] for hit in hits)
+        if batch:
+            yield batch
+
+        search_after = hits[-1]["sort"]
+        if len(hits) < batch_size:
+            break
+
+
 def iter_speaker_embeddings(
     user_id: int,
     speaker_uuids: list[str] | None = None,
@@ -171,95 +258,15 @@ def iter_speaker_embeddings(
         Lists of dicts with keys: speaker_uuid, embedding, speaker_id,
         profile_id, display_name.
     """
-    if not _client.opensearch_client:
+    os_client = _client.opensearch_client
+    if not os_client:
         return
 
     active_index = get_active_speaker_index()
-
     if speaker_uuids is not None:
-        # Fetch specific speakers via mget in batches
-        for i in range(0, len(speaker_uuids), batch_size):
-            chunk = speaker_uuids[i : i + batch_size]
-            try:
-                response = _client.opensearch_client.mget(
-                    index=active_index,
-                    body={"ids": chunk},
-                )
-                batch: list[dict[str, Any]] = []
-                for doc in response.get("docs", []):
-                    if doc.get("found") and "_source" in doc:
-                        source = doc["_source"]
-                        if "embedding" in source and "speaker_uuid" in source:
-                            batch.append(
-                                {
-                                    "speaker_uuid": source["speaker_uuid"],
-                                    "embedding": source["embedding"],
-                                    "speaker_id": source.get("speaker_id"),
-                                    "profile_id": source.get("profile_id"),
-                                    "display_name": source.get("display_name"),
-                                }
-                            )
-                if batch:
-                    yield batch
-            except Exception as e:
-                logger.warning("mget batch failed: %s", e)
-                continue
+        yield from _iter_embeddings_by_uuid(os_client, active_index, speaker_uuids, batch_size)
     else:
-        # Scroll all speakers for user
-        search_after = None
-        while True:
-            query: dict = {
-                "size": batch_size,
-                "query": {
-                    "bool": {
-                        "filter": [
-                            {"term": {"user_id": user_id}},
-                            exclude_unavailable_clause(),
-                        ],
-                        "must_not": [{"exists": {"field": "document_type"}}],
-                    }
-                },
-                "sort": [{"_id": "asc"}],
-                "_source": [
-                    "speaker_uuid",
-                    "embedding",
-                    "speaker_id",
-                    "profile_id",
-                    "display_name",
-                ],
-            }
-            if search_after is not None:
-                query["search_after"] = search_after
-
-            try:
-                response = _client.opensearch_client.search(index=active_index, body=query)
-            except Exception as e:
-                logger.error("Scroll failed: %s", e)
-                break
-
-            hits = response["hits"]["hits"]
-            if not hits:
-                break
-
-            batch = []
-            for hit in hits:
-                source = hit["_source"]
-                if "embedding" in source and "speaker_uuid" in source:
-                    batch.append(
-                        {
-                            "speaker_uuid": source["speaker_uuid"],
-                            "embedding": source["embedding"],
-                            "speaker_id": source.get("speaker_id"),
-                            "profile_id": source.get("profile_id"),
-                            "display_name": source.get("display_name"),
-                        }
-                    )
-            if batch:
-                yield batch
-
-            search_after = hits[-1]["sort"]
-            if len(hits) < batch_size:
-                break
+        yield from _iter_user_embeddings(os_client, active_index, user_id, batch_size)
 
 
 def get_all_speaker_embeddings(

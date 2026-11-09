@@ -12,12 +12,16 @@ export function loadTxtPrefs(): { includeTimestamps: boolean; includeSpeakers: b
   try {
     const raw = localStorage.getItem(TXT_PREF_KEY);
     if (raw) return { includeTimestamps: true, includeSpeakers: true, ...JSON.parse(raw) };
-  } catch {}
+  } catch {
+    // Storage unavailable or corrupt: fall back to the defaults below.
+  }
   return { includeTimestamps: true, includeSpeakers: true };
 }
 
 export function saveTxtPrefs(prefs: { includeTimestamps: boolean; includeSpeakers: boolean }) {
   try {
     localStorage.setItem(TXT_PREF_KEY, JSON.stringify(prefs));
-  } catch {}
+  } catch {
+    // Storage full or disabled: the preference simply does not persist this session.
+  }
 }

@@ -278,7 +278,6 @@ frontend/src/lib/auth/sessionTimeouts.ts::svelte/no-navigation-without-resolve	1
 frontend/src/lib/axios.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/cloud/seamContract.test.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/components/ClassificationBanner.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/lib/export/txtExportPrefs.ts::no-empty	2	lint: burn-down planned
 frontend/src/lib/fileDetail/notificationHandler.test.ts::@typescript-eslint/no-unused-vars	2	lint: burn-down planned
 frontend/src/lib/fileDetail/notificationHandler.ts::@typescript-eslint/no-explicit-any	3	lint: burn-down planned
 frontend/src/lib/fileDetail/notificationHandler.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane

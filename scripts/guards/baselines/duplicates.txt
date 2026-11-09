@@ -229,8 +229,6 @@ frontend/src/components/collections/SharedCollectionsSection.svelte	2	pre-existi
 frontend/src/components/comments/CommentComposer.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/comments/CommentItem.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/fileDetail/AudioTracksNotice.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/fileDetail/DocumentExportOptionsModal.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/fileDetail/TxtExportOptionsModal.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/fileStatus/TasksGrid.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/GalleryHeader.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/GalleryPrimaryActions.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

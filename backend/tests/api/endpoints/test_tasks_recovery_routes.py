@@ -64,19 +64,20 @@ class _RecordingTask:
 
 
 class _StandInRedis:
-    """``scan_iter`` + ``get`` over a dict — what ``get_active_tasks`` uses."""
+    """``smembers`` + ``mget`` over a dict — what ``get_active_tasks`` uses."""
 
     def __init__(self, store: dict[str, str] | None = None) -> None:
         self.store = store or {}
 
-    def scan_iter(self, match: str, count: int = 100):  # signature parity
-        prefix, _, suffix = match.partition("*")
-        for key in self.store:
-            if key.startswith(prefix) and key.endswith(suffix):
-                yield key
+    def smembers(self, index_key: str) -> set[str]:
+        user_id = index_key.rpartition(":")[2]
+        return {k for k in self.store if k.endswith(f":{user_id}")}
 
-    def get(self, key: str) -> str | None:
-        return self.store.get(key)
+    def mget(self, keys: list[str]) -> list[str | None]:
+        return [self.store.get(k) for k in keys]
+
+    def srem(self, *args) -> None:
+        pass
 
 
 @pytest.fixture

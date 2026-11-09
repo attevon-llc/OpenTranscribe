@@ -22,6 +22,9 @@ Defined as plain ``def`` so Starlette runs them in the threadpool — the sync
 Redis pipeline in ``update_queue_depths`` never blocks the event loop.
 """
 
+import threading
+import time
+
 from fastapi import APIRouter
 from prometheus_client import CONTENT_TYPE_LATEST
 from prometheus_client import CollectorRegistry
@@ -51,14 +54,36 @@ _QUEUE_REGISTRY.register(celery_queue_oldest_unacked_age_seconds)
 _QUEUE_REGISTRY.register(celery_queue_oldest_message_age_seconds)
 
 
+# The full page walks every worker's mmap files and every histogram series (7.3% of GIL in
+# the 100-user profile). Scrapers poll every 15 s or more, so a page rendered within this
+# window is served again: concurrent or overlapping scrapes cost one render, not one each.
+METRICS_PAGE_TTL_SECONDS = 5.0
+_page_lock = threading.Lock()
+_page: tuple[float, bytes] | None = None
+
+
+def _render_page() -> bytes:
+    global _page
+    with _page_lock:
+        now = time.monotonic()
+        if _page is not None and 0 <= now - _page[0] < METRICS_PAGE_TTL_SECONDS:
+            return _page[1]
+        update_queue_depths()
+        update_transcription_lease_metrics()
+        refresh_job_metrics()
+        refresh_stuck_gauge()
+        body = metrics_multiprocess.render_all()
+        _page = (now, body)
+        return body
+
+
 @router.get("/metrics", include_in_schema=False)
 def metrics() -> Response:
-    """Render all collectors (every API worker's, in multiprocess mode) as Prometheus text."""
-    update_queue_depths()
-    update_transcription_lease_metrics()
-    refresh_job_metrics()
-    refresh_stuck_gauge()
-    return Response(metrics_multiprocess.render_all(), media_type=CONTENT_TYPE_LATEST)
+    """Render all collectors (every API worker's, in multiprocess mode) as Prometheus text.
+
+    The page is reused for ``METRICS_PAGE_TTL_SECONDS``.
+    """
+    return Response(_render_page(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/metrics/queues", include_in_schema=False)

@@ -118,8 +118,6 @@ orm_call_in_api::backend/app/api/endpoints/speakers_profile_workflow.py	10	layer
 orm_call_in_api::backend/app/api/endpoints/speakers_suggestions.py	7	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/summarization.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/support_access.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/tags/discovery.py	1	layering: removal planned
-orm_call_in_api::backend/app/api/endpoints/tags/sharing.py	3	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks.py	4	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks_file_repair.py	1	layering: removal planned
 orm_call_in_api::backend/app/api/endpoints/tasks_recovery.py	1	layering: removal planned

@@ -25,7 +25,6 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.db.base import get_db
 from app.middleware.audit import get_request_context
-from app.models.sharing import TagShare
 from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.tag import TagShareCreate
@@ -33,6 +32,8 @@ from app.schemas.tag import TagShareTarget
 from app.services.request_context import RequestContext
 from app.services.tag_service import on_tags_changed
 from app.services.tag_sharing import TagShareError
+from app.services.tag_sharing import get_share
+from app.services.tag_sharing import get_tag
 from app.services.tag_sharing import list_shares
 from app.services.tag_sharing import revoke_share
 from app.services.tag_sharing import share_tag
@@ -123,7 +124,7 @@ def create_tag_share(
         organization_id=ctx.org_id,
         is_org_admin=ctx.is_org_admin,
     )[0]
-    tag = db.query(Tag).filter(Tag.id == tag_id).one()
+    tag = get_tag(db, tag_id)
 
     target_user_id = None
     target_group_id = None
@@ -195,14 +196,12 @@ def revoke_tag_share(
     )[0]
     # Captured before revoke_share() deletes the row -- the audit event needs to
     # say WHO the grant was to, and that information is gone once it's gone.
-    share = (
-        db.query(TagShare).filter(TagShare.tag_id == tag_id, TagShare.uuid == share_uuid).first()
-    )
+    share = get_share(db, tag_id, share_uuid)
     if share is None or not revoke_share(db, tag_id, share_uuid):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Share not found")
     on_tags_changed(db, user_id=current_user.id)
 
-    tag = db.query(Tag).filter(Tag.id == tag_id).one()
+    tag = get_tag(db, tag_id)
     _audit_tag_share(
         request,
         current_user,

@@ -16,7 +16,6 @@ from app.api.endpoints.tags._common import _writable_uuids
 from app.api.endpoints.tags._common import _write_rights
 from app.api.endpoints.tags._common import router
 from app.db.base import get_db
-from app.models.tag import Tag
 from app.models.user import User
 from app.schemas.tag import Tag as TagSchema
 from app.schemas.tag import TagCollisionCluster
@@ -31,7 +30,7 @@ from app.services.tag_collisions import files_for_tag
 from app.services.tag_collisions import find_tag_collisions
 from app.services.tag_collisions import tags_on_files
 from app.services.tag_scope import tag_ownership
-from app.services.tag_scope import visible_to
+from app.services.tag_scope import visible_tag_id
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 
 
@@ -121,11 +120,7 @@ def list_files_for_tag(
     ctx: RequestContext = Depends(get_current_context),
 ) -> TagFileList:
     """Your accessible files that carry a tag, newest first, with the true total."""
-    tag_id = (
-        db.query(Tag.id)
-        .filter(Tag.uuid == tag_uuid, visible_to(db, current_user.id, ctx.org_id))
-        .scalar()
-    )
+    tag_id = visible_tag_id(db, tag_uuid, current_user.id, ctx.org_id)
     if tag_id is None:
         raise _tag_not_found()
     files, total = files_for_tag(

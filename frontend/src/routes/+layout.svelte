@@ -40,7 +40,6 @@
 
   // Import components
   import Navbar from "$components/Navbar.svelte";
-  import SupportAccessBanner from "$components/supportAccess/SupportAccessBanner.svelte";
   import { demoMode, loadDemoAttributions } from "$stores/demo";
   import NotificationsPanel from "$components/NotificationsPanel.svelte";
   import ToastContainer from "$components/ToastContainer.svelte";
@@ -102,6 +101,13 @@
   // Settings can only re-open it for that same role.
   $: if ($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin' && !FirstRunWizard) {
     void import("../components/FirstRunWizard.svelte").then((m) => (FirstRunWizard = m.default));
+  }
+  // Lazy: only rendered during an active support-access session.
+  let SupportAccessBanner: Component<any> | null = null;
+  $: if ($supportSession.active && !SupportAccessBanner) {
+    void import("$components/supportAccess/SupportAccessBanner.svelte").then(
+      (m) => (SupportAccessBanner = m.default)
+    );
   }
   // Lazy: the banner only matters while an erasure request is open (self-service erasure, #1354).
   $: if ($isAuthenticated && !lifecycleHold && !ErasureRequestBanner) {
@@ -324,7 +330,7 @@
     <ToastContainer />
     {#if $isAuthenticated && !lifecycleHold}
       <Navbar />
-      {#if $supportSession.active}<SupportAccessBanner />{/if}
+      {#if $supportSession.active && SupportAccessBanner}<svelte:component this={SupportAccessBanner} />{/if}
       {#if $demoMode && DemoBanner}<svelte:component this={DemoBanner} />{/if}
       {#if ErasureRequestBanner}<svelte:component this={ErasureRequestBanner} />{/if}
       <NotificationsPanel />

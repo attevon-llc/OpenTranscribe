@@ -14,7 +14,6 @@
     browseDirectories,
     testMultipartRegex,
     type WatchSource,
-    type SourceType,
     type Capabilities,
     type DirectoryListing,
   } from '$lib/api/watchSourcesApi';

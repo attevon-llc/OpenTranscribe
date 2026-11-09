@@ -619,6 +619,7 @@
               {#each section.items as item (item.id)}
                 <button
                   class="nav-item"
+                  data-section={item.id}
                   class:active={effectiveActiveSection === item.id}
                   class:dirty={rowDirty($settingsModalStore.dirtyState, item.id)}
                   class:locked={item.locked}

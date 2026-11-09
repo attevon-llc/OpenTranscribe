@@ -1100,8 +1100,13 @@ pg_restore_restart_decision() {
 # migrate itself. No-op on pre-0.7.0 compose files, whose API still migrates on startup.
 # $1 = "-f a.yml -f b.yml"; returns the step's exit code (1 failed, 3 lock wait, 4 no database).
 compose_run_migrate() {
+  # Captured, not piped into `grep -q`: under the caller's pipefail, grep exiting on the
+  # first match can SIGPIPE `compose config` (141) and read a match as "no migrate service",
+  # silently skipping the migration.
+  local services
   # shellcheck disable=SC2086
-  docker compose $1 config --services 2>/dev/null | grep -qx migrate || return 0
+  services=$(docker compose $1 config --services 2>/dev/null) || return 0
+  grep -qx migrate <<< "$services" || return 0
   echo "🗄️  Running database migrations (one-shot migrate step)..."
   # shellcheck disable=SC2086
   docker compose $1 run --rm --no-deps migrate && return 0

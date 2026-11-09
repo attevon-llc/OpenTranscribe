@@ -186,3 +186,22 @@ def test_stack_build_and_up_exit_codes_are_checked():
     unchecked = [ln for ln in sites if "if ! " not in ln]
     assert len(sites) == len(needles)
     assert unchecked == []
+
+
+def test_migrate_step_runs_even_when_compose_config_gets_sigpipe(tmp_path):
+    # A `config --services` that keeps writing after grep -q has its answer dies of SIGPIPE;
+    # under pipefail that inverted a match into "no migrate service" and skipped migrations.
+    script = "\n".join(
+        [
+            "set -o pipefail",
+            "docker() {",
+            '  if [ "$4" = config ]; then echo migrate; exec seq 1 300000; fi',
+            '  echo "ran: $*" >> docker.log; return 0',
+            "}",
+            extract_function(COMMON, "compose_run_migrate"),
+            'compose_run_migrate "-f x.yml"',
+        ]
+    )
+    result = _bash(script, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "run --rm --no-deps migrate" in (tmp_path / "docker.log").read_text()

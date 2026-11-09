@@ -27,53 +27,51 @@ export function asAuthError(error: unknown): AuthRequestError {
   return (error ?? {}) as AuthRequestError;
 }
 
+type AuthResponse = NonNullable<AuthRequestError['response']>;
+
+// Message for a server-answered login failure; `retryAfter` is only set for a 429.
+function loginResponseFailure(
+  response: AuthResponse,
+  translate: Translate
+): { message: string; retryAfter: number | null } {
+  const detail = response.data?.detail as string;
+  switch (response.status) {
+    case 401:
+      return { message: detail || translate('auth.error.invalidCredentials'), retryAfter: null };
+    case 400:
+      return { message: detail || translate('auth.error.invalidRequest'), retryAfter: null };
+    case 429: {
+      const retryAfter = retryAfterFromHeaders(response.headers);
+      const message =
+        retryAfter !== null
+          ? translate('auth.error.tooManyLoginAttemptsWait', { seconds: retryAfter })
+          : translate('auth.error.tooManyLoginAttempts');
+      return { message, retryAfter };
+    }
+    case 500:
+    case 502:
+    case 503:
+      return { message: translate('auth.error.serverError'), retryAfter: null };
+    default:
+      return {
+        message:
+          detail || (response.data?.message as string) || translate('auth.error.loginFailed'),
+        retryAfter: null,
+      };
+  }
+}
+
 /** Message and `Retry-After` seconds for a failed `POST /auth/login`. */
 export function loginFailure(
   err: AuthRequestError,
   translate: Translate
 ): { message: string; retryAfter: number | null } {
-  // Extract meaningful error message from backend response
-  let errorMessage = translate('auth.error.loginFailedCheckCredentials');
-  let retryAfter: number | null = null;
-
-  if (err.response) {
-    // Server responded with an error status
-    switch (err.response.status) {
-      case 401:
-        errorMessage =
-          (err.response.data?.detail as string) || translate('auth.error.invalidCredentials');
-        break;
-      case 400:
-        errorMessage =
-          (err.response.data?.detail as string) || translate('auth.error.invalidRequest');
-        break;
-      case 429:
-        retryAfter = retryAfterFromHeaders(err.response.headers);
-        errorMessage =
-          retryAfter !== null
-            ? translate('auth.error.tooManyLoginAttemptsWait', { seconds: retryAfter })
-            : translate('auth.error.tooManyLoginAttempts');
-        break;
-      case 500:
-      case 502:
-      case 503:
-        errorMessage = translate('auth.error.serverError');
-        break;
-      default:
-        errorMessage =
-          (err.response.data?.detail as string) ||
-          (err.response.data?.message as string) ||
-          translate('auth.error.loginFailed');
-    }
-  } else if (err.request) {
-    // Network error - no response received
-    errorMessage = translate('auth.error.networkUnreachable');
-  } else if (err.message) {
-    // Something else happened
-    errorMessage = translate('auth.error.unexpected');
-  }
-
-  return { message: errorMessage, retryAfter };
+  if (err.response) return loginResponseFailure(err.response, translate);
+  // No response received: a network error; anything else carrying a message is unexpected.
+  let message = translate('auth.error.loginFailedCheckCredentials');
+  if (err.request) message = translate('auth.error.networkUnreachable');
+  else if (err.message) message = translate('auth.error.unexpected');
+  return { message, retryAfter: null };
 }
 
 /** Message for a failed self-service password change (`PUT /users/me`). */

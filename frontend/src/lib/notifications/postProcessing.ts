@@ -44,6 +44,38 @@ const STATES = new Set<string>(['queued', 'started', 'done', 'failed', 'skipped'
 
 const POST_PROCESSING_TYPE = 'post_processing_status';
 
+type RawTask = NonNullable<PostProcessingFrame['tasks']>[string];
+
+// One wire task folded against what is already held, or undefined when the frame must be
+// ignored (malformed, older than the run, or older than the held entry).
+function foldTask(
+  raw: RawTask,
+  runAt: number | null,
+  old: PostProcessingEntry | undefined
+): PostProcessingEntry | undefined {
+  if (!raw || typeof raw.state !== 'string' || !STATES.has(raw.state)) return undefined;
+  if (typeof raw.at !== 'number') return undefined;
+  if (runAt !== null && raw.at < runAt) return undefined;
+  if (old && raw.at < old.at) return undefined;
+  const state = raw.state as PostProcessingWireState;
+  let startedAt = old?.startedAt;
+  if (typeof raw.started_at === 'number') startedAt = raw.started_at;
+  else if (state === 'started') startedAt = raw.at;
+  return startedAt === undefined ? { state, at: raw.at } : { state, at: raw.at, startedAt };
+}
+
+// Entries the previous run holds that still belong to the run starting at `runAt`.
+function currentRunTasks(
+  prev: PostProcessingRun | undefined,
+  runAt: number | null
+): Record<string, PostProcessingEntry> {
+  const tasks: Record<string, PostProcessingEntry> = {};
+  for (const [key, entry] of Object.entries(prev?.tasks ?? {})) {
+    if (runAt === null || entry.at >= runAt) tasks[key] = entry;
+  }
+  return tasks;
+}
+
 /** Folds one frame (or REST snapshot) into a file's run. Never mutates `prev`. */
 export function mergePostProcessing(
   prev: PostProcessingRun | undefined,
@@ -55,24 +87,10 @@ export function mergePostProcessing(
     return prev;
   }
   const runAt = isPlan ? (frame.run_at as number) : prev?.runAt ?? null;
-  const tasks: Record<string, PostProcessingEntry> = {};
-  for (const [key, entry] of Object.entries(prev?.tasks ?? {})) {
-    if (runAt === null || entry.at >= runAt) tasks[key] = entry;
-  }
+  const tasks = currentRunTasks(prev, runAt);
   for (const [key, raw] of Object.entries(frame.tasks ?? {})) {
-    if (!raw || typeof raw.state !== 'string' || !STATES.has(raw.state)) continue;
-    if (typeof raw.at !== 'number') continue;
-    if (runAt !== null && raw.at < runAt) continue;
-    const old = tasks[key];
-    if (old && raw.at < old.at) continue;
-    const state = raw.state as PostProcessingWireState;
-    const startedAt =
-      typeof raw.started_at === 'number'
-        ? raw.started_at
-        : state === 'started'
-          ? raw.at
-          : old?.startedAt;
-    tasks[key] = startedAt === undefined ? { state, at: raw.at } : { state, at: raw.at, startedAt };
+    const folded = foldTask(raw, runAt, tasks[key]);
+    if (folded) tasks[key] = folded;
   }
   const empty = Object.keys(tasks).length === 0;
   return {
@@ -111,6 +129,22 @@ function recordTime(
   return existing?.timestamp ?? own?.timestamp ?? new Date(now);
 }
 
+function hasTranscriptionCard(list: Notification[], fileId: string): boolean {
+  return list.some((n) => n.progressId === `transcription_status_${fileId}`);
+}
+
+// Becoming finished (or failed) is news; every intermediate frame is not.
+function readAfter(existing: Notification | undefined, outstanding: boolean): boolean {
+  if (!existing) return false;
+  const finishing = existing.status === 'processing' && !outstanding;
+  return existing.read && !finishing;
+}
+
+function settledStatus(outstanding: boolean, failed: boolean): Notification['status'] {
+  if (outstanding) return 'processing';
+  return failed ? 'error' : 'completed';
+}
+
 /**
  * Applies a frame to the notification list: updates the file's `post_processing_status`
  * record, or creates it when the file already has a transcription record (a frame for a file
@@ -131,21 +165,13 @@ export function upsertPostProcessingRecord(
   const progressId = `${POST_PROCESSING_TYPE}_${fileId}`;
   const index = list.findIndex((n) => n.progressId === progressId);
   const existing = index === -1 ? undefined : list[index];
-  if (!existing && !force && !list.some((n) => n.progressId === `transcription_status_${fileId}`)) {
-    return null;
-  }
+  if (!existing && !force && !hasTranscriptionCard(list, fileId)) return null;
 
   const run = mergePostProcessing(existing?.postProcessing, frame, now);
   const outstanding = postProcessingOutstanding(run);
   const failed = Object.values(run.tasks).some((e) => e.state === 'failed');
-  const status: Notification['status'] = outstanding
-    ? 'processing'
-    : failed
-      ? 'error'
-      : 'completed';
-  const wasOutstanding = existing?.status === 'processing';
-  // Becoming finished (or failed) is news; every intermediate frame is not.
-  const read = existing ? existing.read && !(wasOutstanding && !outstanding) : false;
+  const status = settledStatus(outstanding, failed);
+  const read = readAfter(existing, outstanding);
   const data: NotificationData = { file_id: fileId, status };
   const record: Notification = {
     ...(existing ?? {

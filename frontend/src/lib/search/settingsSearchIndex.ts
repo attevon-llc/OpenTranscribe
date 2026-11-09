@@ -181,6 +181,89 @@ export interface VisibleSection {
   label: string;
 }
 
+function makeItem(
+  section: VisibleSection,
+  sectionLabel: string,
+  text: string,
+  isSectionTitle: boolean
+): SettingsSearchItem {
+  return {
+    sectionId: section.id,
+    sectionLabel,
+    label: text,
+    keywords: text,
+    anchorText: text,
+    isSectionTitle,
+  };
+}
+
+// Whether a dictionary key under `prefix` is a user-facing setting string at all.
+function isSearchableKey(fullKey: string, section: VisibleSection, prefix: string): boolean {
+  if (!fullKey.startsWith(prefix)) return false;
+  if (fullKey.includes('.toast.') || fullKey.includes('.errors.')) return false;
+  if (EXCLUDED_KEY_PREFIXES[section.id]?.some((p) => fullKey.startsWith(p))) return false;
+  const leaf = lastSegment(fullKey);
+  // A section's own title/description duplicates the section row; skip to avoid noise.
+  return leaf !== 'title' && leaf !== 'description' && !isStopLeaf(leaf);
+}
+
+/** The items for one section: its own name, then its settings, with help text folded in. */
+function sectionItems(dict: Record<string, string>, section: VisibleSection): SettingsSearchItem[] {
+  const items: SettingsSearchItem[] = [];
+  const sectionLabel = cleanText(section.label || '');
+  const seen = new Set<string>();
+
+  // The section itself is always findable by its own name.
+  if (sectionLabel) {
+    seen.add(sectionLabel.toLowerCase());
+    items.push(makeItem(section, sectionLabel, sectionLabel, true));
+  }
+
+  const namespaces = SECTION_NAMESPACES[section.id];
+  if (!namespaces) return items;
+
+  // Two passes so secondary (help/hint) text can attach to its base setting.
+  const primaries = new Map<string, SettingsSearchItem>();
+  const orphanSecondaries: Array<{ base: string; value: string }> = [];
+
+  for (const ns of namespaces) {
+    const prefix = `${ns}.`;
+    for (const fullKey of Object.keys(dict)) {
+      if (!isSearchableKey(fullKey, section, prefix)) continue;
+
+      const value = cleanText(dict[fullKey] ?? '');
+      if (!value || !/\p{L}/u.test(value)) continue;
+
+      const relative = fullKey.slice(prefix.length);
+      if (SECONDARY_SUFFIX.test(lastSegment(fullKey))) {
+        orphanSecondaries.push({ base: relative.replace(SECONDARY_SUFFIX, ''), value });
+        continue;
+      }
+
+      const dedupeKey = value.toLowerCase();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const item = makeItem(section, sectionLabel, value, false);
+      primaries.set(relative, item);
+      items.push(item);
+    }
+  }
+
+  // Attach secondary text to its base setting as extra keywords, or index it standalone.
+  for (const secondary of orphanSecondaries) {
+    const base = primaries.get(secondary.base);
+    if (base) {
+      base.keywords = `${base.keywords} ${secondary.value}`;
+      continue;
+    }
+    const dedupeKey = secondary.value.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    items.push(makeItem(section, sectionLabel, secondary.value, false));
+  }
+  return items;
+}
+
 /**
  * Build the flat list of searchable settings items for the given locale dictionary,
  * limited to the sections the user can open.
@@ -189,96 +272,8 @@ export function buildSettingsSearchItems(
   dict: Record<string, string>,
   visibleSections: VisibleSection[]
 ): SettingsSearchItem[] {
-  const items: SettingsSearchItem[] = [];
-  if (!dict) return items;
-
-  for (const section of visibleSections) {
-    const sectionLabel = cleanText(section.label || '');
-    const seen = new Set<string>();
-
-    // The section itself is always findable by its own name.
-    if (sectionLabel) {
-      const key = sectionLabel.toLowerCase();
-      seen.add(key);
-      items.push({
-        sectionId: section.id,
-        sectionLabel,
-        label: sectionLabel,
-        keywords: sectionLabel,
-        anchorText: sectionLabel,
-        isSectionTitle: true,
-      });
-    }
-
-    const namespaces = SECTION_NAMESPACES[section.id];
-    if (!namespaces) continue;
-
-    // Two passes so secondary (help/hint) text can attach to its base setting.
-    const primaries = new Map<string, SettingsSearchItem>();
-    const orphanSecondaries: Array<{ base: string; value: string }> = [];
-
-    for (const ns of namespaces) {
-      const prefix = `${ns}.`;
-      for (const fullKey of Object.keys(dict)) {
-        if (!fullKey.startsWith(prefix)) continue;
-        if (fullKey.includes('.toast.') || fullKey.includes('.errors.')) continue;
-        if (EXCLUDED_KEY_PREFIXES[section.id]?.some((p) => fullKey.startsWith(p))) continue;
-
-        const leaf = lastSegment(fullKey);
-        if (leaf === 'title' || leaf === 'description') {
-          // Section-level title/description handled by the section-title row / kept minimal.
-          // (A section's own title duplicates the section row; skip to avoid noise.)
-          continue;
-        }
-        if (isStopLeaf(leaf)) continue;
-
-        const value = cleanText(dict[fullKey] ?? '');
-        if (!value || !/\p{L}/u.test(value)) continue;
-
-        const relative = fullKey.slice(prefix.length);
-        if (SECONDARY_SUFFIX.test(leaf)) {
-          orphanSecondaries.push({ base: relative.replace(SECONDARY_SUFFIX, ''), value });
-          continue;
-        }
-
-        const dedupeKey = value.toLowerCase();
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        const item: SettingsSearchItem = {
-          sectionId: section.id,
-          sectionLabel,
-          label: value,
-          keywords: value,
-          anchorText: value,
-          isSectionTitle: false,
-        };
-        primaries.set(relative, item);
-        items.push(item);
-      }
-    }
-
-    // Attach secondary text to its base setting as extra keywords, or index it standalone.
-    for (const secondary of orphanSecondaries) {
-      const base = primaries.get(secondary.base);
-      if (base) {
-        base.keywords = `${base.keywords} ${secondary.value}`;
-      } else {
-        const dedupeKey = secondary.value.toLowerCase();
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        items.push({
-          sectionId: section.id,
-          sectionLabel,
-          label: secondary.value,
-          keywords: secondary.value,
-          anchorText: secondary.value,
-          isSectionTitle: false,
-        });
-      }
-    }
-  }
-
-  return items;
+  if (!dict) return [];
+  return visibleSections.flatMap((section) => sectionItems(dict, section));
 }
 
 /** fuse.js field weights: a section's own name ranks highest, then the label, then help text. */

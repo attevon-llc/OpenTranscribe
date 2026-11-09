@@ -100,7 +100,9 @@ describe('SortDropdown', () => {
     expect(screen.getByText('gallery.sort.filename')).toBeInTheDocument();
     expect(screen.getByText('gallery.sort.duration')).toBeInTheDocument();
   });
+});
 
+describe('SortDropdown: choosing a direction', () => {
   it('toggles direction when the active option is clicked again', async () => {
     const onChange = vi.fn();
     render(SortDropdown, {
@@ -209,7 +211,9 @@ describe('SortDropdown', () => {
       sortOrder: 'desc',
     });
   });
+});
 
+describe('SortDropdown: direction arrows', () => {
   // The arrow's geometry is drawn, not rotated by CSS, so jsdom can see which way it points:
   // an arrow whose head sits ABOVE the shaft's midpoint points up, below points down.
   function arrowPoints(svg: Element | null | undefined): 'up' | 'down' {

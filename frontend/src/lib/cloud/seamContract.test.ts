@@ -14,35 +14,40 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = resolve(process.cwd(), 'src');
 
+function hasExportModifier(stmt: ts.Statement): boolean {
+  if (!ts.canHaveModifiers(stmt)) return false;
+  return ts.getModifiers(stmt)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+}
+
+/** The names a `export { a, b }` / `export * from` statement puts in the surface. */
+function reExportedNames(stmt: ts.ExportDeclaration): string[] {
+  const clause = stmt.exportClause;
+  if (clause && ts.isNamedExports(clause)) return clause.elements.map((e) => e.name.text);
+  return ['*'];
+}
+
+/** The names an `export const/function/interface/type/class` statement declares. */
+function declaredNames(stmt: ts.Statement): string[] {
+  if (ts.isVariableStatement(stmt)) {
+    return stmt.declarationList.declarations.flatMap((d) =>
+      ts.isIdentifier(d.name) ? [d.name.text] : []
+    );
+  }
+  const named =
+    ts.isFunctionDeclaration(stmt) ||
+    ts.isInterfaceDeclaration(stmt) ||
+    ts.isTypeAliasDeclaration(stmt) ||
+    ts.isClassDeclaration(stmt);
+  return named && stmt.name ? [stmt.name.text] : [];
+}
+
 /** Every name the seam module exports, values and types alike. */
 function seamExports(source: string): string[] {
   const file = ts.createSourceFile('index.ts', source, ts.ScriptTarget.Latest, true);
   const names: string[] = [];
   for (const stmt of file.statements) {
-    if (ts.isExportDeclaration(stmt)) {
-      const clause = stmt.exportClause;
-      if (clause && ts.isNamedExports(clause))
-        names.push(...clause.elements.map((e) => e.name.text));
-      else names.push('*');
-      continue;
-    }
-    const exported = ts.canHaveModifiers(stmt)
-      ? ts.getModifiers(stmt)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
-      : false;
-    if (!exported) continue;
-    if (ts.isVariableStatement(stmt)) {
-      for (const d of stmt.declarationList.declarations) {
-        if (ts.isIdentifier(d.name)) names.push(d.name.text);
-      }
-    } else if (
-      (ts.isFunctionDeclaration(stmt) ||
-        ts.isInterfaceDeclaration(stmt) ||
-        ts.isTypeAliasDeclaration(stmt) ||
-        ts.isClassDeclaration(stmt)) &&
-      stmt.name
-    ) {
-      names.push(stmt.name.text);
-    }
+    if (ts.isExportDeclaration(stmt)) names.push(...reExportedNames(stmt));
+    else if (hasExportModifier(stmt)) names.push(...declaredNames(stmt));
   }
   return names.sort();
 }

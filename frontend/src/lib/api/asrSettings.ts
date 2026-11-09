@@ -270,6 +270,100 @@ export interface ASRConfigDeleted extends ASRSwitchResult {
   diarizer_source_reverted: boolean;
 }
 
+/** One backend model entry, with both spellings of each renamed field. */
+function normalizeModel(m: RawASRModel): ASRProviderInfo['models'][number] {
+  return {
+    id: m.id,
+    display_name: m.display_name ?? m.name ?? m.id,
+    name: m.display_name ?? m.name ?? m.id,
+    description: m.description,
+    price_per_min_batch: m.price_per_min_batch,
+    // backend sends price_per_min_stream; interface calls it price_per_min_realtime
+    price_per_min_realtime: m.price_per_min_realtime ?? m.price_per_min_stream,
+    supports_diarization: m.supports_diarization,
+    supports_vocabulary: m.supports_vocabulary,
+    supports_translation: m.supports_translation,
+    languages: m.languages,
+    downloaded: m.downloaded,
+    language_support: m.language_support,
+    speaker_count_hints: m.speaker_count_hints,
+    timestamp_granularity: m.timestamp_granularity,
+  };
+}
+
+type ProviderIdentity = Pick<
+  ASRProviderInfo,
+  'id' | 'provider' | 'display_name' | 'name' | 'description'
+>;
+type ProviderCapabilities = Pick<
+  ASRProviderInfo,
+  | 'requires_api_key'
+  | 'requires_access_key_id'
+  | 'supports_region'
+  | 'supports_base_url'
+  | 'supports_diarization'
+  | 'speaker_count_hints'
+  | 'timestamp_granularity'
+  | 'supports_vocabulary'
+  | 'supports_translation'
+  | 'sdk_available'
+>;
+type ProviderStatus = Pick<
+  ASRProviderInfo,
+  'status' | 'status_note' | 'diarization_quality' | 'allowed_for_users'
+>;
+
+function providerIdentity(p: RawASRProvider): ProviderIdentity {
+  const providerId = p.id ?? p.provider ?? '';
+  // the backend sends display_name
+  const providerName = p.display_name ?? p.name ?? providerId;
+  return {
+    id: providerId,
+    provider: providerId as ASRProvider,
+    display_name: providerName,
+    name: providerName,
+    description: p.description ?? '',
+  };
+}
+
+// Capability flags, normalising backend naming to frontend naming.
+function providerCapabilities(p: RawASRProvider): ProviderCapabilities {
+  return {
+    requires_api_key: p.requires_api_key ?? false,
+    requires_access_key_id: p.requires_access_key_id ?? false,
+    supports_region: p.requires_region ?? p.supports_region ?? false,
+    supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
+    supports_diarization: p.supports_diarization ?? false,
+    speaker_count_hints: p.speaker_count_hints ?? [],
+    // A catalog without the field cannot be assumed to time its text.
+    timestamp_granularity: p.timestamp_granularity ?? 'none',
+    supports_vocabulary: p.supports_vocabulary ?? false,
+    supports_translation: p.supports_translation ?? false,
+    // sdk_available is not in the backend catalog — assume true unless explicitly false
+    sdk_available: p.sdk_available ?? true,
+  };
+}
+
+// Testing status and quality notes.
+function providerStatus(p: RawASRProvider): ProviderStatus {
+  return {
+    status: p.status ?? 'experimental',
+    status_note: p.status_note ?? '',
+    diarization_quality: p.diarization_quality ?? '',
+    allowed_for_users: p.allowed_for_users,
+  };
+}
+
+/** One backend catalog entry, normalised so consumers can use either spelling. */
+function normalizeProvider(p: RawASRProvider): ASRProviderInfo {
+  return {
+    ...providerIdentity(p),
+    ...providerCapabilities(p),
+    ...providerStatus(p),
+    models: (p.models ?? []).map(normalizeModel),
+  };
+}
+
 export class ASRSettingsApi {
   private static readonly BASE_PATH = '/asr-settings';
 
@@ -289,55 +383,7 @@ export class ASRSettingsApi {
   static async getProviders(): Promise<{ providers: ASRProviderInfo[] }> {
     const response = await axiosInstance.get(`${this.BASE_PATH}/providers`);
     const raw: RawASRProvider[] = response.data?.providers ?? [];
-    const providers: ASRProviderInfo[] = raw.map((p: RawASRProvider) => {
-      const providerId = p.id ?? p.provider ?? '';
-      const providerName = p.display_name ?? p.name ?? providerId;
-      return {
-        // identity
-        id: providerId,
-        provider: providerId as ASRProvider,
-        // display name — backend sends display_name
-        display_name: providerName,
-        name: providerName,
-        description: p.description ?? '',
-        // capability flags — normalise backend naming to frontend naming
-        requires_api_key: p.requires_api_key ?? false,
-        requires_access_key_id: p.requires_access_key_id ?? false,
-        supports_region: p.requires_region ?? p.supports_region ?? false,
-        supports_base_url: p.supports_custom_url ?? p.supports_base_url ?? false,
-        supports_diarization: p.supports_diarization ?? false,
-        speaker_count_hints: p.speaker_count_hints ?? [],
-        // A catalog without the field cannot be assumed to time its text.
-        timestamp_granularity: p.timestamp_granularity ?? 'none',
-        supports_vocabulary: p.supports_vocabulary ?? false,
-        supports_translation: p.supports_translation ?? false,
-        // sdk_available is not in the backend catalog — assume true unless explicitly false
-        sdk_available: p.sdk_available ?? true,
-        // testing status and quality notes
-        status: p.status ?? 'experimental',
-        status_note: p.status_note ?? '',
-        diarization_quality: p.diarization_quality ?? '',
-        allowed_for_users: p.allowed_for_users,
-        // normalise each model entry
-        models: (p.models ?? []).map((m: RawASRModel) => ({
-          id: m.id,
-          display_name: m.display_name ?? m.name ?? m.id,
-          name: m.display_name ?? m.name ?? m.id,
-          description: m.description,
-          price_per_min_batch: m.price_per_min_batch,
-          // backend sends price_per_min_stream; interface calls it price_per_min_realtime
-          price_per_min_realtime: m.price_per_min_realtime ?? m.price_per_min_stream,
-          supports_diarization: m.supports_diarization,
-          supports_vocabulary: m.supports_vocabulary,
-          supports_translation: m.supports_translation,
-          languages: m.languages,
-          downloaded: m.downloaded,
-          language_support: m.language_support,
-          speaker_count_hints: m.speaker_count_hints,
-          timestamp_granularity: m.timestamp_granularity,
-        })),
-      };
-    });
+    const providers: ASRProviderInfo[] = raw.map(normalizeProvider);
     return { providers };
   }
 

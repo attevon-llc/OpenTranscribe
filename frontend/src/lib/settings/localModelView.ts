@@ -103,6 +103,13 @@ export interface RowView {
   errorKey: string | null;
 }
 
+// The status of a row with no download running against it.
+function restingStatus(entry: LocalModelEntry): RowStatus {
+  if (entry.is_active) return 'active';
+  if (entry.downloaded) return 'downloaded';
+  return entry.partial ? 'partial' : 'notDownloaded';
+}
+
 export function rowView(
   entry: LocalModelEntry,
   download: LocalModelDownloadState | null,
@@ -113,15 +120,8 @@ export function rowView(
   const mine = download !== null && download.model_id === entry.id;
   const inFlight = mine && anyActive;
 
-  let status: RowStatus;
-  if (inFlight) status = download!.status as RowStatus;
-  else if (entry.is_active) status = 'active';
-  else if (entry.downloaded) status = 'downloaded';
-  else if (entry.partial) status = 'partial';
-  else status = 'notDownloaded';
-
   return {
-    status,
+    status: inFlight ? (download!.status as RowStatus) : restingStatus(entry),
     percent: inFlight ? download!.percent ?? null : null,
     inFlight,
     showDownload: !entry.downloaded && !inFlight,

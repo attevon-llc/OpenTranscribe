@@ -122,26 +122,34 @@ export function loadCapabilities(): Promise<void> {
   return inFlight;
 }
 
+// Explicit `null` (admin disabled the limit) must survive as `null`, not fall into the
+// "unknown" bucket — only an actually missing/malformed field does.
+function maxUploadBytesFrom(raw: unknown): number | null | undefined {
+  if (raw === null) return null;
+  return typeof raw === 'number' ? raw : undefined;
+}
+
+function tenancyModeFrom(raw: unknown): CapabilitiesState['tenancyMode'] {
+  return raw === 'multi' || raw === 'single' ? raw : undefined;
+}
+
+function stateFromResponse(data: Record<string, unknown> | undefined): CapabilitiesState {
+  return {
+    edition: data?.edition === 'cloud' ? 'cloud' : 'community',
+    loaded: true,
+    capabilities: (data?.capabilities as CapabilitiesState['capabilities']) ?? {},
+    audience: (data?.audience as CapabilitiesState['audience']) ?? {},
+    maxUploadBytes: maxUploadBytesFrom(data?.max_upload_bytes),
+    apiMediatedUploadEnabled: data?.api_mediated_upload_enabled !== false,
+    tenancyMode: tenancyModeFrom(data?.tenancy_mode),
+  };
+}
+
 async function fetchCapabilities(requestedUnder: number): Promise<void> {
   try {
     const response = await axiosInstance.get('/system/capabilities');
     if (requestedUnder !== generation) return;
-    const rawMaxUpload: unknown = response.data?.max_upload_bytes;
-    capabilities.set({
-      edition: response.data?.edition === 'cloud' ? 'cloud' : 'community',
-      loaded: true,
-      capabilities: response.data?.capabilities ?? {},
-      audience: response.data?.audience ?? {},
-      // Explicit `null` (admin disabled the limit) must survive as `null`, not fall
-      // into the "unknown" bucket — only an actually missing/malformed field does.
-      maxUploadBytes:
-        rawMaxUpload === null ? null : typeof rawMaxUpload === 'number' ? rawMaxUpload : undefined,
-      apiMediatedUploadEnabled: response.data?.api_mediated_upload_enabled !== false,
-      tenancyMode:
-        response.data?.tenancy_mode === 'multi' || response.data?.tenancy_mode === 'single'
-          ? response.data.tenancy_mode
-          : undefined,
-    });
+    capabilities.set(stateFromResponse(response.data));
   } catch {
     if (requestedUnder !== generation) return;
     // Fail-open for feature visibility (community defaults, everything shown), but NOT

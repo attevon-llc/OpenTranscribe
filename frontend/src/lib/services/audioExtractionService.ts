@@ -364,13 +364,7 @@ class AudioExtractionService {
     this.isProcessing = false;
   }
 
-  /**
-   * Internal method to extract audio from video file
-   */
-  private async _extractAudioInternal(
-    file: File,
-    config: Partial<AudioExtractionConfig> = {}
-  ): Promise<ExtractedAudio> {
+  private assertExtractable(file: File, finalConfig: AudioExtractionConfig): void {
     if (!this.isSupported()) {
       throw this.createError(
         'UNSUPPORTED_BROWSER',
@@ -378,14 +372,6 @@ class AudioExtractionService {
         'initializing'
       );
     }
-
-    // Merge config with defaults
-    const finalConfig: AudioExtractionConfig = {
-      ...DEFAULT_EXTRACTION_CONFIG,
-      ...config,
-    };
-
-    // Check file size
     if (file.size > finalConfig.maxFileSize) {
       throw this.createError(
         'FILE_TOO_LARGE',
@@ -396,6 +382,50 @@ class AudioExtractionService {
         'initializing'
       );
     }
+  }
+
+  /** Progress for one named stage, with the message looked up in the active locale. */
+  private emitStage(
+    stage: ExtractionProgress['stage'],
+    percentage: number,
+    messageKey: string,
+    extractionId: string,
+    fileName: string
+  ): void {
+    this.emitProgress({ stage, percentage, message: get(t)(messageKey) }, extractionId, fileName);
+  }
+
+  // Best-effort cleanup of the FFmpeg MEMFS entries written by an extraction — the success
+  // path deletes these, but a failure (e.g. a non-zero exit code, or an error thrown before
+  // either file was even written) must not leak them for the rest of the session. Each
+  // delete is independent since a file that was never written will itself throw on delete,
+  // and one failure should not block the other.
+  private async deleteQuietly(...names: (string | undefined)[]): Promise<void> {
+    const ffmpeg = this.ffmpeg;
+    if (!ffmpeg) return;
+    for (const name of names) {
+      if (!name) continue;
+      try {
+        await ffmpeg.deleteFile(name);
+      } catch {
+        // Best effort — the file may never have been written.
+      }
+    }
+  }
+
+  /**
+   * Internal method to extract audio from video file
+   */
+  private async _extractAudioInternal(
+    file: File,
+    config: Partial<AudioExtractionConfig> = {}
+  ): Promise<ExtractedAudio> {
+    // Merge config with defaults
+    const finalConfig: AudioExtractionConfig = {
+      ...DEFAULT_EXTRACTION_CONFIG,
+      ...config,
+    };
+    this.assertExtractable(file, finalConfig);
 
     const startTime = Date.now();
 
@@ -411,15 +441,7 @@ class AudioExtractionService {
 
     try {
       // Load FFmpeg if not already loaded
-      this.emitProgress(
-        {
-          stage: 'initializing',
-          percentage: 0,
-          message: get(t)('extraction.progressInitializing'),
-        },
-        extractionId,
-        fileName
-      );
+      this.emitStage('initializing', 0, 'extraction.progressInitializing', extractionId, fileName);
 
       await this.load();
       if (!this.ffmpeg) {
@@ -430,15 +452,7 @@ class AudioExtractionService {
       // not produce byte-identically twice) so re-extracting the same video is
       // caught as a duplicate. Bounded 48 KiB read — video is the largest input
       // the app takes (15 GB) and whole-file hashing here is what broke in #342.
-      this.emitProgress(
-        {
-          stage: 'metadata',
-          percentage: 2,
-          message: get(t)('upload.calculatingHash'),
-        },
-        extractionId,
-        fileName
-      );
+      this.emitStage('metadata', 2, 'upload.calculatingHash', extractionId, fileName);
 
       const originalFingerprint = await fingerprintFile(file);
 
@@ -450,15 +464,7 @@ class AudioExtractionService {
       const outputExtension = this.getAudioExtension(audioCodec);
 
       // Write input file to FFmpeg virtual filesystem
-      this.emitProgress(
-        {
-          stage: 'extracting',
-          percentage: 15,
-          message: get(t)('extraction.progressLoadingVideo'),
-        },
-        extractionId,
-        fileName
-      );
+      this.emitStage('extracting', 15, 'extraction.progressLoadingVideo', extractionId, fileName);
 
       // Use unique filenames based on extractionId to support concurrent extractions
       const uniqueId = extractionId.split('-')[1]; // Use timestamp portion for shorter name
@@ -468,15 +474,7 @@ class AudioExtractionService {
       await this.ffmpeg.writeFile(inputFileName, await fetchFile(file));
 
       // Build FFmpeg command for audio extraction
-      this.emitProgress(
-        {
-          stage: 'extracting',
-          percentage: 20,
-          message: get(t)('extraction.progressExtracting'),
-        },
-        extractionId,
-        fileName
-      );
+      this.emitStage('extracting', 20, 'extraction.progressExtracting', extractionId, fileName);
 
       // Use stream copy for fast extraction without re-encoding
       const ffmpegArgs = [
@@ -505,15 +503,7 @@ class AudioExtractionService {
       }
 
       // Read output file
-      this.emitProgress(
-        {
-          stage: 'finalizing',
-          percentage: 95,
-          message: get(t)('extraction.progressFinalizing'),
-        },
-        extractionId,
-        fileName
-      );
+      this.emitStage('finalizing', 95, 'extraction.progressFinalizing', extractionId, fileName);
 
       const audioData = await this.ffmpeg.readFile(outputFileName);
       // Ensure proper BlobPart compatibility - readFile returns Uint8Array or string
@@ -547,15 +537,7 @@ class AudioExtractionService {
         videoMetadata: metadata,
       };
 
-      this.emitProgress(
-        {
-          stage: 'finalizing',
-          percentage: 100,
-          message: get(t)('extraction.progressComplete'),
-        },
-        extractionId,
-        fileName
-      );
+      this.emitStage('finalizing', 100, 'extraction.progressComplete', extractionId, fileName);
 
       return {
         blob: audioBlob,
@@ -570,22 +552,7 @@ class AudioExtractionService {
       // thrown before either file was even written) must not leak them. Each delete
       // is wrapped independently since a file that was never written will itself
       // throw on delete, and one failure should not block the other.
-      if (this.ffmpeg) {
-        if (inputFileName) {
-          try {
-            await this.ffmpeg.deleteFile(inputFileName);
-          } catch {
-            // Best effort — file may never have been written.
-          }
-        }
-        if (outputFileName) {
-          try {
-            await this.ffmpeg.deleteFile(outputFileName);
-          } catch {
-            // Best effort — file may never have been produced.
-          }
-        }
-      }
+      await this.deleteQuietly(inputFileName, outputFileName);
 
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw this.createError(

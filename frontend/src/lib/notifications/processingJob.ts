@@ -298,6 +298,27 @@ const ENTRY_STATE: Record<PostProcessingEntry['state'], TaskState> = {
   skipped: 'skipped',
 };
 
+// How long a finished run task took: the server's own figure, else the span between its
+// start and completion marks.
+function entryDuration(entry: PostProcessingEntry, rec: Notification | undefined): number | null {
+  const serverDuration = rec?.data?.duration_seconds;
+  if (typeof serverDuration === 'number' && serverDuration >= 0) return serverDuration;
+  if (entry.startedAt !== undefined && entry.at >= entry.startedAt) {
+    return entry.at - entry.startedAt;
+  }
+  return null;
+}
+
+function entryPercent(
+  key: PostProcessingKey,
+  state: TaskState,
+  recordPercent: number | null
+): number {
+  if (state === 'done') return 100;
+  if (state !== 'running') return 0;
+  return clamp(key === 'summary' && recordPercent !== null ? recordPercent : INDETERMINATE_PERCENT);
+}
+
 /** A task from the post-processing run, with detail from its own record when it has one. */
 function entryTask(
   key: PostProcessingKey,
@@ -305,26 +326,9 @@ function entryTask(
   rec?: Notification
 ): JobTask {
   const state = ENTRY_STATE[entry.state];
-  const recordPercent = rec ? percentOf(rec) : null;
-  const serverDuration = rec?.data?.duration_seconds;
-  const durationSeconds =
-    state !== 'done'
-      ? null
-      : typeof serverDuration === 'number' && serverDuration >= 0
-        ? serverDuration
-        : entry.startedAt !== undefined && entry.at >= entry.startedAt
-          ? entry.at - entry.startedAt
-          : null;
   return makeTask(key, state, {
-    percent:
-      state === 'done'
-        ? 100
-        : state === 'running'
-          ? clamp(
-              key === 'summary' && recordPercent !== null ? recordPercent : INDETERMINATE_PERCENT
-            )
-          : 0,
-    durationSeconds,
+    percent: entryPercent(key, state, rec ? percentOf(rec) : null),
+    durationSeconds: state === 'done' ? entryDuration(entry, rec) : null,
     message: rec && (state === 'running' || state === 'failed') ? messageOf(rec) : undefined,
   });
 }
@@ -345,57 +349,83 @@ const RECORD_FOR_KEY: Partial<Record<PostProcessingKey, MemberTask>> = {
   redaction: 'redaction',
 };
 
-/** Builds one file's card from its records. Never mutates them. */
-export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJobModel {
-  // The list is newest-first, so the first record of a task is its latest.
-  const byTask = new Map<MemberTask, Notification>();
-  for (const m of item.members) {
-    const task = JOB_TASK_BY_TYPE[m.type];
-    if (task && !byTask.has(task)) byTask.set(task, m);
-  }
+interface MainTier {
+  tasks: JobTask[];
+  state: TaskState | undefined;
+}
 
-  const tx = byTask.get('transcription');
-  const imp = byTask.get('import');
-  const run: PostProcessingRun | undefined = byTask.get('postProcessing')?.postProcessing;
-  const txStart = tx?.startedAt;
-  // A downstream record older than the current transcription run is from a previous run.
-  const current = (task: MemberTask) => {
-    const rec = byTask.get(task);
-    if (!rec || (txStart !== undefined && ms(rec.timestamp) < txStart)) return undefined;
-    return rec;
-  };
-
-  // ---- main tier ------------------------------------------------------------------------
-  const main: JobTask[] = [];
-  let mainState: TaskState | undefined;
+// The import -> transcription -> diarization tier, from the file's import and transcription
+// records. `state` is undefined when the file has neither.
+function buildMainTier(imp: Notification | undefined, tx: Notification | undefined): MainTier {
+  const tasks: JobTask[] = [];
+  let state: TaskState | undefined;
   if (imp) {
     const t = recordTask('import', imp, percentOf(imp));
-    mainState = t.state;
-    main.push(t);
+    state = t.state;
+    tasks.push(t);
   }
   if (tx) {
     const t = recordTask('transcription', tx, percentOf(tx));
     t.subtasks = transcriptionStages(tx, t.state);
-    main.push(t);
+    tasks.push(t);
     const diarize = t.subtasks[DIARIZE_INDEX];
-    main.push(makeTask('diarization', diarize.state, { durationSeconds: diarize.durationSeconds }));
-    mainState = t.state === 'done' && mainState === 'failed' ? 'failed' : t.state;
-  } else if (imp && mainState !== 'failed') {
-    main.push(makeTask('transcription', 'pending'));
-    mainState = mainState === 'done' ? 'pending' : mainState;
+    tasks.push(
+      makeTask('diarization', diarize.state, { durationSeconds: diarize.durationSeconds })
+    );
+    state = t.state === 'done' && state === 'failed' ? 'failed' : t.state;
+  } else if (imp && state !== 'failed') {
+    tasks.push(makeTask('transcription', 'pending'));
+    state = state === 'done' ? 'pending' : state;
   }
-  const hasMain = main.length > 0;
-  const mainDone = mainState === 'done';
-  const mainFailed = mainState === 'failed';
+  return { tasks, state };
+}
 
-  // ---- post-processing tiers --------------------------------------------------------------
+interface PlanStatus {
+  planned: boolean;
+  planUnknown: boolean;
+  awaitingPlan: boolean;
+  txFinishedAt: number | undefined;
+}
+
+// Whether the backend has announced which post-processing tasks the file will run.
+function planStatus(
+  run: PostProcessingRun | undefined,
+  tx: Notification | undefined,
+  main: { hasMain: boolean; mainDone: boolean },
+  now: number
+): PlanStatus {
   const planned = run !== undefined && run.runAt !== null;
   // A record saved before run timing existed has no finishedAt; its last frame is the end.
-  const txFinishedAt = tx && mainDone ? tx.finishedAt ?? ms(tx.timestamp) : undefined;
-  const graceOver = txFinishedAt !== undefined && opts.now - txFinishedAt > PLAN_GRACE_MS;
+  const txFinishedAt = tx && main.mainDone ? tx.finishedAt ?? ms(tx.timestamp) : undefined;
+  const graceOver = txFinishedAt !== undefined && now - txFinishedAt > PLAN_GRACE_MS;
   const planUnknown = !planned && (run?.unknown === true || graceOver);
-  const awaitingPlan = hasMain && mainDone && !planned && !planUnknown;
+  const awaitingPlan = main.hasMain && main.mainDone && !planned && !planUnknown;
+  return { planned, planUnknown, awaitingPlan, txFinishedAt };
+}
 
+interface PostContext extends PlanStatus {
+  hasMain: boolean;
+  mainFailed: boolean;
+  llmAvailable: boolean;
+}
+
+// Before the plan, an LLM deployment expects the AI tier; the plan then decides.
+function expectsPlaceholder(key: PostProcessingKey, ctx: PostContext): boolean {
+  return (
+    !ctx.planned &&
+    !ctx.planUnknown &&
+    ctx.hasMain &&
+    !ctx.mainFailed &&
+    ctx.llmAvailable &&
+    (key === 'summary' || key === 'topics')
+  );
+}
+
+function buildPostTasks(
+  run: PostProcessingRun | undefined,
+  current: (task: MemberTask) => Notification | undefined,
+  ctx: PostContext
+): JobTask[] {
   const post: JobTask[] = [];
   for (const key of POST_KEYS) {
     const entry = run?.tasks[key];
@@ -407,140 +437,216 @@ export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJ
       // A record with no run entry (an older backend, or a manual regenerate on a file
       // whose card has no run) still shows what it says.
       post.push(recordTask(key, rec, key === 'summary' ? percentOf(rec) : null));
-    } else if (
-      !planned &&
-      !planUnknown &&
-      hasMain &&
-      !mainFailed &&
-      opts.llmAvailable &&
-      (key === 'summary' || key === 'topics')
-    ) {
-      // Before the plan, an LLM deployment expects the AI tier; the plan then decides.
+    } else if (expectsPlaceholder(key, ctx)) {
       post.push(makeTask(key, 'pending'));
     }
   }
+  return post;
+}
 
-  const visible = [...main, ...post].filter((t) => t.state !== 'skipped');
+function tierOfTasks(key: TierKey, state: TaskState, tasks: JobTask[]): JobTier {
+  return {
+    key,
+    state,
+    tasks,
+    done: tasks.filter((t) => t.state === 'done').length,
+    total: tasks.length,
+  };
+}
+
+function finishingTierState(tasks: JobTask[], plan: PlanStatus): TaskState {
+  if (tasks.length === 0) {
+    if (plan.awaitingPlan) return 'running';
+    return plan.planned ? 'done' : 'pending';
+  }
+  const state = tierState(tasks);
+  return plan.awaitingPlan && state === 'done' ? 'running' : state;
+}
+
+interface TierContext extends PlanStatus {
+  hasMain: boolean;
+  mainDone: boolean;
+  mainFailed: boolean;
+  mainState: TaskState | undefined;
+}
+
+function buildTiers(main: JobTask[], visible: JobTask[], ctx: TierContext): JobTier[] {
   const finishingTasks = visible.filter((t) => t.tier === 'finishing');
   const aiTasks = visible.filter((t) => t.tier === 'ai');
-
   const tiers: JobTier[] = [];
-  if (hasMain) {
+  if (ctx.hasMain) {
     tiers.push({
       key: 'main',
-      state: mainState ?? 'pending',
+      state: ctx.mainState ?? 'pending',
       tasks: main.filter((t) => t.state !== 'skipped'),
-      done: mainDone ? 1 : 0,
+      done: ctx.mainDone ? 1 : 0,
       total: 1,
     });
   }
-  const finishingVisible = finishingTasks.length > 0 || (hasMain && !mainFailed && !planUnknown);
-  if (finishingVisible) {
-    let state = tierState(finishingTasks);
-    if (finishingTasks.length === 0)
-      state = awaitingPlan ? 'running' : planned ? 'done' : 'pending';
-    else if (awaitingPlan && state === 'done') state = 'running';
-    tiers.push({
-      key: 'finishing',
-      state,
-      tasks: finishingTasks,
-      done: finishingTasks.filter((t) => t.state === 'done').length,
-      total: finishingTasks.length,
-    });
+  if (finishingTasks.length > 0 || (ctx.hasMain && !ctx.mainFailed && !ctx.planUnknown)) {
+    tiers.push(tierOfTasks('finishing', finishingTierState(finishingTasks, ctx), finishingTasks));
   }
-  if (aiTasks.length > 0) {
-    tiers.push({
-      key: 'ai',
-      state: tierState(aiTasks),
-      tasks: aiTasks,
-      done: aiTasks.filter((t) => t.state === 'done').length,
-      total: aiTasks.length,
-    });
-  }
+  if (aiTasks.length > 0) tiers.push(tierOfTasks('ai', tierState(aiTasks), aiTasks));
+  return tiers;
+}
 
-  // ---- overall state ------------------------------------------------------------------------
-  const outstandingTasks = visible.filter((t) => t.tier !== 'main' && isOutstanding(t.state));
-  const failedTasks = visible.filter((t) => t.state === 'failed');
-  const failedTask = failedTasks[0];
-  let state: JobState;
-  if (mainFailed) state = 'attention';
-  else if (hasMain && !mainDone) state = 'processing';
-  else if (outstandingTasks.length > 0 || awaitingPlan)
-    state = hasMain ? 'finishing' : 'processing';
-  else if (failedTask) state = 'attention';
-  else if (hasMain && !planned) state = 'ready';
-  else state = 'complete';
+interface StateContext {
+  hasMain: boolean;
+  mainDone: boolean;
+  mainFailed: boolean;
+  planned: boolean;
+  awaitingPlan: boolean;
+}
 
-  // ---- percent ----------------------------------------------------------------------------------
+function overallState(
+  ctx: StateContext,
+  outstandingCount: number,
+  hasFailedTask: boolean
+): JobState {
+  if (ctx.mainFailed) return 'attention';
+  if (ctx.hasMain && !ctx.mainDone) return 'processing';
+  if (outstandingCount > 0 || ctx.awaitingPlan) return ctx.hasMain ? 'finishing' : 'processing';
+  if (hasFailedTask) return 'attention';
+  if (ctx.hasMain && !ctx.planned) return 'ready';
+  return 'complete';
+}
+
+function taskProgress(t: JobTask): number {
+  if (t.state === 'done') return 100;
+  return isOutstanding(t.state) || t.state === 'failed' ? t.percent : 0;
+}
+
+function overallPercent(visible: JobTask[], state: JobState, placeholder: boolean): number {
   const counted = visible.filter((t) => t.weight > 0);
   let totalWeight = counted.reduce((sum, t) => sum + t.weight, 0);
-  const weighted = counted.reduce(
-    (sum, t) =>
-      sum +
-      t.weight *
-        (t.state === 'done' ? 100 : isOutstanding(t.state) || t.state === 'failed' ? t.percent : 0),
-    0
-  );
-  if (hasMain && !mainFailed && !planned && !planUnknown && finishingTasks.length === 0) {
-    // Nothing known yet: a share of the bar stays empty until the plan names the tasks.
-    totalWeight += FINISHING_PLACEHOLDER_WEIGHT;
-  }
-  let percent = totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
-  if (state === 'complete' || state === 'ready') percent = 100;
-  else if (state !== 'attention') percent = Math.min(99, percent);
+  const weighted = counted.reduce((sum, t) => sum + t.weight * taskProgress(t), 0);
+  // Nothing known yet: a share of the bar stays empty until the plan names the tasks.
+  if (placeholder) totalWeight += FINISHING_PLACEHOLDER_WEIGHT;
+  const percent = totalWeight > 0 ? Math.round(weighted / totalWeight) : 0;
+  if (state === 'complete' || state === 'ready') return 100;
+  return state === 'attention' ? percent : Math.min(99, percent);
+}
 
-  // ---- staleness and reconcile ---------------------------------------------------------------
-  const lastFrame = run?.updatedAt;
+interface SyncContext extends StateContext {
+  state: JobState;
+  run: PostProcessingRun | undefined;
+  txFinishedAt: number | undefined;
+  now: number;
+}
+
+// Milliseconds since the run's last frame, or undefined when it has none.
+function quietFor(ctx: SyncContext): number | undefined {
+  const lastFrame = ctx.run?.updatedAt;
+  return lastFrame === undefined ? undefined : ctx.now - lastFrame;
+}
+
+// Whether the store should re-read the server for a card that may have missed frames.
+function needsReconcile(ctx: SyncContext, quiet: number | undefined): boolean {
+  if (!ctx.hasMain || !ctx.mainDone || ctx.run?.unknown === true) return false;
+  const sinceTxDone = ctx.txFinishedAt !== undefined ? ctx.now - ctx.txFinishedAt : 0;
+  if (sinceTxDone >= RUN_RETENTION_MS) return false;
+  if (ctx.awaitingPlan && sinceTxDone > RECONCILE_AFTER_MS) return true;
+  if (ctx.state === 'ready' && !ctx.planned) return true;
+  return ctx.state === 'finishing' && quiet !== undefined && quiet > STALE_AFTER_MS / 2;
+}
+
+// A card whose frames stopped arriving, and whether the store should re-read the server.
+function stalenessOf(ctx: SyncContext): { stale: boolean; reconcile: boolean } {
+  const quiet = quietFor(ctx);
   const stale =
-    state === 'finishing' &&
-    !awaitingPlan &&
-    lastFrame !== undefined &&
-    opts.now - lastFrame > STALE_AFTER_MS;
-  const sinceTxDone = txFinishedAt !== undefined ? opts.now - txFinishedAt : 0;
-  const reconcile =
-    hasMain &&
-    mainDone &&
-    run?.unknown !== true &&
-    sinceTxDone < RUN_RETENTION_MS &&
-    ((awaitingPlan && sinceTxDone > RECONCILE_AFTER_MS) ||
-      (state === 'ready' && !planned) ||
-      (state === 'finishing' &&
-        lastFrame !== undefined &&
-        opts.now - lastFrame > STALE_AFTER_MS / 2));
+    ctx.state === 'finishing' && !ctx.awaitingPlan && quiet !== undefined && quiet > STALE_AFTER_MS;
+  return { stale, reconcile: needsReconcile(ctx, quiet) };
+}
+
+function etaOf(tx: Notification | undefined): string | undefined {
+  const eta = tx?.progress?.etaSeconds;
+  if (!tx || taskStateFromStatus(wireStatus(tx)) !== 'running') return undefined;
+  return typeof eta === 'number' && eta > 0 ? formatCompactDuration(eta) : undefined;
+}
+
+function filenameOf(members: Notification[]): string {
+  const named = members.map((m) => m.data?.filename).find((f) => typeof f === 'string' && f);
+  return (named as string | undefined) ?? '';
+}
+
+/** Builds one file's card from its records. Never mutates them. */
+export function buildJobModel(item: JobItem, opts: JobModelOptions): ProcessingJobModel {
+  // The list is newest-first, so the first record of a task is its latest.
+  const byTask = new Map<MemberTask, Notification>();
+  for (const m of item.members) {
+    const task = JOB_TASK_BY_TYPE[m.type];
+    if (task && !byTask.has(task)) byTask.set(task, m);
+  }
+
+  const tx = byTask.get('transcription');
+  const run: PostProcessingRun | undefined = byTask.get('postProcessing')?.postProcessing;
+  const txStart = tx?.startedAt;
+  // A downstream record older than the current transcription run is from a previous run.
+  const current = (task: MemberTask) => {
+    const rec = byTask.get(task);
+    if (!rec || (txStart !== undefined && ms(rec.timestamp) < txStart)) return undefined;
+    return rec;
+  };
+
+  const mainTier = buildMainTier(byTask.get('import'), tx);
+  const main = mainTier.tasks;
+  const hasMain = main.length > 0;
+  const mainDone = mainTier.state === 'done';
+  const mainFailed = mainTier.state === 'failed';
+
+  const plan = planStatus(run, tx, { hasMain, mainDone }, opts.now);
+  const post = buildPostTasks(run, current, {
+    ...plan,
+    hasMain,
+    mainFailed,
+    llmAvailable: opts.llmAvailable,
+  });
+  const visible = [...main, ...post].filter((t) => t.state !== 'skipped');
+  const tiers = buildTiers(main, visible, {
+    ...plan,
+    hasMain,
+    mainDone,
+    mainFailed,
+    mainState: mainTier.state,
+  });
+
+  const outstandingTasks = visible.filter((t) => t.tier !== 'main' && isOutstanding(t.state));
+  const failedTasks = visible.filter((t) => t.state === 'failed');
+  const stateCtx = { ...plan, hasMain, mainDone, mainFailed };
+  const state = overallState(stateCtx, outstandingTasks.length, failedTasks.length > 0);
+  const finishingCount = visible.filter((t) => t.tier === 'finishing').length;
+  const percent = overallPercent(
+    visible,
+    state,
+    hasMain && !mainFailed && !plan.planned && !plan.planUnknown && finishingCount === 0
+  );
+  const { stale, reconcile } = stalenessOf({
+    ...stateCtx,
+    state,
+    run,
+    txFinishedAt: plan.txFinishedAt,
+    now: opts.now,
+  });
 
   const runningMain = main.find((t) => t.state === 'running' && t.message);
-  const newest = item.members[0];
-  const filename =
-    (item.members.map((m) => m.data?.filename).find((f) => typeof f === 'string' && f) as
-      | string
-      | undefined) ?? '';
-  const eta =
-    tx &&
-    tx.progress &&
-    taskStateFromStatus(wireStatus(tx)) === 'running' &&
-    typeof tx.progress.etaSeconds === 'number' &&
-    tx.progress.etaSeconds > 0
-      ? formatCompactDuration(tx.progress.etaSeconds)
-      : undefined;
-
   return {
     key: item.key,
     fileId: item.fileId,
-    filename,
+    filename: filenameOf(item.members),
     state,
     percent,
     tiers,
     tasks: visible,
     outstanding: outstandingTasks.map((t) => t.key),
-    awaitingPlan,
+    awaitingPlan: plan.awaitingPlan,
     stale,
     reconcile,
     memberIds: item.members.map((m) => m.id),
     read: item.members.every((m) => m.read),
     dismissible: item.members.every((m) => m.dismissible === true),
-    timestamp: newest.timestamp,
+    timestamp: item.members[0].timestamp,
     currentStep: state === 'processing' ? runningMain?.message : undefined,
-    etaDisplay: state === 'processing' ? eta : undefined,
+    etaDisplay: state === 'processing' ? etaOf(tx) : undefined,
     failures:
       state === 'attention'
         ? // Diarization is a step of the transcription run, so its failure is that run's failure.

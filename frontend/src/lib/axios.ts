@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { isCloudEdition } from '$lib/edition';
 import { parseRetryAfter } from '$lib/utils/retryAfter';
 import {
@@ -223,6 +223,149 @@ function processQueue(error: unknown | null) {
   refreshQueue = [];
 }
 
+interface ErrorBody {
+  detail?: string | { code?: string };
+}
+type ApiError = AxiosError<ErrorBody> & { retryAfterSeconds?: number };
+type RetriableRequest = InternalAxiosRequestConfig & { _retry?: boolean };
+
+// Rate limited (issue #788): parse Retry-After ONCE, here, and attach it to
+// the error rather than popping UI ourselves. Axios lower-cases header
+// keys (unlike `fetch`'s case-insensitive `Headers.get`), hence the
+// literal 'retry-after'. Attaching rather than toasting avoids a double
+// toast when a caller ALSO calls `handleApiError` (`$lib/utils/apiError`,
+// which reads `retryAfterSeconds` off the error to render the wait hint)
+// or renders its own inline message (e.g. `stores/auth.ts`'s login/MFA
+// 429 arms) — this module has no way to know which a given call site does,
+// so it must not assume neither.
+function attachRetryAfter(error: ApiError): void {
+  if (error.response?.status !== 429) return;
+  const retryAfterSeconds = parseRetryAfter(error.response.headers?.['retry-after']);
+  if (retryAfterSeconds !== null) {
+    error.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+// Quota exceeded (cloud edition): the backend returns HTTP 402 when an upload
+// would push the org over its plan limit. Pop the shared QuotaExceededModal +
+// upgrade CTA. The caller still rejects so its catch runs (no double toast — the
+// modal carries the message). Lazy-imported to avoid pulling cloud stores into
+// the community bundle's eager graph.
+async function showQuotaModal(error: ApiError): Promise<void> {
+  try {
+    const detail = error.response?.data?.detail;
+    const message = typeof detail === 'string' ? detail : '';
+    const { showQuotaExceeded } = await import('$lib/cloud');
+    showQuotaExceeded(message);
+  } catch {
+    // Modal trigger failed — fall through to normal rejection.
+  }
+}
+
+// Log server errors (5xx) - client errors are often expected
+function logServerError(error: ApiError): void {
+  const response = error.response;
+  if (response && response.status >= 500) {
+    console.error(
+      `Server error for ${error.config?.url}: ${response.status} - ${JSON.stringify(response.data)}`
+    );
+  }
+}
+
+// Cloud edition: there is NO cookie refresh token. The hosted IdP mints a
+// fresh short-lived bearer on the next request, so a 401 here means the
+// external session is gone (or the token was rejected) — bounce to login
+// rather than attempting the cookie /auth/token/refresh flow.
+async function handleCloudError(error: ApiError): Promise<never> {
+  // The server refused the session as older than the absolute timeout (#1106).
+  // The provider's own session is still live, so a bare redirect to /login
+  // would sign straight back in: end it through the timeout path instead.
+  const detail = error.response?.data?.detail;
+  if (
+    error.response?.status === 401 &&
+    typeof detail === 'object' &&
+    detail?.code === 'session_expired'
+  ) {
+    const { expireSessionNow } = await import('$lib/auth/sessionTimeouts');
+    expireSessionNow('absolute');
+    return Promise.reject(error);
+  }
+  if (
+    error.response?.status === 401 &&
+    typeof window !== 'undefined' &&
+    !window.location.pathname.startsWith('/login')
+  ) {
+    const { authStore } = await import('../stores/auth');
+    authStore.reset();
+    window.location.href = '/login';
+  }
+  logServerError(error);
+  return Promise.reject(error);
+}
+
+// Auth endpoints never trigger a refresh: they ARE the session, or run before one exists.
+// Forced MFA enrolment authenticates with a bearer half-token and there is no refresh cookie
+// to spend, so a 401 there means the half-token is spent or expired and refreshing is a
+// guaranteed-useless round-trip.
+const NO_REFRESH_URL_PARTS = [
+  '/auth/login',
+  '/auth/token/refresh',
+  '/auth/me',
+  '/auth/mfa/setup',
+  '/auth/mfa/verify-setup',
+];
+
+// Auto-refresh: a 401 on a request that has not already been retried and is not an auth call.
+function shouldRefreshSession(error: ApiError, originalRequest: RetriableRequest): boolean {
+  return (
+    error.response?.status === 401 &&
+    !!originalRequest &&
+    !originalRequest._retry &&
+    !NO_REFRESH_URL_PARTS.some((part) => originalRequest.url?.includes(part))
+  );
+}
+
+async function refreshAndRetry(originalRequest: RetriableRequest): Promise<unknown> {
+  if (isRefreshing) {
+    // Another refresh is in progress — queue this request
+    return new Promise((resolve, reject) => {
+      refreshQueue.push({ resolve, reject });
+    }).then(() => axiosInstance(originalRequest));
+  }
+
+  originalRequest._retry = true;
+  isRefreshing = true;
+
+  try {
+    // Coordinated with every other tab (one refresh at a time, skipped when another
+    // tab already did it): the shared refresh cookie can be spent only once.
+    const { refreshSession } = await import('$lib/auth/sessionRefresh');
+    await refreshSession();
+
+    // Refresh succeeded — new cookies are set, retry queued requests
+    processQueue(null);
+
+    // Retry the original failed request
+    return axiosInstance(originalRequest);
+  } catch (refreshError) {
+    // Refresh failed — session is truly expired, redirect to login
+    processQueue(refreshError);
+
+    // Lazy import to avoid circular dependency
+    const { authStore } = await import('../stores/auth');
+    authStore.reset();
+
+    // Only redirect if we're not already on the login page
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+
+    return Promise.reject(refreshError);
+  } finally {
+    isRefreshing = false;
+  }
+}
+
 // Response interceptor — auto-refresh on 401, log 5xx
 axiosInstance.interceptors.response.use(
   (response) => response,
@@ -235,22 +378,7 @@ axiosInstance.interceptors.response.use(
 
     await handleSupportGrantError(error);
     await reportDemoReadOnlyRefusal(error);
-
-    // Rate limited (issue #788): parse Retry-After ONCE, here, and attach it to
-    // the error rather than popping UI ourselves. Axios lower-cases header
-    // keys (unlike `fetch`'s case-insensitive `Headers.get`), hence the
-    // literal 'retry-after'. Attaching rather than toasting avoids a double
-    // toast when a caller ALSO calls `handleApiError` (`$lib/utils/apiError`,
-    // which reads `retryAfterSeconds` off the error to render the wait hint)
-    // or renders its own inline message (e.g. `stores/auth.ts`'s login/MFA
-    // 429 arms) — this module has no way to know which a given call site does,
-    // so it must not assume neither.
-    if (error.response?.status === 429) {
-      const retryAfterSeconds = parseRetryAfter(error.response.headers?.['retry-after']);
-      if (retryAfterSeconds !== null) {
-        error.retryAfterSeconds = retryAfterSeconds;
-      }
-    }
+    attachRetryAfter(error);
 
     // Server busy (scale lane A2): a 503 with Retry-After never reaches the 401 refresh /
     // sign-out paths below. The policy lives in $lib/utils/busyRetry, loaded on first use.
@@ -260,124 +388,16 @@ axiosInstance.interceptors.response.use(
       if (handled) return handled;
     }
 
-    // Quota exceeded (cloud edition): the backend returns HTTP 402 when an upload
-    // would push the org over its plan limit. Pop the shared QuotaExceededModal +
-    // upgrade CTA. Still rejects so the caller's catch runs (no double toast — the
-    // modal carries the message). Lazy-imported to avoid pulling cloud stores into
-    // the community bundle's eager graph.
     if (isCloudEdition && error.response?.status === 402) {
-      try {
-        const detail = error.response?.data?.detail;
-        const message = typeof detail === 'string' ? detail : '';
-        const { showQuotaExceeded } = await import('$lib/cloud');
-        showQuotaExceeded(message);
-      } catch {
-        // Modal trigger failed — fall through to normal rejection.
-      }
+      await showQuotaModal(error);
       return Promise.reject(error);
     }
+    if (isCloudEdition) return handleCloudError(error);
 
     const originalRequest = error.config;
+    if (shouldRefreshSession(error, originalRequest)) return refreshAndRetry(originalRequest);
 
-    // Cloud edition: there is NO cookie refresh token. The hosted IdP mints a
-    // fresh short-lived bearer on the next request, so a 401 here means the
-    // external session is gone (or the token was rejected) — bounce to login
-    // rather than attempting the cookie /auth/token/refresh flow.
-    if (isCloudEdition) {
-      // The server refused the session as older than the absolute timeout (#1106).
-      // The provider's own session is still live, so a bare redirect to /login
-      // would sign straight back in: end it through the timeout path instead.
-      if (
-        error.response?.status === 401 &&
-        error.response?.data?.detail?.code === 'session_expired'
-      ) {
-        const { expireSessionNow } = await import('$lib/auth/sessionTimeouts');
-        expireSessionNow('absolute');
-        return Promise.reject(error);
-      }
-      if (
-        error.response?.status === 401 &&
-        typeof window !== 'undefined' &&
-        !window.location.pathname.startsWith('/login')
-      ) {
-        const { authStore } = await import('../stores/auth');
-        authStore.reset();
-        window.location.href = '/login';
-      }
-      if (error.response?.status >= 500) {
-        console.error(
-          `Server error for ${error.config?.url}: ${error.response.status} - ${JSON.stringify(
-            error.response.data
-          )}`
-        );
-      }
-      return Promise.reject(error);
-    }
-
-    // Auto-refresh: if we get a 401 and haven't already retried this request
-    if (
-      error.response?.status === 401 &&
-      originalRequest &&
-      !originalRequest._retry &&
-      // Don't try to refresh on auth endpoints themselves
-      !originalRequest.url?.includes('/auth/login') &&
-      !originalRequest.url?.includes('/auth/token/refresh') &&
-      !originalRequest.url?.includes('/auth/me') &&
-      // Forced MFA enrolment runs BEFORE any session exists: it authenticates
-      // with a bearer half-token and there is no refresh cookie to spend. A 401
-      // here means the half-token is spent or expired, so refreshing is a
-      // guaranteed-useless round-trip.
-      !originalRequest.url?.includes('/auth/mfa/setup') &&
-      !originalRequest.url?.includes('/auth/mfa/verify-setup')
-    ) {
-      if (isRefreshing) {
-        // Another refresh is in progress — queue this request
-        return new Promise((resolve, reject) => {
-          refreshQueue.push({ resolve, reject });
-        }).then(() => axiosInstance(originalRequest));
-      }
-
-      originalRequest._retry = true;
-      isRefreshing = true;
-
-      try {
-        // Coordinated with every other tab (one refresh at a time, skipped when another
-        // tab already did it): the shared refresh cookie can be spent only once.
-        const { refreshSession } = await import('$lib/auth/sessionRefresh');
-        await refreshSession();
-
-        // Refresh succeeded — new cookies are set, retry queued requests
-        processQueue(null);
-
-        // Retry the original failed request
-        return axiosInstance(originalRequest);
-      } catch (refreshError) {
-        // Refresh failed — session is truly expired, redirect to login
-        processQueue(refreshError);
-
-        // Lazy import to avoid circular dependency
-        const { authStore } = await import('../stores/auth');
-        authStore.reset();
-
-        // Only redirect if we're not already on the login page
-        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-          window.location.href = '/login';
-        }
-
-        return Promise.reject(refreshError);
-      } finally {
-        isRefreshing = false;
-      }
-    }
-
-    // Log server errors (5xx) - client errors are often expected
-    if (error.response?.status >= 500) {
-      console.error(
-        `Server error for ${error.config?.url}: ${error.response.status} - ${JSON.stringify(
-          error.response.data
-        )}`
-      );
-    }
+    logServerError(error);
     return Promise.reject(error);
   }
 );

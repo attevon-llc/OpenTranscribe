@@ -710,7 +710,9 @@ describe('delete, merge, promote', () => {
     );
     expect(api.deleteTags).not.toHaveBeenCalled();
   });
+});
 
+describe('bulk delete, merge, promote', () => {
   // D20 (0749fb73a): the bulk delete preview is the shared confirmation dialog, naming every
   // selected tag and carrying both counts, not an inline panel with a second Delete button.
   const bulkMessage =

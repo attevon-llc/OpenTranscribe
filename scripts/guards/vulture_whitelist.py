@@ -103,7 +103,6 @@ WHITELIST = (
     # [test-observation] Retained pending a decision, not because they are right as they are: a test asserts the invariant through each, and no production path was found that does the same job differently (reviewed in L04b).
     _.assert_real_timings,
     _.needs_rehash_for_fips_v3,
-    _.extract_display_name_from_gov_dn,
     _.generic_guard_tables,
     _.trigger_arguments,
     _.find_missing_pieces,

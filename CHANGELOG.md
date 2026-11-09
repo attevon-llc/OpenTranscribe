@@ -88,6 +88,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ASRWord.confidence` is typed `float | None` (provider JSON can send null) and a segment's average confidence is taken over the scored words only, so a null word score no longer raises in the AWS, Deepgram, Speechmatics and PyAnnote providers. `SwitchOutcome.plan` is typed `PipelinePlan | None` (a refused switch has no plan) and `plan_issues_out` accepts it.
+- A newly provisioned PKI user is named from the certificate in readable form (`CN=DOE.JOHN.Q.1234567890` becomes `John Q. Doe`) instead of the raw common name; existing users are never renamed.
 - `opentranscribe.sh` and `setup-opentranscribe.sh` are reorganised in place (still one self-contained file each): sectioned, long functions and every command split into named steps, shellcheck clean with no disable directives. Two small behaviour notes: prompts now read with `read -r` (backslashes kept), and the installer's Docker daemon check now reaches its diagnostic messages under `set -e`.
 - Request middleware (audit, CSRF, observability, robots) now runs as pure ASGI instead of `BaseHTTPMiddleware`: less per-request overhead, streaming responses are never buffered, and behaviour is unchanged.
 - `GET /tasks/active` progress listing no longer SCANs the Redis keyspace: `ProgressTracker` keeps a per-user index set and reads all states with one `MGET` (two round trips regardless of keyspace size).

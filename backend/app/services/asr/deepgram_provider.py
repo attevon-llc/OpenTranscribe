@@ -19,6 +19,7 @@ from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
+from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def _group_words_into_segments(words: list, fallback_text: str) -> list:
         duration = cur[-1].end - cur[0].start
         if gap >= _MIN_PAUSE_SPLIT or duration >= _MAX_SEGMENT_DURATION:
             text = " ".join(x.word for x in cur)
-            avg_conf = sum(x.confidence for x in cur) / len(cur)
+            avg_conf = mean_word_confidence(cur)
             segments.append(
                 ASRSegment(
                     text=text,
@@ -62,7 +63,7 @@ def _group_words_into_segments(words: list, fallback_text: str) -> list:
 
     if cur:
         text = " ".join(x.word for x in cur)
-        avg_conf = sum(x.confidence for x in cur) / len(cur)
+        avg_conf = mean_word_confidence(cur)
         segments.append(
             ASRSegment(
                 text=text,

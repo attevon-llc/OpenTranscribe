@@ -16,6 +16,7 @@ import httpx
 from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
+from joserfc.jwk import KeySetSerialization
 from joserfc.jwt import JWTClaimsRegistry
 
 from app.auth.oidc.config import DEFAULT_ROLES_CLAIM
@@ -178,7 +179,9 @@ def _has_groups_overage(payload: dict, roles_claim: str) -> bool:
     return bool(payload.get("hasgroups"))
 
 
-def _decode_token(token: str, jwks: dict, cfg: OIDCConfig, expected_issuer: str) -> dict | None:
+def _decode_token(
+    token: str, jwks: dict[str, Any], cfg: OIDCConfig, expected_issuer: str
+) -> dict | None:
     """Verify *token* against the JWKS and return its claims, or None if invalid.
 
     Two separate joserfc calls, deliberately: ``jwt.decode`` verifies the
@@ -194,12 +197,15 @@ def _decode_token(token: str, jwks: dict, cfg: OIDCConfig, expected_issuer: str)
         logger.error("No safe ID-token signing algorithm is configured — refusing the token")
         return None
 
+    keys = jwks.get("keys")
+    if not isinstance(keys, list):
+        logger.warning("Malformed JWKS: 'keys' is not a list")
+        return None
+    serialization: KeySetSerialization = {"keys": keys}
     try:
-        # `jwks` is `dict[str, Any]` (fetch_jwks's return type, cache-friendly);
-        # joserfc wants its own KeySetSerialization TypedDict shape. Runtime
-        # validation of the actual RFC 7517 structure happens inside
+        # Validation of the RFC 7517 structure of each key happens inside
         # import_key_set itself, which is what the except below is for.
-        keyset = KeySet.import_key_set(jwks)  # type: ignore[arg-type]
+        keyset = KeySet.import_key_set(serialization)
     except JoseError as e:
         logger.warning(f"Malformed JWKS (JoseError): {e}")
         return None

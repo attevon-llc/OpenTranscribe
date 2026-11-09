@@ -29,7 +29,6 @@ from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.media import MediaFile
 from app.models.organization import Organization
-from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
@@ -37,6 +36,9 @@ from app.models.speaker import SpeakerClusterMember
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
+from tests.fixtures.tag_world import join
+from tests.fixtures.tag_world import make_org
+from tests.fixtures.tag_world import make_user
 
 # These routes now run the shared speaker cleanup (#1214), which reports a store it cannot reach
 # as a failure. CI has no OpenSearch, so stand the stores in with the recorders; the live
@@ -50,38 +52,6 @@ CLU = "/api/speaker-clusters"
 # --------------------------------------------------------------------------- #
 # World                                                                        #
 # --------------------------------------------------------------------------- #
-
-
-def _mk_user(db, label: str) -> User:
-    user = User(
-        email=f"{label}_{uuid_pkg.uuid4().hex[:8]}@example.com",
-        full_name=f"{label} user",
-        hashed_password="x",
-        is_active=True,
-        is_superuser=False,
-        role="user",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _mk_org(db, label: str) -> Organization:
-    org = Organization(
-        external_org_id=f"org_{label}_{uuid_pkg.uuid4().hex[:8]}",
-        name=f"{label} Org",
-        is_active=True,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-def _join(db, org: Organization, user: User) -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role="org:member"))
-    db.commit()
 
 
 def _mk_file(db, user: User, org_id: int | None) -> MediaFile:
@@ -199,10 +169,10 @@ class World:
 @pytest.fixture()
 def world(db_session) -> World:
     db = db_session
-    org_a, org_b = _mk_org(db, "A"), _mk_org(db, "B")
-    alice = _mk_user(db, "alice")
-    _join(db, org_a, alice)
-    _join(db, org_b, alice)
+    org_a, org_b = make_org(db, "A"), make_org(db, "B")
+    alice = make_user(db, "alice")
+    join(db, org_a, alice)
+    join(db, org_b, alice)
     a_file = _mk_file(db, alice, org_a.id)
     p_file = _mk_file(db, alice, None)
     a_profile = _mk_profile(db, alice, org_a.id)
@@ -408,12 +378,12 @@ def _share_world(db, shape: str, permission: str) -> ShareWorld:
     ``shape="community"``: no organizations, everything personal (a community
     install). ``shape="org"``: both are members of one org and the file is the org's.
     """
-    owner, guest = _mk_user(db, "owner"), _mk_user(db, "guest")
+    owner, guest = make_user(db, "owner"), make_user(db, "guest")
     org_id = None
     if shape == "org":
-        org = _mk_org(db, "S")
-        _join(db, org, owner)
-        _join(db, org, guest)
+        org = make_org(db, "S")
+        join(db, org, owner)
+        join(db, org, guest)
         org_id = org.id
     media_file = _mk_file(db, owner, org_id)
     speaker = _mk_speaker(db, media_file)

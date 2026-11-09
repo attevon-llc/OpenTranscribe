@@ -18,7 +18,7 @@ import pytest
 
 _REPO = Path(__file__).resolve().parents[3]
 DOC = _REPO / "docs" / "LDAP_AUTH.md"
-CONFIG = _REPO / "backend" / "app" / "core" / "config.py"
+CONFIG = _REPO / "backend" / "app" / "core" / "settings_identity.py"
 
 #: Every LDAP setting an operator can put in ``.env`` (P3 spec section 3.2).
 SETTINGS = (

@@ -19,43 +19,12 @@ from unittest.mock import patch
 
 import pytest
 
-from app.models.organization import Organization
-from app.models.organization import OrganizationMembership
 from app.models.prompt import UserSetting
 from app.models.user import User
 from app.models.user_media_source import UserMediaSource
-
-
-def _mk_user(db, label: str) -> User:
-    user = User(
-        email=f"{label}_{uuid_pkg.uuid4().hex[:8]}@example.com",
-        full_name=f"{label} user",
-        hashed_password="x",
-        is_active=True,
-        is_superuser=False,
-        role="user",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _mk_org(db, label: str) -> Organization:
-    org = Organization(
-        external_org_id=f"org_{label}_{uuid_pkg.uuid4().hex[:8]}",
-        name=f"{label} Org",
-        is_active=True,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-def _join(db, org: Organization, user: User) -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role="org:member"))
-    db.commit()
+from tests.fixtures.tag_world import join
+from tests.fixtures.tag_world import make_org
+from tests.fixtures.tag_world import make_user
 
 
 def _share_source(db, owner: User) -> str:
@@ -111,13 +80,13 @@ def _acting_as(user: User, org_id: int | None):
 def world(db_session):
     """Org A (a1 sharer, a2), org B (b1), personal accounts p1 (sharer) and p2."""
     db = db_session
-    org_a = _mk_org(db, "A")
-    org_b = _mk_org(db, "B")
-    a1, a2, b1 = _mk_user(db, "a1"), _mk_user(db, "a2"), _mk_user(db, "b1")
-    p1, p2 = _mk_user(db, "p1"), _mk_user(db, "p2")
-    _join(db, org_a, a1)
-    _join(db, org_a, a2)
-    _join(db, org_b, b1)
+    org_a = make_org(db, "A")
+    org_b = make_org(db, "B")
+    a1, a2, b1 = make_user(db, "a1"), make_user(db, "a2"), make_user(db, "b1")
+    p1, p2 = make_user(db, "p1"), make_user(db, "p2")
+    join(db, org_a, a1)
+    join(db, org_a, a2)
+    join(db, org_b, b1)
     return type(
         "World",
         (),

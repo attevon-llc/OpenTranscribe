@@ -37,6 +37,8 @@ def _token(user_id: int, *, expires_in: timedelta, revoked: bool = False) -> Ref
 
 
 def test_the_task_is_scheduled_daily_on_the_utility_queue():
+    # `include=` modules are imported lazily; a worker does this at start-up.
+    celery_app.loader.import_default_modules()
     entries = [e for e in celery_app.conf.beat_schedule.values() if e["task"] == TASK]
 
     assert len(entries) == 1

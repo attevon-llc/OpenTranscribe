@@ -26,7 +26,7 @@ from app.models.system_settings import SystemSettings
 logger = logging.getLogger(__name__)
 
 
-def _db_get_setting(db: Session, key: str, default: Any = None) -> str | None:
+def _db_get_setting(db: Session, key: str, default: str | None = None) -> str | None:
     """Read a single setting directly from the database (no cache).
 
     Used by the in-process settings cache on a miss; kept separate so the cache
@@ -35,11 +35,11 @@ def _db_get_setting(db: Session, key: str, default: Any = None) -> str | None:
     """
     setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
     if setting is None:
-        return default  # type: ignore[no-any-return]
+        return default
     return str(setting.value) if setting.value is not None else None
 
 
-def get_setting(db: Session, key: str, default: Any = None) -> str | None:
+def get_setting(db: Session, key: str, default: str | None = None) -> str | None:
     """
     Get a system setting by key.
 
@@ -60,7 +60,7 @@ def get_setting(db: Session, key: str, default: Any = None) -> str | None:
     """
     from app.core import settings_cache
 
-    return settings_cache.cached_get(db, key, default)  # type: ignore[no-any-return]
+    return settings_cache.cached_get(db, key, default)
 
 
 def get_setting_int(db: Session, key: str, default: int = 0) -> int:

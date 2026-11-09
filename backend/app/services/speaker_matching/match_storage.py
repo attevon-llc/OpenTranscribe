@@ -223,7 +223,8 @@ def perform_opensearch_query(
     if opensearch_client is None:
         logger.error("OpenSearch client is not available")
         return None
-    return opensearch_client.search(index=get_speaker_index(), body=query)  # type: ignore[no-any-return]
+    response: dict[str, Any] = opensearch_client.search(index=get_speaker_index(), body=query)
+    return response
 
 
 def find_and_store_speaker_matches(

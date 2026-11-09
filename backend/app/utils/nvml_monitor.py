@@ -12,7 +12,9 @@ from typing import NamedTuple
 
 logger = logging.getLogger(__name__)
 
-_nvml = None
+_nvml: ctypes.CDLL | None = None
+# Set once loading or init failed, so later calls do not retry a library that is not there.
+_nvml_unavailable = False
 # Handles are cached PER DEVICE. A single global handle meant the first caller's index
 # won every later query, so `update_gpu_stats` — the one caller that legitimately reads
 # more than one card (GPU_DEVICE_ID and GPU_SCALE_DEVICE_ID under --gpu-scale) — silently
@@ -45,8 +47,8 @@ def _ensure_init(device: int = 0) -> bool:
     also the same number as the CUDA ordinal, which is what lets callers pass
     `HardwareConfig.device_index` straight through.
     """
-    global _nvml
-    if _nvml is False:
+    global _nvml, _nvml_unavailable
+    if _nvml_unavailable:
         return False
 
     try:
@@ -63,7 +65,8 @@ def _ensure_init(device: int = 0) -> bool:
         return True
     except Exception as e:
         logger.debug(f"NVML init failed: {e}")
-        _nvml = False  # type: ignore[assignment]
+        _nvml = None
+        _nvml_unavailable = True
         _handles.clear()
         return False
 
@@ -73,12 +76,12 @@ def get_gpu_memory(device: int = 0) -> GpuMemory | None:
 
     Returns GpuMemory with total/used/free in MB, or None if unavailable.
     """
-    if not _ensure_init(device):
+    if not _ensure_init(device) or _nvml is None:
         return None
 
     try:
         mem = _NvmlMemory()
-        _nvml.nvmlDeviceGetMemoryInfo(_handles[device], ctypes.byref(mem))  # type: ignore[union-attr]
+        _nvml.nvmlDeviceGetMemoryInfo(_handles[device], ctypes.byref(mem))
         return GpuMemory(
             total_mb=mem.total / (1024**2),
             used_mb=mem.used / (1024**2),

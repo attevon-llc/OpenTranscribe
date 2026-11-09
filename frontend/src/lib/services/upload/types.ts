@@ -4,7 +4,7 @@ import type { MultipartPlan } from '$lib/services/multipartUploader';
 
 // Upload item types
 export type UploadType = 'file' | 'url' | 'recording' | 'extracted-audio';
-export type UploadStatus =
+type UploadStatus =
   | 'queued'
   | 'preparing'
   | 'uploading'

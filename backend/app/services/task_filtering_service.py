@@ -293,14 +293,14 @@ class TaskFilteringService:
         Returns:
             Human-readable status
         """
-        status = task.get("status", "unknown")
+        status = str(task.get("status", "unknown"))
         status_map = {
             "pending": "Pending",
             "in_progress": "In Progress",
             "completed": "Completed",
             "failed": "Failed",
         }
-        return status_map.get(status, status.title())  # type: ignore[no-any-return]
+        return status_map.get(status, status.title())
 
     @staticmethod
     def _needs_attention(task: dict[str, Any]) -> bool:

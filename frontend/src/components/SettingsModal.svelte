@@ -1,7 +1,6 @@
 <script lang="ts">
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy, tick } from 'svelte';
-  import i18next from 'i18next';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
   import InfoTip from '$components/settings/transcription/InfoTip.svelte';
   import { page } from '$app/state';
@@ -74,7 +73,7 @@
 
   // Import i18n
   import { t, locale } from '$stores/locale';
-  import { getErrorMessage, handleApiError } from '$lib/utils/apiError';
+  import { getErrorMessage } from '$lib/utils/apiError';
 
   /** The root layout shows the shell first when the chunk was still loading; skip the enter animation then. */
   export let skipEnter = false;

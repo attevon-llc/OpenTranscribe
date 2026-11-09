@@ -21,7 +21,7 @@ DEFAULT_FILE_NAME = "unnamed_file"
 THUMBNAIL_MAX_DIMENSION = 1280  # Longest edge - Full HD for crisp display on any screen
 THUMBNAIL_QUALITY_WEBP = 75  # WebP quality (replaces JPEG 85)
 THUMBNAIL_QUALITY_JPEG = 70  # JPEG fallback quality
-THUMBNAIL_FORMAT = "webp"  # Primary format
+THUMBNAIL_FORMAT: Final = "webp"  # Primary format
 
 # Speaker matching confidence thresholds
 SPEAKER_CONFIDENCE_HIGH = 0.75  # Auto-accept (green)

@@ -345,8 +345,14 @@ class TestAuditLogQueryExportAU6:
         # Should have logs array and total count
         assert "logs" in data or "error" in data
 
-    def test_audit_log_export_csv_format(self, client, super_admin_token_headers):
-        """Audit log export returns CSV — when the OpenSearch audit sink is enabled.
+    @pytest.mark.parametrize(
+        ("export_format", "content_type"),
+        [("csv", "text/csv"), ("json", "application/json")],
+    )
+    def test_audit_log_export_content_type(
+        self, client, super_admin_token_headers, export_format, content_type
+    ):
+        """Audit log export returns the requested format — when the OpenSearch audit sink is enabled.
 
         Was ``in [200, 400]``, which passed either way and so never verified the format at
         all. ``export_audit_logs`` returns 400 outright when ``AUDIT_LOG_TO_OPENSEARCH`` is
@@ -360,7 +366,7 @@ class TestAuditLogQueryExportAU6:
 
         response = client.get(
             "/api/admin/audit-logs/export",
-            params={"export_format": "csv"},
+            params={"export_format": export_format},
             headers=super_admin_token_headers,
         )
         if not settings.AUDIT_LOG_TO_OPENSEARCH:
@@ -370,34 +376,7 @@ class TestAuditLogQueryExportAU6:
                 "because savepoint rollback cannot undo OpenSearch writes"
             )
         assert response.status_code == 200, response.text
-        assert response.headers["content-type"].startswith("text/csv")
-
-    def test_audit_log_export_json_format(self, client, super_admin_token_headers):
-        """Audit log export returns JSON — when the OpenSearch audit sink is enabled.
-
-        Was ``in [200, 400]``, which passed either way and so never verified the format at
-        all. ``export_audit_logs`` returns 400 outright when ``AUDIT_LOG_TO_OPENSEARCH`` is
-        false (``admin.py:1754``), and the root conftest forces it false on purpose —
-        savepoint rollback cannot undo OpenSearch writes, so leaving it on would pollute the
-        live audit index. So the precondition is real and belongs in a visible skip, not in a
-        widened assertion: with the sink off this states plainly that it did not run, and with
-        it on it now checks the actual content type (issue #431).
-        """
-        from app.core.config import settings
-
-        response = client.get(
-            "/api/admin/audit-logs/export",
-            params={"export_format": "json"},
-            headers=super_admin_token_headers,
-        )
-        if not settings.AUDIT_LOG_TO_OPENSEARCH:
-            assert response.status_code == 400, response.text
-            pytest.skip(
-                "audit export requires AUDIT_LOG_TO_OPENSEARCH=true; conftest forces it off "
-                "because savepoint rollback cannot undo OpenSearch writes"
-            )
-        assert response.status_code == 200, response.text
-        assert response.headers["content-type"].startswith("application/json")
+        assert response.headers["content-type"].startswith(content_type)
 
     def test_audit_log_export_invalid_format_rejected(self, client, super_admin_token_headers):
         """Test that invalid export formats are rejected."""

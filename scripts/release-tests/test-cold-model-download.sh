@@ -213,7 +213,7 @@ if (( IMAGE_OVERRIDDEN || SCRIPT_OVERRIDDEN )) || [[ -n "${OT_RELEASE_TEST_ALLOW
     echo "UNVERIFIED (DOWNLOADER_IMAGE/DOWNLOADER_PY override or OT_RELEASE_TEST_ALLOW_STALE_IMAGE): $DOWNLOADER_IMAGE" \
         > "$TEST_ROOT/provenance.txt"
     gr_warn "image provenance UNVERIFIED — this run can report a failure but never a pass"
-elif ! git -C "$REPO_ROOT" diff --quiet HEAD -- scripts/download-models.py 2>/dev/null; then
+elif ! git -C "$REPO_ROOT" diff --quiet HEAD -- scripts/download-models.py scripts/model_download 2>/dev/null; then
     # The working-tree copy is what gets mounted, so an uncommitted edit would be rehearsed and
     # recorded as this commit's downloader.
     echo "UNVERIFIED (scripts/download-models.py differs from HEAD): $DOWNLOADER_IMAGE" \
@@ -221,8 +221,10 @@ elif ! git -C "$REPO_ROOT" diff --quiet HEAD -- scripts/download-models.py 2>/de
     gr_warn "scripts/download-models.py has uncommitted changes — this run can fail but never pass"
 elif ( gr_assert_image_is_the_code_under_test "$DOWNLOADER_IMAGE" \
         "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || true)" ); then
-    printf 'verified %s\ndownloader-blob %s\n' "$DOWNLOADER_IMAGE" \
-        "$(git -C "$REPO_ROOT" hash-object "$DOWNLOADER_PY")" > "$TEST_ROOT/provenance.txt"
+    printf 'verified %s\ndownloader-blob %s\ndownloader-package-tree %s\n' "$DOWNLOADER_IMAGE" \
+        "$(git -C "$REPO_ROOT" hash-object "$DOWNLOADER_PY")" \
+        "$(git -C "$REPO_ROOT" rev-parse "HEAD:scripts/model_download" 2>/dev/null || echo '?')" \
+        > "$TEST_ROOT/provenance.txt"
 else
     exit 3
 fi
@@ -301,6 +303,7 @@ CACHE_MOUNTS=(
     -v "$CACHE/opensearch-ml:/home/appuser/.cache/opensearch-ml"
     -v "$CACHE/diar-native:/models"
     -v "$DOWNLOADER_PY:/app/download-models.py:ro"
+    -v "$(dirname "$DOWNLOADER_PY")/model_download:/app/model_download:ro"
 )
 
 # One group: its log, then one `<group>\t<rc>\t<seconds>` row in groups/<group>.row. A group
@@ -396,7 +399,8 @@ hardlink_leg() {
     fi
     local rc=0 log="$TEST_ROOT/groups/nltk-hardlinked.log"
     run_in_image nltk-hardlinked "$PROBE_TIMEOUT_S" -v "$dst:/home/appuser/.cache/nltk_data" \
-        -v "$DOWNLOADER_PY:/app/download-models.py:ro" "$DOWNLOADER_IMAGE" \
+        -v "$DOWNLOADER_PY:/app/download-models.py:ro" \
+        -v "$(dirname "$DOWNLOADER_PY")/model_download:/app/model_download:ro" "$DOWNLOADER_IMAGE" \
         python /app/download-models.py --only nltk > "$log" 2>&1 || rc=$?
     local linked=0
     while IFS= read -r -d '' _; do linked=$(( linked + 1 )); done \

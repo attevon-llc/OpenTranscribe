@@ -32,7 +32,7 @@ _CLEANUP_DATA_SCRIPT = _REPO_ROOT / "scripts" / "cleanup-test-data.py"
 
 
 def _load_cleanup_data_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("cleanup_test_data", _CLEANUP_DATA_SCRIPT)
+    spec = importlib.util.spec_from_file_location("cleanup_test_data_entry", _CLEANUP_DATA_SCRIPT)
     assert spec is not None and spec.loader is not None, f"cannot load {_CLEANUP_DATA_SCRIPT}"
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

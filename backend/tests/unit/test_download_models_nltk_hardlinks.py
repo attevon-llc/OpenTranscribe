@@ -13,12 +13,13 @@ package server, a ``file://`` index in ``tmp_path`` instead of raw.githubusercon
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import os
 import zipfile
 from pathlib import Path
 
 import pytest
+
+from tests.unit._downloader_package import package_module
 
 nltk = pytest.importorskip("nltk")
 Downloader = pytest.importorskip("nltk.downloader").Downloader
@@ -39,17 +40,8 @@ PACKAGES = {
 
 @pytest.fixture
 def downloader():
-    """``download-models.py`` loaded as a module, with torch.load restored afterwards."""
-    torch = pytest.importorskip("torch")
-    saved_load, saved_empty_cache = torch.load, torch.mps.empty_cache
-    spec = importlib.util.spec_from_file_location("download_models_nltk_links", DOWNLOADER_PY)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        torch.load, torch.mps.empty_cache = saved_load, saved_empty_cache
+    """The downloader's ``nltk`` group module (``scripts/model_download/nltk.py``)."""
+    return package_module("nltk")
 
 
 def _local_package_server(server: Path) -> str:

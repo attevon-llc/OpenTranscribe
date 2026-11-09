@@ -46,7 +46,7 @@ def load_audio(file_path: str) -> np.ndarray:
 
     logger.info(f"Loading audio: {file_path}")
     try:
-        audio = decode_audio(file_path, sampling_rate=SAMPLE_RATE)
+        audio: np.ndarray = decode_audio(file_path, sampling_rate=SAMPLE_RATE)
     except Exception as e:
         raise ValueError(
             f"Unable to load audio content. The file may be corrupted, "
@@ -61,4 +61,4 @@ def load_audio(file_path: str) -> np.ndarray:
         raise ValueError("Audio file is too short to contain meaningful content")
 
     logger.info(f"Audio loaded: {duration:.1f}s ({len(audio)} samples)")
-    return audio  # type: ignore[no-any-return]
+    return audio

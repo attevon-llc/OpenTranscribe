@@ -249,9 +249,10 @@ def _broad_surface_names() -> frozenset[str]:
 
 def _reader_names() -> set[str]:
     """The direction-(a) reader set: base compose union config.py, real files."""
-    return _compose_vars(BASE_COMPOSE.read_text(encoding="utf-8")) | _config_py_vars(
-        CONFIG_PY.read_text(encoding="utf-8")
-    )
+    names = _compose_vars(BASE_COMPOSE.read_text(encoding="utf-8"))
+    for settings_file in (CONFIG_PY, *sorted(CONFIG_PY.parent.glob("settings_*.py"))):
+        names |= _config_py_vars(settings_file.read_text(encoding="utf-8"))
+    return names
 
 
 # ---------------------------------------------------------------------------------------------

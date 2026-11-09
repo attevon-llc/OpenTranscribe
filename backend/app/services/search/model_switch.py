@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from typing import cast
 
 from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 from app.core.exceptions import SearchIndexError
@@ -225,7 +224,7 @@ def apply_embedding_model_switch(model_name: str, triggered_by: int) -> dict[str
     from app.services.search.settings_service import save_search_embedding_model
 
     model_info = OPENSEARCH_EMBEDDING_MODELS[model_name]
-    dimension = cast(int, model_info["dimension"])
+    dimension = model_info["dimension"]
 
     ml_service = get_ml_model_service()
     model_id = ml_service.find_model_by_name(model_name)

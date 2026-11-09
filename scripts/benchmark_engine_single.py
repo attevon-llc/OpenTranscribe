@@ -15,7 +15,6 @@ Or from the host (if backend venv is active):
 from __future__ import annotations
 
 import argparse
-import csv
 import logging
 import socket
 import subprocess
@@ -27,6 +26,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
 from typing import Any
+
+from benchmark_table import print_table, write_csv
 
 logger = logging.getLogger(__name__)
 
@@ -163,14 +164,6 @@ def run_single(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _fmt_val(val: Any) -> str:
-    if val is None:
-        return '—'
-    if isinstance(val, bool):
-        return 'Y' if val else 'N'
-    return str(val)
-
-
 def print_run_summary(row: dict) -> None:
     print(
         f'  Run {row["run"]:>2}  |'
@@ -204,30 +197,6 @@ def print_aggregate(rows: list[dict]) -> None:
             f'  {max(vals):>7.3f}{unit}'
         )
     print()
-
-
-def print_table(rows: list[dict]) -> None:
-    widths = {col: len(col) for col in _COLUMNS}
-    for row in rows:
-        for col in _COLUMNS:
-            widths[col] = max(widths[col], len(_fmt_val(row.get(col))))
-
-    header = '  '.join(col.ljust(widths[col]) for col in _COLUMNS)
-    separator = '  '.join('-' * widths[col] for col in _COLUMNS)
-    print(header)
-    print(separator)
-    for row in rows:
-        line = '  '.join(_fmt_val(row.get(col)).ljust(widths[col]) for col in _COLUMNS)
-        print(line)
-
-
-def write_csv(rows: list[dict], output_path: Path) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open('w', newline='', encoding='utf-8') as fh:
-        writer = csv.DictWriter(fh, fieldnames=_COLUMNS, extrasaction='ignore')
-        writer.writeheader()
-        writer.writerows(rows)
-    logger.info('CSV written to %s', output_path)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -341,10 +310,10 @@ def main() -> int:
         return 1
 
     print()
-    print_table(rows)
+    print_table(rows, _COLUMNS)
     print_aggregate(rows)
 
-    write_csv(rows, Path(args.output))
+    write_csv(rows, Path(args.output), _COLUMNS)
     print(f'Completed {len(rows)}/{args.runs} run(s). CSV: {args.output}')
 
     return 0

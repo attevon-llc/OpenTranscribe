@@ -73,6 +73,7 @@ from contextlib import asynccontextmanager
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from typing import Any
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
@@ -390,9 +391,11 @@ def pinned_requests_session(target: PinnedTarget) -> Iterator[requests.Session]:
     from requests.adapters import HTTPAdapter
 
     class _PinnedAdapter(HTTPAdapter):
-        def init_poolmanager(self, *args: object, **kwargs: object) -> None:
-            kwargs["server_hostname"] = target.hostname
-            super().init_poolmanager(*args, **kwargs)  # type: ignore[arg-type]
+        def init_poolmanager(
+            self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any
+        ) -> None:
+            pool_kwargs["server_hostname"] = target.hostname
+            super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
 
     session = requests.Session()
     if target.pinned and target.scheme == "https":

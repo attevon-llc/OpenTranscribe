@@ -312,7 +312,7 @@ def _refuse_every_holder(monkeypatch):
     issue = PlanIssue(code="diarizer_config_missing", severity="error", step="diarization")
 
     def _assess(db, user_id, target, *, request=None, refused_steps=None):
-        return SwitchOutcome(plan=None, refusal=issue)  # type: ignore[arg-type]
+        return SwitchOutcome(plan=None, refusal=issue)
 
     monkeypatch.setattr("app.api.endpoints.asr_settings.assess_asr_switch", _assess)
 

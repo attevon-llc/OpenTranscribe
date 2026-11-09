@@ -29,9 +29,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._downloader_package import downloader_source
 from tests.unit._shell_extract import COMMON
 from tests.unit._shell_extract import DOWNLOADER
-from tests.unit._shell_extract import DOWNLOADER_PY
 from tests.unit._shell_extract import INSTALLER
 from tests.unit._shell_extract import MANAGER
 from tests.unit._shell_extract import REPO_ROOT
@@ -231,7 +231,7 @@ def test_every_model_category_is_announced():
     wrapper still advertised six items and "~2.9GB", while its own failure path
     treated anything under 10GB as a partial download.
     """
-    functions = set(re.findall(r"^def (download_\w+)", DOWNLOADER_PY.read_text(), re.MULTILINE))
+    functions = set(re.findall(r"^def (download_\w+)", downloader_source(), re.MULTILINE))
     announced = DOWNLOADER.read_text().lower()
 
     # Map each downloader function to a word that must appear in the wrapper's list.

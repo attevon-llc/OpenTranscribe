@@ -12,6 +12,7 @@ Performance Notes:
 """
 
 from typing import Any
+from typing import Protocol
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -34,7 +35,14 @@ from app.services.platform_bypass import PlatformBypass
 from app.utils.uuid_parse import parse_uuid_or_none
 
 
-def get_by_uuid[T](
+class UuidKeyed(Protocol):
+    """A mapped model with the hybrid-ID pair: internal integer ``id``, external ``uuid``."""
+
+    id: int
+    uuid: UUID
+
+
+def get_by_uuid[T: UuidKeyed](
     db: Session,
     model: type[T],
     uuid: UUID | str,
@@ -63,7 +71,7 @@ def get_by_uuid[T](
             raise InvalidInputError(f"Invalid UUID format: {uuid}") from None
 
     # Query by UUID
-    instance = db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined]
+    instance = db.query(model).filter_by(uuid=uuid).first()
 
     if not instance:
         model_name = model.__name__
@@ -73,7 +81,7 @@ def get_by_uuid[T](
     return instance
 
 
-def get_by_uuid_optional[T](
+def get_by_uuid_optional[T: UuidKeyed](
     db: Session,
     model: type[T],
     uuid: UUID | str | None,
@@ -99,10 +107,10 @@ def get_by_uuid_optional[T](
         except ValueError:
             return None
 
-    return db.query(model).filter(model.uuid == uuid).first()  # type: ignore[attr-defined]
+    return db.query(model).filter_by(uuid=uuid).first()
 
 
-def uuid_to_id[T](db: Session, model: type[T], uuid: UUID | str) -> int:
+def uuid_to_id[T: UuidKeyed](db: Session, model: type[T], uuid: UUID | str) -> int:
     """
     Convert UUID to internal integer ID.
 
@@ -120,7 +128,7 @@ def uuid_to_id[T](db: Session, model: type[T], uuid: UUID | str) -> int:
         DomainError: 404 if not found
     """
     instance = get_by_uuid(db, model, uuid)
-    return int(instance.id)  # type: ignore[attr-defined]
+    return int(instance.id)
 
 
 def validate_uuids(uuids: list[str]) -> list[UUID]:

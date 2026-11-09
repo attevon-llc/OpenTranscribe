@@ -25,6 +25,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._downloader_package import PACKAGE_DIR
+from tests.unit._downloader_package import downloader_source
+from tests.unit._downloader_package import package_files
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOWNLOADER_PY = REPO_ROOT / "scripts" / "download-models.py"
 NATIVE_PROVISION_PY = REPO_ROOT / "backend" / "app" / "transcription" / "native_provision.py"
@@ -61,7 +65,7 @@ def _module_level_assigned_names(script: Path) -> set[str]:
 
 def test_diar_native_delegates_to_the_canonical_implementation():
     """download_diar_native_models() must call ensure_native_models, not shell out itself."""
-    source = _function_source(DOWNLOADER_PY, "download_diar_native_models")
+    source = _function_source(PACKAGE_DIR / "diar_native.py", "download_diar_native_models")
 
     assert "ensure_native_models" in source, (
         "download_diar_native_models() no longer calls "
@@ -88,7 +92,7 @@ def test_diar_native_does_not_reimplement_diar_server_invocation():
     timeout instead of ``DIAR_NATIVE_PROVISION_TIMEOUT_S``, and a remedy table with no
     ``--lite`` awareness.
     """
-    source = DOWNLOADER_PY.read_text()
+    source = downloader_source()
 
     # Each snippet is something ONLY a direct diar-server invocation would need; none of
     # them have any other legitimate reason to appear in this file post-delegation.
@@ -120,7 +124,9 @@ def test_diar_native_does_not_redefine_native_provisions_constants():
         "sanity check failed: no EXIT_* constants found in native_provision.py"
     )
 
-    downloader_names = _module_level_assigned_names(DOWNLOADER_PY)
+    downloader_names = set().union(
+        *(_module_level_assigned_names(p) for p in [DOWNLOADER_PY, *package_files()])
+    )
 
     # A prior fork mirrored each canonical name with a "_DIAR_" prefix (EXIT_TOKEN_DENIED ->
     # _DIAR_EXIT_TOKEN_DENIED) plus two more of its own (_DIAR_REMEDY, _DIAR_PROVISION_TIMEOUT_S).
@@ -161,7 +167,7 @@ def test_diar_native_lite_comment_is_not_false():
     the correct, present-tense framing (issue #654) -- rather than an assertion that lite
     skips something.
     """
-    source = DOWNLOADER_PY.read_text()
+    source = downloader_source()
     lowered = source.lower()
     assert "no diar-server binary" not in lowered, (
         "download-models.py still claims the lite image lacks the diar-server binary -- "

@@ -61,7 +61,7 @@ def _bypass() -> bool:
     return os.environ.get("TESTING", "").lower() == "true"
 
 
-def cached_get(db: Any, key: str, default: Any = None) -> Any:
+def cached_get(db: Any, key: str, default: str | None = None) -> str | None:
     """Return a system setting, served from the in-process TTL cache.
 
     On a miss the value is fetched from the database via the service layer and

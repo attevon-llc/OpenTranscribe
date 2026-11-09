@@ -86,6 +86,53 @@ class _Db(Session):
         pass
 
 
+class TestDisplayName:
+    """A new account gets a readable name; an existing account is never renamed."""
+
+    @staticmethod
+    def _gov(cn: str) -> PKIUserData:
+        data = _data(is_admin=False)
+        data["common_name"] = cn
+        data["subject_dn"] = f"CN={cn},O=U.S. Government,C=US"
+        return data
+
+    def _created(self, data: PKIUserData) -> User:
+        with patch("app.auth.approval.initial_approval_status", return_value="pending"):
+            return pki_provisioning._create_pki_user(_Db(), data)
+
+    def test_new_cac_user_gets_a_readable_name(self):
+        user = self._created(self._gov("DOE.JOHN.Q.1234567890"))
+        assert user.full_name == "John Q. Doe"
+        assert user.pki_common_name == "DOE.JOHN.Q.1234567890"
+
+    def test_plain_common_name_is_kept_as_is(self):
+        assert self._created(_data(is_admin=False)).full_name == "Pat Person"
+
+    @pytest.mark.parametrize(
+        ("cn", "expected"),
+        [
+            ("SMITH.JOHN.W.1234567890", "John W. Smith"),
+            ("JONES.JANE.M", "Jane M. Jones"),
+            ("Mary Ann Smith", "Mary Ann Smith"),
+            ("Madonna", "Madonna"),
+            ("Doe John jdoe", "Doe John jdoe"),
+        ],
+    )
+    def test_only_the_government_pattern_is_transformed(self, cn, expected):
+        assert self._created(self._gov(cn)).full_name == expected
+
+    def test_existing_user_is_never_renamed(self):
+        user = _user(ROLE_USER)
+        user.full_name = "Chosen Name"
+        data = self._gov("DOE.JOHN.Q.1234567890")
+        pki_provisioning._update_pki_user(_Db(), user, data)
+        assert user.full_name == "Chosen Name"
+        local = _user(ROLE_USER, auth_type="local")
+        local.full_name = "Local Name"
+        pki_provisioning._convert_local_user_to_pki(_Db(), local, data)
+        assert local.full_name == "Local Name"
+
+
 @pytest.mark.parametrize("update", ["_update_pki_user", "_convert_local_user_to_pki"])
 class TestRoleDerivation:
     def _run(self, update, role, is_admin):

@@ -24,6 +24,7 @@ from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
+from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -489,7 +490,7 @@ class PyAnnoteProvider(ASRProvider):
             # Compute average confidence from words if available.
             avg_confidence: float | None = None
             if turn_words:
-                avg_confidence = sum(w.confidence for w in turn_words) / len(turn_words)
+                avg_confidence = mean_word_confidence(turn_words)
 
             segments.append(
                 ASRSegment(

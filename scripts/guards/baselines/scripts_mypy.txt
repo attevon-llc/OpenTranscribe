@@ -1,4 +1,3 @@
-scripts/audit_tests/cli.py::no-any-return	1	mypy errors in the scripts/ tooling packages when they were first type-checked; fixed lane by lane, the baseline only shrinks
 scripts/audit_tests/patching.py::assignment	1	mypy errors in the scripts/ tooling packages when they were first type-checked; fixed lane by lane, the baseline only shrinks
 scripts/audit_tests/vacuous.py::operator	37	mypy errors in the scripts/ tooling packages when they were first type-checked; fixed lane by lane, the baseline only shrinks
 scripts/lib/manifest_platform_check.py::no-any-return	1	mypy errors in the scripts/ tooling packages when they were first type-checked; fixed lane by lane, the baseline only shrinks

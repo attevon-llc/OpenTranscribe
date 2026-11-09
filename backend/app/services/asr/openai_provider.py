@@ -35,12 +35,19 @@ import math
 import os
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from .base import ASRProvider
 from .base import normalize_speaker_label
 from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
+
+if TYPE_CHECKING:
+    from openai.types.audio import Transcription
+    from openai.types.audio import TranscriptionDiarized
+    from openai.types.audio import TranscriptionVerbose
+    from openai.types.audio import TranslationVerbose
 
 logger = logging.getLogger(__name__)
 _MAX_MB = 25
@@ -88,8 +95,10 @@ class OpenAIASRProvider(ASRProvider):
         progress_callback: Callable[[float, str], None] | None = None,
     ) -> ASRResult:
         try:
+            from openai import Omit
             from openai import OpenAI
             from openai import RateLimitError
+            from openai import omit
         except ImportError as err:
             raise RuntimeError("openai not installed. Run: pip install openai") from err
 
@@ -115,11 +124,12 @@ class OpenAIASRProvider(ASRProvider):
         )
 
         client = OpenAI(api_key=self._api_key)
-        lang = None if config.language == "auto" else config.language
+        lang: str | Omit = omit if config.language == "auto" else config.language
 
         if progress_callback:
             progress_callback(0.2, f"Transcribing with OpenAI {self._model_name}…")
 
+        resp: Transcription | TranscriptionDiarized | TranscriptionVerbose | TranslationVerbose
         try:
             with open(audio_path, "rb") as af:
                 if self._model_name == "whisper-1" and config.translate_to_english:
@@ -128,7 +138,7 @@ class OpenAIASRProvider(ASRProvider):
                     )
                 elif self._model_name == "whisper-1":
                     # language may be None (auto-detect); SDK stub types it as str | Omit
-                    resp = client.audio.transcriptions.create(  # type: ignore[call-overload]
+                    resp = client.audio.transcriptions.create(
                         model="whisper-1",
                         file=af,
                         language=lang,
@@ -137,7 +147,7 @@ class OpenAIASRProvider(ASRProvider):
                 elif self._model_name == "gpt-4o-transcribe-diarize":
                     # diarized_json is the only response_format that returns speaker
                     # labels for this model; verbose_json is explicitly rejected.
-                    resp = client.audio.transcriptions.create(  # type: ignore[call-overload]
+                    resp = client.audio.transcriptions.create(
                         model=self._model_name,
                         file=af,
                         language=lang,
@@ -149,7 +159,7 @@ class OpenAIASRProvider(ASRProvider):
                     # with model ...") -- only "json" is supported. That response
                     # has no `segments`/`avg_logprob`, which the parsing below
                     # already handles via its no-segments fallback.
-                    resp = client.audio.transcriptions.create(  # type: ignore[call-overload]
+                    resp = client.audio.transcriptions.create(
                         model=self._model_name,
                         file=af,
                         language=lang,

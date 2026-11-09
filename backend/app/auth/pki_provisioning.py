@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from typing import TYPE_CHECKING
 
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.pki_auth import PKI_ASSERTS_EMAIL_VERIFIED
 from app.auth.pki_certificate import PKIUserData
+from app.auth.pki_certificate import extract_display_name_from_gov_dn
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
@@ -27,6 +29,20 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+# The documented government CN shape: LAST.FIRST[.MIDDLE][.NUMERIC-ID], dot-separated, no spaces.
+_GOV_DOTTED_CN = re.compile(r"[A-Za-z]+\.[A-Za-z]+(?:\.[A-Za-z]*)?(?:\.\d+)?")
+
+
+def _display_name(pki_data: PKIUserData, email: str) -> str:
+    """Readable name for a NEW account (existing accounts are never renamed)."""
+    common_name = pki_data["common_name"]
+    if not common_name:
+        return email.split("@")[0]
+    if not _GOV_DOTTED_CN.fullmatch(common_name):
+        return common_name  # an ordinary name is kept exactly as the certificate gives it
+    return extract_display_name_from_gov_dn(f"CN={common_name}")
 
 
 def _create_pki_user(db: Session, pki_data: PKIUserData) -> User:
@@ -76,7 +92,7 @@ def _create_pki_user(db: Session, pki_data: PKIUserData) -> User:
     role = ROLE_ADMIN if pki_data["is_admin"] else ROLE_USER
     user = User(
         email=email,
-        full_name=pki_data["common_name"] or email.split("@")[0],
+        full_name=_display_name(pki_data, email),
         hashed_password=EXTERNAL_AUTH_NO_PASSWORD,
         auth_type=AUTH_TYPE_PKI,
         pki_subject_dn=subject_dn,

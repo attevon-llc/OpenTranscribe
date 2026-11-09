@@ -41,48 +41,18 @@ from app.models.custom_vocabulary import CustomVocabulary
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
-from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
 from app.models.topic import TopicSuggestion
 from app.models.usage_event import UsageEvent
 from app.models.user import User
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
+from tests.fixtures.tag_world import join
+from tests.fixtures.tag_world import make_org
+from tests.fixtures.tag_world import make_user
 
 # --------------------------------------------------------------------------- #
 # World                                                                        #
 # --------------------------------------------------------------------------- #
-
-
-def _mk_user(db, label: str) -> User:
-    user = User(
-        email=f"{label}_{uuid_pkg.uuid4().hex[:8]}@example.com",
-        full_name=f"{label} user",
-        hashed_password="x",
-        is_active=True,
-        is_superuser=False,
-        role="user",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _mk_org(db, label: str) -> Organization:
-    org = Organization(
-        external_org_id=f"org_{label}_{uuid_pkg.uuid4().hex[:8]}",
-        name=f"{label} Org",
-        is_active=True,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-def _join(db, org: Organization, user: User, role: str = "org:member") -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role=role))
-    db.commit()
 
 
 def _mk_file(
@@ -134,13 +104,13 @@ def _acting_as(user: User, org_id: int | None, org_role: str | None = "org:membe
 def world(db_session):
     """Org A and org B, alice a member of both, bob a member of org A only."""
     db = db_session
-    org_a = _mk_org(db, "A")
-    org_b = _mk_org(db, "B")
-    alice = _mk_user(db, "alice")
-    bob = _mk_user(db, "bob")
-    _join(db, org_a, alice)
-    _join(db, org_b, alice)
-    _join(db, org_a, bob)
+    org_a = make_org(db, "A")
+    org_b = make_org(db, "B")
+    alice = make_user(db, "alice")
+    bob = make_user(db, "bob")
+    join(db, org_a, alice)
+    join(db, org_b, alice)
+    join(db, org_a, bob)
     return type("World", (), {"db": db, "org_a": org_a, "org_b": org_b, "alice": alice, "bob": bob})
 
 

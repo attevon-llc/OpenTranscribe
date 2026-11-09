@@ -39,8 +39,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._downloader_package import downloader_source
+from tests.unit._downloader_package import package_files
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_DOWNLOAD_SCRIPT = _REPO_ROOT / "scripts" / "download-models.py"
+_DOWNLOAD_SCRIPT = _REPO_ROOT / "scripts" / "download-models.py"  # + scripts/model_download/
 
 #: Measured on opensearch 3.4.0, 2026-08-18. A model here is one that registered,
 #: deployed AND returned its declared dimension from a real prediction.
@@ -93,7 +96,7 @@ def _download_script_models() -> set[str]:
     CPU-only CI image does not carry, and importing it would run its patching side
     effects. The names appear as `huggingface/sentence-transformers/<short>` literals.
     """
-    source = _DOWNLOAD_SCRIPT.read_text(encoding="utf-8")
+    source = downloader_source()
     return set(re.findall(r"huggingface/sentence-transformers/([\w.-]+)", source))
 
 
@@ -168,5 +171,7 @@ def test_the_download_script_is_parseable_and_names_models() -> None:
     matches nothing reports zero findings and reads exactly like a clean tree.
     """
     ast.parse(_DOWNLOAD_SCRIPT.read_text(encoding="utf-8"))
+    for module in package_files():
+        ast.parse(module.read_text(encoding="utf-8"))
     found = _download_script_models()
     assert len(found) >= 4, f"parsed only {found} from download-models.py — check the pattern"

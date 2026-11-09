@@ -64,6 +64,25 @@ def test_every_listed_path_exists():
     assert not missing, f"release-manifest.txt lists paths that do not exist: {missing}"
 
 
+def test_every_model_download_package_file_is_listed():
+    """download-models.py imports scripts/model_download/*.py at run time.
+
+    A package file missing from the manifest is absent from every installed tree, so the
+    downloader dies with ModuleNotFoundError for every user on that tag. The check globs
+    the directory (never a hand-copied list), so a new module fails here until it is listed.
+    """
+    listed = {path for path, _ in _entries()}
+    package = sorted(
+        p.relative_to(REPO_ROOT).as_posix()
+        for p in (REPO_ROOT / "scripts" / "model_download").rglob("*.py")
+    )
+    assert len(package) >= 10, f"scripts/model_download/ looks empty: {package}"
+    assert not [p for p in package if p not in listed], (
+        f"scripts/model_download files missing from release-manifest.txt: "
+        f"{[p for p in package if p not in listed]}"
+    )
+
+
 def test_flags_are_known():
     known = {"optional", "exec", "preserve"}
     bad = {path: sorted(flags - known) for path, flags in _entries() if not flags <= known}

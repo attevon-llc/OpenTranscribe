@@ -103,7 +103,14 @@ KNOWN_GROUPS = frozenset({'whisperx', 'nltk', 'opensearch', 'diar-native', *HF_R
 
 
 def downloader_groups(script: Path) -> list[str]:
-    """Return the keys of DOWNLOAD_GROUPS in download-models.py, in declaration order."""
+    """Return the keys of DOWNLOAD_GROUPS in declaration order.
+
+    The table lives in the ``model_download`` package beside the entry script; a bare script
+    with no sibling package (as the unit tests write) is read directly.
+    """
+    package_groups = script.parent / 'model_download' / 'groups.py'
+    if package_groups.is_file():
+        script = package_groups
     tree = ast.parse(script.read_text(), filename=str(script))
     for node in tree.body:
         targets = node.targets if isinstance(node, ast.Assign) else []

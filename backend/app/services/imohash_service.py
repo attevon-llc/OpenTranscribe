@@ -32,7 +32,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import BinaryIO
+from typing import Protocol
 
 from imohash import hashfile
 from imohash import hashfileobject
@@ -49,7 +49,17 @@ SAMPLE_SIZE = 16 * 1024
 SAMPLE_THRESHOLD = 128 * 1024
 
 
-def compute_from_stream(stream: BinaryIO, size: int | None = None) -> str:
+class SeekableReader(Protocol):
+    """The part of a binary file object the imohash sampling reads through."""
+
+    def seek(self, offset: int, whence: int = ..., /) -> int: ...
+
+    def tell(self) -> int: ...
+
+    def read(self, n: int = ..., /) -> bytes: ...
+
+
+def compute_from_stream(stream: SeekableReader, size: int | None = None) -> str:
     """Fingerprint a file given an open binary stream.
 
     Args:
@@ -170,7 +180,7 @@ def compute_from_minio(object_name: str, size: int | None = None) -> str | None:
             return None
 
         reader = _MinioRangeReader(object_name, size)
-        return compute_from_stream(reader)  # type: ignore[arg-type]  # duck-typed seekable
+        return compute_from_stream(reader)  # duck-typed seekable
     except S3Error as e:
         logger.error(f"Storage outage computing imohash for {object_name}: {e}")
         raise

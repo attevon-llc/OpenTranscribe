@@ -525,7 +525,7 @@ RAW_READ_OF_SETTINGS_FIELD_ALLOWED: dict[str, str] = {}
 
 def _raw_env_reads_outside_config() -> dict[str, set[str]]:
     """``{relative path: names}`` read through an env call anywhere but config.py / env.py."""
-    sanctioned = {CONFIG_PY, APP_DIR / "core" / "env.py"}
+    sanctioned = {CONFIG_PY, *_settings_mixin_files(), APP_DIR / "core" / "env.py"}
     found: dict[str, set[str]] = {}
     for path in APP_DIR.rglob("*.py"):
         if path in sanctioned:

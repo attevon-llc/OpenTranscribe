@@ -271,6 +271,7 @@ download_models() {
         -v "${temp_model_cache}/opensearch-ml:/home/appuser/.cache/opensearch-ml" \
         -v "${temp_model_cache}/diar-native:/models" \
         -v "$(pwd)/scripts/download-models.py:/app/download-models.py" \
+        -v "$(pwd)/scripts/model_download:/app/model_download" \
         davidamacey/opentranscribe-backend:latest \
         python /app/download-models.py
 

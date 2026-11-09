@@ -18,6 +18,7 @@ from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import Label
 
 from app.models.media import MediaFile
 from app.models.media import Task
@@ -127,14 +128,14 @@ def get_user_stats(db: Session, *, include_breakdown: bool = False) -> dict[str,
             "new": row.new,
         }
     else:
-        row = db.query(  # type: ignore[assignment]
+        new_row = db.query(
             func.count().label("total"),
             func.count().filter(User.created_at >= seven_days_ago).label("new"),
         ).first()
-        if not row:
+        if not new_row:
             return {"total": 0, "new": 0}
 
-        return {"total": row.total, "new": row.new}
+        return {"total": new_row.total, "new": new_row.new}
 
 
 def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> dict[str, Any]:
@@ -154,7 +155,7 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
 
     seven_days_ago = datetime.now(UTC) - timedelta(days=7)
 
-    columns = [
+    columns: list[Label[Any]] = [
         func.count().label("total"),
         func.count().filter(MediaFile.upload_time >= seven_days_ago).label("new"),
         func.coalesce(func.sum(MediaFile.duration), 0).label("total_duration"),
@@ -177,7 +178,7 @@ def get_file_stats(db: Session, *, include_status_breakdown: bool = False) -> di
             ]
         )
 
-    row = db.query(*columns).first()  # type: ignore[call-overload]
+    row = db.query(*columns).first()
 
     # Segment and speaker tables reach millions of rows: an exact count is a ~700 ms scan per
     # poll (#1337 A1), so large tables report the planner's estimate and say so.

@@ -31,49 +31,19 @@ from typing import Any
 import pytest
 
 from app.models.organization import Organization
-from app.models.organization import OrganizationMembership
 from app.models.prompt import SummaryPrompt
 from app.models.prompt import UserSetting
 from app.models.user import User
 from app.models.user_asr_settings import UserASRSettings
 from app.models.user_llm_settings import UserLLMSettings
 from app.models.user_media_source import UserMediaSource
+from tests.fixtures.tag_world import join
+from tests.fixtures.tag_world import make_org
+from tests.fixtures.tag_world import make_user
 
 # --------------------------------------------------------------------------- #
 # World                                                                        #
 # --------------------------------------------------------------------------- #
-
-
-def _mk_user(db, label: str) -> User:
-    user = User(
-        email=f"{label}_{uuid_pkg.uuid4().hex[:8]}@example.com",
-        full_name=f"{label} user",
-        hashed_password="x",
-        is_active=True,
-        is_superuser=False,
-        role="user",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _mk_org(db, label: str) -> Organization:
-    org = Organization(
-        external_org_id=f"org_{label}_{uuid_pkg.uuid4().hex[:8]}",
-        name=f"{label} Org",
-        is_active=True,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-def _join(db, org: Organization, user: User) -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role="org:member"))
-    db.commit()
 
 
 @dataclass
@@ -90,11 +60,11 @@ class World:
 @pytest.fixture()
 def world(db_session) -> World:
     db = db_session
-    org_a, org_b = _mk_org(db, "A"), _mk_org(db, "B")
-    users = {name: _mk_user(db, name) for name in ("a1", "a2", "b1", "p1", "p2")}
-    _join(db, org_a, users["a1"])
-    _join(db, org_a, users["a2"])
-    _join(db, org_b, users["b1"])
+    org_a, org_b = make_org(db, "A"), make_org(db, "B")
+    users = {name: make_user(db, name) for name in ("a1", "a2", "b1", "p1", "p2")}
+    join(db, org_a, users["a1"])
+    join(db, org_a, users["a2"])
+    join(db, org_b, users["b1"])
     return World(db=db, org_a=org_a, org_b=org_b, users=users)
 
 
@@ -607,7 +577,7 @@ def test_shared_prompt_library_scoped(client, world, viewer, tenant, owner, expe
 
 def test_prompt_stamped_for_another_org_stays_there(client, world):
     """An owner in two organizations shares a prompt stamped for B: A never sees it."""
-    _join(world.db, world.org_b, world.users["a1"])
+    join(world.db, world.org_b, world.users["a1"])
     prompt_uuid = _share_prompt(world.db, world.users["a1"], org_id=world.org_b.id)
     with _acting_as(world.users["a2"], world.org_a.id):
         assert prompt_uuid not in _prompt_listed(client)

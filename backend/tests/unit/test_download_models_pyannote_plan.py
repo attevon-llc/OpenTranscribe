@@ -16,9 +16,7 @@ Three properties:
 from __future__ import annotations
 
 import ast
-import importlib.util
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -27,6 +25,8 @@ from app.services.embedding_mode_service import MODE_V3
 from app.services.embedding_mode_service import MODE_V4
 from app.services.embedding_mode_service import EmbeddingModeService
 from app.transcription import diarizer
+from tests.unit._downloader_package import PACKAGE_DIR
+from tests.unit._downloader_package import package_module
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOWNLOADER_PY = REPO_ROOT / "scripts" / "download-models.py"
@@ -51,18 +51,8 @@ IN_PROCESS_LOAD_SITES = {
 
 @pytest.fixture
 def downloader():
-    """``download-models.py`` loaded as a module (torch.load restored if torch is present)."""
-    torch: Any = importlib.import_module("torch") if importlib.util.find_spec("torch") else None
-    saved = (torch.load, torch.mps.empty_cache) if torch is not None else None
-    spec = importlib.util.spec_from_file_location("download_models_plan", DOWNLOADER_PY)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-        yield module
-    finally:
-        if torch is not None and saved is not None:
-            torch.load, torch.mps.empty_cache = saved
+    """The downloader's ``pyannote`` group module (``scripts/model_download/pyannote.py``)."""
+    return package_module("pyannote")
 
 
 def test_plan_names_every_in_process_model(downloader):
@@ -139,7 +129,7 @@ def test_pipeline_config_dependencies_are_read_from_the_snapshot(downloader, tmp
 
 
 def test_pyannote_group_runs_no_inference_and_never_imports_whisperx():
-    tree = ast.parse(DOWNLOADER_PY.read_text())
+    tree = ast.parse((PACKAGE_DIR / "pyannote.py").read_text())
     functions = {
         node.name: node
         for node in tree.body

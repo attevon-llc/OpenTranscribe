@@ -1656,6 +1656,21 @@ fresh_write_aux() {
   fi
 }
 
+# Hand the --with-watch folder to the container user. WATCH_HOST_PATH comes from the
+# operator's environment and the chown is recursive, so a mistyped value (`/`, `$HOME`,
+# `/mnt`) would re-own a whole tree. Refuse anything that resolves to the filesystem root,
+# $HOME, or a top-level directory; the folder must sit at least two levels deep.
+chown_watch_folder() {
+  local dir="$1" real
+  real="$(cd "$dir" 2>/dev/null && pwd -P)" || return 0
+  if [ -z "$real" ] || [ "$real" = "/" ] || [ "$real" = "${HOME:-/}" ] || [[ "${real#/}" != */* ]]; then
+    echo "⚠️  Not changing ownership of WATCH_HOST_PATH='$dir' (resolves to '$real'): too broad." >&2
+    echo "   Point WATCH_HOST_PATH at a dedicated folder, e.g. ./watch." >&2
+    return 0
+  fi
+  chown -R "${CONTAINER_UID_GID:-1000:999}" "$real" 2>/dev/null || true
+}
+
 # The compose project THIS invocation will use -- exactly what compose itself resolves:
 # an explicit COMPOSE_PROJECT_NAME, else the directory basename.
 #
@@ -2980,7 +2995,7 @@ start_app() {
       # Match the non-root container user so imports can read/write. appuser is
       # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
       # bit is what the import path needs, but keep the GID honest.
-      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
+      chown_watch_folder "$WATCH_HOST_PATH"
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -3621,7 +3636,7 @@ reset_and_init() {
       # Match the non-root container user so imports can read/write. appuser is
       # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
       # bit is what the import path needs, but keep the GID honest.
-      chown -R "${CONTAINER_UID_GID:-1000:999}" "$WATCH_HOST_PATH" 2>/dev/null || true
+      chown_watch_folder "$WATCH_HOST_PATH"
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -4367,7 +4382,10 @@ case "$1" in
       if [ -n "$(docker ps --filter "name=^${container}$" --filter "status=running" -q)" ]; then
         echo "🎯 ${gpu_service} is active — rebuilding it too"
         # shellcheck disable=SC2086
-        COMPOSE_PROFILES="$gpu_profile" docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"
+        if ! COMPOSE_PROFILES="$gpu_profile" docker compose $COMPOSE_FILES up -d --build --no-deps "$gpu_service"; then
+          echo "❌ Rebuild of ${gpu_service} failed -- it is still running the OLD image. See the output above."
+          exit 1
+        fi
       fi
     done
 
@@ -4522,7 +4540,10 @@ case "$1" in
         echo ""
         echo "🚀 Starting bench stack on $TARGET_BRANCH (no NAS, fresh volumes)..."
         # shellcheck disable=SC2086
-        docker compose $BENCH_COMPOSE up -d --build
+        if ! docker compose $BENCH_COMPOSE up -d --build; then
+          echo "❌ Bench stack failed to build/start -- see the output above."
+          exit 1
+        fi
 
         echo ""
         echo "⏳ Waiting for bench backend to become healthy..."
@@ -4675,16 +4696,22 @@ case "$1" in
         # unrelated content changes).
         echo "🚀 Building bench stack from current branch (backend + infra only)..."
         # shellcheck disable=SC2086
-        docker compose $BENCH_COMPOSE build \
+        if ! docker compose $BENCH_COMPOSE build \
           backend celery-worker celery-download-worker celery-cpu-worker \
           celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
-          celery-beat flower
+          celery-beat flower; then
+          echo "❌ Bench image build failed -- not starting the stack on stale images."
+          exit 1
+        fi
         # shellcheck disable=SC2086
-        docker compose $BENCH_COMPOSE up -d --no-build \
+        if ! docker compose $BENCH_COMPOSE up -d --no-build \
           postgres redis minio opensearch \
           backend celery-worker celery-download-worker celery-cpu-worker \
           celery-redaction celery-cloud-asr-worker celery-nlp-worker celery-embedding-worker \
-          celery-beat flower
+          celery-beat flower; then
+          echo "❌ Bench stack failed to start -- see the output above."
+          exit 1
+        fi
 
         echo ""
         echo "⏳ Waiting for bench stack to be ready (DB migrations, model pre-load)..."

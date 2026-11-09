@@ -419,10 +419,20 @@ fix_pipeline_scratch_permissions() {
     return 0
   fi
 
-  # Resolve the actual volume name (docker-compose prefixes with project
-  # name; matching on the suffix keeps this portable across checkouts).
-  local vol
-  vol=$(docker volume ls --format '{{.Name}}' 2>/dev/null | grep -E '_pipeline_scratch$' | head -1)
+  # Resolve THIS project's volume by compose labels. A suffix match across all volumes
+  # picked the first `*_pipeline_scratch` of ANY project (a --fresh stack, a rehearsal
+  # stack) and chowned it. Unknown project => do nothing rather than guess.
+  local vol project
+  if ! declare -F ot_compose_project > /dev/null; then
+    return 0
+  fi
+  project=$(ot_compose_project)
+  if [ -z "$project" ]; then
+    return 0
+  fi
+  vol=$(docker volume ls -q \
+    --filter "label=com.docker.compose.project=${project}" \
+    --filter "label=com.docker.compose.volume=pipeline_scratch" 2>/dev/null | head -1)
 
   if [ -z "$vol" ]; then
     # Volume not created yet — will be picked up on next invocation after
@@ -1090,8 +1100,13 @@ pg_restore_restart_decision() {
 # migrate itself. No-op on pre-0.7.0 compose files, whose API still migrates on startup.
 # $1 = "-f a.yml -f b.yml"; returns the step's exit code (1 failed, 3 lock wait, 4 no database).
 compose_run_migrate() {
+  # Captured, not piped into `grep -q`: under the caller's pipefail, grep exiting on the
+  # first match can SIGPIPE `compose config` (141) and read a match as "no migrate service",
+  # silently skipping the migration.
+  local services
   # shellcheck disable=SC2086
-  docker compose $1 config --services 2>/dev/null | grep -qx migrate || return 0
+  services=$(docker compose $1 config --services 2>/dev/null) || return 0
+  grep -qx migrate <<< "$services" || return 0
   echo "🗄️  Running database migrations (one-shot migrate step)..."
   # shellcheck disable=SC2086
   docker compose $1 run --rm --no-deps migrate && return 0
@@ -1366,7 +1381,7 @@ backup_database() {
   else
     echo "📦 Creating database backup: ${BACKUP_FILE}..."
     # shellcheck disable=SC2086
-    if docker compose $compose_files exec -T postgres pg_dump -U "$db_user" "$db_name" > "./backups/${BACKUP_FILE}"; then
+    if (umask 077; docker compose $compose_files exec -T postgres pg_dump -U "$db_user" "$db_name" > "./backups/${BACKUP_FILE}"); then
       echo "✅ Backup created successfully: ./backups/${BACKUP_FILE}"
       echo "ℹ️  Tip: backups contain all user transcripts in plaintext - use '$frontend_cmd backup --encrypt' for off-box storage."
     else
@@ -1391,7 +1406,8 @@ backup_database() {
   echo "🗣️  Exporting speaker voiceprints from OpenSearch..."
   # The prefix is built as ONE quoted string here and word-split inside _voiceprint_run,
   # the same exec-prefix contract the pg primitives use.
-  if ! os_export_speaker_indices "docker compose $compose_files exec -T opensearch" "$voiceprint_file"; then
+  # Owner-only: biometric data. Subshell so the umask does not leak to the caller.
+  if ! (umask 077; os_export_speaker_indices "docker compose $compose_files exec -T opensearch" "$voiceprint_file"); then
     echo "❌ Voiceprint export failed — this backup is INCOMPLETE."
     echo "   The database dump itself succeeded and is at ${dump_display},"
     echo "   but speaker voiceprints live ONLY in OpenSearch and are not in it. Bring OpenSearch"

@@ -56,6 +56,8 @@ def test_config_command_masks_credentials_but_shows_the_rest(tmp_path):
             "BLUE=; NC=",
             "check_environment() { :; }",
             "docker() { return 0; }",
+            "apply_deployment_pins() { :; }",
+            "get_compose_files() { echo '-f docker-compose.yml'; }",
             extract_function(MANAGER, "cmd_config"),
             "cmd_config",
         ]

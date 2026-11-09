@@ -2,7 +2,7 @@
 
 ``org.policy.change`` and the two purge events are stamped with the organization, so they
 appear in its admin's audit log and in the event filter. The screen labels events from
-``ORG_AUDIT_EVENT_KEYS`` in ``frontend/src/lib/i18n/keyMaps.ts`` (an event with no entry
+``ORG_AUDIT_EVENT_KEYS`` in ``frontend/src/lib/i18n/auditEventKeys.ts`` (an event with no entry
 renders as its raw dotted identifier), and every label must exist in every locale.
 """
 
@@ -28,7 +28,7 @@ LOCALES = sorted(p.stem for p in (FRONTEND / "locales").glob("*.json"))
 
 
 def _org_audit_map() -> dict[str, str]:
-    text = (FRONTEND / "keyMaps.ts").read_text(encoding="utf-8")
+    text = (FRONTEND / "auditEventKeys.ts").read_text(encoding="utf-8")
     block = text.split("export const ORG_AUDIT_EVENT_KEYS", 1)[1].split("};", 1)[0]
     return dict(re.findall(r"'([^']+)':\s*'([^']+)'", block))
 

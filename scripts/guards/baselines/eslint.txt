@@ -1,3 +1,4 @@
+frontend/src/bundleBudget.allowance.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/AISuggestionsDropdown.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/components/AISuggestionsDropdown.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/AboutModal.svelte::svelte/infinite-reactive-loop	4	lint: burn-down planned
@@ -11,11 +12,14 @@ frontend/src/components/CollectionsPanel.svelte::@typescript-eslint/no-explicit-
 frontend/src/components/CollectionsPanel.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/CollectionsSection.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/CollectionsSection.svelte::svelte/require-each-key	1	lint: burn-down planned
+frontend/src/components/CommentSection.svelte::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/components/CommentSection.svelte::max-depth	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/CommentSection.svelte::no-restricted-imports	3	lint: burn-down planned
 frontend/src/components/CommentSection.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/FileDetailSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FileHeader.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FileUploader.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
+frontend/src/components/FileUploader.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/FileUploader.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FilterSidebar.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
 frontend/src/components/FilterSidebar.svelte::no-restricted-imports	2	lint: burn-down planned
@@ -31,6 +35,7 @@ frontend/src/components/Navbar.svelte::svelte/infinite-reactive-loop	2	lint: bur
 frontend/src/components/Navbar.svelte::svelte/no-navigation-without-resolve	6	lint: burn-down planned
 frontend/src/components/NotificationsPanel.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/NotificationsPanel.svelte::svelte/infinite-reactive-loop	1	lint: burn-down planned
+frontend/src/components/NotificationsPanel.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/NotificationsPanel.test.ts::no-restricted-imports	3	lint: burn-down planned
 frontend/src/components/RetrievalQualityNotice.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/RetrievalQualityNotice.svelte::svelte/no-reactive-reassign	1	lint: burn-down planned
@@ -40,8 +45,10 @@ frontend/src/components/SettingsModal.orgContext.test.ts::no-restricted-imports	
 frontend/src/components/SettingsModal.orgPrivacy.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/SettingsModal.supportAccess.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/SettingsModal.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
+frontend/src/components/SettingsModal.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/SettingsModal.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/components/SettingsModal.svelte::svelte/require-each-key	4	lint: burn-down planned
+frontend/src/components/SettingsModal.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/SettingsModal.test.ts::no-restricted-imports	2	lint: burn-down planned
 frontend/src/components/SpeakerMerge.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
 frontend/src/components/SpeakerMerge.svelte::svelte/require-each-key	2	lint: burn-down planned
@@ -59,6 +66,7 @@ frontend/src/components/ThemeToggle.svelte::no-restricted-imports	1	lint: burn-d
 frontend/src/components/TopicsList.svelte::svelte/no-at-html-tags	3	lint: burn-down planned
 frontend/src/components/TopicsList.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/TranscriptDisplay.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
+frontend/src/components/TranscriptDisplay.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/TranscriptDisplay.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/TranscriptDisplay.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/TranscriptSearch.svelte::no-useless-assignment	3	lint: burn-down planned
@@ -72,9 +80,11 @@ frontend/src/components/UserFileStatus.svelte::svelte/infinite-reactive-loop	2	l
 frontend/src/components/UserFileStatus.svelte::svelte/prefer-svelte-reactivity	2	lint: burn-down planned
 frontend/src/components/UserFileStatus.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/WaveformPlayer.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
+frontend/src/components/WaveformPlayer.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/WaveformPlayer.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/WaveformPlayer.svelte::no-useless-assignment	2	lint: burn-down planned
 frontend/src/components/WaveformPlayer.svelte::prefer-const	1	lint: burn-down planned
+frontend/src/components/WaveformPlayer.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/chat/ChatControlsPanel.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/chat/ChatEmptyState.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/chat/ChatMarkdown.svelte::svelte/no-at-html-tags	1	lint: burn-down planned
@@ -96,6 +106,7 @@ frontend/src/components/gallery/FileListSkeleton.svelte::no-restricted-imports	1
 frontend/src/components/gallery/FileListSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/gallery/GalleryFilterPanel.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/gallery/GallerySelectionActions.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
+frontend/src/components/gallery/QuarantineModal.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/gallery/VirtualGrid.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned
 frontend/src/components/gallery/VirtualGrid.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/gallery/VirtualList.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned
@@ -113,6 +124,8 @@ frontend/src/components/notifications/NotificationIcon.svelte::no-restricted-imp
 frontend/src/components/notifications/NotificationRow.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/notifications/NotificationsPanelBody.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/notifications/ProcessingJobCard.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
+frontend/src/components/privacy/FileVoiceprintConsent.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/components/privacy/PurgeConfirmDialog.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/search/SearchAutocomplete.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/components/search/SearchAutocomplete.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/components/search/SearchAutocomplete.svelte::svelte/require-each-key	1	lint: burn-down planned
@@ -129,10 +142,13 @@ frontend/src/components/settings/ASRConfigModal.svelte::no-restricted-imports	4	
 frontend/src/components/settings/ASRConfigModal.svelte::no-useless-assignment	6	lint: burn-down planned
 frontend/src/components/settings/ASRConfigModal.svelte::svelte/require-each-key	3	lint: burn-down planned
 frontend/src/components/settings/ASRSettings.svelte::@typescript-eslint/no-unused-expressions	1	lint: burn-down planned
+frontend/src/components/settings/ASRSettings.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/ASRSettings.svelte::no-restricted-imports	4	lint: burn-down planned
 frontend/src/components/settings/ASRSettings.svelte::no-useless-assignment	1	lint: burn-down planned
+frontend/src/components/settings/ActiveSessionsPanel.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/AudioExtractionSettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/AuditLogViewer.svelte::prefer-const	1	lint: burn-down planned
+frontend/src/components/settings/AuthMailDesignation.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/AuthenticationSettings.svelte::@typescript-eslint/no-explicit-any	22	lint: burn-down planned
 frontend/src/components/settings/AuthenticationSettings.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/AuthenticationSettings.svelte::prefer-const	1	lint: burn-down planned
@@ -158,6 +174,7 @@ frontend/src/components/settings/DirectorySyncSettings.svelte::no-restricted-imp
 frontend/src/components/settings/DownloadSettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/DownloadSettings.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/EmailConfigModal.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
+frontend/src/components/settings/EmailConfigModal.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/EmailConfigModal.svelte::no-useless-assignment	2	lint: burn-down planned
 frontend/src/components/settings/EmbeddingConsistencySettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/EmbeddingMigrationSettings.svelte::no-restricted-imports	2	lint: burn-down planned
@@ -188,6 +205,8 @@ frontend/src/components/settings/MediaMirrorSettings.svelte::no-restricted-impor
 frontend/src/components/settings/MediaMirrorSettings.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/MediaMirrorSettings.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/MediaSourcesSettings.svelte::no-restricted-imports	1	lint: burn-down planned
+frontend/src/components/settings/OIDCSettings.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/components/settings/OrgPrivacyPolicyPanel.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/OrganizationContextSettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/OrganizationContextSettings.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/OrphanedDataPanel.svelte::no-restricted-imports	2	lint: burn-down planned
@@ -196,6 +215,7 @@ frontend/src/components/settings/PasswordPolicySettings.svelte::@typescript-esli
 frontend/src/components/settings/PasswordPolicySettings.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/PendingApprovalsPanel.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/PipelineOverview.svelte::no-restricted-imports	1	lint: burn-down planned
+frontend/src/components/settings/PipelineOverview.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/PrivacyRedactionSettings.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/ProcessingDetailsModal.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/settings/ProcessingDetailsModal.svelte::no-restricted-imports	1	lint: burn-down planned
@@ -207,6 +227,7 @@ frontend/src/components/settings/RetentionSettings.svelte::no-restricted-imports
 frontend/src/components/settings/RetentionSettings.svelte::svelte/require-each-key	2	lint: burn-down planned
 frontend/src/components/settings/RetrySettings.svelte::@typescript-eslint/no-unused-expressions	2	lint: burn-down planned
 frontend/src/components/settings/RetrySettings.svelte::no-restricted-imports	2	lint: burn-down planned
+frontend/src/components/settings/SAMLSettings.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/SAMLSettings.svelte::svelte/no-immutable-reactive-statements	1	lint: burn-down planned
 frontend/src/components/settings/SCIMTokenSettings.svelte::no-restricted-imports	5	lint: burn-down planned
 frontend/src/components/settings/SearchSettings.svelte::@typescript-eslint/no-explicit-any	3	lint: burn-down planned
@@ -223,11 +244,13 @@ frontend/src/components/settings/SpeakerIdentificationSection.svelte::no-useless
 frontend/src/components/settings/SpeakerIdentificationSection.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/settings/SystemStatisticsPanel.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/settings/SystemStatisticsPanel.svelte::svelte/require-each-key	3	lint: burn-down planned
+frontend/src/components/settings/TakedownNoticesPanel.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/TranscriptionAccuracySettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/TranscriptionLanguageSettings.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/components/settings/TranscriptionSection.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/TranscriptionSection.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/settings/UserProfileSettings.svelte::no-useless-assignment	1	lint: burn-down planned
+frontend/src/components/settings/WatchSourceModal.svelte::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/settings/WatchSourceModal.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/settings/WatchSourceModal.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/settings/WatchSourcesSettings.svelte::no-restricted-imports	1	lint: burn-down planned
@@ -258,6 +281,7 @@ frontend/src/components/supportAccess/OpenFileByUuid.svelte::svelte/no-navigatio
 frontend/src/components/supportAccess/RequestAccessModal.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/supportAccess/SupportAccessBanner.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/components/tags/TagDetailPanel.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
+frontend/src/components/tags/TagManagerModal.contract.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/tags/TagManagerModal.svelte::svelte/prefer-svelte-reactivity	1	lint: burn-down planned
 frontend/src/components/transcript/SpeakerEditorPanel.svelte::@typescript-eslint/no-explicit-any	3	lint: burn-down planned
 frontend/src/components/transcript/SpeakerEditorPanel.svelte::no-useless-assignment	1	lint: burn-down planned
@@ -280,6 +304,7 @@ frontend/src/components/ui/SettingsSkeleton.svelte::svelte/require-each-key	3	li
 frontend/src/components/ui/SkeletonLoader.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/ui/SortDropdown.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/ui/SortDropdown.test.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
+frontend/src/components/ui/SortDropdown.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/ui/Tabs.svelte::no-useless-assignment	1	lint: burn-down planned
 frontend/src/components/ui/Tabs.svelte::prefer-const	1	lint: burn-down planned
 frontend/src/components/ui/TagInput.svelte::svelte/require-each-key	1	lint: burn-down planned
@@ -296,12 +321,15 @@ frontend/src/lib/api/admin.ts::@typescript-eslint/no-explicit-any	1	lint: burn-d
 frontend/src/lib/api/admin.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/adminSettings.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/asrProviderPolicy.ts::no-restricted-imports	1	lint: burn-down planned
+frontend/src/lib/api/asrSettings.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/api/asrSettings.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/audioExtractionSettings.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/authConfig.ts::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
 frontend/src/lib/api/authConfig.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/certificate.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/chatApi.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
+frontend/src/lib/api/chatStream.test.ts::max-lines-per-function	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/api/chatStream.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/api/downloadSettings.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/groupMappings.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/groups.ts::no-restricted-imports	1	lint: burn-down planned
@@ -325,30 +353,58 @@ frontend/src/lib/api/transcriptionSettings.ts::no-restricted-imports	1	lint: bur
 frontend/src/lib/api/transcripts.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/userApprovals.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/api/userSettings.ts::no-restricted-imports	1	lint: burn-down planned
+frontend/src/lib/auth/authErrors.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/auth/sessionTimeouts.test.ts::no-restricted-imports	1	lint: burn-down planned
 frontend/src/lib/auth/sessionTimeouts.ts::svelte/no-navigation-without-resolve	1	lint: burn-down planned
+frontend/src/lib/axios.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/cloud/seamContract.test.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/components/ClassificationBanner.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/lib/export/txtExportPrefs.ts::no-empty	2	lint: burn-down planned
 frontend/src/lib/fileDetail/notificationHandler.test.ts::@typescript-eslint/no-unused-vars	2	lint: burn-down planned
 frontend/src/lib/fileDetail/notificationHandler.ts::@typescript-eslint/no-explicit-any	3	lint: burn-down planned
+frontend/src/lib/fileDetail/notificationHandler.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/fileDetail/notificationHandler.ts::max-depth	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/fileDetail/notificationHandler.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/fileDetail/speakerSave.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/postProcessing.ts::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/processingJob.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/processingJob.ts::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/processingJob.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/progressFrame.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/runTiming.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/notifications/titles.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/passwordPolicyTiers.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/search/settingsSearchIndex.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/services/audioExtractionService.ts::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/lib/services/audioExtractionService.ts::@typescript-eslint/no-unused-vars	2	lint: burn-down planned
+frontend/src/lib/services/audioExtractionService.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/services/audioExtractionService.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/services/audioExtractionService.ts::no-restricted-imports	5	lint: burn-down planned
 frontend/src/lib/services/uploadService.ts::@typescript-eslint/no-unused-vars	3	lint: burn-down planned
+frontend/src/lib/services/uploadService.ts::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/settings/localModelView.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/settings/perFileModel.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/settings/pyannoteCredential.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/settings/sectionLoaders.ts::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
+frontend/src/lib/settings/speakerSources.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/types/audioExtraction.ts::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/lib/types/media.ts::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/lib/types/summary.ts::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
+frontend/src/lib/users/accountActions.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/utils/apiError.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/utils/clipboard.ts::@typescript-eslint/no-unused-vars	2	lint: burn-down planned
 frontend/src/lib/utils/metadataMapper.test.ts::no-restricted-imports	1	lint: burn-down planned
+frontend/src/lib/utils/metadataMapper.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/utils/metadataMapper.ts::no-restricted-imports	2	lint: burn-down planned
 frontend/src/routes/+error.svelte::svelte/no-navigation-without-resolve	1	lint: burn-down planned
 frontend/src/routes/+layout.svelte::@typescript-eslint/no-explicit-any	8	v0.6.1 merge: release lazy ErasureRequestBanner follows the sibling Component<any> lazy-load pattern; typed loader planned
+frontend/src/routes/+layout.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/routes/+layout.svelte::no-restricted-imports	16	lint: burn-down planned
 frontend/src/routes/+layout.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/routes/+layout.svelte::svelte/infinite-reactive-loop	8	v0.6.1 merge: release lazy ErasureRequestBanner follows the sibling Component<any> lazy-load pattern; typed loader planned
 frontend/src/routes/+layout.svelte::svelte/no-navigation-without-resolve	5	lint: burn-down planned
 frontend/src/routes/+page.svelte::@typescript-eslint/no-explicit-any	15	lint: burn-down planned
+frontend/src/routes/+page.svelte::complexity	3	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/routes/+page.svelte::prefer-const	4	lint: burn-down planned
 frontend/src/routes/+page.svelte::svelte/prefer-svelte-reactivity	6	lint: burn-down planned
 frontend/src/routes/accept-invite/+page.svelte::no-restricted-imports	1	lint: burn-down planned
@@ -362,6 +418,7 @@ frontend/src/routes/files/[id]/+page.svelte::svelte/no-navigation-without-resolv
 frontend/src/routes/forgot-password/+page.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/routes/forgot-password/+page.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/forgot-password/+page.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned
+frontend/src/routes/login/+page.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/routes/login/+page.svelte::no-restricted-imports	2	lint: burn-down planned
 frontend/src/routes/login/+page.svelte::svelte/no-navigation-without-resolve	4	lint: burn-down planned
 frontend/src/routes/login/page.test.ts::no-restricted-imports	1	lint: burn-down planned
@@ -369,6 +426,7 @@ frontend/src/routes/register/+page.svelte::no-restricted-imports	1	lint: burn-do
 frontend/src/routes/register/+page.svelte::svelte/no-navigation-without-resolve	3	lint: burn-down planned
 frontend/src/routes/reset-password/+page.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/reset-password/+page.svelte::svelte/no-navigation-without-resolve	3	lint: burn-down planned
+frontend/src/routes/search/+page.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/routes/search/+page.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/search/+page.svelte::svelte/no-navigation-without-resolve	3	lint: burn-down planned
 frontend/src/routes/search/sidebar-chips.test.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
@@ -377,13 +435,25 @@ frontend/src/routes/speakers/page.privacyNotice.test.ts::no-restricted-imports	1
 frontend/src/routes/verify-email/+page.svelte::no-restricted-imports	1	lint: burn-down planned
 frontend/src/routes/verify-email/+page.svelte::svelte/no-navigation-without-resolve	2	lint: burn-down planned
 frontend/src/stores/auth.logoutOrdering.test.ts::no-restricted-imports	1	lint: burn-down planned
+frontend/src/stores/capabilities.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/stores/capabilities.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/stores/chat.rateLimit.test.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
+frontend/src/stores/chat.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/stores/chat.ts::max-lines-per-function	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/stores/chat.ts::svelte/no-navigation-without-resolve	2	lint: burn-down planned
 frontend/src/stores/gallery.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned
+frontend/src/stores/gallery.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/stores/locale.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/stores/recording.ts::@typescript-eslint/no-unused-vars	3	lint: burn-down planned
 frontend/src/stores/search.ts::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/stores/supportSession.ts::svelte/no-navigation-without-resolve	2	lint: burn-down planned
+frontend/src/stores/uploads.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/stores/uploads.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/stores/uploads.ts::no-restricted-imports	1	lint: burn-down planned
+frontend/src/stores/websocket.test.ts::max-lines-per-function	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/stores/websocket.test.ts::no-restricted-imports	1	lint: burn-down planned
+frontend/src/stores/websocket.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/stores/websocketNotifications.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/styles/themeTokens.ts::max-depth	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/svelte.d.ts::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/svelte.d.ts::@typescript-eslint/no-unused-vars	1	lint: burn-down planned

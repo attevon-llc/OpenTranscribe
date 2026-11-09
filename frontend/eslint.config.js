@@ -116,6 +116,17 @@ export default tseslint.config(
     },
   },
   {
+    // Function-size gates (code-debt plan G-b). Thresholds: complexity 15 matches the backend
+    // ratchet (ESLint's own default is 20), max-depth 4 is the ESLint default, and
+    // max-lines-per-function 150 counts code only. `warn` + scripts/guards/check_eslint_ratchet.py
+    // means no new finding can appear; each rule flips to 'error' when its count reaches 0.
+    rules: {
+      complexity: ['warn', 15],
+      'max-depth': ['warn', 4],
+      'max-lines-per-function': ['warn', { max: 150, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
     // Test files: allow test globals and looser typing.
     files: ['**/*.{test,spec}.{ts,js}', 'src/test-setup.ts'],
     languageOptions: { globals: { ...globals.node } },

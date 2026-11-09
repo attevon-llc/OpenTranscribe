@@ -28,6 +28,8 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING
 from typing import Protocol
 
+from redis.exceptions import RedisError
+
 from app.core.config import settings
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -114,7 +116,9 @@ def _listing_failure(role: ObjectRole, error: Exception) -> ObjectTagResult:
     from app.services.minio_service import QuarantineTagWrite
 
     code = error.code if isinstance(error, S3Error) else type(error).__name__
-    logger.warning(f"Could not list {role} copies in {settings.CACHE_BUCKET_NAME}: {error}")
+    logger.warning(
+        f"Could not list {role} copies in {settings.CACHE_BUCKET_NAME}: {error}", exc_info=error
+    )
     return ObjectTagResult(
         role, QuarantineTagWrite("failed", error_code=code, failed_action=LIST_ACTION)
     )
@@ -143,6 +147,7 @@ def remove_cache_copies(
         client: Storage client (the bounded takedown client in production).
     """
     from app.services.media_revocation import ObjectTagResult
+    from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
     from app.services.minio_service import remove_object_reported
 
     bucket = settings.CACHE_BUCKET_NAME
@@ -150,7 +155,7 @@ def remove_cache_copies(
     try:
         derived = _list(derived_prefix(file_id), client)
         derived += [k for k in _legacy_audio_present(filename, client) if k not in derived]
-    except Exception as e:  # reported as a failed object, never raised
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # reported as a failed object, never raised
         results.append(_listing_failure("derived", e))
         derived = []
     results.extend(
@@ -160,7 +165,7 @@ def remove_cache_copies(
 
     try:
         markers = _list(bulk_marker_prefix(file_id), client)
-    except Exception as e:  # reported as a failed object, never raised
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # reported as a failed object, never raised
         results.append(_listing_failure("bulk_export", e))
         markers = []
     for marker in markers:
@@ -197,8 +202,10 @@ def drop_bulk_result(export_key: str) -> None:
         from app.core.redis import get_request_redis
 
         get_request_redis().delete(BULK_RESULT_KEY.format(job=bulk_job_of(export_key)))
-    except Exception as e:  # the replay re-check is the guarantee
-        logger.warning(f"Could not drop the cached result of {export_key}: {type(e).__name__}")
+    except RedisError as e:  # the replay re-check is the guarantee
+        logger.warning(
+            f"Could not drop the cached result of {export_key}: {type(e).__name__}", exc_info=True
+        )
 
 
 def hidden_from_requester(file_ids: Iterable[int], requester_id: int) -> bool:

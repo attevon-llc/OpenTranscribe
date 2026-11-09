@@ -12,6 +12,8 @@ import time
 from typing import TYPE_CHECKING
 from typing import Literal
 
+from redis.exceptions import RedisError
+
 if TYPE_CHECKING:
     from opensearchpy import OpenSearch
 from app.core.embedding_models import PYANNOTE_EMBEDDING_DIMENSION_V3
@@ -69,8 +71,8 @@ class EmbeddingModeService:
             from app.core.redis import get_request_redis
 
             value = get_request_redis().get(_REDIS_MODE_CACHE_KEY)
-        except Exception as e:
-            logger.debug(f"Redis unavailable for embedding-mode cache read: {e}")
+        except RedisError as e:
+            logger.debug(f"Redis unavailable for embedding-mode cache read: {e}", exc_info=True)
         else:
             if value is not None:
                 decoded = value.decode() if isinstance(value, bytes) else value
@@ -91,10 +93,11 @@ class EmbeddingModeService:
             from app.core.redis import get_request_redis
 
             get_request_redis().setex(_REDIS_MODE_CACHE_KEY, _REDIS_MODE_CACHE_TTL_SECONDS, mode)
-        except Exception as e:
+        except RedisError as e:
             logger.warning(
                 f"Could not write embedding-mode cache to Redis (other processes "
-                f"will re-detect independently until Redis recovers): {e}"
+                f"will re-detect independently until Redis recovers): {e}",
+                exc_info=True,
             )
 
     @classmethod
@@ -165,6 +168,7 @@ class EmbeddingModeService:
 
         # Import here to avoid circular imports and allow lazy initialization
         from app.services.opensearch_service import get_opensearch_client
+        from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 
         client = get_opensearch_client()
         if client is None:
@@ -215,11 +219,15 @@ class EmbeddingModeService:
             cls._set_cached_mode(MODE_V4)
             return MODE_V4
 
-        except Exception as e:
+        except CLUSTER_UNAVAILABLE_ERRORS as e:
+            # An outage is not evidence of a new install: answer v4 for this call only. The
+            # fallback must NOT be cached, or an existing v3 deployment would serve v4 from
+            # the shared cache for its whole TTL after one failed probe.
             logger.error(
-                f"Error detecting embedding mode from OpenSearch: {e}, defaulting to v4 mode"
+                f"Error detecting embedding mode from OpenSearch: {e}, defaulting to v4 mode "
+                "for this call (not cached)",
+                exc_info=True,
             )
-            cls._set_cached_mode(MODE_V4)
             return MODE_V4
 
     @classmethod
@@ -238,28 +246,24 @@ class EmbeddingModeService:
         Returns:
             The embedding dimension if found, None otherwise.
         """
-        try:
-            # Query for a single document with an embedding
-            response = client.search(
-                index=index_name,
-                body={
-                    "size": 1,
-                    "query": {"exists": {"field": "embedding"}},
-                    "_source": ["embedding"],
-                },
-            )
+        # Cluster errors propagate to ``detect_mode``: "could not look" must not read as
+        # "no embeddings found", which it would cache as a fresh v4 install.
+        response = client.search(
+            index=index_name,
+            body={
+                "size": 1,
+                "query": {"exists": {"field": "embedding"}},
+                "_source": ["embedding"],
+            },
+        )
 
-            hits = response.get("hits", {}).get("hits", [])
-            if hits:
-                embedding = hits[0].get("_source", {}).get("embedding")
-                if embedding and isinstance(embedding, list):
-                    return len(embedding)
+        hits = response.get("hits", {}).get("hits", [])
+        if hits:
+            embedding = hits[0].get("_source", {}).get("embedding")
+            if embedding and isinstance(embedding, list):
+                return len(embedding)
 
-            return None
-
-        except Exception as e:
-            logger.warning(f"Error sampling documents for dimension detection: {e}")
-            return None
+        return None
 
     @classmethod
     def get_embedding_dimension(cls, mode: EmbeddingMode | None = None) -> int:
@@ -328,11 +332,12 @@ class EmbeddingModeService:
             from app.core.redis import get_request_redis
 
             get_request_redis().delete(_REDIS_MODE_CACHE_KEY)
-        except Exception as e:
+        except RedisError as e:
             logger.warning(
                 f"Could not clear shared embedding-mode cache in Redis (other "
                 f"processes will keep serving the stale mode until their "
-                f"{_REDIS_MODE_CACHE_TTL_SECONDS}s TTL expires): {e}"
+                f"{_REDIS_MODE_CACHE_TTL_SECONDS}s TTL expires): {e}",
+                exc_info=True,
             )
         logger.info("Embedding mode cache cleared")
 

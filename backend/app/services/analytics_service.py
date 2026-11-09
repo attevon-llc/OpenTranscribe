@@ -95,8 +95,8 @@ class AnalyticsService:
             )
             return analytics
 
-        except Exception as e:
-            logger.error(f"Error computing analytics for media file {media_file_id}: {e}")
+        except Exception as e:  # callers treat None as "analytics unavailable"
+            logger.exception(f"Error computing analytics for media file {media_file_id}: {e}")
             return None
 
     @staticmethod
@@ -261,8 +261,8 @@ class AnalyticsService:
             logger.info(f"Saved analytics for media file {media_file_id}")
             return True
 
-        except Exception as e:
-            logger.error(f"Error saving analytics for media file {media_file_id}: {e}")
+        except Exception as e:  # callers treat False as "analytics unavailable"
+            logger.exception(f"Error saving analytics for media file {media_file_id}: {e}")
             db.rollback()
             return False
 
@@ -292,8 +292,8 @@ class AnalyticsService:
             # Recompute and save new analytics
             return AnalyticsService.compute_and_save_analytics(db, media_file_id)
 
-        except Exception as e:
-            logger.error(f"Error regenerating analytics for media file {media_file_id}: {e}")
+        except Exception as e:  # callers treat False as "analytics unavailable"
+            logger.exception(f"Error regenerating analytics for media file {media_file_id}: {e}")
             db.rollback()
             return False
 

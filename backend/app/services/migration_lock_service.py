@@ -12,6 +12,7 @@ A 4-hour TTL acts as a safety net if the backend crashes mid-migration.
 import logging
 
 import redis
+from redis.exceptions import RedisError
 
 from app.core.redis import get_request_redis
 
@@ -37,8 +38,8 @@ class MigrationLockService:
             try:
                 self._client = get_request_redis()
                 self._client.ping()
-            except Exception as e:
-                logger.error(f"Migration lock: Redis unavailable: {e}")
+            except RedisError as e:
+                logger.error(f"Migration lock: Redis unavailable: {e}", exc_info=True)
                 self._client = None
         return self._client
 

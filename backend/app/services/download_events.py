@@ -10,6 +10,8 @@ of the whole app's notification firehose.
 import json
 import logging
 
+from redis.exceptions import RedisError
+
 from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
@@ -62,16 +64,18 @@ def release_download_prep_guard(file_id: int, mode: str, variant: str = "") -> N
     """
     try:
         get_request_redis().delete(download_prep_guard_key(file_id, mode, variant))
-    except Exception as e:  # pragma: no cover - guard release is advisory
-        logger.warning(f"Could not release download-prep guard for file {file_id}/{mode}: {e}")
+    except RedisError as e:  # guard release is advisory
+        logger.warning(
+            f"Could not release download-prep guard for file {file_id}/{mode}: {e}", exc_info=True
+        )
 
 
 def _publish(channel: str, payload: dict) -> None:
     """Fire-and-forget publish to a Redis channel. Failures are logged, never raised."""
     try:
         get_request_redis().publish(channel, json.dumps(payload))
-    except Exception as e:  # pragma: no cover - best-effort notification
-        logger.error(f"Failed to publish to {channel}: {e}")
+    except RedisError as e:  # best-effort notification
+        logger.error(f"Failed to publish to {channel}: {e}", exc_info=True)
 
 
 def publish_download_event(
@@ -168,5 +172,7 @@ def release_document_export_guard(key: str | None) -> None:
         return
     try:
         get_request_redis().delete(key)
-    except Exception as e:  # pragma: no cover - guard release is advisory
-        logger.warning("Could not release the document export guard: %s", type(e).__name__)
+    except RedisError as e:  # guard release is advisory
+        logger.warning(
+            "Could not release the document export guard: %s", type(e).__name__, exc_info=True
+        )

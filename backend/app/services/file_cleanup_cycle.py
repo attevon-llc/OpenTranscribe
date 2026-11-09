@@ -70,9 +70,9 @@ class FileCleanupService:
                                 results["files_recovered"] += 1
                             else:
                                 results["files_marked_orphaned"] += 1
-                        except Exception as e:
+                        except Exception as e:  # one stuck file must not stop the cycle
                             error_msg = f"Error processing stuck file {file_id}: {str(e)}"
-                            logger.error(error_msg)
+                            logger.exception(error_msg)
                             results["cleanup_errors"].append(error_msg)
 
                 # Step 3: Handle very old orphaned files
@@ -86,9 +86,9 @@ class FileCleanupService:
                 health_recommendations = self._generate_health_recommendations(db)
                 results["recommendations"].extend(health_recommendations)
 
-        except Exception as e:
+        except Exception as e:  # the cycle result carries the error to the caller
             error_msg = f"Critical error in cleanup cycle: {str(e)}"
-            logger.error(error_msg)
+            logger.exception(error_msg)
             results["cleanup_errors"].append(error_msg)
 
         logger.info(f"Cleanup cycle completed: {results}")
@@ -263,8 +263,9 @@ class FileCleanupService:
                         results["files_processed"].append(
                             {"id": int(file.id), "filename": file.filename, "status": "deleted"}
                         )
-                    except Exception as e:
+                    except Exception as e:  # recorded per file; one failure never stops the pass
                         error_msg = f"Failed to delete file {file.id}: {str(e)}"
+                        logger.exception(error_msg)
                         results["deletion_errors"].append(error_msg)
                         results["files_processed"].append(
                             {

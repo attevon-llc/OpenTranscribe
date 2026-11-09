@@ -22,6 +22,7 @@ from datetime import datetime
 from datetime import timedelta
 from enum import StrEnum
 
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.models.media import MediaFile
@@ -73,10 +74,14 @@ def _claim_guard(file_id: int) -> bool | None:
     key = GUARD_KEY.format(file_id=file_id)
     try:
         return bool(get_request_redis().set(key, "1", nx=True, ex=GUARD_TTL_SECONDS))
-    except Exception:
+    except RedisError:
         # Fail closed: a duplicate dispatch is a paid LLM call, a skipped companion costs
         # nothing the user cannot redo with the summary or the topics button.
-        logger.warning("Topic companion guard unavailable for file %s; not dispatching", file_id)
+        logger.warning(
+            "Topic companion guard unavailable for file %s; not dispatching",
+            file_id,
+            exc_info=True,
+        )
         return None
 
 
@@ -85,8 +90,10 @@ def _release_guard(file_id: int) -> None:
 
     try:
         get_request_redis().delete(GUARD_KEY.format(file_id=file_id))
-    except Exception:
-        logger.debug("Could not release topic companion guard for file %s", file_id)
+    except RedisError:
+        logger.warning(
+            "Could not release topic companion guard for file %s", file_id, exc_info=True
+        )
 
 
 def queue_topic_extraction_with_summary(

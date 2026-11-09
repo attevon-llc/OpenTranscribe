@@ -47,6 +47,7 @@ from typing import Any
 from sqlalchemy import and_
 from sqlalchemy import exists
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -273,10 +274,11 @@ def is_notification_suppressed(file_id: int, recipient_user_id: int) -> bool:
             return _suppressed(
                 row[0], bool(row[1]), recipient_is_admin=is_review_admin(db, recipient_user_id)
             )
-    except Exception as e:  # fail CLOSED, see docstring
+    except SQLAlchemyError as e:  # fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_id}; "
-            f"suppressing as a precaution: {e}"
+            f"suppressing as a precaution: {e}",
+            exc_info=True,
         )
         return True
 
@@ -310,10 +312,11 @@ def is_notification_suppressed_for_uuid(
             return _suppressed(
                 row[0], bool(row[1]), recipient_is_admin=is_review_admin(db, recipient_user_id)
             )
-    except Exception as e:  # fail CLOSED, see docstring
+    except SQLAlchemyError as e:  # fail CLOSED, see docstring
         logger.warning(
             f"Notification suppression check failed for file {file_uuid}; "
-            f"suppressing as a precaution: {e}"
+            f"suppressing as a precaution: {e}",
+            exc_info=True,
         )
         return True
 
@@ -367,9 +370,10 @@ def filter_suppressed_file_uuids(
                 continue
             visible.append(key)
         return visible
-    except Exception as e:  # fail CLOSED, see docstring
+    except SQLAlchemyError as e:  # fail CLOSED, see docstring
         logger.warning(
             f"Batch notification suppression check failed for {len(candidates)} file(s); "
-            f"suppressing all as a precaution: {e}"
+            f"suppressing all as a precaution: {e}",
+            exc_info=True,
         )
         return []

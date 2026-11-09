@@ -230,8 +230,10 @@ class LLMHealthMixin(LLMHost):
                             )
                             return False  # Model not available
                     return True
-                except Exception as e:
-                    logger.debug(f"Could not parse models response, but got 200: {e}")
+                except (ValueError, TypeError, AttributeError) as e:
+                    logger.debug(
+                        f"Could not parse models response, but got 200: {e}", exc_info=True
+                    )
                     return True  # Service is up even if we can't parse response
             else:
                 logger.info(f"Models endpoint returned status {response.status_code}")

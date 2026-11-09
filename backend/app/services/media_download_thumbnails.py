@@ -142,8 +142,8 @@ def _download_media_thumbnail_sync(
         logger.info(f"Successfully downloaded and uploaded media thumbnail: {storage_path}")
         return storage_path
 
-    except Exception as e:
-        logger.error(f"Error downloading media thumbnail: {e}")
+    except Exception as e:  # thumbnail is optional; the caller falls back to ffmpeg
+        logger.exception(f"Error downloading media thumbnail: {e}")
         return None
 
 
@@ -189,8 +189,8 @@ def _get_thumbnail_with_fallback(
             logger.debug(f"Successfully downloaded media thumbnail: {thumbnail_path}")
             return thumbnail_path
         logger.warning("Failed to download media thumbnail, will generate from video")
-    except Exception as e:
-        logger.error(f"Error downloading media thumbnail: {e}")
+    except Exception as e:  # falls through to the fallback path below
+        logger.exception(f"Error downloading media thumbnail: {e}")
 
     # Fallback path — either defer to Celery or run inline.
     if defer_fallback_generation and storage_path:
@@ -207,10 +207,11 @@ def _get_thumbnail_with_fallback(
                 f"(fallback for URL ingest; object={storage_path})"
             )
             return None
-        except Exception as dispatch_err:
+        except Exception as dispatch_err:  # falls back to inline generation
             logger.warning(
                 f"Async thumbnail dispatch failed for {media_file_id}, "
-                f"falling back to inline generation: {dispatch_err}"
+                f"falling back to inline generation: {dispatch_err}",
+                exc_info=True,
             )
 
     # Inline fallback — keeps legacy behavior for callers that opt out.
@@ -221,6 +222,6 @@ def _get_thumbnail_with_fallback(
             video_path=video_path,
             timestamp=5.0,
         )
-    except Exception as fallback_error:
-        logger.error(f"Fallback thumbnail generation also failed: {fallback_error}")
+    except Exception as fallback_error:  # no thumbnail is not fatal to the ingest
+        logger.exception(f"Fallback thumbnail generation also failed: {fallback_error}")
         return None

@@ -34,6 +34,7 @@ import os
 from pathlib import Path
 from typing import Protocol
 
+import urllib3
 from imohash import hashfile
 from imohash import hashfileobject
 
@@ -95,8 +96,8 @@ def compute_from_path(path: str | Path) -> str | None:
                 hexdigest=True,
             )
         )
-    except Exception as e:
-        logger.debug(f"imohash compute_from_path({path}) failed: {e}")
+    except (OSError, ValueError) as e:
+        logger.warning(f"imohash compute_from_path({path}) failed: {e}", exc_info=True)
         return None
 
 
@@ -184,6 +185,6 @@ def compute_from_minio(object_name: str, size: int | None = None) -> str | None:
     except S3Error as e:
         logger.error(f"Storage outage computing imohash for {object_name}: {e}")
         raise
-    except Exception as e:
-        logger.debug(f"imohash compute_from_minio({object_name}) failed: {e}")
+    except (urllib3.exceptions.HTTPError, OSError, ValueError) as e:
+        logger.warning(f"imohash compute_from_minio({object_name}) failed: {e}", exc_info=True)
         return None

@@ -130,8 +130,8 @@ def _process_playlist_videos(
             logger.info(
                 f"Created placeholder MediaFile {media_file.id} for playlist video: {video_title}"
             )
-        except Exception as e:
-            logger.error(f"Error creating placeholder for video {video_title}: {e}")
+        except Exception as e:  # recorded in skipped_videos; one video never stops the playlist
+            logger.exception(f"Error creating placeholder for video {video_title}: {e}")
             skipped_videos.append(
                 {
                     "video_id": video_id,

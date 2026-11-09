@@ -342,8 +342,8 @@ async def is_llm_available(user_id: int | None = None) -> bool:
             return health_ok
         except SQLAlchemyError:
             raise
-        except Exception as e:
-            logger.error(f"LLM availability check failed: {e}")
+        except Exception as e:  # any provider failure reads as "not available"
+            logger.exception(f"LLM availability check failed: {e}")
             return False
 
     return await asyncio.to_thread(_check)

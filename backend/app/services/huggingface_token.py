@@ -27,6 +27,7 @@ import time
 from typing import Literal
 
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -95,8 +96,11 @@ def _resolve_uncached() -> tuple[str | None, bool]:
         if db.get_bind().dialect.name == "postgresql":
             db.execute(text(f"SET LOCAL statement_timeout = {_DB_STATEMENT_TIMEOUT_MS}"))
         stored = _read_stored(db)
-    except Exception:  # degrade to the environment value, never raise to a model load
-        logger.warning("Could not read the saved Hugging Face token; using the environment value")
+    except SQLAlchemyError:  # degrade to the environment value, never raise to a model load
+        logger.warning(
+            "Could not read the saved Hugging Face token; using the environment value",
+            exc_info=True,
+        )
         return env_token(), False
     finally:
         db.close()
@@ -206,7 +210,9 @@ def check_token(token: str) -> str:
             headers={"Authorization": f"Bearer {token}"},
             timeout=_TEST_TIMEOUT_S,
         )
-    except Exception:  # the exception text can carry the URL/headers; never surface it
+    except requests.RequestException as exc:
+        # The exception text can carry the URL/headers, so neither it nor a traceback is logged.
+        logger.warning("Hugging Face token test could not reach the Hub: %s", type(exc).__name__)
         return TEST_UNREACHABLE
     if response.status_code == 200:
         return TEST_VALID

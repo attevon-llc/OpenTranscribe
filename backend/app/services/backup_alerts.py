@@ -115,8 +115,8 @@ def notify_mirror_result(db: Session, result: dict[str, Any]) -> None:
                 ),
                 event_type=MIRROR_EVENT_TYPE,
             )
-    except Exception as exc:  # alerting must never break the mirror run
-        logger.error("Media mirror alerting failed: %s", exc)
+    except Exception:  # alerting must never break the mirror run
+        logger.exception("Media mirror alerting failed")
 
 
 def notify_backup_result(db: Session, result: dict[str, Any]) -> None:
@@ -137,5 +137,5 @@ def notify_backup_result(db: Session, result: dict[str, Any]) -> None:
                 message="Database backup succeeded with warnings: " + "; ".join(warnings),
             )
         _maybe_send_keys_notice(db, result)
-    except Exception as exc:  # alerting must never break the backup run
-        logger.error("Backup alerting failed: %s", exc)
+    except Exception:  # alerting must never break the backup run
+        logger.exception("Backup alerting failed")

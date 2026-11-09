@@ -34,6 +34,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.auth.audit import audit_logger
 from app.auth.audit_events import TENANT_SCOPE_ORG
 from app.auth.audit_events import TENANT_SCOPE_PERSONAL
@@ -153,8 +155,10 @@ def _already_recorded(
             ex=CONTENT_AUDIT_DEDUP_SECONDS,
         )
         return not claimed
-    except Exception as exc:
-        logger.debug("content-audit de-dup unavailable, writing the event: %s", exc)
+    except RedisError as exc:
+        logger.warning(
+            "content-audit de-dup unavailable, writing the event: %s", exc, exc_info=True
+        )
         return False
 
 

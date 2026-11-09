@@ -14,6 +14,7 @@ from typing import TypedDict
 from typing import cast
 
 import redis
+from redis.exceptions import RedisError
 
 from app.core.redis import get_request_redis
 
@@ -68,8 +69,8 @@ class MigrationProgressService:
             try:
                 self._redis_client = get_request_redis()
                 self._redis_client.ping()
-            except Exception as e:
-                logger.error(f"Failed to connect to Redis: {e}")
+            except RedisError as e:
+                logger.error(f"Failed to connect to Redis: {e}", exc_info=True)
                 self._redis_client = None
         return self._redis_client
 
@@ -123,8 +124,8 @@ class MigrationProgressService:
                 return cast(MigrationStatus, parsed)
             return default_status
 
-        except Exception as e:
-            logger.error(f"Error getting migration status from Redis: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error getting migration status from Redis: {e}", exc_info=True)
             return default_status
 
     def is_running(self) -> bool:
@@ -170,8 +171,8 @@ class MigrationProgressService:
             logger.info(f"Started migration tracking: {total_files} files")
             return True
 
-        except Exception as e:
-            logger.error(f"Error starting migration tracking: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error starting migration tracking: {e}", exc_info=True)
             return False
 
     # Lua script for atomic increment of processed_files + optional failed_files append.
@@ -235,8 +236,8 @@ class MigrationProgressService:
             )
             return True
 
-        except Exception as e:
-            logger.error(f"Error incrementing processed count: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error incrementing processed count: {e}", exc_info=True)
             return False
 
     def complete_migration(self, success: bool = True) -> bool:
@@ -277,8 +278,8 @@ class MigrationProgressService:
             logger.info(f"Migration completed: {processed}/{total} processed, {failed} failed")
             return True
 
-        except Exception as e:
-            logger.error(f"Error completing migration: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error completing migration: {e}", exc_info=True)
             return False
 
     def clear_status(self) -> bool:
@@ -297,8 +298,8 @@ class MigrationProgressService:
             logger.info("Migration status cleared")
             return True
 
-        except Exception as e:
-            logger.error(f"Error clearing migration status: {e}")
+        except RedisError as e:
+            logger.error(f"Error clearing migration status: {e}", exc_info=True)
             return False
 
     def force_stop(self) -> bool:
@@ -328,8 +329,8 @@ class MigrationProgressService:
             logger.warning("Migration force stopped")
             return True
 
-        except Exception as e:
-            logger.error(f"Error force stopping migration: {e}")
+        except (RedisError, ValueError) as e:
+            logger.error(f"Error force stopping migration: {e}", exc_info=True)
             return False
 
 

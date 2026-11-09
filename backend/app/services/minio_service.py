@@ -14,6 +14,7 @@ from typing import Literal
 import certifi
 import urllib3
 from minio import Minio
+from minio.error import MinioException
 from minio.error import S3Error
 
 from app.core.config import settings
@@ -32,6 +33,11 @@ if TYPE_CHECKING:
     from app.services.storage_versions import RemovalResult
 
 logger = logging.getLogger(__name__)
+
+#: What a storage call raises when the store could not answer: an S3 error response
+#: (``MinioException``), a connection that never got one (urllib3's ``HTTPError``), or a
+#: socket/DNS failure (``OSError``).
+STORAGE_UNAVAILABLE_ERRORS = (MinioException, urllib3.exceptions.HTTPError, OSError)
 
 # Disable urllib3 warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -246,8 +252,10 @@ def get_file_url(object_name: str, expires: int = 0, content_type: str | None = 
                 expires=delta,
                 response_headers=response_headers,
             )
-        except Exception as inner_e:
-            logger.info(f"First attempt failed: {inner_e}, trying alternative method")
+        except (MinioException, TypeError, ValueError) as inner_e:
+            logger.info(
+                f"First attempt failed: {inner_e}, trying alternative method", exc_info=True
+            )
             # If that fails, try using the raw method with timedelta
             url = client.get_presigned_url(
                 "GET",
@@ -328,10 +336,11 @@ def set_object_legal_hold(object_name: str, hold: bool) -> bool:
                 bucket_name=settings.MEDIA_BUCKET_NAME, object_name=object_name
             )
         return True
-    except Exception as e:  # legal-hold is advisory; never break takedown
+    except STORAGE_UNAVAILABLE_ERRORS as e:  # legal-hold is advisory; never break takedown
         logger.warning(
             f"Object legal-hold {'enable' if hold else 'disable'} unavailable for "
-            f"{object_name} (bucket object-lock may be disabled): {e}"
+            f"{object_name} (bucket object-lock may be disabled): {e}",
+            exc_info=True,
         )
         return False
 
@@ -428,7 +437,9 @@ def write_object_quarantine_tag(
         logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
         return QuarantineTagWrite("failed", error_code=e.code, failed_action=step)
     except Exception as e:  # reported to the caller, never raised into a takedown
-        logger.warning(f"Quarantine tag {action} failed for {object_name} ({step}): {e}")
+        logger.warning(
+            f"Quarantine tag {action} failed for {object_name} ({step}): {e}", exc_info=True
+        )
         return QuarantineTagWrite("failed", error_code=type(e).__name__, failed_action=step)
 
 
@@ -480,7 +491,7 @@ def remove_object_reported(
         logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}")
         return QuarantineTagWrite("failed", error_code=e.code, failed_action=DELETE_ACTION)
     except Exception as e:  # reported to the caller, never raised into a takedown
-        logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}")
+        logger.warning(f"Could not delete {bucket_name}/{object_name}: {e}", exc_info=True)
         return QuarantineTagWrite(
             "failed", error_code=type(e).__name__, failed_action=DELETE_ACTION
         )
@@ -562,8 +573,8 @@ def cleanup_temp_audio(file_uuid: str) -> None:
     try:
         minio_client.remove_object(settings.MEDIA_BUCKET_NAME, object_name)
         _logger.info(f"Cleaned up temp audio: {object_name}")
-    except Exception as e:
-        _logger.debug(f"Temp audio cleanup failed (non-fatal): {e}")
+    except STORAGE_UNAVAILABLE_ERRORS as e:
+        _logger.warning(f"Temp audio cleanup failed (non-fatal): {e}", exc_info=True)
 
 
 def get_presigned_download_url(
@@ -731,8 +742,8 @@ def range_read(object_name: str, offset: int, length: int) -> bytes:
             try:
                 response.close()
                 response.release_conn()
-            except Exception as e:
-                _logger.debug(f"range_read close failed for {object_name}: {e}")
+            except (OSError, urllib3.exceptions.HTTPError) as e:
+                _logger.debug(f"range_read close failed for {object_name}: {e}", exc_info=True)
 
 
 def upload_file_tuned(

@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from botocore.exceptions import BotoCoreError
+
 from app.core import llm_defaults
 from app.core.config import settings
 
@@ -282,7 +284,8 @@ def server_credential_status() -> dict[str, object]:
         from botocore.session import get_session
 
         creds = get_session().get_credentials()
-    except Exception as exc:  # a broken profile file must read as "not found", not a 500
+    except (BotoCoreError, OSError) as exc:  # a broken profile file must read as "not found"
+        # No traceback on purpose: the exception text of a credential lookup is kept out of logs.
         logger.warning("AWS credential lookup failed: %s", type(exc).__name__)
         return {"found": False, "source": None}
     if creds is None:

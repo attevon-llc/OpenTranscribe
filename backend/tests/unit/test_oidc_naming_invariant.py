@@ -54,8 +54,8 @@ ALLOWED: dict[str, str] = {
     "schemas/user.py": (
         "AuthMethodsResponse emits a deprecated duplicate of oidc_enabled for one "
         "minor release, because a browser holding a cached SPA bundle against a "
-        "freshly-upgraded backend is a real deployment state. It is a computed field "
-        "so it can never disagree with oidc_enabled. Removal ticket: 'drop "
+        "freshly-upgraded backend is a real deployment state. A validator mirrors "
+        "oidc_enabled into it, so it can never disagree. Removal ticket: 'drop "
         "AuthMethodsResponse.keycloak_enabled' — delete this entry with it."
     ),
 }

@@ -332,7 +332,7 @@ def get_search_rate_limit() -> str:
     return f"{settings.RATE_LIMIT_SEARCH_PER_MINUTE}/minute"
 
 
-def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Response:
+def rate_limit_exceeded_handler(request: Request, exc: Exception) -> Response:
     """
     Exception handler for rate limit exceeded errors.
 
@@ -345,6 +345,8 @@ def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> Res
     Returns:
         JSONResponse with 429 status code and error details.
     """
+    if not isinstance(exc, RateLimitExceeded):
+        raise exc
     # Same resolver as key_func, so the logged address matches the bucketed one.
     from app.utils.client_ip import resolve_client_ip
 

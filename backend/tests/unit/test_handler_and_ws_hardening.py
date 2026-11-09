@@ -22,6 +22,7 @@ from typing import cast
 import pytest
 
 from tests.helpers import does_not_raise
+from tests.helpers import fake_websocket
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -144,7 +145,7 @@ def test_websocket_auth_returns_none_for_inactive_user(monkeypatch):
 
     monkeypatch.setattr(_registry, "has_verifiers", lambda: False)
 
-    assert ws_module._try_authenticate_token("tok", db) is None
+    assert ws_module._try_authenticate_token("tok", db, fake_websocket()) is None
 
 
 def test_websocket_auth_returns_none_for_revoked_token(monkeypatch):
@@ -171,7 +172,7 @@ def test_websocket_auth_returns_none_for_revoked_token(monkeypatch):
     monkeypatch.setattr(_registry, "has_verifiers", lambda: False)
     monkeypatch.setattr(ws_module.token_service, "is_token_revoked", lambda jti, **_kw: True)
 
-    assert ws_module._try_authenticate_token("tok", db) is None
+    assert ws_module._try_authenticate_token("tok", db, fake_websocket()) is None
 
 
 def test_websocket_auth_accepts_active_user_with_valid_token(monkeypatch):
@@ -198,7 +199,7 @@ def test_websocket_auth_accepts_active_user_with_valid_token(monkeypatch):
     monkeypatch.setattr(_registry, "has_verifiers", lambda: False)
     monkeypatch.setattr(ws_module.token_service, "is_token_revoked", lambda jti, **_kw: False)
 
-    assert ws_module._try_authenticate_token("tok", db) is cast("User", active)
+    assert ws_module._try_authenticate_token("tok", db, fake_websocket()) is cast("User", active)
 
 
 @pytest.mark.asyncio

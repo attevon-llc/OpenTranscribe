@@ -325,7 +325,10 @@ def _apply_name_update(
 
 
 def _apply_provider_update(config: Any, settings_in: schemas.UserASRSettingsUpdate) -> None:
-    new_provider = settings_in.provider.value  # type: ignore[union-attr]
+    if settings_in.provider is None:
+        # An explicit null would have crashed on ``.value`` as a 500; the column is not nullable.
+        raise HTTPException(status_code=422, detail="provider cannot be null")
+    new_provider = settings_in.provider.value
     if new_provider != config.provider:
         # Provider change invalidates the existing API key (it belongs to the old
         # provider's account).  Clear the stored key so the user is prompted to

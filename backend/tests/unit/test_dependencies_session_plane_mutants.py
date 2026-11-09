@@ -17,6 +17,7 @@ from typing import cast
 
 import pytest
 from fastapi import HTTPException
+from starlette.requests import HTTPConnection
 from starlette.requests import Request
 
 from app.api.endpoints.auth import dependencies as deps_module
@@ -180,7 +181,7 @@ class TestRequiredAuthPassesItsRequestToTheTimeoutRefusal:
         from app.auth.provider_registry import unregister_verifier
 
         class _Verifier:
-            def verify(self, token: str, request: Request) -> ExternalIdentity | None:
+            def verify(self, token: str, request: HTTPConnection) -> ExternalIdentity | None:
                 return ExternalIdentity(
                     provider="mutant-idp",
                     external_id="ext-mutant",

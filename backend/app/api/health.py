@@ -20,6 +20,7 @@ import anyio
 from anyio import to_thread
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from sqlalchemy.pool import QueuePool
 
 from app.core.config import settings
 from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
@@ -68,8 +69,11 @@ def _probe_postgres_and_schema(checks: dict[str, str]) -> None:
 def _db_pool_report() -> str:
     from app.db.base import engine
 
+    pool = engine.pool
+    if not isinstance(pool, QueuePool):
+        raise TypeError(f"db_pool probe needs a QueuePool, engine uses {type(pool).__name__}")
     capacity = settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW
-    return f"{engine.pool.checkedout()}/{capacity}"  # type: ignore[attr-defined]
+    return f"{pool.checkedout()}/{capacity}"
 
 
 def _probe_redis() -> str:

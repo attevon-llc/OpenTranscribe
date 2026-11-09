@@ -3,6 +3,7 @@ import logging
 import uuid
 from pathlib import Path
 from typing import BinaryIO
+from typing import Protocol
 
 from fastapi import HTTPException
 from fastapi import UploadFile
@@ -28,6 +29,16 @@ from app.utils.filename import sanitize_filename
 from app.utils.media_types import normalize_media_content_type
 
 logger = logging.getLogger(__name__)
+
+
+class UploadedFileInfo(Protocol):
+    """What ``create_media_file_record`` reads: ``UploadFile`` and ``FileMetadata`` both satisfy it."""
+
+    @property
+    def filename(self) -> str | None: ...
+
+    @property
+    def content_type(self) -> str | None: ...
 
 
 def validate_file_type(file: UploadFile) -> None:
@@ -107,7 +118,7 @@ def validate_file_size_for_tenant(file_size: int, organization_id: int | None) -
 
 def create_media_file_record(
     db: Session,
-    file: UploadFile,
+    file: UploadedFileInfo,
     current_user: User,
     file_size: int,
     organization_id: int | None = None,

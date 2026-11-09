@@ -55,6 +55,7 @@ from app.core.exceptions import AuthenticationError
 from app.core.exceptions import DomainError
 from app.core.exceptions import ExternalIdentityLinkRefusedError
 from app.models.user import User
+from tests.helpers import fake_websocket
 
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("l2_gb_auth_errors")]
 
@@ -544,4 +545,4 @@ def test_saml_logout_with_an_unverifiable_access_cookie_is_still_a_clean_success
 def test_websocket_token_authentication_returns_none_for_an_invalid_token(db_session):
     from app.api.websockets import _try_authenticate_token
 
-    assert _try_authenticate_token("not-a-jwt", db_session) is None
+    assert _try_authenticate_token("not-a-jwt", db_session, fake_websocket()) is None

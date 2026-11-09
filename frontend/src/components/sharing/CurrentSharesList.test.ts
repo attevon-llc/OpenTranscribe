@@ -34,7 +34,7 @@ const mockSharingApi = vi.hoisted(() => ({
 }));
 vi.mock('$lib/api/sharing', () => ({ SharingApi: mockSharingApi }));
 
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 import CurrentSharesList from './CurrentSharesList.svelte';
 import { sharingStore } from '$stores/sharing';

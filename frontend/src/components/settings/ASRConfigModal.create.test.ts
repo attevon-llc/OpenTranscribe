@@ -14,11 +14,7 @@ const toast = vi.hoisted(() => ({
   info: vi.fn(),
 }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
-vi.mock('$stores/locale', () => {
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    vars ? `${key}${JSON.stringify(vars)}` : key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyWithVarsLocale());
 
 import ASRConfigModal from './ASRConfigModal.svelte';
 import type { ASRProviderInfo } from '$lib/api/asrSettings';

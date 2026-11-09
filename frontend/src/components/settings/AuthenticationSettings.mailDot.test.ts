@@ -28,16 +28,9 @@ vi.mock('$lib/passwordPolicy', () => ({
   fetchPasswordPolicy: vi.fn().mockRejectedValue(new Error('offline')),
 }));
 
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import { AuthConfigApi } from '$lib/api/authConfig';
 import { getEmailConfigs } from '$lib/api/watchSourcesApi';

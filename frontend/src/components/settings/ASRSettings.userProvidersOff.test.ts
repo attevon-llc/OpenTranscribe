@@ -56,9 +56,7 @@ vi.mock('$lib/api/transcriptionSettings', () => ({
 vi.mock('$components/settings/asr/CloudProviderPolicy.svelte', async () => ({
   default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/locale', () => ({
   locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
   t: {

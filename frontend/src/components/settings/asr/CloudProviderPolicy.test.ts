@@ -9,11 +9,7 @@ vi.mock('$lib/api/asrProviderPolicy', async (importOriginal) => ({
 }));
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: toast }));
-vi.mock('$stores/locale', () => {
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    vars ? `${key}${JSON.stringify(vars)}` : key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyWithVarsLocale());
 
 import CloudProviderPolicy from './CloudProviderPolicy.svelte';
 

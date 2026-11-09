@@ -31,14 +31,7 @@ vi.mock('$lib/axios', () => ({
   abortAllRequests: vi.fn(),
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 

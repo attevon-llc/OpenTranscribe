@@ -9,9 +9,7 @@ import { get } from 'svelte/store';
 import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';

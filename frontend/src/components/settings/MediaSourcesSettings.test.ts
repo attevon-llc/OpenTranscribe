@@ -15,17 +15,8 @@ vi.mock('$lib/api/mediaSourcesApi', () => ({
   deleteMediaSource: vi.fn(),
   toggleMediaSourceShare: vi.fn(),
 }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import MediaSourcesSettings from './MediaSourcesSettings.svelte';
 

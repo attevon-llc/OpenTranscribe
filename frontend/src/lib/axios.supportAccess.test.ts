@@ -20,9 +20,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock('$stores/supportSession', () => ({ supportSession: { end: h.end } }));
 vi.mock('$stores/toast', () => ({ toastStore: { error: h.toastError } }));
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import axiosInstance from '$lib/axios';
 import { setActiveSupportGrant } from '$lib/supportAccess/headers';

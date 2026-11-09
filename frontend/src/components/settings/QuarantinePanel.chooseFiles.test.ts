@@ -11,9 +11,7 @@ vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 const admin = vi.hoisted(() => ({
   listQuarantinedFiles: vi.fn(),
   quarantineFile: vi.fn(),

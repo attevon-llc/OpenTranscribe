@@ -49,14 +49,7 @@ vi.mock('axios', () => ({ default: mockAxiosDefault }));
 
 vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, vars?: Record<string, unknown>) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 vi.mock('$lib/services/fileFingerprint', () => ({ fingerprintFile: mockFingerprintFile }));
 vi.mock('$lib/services/multipartUploader', () => ({ uploadInParts: mockUploadInParts }));

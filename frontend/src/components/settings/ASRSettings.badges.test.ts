@@ -11,14 +11,8 @@ const asrApi = vi.hoisted(() => ({
 vi.mock('$lib/api/asrSettings', () => ({ ASRSettingsApi: asrApi }));
 const speakerApi = vi.hoisted(() => ({ getTranscriptionSettings: vi.fn() }));
 vi.mock('$lib/api/transcriptionSettings', () => speakerApi);
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
-vi.mock('$stores/locale', () => {
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    vars ? `${key}${JSON.stringify(vars)}` : key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyWithVarsLocale());
 
 import ASRSettings from './ASRSettings.svelte';
 

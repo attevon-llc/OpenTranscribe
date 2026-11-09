@@ -30,7 +30,7 @@ const mockGroupsApi = vi.hoisted(() => ({
 }));
 vi.mock('$lib/api/groups', () => ({ GroupsApi: mockGroupsApi }));
 
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 vi.mock('$stores/auth', async () => {
   const { writable } = await import('svelte/store');

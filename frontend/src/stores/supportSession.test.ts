@@ -19,10 +19,9 @@ vi.mock('$lib/session/clearUserState', () => ({ purgeTenantDataCaches: h.purge }
 vi.mock('$stores/toast', () => ({
   toastStore: { error: h.toastError, success: h.toastSuccess, info: h.toastInfo },
 }));
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 import { capabilities } from '$stores/capabilities';
 import { getSupportAccessHeaders } from '$lib/supportAccess/headers';

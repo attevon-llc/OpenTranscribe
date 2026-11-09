@@ -7,14 +7,7 @@ const mockToast = vi.hoisted(() => ({ error: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 const mockStore = vi.hoisted(() => ({ updateSegmentText: vi.fn() }));
 vi.mock('$stores/transcriptStore', () => ({ transcriptStore: mockStore }));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import {
   CLOSED_SEGMENT_EDIT,

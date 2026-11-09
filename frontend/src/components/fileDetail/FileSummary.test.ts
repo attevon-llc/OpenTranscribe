@@ -19,14 +19,7 @@ vi.mock('$components/SummaryModal.svelte', async () => ({
   default: (await import('./SummaryModalTestStub.svelte')).default,
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import FileSummaryTestHost from './FileSummaryTestHost.svelte';
 

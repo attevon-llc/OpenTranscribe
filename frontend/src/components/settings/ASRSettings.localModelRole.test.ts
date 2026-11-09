@@ -59,9 +59,7 @@ vi.mock('$lib/api/transcriptionSettings', () => ({
   getTranscriptionSettings: vi.fn().mockResolvedValue({ diarization_source: 'provider' }),
 }));
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 vi.mock('$stores/locale', () => ({
   locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },

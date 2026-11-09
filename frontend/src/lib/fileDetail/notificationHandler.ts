@@ -89,7 +89,7 @@ function onTranscriptionProgress(n: Notification, progress: unknown, ctx: Ctx): 
 async function refreshAfterTranscription(ctx: Ctx): Promise<void> {
   ctx.setCurrentProcessingStep(''); // Clear processing step
   const file = ctx.getFile();
-  if (!file?.uuid || (file.status !== 'completed' && file.status !== 'success')) return;
+  if (!file?.uuid || file.status !== 'completed') return;
   await ctx.fetchTranscriptData();
 
   const videoPlayerComponent = ctx.getVideoPlayerComponent();

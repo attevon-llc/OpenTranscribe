@@ -12,14 +12,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import type { TraceState } from '$lib/chat/traceTree';
 import { emptyTraceState, foldTraceFrame, markTruncated } from '$lib/chat/traceTree';
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, params?: unknown) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import ChatTracePanel from './ChatTracePanel.svelte';
 // Svelte 5 removed `component.$on(...)`, so a legacy dispatched event is only

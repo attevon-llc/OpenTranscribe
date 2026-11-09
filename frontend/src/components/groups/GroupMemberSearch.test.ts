@@ -20,7 +20,7 @@ vi.mock('$stores/locale', () => ({
   },
 }));
 
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 const mockGroupsApi = vi.hoisted(() => ({
   searchUsers: vi.fn(),

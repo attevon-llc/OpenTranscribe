@@ -15,14 +15,7 @@ import type { TraceNode } from '$lib/chat/traceTree';
 // Identity translator: vitest boots no locale bundle, so `$t` returns the raw
 // key. Assertions therefore check WHICH KEY a state selects — asserting on
 // rendered English here would be vacuous and would pass with an empty en.json.
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, params?: unknown) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import ChatTraceNode from './ChatTraceNode.svelte';
 

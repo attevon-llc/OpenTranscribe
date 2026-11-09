@@ -6,7 +6,8 @@
  * deliberately NOT mapped here: the page reads it inline where it decides the edit and
  * show-original gates, so the rule stays in one visible place.
  */
-import type { MediaFileDetail } from '$lib/types/media';
+import type { Collection } from '$lib/types/collection';
+import type { FileDetailState, MediaFileDetail } from '$lib/types/media';
 import { get } from 'svelte/store';
 import axiosInstance from '$lib/axios';
 import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
@@ -19,6 +20,21 @@ import { t } from '$stores/locale';
 import { getErrorMessage } from '$lib/utils/apiError';
 import { toastStore } from '$stores/toast';
 import { redactParams } from './segmentPaging';
+
+/**
+ * The fileDetail helpers pass the file through structurally typed; this is the single assertion
+ * that maps one back onto the type the page holds.
+ */
+export type { FileDetailState };
+export const asFileDetailState = (file: object): FileDetailState => file as FileDetailState;
+
+/** The page's `file` and `collections` out of a `GET /files/{id}` payload. */
+export const splitFileDetail = (
+  detail: object & { collections?: unknown }
+): { file: FileDetailState; collections: Collection[] } => ({
+  file: asFileDetailState(detail),
+  collections: (detail.collections as Collection[]) || [],
+});
 
 /** The `GET /files/{id}` payload, open-ended: the page passes it to many children. */
 export type FileDetailPayload = Record<string, unknown> & {

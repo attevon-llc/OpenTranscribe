@@ -6,17 +6,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 const api = vi.hoisted(() => ({ getInstance: vi.fn() }));
 vi.mock('$lib/api/privacy', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/privacy')>();
   return { ...actual, PrivacyApi: api };
 });
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$components/settings/ContentRedactionSettings.svelte', async () => ({
   default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));

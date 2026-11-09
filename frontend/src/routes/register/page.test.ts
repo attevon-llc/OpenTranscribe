@@ -19,14 +19,7 @@ vi.mock('$stores/auth', () => ({
 const mockToast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn(), info: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 vi.mock('$lib/passwordPolicy', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/passwordPolicy')>()),

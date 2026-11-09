@@ -4,14 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 // Identity translator (same pattern as OIDCSettings.discoveredClaims.test.ts): returns the
 // raw dot-notation key so assertions can check which key the component picked for a given
 // state, without needing to boot real i18next + locale JSON in the test environment.
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import ChatReasoning from './ChatReasoning.svelte';
 

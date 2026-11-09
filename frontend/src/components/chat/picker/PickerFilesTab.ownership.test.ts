@@ -27,14 +27,7 @@ class StubIntersectionObserver {
 // Identity translator (same pattern as ChatReasoning.test.ts): returns the raw
 // dot-notation key so assertions can check which key was picked without
 // booting real i18next + locale JSON in the test environment.
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 const auth = vi.hoisted(() => ({ uuid: 'me-uuid' }));
 

@@ -4,17 +4,11 @@ import { render, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-vi.mock('$lib/axios', () => {
-  const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
-  return { default: axiosInstance, isRequestCancelled: () => false };
-});
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
-}));
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-  locale: { subscribe: (run: (value: string) => void) => (run('de'), () => {}) },
-}));
+vi.mock('$lib/axios', async () => (await import('$testMocks/serviceMocks')).axiosInstanceMock());
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'de' })
+);
 
 import axiosInstance from '$lib/axios';
 import QuarantinePanel from './QuarantinePanel.svelte';

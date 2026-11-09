@@ -7,19 +7,14 @@ const h = vi.hoisted(() => ({
   activate: vi.fn(),
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, o?: Record<string, unknown>) => string) => void) => (
-      run((k) => k), () => {}
-    ),
-  },
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 vi.mock('$stores/auth', async () => {
   const { writable } = await import('svelte/store');
   return { user: writable<{ role: string } | null>({ role: 'admin' }) };
 });
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/supportSession', async () => {
   const { readable } = await import('svelte/store');
   const store = readable({ grantUuid: null as string | null });

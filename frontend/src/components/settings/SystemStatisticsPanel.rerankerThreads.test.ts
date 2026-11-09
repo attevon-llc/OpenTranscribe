@@ -1,10 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => ({
-  // Identity translator so assertions can match on the i18n key.
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import SystemStatisticsPanel from './SystemStatisticsPanel.svelte';
 import { initialSystemStats, type SystemStats } from '$lib/settings/adminLoaders';

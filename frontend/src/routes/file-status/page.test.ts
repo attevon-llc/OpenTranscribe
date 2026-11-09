@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
-vi.mock('$stores/locale', () => {
-  const t = (key: string) => key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 // The full status dashboard has its own suite; this file is about the way back to Settings.
 vi.mock('$components/UserFileStatus.svelte', async () => ({
   default: (await import('$testMocks/SlotHost.svelte')).default,

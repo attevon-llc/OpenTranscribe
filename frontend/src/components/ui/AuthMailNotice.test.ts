@@ -22,9 +22,7 @@ vi.mock('$lib/axios', () => ({
   isRequestCancelled: () => false,
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import axiosInstance from '$lib/axios';
 import type { AuthMailDesignation } from '$lib/api/authConfig';

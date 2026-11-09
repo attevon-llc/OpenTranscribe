@@ -36,9 +36,7 @@ vi.mock('$stores/settingsModalStore', () => ({
   settingsModalStore: { setDirty: vi.fn() },
 }));
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 import { getChatAdminSettings } from '$lib/api/chatApi';
 import ChatAdminSettings from './ChatAdminSettings.svelte';

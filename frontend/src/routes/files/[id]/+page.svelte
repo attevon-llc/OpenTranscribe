@@ -1,7 +1,6 @@
 <script lang="ts">
   import { resolve } from '$app/paths';
   import { onMount, onDestroy, tick } from 'svelte';
-  import type { FileDetailState } from '$lib/types/media';
   import type { Collection } from '$lib/types/collection';
   import type { Tag } from '$lib/types/tag';
   import { guardUnsavedChanges } from '$lib/navigation/unsavedChangesGuard';
@@ -11,6 +10,8 @@
   import { isForFile, latestNotificationForFile, notificationSignature } from '$lib/fileDetail/notificationSelect';
   import { createPageTimers } from '$lib/fileDetail/pageTimers';
   import {
+    asFileDetailState,
+    splitFileDetail,
     fetchAISuggestions,
     fetchFileAnalytics,
     getFileDetail,
@@ -20,6 +21,7 @@
     sawMaskedSpans,
     startRedactionScan,
     type FileDetailPayload,
+    type FileDetailState,
   } from '$lib/fileDetail/fileDetailData';
   import { createRedactionView } from '$lib/fileDetail/redactionView';
   import { createSegmentPager } from '$lib/fileDetail/segmentPaging';
@@ -142,7 +144,7 @@
   const speakers = createFileSpeakers({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f as FileDetailState),
+    setFile: (f) => (file = asFileDetailState(f)),
     getShowOriginal: () => showOriginal,
     getSpeakerList: () => speakerList,
     setSpeakerList: (list) => (speakerList = list),
@@ -155,8 +157,7 @@
     refreshCaptionTrack,
     refreshAnalytics: () => handleAnalyticsRefreshNeeded(),
     applyReloadedFile: (data) => {
-      file = data as FileDetailState;
-      collections = (data.collections as Collection[]) || [];
+      ({ file, collections } = splitFileDetail(data));
       processTranscriptData();
     },
     refetchSegmentsAfterMerge: () => segmentPager.refetchAfterMerge(),
@@ -292,8 +293,7 @@
       if (!data || typeof data !== 'object') throw new Error('Invalid response format');
 
       const detail = data as FileDetailPayload;
-      file = detail as FileDetailState;
-      collections = (detail.collections as Collection[]) || [];
+      ({ file, collections } = splitFileDetail(detail));
       // The ONLY source of the caller's permission; every gate above derives from it.
       myPermission = (detail.my_permission as string | null | undefined) ?? null;
       applyRedactionState(detail);
@@ -327,7 +327,7 @@
   const { toggleShowOriginal } = createRedactionView({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f as FileDetailState),
+    setFile: (f) => (file = asFileDetailState(f)),
     getShowOriginal: () => showOriginal,
     setShowOriginal: (value) => (showOriginal = value),
     isToggleBusy: () => redactionToggleBusy,
@@ -347,7 +347,7 @@
   const segmentPager = createSegmentPager({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f as FileDetailState),
+    setFile: (f) => (file = asFileDetailState(f)),
     getShowOriginal: () => showOriginal,
     getSegmentLimit: () => segmentLimit,
     getTotalSegments: () => totalSegments,
@@ -436,7 +436,7 @@
   const segmentEditor = createSegmentEditor({
     getFileId: () => fileId,
     getFile: () => file,
-    setFile: (f) => (file = f as FileDetailState),
+    setFile: (f) => (file = asFileDetailState(f)),
     getEdit: () => ({ id: editingSegmentId, text: editingSegmentText, originalText: editingSegmentOriginalText }),
     setEdit: (edit) => {
       editingSegmentId = edit.id;
@@ -538,7 +538,7 @@
       getLlmAvailable: () => llmAvailable,
       getRedactionStatus: () => redactionStatus,
       getVideoPlayerComponent: () => filePlayer,
-      setFile: (f) => (file = f as FileDetailState),
+      setFile: (f) => (file = asFileDetailState(f)),
       setCurrentProcessingStep: (s) => (currentProcessingStep = s),
       setSummaryGenerating: (v) => (summaryGenerating = v),
       setGeneratingSummary: (v) => (generatingSummary = v),

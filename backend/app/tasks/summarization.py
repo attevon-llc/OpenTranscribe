@@ -32,6 +32,7 @@ import time
 from typing import Any
 
 from celery.exceptions import Retry
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingState
@@ -308,7 +309,7 @@ def _generate_llm_summary(
             )
     except Exception as e:
         _handle_llm_error(e, file_id, user_id, full_transcript, llm_provider, llm_model)
-        return None  # unreachable — _handle_llm_error always raises
+        raise  # unreachable — _handle_llm_error always raises
     finally:
         llm_service.close()
 
@@ -369,8 +370,8 @@ def _persist_summary(
             used_prompt = resolve_active_prompt_record(user_id or None, db, prompt_uuid)
             if used_prompt is not None:
                 increment_prompt_usage(db, int(used_prompt.id))
-        except Exception as usage_err:
-            logger.warning(f"Could not increment prompt usage_count: {usage_err}")
+        except SQLAlchemyError as usage_err:
+            logger.warning(f"Could not increment prompt usage_count: {usage_err}", exc_info=True)
 
         _task, duration_seconds = update_task_status_with_duration(
             db, task_id, "completed", progress=1.0, completed=True
@@ -385,11 +386,8 @@ def _handle_task_error(
     from app.services.uuid_helpers import get_file_by_uuid
     from app.utils.task_utils import update_task_status
 
-    error_type = type(e).__name__
     refusal = refusal_of(e)
     error_msg = refusal.code if refusal is not None else task_error_text(e)
-    logger.error(f"Error summarizing file {file_id}: {error_type}: {e}")
-    logger.error("Full error traceback:", exc_info=True)
 
     notify: tuple[int, int, str] | None = None
     try:
@@ -561,7 +559,9 @@ def summarize_transcript_task(
         except Retry:
             raise
         except Exception as fatal:
+            logger.exception(f"Error summarizing file {file_id}")
             return _handle_task_error(fatal, file_uuid, file_id, task_id)
         raise  # unreachable — defer_for_redaction always raises
     except Exception as e:
+        logger.exception(f"Error summarizing file {file_id}")
         return _handle_task_error(e, file_uuid, file_id, task_id)

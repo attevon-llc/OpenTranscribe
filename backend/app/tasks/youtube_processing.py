@@ -433,9 +433,9 @@ def process_youtube_url_task(
                             f"Sent file_updated notification for YouTube completion: {file_id}"
                         )
 
-                except Exception as e:
-                    logger.error(
-                        f"Failed to send file_updated notification for YouTube completion {file_id}: {e}"
+                except Exception:  # best-effort: the file is already completed
+                    logger.exception(
+                        f"Failed to send file_updated notification for YouTube completion {file_id}"
                     )
 
                 # Dispatch the 3-stage pipeline, threading our ingress task_id
@@ -489,7 +489,8 @@ def process_youtube_url_task(
                     logger.warning(
                         f"Download attempt {self.request.retries + 1}/{self.max_retries} "
                         f"failed for {url}: {error_msg}. "
-                        f"Retrying in {countdown}s..."
+                        f"Retrying in {countdown}s...",
+                        exc_info=True,
                     )
 
                     # Update status to show retry is pending
@@ -512,7 +513,8 @@ def process_youtube_url_task(
                 # Non-retriable error or last attempt failed
                 logger.error(
                     f"Download failed after {self.request.retries + 1} attempts "
-                    f"for {url}: {error_msg}"
+                    f"for {url}: {error_msg}",
+                    exc_info=True,
                 )
 
                 media_file.last_error_message = error_msg
@@ -544,7 +546,7 @@ def process_youtube_url_task(
         keep_credentials = True
         raise
     except Exception as e:
-        logger.error(f"Unexpected error in YouTube processing task: {e}")
+        logger.exception("Unexpected error in YouTube processing task")
 
         # Send error notification only if file_id was assigned
         if file_id is not None:

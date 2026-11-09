@@ -8,6 +8,7 @@ similar to the transcription retry mechanism in utils/file_retry.py
 import logging
 
 from anyio import to_thread
+from kombu.exceptions import OperationalError as BrokerUnavailableError
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -71,8 +72,8 @@ def reset_summary_for_retry(db: Session, file_uuid: str) -> bool:
         logger.info(f"Reset summary status for file {file_id}")
         return True
 
-    except Exception as e:
-        logger.error(f"Error resetting summary for file {file_id}: {e}")
+    except (SQLAlchemyError, BrokerUnavailableError) as e:
+        logger.error(f"Error resetting summary for file {file_id}: {e}", exc_info=True)
         db.rollback()
         return False
 
@@ -96,9 +97,6 @@ async def check_llm_availability(user_id: int | None = None) -> bool:
     except SQLAlchemyError:
         logger.warning(LLM_SETTINGS_UNREADABLE_MESSAGE)
         raise
-    except Exception as e:
-        logger.debug(f"Error checking LLM availability: {e}")
-        return False
 
 
 def _retry_target(db: Session, file_uuid: str) -> tuple[int, int] | None:
@@ -143,8 +141,8 @@ def _reset_and_queue(db: Session, file_uuid: str, file_id: int) -> bool:
         logger.info(f"Queued summary retry for file {file_id}")
         return True
 
-    except Exception as e:
-        logger.error(f"Error queuing summary retry for file {file_id}: {e}")
+    except BrokerUnavailableError as e:
+        logger.error(f"Error queuing summary retry for file {file_id}: {e}", exc_info=True)
         try:
             media_file.summary_data = previous_summary_data
             media_file.summary_opensearch_id = previous_summary_opensearch_id
@@ -154,10 +152,9 @@ def _reset_and_queue(db: Session, file_uuid: str, file_id: int) -> bool:
             from app.tasks.search_file_field_tasks import index_file_summary
 
             index_file_summary.delay(int(file_id))
-        except Exception as restore_exc:
-            logger.error(
-                f"Failed to restore prior summary state for file {file_id} "
-                f"after a failed dispatch: {restore_exc}"
+        except (SQLAlchemyError, BrokerUnavailableError):
+            logger.exception(
+                f"Failed to restore prior summary state for file {file_id} after a failed dispatch"
             )
             db.rollback()
         return False

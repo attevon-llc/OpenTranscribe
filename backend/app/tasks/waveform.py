@@ -11,6 +11,8 @@ import os
 import tempfile
 from typing import Any
 
+from minio.error import S3Error
+
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.db.session_utils import get_refreshed_object
@@ -63,8 +65,8 @@ def _download_temp_audio_safe(file_uuid: str) -> str | None:
         size_mb = os.path.getsize(temp_file_path) / (1024 * 1024)
         logger.info(f"Using preprocessed WAV from MinIO temp ({size_mb:.1f}MB)")
         return temp_file_path
-    except Exception as e:
-        logger.debug(f"Preprocessed WAV not available yet ({e}); using original")
+    except (S3Error, OSError) as e:
+        logger.debug(f"Preprocessed WAV not available yet ({e}); using original", exc_info=True)
         with contextlib.suppress(OSError):
             os.unlink(temp_file_path)
         return None
@@ -85,8 +87,8 @@ def _download_to_temp_file(storage_path: str) -> str | None:
         temp_file_path = download_to_temp_file(file_data, suffix=file_extension)
         logger.info(f"Downloaded file to {temp_file_path}")
         return temp_file_path
-    except Exception as e:
-        logger.error(f"Error downloading file from storage: {e}")
+    except (S3Error, OSError) as e:
+        logger.error(f"Error downloading file from storage: {e}", exc_info=True)
         return None
 
 

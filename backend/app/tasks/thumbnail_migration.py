@@ -24,6 +24,8 @@ from typing import Any
 from typing import NotRequired
 from typing import TypedDict
 
+from minio.error import S3Error
+
 from app.core import constants
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
@@ -114,8 +116,9 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20, after_id: int = 
                     summary["files_skipped"] += 1
                 else:
                     summary["files_failed"] += 1
-            except Exception as e:
-                logger.error(f"Error migrating thumbnail for file {row['id']}: {e}")
+            except Exception:
+                # Per-file isolation: counted in files_failed, the batch carries on.
+                logger.exception(f"Error migrating thumbnail for file {row['id']}")
                 summary["files_failed"] += 1
 
         # Phase 3 — write (DB session reopened, Postgres only).
@@ -143,7 +146,7 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20, after_id: int = 
             )
 
     except Exception as e:
-        logger.error(f"Error in thumbnail migration task: {e}")
+        logger.exception("Error in thumbnail migration task")
         summary["error"] = str(e)
 
     return dict(summary)
@@ -266,17 +269,19 @@ def _migrate_single_thumbnail(row: dict) -> tuple[str, str | None]:
         # (uq_media_file_thumbnail_path), so no other row can be pointing at it.
         try:
             delete_file(old_thumbnail_path)
-        except Exception as e:
+        except (S3Error, OSError) as e:
             # Log but don't fail - the migration succeeded even if cleanup failed
-            logger.warning(f"Failed to delete old thumbnail {old_thumbnail_path}: {e}")
+            logger.warning(
+                f"Failed to delete old thumbnail {old_thumbnail_path}: {e}", exc_info=True
+            )
 
         logger.info(
             f"Migrated thumbnail for file {file_id}: {old_thumbnail_path} -> {new_thumbnail_path}"
         )
         return "migrated", new_thumbnail_path
 
-    except Exception as e:
-        logger.error(f"Error migrating thumbnail for file {file_id}: {e}")
+    except Exception:
+        logger.exception(f"Error migrating thumbnail for file {file_id}")
         return "failed", None
 
 

@@ -12,14 +12,14 @@
    * boundary and silently stopped applying, with no unused-selector warning.
    */
   const GALLERY_MODAL_HEIGHT = 'min(90vh, 780px)';
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { get } from 'svelte/store';
 
   import { toastStore } from '$stores/toast';
   import { isAuthenticated } from '$stores/auth';
   import { galleryStore, galleryState, hasMoreFiles, isLoadingMore } from '$stores/gallery';
   import { t } from '$stores/locale';
-  import { getErrorMessage, getErrorCode } from '$lib/utils/apiError';
+  import { getErrorCode } from '$lib/utils/apiError';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import { createConfirmDialog } from '$lib/confirmDialog';
   import { trashConfirmMessage, trashSelection } from '$lib/trash/galleryTrash';

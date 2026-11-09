@@ -67,7 +67,7 @@ FROM diar-native-bin-${TARGETARCH} AS diar-native-bin
 # on 0.3.29, and NATIVE aarch64 (Apple M2 Max, not QEMU — emulation dispatches the wrong
 # kernels and cannot answer this) 0.0669 as well; both identical to a 0.3.26 control, with
 # bit-identical segments, plus a 2,016-case `cblas_?gemm` probe over the forwarding shapes
-# finding 0 mismatches.
+# shows 0 mismatches.
 #
 # So this stage is INSURANCE, not repair. It buys two specific things:
 #   - **No unpinned drift.** `libopenblas0` is installed bare and unversioned below, and

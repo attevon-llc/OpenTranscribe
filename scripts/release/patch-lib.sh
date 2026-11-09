@@ -21,7 +21,7 @@
 #
 # ⚠️ versions.sh unconditionally runs `set -euo pipefail`. release.sh already
 # runs under -e, but 70-tag.sh / 65-rehearse.sh / 90-promote.sh deliberately do
-# NOT (see 70-tag.sh's header on issue #784 finding N4 — that omission is what
+# NOT (see 70-tag.sh's header on issue #784 — that omission is what
 # let an unchecked `git push` fall through to a recorded pass). Sourcing this
 # file must not flip -e on for a caller that deliberately left it off, so the
 # caller's own -e state is restored immediately after the versions.sh source.

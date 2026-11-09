@@ -21,11 +21,17 @@ matched on comment syntax). Known limit: a string literal in a ts/svelte file th
 like a comment (``'// @ts-ignore'``) is matched too; only Python is tokenised. A file that
 cannot be read or tokenised fails the run (exit 2).
 
+A second ratchet counts every *reasoned* ``# type: ignore[code]`` per ``path::code`` (one count
+per code in the comment; baseline ``baselines/type_ignore.txt``, shrinking to 0). An ignore hides
+every error of its code on its line, not just the one a reader assumes, so the target is zero.
+``allowlists/type_ignore.txt`` holds only a genuine stub gap (``stub-gap <upstream issue url>``);
+``check_hidden_mypy.py`` measures what the remaining ignores actually hide.
+
 Usage::
 
-    check_suppressions.py [--root DIR] [--baseline FILE]
+    check_suppressions.py [--root DIR] [--baseline FILE] [--type-ignore-baseline FILE]
     check_suppressions.py --tighten
-    check_suppressions.py --write-baseline --reason TEXT [--force]
+    check_suppressions.py --write-baseline --reason TEXT [--force] [--only type-ignore]
 """
 
 from __future__ import annotations
@@ -98,6 +104,25 @@ def classify_python_comment(comment: str) -> list[str]:
     if nosec and not _NOSEC_ID.match(nosec.group('tail')):
         kinds.append('nosec')
     return kinds
+
+
+def type_ignore_codes(source: str, rel: str) -> dict[str, int]:
+    """Count of ``# type: ignore[code]`` comments per error code in Python ``source``."""
+    counts: dict[str, int] = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type != tokenize.COMMENT:
+                continue
+            match = _TYPE_IGNORE.search(tok.string)
+            code = _TYPE_IGNORE_CODE.match(match.group('tail').lstrip()) if match else None
+            if code is None:
+                continue
+            for name in code.group(0).strip('[] ').split(','):
+                counts[name.strip()] = counts.get(name.strip(), 0) + 1
+    except (tokenize.TokenError, SyntaxError) as exc:
+        msg = f'cannot tokenise {rel}: {exc}'
+        raise bl.ScanError(msg) from exc
+    return counts
 
 
 def count_python(source: str, rel: str) -> dict[str, int]:
@@ -186,6 +211,22 @@ def scan(root: Path, files: list[str] | None = None) -> dict[str, int]:
     return findings
 
 
+def scan_type_ignores(root: Path, files: list[str] | None = None) -> dict[str, int]:
+    """Map ``path::code`` -> number of reasoned ``type: ignore[code]`` comments."""
+    findings: dict[str, int] = {}
+    for rel in sorted(files if files is not None else list_files(root)):
+        if _in_scope(rel) != 'py':
+            continue
+        try:
+            source = (root / rel).read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError) as exc:
+            msg = f'cannot read {rel}: {exc}'
+            raise bl.ScanError(msg) from exc
+        for code, n in type_ignore_codes(source, rel).items():
+            findings[f'{rel}::{code}'] = n
+    return findings
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument(
@@ -193,33 +234,63 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument('--baseline', type=Path, default=None, help='baseline file')
     parser.add_argument('--tighten', action='store_true', help='lower values / drop stale entries')
+    parser.add_argument('--type-ignore-baseline', type=Path, default=None)
+    parser.add_argument('--type-ignore-allowlist', type=Path, default=None)
+    parser.add_argument(
+        '--only',
+        choices=('type-ignore',),
+        help='with --write-baseline: write just the type-ignore baseline',
+    )
     bl.add_baseline_args(parser)
     args = parser.parse_args(argv)
     try:
         root = args.root or bl.find_root(_HERE, ('backend/app',))
-        baseline_path = args.baseline or (
-            root / 'scripts' / 'guards' / 'baselines' / 'suppressions.txt'
+        guards = root / 'scripts' / 'guards'
+        baseline_path = args.baseline or guards / 'baselines' / 'suppressions.txt'
+        ti_path = args.type_ignore_baseline or guards / 'baselines' / 'type_ignore.txt'
+        ti_allow = bl.load_allowlist(
+            args.type_ignore_allowlist or guards / 'allowlists' / 'type_ignore.txt'
         )
         findings = scan(root)
+        ignores = scan_type_ignores(root)
         if args.write_baseline:
-            written: int = bl.run_write_baseline(args, baseline_path, findings)
+            if args.only is None:
+                code: int = bl.run_write_baseline(args, baseline_path, findings)
+                if code:
+                    return code
+            written: int = bl.run_write_baseline(args, ti_path, ignores)
             return written
         baseline = bl.load(baseline_path)
+        ti_baseline = bl.load(ti_path)
     except (bl.ScanError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
     if args.tighten:
-        changed = bl.tighten(baseline_path, findings, baseline) if baseline_path.exists() else 0
-        print(f'tightened {changed} baseline lines in {baseline_path}')
+        for path, current, base in (
+            (baseline_path, findings, baseline),
+            (ti_path, ignores, ti_baseline),
+        ):
+            changed = bl.tighten(path, current, base) if path.exists() else 0
+            print(f'tightened {changed} baseline lines in {path}')
         baseline = bl.load(baseline_path)
+        ti_baseline = bl.load(ti_path)
     errors = bl.compare(findings, baseline, unit='suppressions without a rule code or reason')
+    errors += [
+        f'[type-ignore] {e}'
+        for e in bl.compare(ignores, ti_baseline, unit='type: ignore', allowlist=ti_allow)
+    ]
     if errors:
-        print('suppressions must carry a rule code (noqa also a reason):', file=sys.stderr)
+        print(
+            'suppressions must carry a rule code (noqa also a reason); type: ignore may not grow '
+            '(fix the typing instead, a stub gap goes in allowlists/type_ignore.txt):',
+            file=sys.stderr,
+        )
         for line in errors:
             print(f'  {line}', file=sys.stderr)
         return 1
     print(
-        f'suppressions: {sum(findings.values())} offending in {len(findings)} entries, within the baseline'
+        f'suppressions: {sum(findings.values())} offending in {len(findings)} entries, within the baseline; '
+        f'type: ignore {sum(ignores.values())} in {len(ignores)} entries, within the baseline'
     )
     return 0
 

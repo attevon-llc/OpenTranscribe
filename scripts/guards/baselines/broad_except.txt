@@ -735,17 +735,6 @@ backend/app/tasks/rename_propagation_task.py::_finish#1	1	re-keyed per handler s
 backend/app/tasks/rename_propagation_task.py::dispatch_speaker_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/rename_propagation_task.py::propagate_speaker_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/rename_propagation_task.py::propagate_title_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_file_field_tasks.py::update_file_access_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_file_field_tasks.py::update_file_tags_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_file_field_tasks.py::update_file_tags_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_indexing_task.py::backfill_speaker_id_fields_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_indexing_task.py::backfill_speaker_id_fields_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_indexing_task.py::index_transcript_search_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_indexing_task.py::index_transcript_search_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_maintenance_task.py::_dispatch_reindex_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_maintenance_task.py::_get_indexed_uuids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_maintenance_task.py::_run_search_maintenance#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/search_reembed_task.py::_reembed_degraded_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/speaker_attribute_inference.py::_run_gender_inference_parallel#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/speaker_attribute_migration_task.py::detect_speaker_attributes_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/speaker_attribute_task.py::_attributes_already_predicted#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

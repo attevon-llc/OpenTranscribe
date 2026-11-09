@@ -4,6 +4,9 @@ import logging
 import time
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core import stage_timing
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
@@ -306,8 +309,11 @@ def index_transcript_search_task(
                 organization_id=meta["organization_id"],
                 availability=meta["availability"],
             )
-        except Exception as full_doc_err:
-            logger.warning(f"Full-document transcript indexing failed (non-fatal): {full_doc_err}")
+        except OpenSearchException as full_doc_err:
+            logger.warning(
+                f"Full-document transcript indexing failed (non-fatal): {full_doc_err}",
+                exc_info=True,
+            )
 
         indexing_service = TranscriptIndexingService()
         result = indexing_service.index_transcript_chunks(
@@ -383,8 +389,8 @@ def index_transcript_search_task(
                     )
                 else:
                     update_task_status(db, task_id, "failed", error_message=str(exc))
-        except Exception:
-            logger.error(f"Failed to update task status for {task_id}")
+        except SQLAlchemyError:
+            logger.exception(f"Failed to update task status for {task_id}")
 
         # Record this attempt's wall-clock into per_retry_timings so the
         # analysis layer can tell retry-inflated wall-clock apart from
@@ -462,13 +468,14 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
     try:
         if not client.indices.exists(index=index_name):
             return {"status": "skipped", "reason": "no_index"}
-    except Exception as e:
-        logger.error(f"speaker_id backfill: could not check index existence: {e}")
+    except OpenSearchException as e:
+        logger.error(f"speaker_id backfill: could not check index existence: {e}", exc_info=True)
         return {"status": "skipped", "reason": "opensearch_error"}
 
     by_user: dict[int, set[str]] = {}
     after_key: dict[str, Any] | None = None
     collected = 0
+    survey_failed = False
 
     while collected < limit:
         page_size = min(100, limit - collected)
@@ -496,8 +503,9 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
                     "aggs": {"files": {"composite": composite}},
                 },
             )
-        except Exception as e:
-            logger.error(f"speaker_id backfill: candidate survey failed: {e}")
+        except OpenSearchException as e:
+            logger.error(f"speaker_id backfill: candidate survey failed: {e}", exc_info=True)
+            survey_failed = True
             break
 
         files_agg = (response.get("aggregations") or {}).get("files", {})
@@ -518,6 +526,9 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
             break
 
     if not by_user:
+        if survey_failed:
+            # An unreachable index is not "fully covered".
+            return {"status": "skipped", "reason": "opensearch_error"}
         return {"status": "skipped", "reason": "fully_covered"}
 
     from app.core.queues import CPUPriority
@@ -539,4 +550,5 @@ def backfill_speaker_id_fields_task(limit: int = 200) -> dict[str, Any]:
         "status": "dispatched",
         "dispatched_files": dispatched_files,
         "dispatched_users": len(by_user),
+        "survey_complete": not survey_failed,
     }

@@ -40,6 +40,9 @@ from app.models.watch_source import WatchSource
 from app.models.watch_source import WatchSourceFile
 from app.services.imohash_service import compute_from_path
 from app.services.watch_sources import processing
+from tests.fixtures.tag_world import join
+from tests.fixtures.tag_world import make_org
+from tests.fixtures.tag_world import make_user
 
 _SAMPLE_AUDIO = Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sample_short.wav"
 
@@ -47,38 +50,6 @@ _SAMPLE_AUDIO = Path(__file__).resolve().parents[1] / "fixtures" / "media" / "sa
 # --------------------------------------------------------------------------- #
 # Fixtures / builders                                                          #
 # --------------------------------------------------------------------------- #
-
-
-def _mk_user(db, label: str) -> User:
-    user = User(
-        email=f"{label}_{uuid_pkg.uuid4().hex[:8]}@example.com",
-        full_name=f"{label} user",
-        hashed_password="x",
-        is_active=True,
-        is_superuser=False,
-        role="user",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _mk_org(db, label: str) -> Organization:
-    org = Organization(
-        external_org_id=f"org_{label}_{uuid_pkg.uuid4().hex[:8]}",
-        name=f"{label} Org",
-        is_active=True,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-def _join(db, org: Organization, user: User, role: str = "org:member") -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role=role))
-    db.commit()
 
 
 def _leave(db, org: Organization, user: User) -> None:
@@ -172,15 +143,15 @@ def _acting_as(user: User, org_id: int | None, org_role: str | None = "org:membe
 @pytest.fixture()
 def world(db_session):
     db = db_session
-    org_a = _mk_org(db, "A")
-    org_b = _mk_org(db, "B")
-    alice = _mk_user(db, "alice")
-    bob = _mk_user(db, "bob")
-    carol = _mk_user(db, "carol")
-    dave = _mk_user(db, "dave")
-    _join(db, org_a, alice)
-    _join(db, org_a, bob)
-    _join(db, org_b, alice)
+    org_a = make_org(db, "A")
+    org_b = make_org(db, "B")
+    alice = make_user(db, "alice")
+    bob = make_user(db, "bob")
+    carol = make_user(db, "carol")
+    dave = make_user(db, "dave")
+    join(db, org_a, alice)
+    join(db, org_a, bob)
+    join(db, org_b, alice)
     return type(
         "World",
         (),

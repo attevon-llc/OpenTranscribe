@@ -16,6 +16,7 @@ from typing import cast
 
 import pytest
 from fastapi import WebSocket
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.api import websockets as ws_module
 from app.auth.session import InMemoryStore
@@ -34,14 +35,14 @@ class _RecordingRedis:
 
     def publish(self, channel: str, payload: str) -> int:
         if self._fail:
-            raise ConnectionError("redis down")
+            raise RedisConnectionError("redis down")
         self.published.append((channel, json.loads(payload)))
         return 1
 
 
 class _RaisingStore:
     def set(self, *_a: Any, **_k: Any) -> None:
-        raise ConnectionError("redis down")
+        raise RedisConnectionError("redis down")
 
 
 def _service(store: Any) -> TokenService:

@@ -33,6 +33,7 @@ Following the characterization-test convention of ``tests/unit/test_chunking_ser
 from __future__ import annotations
 
 import json
+import subprocess
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
@@ -203,7 +204,10 @@ def test_unified_memory_without_torch_reports_available_with_a_note(monkeypatch)
 def test_a_failing_nvidia_smi_call_yields_none_rather_than_raising():
     """The task must survive a driver hiccup; ``None`` is how this function says so."""
     assert _query_single_gpu(1, _exploding_subprocess(FileNotFoundError("nvidia-smi"))) is None
-    assert _query_single_gpu(1, _exploding_subprocess(RuntimeError("boom"))) is None
+    assert (
+        _query_single_gpu(1, _exploding_subprocess(subprocess.CalledProcessError(9, "nvidia-smi")))
+        is None
+    )
 
 
 def test_truncated_nvidia_smi_output_yields_none_rather_than_a_half_filled_dict():

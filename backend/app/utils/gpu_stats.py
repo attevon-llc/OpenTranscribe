@@ -6,6 +6,7 @@ dashboard's direct read.
 
 import logging
 import subprocess
+from subprocess import SubprocessError
 
 from app.utils.stats_helpers import format_bytes
 
@@ -158,6 +159,6 @@ def query_gpu_stats(device_id: int, *, timeout: float | None = 5) -> dict | None
             "temperature_celsius": temperature_celsius,
             "memory_source": memory_source,
         }
-    except (subprocess.SubprocessError, OSError, IndexError, ValueError) as e:
+    except (SubprocessError, OSError, IndexError, ValueError) as e:
         logger.warning(f"nvidia-smi query for device {device_id} failed: {e}", exc_info=True)
         return None

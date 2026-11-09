@@ -154,10 +154,13 @@ def batch_process_speaker_matches() -> None:
         match_count = db.query(SpeakerMatch).count()
         logger.info(f"Total speaker matches in database: {match_count}")
 
-    except Exception as e:
-        logger.error(f"Error in batch processing: {e}")
+    except Exception:
+        # Script boundary: undo the half-done batch, then let the process fail so a cron or
+        # operator sees a non-zero exit instead of a "successful" run that matched nothing.
+        logger.exception("Error in batch processing")
         db.rollback()
         tracker.discard()
+        raise
     finally:
         db.close()
 

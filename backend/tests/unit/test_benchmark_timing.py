@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
@@ -143,7 +144,7 @@ def test_mark_defaults_to_current_time(monkeypatch):
 def test_mark_swallows_redis_failure(monkeypatch, caplog):
     _enable(monkeypatch)
     with (
-        patch("app.core.redis.get_redis", side_effect=ConnectionError("down")),
+        patch("app.core.redis.get_redis", side_effect=RedisConnectionError("down")),
         caplog.at_level("DEBUG", logger="app.utils.benchmark_timing"),
     ):
         # Must not raise: instrumentation failures can never take down the pipeline.
@@ -408,7 +409,7 @@ def test_fetch_all_not_gated_on_disabled_flag(monkeypatch):
 
 
 def test_fetch_all_swallows_redis_failure():
-    with patch("app.core.redis.get_redis", side_effect=ConnectionError("down")):
+    with patch("app.core.redis.get_redis", side_effect=RedisConnectionError("down")):
         assert benchmark_timing.fetch_all("task-1") == {}
 
 
@@ -511,7 +512,7 @@ def test_capture_queue_depth_survives_llen_failure(monkeypatch, caplog):
     _enable(monkeypatch)
     client = _redis()
     pipe = client.pipeline.return_value
-    pipe.execute.side_effect = ConnectionError("redis down")
+    pipe.execute.side_effect = RedisConnectionError("redis down")
 
     with (
         patch("app.core.redis.get_redis", return_value=client),

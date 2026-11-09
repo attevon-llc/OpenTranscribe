@@ -147,7 +147,7 @@ def _reingest_with_throttle(db, minio_client, user, args):
         except Exception as exc:
             db.rollback()
             summary.errors += 1
-            logger.error("register failed for %s: %s", object_name, exc)
+            logger.error("register failed for %s: %s", object_name, exc, exc_info=True)
             continue
 
         try:
@@ -165,7 +165,9 @@ def _reingest_with_throttle(db, minio_client, user, args):
             summary.dispatched += 1
         except Exception as exc:
             summary.errors += 1
-            logger.error("dispatch failed for media_file id=%s: %s", media_file.id, exc)
+            logger.error(
+                "dispatch failed for media_file id=%s: %s", media_file.id, exc, exc_info=True
+            )
 
         time.sleep(args.throttle)
 

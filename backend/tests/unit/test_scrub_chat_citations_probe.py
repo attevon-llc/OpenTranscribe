@@ -52,11 +52,20 @@ def test_hit_rewrites_only_the_matching_citation(db_session, normal_user):
     assert target not in str(msg.citations) and len(msg.citations) == 2
 
 
+# CREATE INDEX takes a SHARE lock on chat_message, which waits for every other worker's open
+# write to it and queues every later writer behind that wait. The DDL discipline scanner cannot
+# see a statement that comes from IndexSpec.create_sql(), so the test spells the DDL out.
+@pytest.mark.ddl_exclusive
 def test_probe_is_answered_by_the_gin_index(db_session):
     from app.db.chat_indexes import CITATIONS_GIN
 
     conn = db_session.connection()
-    conn.execute(text(CITATIONS_GIN.create_sql().replace(" CONCURRENTLY", "")))
+    conn.execute(
+        text(
+            "CREATE INDEX IF NOT EXISTS ix_chat_message_citations_gin "
+            "ON chat_message USING gin (citations jsonb_path_ops)"
+        )
+    )
     conn.execute(text("SET LOCAL enable_seqscan = off"))
     plan = "\n".join(
         r[0]
@@ -68,3 +77,4 @@ def test_probe_is_answered_by_the_gin_index(db_session):
         )
     )
     assert CITATIONS_GIN.name in plan, plan
+    assert CITATIONS_GIN.method == "gin" and CITATIONS_GIN.table == "chat_message"

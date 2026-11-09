@@ -50,7 +50,9 @@ def _unlink_stale_profile_links(
     blacklisted = blacklisted_profile_ids(self.db, [int(s.id) for s in profile_speakers])
     stale_links = [s for s in profile_speakers if int(s.profile_id or 0) in blacklisted[int(s.id)]]
     for stale in stale_links:
-        profile_id_left = int(stale.profile_id)  # type: ignore[arg-type]
+        if stale.profile_id is None:
+            continue
+        profile_id_left = int(stale.profile_id)
         if unlink_from_profile(
             self.db, [stale], profile_id_left, self._rename_tracker, user_id=None
         ):

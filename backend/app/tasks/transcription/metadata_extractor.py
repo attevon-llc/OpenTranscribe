@@ -327,10 +327,11 @@ def _run_ffprobe_json(url: str, timeout: int) -> dict[str, Any] | None:
         logger.debug(f"ffprobe non-zero exit ({proc.returncode}): {proc.stderr[:200]}")
         return None
     try:
-        return json.loads(proc.stdout)  # type: ignore[no-any-return]
+        parsed = json.loads(proc.stdout)
     except json.JSONDecodeError as e:
         logger.debug(f"ffprobe JSON decode failed: {e}")
         return None
+    return parsed if isinstance(parsed, dict) else None
 
 
 def _map_ffprobe_format(fmt: dict[str, Any], out: dict[str, Any]) -> None:

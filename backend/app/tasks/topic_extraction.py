@@ -455,13 +455,8 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
     Returns:
         dict: Contains total, completed, failed, skipped counts and details for each file
     """
-    results: dict[str, int | list[dict[str, str | None]]] = {
-        "total": len(file_uuids),
-        "completed": 0,
-        "failed": 0,
-        "skipped": 0,
-        "details": [],
-    }
+    completed = failed = skipped = 0
+    details: list[dict[str, str | None]] = []
 
     # Dispatch each file as a separate Celery task so multiple workers
     # can process them in parallel instead of running sequentially in
@@ -476,15 +471,13 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
             result = async_result.get(timeout=600)  # 10 min per file
 
             if result["status"] == "completed":
-                results["completed"] = int(results["completed"]) + 1  # type: ignore[arg-type]
+                completed += 1
             elif result["status"] == "failed":
-                results["failed"] = int(results["failed"]) + 1  # type: ignore[arg-type]
+                failed += 1
             elif result["status"] in ("skipped", SKIPPED_LEGAL_HOLD):
-                results["skipped"] = int(results["skipped"]) + 1  # type: ignore[arg-type]
+                skipped += 1
 
-            details_list = results["details"]
-            assert isinstance(details_list, list)
-            details_list.append(
+            details.append(
                 {
                     "file_uuid": file_uuid,
                     "status": result["status"],
@@ -495,10 +488,8 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
 
         except Exception as e:
             logger.error(f"Error in batch processing file {file_uuid}: {e}", exc_info=True)
-            results["failed"] = int(results["failed"]) + 1  # type: ignore[arg-type]
-            details_list = results["details"]
-            assert isinstance(details_list, list)
-            details_list.append(
+            failed += 1
+            details.append(
                 {
                     "file_uuid": file_uuid,
                     "status": "failed",
@@ -507,8 +498,14 @@ def batch_extract_topics_task(self, file_uuids: list[str], force_regenerate: boo
             )
 
     logger.info(
-        f"Batch topic extraction completed: {results['completed']} succeeded, "
-        f"{results['failed']} failed, {results['skipped']} skipped"
+        f"Batch topic extraction completed: {completed} succeeded, "
+        f"{failed} failed, {skipped} skipped"
     )
 
-    return results
+    return {
+        "total": len(file_uuids),
+        "completed": completed,
+        "failed": failed,
+        "skipped": skipped,
+        "details": details,
+    }

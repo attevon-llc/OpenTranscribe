@@ -16,6 +16,7 @@ import pytest
 
 from app.core.logging_config import _JSON_FMT
 from app.core.logging_config import _TEXT_FMT
+from app.core.logging_config import OBS_HANDLER_NAME
 from app.core.logging_config import RequestIdFilter
 from app.core.logging_config import configure_logging
 from app.core.request_context import request_id_var
@@ -105,7 +106,7 @@ def test_configure_logging_marks_the_handler_as_managed(monkeypatch):
 
     root = configure_logging_and_get_root()
 
-    assert getattr(root.handlers[0], "_obs_managed", None) is True
+    assert root.handlers[0].get_name() == OBS_HANDLER_NAME
 
 
 def test_configure_logging_removes_a_pre_existing_default_handler(monkeypatch):

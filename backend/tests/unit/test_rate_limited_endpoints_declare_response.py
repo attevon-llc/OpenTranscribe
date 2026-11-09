@@ -100,7 +100,7 @@ def test_headers_enabled_is_what_makes_this_required():
     parameter is mandatory rather than deleting it as noise.
     """
     source = (APP_ROOT / "auth" / "rate_limit.py").read_text()
-    assert '"headers_enabled": True' in source, (
+    assert "headers_enabled=True" in source, (
         "headers_enabled is no longer True. The `response: Response` requirement "
         "above comes from it — re-read this module's docstring before relaxing "
         "either one."

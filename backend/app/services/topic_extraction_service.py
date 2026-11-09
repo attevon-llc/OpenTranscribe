@@ -377,8 +377,9 @@ IMPORTANT GUIDELINES:
         inputs = self._load_extraction_inputs(media_file_id, force_regenerate, redaction_cfg)
         if inputs is None:
             return None
-        if "existing" in inputs:
-            return inputs["existing"]  # type: ignore[no-any-return]
+        existing = inputs.get("existing")
+        if isinstance(existing, TopicExtractionResult):
+            return existing
 
         # Phase 2 — the slow phase. NO DB session is held from here until the write
         # below: an LLM completion over the whole transcript.

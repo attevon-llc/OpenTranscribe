@@ -29,6 +29,7 @@ from app.models.media import MediaFile
 from app.models.user import User
 from app.services.delete_permissions import can_delete_file
 from app.services.file_availability import unavailable_list_exempt
+from app.services.platform_bypass import Need
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import _resource_in_tenant_scope
 from app.utils.db_helpers import org_stamp_is
@@ -53,11 +54,11 @@ def _is_org_admin_of(ctx: RequestContext, file: MediaFile) -> bool:
     )
 
 
-def _platform_reaches(ctx: RequestContext, file: MediaFile, need: str) -> bool:
+def _platform_reaches(ctx: RequestContext, file: MediaFile, need: Need) -> bool:
     return ctx.bypass.allows(
         org_id=file.organization_id,
         owner_id=file.user_id,
-        need=need,  # type: ignore[arg-type]
+        need=need,
         resource_type="media_file",
         resource_uuid=str(file.uuid),
     )

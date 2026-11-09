@@ -24,7 +24,6 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509 import ocsp
 from cryptography.x509.oid import AuthorityInformationAccessOID
-from cryptography.x509.oid import ExtensionOID
 
 from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
@@ -297,10 +296,10 @@ def _get_ocsp_url(cert: x509.Certificate) -> str | None:
         OCSP URL string or None if not found
     """
     try:
-        aia = cert.extensions.get_extension_for_oid(ExtensionOID.AUTHORITY_INFORMATION_ACCESS)
+        aia = cert.extensions.get_extension_for_class(x509.AuthorityInformationAccess)
         ocsp_urls = [
             desc.access_location.value
-            for desc in aia.value  # type: ignore[attr-defined]
+            for desc in aia.value
             if desc.access_method == AuthorityInformationAccessOID.OCSP
         ]
         if not ocsp_urls:

@@ -144,7 +144,9 @@ class TaskDetectionStuckMixin:
             .all()
         )
         for task in active_tasks_all:
-            active_tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+            if task.media_file_id is None:
+                continue
+            active_tasks_by_file.setdefault(task.media_file_id, []).append(task)
         dead_ids = self._dead_task_ids(active_tasks_all)
 
         stuck_files = []
@@ -346,7 +348,9 @@ class TaskDetectionStuckMixin:
             )
             tasks_by_file: dict[int, list[Task]] = {}
             for task in all_active_tasks:
-                tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+                if task.media_file_id is None:
+                    continue
+                tasks_by_file.setdefault(task.media_file_id, []).append(task)
             dead_ids = self._dead_task_ids(all_active_tasks)
         else:
             tasks_by_file = {}
@@ -466,7 +470,9 @@ class TaskDetectionStuckMixin:
         )
         tasks_by_file: dict[int, list] = {}
         for task in active_proc_tasks:
-            tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+            if task.media_file_id is None:
+                continue
+            tasks_by_file.setdefault(task.media_file_id, []).append(task)
         dead_ids = self._dead_task_ids(active_proc_tasks)
 
         files_without_tasks = []

@@ -1,6 +1,23 @@
 """OpenSearch embedding model tiers, speaker-index names and embedding dimensions."""
 
+from typing import TypedDict
+
 from app.core.config import settings
+
+
+class EmbeddingModelInfo(TypedDict):
+    """One entry of :data:`OPENSEARCH_EMBEDDING_MODELS`."""
+
+    name: str
+    dimension: int
+    size_mb: int
+    languages: list[str]
+    model_format: str
+    default: bool
+    requires_prefix: bool
+    tier: str
+    language_type: str
+    description: str
 
 
 def get_speaker_index() -> str:
@@ -49,7 +66,7 @@ def get_speaker_index_v3_backup() -> str:
 #
 # Verified working but not offered (no distinct use case over what is here):
 #   all-MiniLM-L12-v2 (384d), paraphrase-mpnet-base-v2 (768d).
-OPENSEARCH_EMBEDDING_MODELS = {
+OPENSEARCH_EMBEDDING_MODELS: dict[str, EmbeddingModelInfo] = {
     # === FAST TIER (384 dimensions) ===
     # Low latency, lower memory. Good for keyword-focused searches.
     "huggingface/sentence-transformers/all-MiniLM-L6-v2": {

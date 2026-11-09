@@ -12,8 +12,8 @@ _KEY_EMBEDDING_MODEL = "search.embedding_model"
 _KEY_EMBEDDING_DIMENSION = "search.embedding_dimension"
 
 # Default dimension from the default model
-_default_model_info = OPENSEARCH_EMBEDDING_MODELS.get(OPENSEARCH_DEFAULT_MODEL, {})
-_DEFAULT_DIMENSION: int = _default_model_info.get("dimension", 384)  # type: ignore[assignment]
+_default_model_info = OPENSEARCH_EMBEDDING_MODELS.get(OPENSEARCH_DEFAULT_MODEL)
+_DEFAULT_DIMENSION: int = _default_model_info["dimension"] if _default_model_info else 384
 
 
 def get_search_embedding_model() -> str:

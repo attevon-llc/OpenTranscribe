@@ -174,10 +174,8 @@ def parse_certificate(cert_pem: str) -> CertificateInfo | None:
         else:
             # Try Subject Alternative Name
             try:
-                san = cert.extensions.get_extension_for_oid(
-                    x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
-                )
-                for name in san.value:  # type: ignore[attr-defined]
+                san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+                for name in san.value:
                     if isinstance(name, x509.RFC822Name):
                         email = str(name.value)
                         break

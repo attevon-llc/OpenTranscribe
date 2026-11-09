@@ -258,7 +258,6 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-                return info  # type: ignore[no-any-return]
         except yt_dlp.DownloadError as e:
             # The raw yt-dlp message can carry cookie/config paths or the URL
             # itself, so it must never reach the response (#859). Log the real
@@ -268,6 +267,9 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
         except Exception as e:
             logger.exception(f"Error extracting video info from {url}")
             raise InvalidInputError("Could not read information for that media URL.") from e
+        if not isinstance(info, dict):
+            raise InvalidInputError("Could not read information for that media URL.")
+        return info
 
     def download_video(
         self,

@@ -37,6 +37,7 @@ from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
+from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -532,7 +533,7 @@ class AWSTranscribeProvider(ASRProvider):
             start=start,
             end=words[-1].end,
             speaker=self._normalize_speaker_label(speaker),
-            confidence=sum(w.confidence for w in words) / len(words),
+            confidence=mean_word_confidence(words),
             words=words,
         )
 
@@ -567,6 +568,6 @@ class AWSTranscribeProvider(ASRProvider):
             text=" ".join(x.word for x in chunk),
             start=chunk[0].start,
             end=chunk[-1].end,
-            confidence=sum(x.confidence for x in chunk) / len(chunk),
+            confidence=mean_word_confidence(chunk),
             words=list(chunk),
         )

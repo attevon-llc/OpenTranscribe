@@ -55,7 +55,7 @@ def startup_recovery_task(self: Any) -> dict[str, Any]:
     Returns:
         Dictionary with summary of recovery actions
     """
-    summary = {
+    summary: dict[str, int | str] = {
         "abandoned_files_found": 0,
         "abandoned_files_reset": 0,
         "abandoned_files_completed": 0,
@@ -118,7 +118,7 @@ def startup_recovery_task(self: Any) -> dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Error in startup recovery: {str(e)}")
-        summary["error"] = str(e)  # type: ignore[assignment]
+        summary["error"] = str(e)
 
     return summary
 
@@ -150,7 +150,7 @@ def recover_user_files_task(
     Returns:
         Dictionary with summary of recovery actions
     """
-    summary = {
+    summary: dict[str, int | str] = {
         "users_processed": 1 if user_id else 0,
         "files_checked": 0,
         "files_recovered": 0,
@@ -188,7 +188,7 @@ def recover_user_files_task(
 
     except Exception as e:
         logger.error(f"Error in user file recovery: {str(e)}")
-        summary["error"] = str(e)  # type: ignore[assignment]
+        summary["error"] = str(e)
 
     return summary
 

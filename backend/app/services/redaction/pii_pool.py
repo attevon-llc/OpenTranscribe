@@ -191,10 +191,11 @@ def analyze_texts(texts: list[str]) -> list[list[tuple]] | None:
         for shard_idx, shard in enumerate(results):
             for pos, value in enumerate(shard):
                 out[shard_idx + pos * workers] = value
-        if any(v is None for v in out):
+        complete = [v for v in out if v is not None]
+        if len(complete) != len(out):
             logger.warning("PII pool returned an incomplete result set; falling back in-process")
             return None
-        return out  # type: ignore[return-value]
+        return complete
     except Exception:
         logger.exception("PII pool analysis failed; falling back in-process")
         return None

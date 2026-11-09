@@ -10,6 +10,8 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.celery import celery_app
@@ -117,7 +119,7 @@ def startup_recovery_task(self: Any) -> dict[str, Any]:
             )
 
     except Exception as e:
-        logger.error(f"Error in startup recovery: {str(e)}")
+        logger.exception(f"Error in startup recovery: {str(e)}")
         summary["error"] = str(e)
 
     return summary
@@ -187,7 +189,7 @@ def recover_user_files_task(
             )
 
     except Exception as e:
-        logger.error(f"Error in user file recovery: {str(e)}")
+        logger.exception(f"Error in user file recovery: {str(e)}")
         summary["error"] = str(e)
 
     return summary
@@ -260,8 +262,9 @@ def _check_opensearch_health(summary: dict) -> None:
                 f"OpenSearch index repair: repaired {len(repaired_indices)} indices: "
                 f"{', '.join(repaired_indices)}"
             )
-    except Exception as os_err:
-        logger.warning(f"OpenSearch health check failed (non-fatal): {os_err}")
+    except (OpenSearchException, OSError) as os_err:
+        summary["opensearch_health_error"] = str(os_err)
+        logger.warning(f"OpenSearch health check failed (non-fatal): {os_err}", exc_info=True)
 
 
 def _sweep_superseded_rows(db: Session, summary: dict[str, Any]) -> None:
@@ -273,9 +276,10 @@ def _sweep_superseded_rows(db: Session, summary: dict[str, Any]) -> None:
         sweep = resolve_superseded_task_rows(db)
         summary["superseded_task_rows_found"] = sweep["found"]
         summary["superseded_task_rows_resolved"] = sweep["resolved"]
-    except Exception as sweep_err:
+    except SQLAlchemyError as sweep_err:
         db.rollback()
-        logger.error(f"Superseded task row sweep failed (non-fatal): {sweep_err}")
+        summary["superseded_task_rows_error"] = str(sweep_err)
+        logger.exception(f"Superseded task row sweep failed (non-fatal): {sweep_err}")
 
 
 def _recover_stuck_tasks_and_inconsistent_files(db: Session, summary: dict[str, Any]) -> None:
@@ -526,7 +530,7 @@ def periodic_health_check_task(self: Any) -> dict[str, Any]:
             _log_health_check_summary(summary)
 
     except Exception as e:
-        logger.error(f"Error in periodic health check: {str(e)}")
+        logger.exception(f"Error in periodic health check: {str(e)}")
         summary["error"] = str(e)
 
     # Step 7: Check and repair OpenSearch indices (corrupted HNSW vector segments)

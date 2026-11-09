@@ -73,7 +73,7 @@ def analyze_transcript_task(self: Any, file_uuid: str) -> dict[str, Any]:
 
         except Exception as e:
             # Handle errors
-            logger.error(f"Error analyzing file {file_id}: {str(e)}")
+            logger.exception(f"Error analyzing file {file_id}: {str(e)}")
             from app.utils.task_utils import update_task_status
 
             update_task_status(db, task_id, "failed", error_message=str(e), completed=True)

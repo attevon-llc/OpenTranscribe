@@ -4,6 +4,8 @@ import contextlib
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_REINDEX_PROGRESS
@@ -105,7 +107,12 @@ def _handle_reindex_completion(
             )
         else:
             orphan_cleaned = _cleanup_orphaned_chunks(user_id, indexed_uuids)
-            if orphan_cleaned > 0:
+            if orphan_cleaned is None:
+                logger.warning(
+                    f"Orphan cleanup for user {user_id} could not run; orphaned chunks may "
+                    "remain until the next integrity sweep"
+                )
+            elif orphan_cleaned > 0:
                 logger.info(f"Cleaned {orphan_cleaned} orphaned chunks for user {user_id}")
 
     # Read final stats
@@ -166,14 +173,15 @@ def _handle_reindex_completion(
     )
 
 
-def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:
+def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int | None:
     """Remove chunk documents for files that were deleted during reindex.
 
     Compares the set of file UUIDs in the chunks index (for this user) against
     the set we just indexed. Any file_uuid in the index but NOT in the indexed
     set is orphaned and gets cleaned up.
 
-    Returns count of orphaned documents deleted.
+    Returns count of orphaned documents deleted, or None when the index could not be
+    read or cleaned (so "nothing was orphaned" and "could not look" differ).
     """
     from app.services.opensearch_service import opensearch_client as os_client
 
@@ -254,6 +262,6 @@ def _cleanup_orphaned_chunks(user_id: int, indexed_file_uuids: set[str]) -> int:
         )
         return int(del_resp.get("deleted", 0))
 
-    except Exception as e:
-        logger.warning(f"Post-reindex orphan cleanup failed: {e}")
-        return 0
+    except (OpenSearchException, OSError) as e:
+        logger.exception(f"Post-reindex orphan cleanup failed: {e}")
+        return None

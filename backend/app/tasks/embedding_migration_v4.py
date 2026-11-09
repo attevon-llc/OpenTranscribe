@@ -23,6 +23,8 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_MIGRATION_PROGRESS
@@ -204,8 +206,8 @@ def migrate_speaker_embeddings_v4_task(
 
         r = get_redis()
         r.set("embedding_migration:batch_task_ids", json.dumps(batch_task_ids), ex=86400)
-    except Exception as e:
-        logger.warning("Failed to store batch task IDs: %s", e)
+    except RedisError as e:
+        logger.warning("Failed to store batch task IDs: %s", e, exc_info=True)
 
     logger.info(f"Dispatched {len(batches)} batch tasks for {total_files} files")
 
@@ -300,7 +302,7 @@ def extract_v4_embeddings_batch_task(
             else:
                 files_with_speakers.append((fuuid, prepared))
         except Exception as e:
-            logger.error(f"Failed to prepare file {fuuid}: {e}")
+            logger.exception(f"Failed to prepare file {fuuid}: {e}")
             migration_progress.increment_processed(success=False, file_uuid=fuuid)
             _emit_progress(tracker, target_user, total_files, failed_item=fuuid)
 
@@ -437,7 +439,7 @@ def extract_v4_embeddings_task(
         else:
             migration_progress.increment_processed(success=True)
     except Exception as e:
-        logger.error(f"[legacy] Error migrating {file_uuid}: {e}")
+        logger.exception(f"[legacy] Error migrating {file_uuid}: {e}")
         migration_progress.increment_processed(success=False, file_uuid=file_uuid)
 
     # Check completion

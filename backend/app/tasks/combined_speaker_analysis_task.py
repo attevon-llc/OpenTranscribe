@@ -12,6 +12,8 @@ import json
 import logging
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_COMPLETE
 from app.core.constants import NOTIFICATION_TYPE_COMBINED_MIGRATION_PROGRESS
@@ -63,7 +65,7 @@ def _combined_result_writer(
         emb_count = _embedding_result_writer(prepared, results_by_model)
         count += emb_count
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Embedding write failed for %s (gender will still run): %s",
             prepared.file_uuid[:12],
             e,
@@ -76,7 +78,7 @@ def _combined_result_writer(
         gender_count = _gender_result_writer(prepared, results_by_model)
         count += gender_count
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Gender write failed for %s (embeddings may have succeeded): %s",
             prepared.file_uuid[:12],
             e,
@@ -149,7 +151,7 @@ def analyze_speakers_combined_batch_task(
                 continue
             prepared_files.append((file_uuid, prepared))
         except Exception as e:
-            logger.error("Failed to prepare %s: %s", file_uuid, e)
+            logger.exception("Failed to prepare %s: %s", file_uuid, e)
             combined_migration_progress.increment_processed(success=False, file_uuid=file_uuid)
             _emit_combined_progress(tracker, target_user, total_files, failed_item=file_uuid)
 
@@ -303,8 +305,8 @@ def _orchestrate_combined(r: Any, user_id: int, task_id: str) -> dict[str, Any]:
             # revocable by the stop endpoint instead of orphaned.
             try:
                 r.set(batch_task_ids_key, json.dumps(batch_task_ids), ex=7200)
-            except Exception as e:
-                logger.warning("Failed to store batch task IDs: %s", e)
+            except RedisError as e:
+                logger.warning("Failed to store batch task IDs: %s", e, exc_info=True)
 
         logger.info(
             "Dispatched %d combined migration batches for %d files",

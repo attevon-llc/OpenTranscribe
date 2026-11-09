@@ -25,6 +25,7 @@ import pytest
 from prometheus_client import REGISTRY
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.task_config import RECOVERED_AFTER_STUCK
@@ -491,7 +492,7 @@ def test_the_health_check_runs_the_sweep_before_stuck_task_recovery(db_session):
 
 def test_a_failing_sweep_does_not_stop_the_rest_of_recovery(db_session):
     def broken(db):
-        raise RuntimeError("sweep exploded")
+        raise OperationalError("select", {}, Exception("sweep exploded"))
 
     order = _run_health_check(db_session, broken)
 

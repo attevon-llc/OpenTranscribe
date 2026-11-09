@@ -367,7 +367,7 @@ def auto_label_batch_task(
                 send_file_cache_invalidation(user_id, str(media_file.uuid))
 
             except Exception as e:
-                logger.error(f"Error processing suggestion {suggestion_id}: {e}")
+                logger.exception(f"Error processing suggestion {suggestion_id}: {e}")
                 batch_result["errors"] += 1
                 with contextlib.suppress(Exception):
                     db.rollback()

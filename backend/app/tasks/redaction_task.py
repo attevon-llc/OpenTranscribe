@@ -20,6 +20,8 @@ import logging
 import time
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.constants import NOTIFICATION_TYPE_REDACTION_STATUS
 from app.core.enums import PostProcessingTask
@@ -57,8 +59,14 @@ def _mark_redaction_task(
                 error_message=error_message,
                 completed=status in ("completed", "failed", "skipped"),
             )
-    except Exception as exc:
-        logger.warning("Could not update redaction task record %s to %s: %s", task_id, status, exc)
+    except SQLAlchemyError as exc:
+        logger.warning(
+            "Could not update redaction task record %s to %s: %s",
+            task_id,
+            status,
+            exc,
+            exc_info=True,
+        )
 
 
 @celery_app.task(
@@ -238,4 +246,4 @@ def _notify(user_id: int, file_id: int, result: dict) -> None:
             },
         )
     except Exception as exc:
-        logger.debug("Failed to send redaction notification: %s", exc)
+        logger.warning("Failed to send redaction notification: %s", exc, exc_info=True)

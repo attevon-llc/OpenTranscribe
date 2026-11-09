@@ -21,6 +21,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from kombu.exceptions import KombuError
+
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
 from app.core.queues import NLPPriority
@@ -108,6 +110,8 @@ def dispatch_file_facts(file_id: int, pipeline_task_id: str | None = None) -> bo
         generate_file_facts_task.delay(file_id=file_id, pipeline_task_id=pipeline_task_id)
         logger.info("Dispatched file_facts generation for file %s", file_id)
         return True
-    except Exception as exc:
-        logger.warning("Failed to dispatch file_facts generation for file %s: %s", file_id, exc)
+    except (KombuError, OSError) as exc:
+        logger.warning(
+            "Failed to dispatch file_facts generation for file %s: %s", file_id, exc, exc_info=True
+        )
         return False

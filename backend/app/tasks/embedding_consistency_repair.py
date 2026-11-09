@@ -362,7 +362,12 @@ def _run_repair_phase(
         )
         return success
     except Exception as e:
-        logger.error("%s repair failed for batch %d: %s", mode, batch_index, e)
+        logger.exception("%s repair failed for batch %d: %s", mode, batch_index, e)
+        # Without this the batch reports "success" with zero repairs and the run's
+        # progress never counts these files, so the run could not finish.
+        if on_file_fail is not None:
+            for fuuid, _prepared in files_with_speakers:
+                on_file_fail(fuuid)
         return 0
 
 
@@ -396,7 +401,7 @@ def _prepare_batch_files(
             else:
                 files_with_speakers.append((fuuid, prepared))
         except Exception as e:
-            logger.error("Failed to prepare file %s: %s", fuuid, e)
+            logger.exception("Failed to prepare file %s: %s", fuuid, e)
             _update_repair_progress(
                 total_files, run_id=run_id, success=False, file_uuid=fuuid, user_id=user_id
             )

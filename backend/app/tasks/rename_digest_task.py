@@ -148,7 +148,9 @@ def regenerate_rename_digests(
             regenerated_uuids.append(file_uuid)
             owners.setdefault(user_id, []).append(file_uuid)
         except Exception as exc:  # a digest miss must not fail a rename
-            logger.warning(f"Could not regenerate digest for file {file_uuid} after rename: {exc}")
+            logger.exception(
+                f"Could not regenerate digest for file {file_uuid} after rename: {exc}"
+            )
             errors += 1
 
     logger.info(
@@ -191,7 +193,8 @@ def regenerate_rename_digests(
             )
         except Exception as exc:  # best-effort, matches every sibling dispatch here
             logger.warning(
-                f"Could not send rename-propagation WS notification to user {user_id}: {exc}"
+                f"Could not send rename-propagation WS notification to user {user_id}: {exc}",
+                exc_info=True,
             )
 
     return {

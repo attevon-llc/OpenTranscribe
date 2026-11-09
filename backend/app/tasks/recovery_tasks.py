@@ -27,6 +27,9 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
 
+from minio.error import MinioException
+from urllib3.exceptions import HTTPError as Urllib3HTTPError
+
 from app.core.celery import celery_app
 from app.core.enums import DurationSource
 from app.core.enums import FileStatus
@@ -244,8 +247,10 @@ def _tier_b_probe_duration(storage_path: str) -> float | None:
 
     try:
         url = get_internal_presigned_url(storage_path, expires=3600)
-    except Exception as e:
-        logger.warning("media_duration_backfill: could not mint presigned URL: %s", e)
+    except (MinioException, Urllib3HTTPError, OSError) as e:
+        logger.warning(
+            "media_duration_backfill: could not mint presigned URL: %s", e, exc_info=True
+        )
         return None
     return probe_media_duration(url)
 

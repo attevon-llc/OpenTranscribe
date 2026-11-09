@@ -74,6 +74,10 @@ import logging
 from collections.abc import Iterable
 from typing import Any
 
+from kombu.exceptions import KombuError
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.queues import CPUPriority
 from app.tasks.rename_digest_task import _DIGEST_REGEN_BATCH_SIZE
@@ -175,8 +179,10 @@ def _current_speaker_name(speaker_id: int) -> str | None:
             )
             # Inside the session: the label asks the privacy policy about the row's file.
             return canonical_speaker_label_for_row(row, db) if row else None
-    except Exception as exc:  # fall back to the dispatched name
-        logger.warning(f"Could not re-resolve speaker {speaker_id} at run time: {exc}")
+    except SQLAlchemyError as exc:  # fall back to the dispatched name
+        logger.warning(
+            f"Could not re-resolve speaker {speaker_id} at run time: {exc}", exc_info=True
+        )
         return None
 
 
@@ -205,9 +211,12 @@ def _file_if_voiceprints_off(file_uuid: str) -> tuple[int, int] | None:
             if voiceprints_allowed(int(row[0]), db):
                 return None
             return int(row[0]), int(row[1])
-    except Exception as exc:  # fall back to the in-place rewrite
-        logger.warning(f"Could not read the voiceprint policy of file {file_uuid}: {exc}")
-        return None
+    except SQLAlchemyError:
+        # Not a fallback: an unreadable policy must not default to the in-place rewrite,
+        # which writes the speaker's name into the index of a file whose voiceprints may
+        # be off. Fail the task visibly instead of guessing.
+        logger.exception(f"Could not read the voiceprint policy of file {file_uuid}")
+        raise
 
 
 def _current_file_title(file_uuid: str) -> str | None:
@@ -228,8 +237,10 @@ def _current_file_title(file_uuid: str) -> str | None:
                 .filter(MediaFile.uuid == file_uuid)
                 .first()
             )
-    except Exception as exc:  # fall back to the dispatched title
-        logger.warning(f"Could not re-resolve title for file {file_uuid} at run time: {exc}")
+    except SQLAlchemyError as exc:  # fall back to the dispatched title
+        logger.warning(
+            f"Could not re-resolve title for file {file_uuid} at run time: {exc}", exc_info=True
+        )
         return None
 
     if not row:
@@ -285,8 +296,10 @@ def _finish(index_name: str, file_uuid: str, updated: int) -> None:
     if client:
         try:
             client.indices.refresh(index=index_name)
-        except Exception as exc:  # visibility, not correctness of the write
-            logger.warning(f"Chunk index refresh failed after rename of {file_uuid}: {exc}")
+        except (OpenSearchException, OSError) as exc:  # visibility, not correctness of the write
+            logger.warning(
+                f"Chunk index refresh failed after rename of {file_uuid}: {exc}", exc_info=True
+            )
 
     from app.services.chat.retrieval_cache import bump_corpus_version
 
@@ -430,7 +443,7 @@ def propagate_speaker_rename(
             conflicts="proceed",
         )
     except Exception as exc:  # a rename must not 500 the caller
-        logger.error(f"Speaker rename propagation failed for file {file_uuid}: {exc}")
+        logger.exception(f"Speaker rename propagation failed for file {file_uuid}: {exc}")
         return {"status": "failed", "error": str(exc), "updated": 0}
 
     updated = int(response.get("updated", 0))
@@ -528,7 +541,7 @@ def propagate_title_rename(self: Any, file_uuid: str, new_title: str) -> dict[st
             conflicts="proceed",
         )
     except Exception as exc:  # a rename must not 500 the caller
-        logger.error(f"Title rename propagation failed for file {file_uuid}: {exc}")
+        logger.exception(f"Title rename propagation failed for file {file_uuid}: {exc}")
         return {"status": "failed", "error": str(exc), "updated": 0}
 
     updated = int(response.get("updated", 0))
@@ -583,8 +596,11 @@ def _dispatch_digest_regeneration(
                 file_uuids=batch, new_name=new_name, speaker_id=speaker_id
             )
             dispatched += 1
-        except Exception as exc:  # dispatch failure must not break the rename
-            logger.warning(f"Could not queue digest regeneration for {len(batch)} file(s): {exc}")
+        except (KombuError, OSError) as exc:  # dispatch failure must not break the rename
+            logger.warning(
+                f"Could not queue digest regeneration for {len(batch)} file(s): {exc}",
+                exc_info=True,
+            )
     return dispatched
 
 
@@ -641,8 +657,11 @@ def dispatch_speaker_rename(
                 new_name=new_name,
                 speaker_id=speaker_id,
             )
-        except Exception as exc:  # dispatch failure must not break the rename
-            logger.warning(f"Could not queue speaker rename propagation for {file_uuid}: {exc}")
+        except (KombuError, OSError) as exc:  # dispatch failure must not break the rename
+            logger.warning(
+                f"Could not queue speaker rename propagation for {file_uuid}: {exc}",
+                exc_info=True,
+            )
 
     # Dispatched unconditionally for every coalesced file — NOT gated on the
     # chunk-plane task above finding anything to rewrite. See the module and

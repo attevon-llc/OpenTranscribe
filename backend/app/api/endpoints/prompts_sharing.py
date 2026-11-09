@@ -15,7 +15,6 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from sqlalchemy import and_
-from sqlalchemy import func
 from sqlalchemy import not_
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -34,8 +33,12 @@ from app.middleware.audit import get_request_context
 from app.services.platform_access import TenancyMode
 from app.services.platform_access import tenancy_mode
 from app.services.request_context import RequestContext
+from app.services.summary_prompt_queries import clear_active_prompt_settings
+from app.services.summary_prompt_queries import prompt_matches
+from app.services.summary_prompt_queries import shared_library_page
+from app.services.summary_prompt_queries import shared_library_tags
+from app.services.summary_prompt_queries import users_by_id
 from app.services.uuid_helpers import get_prompt_by_uuid
-from app.utils.pagination import paginate
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,46 +67,21 @@ def get_shared_prompt_library(
             not_(models.SummaryPrompt.is_system_default),
         ),
     )
-    query = db.query(models.SummaryPrompt).filter(
+    prompts, total = shared_library_page(
+        db,
         shared_here,
-        models.SummaryPrompt.is_active.is_(True),
+        content_type=content_type,
+        tags=tags,
+        search=search,
+        sort_by=sort_by,
+        skip=skip,
+        limit=limit,
     )
-
-    if content_type:
-        query = query.filter(models.SummaryPrompt.content_type == content_type)
-
-    if tags:
-        for tag in tags.split(","):
-            tag = tag.strip().lower()
-            if tag:
-                query = query.filter(models.SummaryPrompt.tags.op("@>")(f'["{tag}"]'))
-
-    if search:
-        search_pattern = f"%{search}%"
-        query = query.filter(
-            or_(
-                models.SummaryPrompt.name.ilike(search_pattern),
-                models.SummaryPrompt.description.ilike(search_pattern),
-            )
-        )
-
-    if sort_by == "popular":
-        query = query.order_by(models.SummaryPrompt.usage_count.desc())
-    elif sort_by == "name":
-        query = query.order_by(models.SummaryPrompt.name)
-    else:
-        query = query.order_by(models.SummaryPrompt.shared_at.desc())
-
-    prompts, total = paginate(query, skip, limit)
 
     # Batch-fetch users referenced for attribution: creators + sharers
     referenced_ids = {p.user_id for p in prompts if p.user_id}
     referenced_ids |= {p.shared_by for p in prompts if p.shared_by}
-    users = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(referenced_ids)).all()}
-        if referenced_ids
-        else {}
-    )
+    users = users_by_id(db, referenced_ids)
 
     prompt_list = []
     for p in prompts:
@@ -122,14 +100,7 @@ def get_shared_prompt_library(
     # Get available tags (from the same tenant-scoped set as the listing)
     available_tags: list[str] = []
     try:
-        tag_col = func.jsonb_array_elements_text(models.SummaryPrompt.tags).label("tag")
-        tag_query = (
-            db.query(tag_col)
-            .filter(shared_here, models.SummaryPrompt.is_active.is_(True))
-            .distinct()
-            .order_by("tag")
-        )
-        available_tags = [row[0] for row in tag_query.all()]
+        available_tags = shared_library_tags(db, shared_here)
     except Exception:
         logger.debug("Could not fetch available tags", exc_info=True)
 
@@ -165,13 +136,7 @@ def share_prompt(
     prompt = get_prompt_by_uuid(db, prompt_uuid)
 
     if prompt.user_id != current_user.id and not prompt.is_system_default:
-        in_tenant = (
-            db.query(models.SummaryPrompt.id)
-            .filter(models.SummaryPrompt.id == prompt.id, _in_tenant(ctx))
-            .first()
-            is not None
-        )
-        if not in_tenant:
+        if not prompt_matches(db, prompt.id, _in_tenant(ctx)):
             raise HTTPException(status_code=404, detail="Prompt not found")
         may_administer = ctx.is_org_admin or ctx.bypass.allows(
             org_id=ctx.org_id,
@@ -198,11 +163,7 @@ def share_prompt(
         prompt.shared_at = None
         prompt.shared_by = None
         # Clean up other users who had this prompt set as active
-        db.query(models.UserSetting).filter(
-            models.UserSetting.setting_key == "active_summary_prompt_id",
-            models.UserSetting.setting_value == str(prompt.id),
-            models.UserSetting.user_id != current_user.id,
-        ).delete(synchronize_session=False)
+        clear_active_prompt_settings(db, prompt.id, except_user_id=current_user.id)
 
     db.commit()
     db.refresh(prompt)

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `scripts/run-backend-tests.sh` now writes its log, JUnit XML and metadata to a per-checkout, per-run directory (`$OT_TEST_OUT_DIR/<checkout-hash>/`), so concurrent runs from different worktrees no longer overwrite each other and `--failures`/`--summary` cannot re-report another run's results. The newest 10 runs per checkout are kept.
+
 - Security: a stored secret that cannot be decrypted (rotated or wrong `ENCRYPTION_KEY`, corrupt or tampered ciphertext) now raises `SecretDecryptionError` instead of returning `None`, which callers could not tell from "no secret stored". Provider and ASR credentials, SMTP/Exchange/M365 and watch-source S3/SMB secrets, scheduled-job S3 secrets and Bedrock credentials now fail visibly rather than connecting without credentials or overwriting the stored value; the API answers `409` with code `stored_value_unreadable` and a fixed message; the media-source resolver skips an undecryptable source; the admin Statistics queue view reports "unavailable" on a broker outage instead of zeros.
 
 ### Changed

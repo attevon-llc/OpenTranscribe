@@ -963,6 +963,7 @@ TASK_FREEZE_GUARDED: dict[str, tuple[str, ...]] = {
     ),
     "tasks/recovery_tasks.py::media_duration_backfill": (
         "tasks/recovery_tasks.py::media_duration_backfill",
+        "tasks/recovery_tasks.py::_read_duration_candidates",
     ),
 }
 

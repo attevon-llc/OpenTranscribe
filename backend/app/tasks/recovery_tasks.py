@@ -250,6 +250,79 @@ def _tier_b_probe_duration(storage_path: str) -> float | None:
     return probe_media_duration(url)
 
 
+def _read_duration_candidates(user_id: int | None) -> list[_DurationCandidate]:
+    """Phase 1: read the rows #969 may have overwritten as PLAIN DATA.
+
+    Short session, no slow work inside.
+    """
+    from sqlalchemy import func
+
+    from app.models.media import TranscriptSegment
+    from app.services.file_availability import exclude_unavailable
+    from app.services.hold_guard import not_held_pred
+
+    with session_scope() as db:
+        segment_max = (
+            db.query(
+                TranscriptSegment.media_file_id.label("media_file_id"),
+                func.max(TranscriptSegment.end_time).label("max_end"),
+            )
+            .group_by(TranscriptSegment.media_file_id)
+            .subquery()
+        )
+        query = (
+            db.query(MediaFile)
+            .join(segment_max, segment_max.c.media_file_id == MediaFile.id)
+            .filter(
+                MediaFile.duration_source.is_(None),
+                MediaFile.status == FileStatus.COMPLETED,
+                not_held_pred(),
+                func.abs(MediaFile.duration - segment_max.c.max_end)
+                < _OVERWRITE_SIGNATURE_TOLERANCE_SECONDS,
+            )
+        )
+        query = exclude_unavailable(query)
+        if user_id is not None:
+            query = query.filter(MediaFile.user_id == user_id)
+
+        candidates = [
+            _DurationCandidate(
+                id=row.id,
+                uuid=str(row.uuid),
+                user_id=row.user_id,
+                stored_duration=row.duration,
+                storage_path=row.storage_path,
+                metadata_important=row.metadata_important or {},
+            )
+            for row in query.all()
+            if row.duration is not None  # the abs() filter above already excludes NULL
+        ]
+    return candidates
+
+
+def _resolve_durations(
+    candidates: list[_DurationCandidate], summary: dict[str, int]
+) -> list[tuple[_DurationCandidate, float | None, str]]:
+    """Phase 2: slow work (dict reads + Tier B network I/O). NO session open."""
+    resolutions: list[tuple[_DurationCandidate, float | None, str]] = []
+    for candidate in candidates:
+        tier_a = _tier_a_container_duration(candidate.metadata_important)
+        if tier_a is not None:
+            summary["tier_a"] += 1
+            resolutions.append((candidate, tier_a, DurationSource.CONTAINER.value))
+            continue
+
+        tier_b = _tier_b_probe_duration(candidate.storage_path)
+        if tier_b is not None:
+            summary["tier_b"] += 1
+            resolutions.append((candidate, tier_b, DurationSource.CONTAINER.value))
+            continue
+
+        summary["unrecoverable"] += 1
+        resolutions.append((candidate, None, DurationSource.TRANSCRIPT_EXTENT.value))
+    return resolutions
+
+
 @celery_app.task(
     name="recovery.media_duration_backfill",
     bind=True,
@@ -291,12 +364,6 @@ def media_duration_backfill(self: Any, user_id: int | None = None, dry_run: bool
     Returns:
         ``{examined, tier_a, tier_b, unrecoverable, updated, skipped_lower, reindexed}``.
     """
-    from sqlalchemy import func
-
-    from app.models.media import TranscriptSegment
-    from app.services.file_availability import exclude_unavailable
-    from app.services.hold_guard import not_held_pred
-
     summary = {
         "examined": 0,
         "tier_a": 0,
@@ -307,66 +374,13 @@ def media_duration_backfill(self: Any, user_id: int | None = None, dry_run: bool
         "reindexed": 0,
     }
 
-    # --- Phase 1: read candidates as PLAIN DATA. Short session, no slow work inside. ---
-    with session_scope() as db:
-        segment_max = (
-            db.query(
-                TranscriptSegment.media_file_id.label("media_file_id"),
-                func.max(TranscriptSegment.end_time).label("max_end"),
-            )
-            .group_by(TranscriptSegment.media_file_id)
-            .subquery()
-        )
-        query = (
-            db.query(MediaFile)
-            .join(segment_max, segment_max.c.media_file_id == MediaFile.id)
-            .filter(
-                MediaFile.duration_source.is_(None),
-                MediaFile.status == FileStatus.COMPLETED,
-                not_held_pred(),
-                func.abs(MediaFile.duration - segment_max.c.max_end)
-                < _OVERWRITE_SIGNATURE_TOLERANCE_SECONDS,
-            )
-        )
-        query = exclude_unavailable(query)
-        if user_id is not None:
-            query = query.filter(MediaFile.user_id == user_id)
-
-        candidates = [
-            _DurationCandidate(
-                id=row.id,
-                uuid=str(row.uuid),
-                user_id=row.user_id,
-                stored_duration=row.duration,
-                storage_path=row.storage_path,
-                metadata_important=row.metadata_important or {},
-            )
-            for row in query.all()
-            if row.duration is not None  # the abs() filter above already excludes NULL
-        ]
-
+    candidates = _read_duration_candidates(user_id)
     summary["examined"] = len(candidates)
     if not candidates:
         logger.info("media_duration_backfill: no candidate rows")
         return summary
 
-    # --- Phase 2: slow work (dict reads + Tier B network I/O). NO session open. ---
-    resolutions: list[tuple[_DurationCandidate, float | None, str]] = []
-    for candidate in candidates:
-        tier_a = _tier_a_container_duration(candidate.metadata_important)
-        if tier_a is not None:
-            summary["tier_a"] += 1
-            resolutions.append((candidate, tier_a, DurationSource.CONTAINER.value))
-            continue
-
-        tier_b = _tier_b_probe_duration(candidate.storage_path)
-        if tier_b is not None:
-            summary["tier_b"] += 1
-            resolutions.append((candidate, tier_b, DurationSource.CONTAINER.value))
-            continue
-
-        summary["unrecoverable"] += 1
-        resolutions.append((candidate, None, DurationSource.TRANSCRIPT_EXTENT.value))
+    resolutions = _resolve_durations(candidates, summary)
 
     # --- Phase 3: write back. Short session(s), batched. ---
     to_reindex: list[tuple[int, str, int]] = []

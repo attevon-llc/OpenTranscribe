@@ -16,6 +16,8 @@ _UPDATE_FUNCTIONS = [
     "update_parse_args",
     "update_resolve_rollback_target",
     "update_refuse_unforced_downgrade",
+    "sed_env_inplace",
+    "append_env_line",
     "update_pin_image_tag",
     "update_check_rollback_compat",
     "run_upgrade_sequence",

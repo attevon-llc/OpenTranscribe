@@ -79,7 +79,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # ─── Tunables (overridable via env) ─────────────────────────────────────────
 TEST_SCENARIO="lite-mode"
 TEST_PROJECT_NAME="${TEST_PROJECT_NAME:-ot-reltest-lite}"
-# Also the compose project (env-template.sh writes it as COMPOSE_PROJECT_NAME into the
+# Also the compose project (the scenario .env carries it as COMPOSE_PROJECT_NAME into the
 # generated .env) — export it here too so compose-project.sh's compose_project_name()
 # scopes every `docker ps` lookup below to THIS rehearsal's stack, never whatever
 # unrelated stack (e.g. the live dev one) happens to be running on the same host.

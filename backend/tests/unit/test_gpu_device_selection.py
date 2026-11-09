@@ -148,7 +148,7 @@ def test_release_test_env_template_does_not_set_cuda_visible_devices():
     to a single card at ordinal 0. `cuInit` then fails with 100 (CUDA_ERROR_NO_DEVICE)
     and every GPU worker silently falls back to CPU while still reporting healthy.
     """
-    template = REPO_ROOT / "scripts/release-tests/lib/env-template.sh"
+    template = REPO_ROOT / "scripts/release-tests/test-upgrade.sh"
     assert template.exists()
     offending = [
         line
@@ -156,7 +156,7 @@ def test_release_test_env_template_does_not_set_cuda_visible_devices():
         if re.match(r"^\s*CUDA_VISIBLE_DEVICES=", line)
     ]
     assert not offending, (
-        "env-template.sh writes CUDA_VISIBLE_DEVICES into the generated .env, which "
+        "test-upgrade.sh writes CUDA_VISIBLE_DEVICES into the generated .env, which "
         f"disables CUDA in every GPU-reserved container: {offending}"
     )
 

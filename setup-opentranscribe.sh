@@ -909,13 +909,40 @@ validate_downloaded_files() {
 
 # ===== .env creation and hardware settings =====
 
+# Run one in-place sed expression on .env. BSD sed (macOS) needs the suffix glued to -i and
+# GNU sed accepts it, so a suffix is the only portable form. It is unique to this process so
+# removing it can never delete a .env.bak the operator keeps there on purpose.
+_sed_env_inplace() {
+    local suffix=".ot-sed.$$"
+    sed -i"$suffix" "$1" .env && rm -f ".env$suffix"
+}
+
+# Replace the value of an existing, uncommented KEY= line. Anchored on purpose: an
+# unanchored `BATCH_SIZE=.*` also rewrote SEARCH_BULK_BATCH_SIZE, DIARIZATION_BATCH_SIZE and
+# GPU_DEFAULT_BATCH_SIZE, and `GPU_DEVICE_ID=.*` rewrote REDACTION_GPU_DEVICE_ID.
+# The value is escaped for the sed replacement ( \ & | ).
+_replace_env_value() {
+    local key="$1" val="$2" esc
+    esc=$(printf '%s' "$val" | sed 's/[\\&|]/\\&/g')
+    _sed_env_inplace "s|^${key}=.*|${key}=${esc}|"
+}
+
+# Append a line to .env, first terminating a last line that has no newline (otherwise the
+# new key is glued onto the previous value).
+_append_env_line() {
+    if [ -s .env ] && [ -n "$(tail -c1 .env)" ]; then
+        printf '\n' >> .env
+    fi
+    printf '%s\n' "$1" >> .env
+}
+
 # Update an existing KEY= line in .env, or append KEY=VALUE if missing.
 _upsert_env() {
     local key="$1" val="$2"
     if grep -q "^${key}=" .env 2>/dev/null; then
-        sed -i.bak "s|^${key}=.*|${key}=${val}|" .env && rm -f .env.bak
+        _replace_env_value "$key" "$val"
     else
-        echo "${key}=${val}" >> .env
+        _append_env_line "${key}=${val}"
     fi
 }
 
@@ -930,23 +957,22 @@ _set_frontend_bind_host() {
 _create_initial_env() {
     cp .env.example .env
     # BEFORE the sed block below writes nine secrets into it (issue #857) — a fresh
-    # `cp` inherits the umask (0644 on a default host), and .env.bak (removed further
-    # down) is created by `sed -i.bak` at the same mode for the duration of those calls.
+    # `cp` inherits the umask (0644 on a default host), and the sed backup copy made by
+    # _sed_env_inplace is created at the same mode for the duration of each call.
     ensure_env_permissions .env
 
-    sed -i.bak "s|POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|g" .env
-    sed -i.bak "s|MINIO_ROOT_PASSWORD=.*|MINIO_ROOT_PASSWORD=$MINIO_ROOT_PASSWORD|g" .env
-    sed -i.bak "s|JWT_SECRET_KEY=.*|JWT_SECRET_KEY=$JWT_SECRET|g" .env
-    sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=$ENCRYPTION_KEY|g" .env
-    sed -i.bak "s|REDIS_PASSWORD=.*|REDIS_PASSWORD=$REDIS_PASSWORD|g" .env
-    sed -i.bak "s|OPENSEARCH_PASSWORD=.*|OPENSEARCH_PASSWORD=$OPENSEARCH_PASSWORD|g" .env
-    sed -i.bak "s|^OPENSEARCH_ADMIN_PASSWORD=.*|OPENSEARCH_ADMIN_PASSWORD=$OPENSEARCH_ADMIN_PASSWORD|" .env
-    sed -i.bak "s|FLOWER_PASSWORD=.*|FLOWER_PASSWORD=$FLOWER_PASSWORD|g" .env
-    sed -i.bak "s|MINIO_KMS_SECRET_KEY=.*|MINIO_KMS_SECRET_KEY=$MINIO_KMS_KEY|g" .env
-    sed -i.bak "s|BATCH_SIZE=.*|BATCH_SIZE=$BATCH_SIZE|g" .env
-    sed -i.bak "s|COMPUTE_TYPE=.*|COMPUTE_TYPE=$COMPUTE_TYPE|g" .env
-    sed -i.bak "s|MODEL_CACHE_DIR=.*|MODEL_CACHE_DIR=${MODEL_CACHE_DIR:-./models}|g" .env
-    rm -f .env.bak
+    _replace_env_value POSTGRES_PASSWORD "$POSTGRES_PASSWORD"
+    _replace_env_value MINIO_ROOT_PASSWORD "$MINIO_ROOT_PASSWORD"
+    _replace_env_value JWT_SECRET_KEY "$JWT_SECRET"
+    _replace_env_value ENCRYPTION_KEY "$ENCRYPTION_KEY"
+    _replace_env_value REDIS_PASSWORD "$REDIS_PASSWORD"
+    _replace_env_value OPENSEARCH_PASSWORD "$OPENSEARCH_PASSWORD"
+    _replace_env_value OPENSEARCH_ADMIN_PASSWORD "$OPENSEARCH_ADMIN_PASSWORD"
+    _replace_env_value FLOWER_PASSWORD "$FLOWER_PASSWORD"
+    _replace_env_value MINIO_KMS_SECRET_KEY "$MINIO_KMS_KEY"
+    _replace_env_value BATCH_SIZE "$BATCH_SIZE"
+    _replace_env_value COMPUTE_TYPE "$COMPUTE_TYPE"
+    _replace_env_value MODEL_CACHE_DIR "${MODEL_CACHE_DIR:-./models}"
 
     # Pin the image tag this install was built against. Compose reads
     # ${OT_IMAGE_TAG:-latest}, so writing it here is what makes `docker compose
@@ -954,13 +980,10 @@ _create_initial_env() {
     # `./opentranscribe.sh update --version vX.Y.Z` rewrites this line, which is
     # also how a rollback works.
     if grep -q '^# *OT_IMAGE_TAG=' .env; then
-        sed -i.bak "s|^# *OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|" .env
-    elif grep -q '^OT_IMAGE_TAG=' .env; then
-        sed -i.bak "s|^OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|" .env
+        _sed_env_inplace "s|^# *OT_IMAGE_TAG=.*|OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}|"
     else
-        echo "OT_IMAGE_TAG=${OT_IMAGE_TAG:-latest}" >> .env
+        _upsert_env OT_IMAGE_TAG "${OT_IMAGE_TAG:-latest}"
     fi
-    rm -f .env.bak
 
     # A local VERSION file so `./opentranscribe.sh version` can answer even when
     # the stack is down and the images carry no labels.
@@ -974,20 +997,19 @@ _create_initial_env() {
 _write_hardware_settings() {
     case "$DETECTED_DEVICE" in
         "cuda")
-            sed -i.bak "s|USE_GPU=.*|USE_GPU=true|g" .env
-            sed -i.bak "s|GPU_DEVICE_ID=.*|GPU_DEVICE_ID=${GPU_DEVICE_ID:-0}|g" .env
-            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cuda|g" .env
+            _upsert_env USE_GPU true
+            _upsert_env GPU_DEVICE_ID "${GPU_DEVICE_ID:-0}"
+            _upsert_env TORCH_DEVICE cuda
             ;;
         "mps")
-            sed -i.bak "s|USE_GPU=.*|USE_GPU=false|g" .env
-            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=mps|g" .env
+            _upsert_env USE_GPU false
+            _upsert_env TORCH_DEVICE mps
             ;;
         "cpu")
-            sed -i.bak "s|USE_GPU=.*|USE_GPU=false|g" .env
-            sed -i.bak "s|TORCH_DEVICE=.*|TORCH_DEVICE=cpu|g" .env
+            _upsert_env USE_GPU false
+            _upsert_env TORCH_DEVICE cpu
             ;;
     esac
-    rm -f .env.bak
 
     _upsert_env "DETECTED_DEVICE" "${DETECTED_DEVICE}"
     _upsert_env "USE_NVIDIA_RUNTIME" "${USE_GPU_RUNTIME}"
@@ -1099,16 +1121,13 @@ configure_environment() {
 write_nginx_server_name_to_env() {
     local name="$1"
     [ -f .env ] || return 0
-    if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-        sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$name|g" .env
+    if grep -qE "^#*[[:space:]]*NGINX_SERVER_NAME=" .env; then
+        _sed_env_inplace "s|^#*[[:space:]]*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$name|"
     else
-        {
-            echo ""
-            echo "# HTTPS/SSL Configuration"
-            echo "NGINX_SERVER_NAME=$name"
-        } >> .env
+        _append_env_line ""
+        _append_env_line "# HTTPS/SSL Configuration"
+        _append_env_line "NGINX_SERVER_NAME=$name"
     fi
-    rm -f .env.bak
     _set_frontend_bind_host 127.0.0.1  # nginx is the front door; plain HTTP stays local
     # Unconditional, not just on the fresh-install path (issue #857): a re-run
     # against a pre-existing .env that predates this fix, or one created by a
@@ -1135,7 +1154,7 @@ hf_token_unattended() {
     # healthy. Diarization is not optional: the pipeline cannot complete
     # without it.
     if [[ -n "$HUGGINGFACE_TOKEN" && -f .env ]]; then
-        sed -i.bak "s|^HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|" .env && rm -f .env.bak
+        _replace_env_value HUGGINGFACE_TOKEN "$HUGGINGFACE_TOKEN"
         ot_log_unattended "HUGGINGFACE_TOKEN written to .env"
     fi
 }
@@ -1199,7 +1218,7 @@ read_hf_token_input() {
 
     # Write token immediately so it's saved even if the script is interrupted later
     if [ -f .env ]; then
-        sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env && rm -f .env.bak
+        _replace_env_value HUGGINGFACE_TOKEN "$HUGGINGFACE_TOKEN"
     fi
 }
 
@@ -1371,7 +1390,7 @@ select_whisper_model() {
 
     # Write immediately so the selection is saved even if the script is interrupted
     if [ -f .env ]; then
-        sed -i.bak "s|WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|g" .env && rm -f .env.bak
+        _replace_env_value WHISPER_MODEL "$WHISPER_MODEL"
     fi
 }
 
@@ -1528,7 +1547,7 @@ select_opensearch_models() {
 
     # Write immediately so the selection is saved even if the script is interrupted
     if [ -f .env ] && [[ -n "$OPENSEARCH_NEURAL_MODEL" ]]; then
-        sed -i.bak "s|OPENSEARCH_NEURAL_MODEL=.*|OPENSEARCH_NEURAL_MODEL=$OPENSEARCH_NEURAL_MODEL|g" .env && rm -f .env.bak
+        _replace_env_value OPENSEARCH_NEURAL_MODEL "$OPENSEARCH_NEURAL_MODEL"
     fi
 }
 
@@ -2007,8 +2026,7 @@ offer_hf_token_entry() {
             # Validate and update .env file
             if [[ -n "$HUGGINGFACE_TOKEN" ]]; then
                 # Update the token in .env file
-                sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env
-                rm -f .env.bak
+                _replace_env_value HUGGINGFACE_TOKEN "$HUGGINGFACE_TOKEN"
 
                 if [[ "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
                     print_success "HuggingFace token configured and saved to .env!"

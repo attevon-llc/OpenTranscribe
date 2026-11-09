@@ -694,8 +694,8 @@ backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#1	1	re-k
 backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/opensearch_integrity_task.py::get_index_overview#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::_check_opensearch_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::_sweep_superseded_rows#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::periodic_health_check_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/recovery.py::periodic_health_check_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::recover_user_files_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::startup_recovery_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery_tasks.py::_tier_b_probe_duration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

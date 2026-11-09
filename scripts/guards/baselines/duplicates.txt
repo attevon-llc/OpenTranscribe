@@ -74,7 +74,6 @@ backend/tests/integration/test_diar_native_multigpu_provider_live.py	2	pre-exist
 backend/tests/integration/test_diarization_regression.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_diarizer_lifecycle.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_digest_plane_opensearch.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/integration/test_dockerfile_targetarch_build.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_org_audit_export_opensearch.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_quarantine_index_lifecycle_opensearch.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/integration/test_reindex_on_mutation_666.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -118,8 +117,6 @@ backend/tests/unit/test_collection_visibility_discipline.py	1	pre-existing dupli
 backend/tests/unit/test_combined_speaker_analysis_task.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_container_error_echo_sanitization.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_diar_native_lite_image_pairing.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/test_direct_ws_event_sites_quarantine.py	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/tests/unit/test_dockerfile_targetarch_stage_selection.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_embedding_migration_v4.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_env_file_permissions.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/unit/test_file_availability_single_source.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

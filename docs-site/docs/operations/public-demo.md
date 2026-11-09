@@ -274,18 +274,19 @@ the item in it; `demo_seed validate` refuses an item whose collection is missing
 |---|---|---|
 | News | Voice of America English reports (VOA Learning English) | US-GOV-PD |
 | Government meetings & public talks | NASA public meetings, USGS public lectures | US-GOV-PD |
-| Business & finance | Federal Reserve FOMC press conferences, SEC open meetings | US-GOV-PD |
-| Training & education | NASA education, FEMA and OSHA training videos, LibriVox readings | US-GOV-PD, PDM-1.0 |
+| Business & finance | Federal Reserve FOMC introductory statements, SEC open-meeting openings, BLS explainers | US-GOV-PD |
+| Training & education | NASA education, FEMA preparedness, BLS career tools, NOAA National Ocean Service | US-GOV-PD |
 | Science & briefings | NASA, NOAA / National Weather Service | US-GOV-PD |
 | Privacy demo | The scripted clip with invented personal details | CC0-1.0 |
 
 The catalogue records, for every source, its licence, licence page, attribution, why it is
 allowed, and exclusion rules (for example, public-comment segments by private citizens are always
-cut, and third-party material a page marks as such is excluded). Two licence pages could not be
-fetched when the catalogue was written (FCC, OSHA); they are marked `license_verified: false`.
-Re-read every licence page and set `license_checked_on` when you build the bundle. LibriVox is
-held back until the project owner decides whether volunteer readers count as private individuals.
-The owner approves the final item list.
+cut, and third-party material a page marks as such is excluded). Items must also be politically
+and socially neutral: no elections or partisan politics, health or drug controversy, crashes or
+casualties, conflict, crime or immigration. FCC and OSHA are excluded because their licence pages
+could not be read, and LibriVox is excluded because volunteer readers are private individuals.
+Re-read every licence page and set `license_checked_on` when you build the bundle. The owner
+approves the final item list.
 
 ### Pre-generated chat conversations
 

@@ -210,24 +210,6 @@ class RedisCacheService:
         """
         return self.delete_pattern("cache:tags:*")
 
-    def invalidate_tags_for_file(self, db: Any, file_id: int) -> None:
-        """Invalidate the owning user's tag + file caches for a file.
-
-        Used by back-door tag-mutation paths (upload helpers, auto-labeling)
-        that operate on ``file_id`` and don't carry ``current_user`` — resolves
-        the file owner so the read-through tag cache never goes stale.
-        Best-effort: a lookup failure must not break the mutation.
-        """
-        try:
-            from app.models.media import MediaFile
-
-            owner_id = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).scalar()
-            if owner_id is not None:
-                self.invalidate_tags(int(owner_id))
-                self.invalidate_user_files(int(owner_id))
-        except Exception as e:
-            logger.debug(f"invalidate_tags_for_file failed (non-critical): {e}")
-
     def invalidate_speakers(self, user_id: int) -> None:
         """Invalidate speaker caches for a user."""
         self.delete_pattern(f"cache:speakers:{user_id}")

@@ -29,7 +29,6 @@ adversaries):
 
 from __future__ import annotations
 
-import io
 import logging
 import os
 from pathlib import Path
@@ -89,11 +88,6 @@ def compute_from_path(path: str | Path) -> str | None:
     except Exception as e:
         logger.debug(f"imohash compute_from_path({path}) failed: {e}")
         return None
-
-
-def compute_from_bytes(data: bytes) -> str:
-    """Fingerprint a raw byte buffer — used on the legacy in-memory path."""
-    return compute_from_stream(io.BytesIO(data))
 
 
 class _MinioRangeReader:

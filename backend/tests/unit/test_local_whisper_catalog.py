@@ -14,7 +14,7 @@ import pytest
 
 from app.core import local_whisper_catalog as catalog
 from app.schemas.processing_request import VALID_LOCAL_WHISPER_MODELS
-from app.services.asr.factory import ASRProviderFactory
+from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 
 EXPECTED_IDS = {
     "tiny",
@@ -78,7 +78,7 @@ def test_allow_patterns_equal_faster_whispers_download_patterns():
 
 
 def test_provider_catalog_local_models_are_the_catalog_in_order():
-    local = ASRProviderFactory.get_provider_catalog()["local"]
+    local = ASR_PROVIDER_CATALOG["local"]
     assert [m["id"] for m in local["models"]] == [m.id for m in catalog.LOCAL_WHISPER_MODELS]
     for served, entry in zip(local["models"], catalog.LOCAL_WHISPER_MODELS, strict=True):
         assert served["display_name"] == entry.display_name

@@ -473,7 +473,6 @@ backend/app/services/redaction/spans.py::_coerce#1	1	re-keyed per handler so a f
 backend/app/services/redis_cache_service.py::RedisCacheService._push_invalidation#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redis_cache_service.py::RedisCacheService.delete_pattern#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redis_cache_service.py::RedisCacheService.get#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/redis_cache_service.py::RedisCacheService.invalidate_tags_for_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redis_cache_service.py::RedisCacheService.redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redis_cache_service.py::RedisCacheService.set#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redis_cache_service.py::_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

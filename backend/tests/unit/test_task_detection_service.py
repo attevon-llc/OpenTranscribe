@@ -361,7 +361,9 @@ def test_retriable_errors_are_capped_at_the_batch_size(service, db_session, norm
     second = _error_file(db_session, normal_user, category=ErrorCategory.NETWORK_ERROR, days_old=1)
     third = _error_file(db_session, normal_user, category=ErrorCategory.NETWORK_ERROR, days_old=2)
 
-    selected = service.identify_retriable_error_files(db_session, batch_size=2)
+    selected = service.identify_retriable_error_files_split(db_session, transcription_batch_size=2)[
+        1
+    ]
     assert [f.id for f in selected] == [first.id, second.id]
     assert third.id not in {f.id for f in selected}
 
@@ -381,7 +383,12 @@ def test_retriable_errors_exclude_permanently_failed_categories(service, db_sess
         db_session, normal_user, category=ErrorCategory.NETWORK_ERROR, days_old=1
     )
 
-    ids = {f.id for f in service.identify_retriable_error_files(db_session, batch_size=5)}
+    ids = {
+        f.id
+        for f in service.identify_retriable_error_files_split(
+            db_session, transcription_batch_size=5
+        )[1]
+    }
     assert retriable.id in ids
     assert permanent.id not in ids
 
@@ -402,7 +409,12 @@ def test_retriable_errors_exhausted_by_retry_count_are_dropped(service, db_sessi
     )
     db_session.commit()
 
-    ids = {f.id for f in service.identify_retriable_error_files(db_session, batch_size=5)}
+    ids = {
+        f.id
+        for f in service.identify_retriable_error_files_split(
+            db_session, transcription_batch_size=5
+        )[1]
+    }
     assert fresh.id in ids
     assert exhausted.id not in ids
 

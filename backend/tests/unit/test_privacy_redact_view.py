@@ -25,6 +25,7 @@ from app.services.privacy.consent import clear_voiceprint_consent_hooks
 from app.services.privacy.consent import register_voiceprint_consent_hook
 from app.services.privacy.policy import reset_privacy_ceiling_resolver
 from app.services.privacy.redact_view import PrivacyView
+from app.utils.speaker_labels import canonical_speaker_label_for_row
 from tests.fixtures.speaker_cleanup_seams import make_file
 from tests.fixtures.speaker_cleanup_seams import make_speaker
 from tests.helpers import persist_speaker_status
@@ -478,7 +479,10 @@ def test_a_view_labels_a_row_with_its_files_answer(db_session, normal_user):
     on = _identified(db_session, normal_user, _org(db_session), source="voiceprint")
     view = PrivacyView(db_session)
 
-    assert (view.label_for_row(off), view.label_for_row(on)) == ("SPEAKER_00", "Alice")
+    assert (
+        canonical_speaker_label_for_row(off, view),
+        canonical_speaker_label_for_row(on, view),
+    ) == ("SPEAKER_00", "Alice")
 
 
 def _columns_row(db, speaker, *, with_identity: bool):

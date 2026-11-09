@@ -437,7 +437,7 @@ repos:
       # frontend/src; --min-tokens and the scan set live in the script. Seconds, not minutes.
       - id: guard-duplicates
         name: duplicated code ratchet (baselined)
-        entry: bash -c '{ [ -d frontend/node_modules ] || (cd frontend && npm ci); } && python3 scripts/guards/check_duplicates.py'
+        entry: bash -c '{ [ -x frontend/node_modules/.bin/jscpd ] || (cd frontend && npm ci); } && python3 scripts/guards/check_duplicates.py'
         language: system
         pass_filenames: false
         files: ^((backend/app|backend/tests|scripts)/.*\.py|frontend/src/|scripts/guards/.*|frontend/package\.json$)

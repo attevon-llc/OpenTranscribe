@@ -1,7 +1,6 @@
 """The ``/token`` + ``/login`` endpoint and its authentication orchestration."""
 
 import logging
-import os
 from datetime import UTC
 from datetime import datetime
 from typing import NoReturn
@@ -46,6 +45,7 @@ from app.core.config import settings
 from app.core.constants import SESSION_CAP_EVICTION_BATCH_LIMIT
 from app.core.db_overload import database_unreachable
 from app.core.db_overload import reraise_db_overload
+from app.core.env import testing_mode
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
@@ -92,9 +92,7 @@ def _perform_authentication(
     # TESTING enables auth shortcuts (a fabricated user, a password-free login path).
     # Gate on is_hardened as well, so the flag can never take effect in a real
     # deployment even if it leaks into the environment (issue #284 A0.8).
-    testing_environment = (
-        os.environ.get("TESTING", "False").lower() == "true" and not settings.is_hardened
-    )
+    testing_environment = testing_mode() and not settings.is_hardened
 
     try:
         if testing_environment:

@@ -5,7 +5,6 @@ from app.core import privacy_env  # noqa: F401  # isort: skip
 # isort: split
 import asyncio
 import logging
-import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextlib import suppress
@@ -40,6 +39,7 @@ from app.auth.rate_limit import rate_limit_exceeded_handler
 from app.core.config import settings
 from app.core.db_overload import OVERLOAD_EXCEPTION_CLASSES
 from app.core.env import env_bool
+from app.core.env import testing_mode
 from app.core.exceptions import ASRConfigurationError
 from app.core.exceptions import DomainError
 from app.core.exceptions import EmailDeliveryError
@@ -116,7 +116,7 @@ async def _lifespan_body(app: FastAPI) -> AsyncIterator[None]:
 
     configure_api_threadpool()
 
-    if os.environ.get("TESTING", "").lower() == "true":
+    if testing_mode():
         logger.info("Test mode: skipping startup tasks")
         yield
         return

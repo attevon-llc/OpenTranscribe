@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 from collections.abc import Callable
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
+
+from app.core.env import env_str
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def hf_offline_requested() -> bool:
     without depending on when that library was first imported in this process
     — see the module docstring.
     """
-    return os.getenv("HF_HUB_OFFLINE") == "1"
+    return env_str("HF_HUB_OFFLINE") == "1"
 
 
 @contextlib.contextmanager

@@ -306,7 +306,7 @@ def test_testing_shortcuts_are_inert_when_hardened(monkeypatch):
     source = "\n".join(
         p.read_text() for p in sorted(Path(auth_package.__file__).parent.glob("*.py"))
     )
-    testing_gates = source.count('os.environ.get("TESTING", "False").lower() == "true"')
+    testing_gates = source.count("testing_mode()")
     guarded = source.count("and not settings.is_hardened")
 
     assert testing_gates > 0, "TESTING gate not found — did it move?"

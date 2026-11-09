@@ -50,6 +50,7 @@ import numpy as np
 
 from app.core.constants import DIAR_SIDECAR_MIN_RTF
 from app.core.constants import DIAR_SIDECAR_TIMEOUT_FLOOR_S
+from app.core.env import celery_visibility_timeout_s
 from app.core.env import env_bool
 from app.core.scratch_paths import DIAR_NATIVE_SHARED_DIR_DEFAULT
 from app.core.scratch_paths import resolve_engine_shared_volume_path
@@ -163,9 +164,7 @@ def _warn_if_timeout_risks_redelivery(timeout_s: float, visibility_timeout_s: fl
         )
 
 
-_warn_if_timeout_risks_redelivery(
-    _TIMEOUT_S, float(os.environ.get("CELERY_VISIBILITY_TIMEOUT", "21600"))
-)
+_warn_if_timeout_risks_redelivery(_TIMEOUT_S, float(celery_visibility_timeout_s()))
 # Ask the sidecar for gender alongside diarization. Off leaves the app's own CPU task in charge.
 _GENDER_ENABLED = env_bool("DIAR_NATIVE_GENDER", True)
 

@@ -21,6 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.env import testing_mode
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,8 @@ _single_until = 0.0
 
 def _testing() -> bool:
     """True under pytest; read at call time, like ``core.settings_cache``."""
-    import os
 
-    return os.environ.get("TESTING", "").lower() == "true"
+    return testing_mode()
 
 
 def _detect_auto(db: Session) -> tuple[TenancyMode, bool]:

@@ -105,3 +105,13 @@ def env_bool(name: str, default: bool = False) -> bool:
 def env_str(name: str, default: str = "") -> str:
     """Stripped string value; unset or blank yields ``default``. Read at call time."""
     return _raw(name) or default
+
+
+def testing_mode() -> bool:
+    """True when ``TESTING=true``; read at call time so a fixture can flip it."""
+    return env_str("TESTING").lower() == "true"
+
+
+def celery_visibility_timeout_s() -> int:
+    """Seconds the broker holds an un-acked task (``CELERY_VISIBILITY_TIMEOUT``, default 21600)."""
+    return env_int("CELERY_VISIBILITY_TIMEOUT", 21600, minimum=1)

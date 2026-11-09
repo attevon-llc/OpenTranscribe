@@ -1,7 +1,6 @@
 """Hardened-mode startup checks: boot secrets, FIPS configuration, service credentials, object-store encryption."""
 
 import logging
-import os
 
 from pydantic_settings import BaseSettings
 
@@ -10,6 +9,7 @@ from app.core.config import Settings
 from app.core.config import settings
 from app.core.entropy import assert_csprng_available
 from app.core.entropy import validate_secret_entropy
+from app.core.env import testing_mode
 from app.core.legacy_auth_env import deprecated_oidc_env_names
 
 logger = logging.getLogger(__name__)
@@ -286,7 +286,7 @@ def _validate_production_secrets() -> None:
     # if it leaks into the environment. Warn here rather than refusing to boot: the
     # secrets-guard test suite legitimately simulates production while TESTING is set
     # process-wide by conftest (issue #284 A0.8).
-    if is_production and os.environ.get("TESTING", "False").lower() == "true":
+    if is_production and testing_mode():
         logger.warning(
             "TESTING=true in a hardened environment. Auth shortcuts are disabled by "
             "is_hardened, but this variable should not be set in production."

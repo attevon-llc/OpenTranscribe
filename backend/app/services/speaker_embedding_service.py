@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
@@ -10,6 +9,7 @@ from typing import cast
 import numpy as np
 
 from app.core.env import env_bool
+from app.utils.hf_hub_offline import hf_offline_requested
 
 if TYPE_CHECKING:
     import threading
@@ -233,7 +233,7 @@ class SpeakerEmbeddingService:
 
             hf_token = get_hf_token()
             # Only warn about missing token if not in offline mode (models pre-downloaded)
-            if not hf_token and os.getenv("HF_HUB_OFFLINE") != "1":
+            if not hf_token and not hf_offline_requested():
                 logger.warning(
                     "No Hugging Face access token is set. It may be required for gated models."
                 )
@@ -245,7 +245,7 @@ class SpeakerEmbeddingService:
             logger.info(f"Loading pyannote embedding model: {self.model_name}")
             model = Model.from_pretrained(self.model_name, token=hf_token)
             if model is None:
-                if os.getenv("HF_HUB_OFFLINE") == "1":
+                if hf_offline_requested():
                     msg = (
                         f"PyAnnote model '{self.model_name}' returned None. "
                         "In offline mode, models must be pre-downloaded. "

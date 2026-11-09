@@ -168,9 +168,9 @@ def test_write_baseline_records_both_tools_with_reasons(tmp_path):
 def test_committed_baselines_are_well_formed_and_reasoned():
     knip = guard.bl.load(_KNIP_BASELINE)
     madge = guard.bl.load(_MADGE_BASELINE)
-    # The knip baseline still holds pre-existing debt; an empty load means the file
-    # was not parsed, not that the debt is gone. The madge baseline may be empty.
-    assert knip, f"{_KNIP_BASELINE} loaded no entries"
+    # An empty baseline is the goal state (no tolerated debt), so emptiness is fine; the
+    # file must still exist so a deleted baseline is not mistaken for a burned-down one.
+    assert _KNIP_BASELINE.is_file(), f"{_KNIP_BASELINE} is missing"
     for key, entry in [*knip.items(), *madge.items()]:
         assert "::" in key
         assert entry.value >= 1

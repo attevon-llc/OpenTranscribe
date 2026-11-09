@@ -205,6 +205,13 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "schedule": crontab(minute=55, hour=4),
         "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
     },
+    "expired-refresh-token-cleanup": {
+        "task": "auth.cleanup_expired_refresh_tokens",
+        # Daily at 05:10, after the 04:55 session-cap sweep so the two never contend.
+        # Expired rows are already unusable; this only reclaims table and index space.
+        "schedule": crontab(minute=10, hour=5),
+        "options": {"queue": "utility", "priority": 7},  # UtilityPriority.BACKGROUND
+    },
     "media-mirror-check-schedule": {
         "task": "backup.mirror_check_schedule",
         # Same DB-driven due-check pattern for the media mirror (issue #242);
@@ -274,6 +281,7 @@ BEAT_ENTRY_EFFECT: dict[str, BeatEffect] = {
     "voiceprint-retention-sweep": BeatEffect.MUTATING,  # deletes voiceprints
     "privacy-purge-reverify": BeatEffect.MUTATING,  # deletes centroid docs, fails lost purges
     "session-cap-sweep": BeatEffect.MUTATING,  # revokes sessions
+    "expired-refresh-token-cleanup": BeatEffect.MUTATING,  # deletes expired session rows
     "media-mirror-check-schedule": BeatEffect.MUTATING,  # stamps settings, copies media out
     "directory-sync-check-schedule": BeatEffect.INGEST,  # pulls users from the directory
     "usage-report": BeatEffect.MUTATING,  # sends the opt-in usage report out, stamps settings

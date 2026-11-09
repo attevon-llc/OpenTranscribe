@@ -108,7 +108,6 @@ backend/app/auth/rate_limit.py::_redis_reachable#1	1	re-keyed per handler so a f
 backend/app/auth/refresh_tokens.py::RefreshTokenOps.verify_refresh_token#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/auth/session.py::get_redis_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/auth/token_service.py::TokenService._issued_before_user_epoch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/auth/token_service.py::TokenService.cleanup_expired_tokens#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/auth/token_service.py::TokenService.is_token_revoked#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/auth/token_service.py::TokenService.revoke_all_user_tokens_pending_audit#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/auth/token_service.py::TokenService.stamp_user_revocation_epoch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

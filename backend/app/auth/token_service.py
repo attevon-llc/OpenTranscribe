@@ -557,8 +557,9 @@ class TokenService(RefreshTokenOps):
         """
         Remove expired refresh tokens from database.
 
-        Should be called periodically (e.g., via Celery beat) to clean up
-        expired tokens that are no longer needed.
+        Run daily by the ``auth.cleanup_expired_refresh_tokens`` beat task
+        (``tasks/token_cleanup.py``). A failure propagates: returning 0 would make a
+        broken sweep look like "nothing was expired".
 
         Args:
             db: Database session
@@ -566,20 +567,14 @@ class TokenService(RefreshTokenOps):
         Returns:
             Number of tokens deleted
         """
-        try:
-            now = datetime.now(UTC)
-            result = (
-                db.query(RefreshToken)
-                .filter(RefreshToken.expires_at < now)
-                .delete(synchronize_session=False)
-            )
-            db.commit()
-            logger.info(f"Cleaned up {result} expired refresh tokens")
-            return result
-        except Exception as e:
-            logger.error(f"Error cleaning up expired tokens: {e}")
-            db.rollback()
-            return 0
+        deleted = (
+            db.query(RefreshToken)
+            .filter(RefreshToken.expires_at < datetime.now(UTC))
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        logger.info("Cleaned up %d expired refresh tokens", deleted)
+        return int(deleted)
 
     def get_user_active_sessions(self, db: Session, user_id: int) -> list[dict]:
         """

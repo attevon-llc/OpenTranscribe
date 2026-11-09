@@ -15,8 +15,6 @@ frontend/src/components/CommentSection.svelte::complexity	2	function-size gates 
 frontend/src/components/CommentSection.svelte::max-depth	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/FileDetailSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FileHeader.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/FileUploader.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
-frontend/src/components/FileUploader.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/FileUploader.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FilterSidebar.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
 frontend/src/components/FilterSidebar.svelte::no-useless-assignment	4	lint: burn-down planned
@@ -222,7 +220,7 @@ frontend/src/lib/search/settingsSearchIndex.ts::complexity	1	function-size gates
 frontend/src/lib/services/audioExtractionService.ts::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
 frontend/src/lib/services/audioExtractionService.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/services/audioExtractionService.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
-frontend/src/lib/services/uploadService.ts::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
+frontend/src/lib/services/uploadService.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/settings/localModelView.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/settings/perFileModel.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/lib/settings/pyannoteCredential.ts::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane

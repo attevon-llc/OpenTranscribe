@@ -6,6 +6,7 @@ files (skipping legal holds) first, then the owner-scoped rows, then the avatar 
 after the commit. ``_resolve_outcome`` is the one place an erasure is judged complete.
 """
 
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -27,6 +28,8 @@ from app.services.gdpr_voiceprint_erasure import _erase_profile_embedding
 from app.services.hold_guard import held_pred
 from app.services.hold_guard import unheld_file_ids
 from app.services.storage_versions import UNVERIFIED_VERSIONS_ERROR
+
+logger = logging.getLogger(__name__)
 
 
 def _delete_profiles(
@@ -65,6 +68,7 @@ def _erase_avatar_objects(avatar_paths: list[str], errors: list[dict[str, Any]])
             if getattr(delete_file(path), "unverified", False):
                 errors.append({"stage": "storage_unverified", "error": UNVERIFIED_VERSIONS_ERROR})
         except Exception as e:  # record, don't raise; one avatar never blocks the rest
+            logger.exception("GDPR erasure: avatar object delete failed")
             errors.append(
                 {"stage": "avatar", "error": f"avatar delete failed ({type(e).__name__})"}
             )

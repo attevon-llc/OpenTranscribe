@@ -148,6 +148,7 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
 
             remove_speaker_embedding(speaker_uuid)
         except Exception as e:  # any failure is a residual; the count still runs
+            logger.exception("Erasure: voiceprint removal failed for speaker %s", speaker_uuid)
             fail("speakers", e)
 
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
@@ -158,6 +159,7 @@ def _erase_speaker_docs(speaker_uuids: list[str], fail: Callable[[str, object], 
             if left:
                 fail("speakers", f"{left} voiceprint doc(s) survive in {idx}")
         except Exception as e:  # unverifiable == not proven gone
+            logger.exception("Erasure: could not verify voiceprint removal in %s", idx)
             fail("speakers", f"could not verify {idx}: {e}")
 
 
@@ -181,6 +183,7 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
 
             remove_profile_embedding(profile_uuid)
         except Exception as e:  # any failure is a residual; the count still runs
+            logger.exception("Erasure: profile embedding removal failed for %s", profile_uuid)
             fail("profiles", e)
 
     from app.services.opensearch_service.speaker_maintenance import speaker_embedding_indices
@@ -204,6 +207,7 @@ def _erase_profile_docs(profile_uuids: list[str], fail: Callable[[str, object], 
             if left:
                 fail("profiles", f"{left} profile embedding doc(s) survive in {idx}")
         except Exception as e:  # unverifiable == not proven gone
+            logger.exception("Erasure: could not verify profile embedding removal in %s", idx)
             fail("profiles", f"could not verify {idx}: {e}")
 
 
@@ -231,6 +235,7 @@ def _erase_cluster_docs(cluster_uuids: list[str], fail: Callable[[str, object], 
             if left:
                 fail("clusters", f"{left} centroid doc(s) survive in {idx}")
         except Exception as e:  # unverifiable == not proven gone
+            logger.exception("Erasure: could not erase/verify cluster centroids in %s", idx)
             fail("clusters", f"could not erase/verify {idx}: {e}")
 
 
@@ -249,6 +254,7 @@ def _erase_transcript_doc(file_uuid: str, fail: Callable[[str, object], None]) -
         with contextlib.suppress(NotFoundError):
             client.delete(index=os_settings.OPENSEARCH_TRANSCRIPT_INDEX, id=file_uuid)
     except Exception as e:
+        logger.exception("Erasure: transcript document delete failed for file %s", file_uuid)
         fail("transcript", e)
 
 
@@ -278,6 +284,7 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
 
         TranscriptIndexingService().delete_transcript_chunks(file_uuid)
     except Exception as e:  # any failure is a residual; the count still runs
+        logger.exception("Erasure: transcript chunk delete failed for file %s", file_uuid)
         fail("transcript_chunks", e)
 
     try:
@@ -287,6 +294,9 @@ def _erase_transcript_chunks(file_uuid: str, fail: Callable[[str, object], None]
         if left:
             fail("transcript_chunks", f"{left} document(s) survive")
     except Exception as e:  # unverifiable == not proven gone
+        logger.exception(
+            "Erasure: could not verify transcript chunk removal for file %s", file_uuid
+        )
         fail("transcript_chunks", f"could not verify: {e}")
 
 
@@ -331,4 +341,5 @@ def _erase_summary_docs(file_id: int, fail: Callable[[str, object], None]) -> No
         if failures:
             fail("transcript_summaries", f"delete_by_query reported {len(failures)} failure(s)")
     except Exception as e:
+        logger.exception("Erasure: summary index delete failed for file %s", file_id)
         fail("transcript_summaries", e)

@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 from typing import Any
 
+from app.core.exceptions import LLMServiceError
 from app.services.chat import legs
 from app.services.chat import limits
 from app.services.chat import planner
@@ -22,6 +23,8 @@ from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceRecorder
 from app.services.chat.trace import emit as emit_trace
 from app.services.chat.turn import _check_cancelled
+from app.services.llm_budget import LLMBudgetExceededError
+from app.services.llm_service import LLMEndpointBlockedError
 
 if TYPE_CHECKING:
     from app.services.chat.aggregation import AggregationResult
@@ -313,7 +316,7 @@ def _run_enrichment(
     ]
     try:
         response = llm.chat_completion(messages, max_tokens=500, temperature=0)
-    except Exception:  # LLM-provider boundary (providers raise bare Exception); enhancement only
+    except (LLMServiceError, LLMEndpointBlockedError, LLMBudgetExceededError):  # enhancement only
         logger.warning(
             "Chat enrichment call failed, continuing without a synthesis block", exc_info=True
         )

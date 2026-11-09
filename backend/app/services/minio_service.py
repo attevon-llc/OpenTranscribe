@@ -20,6 +20,8 @@ from minio.error import S3Error
 from app.core.config import settings
 from app.core.constants import DEPENDENCY_PROBE_TIMEOUT_SECONDS
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
+from app.core.exceptions import StorageError
+from app.core.exceptions import StorageUnavailableError
 from app.core.threadpool import api_threadpool_size
 from app.services import storage_backend
 from app.services import storage_presign_identity
@@ -34,10 +36,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: What a storage client call raises over the wire (no local-filesystem ``OSError``); use this
+#: when the try body also touches local files, so a full disk is not reported as a storage outage.
 #: What a storage call raises when the store could not answer: an S3 error response
 #: (``MinioException``), a connection that never got one (urllib3's ``HTTPError``), or a
 #: socket/DNS failure (``OSError``).
-STORAGE_UNAVAILABLE_ERRORS = (MinioException, urllib3.exceptions.HTTPError, OSError)
+STORAGE_CLIENT_ERRORS = (MinioException, urllib3.exceptions.HTTPError)
+STORAGE_UNAVAILABLE_ERRORS = (*STORAGE_CLIENT_ERRORS, OSError)
+
+
+def storage_failure(action: str, exc: BaseException) -> StorageError:
+    """Map a client exception to the typed storage error (the caller raises it ``from exc``).
+
+    minio-py's ``S3Error`` is an error response from the store; ``ServerError`` is a 5xx;
+    urllib3's ``HTTPError`` (retries exhausted, timeouts) and ``OSError`` (socket, DNS) mean
+    no answer. All but ``S3Error`` are outages. The message carries the action and the S3
+    error code only: no object name, endpoint or credentials.
+    """
+    if isinstance(exc, S3Error):
+        return StorageError(f"Storage error while {action}: {exc.code}")
+    return StorageUnavailableError(f"Storage unavailable while {action}: {type(exc).__name__}")
+
 
 # Disable urllib3 warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -124,8 +143,8 @@ def ensure_bucket_exists() -> None:
     try:
         if not minio_client.bucket_exists(settings.MEDIA_BUCKET_NAME):
             minio_client.make_bucket(settings.MEDIA_BUCKET_NAME)
-    except S3Error as e:
-        raise Exception(f"Error ensuring bucket exists: {e}") from e
+    except STORAGE_UNAVAILABLE_ERRORS as e:
+        raise storage_failure("ensuring the bucket exists", e) from e
 
 
 def upload_file(file_content: BinaryIO, file_size: int, object_name: str, content_type: str) -> str:
@@ -152,8 +171,8 @@ def upload_file(file_content: BinaryIO, file_size: int, object_name: str, conten
             content_type=content_type,
         )
         return object_name
-    except S3Error as e:
-        raise Exception(f"Error uploading file: {e}") from e
+    except STORAGE_UNAVAILABLE_ERRORS as e:
+        raise storage_failure("uploading a file", e) from e
 
 
 def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
@@ -198,10 +217,10 @@ def download_file(object_name: str) -> tuple[io.BytesIO, int, str]:
             # Missing object is a distinct, recoverable condition (callers map to 404)
             raise FileNotFoundError(f"Object not found in storage: {object_name}") from e
         logger.error(f"Error downloading file: {e}")
-        raise Exception(f"Error downloading file: {e}") from e
-    except Exception as e:
+        raise storage_failure("downloading a file", e) from e
+    except STORAGE_UNAVAILABLE_ERRORS as e:
         logger.error(f"Error downloading file: {e}")
-        raise Exception(f"Error downloading file: {e}") from e
+        raise storage_failure("downloading a file", e) from e
 
 
 def download_file_to_path(object_name: str, file_path: str) -> None:
@@ -279,10 +298,12 @@ def get_file_url(object_name: str, expires: int = 0, content_type: str | None = 
         logger.info(f"Generated presigned URL: {url[:50]}...")
 
         return url
-    except Exception as e:
-        # Catch all exceptions, not just S3Error
-        logger.error(f"Error in get_file_url: {e}, type(expires)={type(expires)}")
-        raise Exception(f"Error getting file URL: {e}") from e
+    except STORAGE_UNAVAILABLE_ERRORS as e:
+        logger.error(f"Error in get_file_url: {e}")
+        raise storage_failure("presigning a URL", e) from e
+    except ValueError as e:  # an unusable presigned URL, or an expiry the signer rejects
+        logger.error(f"Error in get_file_url: {e}")
+        raise StorageError("Storage could not produce a usable presigned URL") from e
 
 
 def delete_file(object_name: str) -> RemovalResult:
@@ -296,16 +317,20 @@ def delete_file(object_name: str) -> RemovalResult:
         be read, so whether old versions remain is unknown (an erasure records that partial).
 
     Raises:
-        Exception: Some version survived (a legal hold or retention, a refused call); the
-            message names what remains.
+        StorageError: Some version survived (a legal hold or retention, a refused call); the
+            message names what remains. ``StorageUnavailableError`` when the store gave no answer.
     """
     from app.services.storage_versions import StorageDeleteIncompleteError
     from app.services.storage_versions import remove_completely
 
     try:
         return remove_completely(minio_client, settings.MEDIA_BUCKET_NAME, names=[object_name])
-    except (S3Error, StorageDeleteIncompleteError) as e:
-        raise Exception(f"Error deleting file: {e}") from e
+    except StorageDeleteIncompleteError as e:
+        # The detail (object names, retention reason) stays on __cause__ and is logged here.
+        logger.error("Delete left object versions behind: %s", e)
+        raise StorageError("Error deleting file: some object versions remain") from e
+    except STORAGE_UNAVAILABLE_ERRORS as e:
+        raise storage_failure("deleting a file", e) from e
 
 
 def set_object_legal_hold(object_name: str, hold: bool) -> bool:

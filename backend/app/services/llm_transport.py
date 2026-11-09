@@ -18,6 +18,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from app.core.config import settings
+from app.core.exceptions import LLMResponseError
 from app.services.llm_types import SDK_PROVIDERS
 from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMProvider
@@ -246,7 +247,7 @@ class LLMTransportMixin(LLMHost):
         if response.status_code != 200:
             error_detail = f"LLM API error ({response.status_code}): {response.text[:500]}{'...' if len(response.text) > 500 else ''}"
             logger.error(error_detail)
-            raise Exception(f"LLM API error: {response.status_code} - {response.text}")
+            raise LLMResponseError(f"LLM API error: HTTP {response.status_code}")
 
         try:
             result: dict[str, Any] = response.json()
@@ -256,7 +257,7 @@ class LLMTransportMixin(LLMHost):
                 "Failed to parse LLM response body as JSON (%s)", describe_llm_text(response.text)
             )
             log_llm_text_excerpt(logger, "Unparseable LLM response body", response.text)
-            raise Exception(f"Invalid JSON response: {e}") from e
+            raise LLMResponseError("LLM response body is not valid JSON") from e
 
     def _resolve_endpoint(self) -> str:
         """Return the HTTP endpoint for the configured provider, or raise.

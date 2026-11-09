@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Any
 
+from app.core.exceptions import LLMResponseError
 from app.services.llm_claude_capabilities import claude_capabilities
 from app.services.llm_types import LLMHost
 from app.services.llm_types import LLMProvider
@@ -243,7 +244,7 @@ class LLMPayloadMixin(LLMHost):
     def _extract_claude_response(self, data: dict) -> tuple[str, int | None, str | None]:
         """Extract content, usage tokens, and finish reason from Claude/Anthropic response."""
         if "content" not in data or not data["content"]:
-            raise Exception("No content in Claude response")
+            raise LLMResponseError("No content in Claude response")
 
         content_blocks = data["content"]
         if isinstance(content_blocks, list) and content_blocks:
@@ -277,7 +278,7 @@ class LLMPayloadMixin(LLMHost):
                 f"Ollama response missing 'message' field. Response keys: {list(data.keys())}"
             )
             logger.debug(f"Full Ollama response: {json.dumps(data, indent=2)}")
-            raise Exception("No message in Ollama response")
+            raise LLMResponseError("No message in Ollama response")
 
         content = data["message"].get("content", "")
         finish_reason = data.get("done_reason", "stop")
@@ -301,7 +302,7 @@ class LLMPayloadMixin(LLMHost):
     def _extract_openai_response(self, data: dict) -> tuple[str, int | None, str | None]:
         """Extract content, usage tokens, and finish reason from OpenAI-compatible response."""
         if "choices" not in data or not data["choices"]:
-            raise Exception("No choices in LLM response")
+            raise LLMResponseError("No choices in LLM response")
 
         choice = data["choices"][0]
         # `or ""`, not a default: a reasoning model that spends its whole token

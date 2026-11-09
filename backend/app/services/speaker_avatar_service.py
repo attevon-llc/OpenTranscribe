@@ -15,6 +15,7 @@ import uuid as uuid_pkg
 
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import StorageError
 from app.models.speaker import SpeakerProfile
 from app.services.speaker_profile_activity import touch_profile_interaction
 
@@ -55,6 +56,6 @@ def delete_avatar_object(key: str | None, *, current: str | None = None) -> None
 
     try:
         delete_file(key)
-    except Exception:  # delete_file's contract raises a bare Exception, so nothing narrower matches
+    except StorageError:
         # A leftover avatar object is a leak, not data loss; the request already succeeded.
         logger.warning("Failed to delete superseded avatar object %s", key, exc_info=True)

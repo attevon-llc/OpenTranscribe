@@ -13,6 +13,7 @@ import pytest
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
 from opensearchpy.exceptions import NotFoundError
 
+from app.core.exceptions import StorageUnavailableError
 from app.services import opensearch_snapshot
 from app.services.storage_versions import StorageDeleteIncompleteError
 from app.services.video_processing_service import VideoProcessingService
@@ -26,7 +27,7 @@ def test_masked_render_listing_outage_is_not_an_empty_listing(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     minio = MagicMock()
-    minio.list_objects.side_effect = RuntimeError("storage down")
+    minio.list_objects.side_effect = StorageUnavailableError("storage down")
     svc = VideoProcessingService.__new__(VideoProcessingService)
     svc.minio_service = minio
     svc.cache_bucket = "media"

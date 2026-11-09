@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.exceptions import StorageUnavailableError
 from app.services import storage_recovery_service as real
 from app.tasks import recovery_tasks
 
@@ -23,7 +24,9 @@ class _InMemoryMinio:
 
     def get_object(self, _bucket, _name):
         if self.outage is not None:
-            raise Exception("Error getting object") from self.outage
+            raise StorageUnavailableError(
+                "Storage unavailable while reading an object"
+            ) from self.outage
         stored = self.stored
 
         class _Resp:

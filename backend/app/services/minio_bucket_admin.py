@@ -18,7 +18,9 @@ from minio.error import S3Error
 from app.core.config import settings
 from app.services import minio_service
 from app.services import storage_presign_identity
+from app.services.minio_service import STORAGE_CLIENT_ERRORS
 from app.services.minio_service import STORAGE_UNAVAILABLE_ERRORS
+from app.services.minio_service import storage_failure
 from app.services.storage_backend import clamp_presigned_expiry
 from app.services.storage_backend import rewrite_public_host
 
@@ -48,13 +50,14 @@ class MinIOService:
         content_type: str | None = None,
     ) -> None:
         """Upload a file to MinIO bucket."""
-        try:
-            with open(file_path, "rb") as file_data:
-                file_size = os.path.getsize(file_path)
-                # Use default content type if not provided
-                effective_content_type = (
-                    content_type if content_type is not None else "application/octet-stream"
-                )
+        # A local read error (missing path, permissions) propagates as itself: it is not storage.
+        with open(file_path, "rb") as file_data:
+            file_size = os.path.getsize(file_path)
+            # Use default content type if not provided
+            effective_content_type = (
+                content_type if content_type is not None else "application/octet-stream"
+            )
+            try:
                 self.client.put_object(
                     bucket_name=bucket_name,
                     object_name=object_name,
@@ -62,8 +65,8 @@ class MinIOService:
                     length=file_size,
                     content_type=effective_content_type,
                 )
-        except Exception as e:
-            raise Exception(f"Error uploading file: {e}") from e
+            except STORAGE_CLIENT_ERRORS as e:
+                raise storage_failure("uploading a file", e) from e
 
     def upload_bytes(
         self, bucket_name: str, object_name: str, data: bytes, content_type: str
@@ -77,8 +80,8 @@ class MinIOService:
                 length=len(data),
                 content_type=content_type,
             )
-        except Exception as e:
-            raise Exception(f"Error uploading bytes: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("uploading bytes", e) from e
 
     def download_file(
         self, object_name: str, file_path: str, bucket_name: str | None = None
@@ -87,8 +90,8 @@ class MinIOService:
         bucket = bucket_name or settings.MEDIA_BUCKET_NAME
         try:
             self.client.fget_object(bucket, object_name, file_path)
-        except Exception as e:
-            raise Exception(f"Error downloading file: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("downloading a file", e) from e
 
     def get_presigned_url(self, bucket_name: str, object_name: str, expires: int = 3600) -> str:
         """Get a browser-reachable presigned URL for object access.
@@ -109,15 +112,15 @@ class MinIOService:
                 expires=datetime.timedelta(seconds=clamp_presigned_expiry(expires)),
             )
             return rewrite_public_host(str(url))
-        except Exception as e:
-            raise Exception(f"Error getting presigned URL: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("presigning a URL", e) from e
 
     def delete_object(self, bucket_name: str, object_name: str) -> None:
         """Delete an object from MinIO."""
         try:
             self.client.remove_object(bucket_name, object_name)
-        except Exception as e:
-            raise Exception(f"Error deleting object: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("deleting an object", e) from e
 
     def list_objects(
         self, bucket_name: str, prefix: str | None = None, recursive: bool = False
@@ -128,15 +131,15 @@ class MinIOService:
                 bucket_name, prefix=prefix, recursive=recursive
             )
             return objects
-        except Exception as e:
-            raise Exception(f"Error listing objects: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("listing objects", e) from e
 
     def stat_object(self, bucket_name: str, object_name: str) -> Object:
         """Get object statistics."""
         try:
             return self.client.stat_object(bucket_name, object_name)
-        except Exception as e:
-            raise Exception(f"Error getting object stats: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("reading object stats", e) from e
 
     def get_object(self, bucket_name: str, object_name: str) -> BaseHTTPResponse:
         """Get object from MinIO.
@@ -148,22 +151,22 @@ class MinIOService:
         """
         try:
             return self.client.get_object(bucket_name, object_name)
-        except Exception as e:
-            raise Exception(f"Error getting object: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("reading an object", e) from e
 
     def bucket_exists(self, bucket_name: str) -> bool:
         """Check if bucket exists."""
         try:
             return self.client.bucket_exists(bucket_name)
-        except Exception as e:
-            raise Exception(f"Error checking bucket existence: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("checking a bucket", e) from e
 
     def make_bucket(self, bucket_name: str) -> None:
         """Create a new bucket."""
         try:
             self.client.make_bucket(bucket_name)
-        except Exception as e:
-            raise Exception(f"Error creating bucket: {e}") from e
+        except STORAGE_CLIENT_ERRORS as e:
+            raise storage_failure("creating a bucket", e) from e
 
     def ensure_prefix_expiry(
         self,

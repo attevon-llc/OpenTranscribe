@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from redis.exceptions import RedisError
 
 from app.core.config import settings
+from app.core.exceptions import StorageError
 from app.core.redis import get_async_redis
 from app.db.session_utils import session_scope
 from app.services.audio_extraction import AudioExtractionMixin
@@ -209,7 +210,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             # Check if cached video exists
             self.minio_service.stat_object(self.cache_bucket, cache_key)
             return True
-        except Exception as exc:  # MinIOService wraps client failures in a bare Exception
+        except StorageError as exc:
             if not is_absent_error(exc):
                 logger.warning("video cache probe failed for %s", cache_key, exc_info=True)
             return False
@@ -333,7 +334,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 for obj in objects
                 if obj.object_name and pattern.match(obj.object_name)
             ]
-        except Exception as e:  # MinIOService wraps failures in a bare Exception; re-raised as StorageDeleteIncompleteError
+        except StorageError as e:  # re-raised as StorageDeleteIncompleteError
             logger.exception(f"Could not list masked derived renders for {filename}: {e}")
             from app.services.storage_versions import StorageDeleteIncompleteError
 

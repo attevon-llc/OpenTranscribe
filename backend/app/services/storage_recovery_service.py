@@ -44,6 +44,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.exceptions import StorageError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -403,7 +404,7 @@ def load_metadata_sidecar(minio_service: Any) -> dict[str, dict[str, Any]]:
 
     try:
         response = minio_service.get_object(settings.MEDIA_BUCKET_NAME, YOUTUBE_METADATA_SIDECAR)
-    except Exception as exc:  # MinIOService wraps every client failure in a bare Exception
+    except StorageError as exc:
         if is_absent_error(exc):
             logger.debug("metadata sidecar not present (%s); starting fresh", exc)
             return {}

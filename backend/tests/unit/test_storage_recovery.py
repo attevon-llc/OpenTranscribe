@@ -13,9 +13,11 @@ from unittest.mock import patch
 
 import pytest
 
+from app.core.exceptions import StorageError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.services import storage_recovery_service as recovery
+from app.services.minio_service import storage_failure
 
 
 class _FakeObj:
@@ -373,10 +375,10 @@ def _sidecar_max_retry():
 
 
 def _wrapped(exc: Exception) -> Exception:
-    """Shape ``MinIOService.get_object`` raises: a plain Exception, real cause in __cause__."""
+    """Shape ``MinIOService.get_object`` raises: a typed StorageError, real cause in __cause__."""
     try:
-        raise Exception(f"Error getting object: {exc}") from exc
-    except Exception as wrapped:
+        raise storage_failure("reading an object", exc) from exc
+    except StorageError as wrapped:
         return wrapped
 
 
@@ -403,10 +405,9 @@ class _SidecarSvc:
         return _Resp()
 
 
-def test_sidecar_absent_reads_as_empty_direct_and_wrapped():
+def test_sidecar_absent_reads_as_empty():
     err = _sidecar_s3_error("NoSuchKey", 404)
 
-    assert recovery.load_metadata_sidecar(_SidecarSvc(error=err)) == {}
     assert recovery.load_metadata_sidecar(_SidecarSvc(error=_wrapped(err))) == {}
 
 
@@ -429,9 +430,8 @@ def test_sidecar_present_is_parsed():
 def test_sidecar_outage_raises_instead_of_reading_as_empty(make):
     exc = make()
 
-    for err in (exc, _wrapped(exc)):
-        with pytest.raises(recovery.MetadataSidecarUnavailableError):
-            recovery.load_metadata_sidecar(_SidecarSvc(error=err))
+    with pytest.raises(recovery.MetadataSidecarUnavailableError):
+        recovery.load_metadata_sidecar(_SidecarSvc(error=_wrapped(exc)))
 
 
 @pytest.mark.parametrize("body", [b"{not json", b"\xff\xfe", b"[1, 2]"])

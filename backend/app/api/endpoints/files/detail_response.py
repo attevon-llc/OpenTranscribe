@@ -16,6 +16,7 @@ from app.api.error_handlers import ErrorHandler
 from app.core.db_overload import reraise_db_overload
 from app.core.env import env_bool
 from app.core.exceptions import DomainError
+from app.core.exceptions import StorageError
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
@@ -194,7 +195,7 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
                     str(db_file.thumbnail_path),
                     expires=bypass.presign_ttl(settings.THUMBNAIL_URL_EXPIRE_SECONDS),
                 )
-            except Exception:  # get_file_url wraps every failure in a bare Exception
+            except StorageError:
                 logger.exception("Failed to generate presigned thumbnail URL")
                 # Fallback to API endpoint (requires auth)
                 db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"

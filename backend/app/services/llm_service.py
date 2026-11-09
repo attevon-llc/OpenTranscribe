@@ -16,6 +16,8 @@ from typing import Self
 import requests
 from urllib3.util.retry import Retry
 
+from app.core.exceptions import LLMResponseError
+from app.core.exceptions import LLMUnavailableError
 from app.services.llm_chunking import LLMChunkingMixin
 from app.services.llm_factory import LLMFactoryMixin
 from app.services.llm_health import LLMHealthMixin
@@ -213,7 +215,7 @@ class LLMService(
             content, usage_tokens, finish_reason = self._extract_response_content(data)
 
             if not content:
-                raise Exception("Empty content in LLM response")
+                raise LLMResponseError("Empty content in LLM response")
 
             logger.info(f"LLM request successful, tokens: {usage_tokens}")
 
@@ -227,15 +229,15 @@ class LLMService(
 
         except requests.exceptions.Timeout as e:
             logger.error(f"Request timed out after {timeout}s for {self.config.provider}: {e}")
-            raise Exception(
+            raise LLMUnavailableError(
                 f"Request timed out after {timeout} seconds. Content may be too long for processing."
             ) from e
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Connection error to {self.config.provider}: {e}")
-            raise Exception(f"Connection error: {e}") from e
+            raise LLMUnavailableError(f"Connection error: {type(e).__name__}") from e
         except requests.exceptions.RequestException as e:
             logger.error(f"HTTP error in LLM request: {type(e).__name__}: {e}")
-            raise Exception(f"Network error: {e}") from e
+            raise LLMUnavailableError(f"Network error: {type(e).__name__}") from e
         except Exception as e:
             logger.error(
                 f"Unexpected error in LLM request to {self.config.provider}: {type(e).__name__}: {e}"
@@ -277,7 +279,7 @@ class LLMService(
             )
         except BedrockStreamError as e:
             logger.error(f"Bedrock chat completion failed: {e}")
-            raise Exception(f"Bedrock error: {e}") from e
+            raise LLMResponseError("Bedrock reported an error mid-stream") from e
         finally:
             if call is not None and usage_out:
                 from app.services.llm_usage import Usage
@@ -290,7 +292,7 @@ class LLMService(
                 )
 
         if not content:
-            raise Exception("Empty content in LLM response")
+            raise LLMResponseError("Empty content in LLM response")
 
         logger.info(f"LLM request successful, tokens: {usage_tokens}")
 

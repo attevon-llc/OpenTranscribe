@@ -29,6 +29,7 @@ import uuid
 import pytest
 from fastapi import status
 
+from app.core.exceptions import StorageUnavailableError
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCollection
@@ -138,7 +139,9 @@ def test_list_profiles_survives_an_avatar_url_failure(
     prof.avatar_path = f"avatars/{normal_user.id}/{prof.uuid}.png"
     db_session.commit()
 
-    with patch("app.services.minio_service.get_file_url", side_effect=OSError("minio down")):
+    with patch(
+        "app.services.minio_service.get_file_url", side_effect=StorageUnavailableError("minio down")
+    ):
         resp = client.get(f"{PREFIX}/profiles", headers=user_token_headers)
 
     assert resp.status_code == status.HTTP_200_OK

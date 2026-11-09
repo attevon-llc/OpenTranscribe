@@ -20,6 +20,7 @@ from app.api.endpoints.auth import get_current_active_user
 from app.api.error_handlers import ErrorHandler
 from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
+from app.core.exceptions import StorageError
 from app.db.base import get_db
 from app.models.speaker import SpeakerCollection
 from app.models.speaker import SpeakerProfile
@@ -70,7 +71,7 @@ def _profile_avatar_url(profile: SpeakerProfile, bypass: PlatformBypass) -> str 
     if profile.avatar_path:
         try:
             avatar_url = get_file_url(profile.avatar_path, expires=bypass.presign_ttl(3600))
-        except Exception:  # get_file_url wraps every failure in a bare Exception
+        except StorageError:
             logger.exception(f"Failed to get avatar URL for profile {profile.uuid}")
     return avatar_url
 
@@ -501,7 +502,7 @@ def delete_speaker_profile(
                 from app.services.minio_service import delete_file
 
                 delete_file(profile.avatar_path)
-            except Exception:  # delete_file wraps every storage failure in a bare Exception
+            except StorageError:
                 logger.exception(f"Failed to delete avatar for profile {profile.uuid}")
 
         impact.erase_profile_uuids.add(str(profile.uuid))

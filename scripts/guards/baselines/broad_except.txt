@@ -923,13 +923,6 @@ backend/app/utils/benchmark_timing.py::mark_many#1	1	re-keyed per handler so a f
 backend/app/utils/benchmark_timing.py::pipeline_task_id#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/benchmark_timing.py::record_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/boot_once.py::run_once_per_boot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::_decrypt_fernet_legacy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::_get_fernet_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::decrypt_api_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::decrypt_value#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::encrypt_api_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::encrypt_value#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/encryption.py::test_encryption#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/file_retry.py::is_file_safe_to_delete#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/file_retry.py::media_object_is_resolvable#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/file_retry.py::reset_file_for_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -956,7 +949,6 @@ backend/app/utils/stats_helpers.py::get_queue_depths#1	1	re-keyed per handler so
 backend/app/utils/stuck_file_recovery.py::check_for_stuck_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/task_cancel.py::_schedule_cancellation_reconcile#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/task_cancel.py::cancel_active_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/utils/task_secret_handoff.py::discard_task_secret#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/text_preprocessing.py::_get_stopwords#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/text_preprocessing.py::_tokenize#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/utils/vram_profiler.py::VRAMProfiler.save_to_redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

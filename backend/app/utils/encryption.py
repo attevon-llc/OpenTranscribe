@@ -26,6 +26,7 @@ import os
 from typing import Literal
 from typing import overload
 
+from cryptography.exceptions import InvalidTag
 from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from cryptography.hazmat.backends import default_backend
@@ -36,6 +37,16 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class EncryptionKeyConfigError(RuntimeError):
+    """``ENCRYPTION_KEY`` is missing or unusable.
+
+    Deliberately NOT a ``ValueError``: callers narrow bad-ciphertext handling to
+    ``ValueError``/``InvalidTag`` and return ``None``, which would turn a broken deployment
+    into "no key stored". A misconfigured key must reach the operator as an error.
+    """
+
 
 # V3 encryption constants (FIPS 140-3 compliant)
 ENCRYPTION_V3_PREFIX = "v3:"
@@ -62,16 +73,13 @@ def _get_master_key_material() -> bytes:
         bytes: Raw key material for key derivation
 
     Raises:
-        ValueError: If encryption key is not configured
+        EncryptionKeyConfigError: If encryption key is not configured
     """
-    try:
-        key_string = settings.ENCRYPTION_KEY
-        if not key_string:
-            raise ValueError("ENCRYPTION_KEY not configured")
-        return key_string.encode("utf-8")
-    except Exception as e:
-        logger.error(f"Failed to get master key material: {e}")
-        raise ValueError("Invalid encryption key configuration") from e
+    key_string = settings.ENCRYPTION_KEY
+    if not key_string:
+        logger.error("ENCRYPTION_KEY is not configured")
+        raise EncryptionKeyConfigError("ENCRYPTION_KEY not configured")
+    return key_string.encode("utf-8")
 
 
 def _derive_key_v3(password: bytes, salt: bytes) -> bytes:
@@ -178,32 +186,31 @@ def _get_fernet_key() -> bytes:
         bytes: Fernet-compatible encryption key
 
     Raises:
-        ValueError: If encryption key is invalid
+        EncryptionKeyConfigError: If encryption key is not configured
     """
+    key_string = settings.ENCRYPTION_KEY
+    if not key_string:
+        logger.error("ENCRYPTION_KEY is not configured")
+        raise EncryptionKeyConfigError("ENCRYPTION_KEY not configured")
+
+    # If it's already a valid Fernet key, use it
     try:
-        key_string = settings.ENCRYPTION_KEY
+        key = base64.urlsafe_b64decode(key_string)
+    except ValueError:  # binascii.Error is a ValueError: the key is not base64
+        # Derive from string for legacy compatibility
+        key_material = key_string.encode("utf-8")
+        # Pad or truncate to 32 bytes
+        if len(key_material) < 32:
+            key_material = key_material.ljust(32, b"\0")
+        else:
+            key_material = key_material[:32]
 
-        # If it's already a valid Fernet key, use it
-        try:
-            key = base64.urlsafe_b64decode(key_string)
-            if len(key) == 32:
-                # Valid Fernet key (32 bytes decoded)
-                return base64.urlsafe_b64encode(key)
-            # Try using it directly
-            return key_string.encode("utf-8")
-        except Exception:
-            # Derive from string for legacy compatibility
-            key_material = key_string.encode("utf-8")
-            # Pad or truncate to 32 bytes
-            if len(key_material) < 32:
-                key_material = key_material.ljust(32, b"\0")
-            else:
-                key_material = key_material[:32]
-
-            return base64.urlsafe_b64encode(key_material)
-    except Exception as e:
-        logger.error(f"Failed to get Fernet key: {e}")
-        raise ValueError("Invalid encryption key configuration") from e
+        return base64.urlsafe_b64encode(key_material)
+    if len(key) == 32:
+        # Valid Fernet key (32 bytes decoded)
+        return base64.urlsafe_b64encode(key)
+    # Try using it directly
+    return key_string.encode("utf-8")
 
 
 def _decrypt_fernet_legacy(encrypted_data: str) -> str | None:
@@ -230,8 +237,8 @@ def _decrypt_fernet_legacy(encrypted_data: str) -> str | None:
     except InvalidToken:
         logger.debug("Fernet token invalid - may not be legacy format")
         return None
-    except Exception as e:
-        logger.error(f"Failed to decrypt legacy Fernet data: {e}")
+    except ValueError as e:  # malformed base64 / non-UTF-8 plaintext: corrupt stored value
+        logger.error(f"Failed to decrypt legacy Fernet data: {e}", exc_info=True)
         return None
 
 
@@ -243,16 +250,17 @@ def encrypt_api_key(api_key: str) -> str | None:
         api_key: Plain text API key to encrypt
 
     Returns:
-        Encrypted API key in v3 format, or None if encryption fails
+        Encrypted API key in v3 format, or None if ``api_key`` is empty
+
+    Raises:
+        EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured. Encryption failing
+            must not look like "no secret": a caller storing the returned None would
+            silently drop the user's credential.
     """
     if not api_key or not api_key.strip():
         return None
 
-    try:
-        return _encrypt_v3(api_key.encode("utf-8"))
-    except Exception as e:
-        logger.error(f"Failed to encrypt API key: {e}")
-        return None
+    return _encrypt_v3(api_key.encode("utf-8"))
 
 
 @overload
@@ -281,8 +289,13 @@ def decrypt_api_key(
                      for legacy data that should be re-encrypted
 
     Returns:
-        If auto_upgrade=False: Decrypted API key as plain text, or None if decryption fails
+        If auto_upgrade=False: Decrypted API key as plain text, or None if the stored value
+        is empty or cannot be decrypted (wrong key, corrupt or tampered data)
         If auto_upgrade=True: Tuple of (decrypted_key, new_v3_encrypted_key or None)
+
+    Raises:
+        EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured (an outage, not a
+            missing value).
     """
     if not encrypted_api_key or not encrypted_api_key.strip():
         if auto_upgrade:
@@ -312,8 +325,8 @@ def decrypt_api_key(
 
         return legacy_decrypted
 
-    except Exception as e:
-        logger.error(f"Failed to decrypt API key: {e}")
+    except (InvalidTag, ValueError) as e:
+        logger.error(f"Failed to decrypt API key: {e}", exc_info=True)
         if auto_upgrade:
             return None, None
         return None
@@ -363,8 +376,8 @@ def test_encryption() -> bool:
         logger.info("V3 encryption test passed")
         return True
 
-    except Exception as e:
-        logger.error(f"Encryption test failed: {e}")
+    except (EncryptionKeyConfigError, InvalidTag, ValueError) as e:
+        logger.error(f"Encryption test failed: {e}", exc_info=True)
         return False
 
 
@@ -375,15 +388,14 @@ def encrypt_value(value: str, aad: bytes | None = None) -> str | None:
     so a ciphertext cannot be replayed into a different context.
 
     Returns:
-        Encrypted value in v3 format, or None if the value is empty or encryption fails.
+        Encrypted value in v3 format, or None if the value is empty.
+
+    Raises:
+        EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured.
     """
     if not value or not value.strip():
         return None
-    try:
-        return _encrypt_v3(value.encode("utf-8"), DEFAULT_AAD if aad is None else aad)
-    except Exception as e:
-        logger.error(f"Failed to encrypt value: {e}")
-        return None
+    return _encrypt_v3(value.encode("utf-8"), DEFAULT_AAD if aad is None else aad)
 
 
 def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
@@ -395,7 +407,11 @@ def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
         aad: Optional associated authenticated data (must match encryption)
 
     Returns:
-        Decrypted value as plain text, or None if decryption fails
+        Decrypted value as plain text, or None if the stored value is empty or cannot be
+        decrypted (wrong key or AAD, corrupt or tampered data)
+
+    Raises:
+        EncryptionKeyConfigError: If ENCRYPTION_KEY is not configured.
     """
     if not encrypted_value or not encrypted_value.strip():
         return None
@@ -409,6 +425,6 @@ def decrypt_value(encrypted_value: str, aad: bytes | None = None) -> str | None:
         # Legacy Fernet decryption (doesn't support custom AAD)
         return _decrypt_fernet_legacy(encrypted_value)
 
-    except Exception as e:
-        logger.error(f"Failed to decrypt value: {e}")
+    except (InvalidTag, ValueError) as e:
+        logger.error(f"Failed to decrypt value: {e}", exc_info=True)
         return None

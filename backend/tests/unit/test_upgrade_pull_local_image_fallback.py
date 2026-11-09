@@ -173,12 +173,20 @@ def test_both_update_call_sites_go_through_the_helper():
     bare = [
         line.strip()
         for line in outside.splitlines()
-        if "compose $compose_files pull" in line and not line.lstrip().startswith("#")
+        if 'compose "${compose_chain[@]}" pull' in line and not line.lstrip().startswith("#")
     ]
     assert not bare, (
         "these upgrade paths still pull directly and will abort on an unpublished tag:\n  "
         + "\n  ".join(bare)
     )
-    assert text.count('compose_pull_for_upgrade "$compose_files"') >= 2, (
-        "expected both update call sites to route through compose_pull_for_upgrade"
+    # `update` and `update-full` share one upgrade sequence; it is the single call site.
+    sequence = re.search(r"\nrun_upgrade_sequence\(\) \{.*?\n\}\n", text, re.S)
+    assert sequence, "run_upgrade_sequence is gone"
+    assert 'compose_pull_for_upgrade "$compose_files"' in sequence.group(0), (
+        "the shared upgrade sequence must pull through compose_pull_for_upgrade"
     )
+    for command in ("cmd_update", "cmd_update_full"):
+        body = re.search(rf"\n{command}\(\) \{{.*?\n\}}\n", text, re.S)
+        assert body and "run_upgrade_sequence" in body.group(0), (
+            f"{command} must route its pull through run_upgrade_sequence"
+        )

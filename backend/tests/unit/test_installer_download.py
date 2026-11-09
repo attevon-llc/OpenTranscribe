@@ -91,7 +91,14 @@ def _run_installer_download(tmp_path: Path, *, manifest_at: set[str], ref: str =
         "set -uo pipefail\n"
         "RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''\n"
         + extract_function(INSTALLER, "resolve_default_branch")
-        + extract_function(INSTALLER, "download_release_manifest_artifacts")
+        + "\n".join(
+            extract_function(INSTALLER, n)
+            for n in [
+                "fetch_release_manifest",
+                "download_manifest_artifact",
+                "download_release_manifest_artifacts",
+            ]
+        )
         + "\ndownload_release_manifest_artifacts\n"
     )
     proc = subprocess.run(

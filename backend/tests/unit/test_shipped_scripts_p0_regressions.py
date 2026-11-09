@@ -153,7 +153,8 @@ def test_fix_model_cache_permissions_checks_every_subdirectory_not_just_the_pare
 
 
 def _get_compose_files_source() -> str:
-    return _extract_function(MANAGER, "get_compose_files")
+    # The sidecar gate moved out of get_compose_files into its own overlay step.
+    return _extract_function(MANAGER, "compose_overlay_diar_native")
 
 
 def _preflight_upgrade_env_source() -> str:
@@ -162,7 +163,7 @@ def _preflight_upgrade_env_source() -> str:
 
 @pytest.mark.parametrize("raw_value", ["native", "Native", "NATIVE", "  native  "])
 def test_get_compose_files_sidecar_gate_is_case_insensitive(tmp_path: Path, raw_value: str):
-    """The sidecar-loading gate in get_compose_files() must treat 'Native'/'NATIVE' the same
+    """The sidecar-loading gate (compose_overlay_diar_native, called by get_compose_files) must treat 'Native'/'NATIVE' the same
     as 'native' — backend/app/transcription/config.py:357-366 resolves the value with
     .strip().lower() and defaults anything unrecognised TO native, so a case-sensitive
     comparison here silently skips the sidecar for a backend that is about to run it anyway.
@@ -172,7 +173,7 @@ def test_get_compose_files_sidecar_gate_is_case_insensitive(tmp_path: Path, raw_
         line for line in fn_source.splitlines() if "diar_backend=$(read_env_value" in line
     )
     assert "tr '[:upper:]' '[:lower:]'" in read_line, (
-        "get_compose_files' ENGINE_DIARIZER_BACKEND read must lowercase the value at read "
+        "the sidecar gate's ENGINE_DIARIZER_BACKEND read must lowercase the value at read "
         f"time (raw_value={raw_value!r} would otherwise fail the 'native' compare below): "
         f"{read_line!r}"
     )

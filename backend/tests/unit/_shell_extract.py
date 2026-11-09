@@ -51,6 +51,16 @@ def extract_function(script: Path, name: str) -> str:
     return out
 
 
+def extract_functions(script: Path, names: list[str]) -> str:
+    """Pull several shell functions out of a script, in the order given.
+
+    A command that was decomposed into named steps (``cmd_update`` and its ``update_*``
+    helpers) needs the whole set to run in isolation; naming them here keeps each test
+    explicit about which pieces of the script it exercises, and lets it stub the rest.
+    """
+    return "\n".join(extract_function(script, name) for name in names)
+
+
 def run_shell(snippet: str, env: dict[str, str] | None = None, cwd: Path | None = None) -> str:
     proc = subprocess.run(
         ["bash", "-c", snippet],

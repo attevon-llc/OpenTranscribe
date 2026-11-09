@@ -86,6 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `opentranscribe.sh` and `setup-opentranscribe.sh` are reorganised in place (still one self-contained file each): sectioned, long functions and every command split into named steps, shellcheck clean with no disable directives. Two small behaviour notes: prompts now read with `read -r` (backslashes kept), and the installer's Docker daemon check now reaches its diagnostic messages under `set -e`.
 - Request middleware (audit, CSRF, observability, robots) now runs as pure ASGI instead of `BaseHTTPMiddleware`: less per-request overhead, streaming responses are never buffered, and behaviour is unchanged.
 - `GET /tasks/active` progress listing no longer SCANs the Redis keyspace: `ProgressTracker` keeps a per-user index set and reads all states with one `MGET` (two round trips regardless of keyspace size).
 - `/metrics` reuses its rendered page for 5 s, so overlapping or frequent scrapes cost one multiprocess render instead of one each.

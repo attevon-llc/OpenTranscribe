@@ -254,26 +254,27 @@ def test_adding_a_third_case_is_a_one_line_table_entry_not_a_new_call_site():
 
 def test_preflight_upgrade_env_calls_check_stale_env_values():
     """Hooked into preflight_upgrade_env so a stale value is surfaced BEFORE teardown, same
-    placement as issue #670's hard refusal.
+    placement as issue #670's hard refusal. The report itself lives in
+    preflight_print_notices; the preflight must reach it.
     """
-    fn = _extract_function(MANAGER, "preflight_upgrade_env")
-    assert "check_stale_env_values" in fn
+    assert "check_stale_env_values" in _extract_function(MANAGER, "preflight_print_notices")
+    assert "preflight_print_notices" in _extract_function(MANAGER, "preflight_upgrade_env")
 
 
 def test_update_full_arm_calls_check_stale_env_values():
-    text = MANAGER.read_text()
-    idx = text.index("New settings in this release")
-    idx_full = text.index("update-full)")
-    # The call must appear in the update-full arm, after the new-keys report and before the
-    # docker image pull/teardown step.
-    tail = text[idx:]
-    teardown_idx = tail.index("compose_down_for_upgrade")
-    call_idx = tail.index("check_stale_env_values")
-    assert idx_full < idx, "sanity: new-keys report must live inside the update-full arm"
-    assert call_idx < teardown_idx, (
-        "check_stale_env_values must run before compose_down_for_upgrade (teardown), while "
-        "the operator can still act"
+    # The stale-value report must run in the update-full command after the new-keys report
+    # and before the shared teardown/pull/restart sequence, while the operator can still act.
+    report = _extract_function(MANAGER, "update_report_env_drift")
+    assert report.index("New settings in this release") < report.index("check_stale_env_values"), (
+        "the stale-value check belongs after the new-keys report in update_report_env_drift"
     )
+    full = _extract_function(MANAGER, "cmd_update_full")
+    assert full.index("update_report_env_drift") < full.index("run_upgrade_sequence"), (
+        "check_stale_env_values must run before the teardown sequence, while the operator "
+        "can still act"
+    )
+    sequence = _extract_function(MANAGER, "run_upgrade_sequence")
+    assert "compose_down_for_upgrade" in sequence
 
 
 def test_stale_key_detection_must_fire_control_a_naive_presence_check_would_miss_it():

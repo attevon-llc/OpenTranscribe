@@ -43,6 +43,8 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# ===== standalone fallbacks for scripts/common.sh helpers =====
+
 # Fallback definition: this script is the BOOTSTRAP -- it runs before scripts/ is
 # guaranteed to exist locally (a fresh `curl | bash` fetches this file alone), so it
 # cannot `source scripts/common.sh` the way opentr.sh/opentranscribe.sh do. Identical
@@ -88,7 +90,8 @@ if ! declare -F ot_detect_lan_ip >/dev/null 2>&1; then
     }
 fi
 
-# ─── Unattended-mode helpers ─────────────────────────────────────────────────
+# ===== output helpers =====
+
 # When OPENTRANSCRIBE_UNATTENDED is set, interactive prompts are skipped and
 # pre-set environment variables (or safe defaults) are used instead.
 is_unattended() {
@@ -124,6 +127,8 @@ print_header() {
     echo -e "${BLUE}═══════════════════════════════════════════${NC}"
     echo ""
 }
+
+# ===== state and install mode flags =====
 
 echo -e "${YELLOW}OpenTranscribe Cross-Platform Setup Script${NC}"
 echo "Automatic hardware detection and configuration for CUDA, MPS, and CPU"
@@ -175,9 +180,7 @@ if [[ -n "${OPENTRANSCRIBE_LITE:-}" ]]; then
     FORCE_CPU="true"
 fi
 
-#######################
-# HARDWARE DETECTION
-#######################
+# ===== platform and GPU detection =====
 
 detect_platform() {
     echo -e "${BLUE}🔍 Detecting platform and hardware...${NC}"
@@ -207,6 +210,85 @@ detect_platform() {
     detect_hardware_acceleration
 }
 
+# Count the CPU cores for optimisation (Linux nproc, then macOS sysctl, then a safe default).
+detect_cpu_cores() {
+    if command -v nproc &> /dev/null; then
+        CPU_CORES=$(nproc)
+    elif command -v sysctl &> /dev/null; then
+        CPU_CORES=$(sysctl -n hw.ncpu)
+    else
+        CPU_CORES=4
+    fi
+    echo "✓ Detected $CPU_CORES CPU cores"
+}
+
+# Fall back to the CPU settings shared by every "no usable accelerator" path.
+use_cpu_defaults() {
+    DETECTED_DEVICE="cpu"
+    COMPUTE_TYPE="int8"
+    BATCH_SIZE="4"
+}
+
+# Check for an NVIDIA GPU (CUDA); sets the CUDA settings and ACCELERATOR_FOUND=true when
+# one answers. Called as a plain statement, never in an `if` condition, so `set -e` stays
+# active inside it exactly as it was when this was inline.
+detect_nvidia_gpu() {
+    command -v nvidia-smi &> /dev/null || return 0
+    nvidia-smi &> /dev/null || return 0
+
+    echo "✓ NVIDIA GPU detected"
+    nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
+    DETECTED_DEVICE="cuda"
+    COMPUTE_TYPE="float16"
+    BATCH_SIZE="16"
+    USE_GPU_RUNTIME="true"
+
+    # Get count of available GPUs. Captured once and reused below, so the
+    # device list is queried a single time rather than through two pipelines.
+    GPU_INDEXES=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits)
+    GPU_COUNT=$(printf '%s\n' "$GPU_INDEXES" | wc -l)
+
+    # Get default GPU (first available).
+    #
+    # `head -n1` on the SECOND line of a `set -euo pipefail` script is the other
+    # half of the SIGPIPE hazard documented on docker_runtime_has_nvidia(): head
+    # exits after one line, nvidia-smi can take SIGPIPE (141), pipefail promotes
+    # that to the pipeline's status, and under `set -e` an unguarded assignment
+    # aborts the INSTALLER mid-run — measured:
+    #   bash -c 'set -euo pipefail; v="$(cat 2MB | head -1)"; echo REACHED'
+    # exits 141 and never prints. `wc -l` above reads to EOF and is unaffected.
+    # Reuse its already-captured output instead of a second pipeline.
+    DEFAULT_GPU="${GPU_INDEXES%%$'\n'*}"
+    GPU_DEVICE_ID=${DEFAULT_GPU:-0}
+    ACCELERATOR_FOUND=true
+}
+
+# Check for Apple Silicon (MPS); sets ACCELERATOR_FOUND=true on an arm64 Mac. Plain
+# statement for the same `set -e` reason as detect_nvidia_gpu.
+detect_apple_silicon() {
+    [[ "$DETECTED_PLATFORM" == "macos" ]] || return 0
+    if [[ $(uname -m) != "arm64" ]]; then
+        echo "✓ Intel Mac detected"
+        return 0
+    fi
+
+    echo "✓ Apple Silicon detected (M1/M2)"
+    DETECTED_DEVICE="mps"
+    COMPUTE_TYPE="float32"
+    BATCH_SIZE="8"
+
+    # Check macOS version for MPS support (requires macOS 12.3+)
+    local macos_version
+    macos_version=$(sw_vers -productVersion)
+    if [[ $(echo "$macos_version" | cut -d. -f1) -ge 12 ]] && [[ $(echo "$macos_version" | cut -d. -f2) -ge 3 ]]; then
+        echo "✓ macOS $macos_version supports MPS acceleration"
+    else
+        echo "⚠️  macOS $macos_version detected, MPS requires 12.3+, falling back to CPU"
+        DETECTED_DEVICE="cpu"
+    fi
+    ACCELERATOR_FOUND=true
+}
+
 detect_hardware_acceleration() {
     DETECTED_DEVICE="cpu"  # Default fallback
 
@@ -218,98 +300,28 @@ detect_hardware_acceleration() {
     if [[ "$FORCE_CPU" == "true" ]]; then
         echo "✓ CPU-only mode requested (--cpu or OPENTRANSCRIBE_FORCE_CPU)"
         echo "  Skipping GPU detection"
-        DETECTED_DEVICE="cpu"
-        COMPUTE_TYPE="int8"
-        BATCH_SIZE="4"
+        use_cpu_defaults
         USE_GPU_RUNTIME="false"
-
-        if command -v nproc &> /dev/null; then
-            CPU_CORES=$(nproc)
-        elif command -v sysctl &> /dev/null; then
-            CPU_CORES=$(sysctl -n hw.ncpu)
-        else
-            CPU_CORES=4
-        fi
-        echo "✓ Detected $CPU_CORES CPU cores"
+        detect_cpu_cores
         return
     fi
 
-    # Check for NVIDIA GPU (CUDA)
-    if command -v nvidia-smi &> /dev/null; then
-        if nvidia-smi &> /dev/null; then
-            echo "✓ NVIDIA GPU detected"
-            nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
-            DETECTED_DEVICE="cuda"
-            COMPUTE_TYPE="float16"
-            BATCH_SIZE="16"
-            USE_GPU_RUNTIME="true"
-
-            # Get count of available GPUs. Captured once and reused below, so the
-            # device list is queried a single time rather than through two pipelines.
-            GPU_INDEXES=$(nvidia-smi --query-gpu=index --format=csv,noheader,nounits)
-            GPU_COUNT=$(printf '%s\n' "$GPU_INDEXES" | wc -l)
-
-            # Get default GPU (first available).
-            #
-            # `head -n1` on the SECOND line of a `set -euo pipefail` script is the other
-            # half of the SIGPIPE hazard documented on docker_runtime_has_nvidia(): head
-            # exits after one line, nvidia-smi can take SIGPIPE (141), pipefail promotes
-            # that to the pipeline's status, and under `set -e` an unguarded assignment
-            # aborts the INSTALLER mid-run — measured:
-            #   bash -c 'set -euo pipefail; v="$(cat 2MB | head -1)"; echo REACHED'
-            # exits 141 and never prints. `wc -l` above reads to EOF and is unaffected.
-            # Reuse its already-captured output instead of a second pipeline.
-            DEFAULT_GPU="${GPU_INDEXES%%$'\n'*}"
-            GPU_DEVICE_ID=${DEFAULT_GPU:-0}
-
-            return
-        fi
+    ACCELERATOR_FOUND=false
+    detect_nvidia_gpu
+    if [[ "$ACCELERATOR_FOUND" == "true" ]]; then
+        return
     fi
 
-    # Check for Apple Silicon (MPS)
-    if [[ "$DETECTED_PLATFORM" == "macos" ]]; then
-        # Check for Apple Silicon
-        if [[ $(uname -m) == "arm64" ]]; then
-            echo "✓ Apple Silicon detected (M1/M2)"
-            DETECTED_DEVICE="mps"
-            COMPUTE_TYPE="float32"
-            BATCH_SIZE="8"
-
-            # Check macOS version for MPS support (requires macOS 12.3+)
-            macos_version=$(sw_vers -productVersion)
-            if [[ $(echo "$macos_version" | cut -d. -f1) -ge 12 ]] && [[ $(echo "$macos_version" | cut -d. -f2) -ge 3 ]]; then
-                echo "✓ macOS $macos_version supports MPS acceleration"
-            else
-                echo "⚠️  macOS $macos_version detected, MPS requires 12.3+, falling back to CPU"
-                DETECTED_DEVICE="cpu"
-            fi
-
-            return
-        else
-            echo "✓ Intel Mac detected"
-        fi
+    detect_apple_silicon
+    if [[ "$ACCELERATOR_FOUND" == "true" ]]; then
+        return
     fi
 
     # CPU fallback
     echo "ℹ️  Using CPU processing (no GPU acceleration detected)"
-    DETECTED_DEVICE="cpu"
-    COMPUTE_TYPE="int8"
-    BATCH_SIZE="4"
-
-    # Detect CPU cores for optimization
-    if command -v nproc &> /dev/null; then
-        CPU_CORES=$(nproc)
-    elif command -v sysctl &> /dev/null; then
-        CPU_CORES=$(sysctl -n hw.ncpu)
-    else
-        CPU_CORES=4
-    fi
-    echo "✓ Detected $CPU_CORES CPU cores"
+    use_cpu_defaults
+    detect_cpu_cores
 }
-
-#######################
-# DOCKER CONFIGURATION
-#######################
 
 # Does the Docker daemon expose the NVIDIA container runtime?
 #
@@ -396,6 +408,66 @@ check_gpu_support() {
     esac
 }
 
+# The GPU is present but whether Docker can use it could not be determined (check_gpu_support rc 2).
+docker_runtime_undetermined() {
+    # ⚠️ COULD NOT DETERMINE. This branch must NEVER reach fallback_to_cpu().
+    #
+    # Every other decision this installer makes can be re-run; this one is
+    # written to the user's .env by configure_environment() (DETECTED_DEVICE,
+    # USE_NVIDIA_RUNTIME, COMPUTE_TYPE) and is never re-detected. Persisting a
+    # *guess* is the actual harm: it silently converts "docker was busy for a
+    # moment" into "this deployment is CPU-only forever", on a host the user
+    # bought a GPU for. Refusing costs one re-run; guessing costs a permanently
+    # degraded install that presents only as slowness.
+    #
+    # We know the user wants GPU: this whole block is gated on USE_GPU_RUNTIME
+    # and DETECTED_DEVICE=cuda, and nvidia-smi already succeeded inside
+    # check_gpu_support. So there is a real, deliberate CPU path available
+    # (--cpu / OPENTRANSCRIBE_FORCE_CPU=1) that this user did not take, and
+    # naming it is a better answer than choosing it for them.
+    echo ""
+    echo -e "${YELLOW}⚠️  COULD NOT DETERMINE whether the NVIDIA Container Toolkit is configured.${NC}"
+    echo "   This host HAS an NVIDIA GPU (nvidia-smi answered), but \`docker info\`"
+    echo "   did not respond usably after 3 attempts — usually a busy or restarting"
+    echo "   Docker daemon."
+    echo ""
+    echo "   Refusing to guess: the GPU/CPU decision is written to .env here and is"
+    echo "   never re-detected, so a wrong guess would pin this install to CPU"
+    echo "   permanently with no symptom other than slowness."
+    echo ""
+    echo "   What to do:"
+    echo "   1. Wait for Docker to settle and re-run this installer, or"
+    echo "   2. Check the daemon:  docker info"
+    echo "   3. Install CPU-only ON PURPOSE:  --cpu   (or OPENTRANSCRIBE_FORCE_CPU=1)"
+    echo ""
+    if is_unattended; then
+        ot_log_unattended "Aborting: GPU runtime undetermined, and unattended mode must not persist a guess. Re-run, or pass --cpu / OPENTRANSCRIBE_FORCE_CPU=1 to choose CPU deliberately."
+        exit 1
+    fi
+    read -p "Continue and install in CPU mode anyway? (y/N) " -n 1 -r </dev/tty
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_error "Setup cancelled — GPU support could not be verified."
+        exit 1
+    fi
+    echo -e "${YELLOW}⚠️  Continuing in CPU mode at your request.${NC}"
+    fallback_to_cpu
+}
+
+# check_gpu_support said no: the NVIDIA Container Toolkit is not usable, so fall back to the CPU.
+docker_runtime_toolkit_failed() {
+    echo -e "${RED}❌ NVIDIA Container Toolkit tests failed${NC}"
+    echo ""
+    echo "Possible solutions:"
+    echo "1. Install NVIDIA Container Toolkit:"
+    echo "   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
+    echo "2. Restart Docker daemon after installation"
+    echo "3. Check NVIDIA driver installation with: nvidia-smi"
+    echo ""
+    echo -e "${YELLOW}⚠️  Automatically falling back to CPU mode...${NC}"
+    fallback_to_cpu
+}
+
 configure_docker_runtime() {
     echo -e "${BLUE}🐳 Configuring Docker runtime...${NC}"
 
@@ -410,59 +482,9 @@ configure_docker_runtime() {
             echo -e "${GREEN}✅ NVIDIA Container Toolkit fully functional${NC}"
             DOCKER_RUNTIME="nvidia"
         elif [ "$gpu_rc" -eq 2 ]; then
-            # ⚠️ COULD NOT DETERMINE. This branch must NEVER reach fallback_to_cpu().
-            #
-            # Every other decision this installer makes can be re-run; this one is
-            # written to the user's .env by configure_environment() (DETECTED_DEVICE,
-            # USE_NVIDIA_RUNTIME, COMPUTE_TYPE) and is never re-detected. Persisting a
-            # *guess* is the actual harm: it silently converts "docker was busy for a
-            # moment" into "this deployment is CPU-only forever", on a host the user
-            # bought a GPU for. Refusing costs one re-run; guessing costs a permanently
-            # degraded install that presents only as slowness.
-            #
-            # We know the user wants GPU: this whole block is gated on USE_GPU_RUNTIME
-            # and DETECTED_DEVICE=cuda, and nvidia-smi already succeeded inside
-            # check_gpu_support. So there is a real, deliberate CPU path available
-            # (--cpu / OPENTRANSCRIBE_FORCE_CPU=1) that this user did not take, and
-            # naming it is a better answer than choosing it for them.
-            echo ""
-            echo -e "${YELLOW}⚠️  COULD NOT DETERMINE whether the NVIDIA Container Toolkit is configured.${NC}"
-            echo "   This host HAS an NVIDIA GPU (nvidia-smi answered), but \`docker info\`"
-            echo "   did not respond usably after 3 attempts — usually a busy or restarting"
-            echo "   Docker daemon."
-            echo ""
-            echo "   Refusing to guess: the GPU/CPU decision is written to .env here and is"
-            echo "   never re-detected, so a wrong guess would pin this install to CPU"
-            echo "   permanently with no symptom other than slowness."
-            echo ""
-            echo "   What to do:"
-            echo "   1. Wait for Docker to settle and re-run this installer, or"
-            echo "   2. Check the daemon:  docker info"
-            echo "   3. Install CPU-only ON PURPOSE:  --cpu   (or OPENTRANSCRIBE_FORCE_CPU=1)"
-            echo ""
-            if is_unattended; then
-                ot_log_unattended "Aborting: GPU runtime undetermined, and unattended mode must not persist a guess. Re-run, or pass --cpu / OPENTRANSCRIBE_FORCE_CPU=1 to choose CPU deliberately."
-                exit 1
-            fi
-            read -p "Continue and install in CPU mode anyway? (y/N) " -n 1 -r </dev/tty
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                print_error "Setup cancelled — GPU support could not be verified."
-                exit 1
-            fi
-            echo -e "${YELLOW}⚠️  Continuing in CPU mode at your request.${NC}"
-            fallback_to_cpu
+            docker_runtime_undetermined
         else
-            echo -e "${RED}❌ NVIDIA Container Toolkit tests failed${NC}"
-            echo ""
-            echo "Possible solutions:"
-            echo "1. Install NVIDIA Container Toolkit:"
-            echo "   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
-            echo "2. Restart Docker daemon after installation"
-            echo "3. Check NVIDIA driver installation with: nvidia-smi"
-            echo ""
-            echo -e "${YELLOW}⚠️  Automatically falling back to CPU mode...${NC}"
-            fallback_to_cpu
+            docker_runtime_toolkit_failed
         fi
     else
         DOCKER_RUNTIME="default"
@@ -478,9 +500,7 @@ fallback_to_cpu() {
     DOCKER_RUNTIME="default"
 }
 
-#######################
-# NETWORK AND DEPENDENCY CHECKS
-#######################
+# ===== prerequisite checks =====
 
 check_network_connectivity() {
     echo -e "${BLUE}🌐 Checking network connectivity...${NC}"
@@ -503,40 +523,6 @@ check_network_connectivity() {
     else
         echo "✓ Network connectivity verified"
     fi
-}
-
-validate_downloaded_files() {
-    echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
-
-    # Note: Database schema is managed by Alembic migrations on backend startup.
-    # No init_db.sql validation needed.
-
-    # Validate docker-compose files exist
-    if [ ! -f "docker-compose.yml" ]; then
-        echo -e "${RED}❌ docker-compose.yml file not found${NC}"
-        return 1
-    fi
-
-    if [ ! -f "docker-compose.prod.yml" ]; then
-        echo -e "${RED}❌ docker-compose.prod.yml file not found${NC}"
-        return 1
-    fi
-
-    # Check for essential services in base file
-    if ! grep -q "services:" docker-compose.yml; then
-        echo -e "${RED}❌ docker-compose.yml appears invalid (no 'services:' section)${NC}"
-        return 1
-    fi
-
-    if ! grep -q "backend:" docker-compose.yml || ! grep -q "frontend:" docker-compose.yml; then
-        echo -e "${RED}❌ docker-compose.yml missing essential services${NC}"
-        return 1
-    fi
-
-    echo "✓ docker-compose.yml and docker-compose.prod.yml validated"
-    echo "  (Full configuration validation will occur after .env file creation)"
-    echo "✓ All downloaded files validated successfully"
-    return 0
 }
 
 check_dependencies() {
@@ -574,8 +560,7 @@ check_dependencies() {
 
     # Check if Docker daemon is running
     local docker_check_output
-    docker_check_output=$(docker info 2>&1)
-    if [ $? -ne 0 ]; then
+    if ! docker_check_output=$(docker info 2>&1); then
         if echo "$docker_check_output" | grep -qi "permission denied"; then
             echo -e "${RED}❌ Permission denied accessing Docker.${NC}"
             echo ""
@@ -599,9 +584,7 @@ check_dependencies() {
     check_network_connectivity
 }
 
-#######################
-# CONFIGURATION SETUP
-#######################
+# ===== project files and manifest download =====
 
 setup_project_directory() {
     echo -e "${BLUE}📁 Setting up project directory...${NC}"
@@ -644,286 +627,6 @@ create_configuration_files() {
         echo -e "${RED}❌ File validation failed${NC}"
         exit 1
     fi
-}
-
-# The repo's default branch, asked for at runtime rather than written down.
-#
-# Every hardcoded "master" in a download URL is a rename waiting to break installs, and
-# this script is about to be served from a branch that is renamed. Resolve it instead.
-# Echoes empty on any failure (offline, rate-limited, malformed) — callers MUST treat
-# empty as "no fallback available" and fail closed rather than guessing a name.
-resolve_default_branch() {
-    curl -fsSL --connect-timeout 10 --max-time 20 \
-        "https://api.github.com/repos/attevon-llc/OpenTranscribe" 2>/dev/null |
-        grep -m1 '"default_branch"' |
-        sed -E 's/.*"default_branch"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true
-}
-
-# Download every artifact listed in release-manifest.txt, at the resolved install ref.
-#
-# The file list lives in release-manifest.txt, NOT in this script. This installer used to
-# keep its own hardcoded list, and the two drifted: docker-compose.blackwell.yml and
-# docker-compose.backup.yml were listed in the manifest and downloaded by
-# `opentranscribe.sh update-full`, but never by a fresh install. Because
-# get_compose_files() guards overlay selection with `[ -f ... ]`, the miss was SILENT —
-# a fresh install on a Blackwell (SM_121) card fell back to the generic GPU overlay and
-# then crashed in NVRTC on the first transcription, which is the app's core function
-# (see docs/BLACKWELL_SETUP.md, issue #640).
-#
-# Mirrors the replay loop in opentranscribe.sh's update-full arm, with the same
-# optional/exec/preserve flag semantics, plus this script's retry-and-timeout behaviour.
-# Adding a file to a deployment is now a one-line change in release-manifest.txt.
-download_release_manifest_artifacts() {
-    echo "✓ Downloading deployment files listed in release-manifest.txt..."
-
-    local max_retries=3
-    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
-    # URL-encode the branch name (replace / with %2F)
-    local encoded_branch
-    encoded_branch=$(echo "$branch" | sed 's|/|%2F|g')
-    local github_raw="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}"
-
-    # The manifest itself is required. Guessing the file list is the bug this replaced,
-    # so refuse to install rather than fall back to an assumed set.
-    #
-    # WHY THERE IS A FALLBACK REF (issue #683)
-    #
-    # This installer is served from the default branch, but installs whatever
-    # resolve_install_ref() picks — the latest published GitHub Release. Those are two
-    # different refs, and release-manifest.txt was added AFTER the newest release at the
-    # time. So the current installer asked an older tag for a file that tag had never
-    # heard of, 404ed, and correctly-but-fatally refused: 100% of fresh installs died
-    # for 22 days.
-    #
-    # A release that ships its own manifest describes itself best, so that is still
-    # preferred. Only when the pinned ref predates the manifest do we borrow the list
-    # from the default branch. The ARTIFACTS are always fetched from the pinned ref
-    # ($github_raw) either way — only the file *list* falls back, so this cannot
-    # reintroduce an unpinned install.
-    #
-    # issue #723: a borrowed manifest is NEWER than the tag it is being applied to, so
-    # it can list a REQUIRED entry the tag genuinely never shipped (e.g. NOTICE, added
-    # required in 91128ecb the same day this was found). The `optional` flag alone does
-    # not absorb that skew — it only helps entries someone remembered to mark, and a
-    # required-on-principle file like NOTICE is deliberately never marked optional. So
-    # when the manifest had to be borrowed, a download failure for ANY entry is treated
-    # as "this tag predates the file" and skipped, never fatal — the tag's own manifest
-    # (the normal, non-borrowed case) is still enforced at full strictness.
-    local manifest_borrowed=0
-    if ! curl -fsSL --connect-timeout 10 --max-time 30 \
-        "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
-        rm -f release-manifest.txt.new
-
-        local default_branch
-        default_branch=$(resolve_default_branch)
-
-        if [ -n "$default_branch" ] && [ "$default_branch" != "$branch" ] &&
-            curl -fsSL --connect-timeout 10 --max-time 30 \
-                "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${default_branch}/release-manifest.txt" \
-                -o release-manifest.txt.new; then
-            manifest_borrowed=1
-            echo -e "  ${YELLOW}⚠️${NC}  ${branch} predates release-manifest.txt — using the file list from '${default_branch}'."
-            echo "     Deployment files are still downloaded from ${branch}; files that release"
-            echo "     does not have are skipped, whether or not the manifest marks them optional."
-        else
-            rm -f release-manifest.txt.new
-            echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
-            echo "Refusing to install from an unknown artifact list."
-            echo "Alternative: You can manually download from: $github_raw/release-manifest.txt"
-            exit 1
-        fi
-    fi
-    mv release-manifest.txt.new release-manifest.txt
-
-    local install_failed=0
-    local manifest_line artifact_path artifact_flags artifact_dir retry_count downloaded
-    while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
-        # Strip comments and blanks.
-        case "$manifest_line" in '' | '#'*) continue ;; esac
-
-        artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
-        artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
-        [ -n "$artifact_path" ] || continue
-
-        # preserve = user-owned data; never clobber an existing copy.
-        case ",$artifact_flags," in
-            *,preserve,*)
-                if [ -f "$artifact_path" ]; then
-                    echo "  ↷ $artifact_path (preserved)"
-                    continue
-                fi
-                ;;
-        esac
-
-        artifact_dir=$(dirname "$artifact_path")
-        [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
-
-        retry_count=0
-        downloaded=0
-        while [ $retry_count -lt $max_retries ]; do
-            # Stage to .new so a failed attempt never truncates a good file.
-            if curl -fsSL --connect-timeout 10 --max-time 30 \
-                "$github_raw/$artifact_path" -o "${artifact_path}.new" &&
-                [ -s "${artifact_path}.new" ]; then
-                mv "${artifact_path}.new" "$artifact_path"
-                case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
-                echo -e "  ${GREEN}✓${NC} $artifact_path"
-                downloaded=1
-                break
-            fi
-            rm -f "${artifact_path}.new"
-            retry_count=$((retry_count + 1))
-            if [ $retry_count -lt $max_retries ]; then
-                sleep 2
-            fi
-        done
-
-        if [ "$downloaded" -eq 0 ]; then
-            case ",$artifact_flags," in
-                *,optional,*)
-                    echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (optional, not in this release)"
-                    ;;
-                *)
-                    if [ "$manifest_borrowed" -eq 1 ]; then
-                        echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (required by a newer manifest, but ${branch} predates it — skipped)"
-                    else
-                        echo -e "  ${RED}✗${NC}  $artifact_path (REQUIRED — download failed)"
-                        install_failed=1
-                    fi
-                    ;;
-            esac
-        fi
-    done <release-manifest.txt
-
-    if [ "$install_failed" -ne 0 ]; then
-        echo ""
-        echo -e "${RED}❌ One or more required deployment files failed to download.${NC}"
-        echo "Please check your internet connection and try again."
-        exit 1
-    fi
-
-    echo "✓ All deployment files downloaded"
-}
-
-prompt_huggingface_token() {
-    # Unattended mode: use HUGGINGFACE_TOKEN from environment (or leave empty)
-    if is_unattended; then
-        if [[ -n "${HUGGINGFACE_TOKEN:-}" ]]; then
-            ot_log_unattended "Using HUGGINGFACE_TOKEN from environment"
-        else
-            ot_log_unattended "HUGGINGFACE_TOKEN not set; continuing without it"
-            HUGGINGFACE_TOKEN=""
-        fi
-        # PERSIST IT. This early return used to skip the only line that writes the
-        # token to .env (in the interactive branch below), so an unattended install
-        # kept the token in a shell variable and wrote HUGGINGFACE_TOKEN= empty.
-        # The containers therefore never saw it, PyAnnote's gated models answered
-        # 401, and EVERY transcription failed on a stack that otherwise looked
-        # healthy. Diarization is not optional: the pipeline cannot complete
-        # without it.
-        if [[ -n "$HUGGINGFACE_TOKEN" && -f .env ]]; then
-            sed -i.bak "s|^HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|" .env && rm -f .env.bak
-            ot_log_unattended "HUGGINGFACE_TOKEN written to .env"
-        fi
-        return 0
-    fi
-
-    # Re-run guard: skip if a valid token is already saved in .env
-    local _existing_token
-    _existing_token=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
-    if [[ "$_existing_token" =~ ^hf_ ]]; then
-        HUGGINGFACE_TOKEN="$_existing_token"
-        echo "✓ HuggingFace token already configured"
-        return 0
-    fi
-
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-    echo -e "${RED}⚠️  IMPORTANT: Token + Model Agreements REQUIRED!${NC}"
-    echo ""
-    echo "Without this token:"
-    echo "  • Transcription will work normally"
-    echo "  • Speaker diarization (who said what) will NOT work"
-    echo "  • Models cannot be pre-downloaded (will download on first use)"
-    echo ""
-    echo -e "${CYAN}Step 1: Get your FREE HuggingFace token${NC}"
-    echo "  1. Visit: https://huggingface.co/settings/tokens"
-    echo "  2. Click 'New token'"
-    echo "  3. Give it a name (e.g., 'OpenTranscribe')"
-    echo "  4. Select 'Read' permissions"
-    echo "  5. Copy the token"
-    echo ""
-    echo -e "${CYAN}Step 2: Accept the gated model agreement (CRITICAL!)${NC}"
-    echo -e "  ${RED}You MUST accept this agreement or downloads will fail!${NC}"
-    echo ""
-    echo "  Speaker Diarization Model (the only repo OpenTranscribe gates on):"
-    echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
-    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-
-    # Ask if they want to enter token now
-    read -p "Do you have a HuggingFace token to enter now? (Y/n) " -n 1 -r </dev/tty
-    echo
-    echo
-
-    if [[ $REPLY =~ ^[Nn]$ ]]; then
-        print_warning "Skipping HuggingFace token - you can add it later"
-        echo "To add later:"
-        echo "  1. Edit: $PROJECT_DIR/.env"
-        echo "  2. Set: HUGGINGFACE_TOKEN=your_token_here"
-        echo "  3. Restart: cd $PROJECT_DIR && ./opentranscribe.sh restart"
-        echo ""
-        HUGGINGFACE_TOKEN=""
-        return 0
-    fi
-
-    # Prompt for token
-    echo "Please enter your HuggingFace token:"
-    echo "(Token will be hidden for security)"
-    read -s HUGGINGFACE_TOKEN </dev/tty
-    echo
-
-    # Strip any 'HUGGINGFACE_TOKEN=' prefix if user pasted it
-    HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN#HUGGINGFACE_TOKEN=}"
-
-    # Validate token format (basic check - should start with hf_)
-    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
-        print_warning "No token entered - you can add it later in .env file"
-        HUGGINGFACE_TOKEN=""
-    elif [[ ! "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
-        print_warning "Token doesn't start with 'hf_' - this may not be valid"
-        echo "Using it anyway, but verify it's correct."
-        echo ""
-    else
-        print_success "HuggingFace token configured!"
-        echo ""
-    fi
-
-    # Write token immediately so it's saved even if the script is interrupted later
-    if [ -f .env ]; then
-        sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env && rm -f .env.bak
-    fi
-}
-
-# Update an existing KEY= line in .env, or append KEY=VALUE if missing.
-_upsert_env() {
-    local key="$1" val="$2"
-    if grep -q "^${key}=" .env 2>/dev/null; then
-        sed -i.bak "s|^${key}=.*|${key}=${val}|" .env && rm -f .env.bak
-    else
-        echo "${key}=${val}" >> .env
-    fi
-}
-
-# FRONTEND_BIND_HOST (issue #1332): the plain-HTTP port's host address. A non-empty value
-# already in .env is an earlier choice and is kept on a re-run.
-_set_frontend_bind_host() {
-    grep -qE '^FRONTEND_BIND_HOST=.+' .env 2>/dev/null || _upsert_env FRONTEND_BIND_HOST "$1"
 }
 
 # Resolve which release this install pins to.
@@ -996,6 +699,230 @@ resolve_install_ref() {
     OT_IMAGE_TAG="$resolved"
     OPENTRANSCRIBE_BRANCH="$resolved"
     print_success "Installing release $OT_IMAGE_TAG"
+}
+
+# The repo's default branch, asked for at runtime rather than written down.
+#
+# Every hardcoded "master" in a download URL is a rename waiting to break installs, and
+# this script is about to be served from a branch that is renamed. Resolve it instead.
+# Echoes empty on any failure (offline, rate-limited, malformed) — callers MUST treat
+# empty as "no fallback available" and fail closed rather than guessing a name.
+resolve_default_branch() {
+    curl -fsSL --connect-timeout 10 --max-time 20 \
+        "https://api.github.com/repos/attevon-llc/OpenTranscribe" 2>/dev/null |
+        grep -m1 '"default_branch"' |
+        sed -E 's/.*"default_branch"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true
+}
+
+# Download every artifact listed in release-manifest.txt, at the resolved install ref.
+#
+# The file list lives in release-manifest.txt, NOT in this script. This installer used to
+# keep its own hardcoded list, and the two drifted: docker-compose.blackwell.yml and
+# docker-compose.backup.yml were listed in the manifest and downloaded by
+# `opentranscribe.sh update-full`, but never by a fresh install. Because
+# get_compose_files() guards overlay selection with `[ -f ... ]`, the miss was SILENT —
+# a fresh install on a Blackwell (SM_121) card fell back to the generic GPU overlay and
+# then crashed in NVRTC on the first transcription, which is the app's core function
+# (see docs/BLACKWELL_SETUP.md, issue #640).
+#
+# Mirrors the replay loop in opentranscribe.sh's update-full arm, with the same
+# optional/exec/preserve flag semantics, plus this script's retry-and-timeout behaviour.
+# Adding a file to a deployment is now a one-line change in release-manifest.txt.
+# Fetch release-manifest.txt for the pinned ref ($1) from $2 (raw base URL); sets MANIFEST_BORROWED=1 when the list had to come from the default branch.
+fetch_release_manifest() {
+    local branch="$1" github_raw="$2"
+    # The manifest itself is required. Guessing the file list is the bug this replaced,
+    # so refuse to install rather than fall back to an assumed set.
+    #
+    # WHY THERE IS A FALLBACK REF (issue #683)
+    #
+    # This installer is served from the default branch, but installs whatever
+    # resolve_install_ref() picks — the latest published GitHub Release. Those are two
+    # different refs, and release-manifest.txt was added AFTER the newest release at the
+    # time. So the current installer asked an older tag for a file that tag had never
+    # heard of, 404ed, and correctly-but-fatally refused: 100% of fresh installs died
+    # for 22 days.
+    #
+    # A release that ships its own manifest describes itself best, so that is still
+    # preferred. Only when the pinned ref predates the manifest do we borrow the list
+    # from the default branch. The ARTIFACTS are always fetched from the pinned ref
+    # ($github_raw) either way — only the file *list* falls back, so this cannot
+    # reintroduce an unpinned install.
+    #
+    # issue #723: a borrowed manifest is NEWER than the tag it is being applied to, so
+    # it can list a REQUIRED entry the tag genuinely never shipped (e.g. NOTICE, added
+    # required in 91128ecb the same day this was found). The `optional` flag alone does
+    # not absorb that skew — it only helps entries someone remembered to mark, and a
+    # required-on-principle file like NOTICE is deliberately never marked optional. So
+    # when the manifest had to be borrowed, a download failure for ANY entry is treated
+    # as "this tag predates the file" and skipped, never fatal — the tag's own manifest
+    # (the normal, non-borrowed case) is still enforced at full strictness.
+    MANIFEST_BORROWED=0
+    if ! curl -fsSL --connect-timeout 10 --max-time 30 \
+        "$github_raw/release-manifest.txt" -o release-manifest.txt.new; then
+        rm -f release-manifest.txt.new
+
+        local default_branch
+        default_branch=$(resolve_default_branch)
+
+        if [ -n "$default_branch" ] && [ "$default_branch" != "$branch" ] &&
+            curl -fsSL --connect-timeout 10 --max-time 30 \
+                "https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${default_branch}/release-manifest.txt" \
+                -o release-manifest.txt.new; then
+            MANIFEST_BORROWED=1
+            echo -e "  ${YELLOW}⚠️${NC}  ${branch} predates release-manifest.txt — using the file list from '${default_branch}'."
+            echo "     Deployment files are still downloaded from ${branch}; files that release"
+            echo "     does not have are skipped, whether or not the manifest marks them optional."
+        else
+            rm -f release-manifest.txt.new
+            echo -e "${RED}❌ Failed to download release-manifest.txt from ${branch}${NC}"
+            echo "Refusing to install from an unknown artifact list."
+            echo "Alternative: You can manually download from: $github_raw/release-manifest.txt"
+            exit 1
+        fi
+    fi
+    mv release-manifest.txt.new release-manifest.txt
+}
+
+# Download one manifest artifact with retries, then report it. A REQUIRED failure sets MANIFEST_INSTALL_FAILED=1.
+# Plain statement for the caller (never an `if` condition), so `set -e` stays active inside.
+download_manifest_artifact() {
+    local artifact_path="$1" artifact_flags="$2" github_raw="$3" branch="$4"
+    local max_retries=3 artifact_dir retry_count downloaded
+    artifact_dir=$(dirname "$artifact_path")
+    [ "$artifact_dir" = "." ] || mkdir -p "$artifact_dir"
+
+    retry_count=0
+    downloaded=0
+    while [ $retry_count -lt $max_retries ]; do
+        # Stage to .new so a failed attempt never truncates a good file.
+        if curl -fsSL --connect-timeout 10 --max-time 30 \
+            "$github_raw/$artifact_path" -o "${artifact_path}.new" &&
+            [ -s "${artifact_path}.new" ]; then
+            mv "${artifact_path}.new" "$artifact_path"
+            case ",$artifact_flags," in *,exec,*) chmod +x "$artifact_path" ;; esac
+            echo -e "  ${GREEN}✓${NC} $artifact_path"
+            downloaded=1
+            break
+        fi
+        rm -f "${artifact_path}.new"
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $max_retries ]; then
+            sleep 2
+        fi
+    done
+
+    if [ "$downloaded" -eq 0 ]; then
+        case ",$artifact_flags," in
+            *,optional,*)
+                echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (optional, not in this release)"
+                ;;
+            *)
+                if [ "$MANIFEST_BORROWED" -eq 1 ]; then
+                    echo -e "  ${YELLOW}⚠️${NC}  $artifact_path (required by a newer manifest, but ${branch} predates it — skipped)"
+                else
+                    echo -e "  ${RED}✗${NC}  $artifact_path (REQUIRED — download failed)"
+                    MANIFEST_INSTALL_FAILED=1
+                fi
+                ;;
+        esac
+    fi
+}
+
+download_release_manifest_artifacts() {
+    echo "✓ Downloading deployment files listed in release-manifest.txt..."
+
+    local branch="${OPENTRANSCRIBE_BRANCH:-master}"
+    # URL-encode the branch name (replace / with %2F)
+    local encoded_branch
+    encoded_branch="${branch//\//%2F}"
+    local github_raw="https://raw.githubusercontent.com/attevon-llc/OpenTranscribe/${encoded_branch}"
+
+    fetch_release_manifest "$branch" "$github_raw"
+
+    MANIFEST_INSTALL_FAILED=0
+    local manifest_line artifact_path artifact_flags
+    while IFS= read -r manifest_line || [ -n "$manifest_line" ]; do
+        # Strip comments and blanks.
+        case "$manifest_line" in '' | '#'*) continue ;; esac
+
+        artifact_path=$(printf '%s' "$manifest_line" | cut -f1 | tr -d '[:space:]')
+        artifact_flags=$(printf '%s' "$manifest_line" | cut -s -f2)
+        [ -n "$artifact_path" ] || continue
+
+        # preserve = user-owned data; never clobber an existing copy.
+        case ",$artifact_flags," in
+            *,preserve,*)
+                if [ -f "$artifact_path" ]; then
+                    echo "  ↷ $artifact_path (preserved)"
+                    continue
+                fi
+                ;;
+        esac
+
+        download_manifest_artifact "$artifact_path" "$artifact_flags" "$github_raw" "$branch"
+    done <release-manifest.txt
+
+    if [ "$MANIFEST_INSTALL_FAILED" -ne 0 ]; then
+        echo ""
+        echo -e "${RED}❌ One or more required deployment files failed to download.${NC}"
+        echo "Please check your internet connection and try again."
+        exit 1
+    fi
+
+    echo "✓ All deployment files downloaded"
+}
+
+validate_downloaded_files() {
+    echo -e "${BLUE}🔍 Validating downloaded files...${NC}"
+
+    # Note: Database schema is managed by Alembic migrations on backend startup.
+    # No init_db.sql validation needed.
+
+    # Validate docker-compose files exist
+    if [ ! -f "docker-compose.yml" ]; then
+        echo -e "${RED}❌ docker-compose.yml file not found${NC}"
+        return 1
+    fi
+
+    if [ ! -f "docker-compose.prod.yml" ]; then
+        echo -e "${RED}❌ docker-compose.prod.yml file not found${NC}"
+        return 1
+    fi
+
+    # Check for essential services in base file
+    if ! grep -q "services:" docker-compose.yml; then
+        echo -e "${RED}❌ docker-compose.yml appears invalid (no 'services:' section)${NC}"
+        return 1
+    fi
+
+    if ! grep -q "backend:" docker-compose.yml || ! grep -q "frontend:" docker-compose.yml; then
+        echo -e "${RED}❌ docker-compose.yml missing essential services${NC}"
+        return 1
+    fi
+
+    echo "✓ docker-compose.yml and docker-compose.prod.yml validated"
+    echo "  (Full configuration validation will occur after .env file creation)"
+    echo "✓ All downloaded files validated successfully"
+    return 0
+}
+
+# ===== .env creation and hardware settings =====
+
+# Update an existing KEY= line in .env, or append KEY=VALUE if missing.
+_upsert_env() {
+    local key="$1" val="$2"
+    if grep -q "^${key}=" .env 2>/dev/null; then
+        sed -i.bak "s|^${key}=.*|${key}=${val}|" .env && rm -f .env.bak
+    else
+        echo "${key}=${val}" >> .env
+    fi
+}
+
+# FRONTEND_BIND_HOST (issue #1332): the plain-HTTP port's host address. A non-empty value
+# already in .env is an earlier choice and is kept on a re-run.
+_set_frontend_bind_host() {
+    grep -qE '^FRONTEND_BIND_HOST=.+' .env 2>/dev/null || _upsert_env FRONTEND_BIND_HOST "$1"
 }
 
 # Create .env from template and write all auto-generated credentials immediately.
@@ -1087,6 +1014,56 @@ _write_hardware_settings() {
 # Global: distinguishes a brand-new install (no prior .env) from a re-run.
 _FRESH_INSTALL="false"
 
+# Generate every secret (openssl, then python3, then /dev/urandom) into the globals _create_initial_env writes to .env.
+generate_credentials() {
+    if command -v openssl &> /dev/null; then
+        POSTGRES_PASSWORD=$(openssl rand -hex 32)
+        MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
+        JWT_SECRET=$(openssl rand -hex 64)
+        # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
+        ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
+        REDIS_PASSWORD=$(openssl rand -hex 32)
+        OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
+        # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+        # OpenSearch enforces password complexity (upper+lower+digit+special, >=8);
+        # append "Aa1!" to the random base to guarantee all four character classes.
+        OPENSEARCH_ADMIN_PASSWORD="$(openssl rand -base64 24)Aa1!"
+        FLOWER_PASSWORD=$(openssl rand -hex 16)
+        MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
+    elif command -v python3 &> /dev/null; then
+        POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        MINIO_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(64))")
+        ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
+        REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+        # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+        # Complexity-satisfying (upper+lower+digit+special) for OpenSearch's bootstrap check.
+        OPENSEARCH_ADMIN_PASSWORD=$(python3 -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(18)).decode() + 'Aa1!')")
+        FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
+        MINIO_KMS_KEY=$(python3 -c "import secrets, base64; print('opentranscribe-key:' + base64.b64encode(secrets.token_bytes(32)).decode())")
+    elif [[ -r /dev/urandom ]]; then
+        # /dev/urandom fallback - cryptographically secure, needs only coreutils
+        POSTGRES_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        MINIO_ROOT_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        JWT_SECRET=$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
+        ENCRYPTION_KEY="opentranscribe_$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
+        REDIS_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        OPENSEARCH_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
+        # Complexity-satisfying (upper+lower+digit+special) for OpenSearch's bootstrap check.
+        OPENSEARCH_ADMIN_PASSWORD="$(head -c 18 /dev/urandom | base64 | tr -d '\n')Aa1!"
+        FLOWER_PASSWORD=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        MINIO_KMS_KEY="opentranscribe-key:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+    else
+        # Never fall back to predictable secrets - timestamp/$RANDOM-derived keys are brute-forceable
+        print_error "Cannot generate secure credentials: openssl, python3, or /dev/urandom is required."
+        echo "   Install openssl (e.g. 'apt install openssl' or 'brew install openssl') and re-run setup."
+        exit 1
+    fi
+}
+
 configure_environment() {
     echo -e "${BLUE}⚙️  Configuring environment...${NC}"
 
@@ -1096,52 +1073,7 @@ configure_environment() {
         # Generate all secure secrets using openssl or python3 fallback
         echo "🔒 Generating secure credentials..."
 
-        if command -v openssl &> /dev/null; then
-            POSTGRES_PASSWORD=$(openssl rand -hex 32)
-            MINIO_ROOT_PASSWORD=$(openssl rand -hex 32)
-            JWT_SECRET=$(openssl rand -hex 64)
-            # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
-            ENCRYPTION_KEY="opentranscribe_$(openssl rand -base64 48)"
-            REDIS_PASSWORD=$(openssl rand -hex 32)
-            OPENSEARCH_PASSWORD=$(openssl rand -hex 32)
-            # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
-            # OpenSearch enforces password complexity (upper+lower+digit+special, >=8);
-            # append "Aa1!" to the random base to guarantee all four character classes.
-            OPENSEARCH_ADMIN_PASSWORD="$(openssl rand -base64 24)Aa1!"
-            FLOWER_PASSWORD=$(openssl rand -hex 16)
-            MINIO_KMS_KEY="opentranscribe-key:$(openssl rand -base64 32)"
-        elif command -v python3 &> /dev/null; then
-            POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-            MINIO_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-            JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(64))")
-            ENCRYPTION_KEY=$(python3 -c "import secrets, base64; print('opentranscribe_' + base64.b64encode(secrets.token_bytes(48)).decode())")
-            REDIS_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-            OPENSEARCH_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
-            # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
-            # Complexity-satisfying (upper+lower+digit+special) for OpenSearch's bootstrap check.
-            OPENSEARCH_ADMIN_PASSWORD=$(python3 -c "import secrets, base64; print(base64.b64encode(secrets.token_bytes(18)).decode() + 'Aa1!')")
-            FLOWER_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(16))")
-            MINIO_KMS_KEY=$(python3 -c "import secrets, base64; print('opentranscribe-key:' + base64.b64encode(secrets.token_bytes(32)).decode())")
-        elif [[ -r /dev/urandom ]]; then
-            # /dev/urandom fallback - cryptographically secure, needs only coreutils
-            POSTGRES_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            MINIO_ROOT_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            JWT_SECRET=$(head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            # ENCRYPTION_KEY: arbitrary high-entropy string used as PBKDF2 master key material; format is not parsed.
-            ENCRYPTION_KEY="opentranscribe_$(head -c 48 /dev/urandom | base64 | tr -d '\n')"
-            REDIS_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            OPENSEARCH_PASSWORD=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            # OPENSEARCH_ADMIN_PASSWORD: only used when OPENSEARCH_SECURITY_ENABLED=true.
-            # Complexity-satisfying (upper+lower+digit+special) for OpenSearch's bootstrap check.
-            OPENSEARCH_ADMIN_PASSWORD="$(head -c 18 /dev/urandom | base64 | tr -d '\n')Aa1!"
-            FLOWER_PASSWORD=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
-            MINIO_KMS_KEY="opentranscribe-key:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
-        else
-            # Never fall back to predictable secrets - timestamp/$RANDOM-derived keys are brute-forceable
-            print_error "Cannot generate secure credentials: openssl, python3, or /dev/urandom is required."
-            echo "   Install openssl (e.g. 'apt install openssl' or 'brew install openssl') and re-run setup."
-            exit 1
-        fi
+        generate_credentials
 
         print_success "Secure credentials generated (64-char JWT/encryption, 32-char passwords)"
 
@@ -1162,26 +1094,154 @@ configure_environment() {
     _write_hardware_settings
 }
 
-select_whisper_model() {
-    # Re-run guard: skip if already configured in .env (only on re-runs, not fresh installs
-    # where the template default "large-v3-turbo" would falsely match)
-    if [[ "$_FRESH_INSTALL" == "false" ]]; then
-        local _existing_model
-        _existing_model=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
-        if [[ -n "$_existing_model" ]]; then
-            WHISPER_MODEL="$_existing_model"
-            echo "✓ Whisper model already configured: $WHISPER_MODEL"
-            return 0
-        fi
+# Persist NGINX_SERVER_NAME in .env (update a live or commented entry, else append).
+# $1 must already have passed ot_is_valid_hostname: it is spliced into a sed replacement.
+write_nginx_server_name_to_env() {
+    local name="$1"
+    [ -f .env ] || return 0
+    if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
+        sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$name|g" .env
+    else
+        {
+            echo ""
+            echo "# HTTPS/SSL Configuration"
+            echo "NGINX_SERVER_NAME=$name"
+        } >> .env
     fi
+    rm -f .env.bak
+    _set_frontend_bind_host 127.0.0.1  # nginx is the front door; plain HTTP stays local
+    # Unconditional, not just on the fresh-install path (issue #857): a re-run
+    # against a pre-existing .env that predates this fix, or one created by a
+    # different path, is not guaranteed to already be owner-only.
+    ensure_env_permissions .env
+    echo "✓ Updated .env with NGINX_SERVER_NAME=$name"
+}
 
-    echo -e "${YELLOW}🎤 Selecting Whisper Model based on hardware...${NC}"
+# ===== interactive prompts =====
+
+# Unattended mode: take HUGGINGFACE_TOKEN from the environment and persist it to .env.
+hf_token_unattended() {
+    if [[ -n "${HUGGINGFACE_TOKEN:-}" ]]; then
+        ot_log_unattended "Using HUGGINGFACE_TOKEN from environment"
+    else
+        ot_log_unattended "HUGGINGFACE_TOKEN not set; continuing without it"
+        HUGGINGFACE_TOKEN=""
+    fi
+    # PERSIST IT. This early return used to skip the only line that writes the
+    # token to .env (in the interactive branch below), so an unattended install
+    # kept the token in a shell variable and wrote HUGGINGFACE_TOKEN= empty.
+    # The containers therefore never saw it, PyAnnote's gated models answered
+    # 401, and EVERY transcription failed on a stack that otherwise looked
+    # healthy. Diarization is not optional: the pipeline cannot complete
+    # without it.
+    if [[ -n "$HUGGINGFACE_TOKEN" && -f .env ]]; then
+        sed -i.bak "s|^HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|" .env && rm -f .env.bak
+        ot_log_unattended "HUGGINGFACE_TOKEN written to .env"
+    fi
+}
+
+# Explain why the HuggingFace token and the gated-model agreement are needed.
+print_hf_token_instructions() {
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}🤗 HuggingFace Token Configuration${NC}"
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${RED}⚠️  IMPORTANT: Token + Model Agreements REQUIRED!${NC}"
+    echo ""
+    echo "Without this token:"
+    echo "  • Transcription will work normally"
+    echo "  • Speaker diarization (who said what) will NOT work"
+    echo "  • Models cannot be pre-downloaded (will download on first use)"
+    echo ""
+    echo -e "${CYAN}Step 1: Get your FREE HuggingFace token${NC}"
+    echo "  1. Visit: https://huggingface.co/settings/tokens"
+    echo "  2. Click 'New token'"
+    echo "  3. Give it a name (e.g., 'OpenTranscribe')"
+    echo "  4. Select 'Read' permissions"
+    echo "  5. Copy the token"
+    echo ""
+    echo -e "${CYAN}Step 2: Accept the gated model agreement (CRITICAL!)${NC}"
+    echo -e "  ${RED}You MUST accept this agreement or downloads will fail!${NC}"
+    echo ""
+    echo "  Speaker Diarization Model (the only repo OpenTranscribe gates on):"
+    echo "     https://huggingface.co/pyannote/speaker-diarization-community-1"
+    echo -e "     ${GREEN}→ Click 'Agree and access repository'${NC}"
+    echo ""
+    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    # Auto-select optimal model based on hardware with GPU memory detection
-    local RECOMMENDED_MODEL=""
-    local RECOMMENDATION_REASON=""
+    # Ask if they want to enter token now
+}
 
+# Read the token silently, normalise it, report its shape and write it to .env.
+read_hf_token_input() {
+    # Prompt for token
+    echo "Please enter your HuggingFace token:"
+    echo "(Token will be hidden for security)"
+    read -r -s HUGGINGFACE_TOKEN </dev/tty
+    echo
+
+    # Strip any 'HUGGINGFACE_TOKEN=' prefix if user pasted it
+    HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN#HUGGINGFACE_TOKEN=}"
+
+    # Validate token format (basic check - should start with hf_)
+    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
+        print_warning "No token entered - you can add it later in .env file"
+        HUGGINGFACE_TOKEN=""
+    elif [[ ! "$HUGGINGFACE_TOKEN" =~ ^hf_ ]]; then
+        print_warning "Token doesn't start with 'hf_' - this may not be valid"
+        echo "Using it anyway, but verify it's correct."
+        echo ""
+    else
+        print_success "HuggingFace token configured!"
+        echo ""
+    fi
+
+    # Write token immediately so it's saved even if the script is interrupted later
+    if [ -f .env ]; then
+        sed -i.bak "s|HUGGINGFACE_TOKEN=.*|HUGGINGFACE_TOKEN=$HUGGINGFACE_TOKEN|g" .env && rm -f .env.bak
+    fi
+}
+
+prompt_huggingface_token() {
+    # Unattended mode: use HUGGINGFACE_TOKEN from environment (or leave empty)
+    if is_unattended; then
+        hf_token_unattended
+        return 0
+    fi
+
+    # Re-run guard: skip if a valid token is already saved in .env
+    local _existing_token
+    _existing_token=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
+    if [[ "$_existing_token" =~ ^hf_ ]]; then
+        HUGGINGFACE_TOKEN="$_existing_token"
+        echo "✓ HuggingFace token already configured"
+        return 0
+    fi
+
+    echo ""
+    print_hf_token_instructions
+    read -p "Do you have a HuggingFace token to enter now? (Y/n) " -n 1 -r </dev/tty
+    echo
+    echo
+
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        print_warning "Skipping HuggingFace token - you can add it later"
+        echo "To add later:"
+        echo "  1. Edit: $PROJECT_DIR/.env"
+        echo "  2. Set: HUGGINGFACE_TOKEN=your_token_here"
+        echo "  3. Restart: cd $PROJECT_DIR && ./opentranscribe.sh restart"
+        echo ""
+        HUGGINGFACE_TOKEN=""
+        return 0
+    fi
+
+    read_hf_token_input
+}
+
+# Pick the recommended Whisper model for the detected hardware.
+# Assigns RECOMMENDED_MODEL / RECOMMENDATION_REASON, which the caller declares `local` (bash dynamic scope).
+recommend_whisper_model() {
     case "$DETECTED_DEVICE" in
         "cuda")
             # Try to detect GPU memory for better model selection
@@ -1217,6 +1277,10 @@ select_whisper_model() {
     esac
 
     # Display recommendation
+}
+
+print_whisper_model_table() {
+    local RECOMMENDED_MODEL="$1" RECOMMENDATION_REASON="$2"
     echo -e "${BLUE}Available Whisper Models:${NC}"
     echo ""
     echo "  Model            VRAM     English    Multilingual  Translate  Notes"
@@ -1235,6 +1299,55 @@ select_whisper_model() {
     echo "Note: Larger models provide better accuracy but require more memory"
     echo "      and processing time. You can change this later in the .env file."
     echo ""
+}
+
+# Ask until the answer is a valid model name (Enter takes the recommendation); sets WHISPER_MODEL.
+choose_whisper_model() {
+    local RECOMMENDED_MODEL="$1" user_model
+    while true; do
+        read -r -p "Select model (tiny/base/small/medium/large-v2/large-v3/large-v3-turbo) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
+
+        # Use recommended if user just presses Enter
+        if [ -z "$user_model" ]; then
+            WHISPER_MODEL="$RECOMMENDED_MODEL"
+            break
+        fi
+
+        # Validate input
+        case "$user_model" in
+            tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)
+                WHISPER_MODEL="$user_model"
+                break
+                ;;
+            *)
+                echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, large-v2, large-v3, or large-v3-turbo${NC}"
+                ;;
+        esac
+    done
+}
+
+select_whisper_model() {
+    # Re-run guard: skip if already configured in .env (only on re-runs, not fresh installs
+    # where the template default "large-v3-turbo" would falsely match)
+    if [[ "$_FRESH_INSTALL" == "false" ]]; then
+        local _existing_model
+        _existing_model=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+        if [[ -n "$_existing_model" ]]; then
+            WHISPER_MODEL="$_existing_model"
+            echo "✓ Whisper model already configured: $WHISPER_MODEL"
+            return 0
+        fi
+    fi
+
+    echo -e "${YELLOW}🎤 Selecting Whisper Model based on hardware...${NC}"
+    echo ""
+
+    # Auto-select optimal model based on hardware with GPU memory detection
+    local RECOMMENDED_MODEL=""
+    local RECOMMENDATION_REASON=""
+
+    recommend_whisper_model
+    print_whisper_model_table "$RECOMMENDED_MODEL" "$RECOMMENDATION_REASON"
 
     # Unattended: honor WHISPER_MODEL env var if set, else use recommended
     if is_unattended; then
@@ -1246,26 +1359,7 @@ select_whisper_model() {
         fi
     else
         # Prompt user for model selection
-        while true; do
-            read -p "Select model (tiny/base/small/medium/large-v2/large-v3/large-v3-turbo) [${RECOMMENDED_MODEL}]: " user_model </dev/tty
-
-            # Use recommended if user just presses Enter
-            if [ -z "$user_model" ]; then
-                WHISPER_MODEL="$RECOMMENDED_MODEL"
-                break
-            fi
-
-            # Validate input
-            case "$user_model" in
-                tiny|base|small|medium|large-v1|large-v2|large-v3|large-v3-turbo)
-                    WHISPER_MODEL="$user_model"
-                    break
-                    ;;
-                *)
-                    echo -e "${RED}Invalid model. Please choose: tiny, base, small, medium, large-v2, large-v3, or large-v3-turbo${NC}"
-                    ;;
-            esac
-        done
+        choose_whisper_model "$RECOMMENDED_MODEL"
     fi
 
     echo ""
@@ -1281,27 +1375,9 @@ select_whisper_model() {
     fi
 }
 
-select_opensearch_models() {
-    # Re-run guard: skip if already configured in .env (only on re-runs)
-    if [[ "$_FRESH_INSTALL" == "false" ]]; then
-        local _existing_os_model
-        _existing_os_model=$(grep '^OPENSEARCH_NEURAL_MODEL=' .env 2>/dev/null | cut -d= -f2-)
-        if [[ -n "$_existing_os_model" ]]; then
-            OPENSEARCH_NEURAL_MODEL="$_existing_os_model"
-            # Derive short name for display
-            OPENSEARCH_MODELS=$(basename "$OPENSEARCH_NEURAL_MODEL")
-            echo "✓ OpenSearch neural model already configured: $OPENSEARCH_MODELS"
-            return 0
-        fi
-    fi
-
-    echo -e "${YELLOW}🔍 Selecting OpenSearch Neural Search Models...${NC}"
-    echo ""
-
-    # Auto-select optimal model based on use case
-    local RECOMMENDED_MODEL="all-MiniLM-L6-v2"
-    local RECOMMENDATION_REASON="Fast, lightweight, good for English keyword-heavy searches"
-
+# Show the neural search model tiers and the quality-level menu.
+print_opensearch_model_menu() {
+    local RECOMMENDED_MODEL="$1" RECOMMENDATION_REASON="$2"
     # Display available models
     echo -e "${BLUE}Available Neural Search Models (for semantic/vector search):${NC}"
     echo ""
@@ -1332,24 +1408,15 @@ select_opensearch_models() {
     echo "  7) all-models   - Download all 6 models (~2.6GB total, complete offline support)"
     echo "  8) skip         - Don't download now (download on first use)"
     echo ""
+}
 
-    # Unattended: honor OPENSEARCH_MODELS env var if set, else default to fast model
-    if is_unattended; then
-        if [[ -n "${OPENSEARCH_MODELS:-}" ]]; then
-            OPENSEARCH_NEURAL_MODEL="${OPENSEARCH_NEURAL_MODEL:-huggingface/sentence-transformers/${OPENSEARCH_MODELS}}"
-            ot_log_unattended "Using OPENSEARCH_MODELS=${OPENSEARCH_MODELS} from environment"
-        else
-            OPENSEARCH_MODELS="all-MiniLM-L6-v2"
-            OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
-            ot_log_unattended "OPENSEARCH_MODELS defaulted to ${OPENSEARCH_MODELS}"
-        fi
-        echo ""
-        return 0
-    fi
-
+# Ask for a quality level until the answer is valid; sets OPENSEARCH_MODELS / OPENSEARCH_NEURAL_MODEL.
+# Choosing "skip" sets OPENSEARCH_SKIPPED=true so the caller returns before writing .env.
+choose_opensearch_model() {
+    OPENSEARCH_SKIPPED=false
     # Prompt user for model selection
     while true; do
-        read -p "Select model quality [1-8, default=1]: " user_choice </dev/tty
+        read -r -p "Select model quality [1-8, default=1]: " user_choice </dev/tty
 
         # Use default if user just presses Enter
         if [ -z "$user_choice" ] || [ "$user_choice" = "1" ]; then
@@ -1403,6 +1470,7 @@ select_opensearch_models() {
                 echo -e "${YELLOW}⚠️  Skipping OpenSearch model download${NC}"
                 echo "Model will download automatically on first use (causes delay)"
                 echo ""
+                OPENSEARCH_SKIPPED=true
                 return 0
                 ;;
             *)
@@ -1410,6 +1478,49 @@ select_opensearch_models() {
                 ;;
         esac
     done
+}
+
+select_opensearch_models() {
+    # Re-run guard: skip if already configured in .env (only on re-runs)
+    if [[ "$_FRESH_INSTALL" == "false" ]]; then
+        local _existing_os_model
+        _existing_os_model=$(grep '^OPENSEARCH_NEURAL_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+        if [[ -n "$_existing_os_model" ]]; then
+            OPENSEARCH_NEURAL_MODEL="$_existing_os_model"
+            # Derive short name for display
+            OPENSEARCH_MODELS=$(basename "$OPENSEARCH_NEURAL_MODEL")
+            echo "✓ OpenSearch neural model already configured: $OPENSEARCH_MODELS"
+            return 0
+        fi
+    fi
+
+    echo -e "${YELLOW}🔍 Selecting OpenSearch Neural Search Models...${NC}"
+    echo ""
+
+    # Auto-select optimal model based on use case
+    local RECOMMENDED_MODEL="all-MiniLM-L6-v2"
+    local RECOMMENDATION_REASON="Fast, lightweight, good for English keyword-heavy searches"
+
+    print_opensearch_model_menu "$RECOMMENDED_MODEL" "$RECOMMENDATION_REASON"
+
+    # Unattended: honor OPENSEARCH_MODELS env var if set, else default to fast model
+    if is_unattended; then
+        if [[ -n "${OPENSEARCH_MODELS:-}" ]]; then
+            OPENSEARCH_NEURAL_MODEL="${OPENSEARCH_NEURAL_MODEL:-huggingface/sentence-transformers/${OPENSEARCH_MODELS}}"
+            ot_log_unattended "Using OPENSEARCH_MODELS=${OPENSEARCH_MODELS} from environment"
+        else
+            OPENSEARCH_MODELS="all-MiniLM-L6-v2"
+            OPENSEARCH_NEURAL_MODEL="huggingface/sentence-transformers/all-MiniLM-L6-v2"
+            ot_log_unattended "OPENSEARCH_MODELS defaulted to ${OPENSEARCH_MODELS}"
+        fi
+        echo ""
+        return 0
+    fi
+
+    choose_opensearch_model
+    if [[ "$OPENSEARCH_SKIPPED" == "true" ]]; then
+        return 0
+    fi
 
     echo ""
     echo -e "${GREEN}✓ Selected model: ${OPENSEARCH_MODELS}${NC}"
@@ -1419,6 +1530,33 @@ select_opensearch_models() {
     if [ -f .env ] && [[ -n "$OPENSEARCH_NEURAL_MODEL" ]]; then
         sed -i.bak "s|OPENSEARCH_NEURAL_MODEL=.*|OPENSEARCH_NEURAL_MODEL=$OPENSEARCH_NEURAL_MODEL|g" .env && rm -f .env.bak
     fi
+}
+
+# Ask which GPU to use until the answer is a valid index; leaves it in selected_gpu.
+prompt_gpu_index() {
+    # Prompt user for GPU selection
+    while true; do
+        read -r -p "Enter GPU index to use [0-$((GPU_COUNT-1))] (default: ${GPU_DEVICE_ID}): " selected_gpu </dev/tty
+
+        # Use default if empty
+        if [[ -z "$selected_gpu" ]]; then
+            selected_gpu=$GPU_DEVICE_ID
+            break
+        fi
+
+        # Validate input is a number
+        if ! [[ "$selected_gpu" =~ ^[0-9]+$ ]]; then
+            echo -e "${RED}❌ Invalid input. Please enter a number.${NC}"
+            continue
+        fi
+
+        # Validate GPU index is within range
+        if [[ $selected_gpu -ge 0 && $selected_gpu -lt $GPU_COUNT ]]; then
+            break
+        else
+            echo -e "${RED}❌ Invalid GPU index. Please enter a number between 0 and $((GPU_COUNT-1)).${NC}"
+        fi
+    done
 }
 
 select_gpu_device() {
@@ -1451,29 +1589,7 @@ select_gpu_device() {
     echo "Consider GPU availability, memory, and existing workloads when choosing."
     echo ""
 
-    # Prompt user for GPU selection
-    while true; do
-        read -p "Enter GPU index to use [0-$((GPU_COUNT-1))] (default: ${GPU_DEVICE_ID}): " selected_gpu </dev/tty
-
-        # Use default if empty
-        if [[ -z "$selected_gpu" ]]; then
-            selected_gpu=$GPU_DEVICE_ID
-            break
-        fi
-
-        # Validate input is a number
-        if ! [[ "$selected_gpu" =~ ^[0-9]+$ ]]; then
-            echo -e "${RED}❌ Invalid input. Please enter a number.${NC}"
-            continue
-        fi
-
-        # Validate GPU index is within range
-        if [[ $selected_gpu -ge 0 && $selected_gpu -lt $GPU_COUNT ]]; then
-            break
-        else
-            echo -e "${RED}❌ Invalid GPU index. Please enter a number between 0 and $((GPU_COUNT-1)).${NC}"
-        fi
-    done
+    prompt_gpu_index
 
     # Update GPU_DEVICE_ID with user selection
     GPU_DEVICE_ID=$selected_gpu
@@ -1485,6 +1601,154 @@ select_gpu_device() {
     echo ""
     echo -e "${GREEN}✓ Selected GPU ${GPU_DEVICE_ID}: ${GPU_NAME} (${GPU_MEMORY}MB)${NC}"
     echo ""
+}
+
+# Interactive vLLM setup: ask for the endpoint/key/model, then write them to .env.
+llm_setup_vllm() {
+    echo "✓ Configuring vLLM (Local server)"
+    LLM_PROVIDER="vllm"
+    read -r -p "Enter your vLLM server URL [http://localhost:8000/v1]: " vllm_url </dev/tty
+    VLLM_BASE_URL=${vllm_url:-"http://localhost:8000/v1"}
+    read -r -s -p "Enter your vLLM API key (optional): " vllm_key </dev/tty; echo
+    VLLM_API_KEY=${vllm_key:-""}
+    read -r -p "Enter your model name [gpt-oss]: " vllm_model </dev/tty
+    VLLM_MODEL_NAME=${vllm_model:-"gpt-oss"}
+    echo "✓ vLLM configured: $VLLM_BASE_URL with model $VLLM_MODEL_NAME"
+    if [ -f .env ]; then
+        _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+        _upsert_env "VLLM_BASE_URL" "$VLLM_BASE_URL"
+        if [[ -n "$VLLM_API_KEY" ]]; then _upsert_env "VLLM_API_KEY" "$VLLM_API_KEY"; fi
+        if [[ -n "$VLLM_MODEL_NAME" ]]; then _upsert_env "VLLM_MODEL_NAME" "$VLLM_MODEL_NAME"; fi
+    fi
+}
+
+# Interactive OpenAI setup: ask for the endpoint/key/model, then write them to .env.
+llm_setup_openai() {
+    echo "✓ Configuring OpenAI"
+    LLM_PROVIDER="openai"
+    read -r -s -p "Enter your OpenAI API key: " openai_key </dev/tty; echo
+    OPENAI_API_KEY=$openai_key
+    read -r -p "Enter OpenAI model [gpt-4o-mini]: " openai_model </dev/tty
+    OPENAI_MODEL_NAME=${openai_model:-"gpt-4o-mini"}
+    echo "✓ OpenAI configured with model $OPENAI_MODEL_NAME"
+    if [ -f .env ]; then
+        _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+        _upsert_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
+        if [[ -n "$OPENAI_MODEL_NAME" ]]; then _upsert_env "OPENAI_MODEL_NAME" "$OPENAI_MODEL_NAME"; fi
+    fi
+}
+
+# Interactive Ollama setup: ask for the endpoint/key/model, then write them to .env.
+llm_setup_ollama() {
+    echo "✓ Configuring Ollama"
+    LLM_PROVIDER="ollama"
+    read -r -p "Enter your Ollama server URL [http://localhost:11434]: " ollama_url </dev/tty
+    OLLAMA_BASE_URL=${ollama_url:-"http://localhost:11434"}
+    read -r -p "Enter Ollama model [llama2:7b-chat]: " ollama_model </dev/tty
+    OLLAMA_MODEL_NAME=${ollama_model:-"llama2:7b-chat"}
+    echo "✓ Ollama configured: $OLLAMA_BASE_URL with model $OLLAMA_MODEL_NAME"
+    if [ -f .env ]; then
+        _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+        _upsert_env "OLLAMA_BASE_URL" "$OLLAMA_BASE_URL"
+        if [[ -n "$OLLAMA_MODEL_NAME" ]]; then _upsert_env "OLLAMA_MODEL_NAME" "$OLLAMA_MODEL_NAME"; fi
+    fi
+}
+
+# Interactive Anthropic Claude setup: ask for the endpoint/key/model, then write them to .env.
+llm_setup_anthropic() {
+    echo "✓ Configuring Anthropic Claude"
+    LLM_PROVIDER="anthropic"
+    read -r -s -p "Enter your Anthropic API key: " anthropic_key </dev/tty; echo
+    ANTHROPIC_API_KEY=$anthropic_key
+    read -r -p "Enter Claude model [claude-haiku-4-5-20251001]: " anthropic_model </dev/tty
+    ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-haiku-4-5-20251001"}
+    echo "✓ Anthropic Claude configured with model $ANTHROPIC_MODEL_NAME"
+    if [ -f .env ]; then
+        _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+        _upsert_env "ANTHROPIC_API_KEY" "$ANTHROPIC_API_KEY"
+        if [[ -n "$ANTHROPIC_MODEL_NAME" ]]; then _upsert_env "ANTHROPIC_MODEL_NAME" "$ANTHROPIC_MODEL_NAME"; fi
+    fi
+}
+
+# Interactive OpenRouter setup: ask for the endpoint/key/model, then write them to .env.
+llm_setup_openrouter() {
+    echo "✓ Configuring OpenRouter"
+    LLM_PROVIDER="openrouter"
+    read -r -s -p "Enter your OpenRouter API key: " openrouter_key </dev/tty; echo
+    OPENROUTER_API_KEY=$openrouter_key
+    read -r -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model </dev/tty
+    OPENROUTER_MODEL_NAME=${openrouter_model:-"anthropic/claude-3-haiku"}
+    echo "✓ OpenRouter configured with model $OPENROUTER_MODEL_NAME"
+    if [ -f .env ]; then
+        _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
+        _upsert_env "OPENROUTER_API_KEY" "$OPENROUTER_API_KEY"
+        if [[ -n "$OPENROUTER_MODEL_NAME" ]]; then _upsert_env "OPENROUTER_MODEL_NAME" "$OPENROUTER_MODEL_NAME"; fi
+    fi
+}
+
+# Explain what the LLM is used for and list the supported providers.
+print_llm_intro() {
+    echo -e "${YELLOW}🤖 LLM Configuration for AI Features${NC}"
+    echo "=================================================="
+    echo "OpenTranscribe includes AI features that require an LLM (Large Language Model):"
+    echo "  • AI-powered transcript summarization with BLUF format"
+    echo "  • Speaker identification suggestions"
+    echo ""
+    echo -e "${BLUE}Supported LLM Providers:${NC}"
+    echo "1. vLLM (Default) - Local server with OpenAI-compatible API"
+    echo "2. OpenAI - Official OpenAI API (requires API key)"
+    echo "3. Ollama - Local Ollama server"
+    echo "4. Anthropic Claude - Claude API (requires API key)"
+    echo "5. OpenRouter - Multi-provider API service"
+    echo ""
+    echo -e "${YELLOW}💡 Configuration Options:${NC}"
+    echo "• Configure now (recommended for vLLM users)"
+    echo "• Skip configuration (you can set up later in .env file)"
+    echo ""
+}
+
+# Interactive provider choice (REPLY holds the answer to "configure now?"); sets LLM_PROVIDER.
+choose_llm_provider() {
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo ""
+        echo "Select your LLM provider:"
+        echo "1) vLLM (Local server - recommended)"
+        echo "2) OpenAI"
+        echo "3) Ollama"
+        echo "4) Anthropic Claude"
+        echo "5) OpenRouter"
+        echo "6) Skip (configure manually later)"
+
+        read -p "Enter your choice (1-6): " -n 1 -r llm_choice </dev/tty
+        echo
+        echo
+
+        case $llm_choice in
+            1)
+                llm_setup_vllm
+                ;;
+            2)
+                llm_setup_openai
+                ;;
+            3)
+                llm_setup_ollama
+                ;;
+            4)
+                llm_setup_anthropic
+                ;;
+            5)
+                llm_setup_openrouter
+                ;;
+            6|*)
+                echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
+                LLM_PROVIDER="vllm"  # Default
+                ;;
+        esac
+    else
+        echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
+        echo "💡 Edit the LLM_* variables in .env file to enable AI features"
+        LLM_PROVIDER="vllm"  # Default
+    fi
 }
 
 configure_llm_settings() {
@@ -1507,125 +1771,12 @@ configure_llm_settings() {
     fi
 
     echo ""
-    echo -e "${YELLOW}🤖 LLM Configuration for AI Features${NC}"
-    echo "=================================================="
-    echo "OpenTranscribe includes AI features that require an LLM (Large Language Model):"
-    echo "  • AI-powered transcript summarization with BLUF format"
-    echo "  • Speaker identification suggestions"
-    echo ""
-    echo -e "${BLUE}Supported LLM Providers:${NC}"
-    echo "1. vLLM (Default) - Local server with OpenAI-compatible API"
-    echo "2. OpenAI - Official OpenAI API (requires API key)"
-    echo "3. Ollama - Local Ollama server"
-    echo "4. Anthropic Claude - Claude API (requires API key)"
-    echo "5. OpenRouter - Multi-provider API service"
-    echo ""
-    echo -e "${YELLOW}💡 Configuration Options:${NC}"
-    echo "• Configure now (recommended for vLLM users)"
-    echo "• Skip configuration (you can set up later in .env file)"
-    echo ""
+    print_llm_intro
 
     read -p "Do you want to configure LLM settings now? (y/N) " -n 1 -r </dev/tty
     echo
 
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo ""
-        echo "Select your LLM provider:"
-        echo "1) vLLM (Local server - recommended)"
-        echo "2) OpenAI"
-        echo "3) Ollama"
-        echo "4) Anthropic Claude"
-        echo "5) OpenRouter"
-        echo "6) Skip (configure manually later)"
-
-        read -p "Enter your choice (1-6): " -n 1 -r llm_choice </dev/tty
-        echo
-        echo
-
-        case $llm_choice in
-            1)
-                echo "✓ Configuring vLLM (Local server)"
-                LLM_PROVIDER="vllm"
-                read -p "Enter your vLLM server URL [http://localhost:8000/v1]: " vllm_url </dev/tty
-                VLLM_BASE_URL=${vllm_url:-"http://localhost:8000/v1"}
-                read -s -p "Enter your vLLM API key (optional): " vllm_key </dev/tty; echo
-                VLLM_API_KEY=${vllm_key:-""}
-                read -p "Enter your model name [gpt-oss]: " vllm_model </dev/tty
-                VLLM_MODEL_NAME=${vllm_model:-"gpt-oss"}
-                echo "✓ vLLM configured: $VLLM_BASE_URL with model $VLLM_MODEL_NAME"
-                if [ -f .env ]; then
-                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
-                    _upsert_env "VLLM_BASE_URL" "$VLLM_BASE_URL"
-                    [[ -n "$VLLM_API_KEY" ]] && _upsert_env "VLLM_API_KEY" "$VLLM_API_KEY"
-                    [[ -n "$VLLM_MODEL_NAME" ]] && _upsert_env "VLLM_MODEL_NAME" "$VLLM_MODEL_NAME"
-                fi
-                ;;
-            2)
-                echo "✓ Configuring OpenAI"
-                LLM_PROVIDER="openai"
-                read -s -p "Enter your OpenAI API key: " openai_key </dev/tty; echo
-                OPENAI_API_KEY=$openai_key
-                read -p "Enter OpenAI model [gpt-4o-mini]: " openai_model </dev/tty
-                OPENAI_MODEL_NAME=${openai_model:-"gpt-4o-mini"}
-                echo "✓ OpenAI configured with model $OPENAI_MODEL_NAME"
-                if [ -f .env ]; then
-                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
-                    _upsert_env "OPENAI_API_KEY" "$OPENAI_API_KEY"
-                    [[ -n "$OPENAI_MODEL_NAME" ]] && _upsert_env "OPENAI_MODEL_NAME" "$OPENAI_MODEL_NAME"
-                fi
-                ;;
-            3)
-                echo "✓ Configuring Ollama"
-                LLM_PROVIDER="ollama"
-                read -p "Enter your Ollama server URL [http://localhost:11434]: " ollama_url </dev/tty
-                OLLAMA_BASE_URL=${ollama_url:-"http://localhost:11434"}
-                read -p "Enter Ollama model [llama2:7b-chat]: " ollama_model </dev/tty
-                OLLAMA_MODEL_NAME=${ollama_model:-"llama2:7b-chat"}
-                echo "✓ Ollama configured: $OLLAMA_BASE_URL with model $OLLAMA_MODEL_NAME"
-                if [ -f .env ]; then
-                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
-                    _upsert_env "OLLAMA_BASE_URL" "$OLLAMA_BASE_URL"
-                    [[ -n "$OLLAMA_MODEL_NAME" ]] && _upsert_env "OLLAMA_MODEL_NAME" "$OLLAMA_MODEL_NAME"
-                fi
-                ;;
-            4)
-                echo "✓ Configuring Anthropic Claude"
-                LLM_PROVIDER="anthropic"
-                read -s -p "Enter your Anthropic API key: " anthropic_key </dev/tty; echo
-                ANTHROPIC_API_KEY=$anthropic_key
-                read -p "Enter Claude model [claude-haiku-4-5-20251001]: " anthropic_model </dev/tty
-                ANTHROPIC_MODEL_NAME=${anthropic_model:-"claude-haiku-4-5-20251001"}
-                echo "✓ Anthropic Claude configured with model $ANTHROPIC_MODEL_NAME"
-                if [ -f .env ]; then
-                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
-                    _upsert_env "ANTHROPIC_API_KEY" "$ANTHROPIC_API_KEY"
-                    [[ -n "$ANTHROPIC_MODEL_NAME" ]] && _upsert_env "ANTHROPIC_MODEL_NAME" "$ANTHROPIC_MODEL_NAME"
-                fi
-                ;;
-            5)
-                echo "✓ Configuring OpenRouter"
-                LLM_PROVIDER="openrouter"
-                read -s -p "Enter your OpenRouter API key: " openrouter_key </dev/tty; echo
-                OPENROUTER_API_KEY=$openrouter_key
-                read -p "Enter OpenRouter model [anthropic/claude-3-haiku]: " openrouter_model </dev/tty
-                OPENROUTER_MODEL_NAME=${openrouter_model:-"anthropic/claude-3-haiku"}
-                echo "✓ OpenRouter configured with model $OPENROUTER_MODEL_NAME"
-                if [ -f .env ]; then
-                    _upsert_env "LLM_PROVIDER" "$LLM_PROVIDER"
-                    _upsert_env "OPENROUTER_API_KEY" "$OPENROUTER_API_KEY"
-                    [[ -n "$OPENROUTER_MODEL_NAME" ]] && _upsert_env "OPENROUTER_MODEL_NAME" "$OPENROUTER_MODEL_NAME"
-                fi
-                ;;
-            6|*)
-                echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
-                LLM_PROVIDER="vllm"  # Default
-                ;;
-        esac
-    else
-        echo "⏭️  Skipping LLM configuration - you can configure manually in .env file"
-        echo "💡 Edit the LLM_* variables in .env file to enable AI features"
-        LLM_PROVIDER="vllm"  # Default
-    fi
+    choose_llm_provider
 
     echo ""
     echo -e "${YELLOW}💡 LLM Configuration Notes:${NC}"
@@ -1634,74 +1785,38 @@ configure_llm_settings() {
     echo "• See .env.example for all available configuration options"
 }
 
-# Persist NGINX_SERVER_NAME in .env (update a live or commented entry, else append).
-# $1 must already have passed ot_is_valid_hostname: it is spliced into a sed replacement.
-write_nginx_server_name_to_env() {
-    local name="$1"
-    [ -f .env ] || return 0
-    if grep -q "^NGINX_SERVER_NAME=" .env || grep -q "^#.*NGINX_SERVER_NAME=" .env; then
-        sed -i.bak "s|^#*\s*NGINX_SERVER_NAME=.*|NGINX_SERVER_NAME=$name|g" .env
-    else
-        echo "" >> .env
-        echo "# HTTPS/SSL Configuration" >> .env
-        echo "NGINX_SERVER_NAME=$name" >> .env
+# Unattended HTTPS: take NGINX_SERVER_NAME from the environment, or keep the install HTTP-only and loopback-bound.
+https_unattended() {
+    if [[ -z "${NGINX_SERVER_NAME:-}" ]]; then
+        ot_log_unattended "NGINX_SERVER_NAME not set; skipping HTTPS/NGINX setup"
+        [[ "${FRONTEND_BIND_HOST:-}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || FRONTEND_BIND_HOST="127.0.0.1"
+        _set_frontend_bind_host "$FRONTEND_BIND_HOST"
+        NGINX_SERVER_NAME=""
+        SSL_CONFIGURED=false
+        return 0
     fi
-    rm -f .env.bak
-    _set_frontend_bind_host 127.0.0.1  # nginx is the front door; plain HTTP stays local
-    # Unconditional, not just on the fresh-install path (issue #857): a re-run
-    # against a pre-existing .env that predates this fix, or one created by a
-    # different path, is not guaranteed to already be owner-only.
-    ensure_env_permissions .env
-    echo "✓ Updated .env with NGINX_SERVER_NAME=$name"
+    if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
+        print_warning "NGINX_SERVER_NAME is not a valid hostname; skipping HTTPS/NGINX setup"
+        _set_frontend_bind_host 127.0.0.1
+        NGINX_SERVER_NAME=""
+        SSL_CONFIGURED=false
+        return 0
+    fi
+    # opentranscribe.sh reads NGINX_SERVER_NAME from .env only, never from the
+    # installer's environment, so without this write the nginx overlay is never
+    # selected and the stack silently comes up without HTTPS.
+    write_nginx_server_name_to_env "$NGINX_SERVER_NAME"
+    if [[ -f "nginx/ssl/server.crt" && -f "nginx/ssl/server.key" ]]; then
+        ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME} written to .env; existing certificates will be used"
+        SSL_CONFIGURED=true
+    else
+        ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME} written to .env; certificates are not generated unattended. Run: ./scripts/generate-ssl-cert.sh ${NGINX_SERVER_NAME} --auto-ip"
+        SSL_CONFIGURED=false
+    fi
 }
 
-configure_https_settings() {
-    # Unattended: only configure HTTPS if NGINX_SERVER_NAME is pre-set in the environment
-    if is_unattended; then
-        if [[ -z "${NGINX_SERVER_NAME:-}" ]]; then
-            ot_log_unattended "NGINX_SERVER_NAME not set; skipping HTTPS/NGINX setup"
-            [[ "${FRONTEND_BIND_HOST:-}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || FRONTEND_BIND_HOST="127.0.0.1"
-            _set_frontend_bind_host "$FRONTEND_BIND_HOST"
-            NGINX_SERVER_NAME=""
-            SSL_CONFIGURED=false
-            return 0
-        fi
-        if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
-            print_warning "NGINX_SERVER_NAME is not a valid hostname; skipping HTTPS/NGINX setup"
-            _set_frontend_bind_host 127.0.0.1
-            NGINX_SERVER_NAME=""
-            SSL_CONFIGURED=false
-            return 0
-        fi
-        # opentranscribe.sh reads NGINX_SERVER_NAME from .env only, never from the
-        # installer's environment, so without this write the nginx overlay is never
-        # selected and the stack silently comes up without HTTPS.
-        write_nginx_server_name_to_env "$NGINX_SERVER_NAME"
-        if [[ -f "nginx/ssl/server.crt" && -f "nginx/ssl/server.key" ]]; then
-            ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME} written to .env; existing certificates will be used"
-            SSL_CONFIGURED=true
-        else
-            ot_log_unattended "NGINX_SERVER_NAME=${NGINX_SERVER_NAME} written to .env; certificates are not generated unattended. Run: ./scripts/generate-ssl-cert.sh ${NGINX_SERVER_NAME} --auto-ip"
-            SSL_CONFIGURED=false
-        fi
-        return 0
-    fi
-
-    # Re-run guard: skip if NGINX_SERVER_NAME is already set in .env
-    local _existing_nginx
-    _existing_nginx=$(grep '^NGINX_SERVER_NAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
-    if [[ -n "$_existing_nginx" ]]; then
-        NGINX_SERVER_NAME="$_existing_nginx"
-        if [[ -f "nginx/ssl/server.crt" && -f "nginx/ssl/server.key" ]]; then
-            SSL_CONFIGURED=true
-        else
-            SSL_CONFIGURED=false
-        fi
-        echo "✓ HTTPS already configured ($NGINX_SERVER_NAME)"
-        return 0
-    fi
-
-    echo ""
+# Explain what HTTPS is needed for and what skipping it costs.
+print_https_intro() {
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}🔒 HTTPS/SSL Configuration${NC}"
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -1718,46 +1833,11 @@ configure_https_settings() {
     echo ""
 
     # On re-run where user previously said No, add context to avoid nagging
-    if [[ "$_FRESH_INSTALL" == "false" ]]; then
-        echo -e "${YELLOW}ℹ️  HTTPS was not configured during initial setup.${NC}"
-        echo ""
-    fi
+}
 
-    read -p "Do you want to set up HTTPS with a certificate made on this server? (y/N) " -n 1 -r </dev/tty
-    echo
-    echo
-
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Skipping HTTPS setup - you can configure later"
-        echo "To enable HTTPS later:"
-        echo "  1. Run: cd $PROJECT_DIR && ./opentranscribe.sh setup-ssl"
-        echo "  2. Or follow: https://docs.opentranscribe.app/docs/installation/small-business-lan"
-        echo ""
-        read -p "Expose directly on your LAN without HTTPS? (y/N) " -n 1 -r </dev/tty
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then _set_frontend_bind_host 0.0.0.0; else _set_frontend_bind_host 127.0.0.1; fi
-        NGINX_SERVER_NAME=""
-        return 0
-    fi
-
-    # Prompt for hostname
-    echo -e "${CYAN}Enter a hostname for your OpenTranscribe installation:${NC}"
-    echo "(e.g., opentranscribe.local, transcribe.home, your-hostname.lan)"
-    echo ""
-    read -p "Hostname [opentranscribe.local]: " user_hostname </dev/tty
-    NGINX_SERVER_NAME="${user_hostname:-opentranscribe.local}"
-
-    # Validate hostname (basic check)
-    if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
-        print_warning "Hostname appears invalid, using default: opentranscribe.local"
-        NGINX_SERVER_NAME="opentranscribe.local"
-    fi
-
-    echo ""
-    print_success "Hostname set to: $NGINX_SERVER_NAME"
-
-    write_nginx_server_name_to_env "$NGINX_SERVER_NAME"
-
+# Offer to generate the local CA and server certificate for NGINX_SERVER_NAME; records the answer in SSL_CONFIGURED.
+# Called last in configure_https_settings, so its `return 0` ends that function exactly as it did inline.
+https_generate_certificates() {
     # Check if SSL certificate generation script exists
     if [ -f "scripts/generate-ssl-cert.sh" ]; then
         echo ""
@@ -1814,38 +1894,76 @@ configure_https_settings() {
     fi
 }
 
-#######################
-# MODEL DOWNLOADING
-#######################
-
-download_ai_models() {
-    print_header "AI Model Pre-Download"
-
-    # Unattended: skip all model downloads and let them fetch at first use
+configure_https_settings() {
+    # Unattended: only configure HTTPS if NGINX_SERVER_NAME is pre-set in the environment
     if is_unattended; then
-        ot_log_unattended "Skipping model pre-download (models will lazy-download on first use)"
+        https_unattended
         return 0
     fi
 
-    # Load token from .env if the shell var is empty (handles re-run case)
-    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
-        HUGGINGFACE_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
-    fi
-
-    # Load whisper model from .env if shell var is empty (re-run case)
-    if [[ -z "$WHISPER_MODEL" ]]; then
-        WHISPER_MODEL=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
-    fi
-
-    # Skip if models were already successfully downloaded
-    local _model_cache
-    _model_cache=$(grep '^MODEL_CACHE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
-    _model_cache="${_model_cache:-./models}"
-    if [ -f "$_model_cache/.download_complete" ]; then
-        echo "✓ AI models already downloaded ($(cat "$_model_cache/.download_complete"))"
+    # Re-run guard: skip if NGINX_SERVER_NAME is already set in .env
+    local _existing_nginx
+    _existing_nginx=$(grep '^NGINX_SERVER_NAME=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
+    if [[ -n "$_existing_nginx" ]]; then
+        NGINX_SERVER_NAME="$_existing_nginx"
+        if [[ -f "nginx/ssl/server.crt" && -f "nginx/ssl/server.key" ]]; then
+            SSL_CONFIGURED=true
+        else
+            SSL_CONFIGURED=false
+        fi
+        echo "✓ HTTPS already configured ($NGINX_SERVER_NAME)"
         return 0
     fi
 
+    echo ""
+    print_https_intro
+    if [[ "$_FRESH_INSTALL" == "false" ]]; then
+        echo -e "${YELLOW}ℹ️  HTTPS was not configured during initial setup.${NC}"
+        echo ""
+    fi
+
+    read -p "Do you want to set up HTTPS with a certificate made on this server? (y/N) " -n 1 -r </dev/tty
+    echo
+    echo
+
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        print_info "Skipping HTTPS setup - you can configure later"
+        echo "To enable HTTPS later:"
+        echo "  1. Run: cd $PROJECT_DIR && ./opentranscribe.sh setup-ssl"
+        echo "  2. Or follow: https://docs.opentranscribe.app/docs/installation/small-business-lan"
+        echo ""
+        read -p "Expose directly on your LAN without HTTPS? (y/N) " -n 1 -r </dev/tty
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then _set_frontend_bind_host 0.0.0.0; else _set_frontend_bind_host 127.0.0.1; fi
+        NGINX_SERVER_NAME=""
+        return 0
+    fi
+
+    # Prompt for hostname
+    echo -e "${CYAN}Enter a hostname for your OpenTranscribe installation:${NC}"
+    echo "(e.g., opentranscribe.local, transcribe.home, your-hostname.lan)"
+    echo ""
+    read -r -p "Hostname [opentranscribe.local]: " user_hostname </dev/tty
+    NGINX_SERVER_NAME="${user_hostname:-opentranscribe.local}"
+
+    # Validate hostname (basic check)
+    if ! ot_is_valid_hostname "$NGINX_SERVER_NAME"; then
+        print_warning "Hostname appears invalid, using default: opentranscribe.local"
+        NGINX_SERVER_NAME="opentranscribe.local"
+    fi
+
+    echo ""
+    print_success "Hostname set to: $NGINX_SERVER_NAME"
+
+    write_nginx_server_name_to_env "$NGINX_SERVER_NAME"
+
+    https_generate_certificates
+}
+
+# ===== model download and image pull =====
+
+# Describe what will be downloaded and the configuration it is based on.
+print_model_download_summary() {
     echo "OpenTranscribe requires several GB of AI models for transcription, speaker"
     echo "diarization, semantic search, chat reranking, and content redaction."
     echo "The exact size depends on WHISPER_MODEL and how many neural search models you enable."
@@ -1857,6 +1975,10 @@ download_ai_models() {
     echo ""
 
     # If HuggingFace token not set, offer one more chance to enter it
+}
+
+# No token yet: show the reminder and offer to take one now (it is saved to .env).
+offer_hf_token_entry() {
     if [ -z "$HUGGINGFACE_TOKEN" ]; then
         print_warning "HuggingFace token not configured"
         echo ""
@@ -1876,7 +1998,7 @@ download_ai_models() {
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             echo "Please enter your HuggingFace token:"
             echo "(Token will be hidden for security)"
-            read -s HUGGINGFACE_TOKEN </dev/tty
+            read -r -s HUGGINGFACE_TOKEN </dev/tty
             echo
 
             # Strip any 'HUGGINGFACE_TOKEN=' prefix if user pasted it
@@ -1908,6 +2030,127 @@ download_ai_models() {
     fi
 
     # If still no token, skip download
+}
+
+# Create models/ with the ownership the non-root containers need and warn when it is not writable.
+prepare_model_cache_dirs() {
+    # Create models directory structure with proper permissions
+    print_info "Creating model cache directories with proper permissions..."
+
+    # Create main directory and subdirectories. diar-native lands at the top level
+    # (mounted at /models, not under ~/.cache like the others) — see
+    # scripts/download-models.sh's own mkdir block for why it is included here anyway:
+    # `bash scripts/download-models.sh models` below runs the diar-native download group
+    # too, and its bind-mount source must exist and be owned correctly before that runs.
+    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native models/password-blocklist
+
+    # Set ownership to prevent permission issues in non-root containers
+    # Container runs as UID 1000, so we need to ensure host directories are accessible
+    if [ "$(id -u)" -eq 0 ]; then
+        # Running as root - explicitly set ownership to UID 1000 for container compatibility
+        echo "  Detected root user - setting ownership to UID 1000 for container compatibility"
+        # appuser is uid 1000 / gid 999 in the backend image (issue #580).
+        chown -R 1000:999 models
+    else
+        # Running as regular user - ensure current user owns the directories
+        current_uid=$(id -u)
+        current_gid=$(id -g)
+        echo "  Setting ownership to current user (UID:GID $current_uid:$current_gid)"
+        chown -R "$current_uid:$current_gid" models 2>/dev/null || true
+    fi
+
+    # Set proper permissions (755 for directories)
+    chmod -R 755 models
+
+    # Verify directories are writable
+    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ] && [ -w models/password-blocklist ]; then
+        echo "✓ Model cache directories created with proper permissions"
+    else
+        print_warning "Model directories exist but may not be writable"
+        echo "  If you encounter permission errors, run: ./scripts/fix-model-permissions.sh"
+    fi
+}
+
+# The pyannote download failed: explain why and ask whether to continue without models (exit 1 if not).
+model_download_failed_prompt() {
+    print_error "⚠️  ⚠️  CRITICAL: Model download failed"
+    echo ""
+    echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║  WITHOUT PYANNOTE MODELS, TRANSCRIPTION WILL NOT WORK!           ║${NC}"
+    echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}What this means:${NC}"
+    echo -e "  ${RED}• The transcription pipeline REQUIRES speaker diarization models${NC}"
+    echo -e "  ${RED}• Without PyAnnote models, ALL transcriptions will FAIL${NC}"
+    echo "  • Models will auto-download on first use (10-30 minute delay)"
+    echo "  • First transcription attempt may fail if models can't download"
+    echo ""
+    echo -e "${YELLOW}Most common cause: Missing gated model access${NC}"
+    echo "  You likely have NOT accepted the PyAnnote model agreement"
+    echo ""
+    echo -e "${CYAN}To fix before starting:${NC}"
+    echo "  1. Accept the model agreement (URL shown above)"
+    echo "  2. Wait 1-2 minutes for permissions to propagate"
+    echo "  3. Run: cd $PROJECT_DIR && bash scripts/download-models.sh models"
+    echo ""
+    echo -e "${YELLOW}Or continue and fix later:${NC}"
+    echo "  • Models will download when you first transcribe a file"
+    echo "  • Ensure you've accepted model agreements before first use"
+    echo ""
+
+    # Ask if user wants to continue or abort with default to NO
+    read -r -p "Continue setup WITHOUT models? (y/N): " continue_choice </dev/tty
+    if [[ ! $continue_choice =~ ^[Yy]$ ]]; then
+        print_error "Setup aborted - please fix model access and run setup again"
+        echo ""
+        echo "Quick fix steps:"
+        echo "  1. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
+        echo "  2. Wait 1-2 minutes"
+        echo "  3. Run setup again"
+        exit 1
+    fi
+
+    print_warning "⚠️  Continuing WITHOUT models - transcription will not work until models download"
+    echo ""
+    return 0  # Return success to allow setup to continue
+}
+
+# Re-run case: take the token and Whisper model from .env when the shell variables are empty.
+load_model_settings_from_env() {
+    # Load token from .env if the shell var is empty (handles re-run case)
+    if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
+        HUGGINGFACE_TOKEN=$(grep '^HUGGINGFACE_TOKEN=' .env 2>/dev/null | cut -d= -f2-)
+    fi
+
+    # Load whisper model from .env if shell var is empty (re-run case)
+    if [[ -z "$WHISPER_MODEL" ]]; then
+        WHISPER_MODEL=$(grep '^WHISPER_MODEL=' .env 2>/dev/null | cut -d= -f2-)
+    fi
+}
+
+download_ai_models() {
+    print_header "AI Model Pre-Download"
+
+    # Unattended: skip all model downloads and let them fetch at first use
+    if is_unattended; then
+        ot_log_unattended "Skipping model pre-download (models will lazy-download on first use)"
+        return 0
+    fi
+
+    load_model_settings_from_env
+
+    # Skip if models were already successfully downloaded
+    local _model_cache
+    _model_cache=$(grep '^MODEL_CACHE_DIR=' .env 2>/dev/null | cut -d= -f2- | tr -d '"')
+    _model_cache="${_model_cache:-./models}"
+    if [ -f "$_model_cache/.download_complete" ]; then
+        echo "✓ AI models already downloaded ($(cat "$_model_cache/.download_complete"))"
+        return 0
+    fi
+
+    print_model_download_summary
+    offer_hf_token_entry
+
     if [ -z "$HUGGINGFACE_TOKEN" ]; then
         print_info "Skipping model pre-download"
         echo ""
@@ -1961,41 +2204,7 @@ download_ai_models() {
     export OPENSEARCH_MODELS
     export OPENSEARCH_NEURAL_MODEL
 
-    # Create models directory structure with proper permissions
-    print_info "Creating model cache directories with proper permissions..."
-
-    # Create main directory and subdirectories. diar-native lands at the top level
-    # (mounted at /models, not under ~/.cache like the others) — see
-    # scripts/download-models.sh's own mkdir block for why it is included here anyway:
-    # `bash scripts/download-models.sh models` below runs the diar-native download group
-    # too, and its bind-mount source must exist and be owned correctly before that runs.
-    mkdir -p models/huggingface models/torch models/nltk_data models/sentence-transformers models/opensearch-ml models/diar-native models/password-blocklist
-
-    # Set ownership to prevent permission issues in non-root containers
-    # Container runs as UID 1000, so we need to ensure host directories are accessible
-    if [ "$(id -u)" -eq 0 ]; then
-        # Running as root - explicitly set ownership to UID 1000 for container compatibility
-        echo "  Detected root user - setting ownership to UID 1000 for container compatibility"
-        # appuser is uid 1000 / gid 999 in the backend image (issue #580).
-        chown -R 1000:999 models
-    else
-        # Running as regular user - ensure current user owns the directories
-        current_uid=$(id -u)
-        current_gid=$(id -g)
-        echo "  Setting ownership to current user (UID:GID $current_uid:$current_gid)"
-        chown -R "$current_uid:$current_gid" models 2>/dev/null || true
-    fi
-
-    # Set proper permissions (755 for directories)
-    chmod -R 755 models
-
-    # Verify directories are writable
-    if [ -w models/huggingface ] && [ -w models/torch ] && [ -w models/nltk_data ] && [ -w models/sentence-transformers ] && [ -w models/opensearch-ml ] && [ -w models/diar-native ] && [ -w models/password-blocklist ]; then
-        echo "✓ Model cache directories created with proper permissions"
-    else
-        print_warning "Model directories exist but may not be writable"
-        echo "  If you encounter permission errors, run: ./scripts/fix-model-permissions.sh"
-    fi
+    prepare_model_cache_dirs
 
     # Run the download script and capture exit status
     # Important: Use || true to prevent script exit on download failure
@@ -2013,54 +2222,9 @@ download_ai_models() {
         echo ""
         return 0
     else
-        print_error "⚠️  ⚠️  CRITICAL: Model download failed"
-        echo ""
-        echo -e "${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║  WITHOUT PYANNOTE MODELS, TRANSCRIPTION WILL NOT WORK!           ║${NC}"
-        echo -e "${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "${YELLOW}What this means:${NC}"
-        echo -e "  ${RED}• The transcription pipeline REQUIRES speaker diarization models${NC}"
-        echo -e "  ${RED}• Without PyAnnote models, ALL transcriptions will FAIL${NC}"
-        echo "  • Models will auto-download on first use (10-30 minute delay)"
-        echo "  • First transcription attempt may fail if models can't download"
-        echo ""
-        echo -e "${YELLOW}Most common cause: Missing gated model access${NC}"
-        echo "  You likely have NOT accepted the PyAnnote model agreement"
-        echo ""
-        echo -e "${CYAN}To fix before starting:${NC}"
-        echo "  1. Accept the model agreement (URL shown above)"
-        echo "  2. Wait 1-2 minutes for permissions to propagate"
-        echo "  3. Run: cd $PROJECT_DIR && bash scripts/download-models.sh models"
-        echo ""
-        echo -e "${YELLOW}Or continue and fix later:${NC}"
-        echo "  • Models will download when you first transcribe a file"
-        echo "  • Ensure you've accepted model agreements before first use"
-        echo ""
-
-        # Ask if user wants to continue or abort with default to NO
-        read -p "Continue setup WITHOUT models? (y/N): " continue_choice </dev/tty
-        if [[ ! $continue_choice =~ ^[Yy]$ ]]; then
-            print_error "Setup aborted - please fix model access and run setup again"
-            echo ""
-            echo "Quick fix steps:"
-            echo "  1. Accept: https://huggingface.co/pyannote/speaker-diarization-community-1"
-            echo "  2. Wait 1-2 minutes"
-            echo "  3. Run setup again"
-            exit 1
-        fi
-
-        print_warning "⚠️  Continuing WITHOUT models - transcription will not work until models download"
-        echo ""
-        return 0  # Return success to allow setup to continue
+        model_download_failed_prompt
     fi
 }
-
-
-
-#######################
-# FINAL VALIDATION
-#######################
 
 validate_setup() {
     echo -e "${BLUE}✅ Validating setup...${NC}"
@@ -2139,7 +2303,17 @@ pull_docker_images() {
     fi
 }
 
-display_summary() {
+# ===== summary =====
+
+# `|| true` on each read is load-bearing, not defensive noise. This script
+# runs under `set -e` AND `set -o pipefail`: when the key is absent from .env
+# the `grep | cut` pipeline exits 1, that becomes the assignment's status, and
+# the script dies. An absent optional key is the NORMAL case, so the whole
+# summary aborted on it.
+summary_env_val() { grep "^$1=" .env 2>/dev/null | cut -d= -f2- || true; }
+
+# Fill the summary variables from .env when the shell has none (re-run case), and define every one.
+summary_load_values() {
     # Load key values from .env if shell vars are empty (re-run case).
     #
     # ${VAR:-} on every read, NOT "$VAR". This script runs under `set -u`, and
@@ -2153,20 +2327,14 @@ display_summary() {
     # scripted install, and by the release-test harness — where it surfaced only
     # as "one-liner failed", because the abort happened before this function
     # printed anything at all.
-    # `|| true` on each read is load-bearing, not defensive noise. This script
-    # runs under `set -e` AND `set -o pipefail`: when the key is absent from .env
-    # the `grep | cut` pipeline exits 1, that becomes the assignment's status, and
-    # the script dies. An absent optional key is the NORMAL case, so the whole
-    # summary aborted on it.
-    _env_val() { grep "^$1=" .env 2>/dev/null | cut -d= -f2- || true; }
 
-    [[ -z "${WHISPER_MODEL:-}" ]]     && WHISPER_MODEL=$(_env_val WHISPER_MODEL)
-    [[ -z "${HUGGINGFACE_TOKEN:-}" ]] && HUGGINGFACE_TOKEN=$(_env_val HUGGINGFACE_TOKEN)
-    [[ -z "${LLM_PROVIDER:-}" ]]      && LLM_PROVIDER=$(_env_val LLM_PROVIDER)
-    [[ -z "${NGINX_SERVER_NAME:-}" ]] && NGINX_SERVER_NAME=$(_env_val NGINX_SERVER_NAME | tr -d '"')
-    [[ -z "${DETECTED_DEVICE:-}" ]]   && DETECTED_DEVICE=$(_env_val DETECTED_DEVICE)
-    [[ -z "${COMPUTE_TYPE:-}" ]]      && COMPUTE_TYPE=$(_env_val COMPUTE_TYPE)
-    [[ -z "${VLLM_BASE_URL:-}" ]]     && VLLM_BASE_URL=$(_env_val VLLM_BASE_URL)
+    [[ -z "${WHISPER_MODEL:-}" ]]     && WHISPER_MODEL=$(summary_env_val WHISPER_MODEL)
+    [[ -z "${HUGGINGFACE_TOKEN:-}" ]] && HUGGINGFACE_TOKEN=$(summary_env_val HUGGINGFACE_TOKEN)
+    [[ -z "${LLM_PROVIDER:-}" ]]      && LLM_PROVIDER=$(summary_env_val LLM_PROVIDER)
+    [[ -z "${NGINX_SERVER_NAME:-}" ]] && NGINX_SERVER_NAME=$(summary_env_val NGINX_SERVER_NAME | tr -d '"')
+    [[ -z "${DETECTED_DEVICE:-}" ]]   && DETECTED_DEVICE=$(summary_env_val DETECTED_DEVICE)
+    [[ -z "${COMPUTE_TYPE:-}" ]]      && COMPUTE_TYPE=$(summary_env_val COMPUTE_TYPE)
+    [[ -z "${VLLM_BASE_URL:-}" ]]     && VLLM_BASE_URL=$(summary_env_val VLLM_BASE_URL)
 
     # Guarantee every one is DEFINED from here on, so the echo blocks below
     # cannot re-trigger the unbound-variable half of the same abort.
@@ -2174,13 +2342,9 @@ display_summary() {
     LLM_PROVIDER="${LLM_PROVIDER:-}"; NGINX_SERVER_NAME="${NGINX_SERVER_NAME:-}"
     DETECTED_DEVICE="${DETECTED_DEVICE:-}"; COMPUTE_TYPE="${COMPUTE_TYPE:-}"
     VLLM_BASE_URL="${VLLM_BASE_URL:-}"
+}
 
-    echo ""
-    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}🎉  OpenTranscribe Setup Complete!${NC}"
-    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-    echo ""
-
+print_configuration_summary() {
     # Configuration Summary (show first, above the fold)
     echo -e "${BLUE}📋 Configuration Summary${NC}"
     echo "┌─ Hardware:"
@@ -2214,7 +2378,9 @@ display_summary() {
     fi
     echo "   • Project Location: $PROJECT_DIR"
     echo ""
+}
 
+print_cpu_mode_notes() {
     # CPU-mode advisory: explain the trade-offs and how to undo this choice.
     # Emitted whenever the running stack will use CPU for transcription —
     # whether the user passed --cpu or no GPU was detected.
@@ -2235,7 +2401,9 @@ display_summary() {
         echo "   FORCE_CPU_MODE=false, ensure nvidia-smi works, restart."
         echo ""
     fi
+}
 
+print_quick_start() {
     # QUICK START section (show last so users see it without scrolling)
     echo ""
     echo -e "${YELLOW}╔══════════════════════════════════════════════════╗${NC}"
@@ -2268,7 +2436,9 @@ display_summary() {
     echo ""
     echo -e "${YELLOW}════════════════════════════════════════════════════${NC}"
     echo ""
+}
 
+print_service_urls() {
     # Access URLs
     echo -e "${BLUE}🌐 Service URLs (after starting)${NC}"
     if [[ -n "$NGINX_SERVER_NAME" ]]; then
@@ -2287,7 +2457,9 @@ display_summary() {
         echo "  • MinIO Console:     http://localhost:${MINIO_CONSOLE_PORT:-5179}"
     fi
     echo ""
+}
 
+print_management_commands() {
     # Management commands
     echo -e "${BLUE}📚 Useful Management Commands${NC}"
     echo -e "  ${BLUE}./opentranscribe.sh status${NC}  - Check service status"
@@ -2296,7 +2468,9 @@ display_summary() {
     echo -e "  ${BLUE}./opentranscribe.sh stop${NC}    - Stop all services"
     echo -e "  ${BLUE}./opentranscribe.sh help${NC}    - Show all commands"
     echo ""
+}
 
+print_setup_notices() {
     # Optional setup notices (collapsed, less prominent)
     if [[ -z "$HUGGINGFACE_TOKEN" ]]; then
         echo -e "${YELLOW}💡 Optional: Enable Speaker Diarization${NC}"
@@ -2322,7 +2496,9 @@ display_summary() {
         echo "   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html"
         echo ""
     fi
+}
 
+print_ssl_trust_notes() {
     # SSL certificate reminder — shown whenever HTTPS is configured so users
     # don't wonder why their browser shows a security warning on first visit.
     if [[ -n "$NGINX_SERVER_NAME" && "$SSL_CONFIGURED" == "true" ]]; then
@@ -2349,9 +2525,29 @@ display_summary() {
     fi
 }
 
-#######################
-# MAIN EXECUTION
-#######################
+display_summary() {
+    summary_load_values
+
+    echo ""
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}🎉  OpenTranscribe Setup Complete!${NC}"
+    echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    print_configuration_summary
+
+    print_cpu_mode_notes
+
+    print_quick_start
+
+    print_service_urls
+
+    print_management_commands
+
+    print_setup_notices
+
+    print_ssl_trust_notes
+}
 
 prompt_start() {
     # Skip in unattended mode
@@ -2399,7 +2595,51 @@ prompt_start() {
     fi
 }
 
-main() {
+# ===== main =====
+
+# Usage text for -h/--help.
+print_installer_help() {
+    echo "OpenTranscribe installer"
+    echo ""
+    echo "Usage: setup-opentranscribe.sh [--cpu] [--lite] [--version vX.Y.Z] [--branch <ref>]"
+    echo ""
+    echo "Options:"
+    echo "  --lite      Install the CPU-only 'lite' deployment: the much"
+    echo "              smaller opentranscribe-backend-lite image, with"
+    echo "              transcription and speaker detection done by a cloud"
+    echo "              provider you configure after install. Needs a"
+    echo "              provider account and the audio leaves the machine;"
+    echo "              small image, fast. Implies --cpu. Persists"
+    echo "              DEPLOYMENT_MODE=lite. The default on arm64."
+    echo "  --cpu       Run on the CPU with the full image: skip GPU"
+    echo "              detection and never load the GPU overlay."
+    echo "              Persists FORCE_CPU_MODE=true. Everything runs locally: private,"
+    echo "              no provider account, much slower than a GPU (CPU-optimised pipeline"
+    echo "              planned: https://docs.opentranscribe.app/roadmap). Also use it where Docker reports the NVIDIA runtime"
+    echo "              but containers cannot reach the GPU (for example"
+    echo "              WSL2 without a WSL-capable Windows driver, which"
+    echo "              fails with an nvidia-container-cli error)."
+    echo "  --version vX.Y.Z"
+    echo "              Install a specific published release. Compose files"
+    echo "              are downloaded at that tag and images are pinned to"
+    echo "              it, so the install is reproducible and can be rolled"
+    echo "              back. Default: the latest GitHub Release."
+    echo "  --branch <ref>"
+    echo "              Install from a git ref with :latest images. TESTING"
+    echo "              ONLY - the result is not reproducible."
+    echo "  -h, --help  Show this help and exit."
+    echo ""
+    echo "Environment variables:"
+    echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
+    echo "  OPENTRANSCRIBE_LITE       Non-empty = same as --lite"
+    echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = no prompts; use defaults and"
+    echo "                            pre-set variables (see the script header)"
+    echo "  OPENTRANSCRIBE_VERSION    Same as --version"
+    echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
+}
+
+# Consume every command-line flag; each sets the same variable as its OPENTRANSCRIBE_* env var.
+parse_installer_args() {
     # Consume every argument before any setup step runs; each flag sets the same
     # variable as its OPENTRANSCRIBE_* env var, so the flag wins when both are given.
     # Anything unrecognised is fatal (see the last arm).
@@ -2432,43 +2672,7 @@ main() {
                 shift 2
                 ;;
             -h|--help)
-                echo "OpenTranscribe installer"
-                echo ""
-                echo "Usage: setup-opentranscribe.sh [--cpu] [--lite] [--version vX.Y.Z] [--branch <ref>]"
-                echo ""
-                echo "Options:"
-                echo "  --lite      Install the CPU-only 'lite' deployment: the much"
-                echo "              smaller opentranscribe-backend-lite image, with"
-                echo "              transcription and speaker detection done by a cloud"
-                echo "              provider you configure after install. Needs a"
-                echo "              provider account and the audio leaves the machine;"
-                echo "              small image, fast. Implies --cpu. Persists"
-                echo "              DEPLOYMENT_MODE=lite. The default on arm64."
-                echo "  --cpu       Run on the CPU with the full image: skip GPU"
-                echo "              detection and never load the GPU overlay."
-                echo "              Persists FORCE_CPU_MODE=true. Everything runs locally: private,"
-                echo "              no provider account, much slower than a GPU (CPU-optimised pipeline"
-                echo "              planned: https://docs.opentranscribe.app/roadmap). Also use it where Docker reports the NVIDIA runtime"
-                echo "              but containers cannot reach the GPU (for example"
-                echo "              WSL2 without a WSL-capable Windows driver, which"
-                echo "              fails with an nvidia-container-cli error)."
-                echo "  --version vX.Y.Z"
-                echo "              Install a specific published release. Compose files"
-                echo "              are downloaded at that tag and images are pinned to"
-                echo "              it, so the install is reproducible and can be rolled"
-                echo "              back. Default: the latest GitHub Release."
-                echo "  --branch <ref>"
-                echo "              Install from a git ref with :latest images. TESTING"
-                echo "              ONLY - the result is not reproducible."
-                echo "  -h, --help  Show this help and exit."
-                echo ""
-                echo "Environment variables:"
-                echo "  OPENTRANSCRIBE_FORCE_CPU  Non-empty = same as --cpu"
-                echo "  OPENTRANSCRIBE_LITE       Non-empty = same as --lite"
-                echo "  OPENTRANSCRIBE_UNATTENDED Non-empty = no prompts; use defaults and"
-                echo "                            pre-set variables (see the script header)"
-                echo "  OPENTRANSCRIBE_VERSION    Same as --version"
-                echo "  OPENTRANSCRIBE_BRANCH     Same as --branch"
+                print_installer_help
                 exit 0
                 ;;
             *)
@@ -2484,11 +2688,9 @@ main() {
                 ;;
         esac
     done
+}
 
-    # Decide WHAT to install before downloading anything.
-    resolve_install_ref
-    export OPENTRANSCRIBE_BRANCH OT_IMAGE_TAG
-
+announce_install_mode() {
     if [[ "$LITE_MODE" == "true" ]]; then
         echo -e "${BLUE}ℹ️  Lite (CPU-only) install mode selected — DEPLOYMENT_MODE=lite${NC}"
         echo "   Backend image: opentranscribe-backend-lite (no CUDA, no local ASR model)"
@@ -2497,7 +2699,9 @@ main() {
     elif [[ "$FORCE_CPU" == "true" ]]; then
         echo -e "${BLUE}ℹ️  CPU-only install mode selected (full image, GPU detection and GPU overlay skipped)${NC}"
     fi
+}
 
+enable_unattended_without_tty() {
     # Auto-enable unattended mode when /dev/tty is unavailable (CI, Docker without -it, etc.)
     # The interactive read prompts all use </dev/tty; without it they would produce an
     # obscure error rather than a helpful message.
@@ -2508,6 +2712,18 @@ main() {
         echo ""
         export OPENTRANSCRIBE_UNATTENDED=1
     fi
+}
+
+main() {
+    parse_installer_args "$@"
+
+    # Decide WHAT to install before downloading anything.
+    resolve_install_ref
+    export OPENTRANSCRIBE_BRANCH OT_IMAGE_TAG
+
+    announce_install_mode
+
+    enable_unattended_without_tty
 
     # Run setup steps
     detect_platform

@@ -151,7 +151,9 @@ def test_https_rerun_path_also_locks_permissions():
     assert "NGINX_SERVER_NAME=" in writer
     assert "ensure_env_permissions" in writer
     # Both the interactive and the unattended branch must go through that one writer.
-    https = _function_body(source, "configure_https_settings")
+    https = _function_body(source, "configure_https_settings") + _function_body(
+        source, "https_unattended"
+    )
     assert https.count("write_nginx_server_name_to_env") >= 2, (
         "configure_https_settings must write NGINX_SERVER_NAME via the permission-locking "
         "writer on both the interactive and the unattended path"
@@ -178,9 +180,9 @@ def test_opentr_sh_locks_permissions_at_both_first_run_paths(function_name):
 
 
 def test_opentranscribe_sh_start_arm_locks_permissions():
-    from tests.unit.test_opentr_minio_kms_first_run import _extract_case_block
+    from tests.unit.test_opentr_minio_kms_first_run import _start_command_body
 
-    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    body = _start_command_body()
     assert "ensure_env_permissions" in body, (
         "opentranscribe.sh's start) arm never calls ensure_env_permissions — a "
         "production/curl install's .env stays world-readable (issue #857)"
@@ -188,9 +190,9 @@ def test_opentranscribe_sh_start_arm_locks_permissions():
 
 
 def test_opentranscribe_sh_start_arm_guards_a_missing_function():
-    from tests.unit.test_opentr_minio_kms_first_run import _extract_case_block
+    from tests.unit.test_opentr_minio_kms_first_run import _start_command_body
 
-    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    body = _start_command_body()
     assert "declare -F ensure_env_permissions" in body, (
         "the call must be guarded — an install whose scripts/common.sh predates this "
         "fix must still be able to `start`, just without the auto-fix"

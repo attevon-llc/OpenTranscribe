@@ -11,7 +11,7 @@ import pytest
 
 from tests.unit._shell_extract import COMMON
 from tests.unit._shell_extract import MANAGER
-from tests.unit._shell_extract import extract_case_block
+from tests.unit._shell_extract import extract_function
 from tests.unit._shell_extract import requires_install_scripts
 from tests.unit._shell_extract import run_shell
 
@@ -234,12 +234,8 @@ _FAKE_DUMP = (
 
 
 def _backup_restore_arm() -> str:
-    # No backslash before `|` or `)`: GNU sed's BRE treats a bare `|` as literal (its
-    # alternation is the `\|` EXTENSION) and a bare `)` as literal too (only `\(...\)` is
-    # BRE grouping) — `extract_case_block`'s other callers rely on the same bare-`)` rule
-    # (e.g. `r"    update)"`). Escaping either here makes sed reject the pattern outright
-    # ("Unmatched ) or \)"), which is a hard error, not a silent miss.
-    return extract_case_block(MANAGER, r"    backup|restore)", r"    config)")
+    """The REAL `backup|restore` command, called with the shell's `$@` like the dispatcher does."""
+    return extract_function(MANAGER, "cmd_backup_restore") + '\ncmd_backup_restore "$@"\n'
 
 
 def test_backup_arm_passes_the_resolved_compose_chain(tmp_path: Path):

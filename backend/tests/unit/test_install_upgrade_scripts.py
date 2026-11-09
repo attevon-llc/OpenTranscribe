@@ -412,14 +412,14 @@ def test_installer_reads_optional_env_keys_safely():
     helper ending in `|| true` (set -e + pipefail).
     """
     source = INSTALLER.read_text()
-    summary = source.split("display_summary()", 1)[1].split("\nprompt_start", 1)[0]
+    summary = source.split("\nsummary_env_val()", 1)[1].split("\nprompt_start", 1)[0]
 
     bare_greps = re.findall(r"=\$\(grep '\^[A-Z_]+=' \.env[^)]*\)", summary)
     assert not bare_greps, (
         f"display_summary still assigns from an unguarded grep pipeline: {bare_greps}. "
         "An absent optional key exits 1 under pipefail and set -e kills the install."
     )
-    assert "_env_val" in summary, "expected the || true helper for optional .env reads"
+    assert "summary_env_val" in summary, "expected the || true helper for optional .env reads"
 
 
 def test_unattended_install_persists_the_huggingface_token():
@@ -435,8 +435,12 @@ def test_unattended_install_persists_the_huggingface_token():
     Affects every scripted/CI install and the release harness itself.
     """
     source = INSTALLER.read_text()
-    fn = source.split("prompt_huggingface_token()", 1)[1].split("\n_upsert_env", 1)[0]
-    unattended = fn.split("is_unattended", 1)[1].split("return 0", 1)[0]
+    # The unattended branch lives in hf_token_unattended(); the prompt must call it.
+    assert (
+        "hf_token_unattended"
+        in source.split("\nprompt_huggingface_token()", 1)[1].split("\n}", 1)[0]
+    )
+    unattended = source.split("\nhf_token_unattended()", 1)[1].split("\n}", 1)[0]
     assert "HUGGINGFACE_TOKEN=" in unattended and "sed" in unattended, (
         "the unattended branch returns without persisting HUGGINGFACE_TOKEN to .env"
     )
@@ -552,19 +556,21 @@ def test_upgrade_refuses_before_teardown_when_secrets_are_missing():
     source = MANAGER.read_text()
     assert "preflight_upgrade_env" in source
 
-    fn = source.split("preflight_upgrade_env() {", 1)[1].split("\n}", 1)[0]
-    assert "REDIS_PASSWORD" in fn
+    fn = extract_function(MANAGER, "preflight_upgrade_env")
+    assert "REDIS_PASSWORD" in extract_function(MANAGER, "preflight_check_secrets")
     assert "development" in fn, "must honour the relaxed-environment opt-out"
 
-    # Ordering is the whole point: the check must precede the teardown each time.
-    for path in source.split("preflight_upgrade_env || exit 1")[1:]:
-        head = path.lstrip().splitlines()[0]
-        assert "compose_down_for_upgrade" in head, (
-            f"teardown does not immediately follow the gate: {head!r}"
+    # Ordering is the whole point: the check must precede the teardown. `update` and
+    # `update-full` share one sequence, so gating that sequence gates both.
+    sequence = extract_function(MANAGER, "run_upgrade_sequence")
+    assert sequence.index("preflight_upgrade_env || exit 1") < sequence.index(
+        "compose_down_for_upgrade"
+    ), "the gate must run before the teardown"
+    assert source.count("preflight_upgrade_env || exit 1") == 1
+    for command in ("cmd_update", "cmd_update_full"):
+        assert "run_upgrade_sequence" in extract_function(MANAGER, command), (
+            f"{command} must be gated by the shared upgrade sequence"
         )
-    assert source.count("preflight_upgrade_env || exit 1") == 2, (
-        "both `update` and `update-full` must be gated"
-    )
 
 
 def test_base_compose_does_not_blank_the_baked_version():

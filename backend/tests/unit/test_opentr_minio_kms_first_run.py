@@ -41,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.unit._shell_extract import extract_function
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPENTR = REPO_ROOT / "opentr.sh"
 MANAGER = REPO_ROOT / "opentranscribe.sh"
@@ -78,29 +80,11 @@ def _function_body(text: str, name: str) -> str:
     raise AssertionError(f"unbalanced braces scanning {name}()")
 
 
-def _extract_case_block(script: Path, start_label: str, end_label: str) -> str:
-    """Pull one `case` arm out of a script, from its label through the NEXT label's
-    line (exclusive), with the terminating `;;` stripped so the result is directly
-    executable as a standalone snippet (outside its enclosing `case`/`esac`, a bare
-    `;;` is a syntax error). Same base technique as `test_install_upgrade_scripts.py`'s
-    helper of the same name — duplicated rather than imported, since these are
-    independent test modules and pytest collection order should not matter for either;
-    the `;;`-stripping is new here because this file's tests assert on the real process
-    exit code, not just substring containment, so a trailing syntax error would fail
-    every behavioural test even when the wiring under test is correct.
+def _start_command_body() -> str:
+    """The REAL `start` command of opentranscribe.sh (extracted, not re-typed), invoked the
+    way the dispatcher does: `cmd_start "$@"`. Executable as a standalone snippet.
     """
-    out = subprocess.run(
-        ["sed", "-n", f"/^{start_label}/,/^{end_label}/p", str(script)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert out.strip(), f"{start_label} not found in {script.name}"
-    body = out.split(start_label, 1)[1]
-    body = body.rsplit(end_label, 1)[0]
-    stripped = body.rstrip()
-    assert stripped.endswith(";;"), f"expected the case arm to end in ';;': {body!r}"
-    return stripped[: -len(";;")]
+    return extract_function(MANAGER, "cmd_start") + '\ncmd_start "$@"\n'
 
 
 # ─── static ─────────────────────────────────────────────────────────────────
@@ -141,7 +125,7 @@ def test_opentranscribe_sh_start_arm_calls_ensure_minio_kms_secret():
     `start)` is opentranscribe.sh's equivalent of opentr.sh's start_app(): the command
     that brings MinIO up from a truly fresh `.env`.
     """
-    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    body = _start_command_body()
     assert "ensure_minio_kms_secret" in body, (
         "opentranscribe.sh's start) arm never calls ensure_minio_kms_secret — a fresh "
         ".env with the .env.example placeholder still crash-loops MinIO from a "
@@ -155,7 +139,7 @@ def test_opentranscribe_sh_start_arm_guards_a_missing_function():
     message for the same scenario) must still be able to `start`, just without the
     auto-fix, rather than crashing on "unknown function" mid-startup.
     """
-    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    body = _start_command_body()
     assert "declare -F ensure_minio_kms_secret" in body, (
         "the start) arm calls ensure_minio_kms_secret unconditionally — an install "
         "whose scripts/common.sh predates this fix would crash on `start` instead of "
@@ -171,7 +155,7 @@ def test_opentranscribe_sh_start_arm_actually_patches_a_fresh_env(tmp_path: Path
     tell a real call from one sitting inside a comment or a string.
     """
     (tmp_path / ".env").write_text(f"MINIO_KMS_SECRET_KEY={PLACEHOLDER}\n")
-    body = _extract_case_block(MANAGER, r"    start)", r"    stop)")
+    body = _start_command_body()
     snippet = f"""
 YELLOW=''; GREEN=''; RED=''; BLUE=''; NC=''
 cd {tmp_path}

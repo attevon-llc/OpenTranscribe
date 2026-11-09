@@ -324,8 +324,10 @@ def test_resolve_diar_native_downloader_image_uses_effective_deployment_mode():
 
 
 def test_preflight_upgrade_env_uses_effective_deployment_mode():
+    # The lite/native decision lives in preflight_check_diar_native, which the preflight calls.
     text = OPENTRANSCRIBE.read_text(encoding="utf-8")
-    fn = _function_body(text, "preflight_upgrade_env")
+    assert "preflight_check_diar_native" in _function_body(text, "preflight_upgrade_env")
+    fn = _function_body(text, "preflight_check_diar_native")
     assert "effective_deployment_mode" in fn, (
         "preflight_upgrade_env must call effective_deployment_mode() so it can see "
         "arm64_deployment_preflight's in-process DEPLOYMENT_MODE=lite export"

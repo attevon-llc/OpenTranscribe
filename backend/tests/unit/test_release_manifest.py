@@ -191,7 +191,14 @@ def test_a_fresh_install_downloads_every_compose_overlay_the_manifest_lists(tmp_
     snippet = (
         "set -uo pipefail\nset -e\n"
         "RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''\n"
-        + _extract_function(INSTALLER, "download_release_manifest_artifacts")
+        + "\n".join(
+            _extract_function(INSTALLER, n)
+            for n in [
+                "fetch_release_manifest",
+                "download_manifest_artifact",
+                "download_release_manifest_artifacts",
+            ]
+        )
         + "\ndownload_release_manifest_artifacts\n"
     )
     proc = subprocess.run(
@@ -296,7 +303,14 @@ def test_a_pinned_install_survives_a_required_entry_the_tag_predates(tmp_path):
         "RED=''; GREEN=''; YELLOW=''; BLUE=''; NC=''\n"
         + _extract_function(INSTALLER, "resolve_default_branch")
         + "\n"
-        + _extract_function(INSTALLER, "download_release_manifest_artifacts")
+        + "\n".join(
+            _extract_function(INSTALLER, n)
+            for n in [
+                "fetch_release_manifest",
+                "download_manifest_artifact",
+                "download_release_manifest_artifacts",
+            ]
+        )
         + "\ndownload_release_manifest_artifacts\n"
     )
     proc = subprocess.run(

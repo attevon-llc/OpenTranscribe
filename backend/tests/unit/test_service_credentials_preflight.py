@@ -121,9 +121,9 @@ def test_secret_containing_hash_is_not_truncated(tmp_path: Path) -> None:
 def test_opentranscribe_sh_wires_preflight_into_start_and_update() -> None:
     text = (REPO / "opentranscribe.sh").read_text()
     assert "scripts/lib/service-credentials.sh" in text
-    pre = text.split("preflight_upgrade_env() {", 1)[1].split("\n}\n", 1)[0]
+    pre = text.split("\npreflight_upgrade_env() {\n", 1)[1].split("\n}\n", 1)[0]
     assert "ot_require_service_credentials .env || return 1" in pre
-    start = text.split("    start)\n", 1)[1].split("        ;;", 1)[0]
+    start = text.split("\ncmd_start() {\n", 1)[1].split("\n}\n", 1)[0]
     assert "ot_require_service_credentials .env || exit 1" in start
 
 

@@ -16,6 +16,9 @@ from collections.abc import Callable
 from collections.abc import Iterable
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.constants import NOTIFICATION_TYPE_DATA_INTEGRITY_COMPLETE
@@ -217,7 +220,8 @@ def _cleanup_index_by_field(
         Dict with total_docs, orphaned_docs, deleted_docs, ``refused`` (None,
         ``"empty_valid_set"`` or ``"ratio_guard"``), ``orphan_keys`` (the orphaned
         identifiers, sorted, capped at :data:`_ORPHAN_KEY_LISTING_CAP`),
-        ``orphan_keys_truncated`` and ``rechecked_present``.
+        ``orphan_keys_truncated``, ``rechecked_present``, ``error`` (None, or why the
+        index could not be fully swept) and ``failed_delete_batches``.
     """
     result: dict[str, Any] = {
         "total_docs": 0,
@@ -227,6 +231,8 @@ def _cleanup_index_by_field(
         "orphan_keys": [],
         "orphan_keys_truncated": False,
         "rechecked_present": 0,
+        "error": None,
+        "failed_delete_batches": 0,
     }
 
     if not client.indices.exists(index=index_name):
@@ -265,8 +271,11 @@ def _cleanup_index_by_field(
             },
         )
         buckets = agg_resp.get("aggregations", {}).get("file_ids", {}).get("buckets", [])
-    except Exception as e:
-        logger.warning(f"Aggregation on {index_name}.{field_name} failed: {e}")
+    except OpenSearchException as e:
+        # An unreadable index must not look like a clean one: the caller reads
+        # "error" to report the sweep as incomplete.
+        logger.exception(f"Aggregation on {index_name}.{field_name} failed: {e}")
+        result["error"] = f"aggregation failed: {e}"
         return result
 
     # (raw bucket key, comparable key, documents behind it)
@@ -336,8 +345,10 @@ def _cleanup_index_by_field(
                 refresh=True,
             )
             result["deleted_docs"] += del_resp.get("deleted", 0)
-        except Exception as e:
-            logger.warning(f"delete_by_query on {index_name} failed for batch: {e}")
+        except OpenSearchException as e:
+            logger.exception(f"delete_by_query on {index_name} failed for batch: {e}")
+            result["failed_delete_batches"] += 1
+            result["error"] = f"delete_by_query failed: {e}"
 
     return result
 
@@ -419,6 +430,7 @@ def run_orphan_cleanup(
     total_orphans = 0
     total_deleted = 0
     refusals: dict[str, str] = {}
+    errors: dict[str, str] = {}
 
     for idx, (index_name, field_name, valid_set, key_type, recheck) in enumerate(index_configs):
         logger.info(f"Scanning index {index_name} for orphans...")
@@ -430,6 +442,8 @@ def run_orphan_cleanup(
         total_deleted += stats["deleted_docs"]
         if stats["refused"]:
             refusals[index_name] = stats["refused"]
+        if stats["error"]:
+            errors[index_name] = stats["error"]
 
         # Send progress notification
         _notify(
@@ -450,7 +464,10 @@ def run_orphan_cleanup(
         "dry_run": dry_run,
         "force": force,
         "refused_indices": refusals,
+        "failed_indices": errors,
     }
+    if errors:
+        logger.error(f"Orphan cleanup could not fully sweep {len(errors)} index/indices")
     if refusals:
         logger.error(f"Orphan cleanup refused deletion in {len(refusals)} index/indices")
 
@@ -688,7 +705,12 @@ def get_index_overview() -> dict[str, Any]:
                 db.query(MediaFile.id).filter(MediaFile.status.notin_(excluded)).count()
             )
             pg_stats["speakers"] = db.query(Speaker.id).count()
-    except Exception as e:
-        logger.warning(f"Failed to get PG counts: {e}")
+    except SQLAlchemyError as e:
+        logger.exception(f"Failed to get PG counts: {e}")
+        return {
+            "indices": indices,
+            "pg_stats": pg_stats,
+            "pg_stats_error": "PostgreSQL counts are unavailable",
+        }
 
     return {"indices": indices, "pg_stats": pg_stats}

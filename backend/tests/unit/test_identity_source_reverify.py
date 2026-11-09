@@ -303,6 +303,49 @@ def test_the_scope_keeps_another_users_stamps_out(db_session, normal_user, other
     assert _row(db_session, theirs)[0] == "voiceprint"
 
 
+def test_an_organization_scope_follows_the_files_tenant_not_the_speaker_row(
+    db_session, normal_user, events
+):
+    """The pipeline never stamps ``speaker.organization_id``; the tenant is the file's."""
+    from app.models.organization import Organization
+
+    org_a = Organization(name=f"org-a-{uuid_pkg.uuid4().hex[:8]}")
+    org_b = Organization(name=f"org-b-{uuid_pkg.uuid4().hex[:8]}")
+    db_session.add_all([org_a, org_b])
+    db_session.flush()
+    speaker = _auto_accept(db_session, normal_user, _profile(db_session, normal_user, "Alice"))
+    speaker.media_file.organization_id = org_a.id
+    db_session.execute(
+        text("DELETE FROM speaker WHERE profile_id = :p AND id <> :i"),
+        {"p": speaker.profile_id, "i": speaker.id},
+    )
+    _stamp(db_session, speaker)
+    db_session.flush()
+    assert (
+        db_session.execute(
+            text("SELECT organization_id FROM speaker WHERE id = :i"), {"i": speaker.id}
+        ).scalar_one()
+        is None
+    )
+
+    other = reverify_identity_sources(
+        db_session,
+        scope=ReverifyScope(organization_id=org_b.id),
+        apply=True,
+        reindex=lambda _files: [],
+    )
+    assert other.backfill_stamped == 0
+    assert _row(db_session, speaker)[0] == "voiceprint"
+
+    own = reverify_identity_sources(
+        db_session,
+        scope=ReverifyScope(organization_id=org_a.id),
+        apply=True,
+        reindex=lambda _files: [],
+    )
+    assert own.cleared_uuids == [str(speaker.uuid)]
+
+
 def test_it_lists_the_summaries_a_voiceprint_name_may_be_in(db_session, normal_user, events):
     profile = _profile(db_session, normal_user, "Alice")
     with_summary = _auto_accept(db_session, normal_user, profile, summary=True)

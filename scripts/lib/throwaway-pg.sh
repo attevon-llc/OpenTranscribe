@@ -26,6 +26,11 @@ TPG_IMAGE="${OT_TEST_PG_IMAGE:-postgres:17.5-alpine}"
 TPG_LABEL="ot-test-artifact=1"
 TPG_PURPOSE_LABEL="org.opentranscribe.purpose=throwaway-test-db"
 TPG_TMPFS_SIZE="${OT_TEST_PG_TMPFS_SIZE:-2g}"
+# Postgres's default (100) is exhausted by `-n auto` on a 48-core host: every xdist worker keeps two
+# connections (tests/conftest.py's engine and the app's) for the whole session, 96 in all, so any
+# test that briefly opens a third on each of a few workers fails unrelated tests with "too many
+# clients already". docker-compose.yml sizes the live database the same way (PG_MAX_CONNECTIONS).
+TPG_MAX_CONNECTIONS="${OT_TEST_PG_MAX_CONNECTIONS:-300}"
 TPG_READY_TIMEOUT="${OT_TEST_PG_READY_TIMEOUT:-120}"
 # Bound on retries after losing the probe-then-bind race to a concurrent run.
 TPG_RUN_ATTEMPTS=5
@@ -82,7 +87,7 @@ tpg_start() {
             -e POSTGRES_USER="$TPG_USER" -e POSTGRES_PASSWORD="$TPG_PASSWORD" -e POSTGRES_DB="$TPG_DB" \
             -p "127.0.0.1:${TPG_PORT}:5432" \
             --tmpfs "/var/lib/postgresql/data:rw,size=${TPG_TMPFS_SIZE}" \
-            "$TPG_IMAGE" 2>&1)"; then
+            "$TPG_IMAGE" postgres -c "max_connections=${TPG_MAX_CONNECTIONS}" 2>&1)"; then
             TPG_NAME="$candidate"
             return 0
         fi

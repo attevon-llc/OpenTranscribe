@@ -339,6 +339,19 @@ services:
       # uvicorn's --limit-concurrency, also read by the app to size its threadpool
       # (app/core/threadpool.py). Overrides the image's ENV default when set in .env.
       - UVICORN_LIMIT_CONCURRENCY=${UVICORN_LIMIT_CONCURRENCY:-512}
+      # API processes in this container (scripts/api-start.sh; uvicorn reads it itself).
+      # Default 2 suits an 8 GB host; each process loads its own models (~1-1.8 GB). The pool
+      # below and UVICORN_LIMIT_CONCURRENCY above are PER PROCESS, so the connection budget is
+      # (DB_POOL_SIZE + DB_MAX_OVERFLOW + 1 readiness connection) x UVICORN_WORKERS; raise
+      # PG_MAX_CONNECTIONS before raising workers past 2 (.env.example, POSTGRES TUNING).
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
+      - UVICORN_TIMEOUT_WORKER_HEALTHCHECK=${UVICORN_TIMEOUT_WORKER_HEALTHCHECK:-30}
+      - UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=${UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN:-30}
+      - DB_POOL_SIZE=${DB_POOL_SIZE:-15}
+      - DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW:-15}
+      # pg_stat_activity.application_name of this service's connections (app/db/base.py), so
+      # API connections can be counted from Postgres itself.
+      - DB_APPLICATION_NAME=opentranscribe-api
       # Postgres statement_timeout for the API's own pool only (app/db/base.py); the coded
       # default is 0, so the workers and the migrate step, which do not get this line, keep none.
       - DB_STATEMENT_TIMEOUT_MS=${DB_STATEMENT_TIMEOUT_MS:-30000}

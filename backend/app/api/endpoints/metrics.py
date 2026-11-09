@@ -24,11 +24,11 @@ Redis pipeline in ``update_queue_depths`` never blocks the event loop.
 
 from fastapi import APIRouter
 from prometheus_client import CONTENT_TYPE_LATEST
-from prometheus_client import REGISTRY
 from prometheus_client import CollectorRegistry
 from prometheus_client import generate_latest
 from starlette.responses import Response
 
+from app.core import metrics_multiprocess
 from app.core.backup_metrics import refresh_job_metrics
 from app.core.celery_metrics import update_queue_depths
 from app.core.celery_metrics import update_transcription_lease_metrics
@@ -53,12 +53,12 @@ _QUEUE_REGISTRY.register(celery_queue_oldest_message_age_seconds)
 
 @router.get("/metrics", include_in_schema=False)
 def metrics() -> Response:
-    """Render all registered collectors in the Prometheus text exposition format."""
+    """Render all collectors (every API worker's, in multiprocess mode) as Prometheus text."""
     update_queue_depths()
     update_transcription_lease_metrics()
     refresh_job_metrics()
     refresh_stuck_gauge()
-    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
+    return Response(metrics_multiprocess.render_all(), media_type=CONTENT_TYPE_LATEST)
 
 
 @router.get("/metrics/queues", include_in_schema=False)

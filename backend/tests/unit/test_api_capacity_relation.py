@@ -80,3 +80,26 @@ def test_compose_passes_the_same_limit_to_the_backend_and_the_dev_command():
     dev = yaml.safe_load((REPO / "docker-compose.override.yml").read_text())
     command = dev["services"]["backend"]["command"]
     assert f"--limit-concurrency ${{UVICORN_LIMIT_CONCURRENCY:-{default}}}" in command
+
+
+def test_the_relation_holds_for_the_pool_the_container_actually_gets(monkeypatch):
+    """``L < C + T`` is per process, and the container's pool is 15 + 15, not the coded 20 + 40."""
+    env = dict(
+        item.split("=", 1)
+        for item in yaml.safe_load((REPO / "docker-compose.yml").read_text())["services"][
+            "backend"
+        ]["environment"]
+    )
+
+    def resolved(name: str) -> int:
+        match = re.fullmatch(r"\$\{\w+:-(\d+)\}", env[name])
+        assert match, env[name]
+        return int(match.group(1))
+
+    monkeypatch.setattr(settings, "DB_POOL_SIZE", resolved("DB_POOL_SIZE"))
+    monkeypatch.setattr(settings, "DB_MAX_OVERFLOW", resolved("DB_MAX_OVERFLOW"))
+    monkeypatch.setattr(settings, "API_THREADPOOL_SIZE", 0)
+    limit = resolved("UVICORN_LIMIT_CONCURRENCY")
+    monkeypatch.setattr(settings, "UVICORN_LIMIT_CONCURRENCY", limit)
+
+    assert limit < settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW + api_threadpool_size()

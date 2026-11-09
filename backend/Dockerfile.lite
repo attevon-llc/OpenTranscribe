@@ -380,5 +380,14 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # reads the same variable to size its threadpool; sizing rule in app/core/threadpool.py.
 ENV UVICORN_LIMIT_CONCURRENCY=512
 
+# API processes in this container (uvicorn reads UVICORN_WORKERS itself; scripts/api-start.sh
+# starts it). 1 = one process, the right setting under an orchestrator that scales by
+# replicas. UVICORN_LIMIT_CONCURRENCY above is PER PROCESS. The health-check and graceful
+# timeouts are raised from uvicorn's 5 s / unbounded so a GIL-saturated but healthy worker is
+# not SIGKILLed by the supervisor and SIGTERM drains WebSockets within a bound.
+ENV UVICORN_WORKERS=2 \
+    UVICORN_TIMEOUT_WORKER_HEALTHCHECK=30 \
+    UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=30
+
 # Command to run the application in production (no reload)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["/app/scripts/api-start.sh"]

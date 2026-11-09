@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.core.db_metrics import register_listeners
-from app.core.db_metrics import register_pool_collector
+from app.core.db_metrics import register_pool_metrics
 from app.db.migration_connection import install_idle_in_transaction_timeout
 from app.db.migration_connection import install_statement_timeout
 from app.db.request_deadline import install_request_deadline
@@ -16,6 +16,10 @@ from app.db.request_deadline import install_request_deadline
 connect_args: dict = {}
 if settings.POSTGRES_SSLMODE and settings.POSTGRES_SSLMODE != "disable":
     connect_args["sslmode"] = settings.POSTGRES_SSLMODE
+if settings.DB_APPLICATION_NAME:
+    # pg_stat_activity.application_name: lets load tooling count the API's connections from
+    # Postgres, never through the (possibly saturated) API. Set per service in compose.
+    connect_args["application_name"] = settings.DB_APPLICATION_NAME
 
 
 # Create SQLAlchemy engine with connection pool settings
@@ -36,7 +40,7 @@ engine = create_engine(
 # (see app.core.db_metrics). Registered here, on the shared engine, so the same
 # instrumentation applies to API requests, Celery tasks, and scripts.
 register_listeners(engine)
-register_pool_collector(engine, settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW)
+register_pool_metrics(engine, settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW)
 
 # Server-side backstop for sessions stuck idle in a transaction. A pool connect-event SET, not a
 # libpq `options=-c` startup parameter (proxies reject those); startup also sets it on the role

@@ -25,6 +25,13 @@ class CapacitySettings(BaseSettings):
     # connection while the requests holding them wait for a thread (#1169). See
     # app/core/threadpool.py.
     API_THREADPOOL_SIZE: int = 0
+    # pg_stat_activity.application_name for this process's connections (app/db/base.py).
+    # Empty = Postgres's default. docker-compose.yml sets it on the backend service only.
+    DB_APPLICATION_NAME: str = ""
+    # prometheus_client multiprocess directory; set (and wiped) by scripts/api-start.sh when the
+    # API runs more than one worker. Empty = plain single-process registry. The client library
+    # reads the same variable itself at import (core/metrics_multiprocess.py).
+    PROMETHEUS_MULTIPROC_DIR: str = ""
     # Seconds a request waits for a pooled connection before it is answered 503 with
     # Retry-After (SQLAlchemy's default is 30; app/api/overload_response.py). A longer wait
     # only holds a thread and a socket, so a burst that exhausts the pool is refused

@@ -225,17 +225,36 @@ OpenTranscribe configures PostgreSQL with tuning parameters optimized for transc
 
 ### Connection budget
 
-Every pool belongs to one process, not one container. The API is one process with a pool of
-`DB_POOL_SIZE + DB_MAX_OVERFLOW` (60). A prefork Celery worker (download, cpu, cloud-asr, nlp,
-embedding) is a main process plus one child per `--concurrency`, and each builds its own pool of
-`WORKER_DB_POOL_SIZE + WORKER_DB_MAX_OVERFLOW` (2 + 0). The threads-pool workers (GPU, redaction)
-are one process whose task threads share `WORKER_DB_POOL_SIZE + THREADED_WORKER_DB_MAX_OVERFLOW`
-(2 + 3). The worst case is the sum over services of pool capacity times processes, about 165
-with the defaults, and it must stay below `PG_MAX_CONNECTIONS` minus the 3 slots PostgreSQL
-reserves for superusers (197 of 200). `backend/tests/unit/test_db_connection_budget.py`
-recomputes it from `docker-compose.yml`. If you raise a worker's concurrency (for example
-`CLOUD_ASR_CONCURRENCY`) or a pool, raise `PG_MAX_CONNECTIONS` with it; each extra prefork child
-costs two connections.
+Every pool belongs to one process, not one container. The API is `UVICORN_WORKERS` processes
+(default 2), each with a pool of `DB_POOL_SIZE + DB_MAX_OVERFLOW` (15 + 15) and one more connection
+for the readiness probe, so `(15 + 15 + 1) x 2 = 62`. A prefork Celery worker (download, cpu,
+cloud-asr, nlp, embedding) is a main process plus one child per `--concurrency`, and each builds
+its own pool of `WORKER_DB_POOL_SIZE + WORKER_DB_MAX_OVERFLOW` (2 + 0). The threads-pool workers
+(GPU, redaction) are one process whose task threads share
+`WORKER_DB_POOL_SIZE + THREADED_WORKER_DB_MAX_OVERFLOW` (2 + 3). The worst case is the sum over
+services of pool capacity times processes, about 172 with the defaults, and it must stay below
+`PG_MAX_CONNECTIONS` minus the 3 slots PostgreSQL reserves for superusers (197 of 200).
+`backend/tests/unit/test_db_connection_budget.py` recomputes it from `docker-compose.yml`. If you
+raise a worker's concurrency (for example `CLOUD_ASR_CONCURRENCY`), a pool, or `UVICORN_WORKERS`,
+raise `PG_MAX_CONNECTIONS` with it; each extra prefork child costs two connections and each extra
+API worker about 30. At 4 API workers use a 10 + 10 pool and `PG_MAX_CONNECTIONS=300`.
+
+### API workers versus replicas
+
+One Python process serves one event loop and one GIL, so a single API process tops out near one CPU
+core however idle Postgres is. `UVICORN_WORKERS` (default 2, set in `.env`) runs that many uvicorn
+processes in the backend container behind one port, started by `backend/scripts/api-start.sh`.
+Each worker loads its own models (embedding, PII and reranker), roughly 1 to 1.8 GB each, so two
+workers suit an 8 GB host; raise it only with the RAM and with `PG_MAX_CONNECTIONS`. Everything
+described as "per process" is multiplied by the worker count: the database pool,
+`UVICORN_LIMIT_CONCURRENCY` (open sockets, WebSockets and SSE included; total is workers times the
+limit), the API threadpool, and the per-user WebSocket cap. The supervisor restarts a dead worker;
+`UVICORN_TIMEOUT_WORKER_HEALTHCHECK` (30 s) is how long a busy worker may take to answer its ping
+before it is killed, and `UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN` (30 s) bounds the WebSocket drain on
+stop. Under Kubernetes or another orchestrator, run one process per container
+(`UVICORN_WORKERS=1`) and scale by replicas instead. Development always runs one process because
+uvicorn's `--reload` and `--workers` are mutually exclusive. If you put a proxy with upstream
+keep-alive in front, keep its idle timeout below uvicorn's keep-alive (5 s default).
 
 Additional hardcoded tuning (in `docker-compose.yml`):
 

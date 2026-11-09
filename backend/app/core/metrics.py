@@ -40,6 +40,8 @@ from prometheus_client import Counter
 from prometheus_client import Gauge
 from prometheus_client import Histogram
 
+from app.core import metrics_multiprocess
+
 # Latency buckets. The 120/300/600 tail exists because uploads/long requests can
 # run for minutes — without those buckets p99 saturates at +Inf and hides real
 # tail latency.
@@ -92,6 +94,10 @@ http_requests_total: Counter
 http_requests_in_flight: Gauge
 db_query_duration_seconds: Histogram
 db_queries_per_request: Histogram
+db_connection_hold_seconds: Histogram
+db_pool_capacity: Gauge
+db_pool_checked_out: Gauge
+db_pool_overflow: Gauge
 cache_operations_total: Counter
 security_state_degraded_total: Counter
 celery_queue_depth: Gauge
@@ -128,6 +134,10 @@ def _register() -> None:
     global http_requests_in_flight
     global db_query_duration_seconds
     global db_queries_per_request
+    global db_connection_hold_seconds
+    global db_pool_capacity
+    global db_pool_checked_out
+    global db_pool_overflow
     global cache_operations_total
     global security_state_degraded_total
     global celery_queue_depth
@@ -172,6 +182,7 @@ def _register() -> None:
     http_requests_in_flight = Gauge(
         "http_requests_in_flight",
         "HTTP requests currently being processed.",
+        multiprocess_mode="livesum",
     )
     db_query_duration_seconds = Histogram(
         "db_query_duration_seconds",
@@ -184,6 +195,34 @@ def _register() -> None:
         "(the duplicate/N+1 query detector).",
         ["method", "route"],
         buckets=_DB_QUERIES_PER_REQUEST_BUCKETS,
+    )
+    db_connection_hold_seconds = Histogram(
+        "db_connection_hold_seconds",
+        "Seconds one HTTP request held pooled database connections (checkout to checkin, "
+        "summed over the request), by route template. Requests that never touched the "
+        "database are not observed.",
+        ["route"],
+        buckets=_HTTP_DURATION_BUCKETS,
+    )
+    # Pool gauges are plain Gauges driven by pool events (db_metrics.register_pool_metrics),
+    # not a custom collector: multiprocess mode does not support custom collectors. livesum
+    # adds up the live API processes, so the page shows the whole deployment's pool.
+    db_pool_capacity = Gauge(
+        "db_pool_capacity",
+        "Connections the API's database pools may hold (pool_size + max_overflow, summed "
+        "over live API processes).",
+        multiprocess_mode="livesum",
+    )
+    db_pool_checked_out = Gauge(
+        "db_pool_checked_out",
+        "Pooled database connections currently in use by the API (summed over live API processes).",
+        multiprocess_mode="livesum",
+    )
+    db_pool_overflow = Gauge(
+        "db_pool_overflow",
+        "Connections open beyond pool_size (negative while a pool is still filling), "
+        "summed over live API processes.",
+        multiprocess_mode="livesum",
     )
     cache_operations_total = Counter(
         "cache_operations_total",
@@ -204,6 +243,7 @@ def _register() -> None:
         "celery_queue_depth",
         "Pending tasks per Celery queue (priority sub-lists summed).",
         ["queue"],
+        multiprocess_mode="mostrecent",
     )
     # Incremented by the ``before_task_publish`` receiver in ``app/core/celery.py`` (issue
     # #898), so each process counts what IT published: on the API process, that is work a
@@ -222,6 +262,7 @@ def _register() -> None:
         "celery_queue_depth + celery_queue_reserved: depth alone trends to zero "
         "as the fleet saturates. Excludes orphans (see celery_queue_orphaned).",
         ["queue"],
+        multiprocess_mode="mostrecent",
     )
     celery_queue_orphaned = Gauge(
         "celery_queue_orphaned",
@@ -230,12 +271,14 @@ def _register() -> None:
         "minute, so a value that stays above zero means the reaper is not running. Alert "
         "on it; never scale on it.",
         ["queue"],
+        multiprocess_mode="mostrecent",
     )
     celery_queue_oldest_unacked_age_seconds = Gauge(
         "celery_queue_oldest_unacked_age_seconds",
         "Age of the oldest unacknowledged message per queue (live or orphaned). Compare "
         "with the longest expected task duration.",
         ["queue"],
+        multiprocess_mode="mostrecent",
     )
     celery_queue_oldest_message_age_seconds = Gauge(
         "celery_queue_oldest_message_age_seconds",
@@ -243,17 +286,20 @@ def _register() -> None:
         "its publish stamp; 0 when the queue is empty or the message is unstamped). A "
         "redelivered message includes its failed attempt; producer clock skew shifts it.",
         ["queue"],
+        multiprocess_mode="mostrecent",
     )
     transcription_runs_without_lease = Gauge(
         "transcription_runs_without_lease",
         "Transcriptions in a non-terminal state that are neither running (no live lease) "
         "nor waiting in the broker. Should be zero; recovery requeues them within minutes.",
+        multiprocess_mode="mostrecent",
     )
     transcription_files_infra_requeued = Gauge(
         "transcription_files_infra_requeued",
         "Files whose run has been requeued by infrastructure recovery (dead worker) at "
         "least TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD times: candidates for a poison "
         "input that kills every worker it reaches.",
+        multiprocess_mode="mostrecent",
     )
     user_signups_total = Counter(
         "user_signups_total",
@@ -278,11 +324,13 @@ def _register() -> None:
         "backup_last_success_timestamp_seconds",
         "Unix timestamp of the last successful database backup "
         "(0 = never; alert on time() - this > N).",
+        multiprocess_mode="mostrecent",
     )
     backup_last_status = Gauge(
         "backup_last_status",
         "1 when the most recent backup run succeeded, 0 when it failed "
         "(0 also before any run — gate alerts on backup_runs_total > 0).",
+        multiprocess_mode="mostrecent",
     )
     # Media mirror (issue #242) — same sample-at-scrape pattern as the backup
     # collectors above (state persisted to SystemSettings by the download-queue
@@ -296,17 +344,20 @@ def _register() -> None:
         "media_mirror_last_success_timestamp_seconds",
         "Unix timestamp of the last successful media mirror run "
         "(0 = never; alert on time() - this > N).",
+        multiprocess_mode="mostrecent",
     )
     media_mirror_last_status = Gauge(
         "media_mirror_last_status",
         "1 when the most recent media mirror run succeeded, 0 when it failed "
         "(0 also before any run — gate alerts on media_mirror_runs_total > 0).",
+        multiprocess_mode="mostrecent",
     )
     media_mirror_last_run_objects = Gauge(
         "media_mirror_last_run_objects",
         "Object counts from the most recent media mirror run by outcome "
         "(copied/skipped/failed/excluded).",
         ["outcome"],
+        multiprocess_mode="mostrecent",
     )
 
     # Search indexing (issue #1182). The two counters are incremented inside the indexing
@@ -328,6 +379,7 @@ def _register() -> None:
         "search_indexing_files_awaiting_reindex",
         "Completed files with a transcript that are not yet searchable: indexing failed, "
         "is waiting on a retry, or never ran. Alert if it stays above zero.",
+        multiprocess_mode="mostrecent",
     )
 
     # Superseded task rows (issue #1185). The counter is incremented by the recovery sweep and
@@ -345,6 +397,7 @@ def _register() -> None:
         "Active (pending/in_progress) task rows that a newer completed row of the same step "
         "for the same file has superseded: what the recovery sweep resolves on its next run. "
         "Should be zero; alert if it stays above zero for longer than a sweep interval.",
+        multiprocess_mode="mostrecent",
     )
 
     # Governance audit outbox (v459, issue #1329). Derived from the database at scrape time
@@ -354,6 +407,7 @@ def _register() -> None:
         "audit_outbox_stuck_events",
         "Governance audit events committed to audit_outbox that the audit sink has not received "
         "within 15 minutes, or that it rejected. Should be zero; alert if it stays above zero.",
+        multiprocess_mode="mostrecent",
     )
 
     # Diarization runs by the engine that served them (issue #1184). Incremented in the GPU
@@ -372,3 +426,4 @@ def _register() -> None:
 
 
 _register()
+metrics_multiprocess.install()

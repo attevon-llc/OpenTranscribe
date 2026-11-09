@@ -35,3 +35,26 @@ def test_checked_out_connections_follow_the_pool(client):
 
     assert during == before + 2
     assert after == before
+
+
+def test_connection_hold_time_is_observed_per_request_route(client, monkeypatch):
+    import itertools
+
+    import pytest
+    from prometheus_client import REGISTRY
+
+    from app.core import db_metrics
+
+    # A clock that advances 0.25 s per reading: checkout reads it once, checkin once.
+    ticks = itertools.count(step=0.25)
+    monkeypatch.setattr(db_metrics.time, "perf_counter", lambda: next(ticks))
+    token = db_metrics.start_request_counter()
+    try:
+        with engine.connect():
+            pass
+        db_metrics.observe_request_connection_hold("/hold-test")
+    finally:
+        db_metrics.reset(token)
+
+    total = REGISTRY.get_sample_value("db_connection_hold_seconds_sum", {"route": "/hold-test"})
+    assert total == pytest.approx(0.25)

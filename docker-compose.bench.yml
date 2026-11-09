@@ -67,7 +67,7 @@ services:
       # already are below.
       - app_bench_data:/app/data
       - audit_fallback_bench_data:/var/log/opentranscribe
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+    command: ["/app/scripts/api-start.sh"]
     environment:
       RUN_MIGRATIONS_ON_STARTUP: "false"
 

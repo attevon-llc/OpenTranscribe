@@ -32,7 +32,9 @@ Key metric names (stable; dashboards are built against these):
 | `event_loop_lag_seconds` | Histogram | — (how much later than scheduled the API event loop woke a 0.5 s sampler; rising lag means blocking code on the loop, as opposed to an exhausted DB or thread pool) |
 | `db_query_duration_seconds` | Histogram | — (no statement/table labels — cardinality) |
 | `db_queries_per_request` | Histogram | `method`, `route` |
-| `db_pool_capacity`, `db_pool_checked_out`, `db_pool_overflow` | Gauge | — (the API process's SQLAlchemy pool, read at scrape time; `checked_out` at `capacity` means requests are waiting for a connection) |
+| `db_pool_capacity`, `db_pool_checked_out`, `db_pool_overflow` | Gauge | — (the API's SQLAlchemy pools, updated from pool events and summed over the live API workers; `checked_out` at `capacity` means requests are waiting for a connection) |
+| `db_connection_hold_seconds` | Histogram | `route` (seconds one request held pooled database connections, checkout to checkin; the measure of whether handlers hold a connection longer than they use it) |
+| `api_overload_responses_total` | Counter | `cause` (`pool_timeout`, `statement_timeout`, `deadline`: requests answered `503` with `Retry-After` because the database side was overloaded; `pool_timeout` means no connection within `DB_POOL_TIMEOUT_SECONDS`, `statement_timeout` is `DB_STATEMENT_TIMEOUT_MS`, `deadline` is `REQUEST_DEADLINE_SECONDS`. Alert on a sustained rate: it is load being refused, not an error) |
 | `cache_operations_total` | Counter | `cache` (`redis`/`settings`), `result` (`hit`/`miss`) |
 | `celery_queue_depth` | Gauge | `queue` |
 | `celery_queue_reserved` | Gauge | `queue` |
@@ -54,6 +56,10 @@ Key metric names (stable; dashboards are built against these):
 
 :::info[Worker-side product events (transcription outcomes, processed minutes, watch-source imports) happen in Celery workers, whose Prometheus registries are never scraped. Those are dashboarded from the database via Grafana's PostgreSQL datasource (the Product dashboard below), not from Prometheus counters.]
 :::
+
+### Several API workers
+
+The backend runs `UVICORN_WORKERS` processes (default 2). `/metrics` aggregates all of them with the Prometheus client's multiprocess mode: counters and histograms are summed, `http_requests_in_flight` and the `db_pool_*` gauges are summed over live workers, and the queue and backup gauges report the most recent scrape's value. A restarted worker keeps its counts in the totals (rates stay correct) but its in-flight and pool values are dropped. The default process, GC and platform collectors are per process and are not on the aggregated page. With `UVICORN_WORKERS=1` (and in dev) the page is the plain single-process registry. Pool and `application_name` of the API connections: `pg_stat_activity` rows named `opentranscribe-api` count the API's connections from Postgres itself.
 
 ### Starting the stack
 

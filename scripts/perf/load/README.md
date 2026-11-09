@@ -172,8 +172,13 @@ Change them there, in review.
 - A p95 that climbs with users while Postgres CPU stays low, and the API's `pgapi` connections sit
   at capacity, is pool or threadpool saturation, not slow SQL: see the plan's section on pool and
   threadpool sizing before tuning anything.
-- A climbing p95 with the backend container at 100% of one core is the single API process
-  (the plan's top recommendation).
+- A climbing p95 with the backend container at 100% of one core is one API process saturated;
+  `UVICORN_WORKERS` (default 2) adds processes. **Measure the process model that ships:** a plain
+  `--fresh` dev stack runs one `--reload` process. Use `./opentr.sh start dev --fresh NAME
+  --no-bindmount`, which starts the backend through the image's `scripts/api-start.sh` with
+  `UVICORN_WORKERS` processes (default 2; export `UVICORN_WORKERS=1` for the A side of an A/B), and
+  confirm `ps` in the container shows the supervisor plus N workers. The API's connections are
+  `application_name = 'opentranscribe-api'` in `pg_stat_activity`.
 - A slow `WS echo round trip` with fast HTTP reads points at the event loop, not the database.
 - In a soak, container memory that keeps rising, or connections that keep growing in
   `pg_stat_activity`, is a leak; the summary flags memory growth.

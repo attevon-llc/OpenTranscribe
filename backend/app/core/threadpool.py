@@ -1,5 +1,8 @@
 """Size the API process's worker-thread pool against its database pool (#1169).
 
+Every number here is PER API PROCESS: with ``UVICORN_WORKERS`` workers the deployment holds that
+many pools, thread pools and ``UVICORN_LIMIT_CONCURRENCY`` socket allowances.
+
 Starlette runs every sync handler, sync dependency and ``run_in_threadpool`` call on
 anyio's default thread limiter, which allows 40 threads. Authentication returns its
 pooled connection as soon as it has decided (``app.db.session_utils.end_read_transaction``);

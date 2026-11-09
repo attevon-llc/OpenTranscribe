@@ -284,8 +284,17 @@ should import `app.api` or `app.services` at module scope.
   runs `call_next` in a child task, so re-`set()`ing the var would not propagate back.
 - `FileStatus` is `(str, enum.Enum)` and deliberately **not** `StrEnum` — `str(FileStatus.X) ==
   "FileStatus.X"` is pinned by characterization tests and redaction/analytics comparisons.
-- The single-process Prometheus registry assumes **one** uvicorn worker (prod CMD has no
-  `--workers`).
+- The API runs `UVICORN_WORKERS` processes (default 2; `scripts/api-start.sh`). Every number here
+  described as per process (pool, `UVICORN_LIMIT_CONCURRENCY`, threadpool, per-user WebSocket cap,
+  `settings_cache`) is multiplied by it. Connection budget: `(DB_POOL_SIZE + DB_MAX_OVERFLOW + 1
+  readiness) x UVICORN_WORKERS` against `PG_MAX_CONNECTIONS` (`test_db_connection_budget.py`).
+- `metrics_multiprocess.py`: with more than one worker the script sets `PROMETHEUS_MULTIPROC_DIR`
+  and `/metrics` renders `MultiProcessCollector` on a fresh registry. Rules (prometheus_client
+  docs): every `Gauge` declares `multiprocess_mode` (`livesum` per-process quantities,
+  `mostrecent` scrape-refreshed values, which allows `set` only), no custom collector on the
+  default registry (the pool gauges are event-driven Gauges for that reason), and dead workers'
+  `live*` files are swept at import. Pinned by `test_gauge_multiprocess_modes.py`. Dev runs one
+  process (`--reload`), tests the plain registry.
 
 ## Caching rule
 

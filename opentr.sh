@@ -215,7 +215,7 @@ show_help() {
   echo "  --seed-benchmark     - With --fresh: upload small benchmark media once healthy"
   echo "                         (idempotent: files the deployment already holds are skipped)"
   echo "  --no-bindmount       - With --fresh: don't bind-mount ./backend into backend/worker"
-  echo "                         containers, and drop uvicorn --reload. The stack then runs the"
+  echo "                         containers; the API starts via api-start.sh, not --reload. The stack runs the"
   echo "                         IMAGE built at 'up --build' time, not live edits on disk — for"
   echo "                         measurement runs where every number must attribute to a commit,"
   echo "                         not whatever was on disk when a container last reloaded (#55)."
@@ -1357,7 +1357,7 @@ FRESH_BAKED_SERVICES=(
 # `volumes:` (via the `!override` YAML tag, Compose >=2.24) with the list
 # `docker compose config` already resolved for THIS deployment, minus the
 # ./backend:/app bind and its /app/venv exclusion — and drops `--reload` from
-# any command that has it (only `backend`'s does today).
+# any command that has it (only `backend`'s), swapping in scripts/api-start.sh (multi-worker).
 #
 # `!override` is required, not a nicety: compose MERGES a plain `volumes:`
 # key across files rather than replacing it, so an overlay listing fewer
@@ -1399,7 +1399,7 @@ fresh_generate_baked_overlay() {
     echo "# resolved config, not a hand-written list. Safe to delete; regenerated"
     echo "# on demand. Do NOT edit by hand."
     echo "services:"
-    local svc vols cmd has_reload
+    local svc vols has_reload
     for svc in "${FRESH_BAKED_SERVICES[@]}"; do
       if ! jq -e --arg svc "$svc" '.services[$svc] != null' >/dev/null 2>&1 <<<"$resolved"; then
         continue # not part of this deployment (e.g. a gpu-scale/gpu-split worker that's off)
@@ -1425,8 +1425,8 @@ fresh_generate_baked_overlay() {
       fi
       has_reload="$(jq -r --arg svc "$svc" '(.services[$svc].command // []) | any(. == "--reload")' <<<"$resolved")"
       if [ "$has_reload" = "true" ]; then
-        cmd="$(jq -c --arg svc "$svc" '.services[$svc].command | map(select(. != "--reload"))' <<<"$resolved")"
-        echo "    command: ${cmd}"
+        # Baked stacks run the shipped process model (api-start.sh), not dev's single --reload process.
+        printf '    command: ["/app/scripts/api-start.sh"]\n    environment:\n      UVICORN_WORKERS: "${UVICORN_WORKERS:-2}"\n'
       fi
     done
   } >"$file"

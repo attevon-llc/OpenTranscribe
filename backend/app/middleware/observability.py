@@ -39,6 +39,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.core.db_metrics import observe_request_connection_hold
 from app.core.db_metrics import observe_request_query_count
 from app.core.db_metrics import reset
 from app.core.db_metrics import start_request_counter
@@ -81,6 +82,7 @@ class ObservabilityMiddleware(BaseHTTPMiddleware):
             ).observe(duration)
             http_requests_total.labels(method=method, route=route, status=status_str).inc()
             observe_request_query_count(method, route)
+            observe_request_connection_hold(route)
 
             db_query_count = self._safe_query_count()
             self._access_log(request, method, route, status, duration, db_query_count)

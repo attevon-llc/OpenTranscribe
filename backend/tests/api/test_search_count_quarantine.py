@@ -178,12 +178,14 @@ def test_an_unscoped_count_excludes_quarantined_files(
     hidden = _make_file(db_session, normal_user, is_quarantined=True)
     visible = _make_file(db_session, normal_user)
     fake_count_engine.docs = [_chunk(normal_user, hidden), _chunk(normal_user, visible)]
+    # Read before the request: the handler releases the shared session, detaching `hidden`.
+    hidden_uuid = str(hidden.uuid)
 
     response = client.get(COUNT, headers=user_token_headers, params={"q": "pricing"})
 
     assert response.status_code == 200, response.text
     assert response.json() == {"total": 1}
-    assert str(hidden.uuid) not in str(fake_count_engine.bodies[0])
+    assert hidden_uuid not in str(fake_count_engine.bodies[0])
 
 
 def test_an_admin_counts_quarantined_files_across_the_corpus(

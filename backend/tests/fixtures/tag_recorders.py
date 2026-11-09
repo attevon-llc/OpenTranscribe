@@ -8,6 +8,7 @@ path the permission service knows.
 
 from __future__ import annotations
 
+import sys
 import uuid
 from typing import Any
 
@@ -55,12 +56,17 @@ def record_hook(monkeypatch, module_path: str) -> HookRecorder:
 
 
 def count_commits(monkeypatch, db) -> list[int]:
-    """Wrap ``db.commit`` so a test can tell whether (and how often) it ran."""
+    """Wrap ``db.commit`` so a test can tell whether (and how often) a handler ran it.
+
+    The auth dependencies end their read transaction with a commit
+    (``end_read_transaction``); that is connection hygiene, not a write, so it is not counted.
+    """
     seen: list[int] = []
     real_commit = db.commit
 
     def commit_and_count():
-        seen.append(1)
+        if sys._getframe(1).f_code.co_name != "end_read_transaction":
+            seen.append(1)
         return real_commit()
 
     monkeypatch.setattr(db, "commit", commit_and_count)

@@ -208,6 +208,8 @@ class TestFilterForwarding:
         way. The collection is the caller's own: a collection they cannot see
         filters to nothing (``TestCollectionFilter``)."""
         own = _make_collection(db_session, normal_user)
+        # Read before the request: the handler releases the shared session (concurrency audit F4).
+        own_id = own.id
         response = client.get(
             SEARCH_PATH,
             params={
@@ -222,7 +224,7 @@ class TestFilterForwarding:
                 "sort_order": "asc",
                 "search_mode": "keyword",
                 "file_type": ["audio"],
-                "collection_id": own.id,
+                "collection_id": own_id,
                 "min_duration": 10.5,
                 "max_duration": 900.0,
                 "min_file_size": 1000,
@@ -246,7 +248,7 @@ class TestFilterForwarding:
         assert sent["sort_order"] == "asc"
         assert sent["search_mode"] == "keyword"
         assert sent["file_type"] == ["audio"]
-        assert sent["collection_id"] == own.id
+        assert sent["collection_id"] == own_id
         assert sent["min_duration"] == 10.5
         assert sent["max_duration"] == 900.0
         assert sent["min_file_size"] == 1000
@@ -294,11 +296,14 @@ class TestQuarantinedHitsAreDropped:
         visible = _make_file(db_session, normal_user, quarantined=False)
         hidden = _make_file(db_session, normal_user, quarantined=True)
         stub_search([_hit(str(visible.uuid), visible.id), _hit(str(hidden.uuid), hidden.id)])
+        # Read before the request: the handler releases the session the test client shares
+        # (concurrency audit F4), and the auth commit has already expired these objects.
+        visible_uuid = str(visible.uuid)
 
         response = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers)
         assert response.status_code == 200, response.text
         returned = {row["file_uuid"] for row in response.json()["results"]}
-        assert returned == {str(visible.uuid)}
+        assert returned == {visible_uuid}
 
     def test_the_reported_totals_are_trimmed_with_the_page(
         self, client, user_token_headers, normal_user, db_session, stub_search
@@ -371,20 +376,26 @@ class TestQuarantinedHitsAreDropped:
         visible = _make_file(db_session, admin_user, quarantined=False)
         hidden = _make_file(db_session, admin_user, quarantined=True)
         stub_search([_hit(str(visible.uuid), visible.id), _hit(str(hidden.uuid), hidden.id)])
+        # Read before the request: the handler releases the session the test client shares
+        # (concurrency audit F4), and the auth commit has already expired these objects.
+        expected = {str(visible.uuid), str(hidden.uuid)}
 
         response = client.get(SEARCH_PATH, params={"q": "test"}, headers=admin_token_headers)
         assert response.status_code == 200, response.text
         returned = {row["file_uuid"] for row in response.json()["results"]}
-        assert returned == {str(visible.uuid), str(hidden.uuid)}
+        assert returned == expected
 
     def test_a_clean_page_is_returned_untouched(
         self, client, user_token_headers, normal_user, db_session, stub_search
     ):
         visible = _make_file(db_session, normal_user, quarantined=False)
         stub_search([_hit(str(visible.uuid), visible.id)])
+        # Read before the request: the handler releases the session the test client shares
+        # (concurrency audit F4), and the auth commit has already expired these objects.
+        visible_uuid = str(visible.uuid)
 
         body = client.get(SEARCH_PATH, params={"q": "test"}, headers=user_token_headers).json()
-        assert [row["file_uuid"] for row in body["results"]] == [str(visible.uuid)]
+        assert [row["file_uuid"] for row in body["results"]] == [visible_uuid]
         assert body["total_results"] == 1
 
 
@@ -428,15 +439,18 @@ class TestCollectionFilter:
         self, client, user_token_headers, normal_user, db_session, search_recorder
     ):
         own = _make_collection(db_session, normal_user)
+        # Read before the request: the handler releases the session the test client shares
+        # (concurrency audit F4), and the auth commit has already expired these objects.
+        own_uuid, own_id = str(own.uuid), own.id
 
         response = client.get(
             SEARCH_PATH,
-            params={"q": "test", "collection_uuid": str(own.uuid)},
+            params={"q": "test", "collection_uuid": own_uuid},
             headers=user_token_headers,
         )
 
         assert response.status_code == 200, response.text
-        assert search_recorder[0]["collection_id"] == own.id
+        assert search_recorder[0]["collection_id"] == own_id
 
     def test_a_collection_the_caller_cannot_see_filters_to_nothing(
         self, client, user_token_headers, other_user, db_session, search_recorder
@@ -446,15 +460,18 @@ class TestCollectionFilter:
         from app.services.collection_visibility import NO_VISIBLE_COLLECTION
 
         theirs = _make_collection(db_session, other_user)
+        # Read before the request: the handler releases the session the test client shares
+        # (concurrency audit F4), and the auth commit has already expired these objects.
+        theirs_uuid, theirs_id = str(theirs.uuid), theirs.id
 
         by_uuid = client.get(
             SEARCH_PATH,
-            params={"q": "test", "collection_uuid": str(theirs.uuid)},
+            params={"q": "test", "collection_uuid": theirs_uuid},
             headers=user_token_headers,
         )
         by_id = client.get(
             SEARCH_PATH,
-            params={"q": "test", "collection_id": theirs.id},
+            params={"q": "test", "collection_id": theirs_id},
             headers=user_token_headers,
         )
 

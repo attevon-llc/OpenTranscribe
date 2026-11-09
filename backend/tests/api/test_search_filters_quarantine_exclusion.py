@@ -101,13 +101,15 @@ def test_a_quarantined_files_speaker_and_tags_are_not_facets(
     client, user_token_headers, normal_user, db_session, fake_cluster
 ):
     hidden = _seed(fake_cluster, db_session, normal_user)
+    # Read before the request: the handler releases the shared session, detaching `hidden`.
+    hidden_uuid = str(hidden.uuid)
 
     response = client.get(FILTERS, headers=user_token_headers)
 
     assert response.status_code == 200, response.text
     assert [s["name"] for s in response.json()["speakers"]] == [VISIBLE_SPEAKER]
     assert [t["name"] for t in response.json()["tags"]] == [f"tag-{VISIBLE_SPEAKER}"]
-    assert str(hidden.uuid) not in str(fake_cluster.bodies[0]), "no per-file id list"
+    assert hidden_uuid not in str(fake_cluster.bodies[0]), "no per-file id list"
 
 
 def test_an_admin_keeps_a_quarantined_files_facets(

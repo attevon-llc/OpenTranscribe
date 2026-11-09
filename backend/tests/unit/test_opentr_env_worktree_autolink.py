@@ -79,7 +79,9 @@ def _run_bash(script: str, cwd: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["bash", "-c", script],
         cwd=cwd,
-        env=os.environ.copy(),
+        # The suite exports OPENTR_NO_ENV_LINK so nothing else links a .env; this module
+        # is the one place that must see the real link behaviour.
+        env={k: v for k, v in os.environ.items() if k != "OPENTR_NO_ENV_LINK"},
         capture_output=True,
         text=True,
     )

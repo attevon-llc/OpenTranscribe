@@ -73,10 +73,9 @@ OPENTR = REPO_ROOT / "opentr.sh"
 PROJECT_LABEL_VAR = "OPENTR_STOP_PROJECT_LABEL"
 PROJECT_LABEL_ALT_VAR = "OPENTR_STOP_PROJECT_LABEL_ALT"
 
-#: The values those variables must default to when unset -- i.e. what
-#: `./opentr.sh stop` does on a real host, which this change must not alter.
+#: The default of the first variable when unset; the alternate defaults to this
+#: checkout's own compose project (ot_compose_project), not a literal.
 REAL_PROJECT_LABEL = "opentranscribe"
-REAL_PROJECT_LABEL_ALT = "transcribe-app"
 
 LABEL_FILTER_PREFIX = "label=com.docker.compose.project="
 
@@ -153,6 +152,7 @@ def _run_loop_with_fake_docker(
     *,
     overrides: dict[str, str],
     ps_output: str = "",
+    cwd: Path | None = None,
 ) -> list[list[str]]:
     """Execute the real loop with a fake ``docker`` first on ``PATH``, and return
     the argv of every ``docker`` invocation it made.
@@ -175,7 +175,9 @@ def _run_loop_with_fake_docker(
     env["FAKE_DOCKER_LOG"] = str(log)
     env["FAKE_DOCKER_PS_OUTPUT"] = ps_output
 
-    subprocess.run(["bash", "-c", loop_text], capture_output=True, timeout=60, env=env, check=False)
+    subprocess.run(
+        ["bash", "-c", loop_text], capture_output=True, timeout=60, env=env, check=False, cwd=cwd
+    )
 
     records: list[list[str]] = []
     current: list[str] = []
@@ -409,7 +411,14 @@ def test_with_the_override_unset_the_loop_targets_the_real_project_names(
 ):
     """Production default, unchanged: with neither override exported, the loop
     filters on exactly the two real compose project names it always did."""
-    calls = _run_loop_with_fake_docker(raw_straggler_loop, tmp_path, overrides={})
+    checkout = tmp_path / "this-checkout"
+    checkout.mkdir()
+    calls = _run_loop_with_fake_docker(
+        f"{_function_body(OPENTR.read_text(encoding='utf-8'), 'ot_compose_project')}\n{raw_straggler_loop}",
+        tmp_path,
+        overrides={},
+        cwd=checkout,
+    )
 
     selections = [call for call in calls if call and call[0] == "ps"]
     project_filters = {
@@ -417,7 +426,7 @@ def test_with_the_override_unset_the_loop_targets_the_real_project_names(
     }
     assert project_filters == {
         f"{LABEL_FILTER_PREFIX}{REAL_PROJECT_LABEL}",
-        f"{LABEL_FILTER_PREFIX}{REAL_PROJECT_LABEL_ALT}",
+        f"{LABEL_FILTER_PREFIX}this-checkout",
     }, (
         "parameterising the project label changed what `./opentr.sh stop` does by default -- "
         f"it must be byte-identical to the previous hardcoded filters, got {project_filters!r}"
@@ -655,8 +664,13 @@ def test_with_the_override_unset_the_gpu_drain_function_targets_the_real_project
 ):
     """Production default, unchanged: with neither override exported, the function
     filters on exactly the two real compose project names it always did."""
-    script = f"{raw_gpu_drain_function}\not_drain_gpu_workers_by_container"
-    calls = _run_loop_with_fake_docker(script, tmp_path, overrides={"OT_STOP_GRACE_GPU": "1"})
+    checkout = tmp_path / "this-checkout"
+    checkout.mkdir()
+    project_fn = _function_body(OPENTR.read_text(encoding="utf-8"), "ot_compose_project")
+    script = f"{project_fn}\n{raw_gpu_drain_function}\not_drain_gpu_workers_by_container"
+    calls = _run_loop_with_fake_docker(
+        script, tmp_path, overrides={"OT_STOP_GRACE_GPU": "1"}, cwd=checkout
+    )
 
     selections = [call for call in calls if call and call[0] == "ps"]
     project_filters = {
@@ -664,7 +678,7 @@ def test_with_the_override_unset_the_gpu_drain_function_targets_the_real_project
     }
     assert project_filters == {
         f"{LABEL_FILTER_PREFIX}{REAL_PROJECT_LABEL}",
-        f"{LABEL_FILTER_PREFIX}{REAL_PROJECT_LABEL_ALT}",
+        f"{LABEL_FILTER_PREFIX}this-checkout",
     }, (
         "parameterising the project label changed ot_drain_gpu_workers_by_container()'s "
         f"default behaviour -- got {project_filters!r}"

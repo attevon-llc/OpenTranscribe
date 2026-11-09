@@ -36,7 +36,9 @@ source ./scripts/lib/model-cache-dir.sh
 # secrets-file rule. A RELATIVE symlink is used deliberately: it was confirmed
 # to work by hand in a case where an absolute `cp` of the file was refused
 # (source-tree permissions), and it keeps working if the whole repo is moved.
-if [ ! -f ".env" ]; then
+# OPENTR_NO_ENV_LINK=1 skips the link: the test suite runs this script from the checkout root
+# hundreds of times and must not leave a .env symlink behind in a worktree.
+if [ ! -f ".env" ] && [ -z "${OPENTR_NO_ENV_LINK:-}" ]; then
   _ot_common_dir="$(git rev-parse --git-common-dir 2>/dev/null || true)"
   _ot_git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
   if [ -n "$_ot_common_dir" ] && [ "$_ot_common_dir" != "$_ot_git_dir" ]; then
@@ -2632,9 +2634,19 @@ start_app() {
       _aux_files+=("docker-compose.diar-native.yml")
     fi
 
-    fresh_write_offset "$FRESH_NAME" "$_offset"
-    fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
-    FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" "$_offset" ${_aux_services[@]+"${_aux_services[@]}"})"
+    if [ -n "$DRY_RUN_FLAG" ]; then
+      # A preview must not touch .fresh/: re-running `--fresh <name> --dry-run` against a
+      # live deployment used to rewrite its recorded offset/aux files and its overlay.
+      FRESH_OVERLAY="${FRESH_OVERLAY_DIR}/${FRESH_NAME}.yml"
+      echo "🔎 DRY RUN — would write (nothing written):"
+      echo "   ${FRESH_OVERLAY}  (container_name overlay)"
+      if [ "$_offset" -ne 0 ]; then echo "   $(fresh_offset_file "$FRESH_NAME")  (offset ${_offset})"; fi
+      if [ ${#_aux_files[@]} -gt 0 ]; then echo "   $(fresh_aux_file "$FRESH_NAME")  (${_aux_files[*]})"; fi
+    else
+      fresh_write_offset "$FRESH_NAME" "$_offset"
+      fresh_write_aux "$FRESH_NAME" ${_aux_files[@]+"${_aux_files[@]}"}
+      FRESH_OVERLAY="$(fresh_generate_overlay "$FRESH_NAME" "$_offset" ${_aux_services[@]+"${_aux_services[@]}"})"
+    fi
     export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 
     # --fresh isolates the compose PROJECT, named volumes, ports and container_names —
@@ -2884,10 +2896,10 @@ start_app() {
       OS_PATH="${OPENSEARCH_DATA_PATH:-/mnt/nvm/opentranscribe/os}"
 
       # Create directories if they don't exist
-      mkdir -p "$NAS_PATH" "$PG_PATH" "$OS_PATH" 2>/dev/null || true
+      [ -n "$DRY_RUN_FLAG" ] || mkdir -p "$NAS_PATH" "$PG_PATH" "$OS_PATH" 2>/dev/null || true
 
       # Check mount points are accessible
-      if [ ! -d "$NAS_PATH" ]; then
+      if [ -z "$DRY_RUN_FLAG" ] && [ ! -d "$NAS_PATH" ]; then
         echo "❌ NAS path not accessible: $NAS_PATH"
         echo "   Ensure NAS is mounted and set MINIO_NAS_PATH in .env"
         exit 1
@@ -2996,7 +3008,11 @@ start_app() {
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.authentik.yml"
       echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
       echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
-      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}"
+      if [ -n "${AUTHENTIK_BOOTSTRAP_PASSWORD:-}" ]; then
+        echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / (AUTHENTIK_BOOTSTRAP_PASSWORD from your environment)"
+      else
+        echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / admin_password"
+      fi
     else
       echo "⚠️  --with-authentik-test specified but docker-compose.authentik.yml not found"
     fi
@@ -3006,11 +3022,11 @@ start_app() {
   if [ -n "$WITH_WATCH_FLAG" ]; then
     if [ -f "docker-compose.watch.yml" ]; then
       WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
-      mkdir -p "$WATCH_HOST_PATH"
+      [ -n "$DRY_RUN_FLAG" ] || mkdir -p "$WATCH_HOST_PATH"
       # Match the non-root container user so imports can read/write. appuser is
       # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
       # bit is what the import path needs, but keep the GID honest.
-      chown_watch_folder "$WATCH_HOST_PATH"
+      [ -n "$DRY_RUN_FLAG" ] || chown_watch_folder "$WATCH_HOST_PATH"
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -3047,8 +3063,10 @@ start_app() {
     if [ -f "docker-compose.backup.yml" ]; then
       BACKUP_HOST_PATH="${BACKUP_HOST_PATH:-./backups}"
       BACKUP_MIRROR_HOST_PATH="${BACKUP_MIRROR_HOST_PATH:-./media-mirror}"
-      mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
-      mkdir -p "$BACKUP_MIRROR_HOST_PATH" 2>/dev/null || true
+      if [ -z "$DRY_RUN_FLAG" ]; then
+        mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
+        mkdir -p "$BACKUP_MIRROR_HOST_PATH" 2>/dev/null || true
+      fi
       export BACKUP_HOST_PATH BACKUP_MIRROR_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.backup.yml"
       echo "💾 Adding Backup overlay (docker-compose.backup.yml)"
@@ -3072,7 +3090,11 @@ start_app() {
   # overlays + the fresh container_name overlay all included), then appended
   # last so its !override sees — and replaces — the fully-merged volume list.
   if [ -n "$FRESH_FLAG" ] && [ -n "$NO_BINDMOUNT_FLAG" ]; then
-    FRESH_BAKED_OVERLAY="$(fresh_generate_baked_overlay "$FRESH_NAME" "$COMPOSE_FILES")"
+    if [ -n "$DRY_RUN_FLAG" ]; then
+      FRESH_BAKED_OVERLAY="${FRESH_OVERLAY_DIR}/${FRESH_NAME}-baked.yml" # not generated in a preview
+    else
+      FRESH_BAKED_OVERLAY="$(fresh_generate_baked_overlay "$FRESH_NAME" "$COMPOSE_FILES")"
+    fi
     COMPOSE_FILES="$COMPOSE_FILES -f $FRESH_BAKED_OVERLAY"
   fi
 
@@ -3579,10 +3601,10 @@ reset_and_init() {
       OS_PATH="${OPENSEARCH_DATA_PATH:-/mnt/nvm/opentranscribe/os}"
 
       # Create directories if they don't exist
-      mkdir -p "$NAS_PATH" "$PG_PATH" "$OS_PATH" 2>/dev/null || true
+      [ -n "$DRY_RUN_FLAG" ] || mkdir -p "$NAS_PATH" "$PG_PATH" "$OS_PATH" 2>/dev/null || true
 
       # Check mount points are accessible
-      if [ ! -d "$NAS_PATH" ]; then
+      if [ -z "$DRY_RUN_FLAG" ] && [ ! -d "$NAS_PATH" ]; then
         echo "❌ NAS path not accessible: $NAS_PATH"
         echo "   Ensure NAS is mounted and set MINIO_NAS_PATH in .env"
         exit 1
@@ -3649,11 +3671,11 @@ reset_and_init() {
   if [ -n "$WITH_WATCH_FLAG" ]; then
     if [ -f "docker-compose.watch.yml" ]; then
       WATCH_HOST_PATH="${WATCH_HOST_PATH:-./watch}"
-      mkdir -p "$WATCH_HOST_PATH"
+      [ -n "$DRY_RUN_FLAG" ] || mkdir -p "$WATCH_HOST_PATH"
       # Match the non-root container user so imports can read/write. appuser is
       # uid 1000 / gid 999 (see CONTAINER_UID_GID in scripts/common.sh) — the owner
       # bit is what the import path needs, but keep the GID honest.
-      chown_watch_folder "$WATCH_HOST_PATH"
+      [ -n "$DRY_RUN_FLAG" ] || chown_watch_folder "$WATCH_HOST_PATH"
       export WATCH_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.watch.yml"
       echo "👁️  Adding Watch Sources overlay (docker-compose.watch.yml)"
@@ -3673,8 +3695,10 @@ reset_and_init() {
     if [ -f "docker-compose.backup.yml" ]; then
       BACKUP_HOST_PATH="${BACKUP_HOST_PATH:-./backups}"
       BACKUP_MIRROR_HOST_PATH="${BACKUP_MIRROR_HOST_PATH:-./media-mirror}"
-      mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
-      mkdir -p "$BACKUP_MIRROR_HOST_PATH" 2>/dev/null || true
+      if [ -z "$DRY_RUN_FLAG" ]; then
+        mkdir -p "$BACKUP_HOST_PATH" 2>/dev/null || true
+        mkdir -p "$BACKUP_MIRROR_HOST_PATH" 2>/dev/null || true
+      fi
       export BACKUP_HOST_PATH BACKUP_MIRROR_HOST_PATH
       COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.backup.yml"
       echo "💾 Adding Backup overlay (docker-compose.backup.yml)"
@@ -3935,7 +3959,7 @@ ot_drain_gpu_workers_by_container() {
   local pids=()
   local gpu_container
   for gpu_container in $( { docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
-                            docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' 2>/dev/null
+                            docker ps --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-$(ot_compose_project)}" --format '{{.Names}}' 2>/dev/null
                           } | sort -u ); do
     case "$gpu_container" in
       *celery-worker*|*celery-cpu-worker*|*celery-redaction*|*diar-native*)
@@ -3984,9 +4008,9 @@ stop_all_containers() {
   # container on this host ("opentranscribe-homepage", a dashboard app from a
   # different compose project sharing the name prefix by coincidence). Two
   # project names are legitimate here: "opentranscribe" (every service with an
-  # explicit container_name) and "transcribe-app" (docker-compose.diar-native.yml's
-  # diar-native service has no explicit container_name, so compose falls back
-  # to the checkout directory's basename as the project name).
+  # explicit container_name) and this checkout's own compose project (ot_compose_project;
+  # docker-compose.diar-native.yml's diar-native service has no explicit
+  # container_name, so compose falls back to the directory basename).
   #
   # The two project names are parameterised ONLY so the test that drives this
   # real loop body (backend/tests/unit/test_opentr_stop_container_scoping.py)
@@ -3996,7 +4020,7 @@ stop_all_containers() {
   # sets them: unset, both expand to the literals they replaced, so `opentr.sh
   # stop` behaves exactly as before.
   for container in $( { docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" --format '{{.Names}}' 2>/dev/null
-                        docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}" --format '{{.Names}}' 2>/dev/null
+                        docker ps -a --filter "label=com.docker.compose.project=${OPENTR_STOP_PROJECT_LABEL_ALT:-$(ot_compose_project)}" --format '{{.Names}}' 2>/dev/null
                       } | sort -u ); do
     docker stop "$container" 2>/dev/null && docker rm "$container" 2>/dev/null || true
   done
@@ -4028,7 +4052,7 @@ purge_system() {
       # shellcheck disable=SC2086
       COMPOSE_PROFILES="*" docker compose $_chain config --images 2>/dev/null || true
     done
-    for _p in "${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" "${OPENTR_STOP_PROJECT_LABEL_ALT:-transcribe-app}"; do
+    for _p in "${OPENTR_STOP_PROJECT_LABEL:-opentranscribe}" "${OPENTR_STOP_PROJECT_LABEL_ALT:-$(ot_compose_project)}"; do
       docker images --filter "label=com.docker.compose.project=${_p}" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true
     done
   } | grep -v ':otfresh-' | grep -v ':<none>' | sort -u || true)"
@@ -4512,7 +4536,9 @@ case "$1" in
     # which makes the running code track the current git branch instead of the built image.
     # docker-compose.bench.yml provides its own build/image definitions without source mounts.
     BENCH_COMPOSE="-f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.bench.yml"
-    BENCH_VOLUME_PREFIX="transcribe-app"
+    # Named volumes are <compose project>_<volume>; the project is the one compose resolves for
+    # this checkout, not a literal (a differently named directory has different volumes).
+    BENCH_VOLUME_PREFIX="$(ot_compose_project)"
 
     case "$BENCH_SUBCOMMAND" in
       start)

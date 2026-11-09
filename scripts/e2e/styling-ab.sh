@@ -16,7 +16,7 @@
 #   ./opentr.sh start dev --fresh styling --port-offset 200 --seed-benchmark --with-mock-llm
 #
 # Refuses unless .fresh/<stack>.offset is non-zero and that stack's backend answers
-# /api/health, so it can never be pointed at the live stack. Never kills by name: the EXIT
+# /health, so it can never be pointed at the live stack. Never kills by name: the EXIT
 # trap TERMs only the PIDs this script started.
 #
 # Exit: 0 pass, 1 differences/failures, 2 misuse, 3 precondition unmet.
@@ -68,8 +68,8 @@ case "$OFFSET" in ''|*[!0-9]*) die "offset '$OFFSET' is not a number" 3 ;; esac
 [ "$OFFSET" -gt 0 ] || die "offset 0 is the LIVE dev stack; refusing" 3
 BACKEND_PORT=$((5174 + OFFSET)); MINIO_PORT=$((5178 + OFFSET))
 BACKEND="http://localhost:$BACKEND_PORT"
-curl -fsS --max-time 10 "$BACKEND/api/health" >/dev/null 2>&1 \
-  || die "backend $BACKEND/api/health does not answer; start the stack: ./opentr.sh start dev --fresh $STACK --port-offset $OFFSET --seed-benchmark --with-mock-llm" 3
+curl -fsS --max-time 10 "$BACKEND/health" >/dev/null 2>&1 \
+  || die "backend $BACKEND/health does not answer; start the stack: ./opentr.sh start dev --fresh $STACK --port-offset $OFFSET --seed-benchmark --with-mock-llm" 3
 
 PORT_BEFORE=$((5291 + OFFSET)); PORT_AFTER=$((5292 + OFFSET))
 port_bound() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }

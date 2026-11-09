@@ -49,6 +49,44 @@ EXEMPT: dict[str, str] = {
     'backend/app/core/env.py': 'the sanctioned reader for tuning knobs (D4 policy); every other module calls it',
 }
 
+# Classified exemptions. A reason starts with its class:
+#   bootstrap-before-settings  runs before ``Settings`` can be built (Celery/worker boot, migrations,
+#                              the env-name compat readers settings itself calls), so it cannot go
+#                              through settings or ``app.core.env`` without a cycle or a late read.
+#   process-env-handoff        builds or mutates the environment handed to a child process or to a
+#                              third-party library (HF_TOKEN, CUDA_VISIBLE_DEVICES, OMP threads);
+#                              the process environment IS the interface, not a setting.
+#   cli-script                 operator/benchmark entry points under app/scripts, not served code.
+_BOOTSTRAP = 'bootstrap-before-settings'
+_HANDOFF = 'process-env-handoff'
+_CLI = 'cli-script'
+EXEMPT.update(
+    {
+        'backend/app/core/celery.py': f'{_BOOTSTRAP}: broker TLS and pool mode are read while the Celery app is built',
+        'backend/app/core/celery_worker_lifecycle.py': f'{_HANDOFF}: pins OMP/torch thread env at worker boot before torch loads',
+        'backend/app/core/privacy_env.py': f'{_BOOTSTRAP}: setdefault of telemetry opt-outs before any import can read them',
+        'backend/app/core/legacy_auth_env.py': f'{_BOOTSTRAP}: the OIDC env-name compat reader that Settings itself calls',
+        'backend/app/core/worker_metrics.py': f'{_BOOTSTRAP}: prometheus multiprocess dir must exist before prometheus_client imports',
+        'backend/app/core/worker_shutdown.py': f'{_BOOTSTRAP}: module-level budget read at import by the worker signal handler',
+        'backend/app/db/migrations.py': f'{_BOOTSTRAP}: the startup DB wait runs before the app config is usable',
+        'backend/app/services/backup_service.py': f'{_HANDOFF}: copies the environment into the pg_dump/gpg subprocess',
+        'backend/app/services/local_models/supervisor.py': f'{_HANDOFF}: copies the environment into the model-server subprocess',
+        'backend/app/services/local_models/runner.py': f'{_HANDOFF}: HF_TOKEN read in the child process that downloads models',
+        'backend/app/services/huggingface_token.py': f'{_HANDOFF}: publishes the admin token as HF_TOKEN for huggingface_hub',
+        'backend/app/services/asr/google_provider.py': f'{_HANDOFF}: GOOGLE_APPLICATION_CREDENTIALS is the google-cloud client interface',
+        'backend/app/services/chat/reranker_threads.py': f'{_HANDOFF}: respects an operator OMP/torch thread pin before torch sizes its pool',
+        'backend/app/transcription/native_provision.py': f'{_HANDOFF}: environment passed to the diar-native provisioning subprocess',
+        'backend/app/transcription/engine/engine.py': f'{_HANDOFF}: extends PYTORCH_CUDA_ALLOC_CONF before torch initialises CUDA',
+        'backend/app/utils/nltk_offline.py': f'{_HANDOFF}: NLTK_OFFLINE/NLTK_DATA are the nltk library interface',
+        'backend/app/scripts/benchmark_reranker_threads.py': f'{_CLI}: benchmark entry point',
+        'backend/app/scripts/build_password_blocklist.py': f'{_CLI}: operator build script',
+        'backend/app/scripts/corpus_injection/adapters/miracl.py': f'{_CLI}: corpus tooling',
+        'backend/app/scripts/corpus_injection/env.py': f'{_CLI}: corpus tooling .env loader',
+        'backend/app/scripts/gpu_stage_vram_probe.py': f'{_CLI}: GPU probe sets its own environment',
+        'backend/app/scripts/probe_torch_thread_scope.py': f'{_CLI}: diagnostic probe',
+    }
+)
+
 # Attributes of the ``os`` module that read or mutate the process environment.
 _ENV_NAMES = frozenset({'getenv', 'getenvb', 'environ', 'environb', 'putenv', 'unsetenv'})
 

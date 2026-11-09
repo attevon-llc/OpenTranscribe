@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import os
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 from app.core.env import env_bool
+from app.core.env import env_int
 from app.services.audio_segment_utils import extract_audio_segment_np
 
 if TYPE_CHECKING:
@@ -35,14 +35,7 @@ def _max_concurrency() -> int:
     Each costs ~0.7 GB for the model plus ~0.4 GB of activations at the default clip cap,
     and every prefork child shares the container's memory limit. 0 disables the bound.
     """
-    raw = os.environ.get("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY", "").strip()
-    if not raw:
-        return _DEFAULT_MAX_CONCURRENCY
-    try:
-        return max(0, int(raw))
-    except ValueError:
-        logger.warning("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY=%r is not an integer; using default", raw)
-        return _DEFAULT_MAX_CONCURRENCY
+    return max(0, env_int("SPEAKER_ATTRIBUTE_MAX_CONCURRENCY", _DEFAULT_MAX_CONCURRENCY))
 
 
 def _is_gpu_worker() -> bool:

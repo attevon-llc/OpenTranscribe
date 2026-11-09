@@ -19,8 +19,9 @@ Dockerfile.prod so this contract cannot be quietly dropped again.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
+
+from app.core.env import env_str
 
 UNKNOWN = "unknown"
 
@@ -31,7 +32,7 @@ def _read_version() -> str:
     Prefers the build argument (the only source available in a prod image), then
     walks up for a VERSION file (dev checkouts and the offline package).
     """
-    env_version = os.environ.get("APP_VERSION")
+    env_version = env_str("APP_VERSION")
     if env_version and env_version != UNKNOWN:
         return env_version.strip()
 
@@ -52,13 +53,13 @@ def _read_git_sha() -> str:
     subprocess call at import time would be a startup cost paid on every boot
     for a value that is static.
     """
-    sha = os.environ.get("GIT_SHA", "").strip()
+    sha = env_str("GIT_SHA")
     return sha or UNKNOWN
 
 
 def _read_build_time() -> str:
     """ISO-8601 UTC timestamp of the image build, or ``unknown``."""
-    built = os.environ.get("BUILD_TIME", "").strip()
+    built = env_str("BUILD_TIME")
     return built or UNKNOWN
 
 

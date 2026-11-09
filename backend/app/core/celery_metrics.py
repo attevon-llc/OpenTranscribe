@@ -69,6 +69,7 @@ import redis
 from kombu.exceptions import KombuError
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.env import env_int
 from app.core.metrics import celery_queue_depth
 from app.core.metrics import celery_queue_oldest_message_age_seconds
 from app.core.metrics import celery_queue_oldest_unacked_age_seconds
@@ -295,7 +296,6 @@ def update_transcription_lease_metrics() -> None:
     ``transcription_files_infra_requeued``: files at or past the poison-alert threshold.
     One indexed query and one MGET; any failure leaves the gauges untouched.
     """
-    import os
 
     try:
         from app.core.task_liveness import TRANSCRIPTION_TASK_TYPE
@@ -317,7 +317,7 @@ def update_transcription_lease_metrics() -> None:
         if all(run.state != RunState.UNKNOWN for run in runs.values()):
             dead = sum(1 for run in runs.values() if run.state == RunState.DEAD)
             transcription_runs_without_lease.set(dead)
-        threshold = max(1, int(os.getenv("TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD", "3")))
+        threshold = env_int("TRANSCRIPTION_INFRA_REQUEUE_ALERT_THRESHOLD", 3, minimum=1)
         requeued = files_requeued_at_least(threshold)
         if requeued is not None:
             transcription_files_infra_requeued.set(_count_in_flight(requeued))

@@ -15,6 +15,7 @@ from redis.exceptions import RedisError
 from app.core.celery import celery_app
 from app.core.config import settings
 from app.core.env import env_bool
+from app.core.env import env_int
 from app.core.queues import CPUPriority
 from app.core.redis import get_redis
 from app.utils.gpu_stats import query_gpu_stats
@@ -42,12 +43,10 @@ def update_gpu_stats(self: Any) -> list[dict[str, Any]]:
         List of GPU stat dicts (one per active device).
     """
     try:
-        import os
-
         # Determine which GPU devices the app workers are using.
         # All values come from .env via env_file on the cpu-worker service.
         gpu_scale_enabled = env_bool("GPU_SCALE_ENABLED", default=False)
-        scale_device_id = int(os.environ.get("GPU_SCALE_DEVICE_ID", "2"))
+        scale_device_id = env_int("GPU_SCALE_DEVICE_ID", 2, minimum=0)
         default_device_id = settings.GPU_DEVICE_ID
         scale_default_worker = env_bool("GPU_SCALE_DEFAULT_WORKER", default=False)
 

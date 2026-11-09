@@ -9,12 +9,12 @@ Model card: https://huggingface.co/prithivMLmods/Common-Voice-Gender-Detection
 """
 
 import logging
-import os
 from typing import Any
 
 import numpy as np
 
 from app.core.env import env_bool
+from app.core.env import env_float
 from app.core.pipeline_constants import SAMPLE_RATE
 
 logger = logging.getLogger(__name__)
@@ -31,18 +31,7 @@ DEFAULT_MAX_CLIP_SECONDS = 20.0
 
 def max_clip_seconds() -> float:
     """``SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS``, falling back to the default on garbage."""
-    raw = os.getenv("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS", "").strip()
-    if not raw:
-        return DEFAULT_MAX_CLIP_SECONDS
-    try:
-        value = float(raw)
-    except ValueError:
-        logger.warning("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS=%r is not a number; using default", raw)
-        return DEFAULT_MAX_CLIP_SECONDS
-    if value < 2.0:
-        logger.warning("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS=%s is below 2 s; using default", raw)
-        return DEFAULT_MAX_CLIP_SECONDS
-    return value
+    return env_float("SPEAKER_ATTRIBUTE_MAX_CLIP_SECONDS", DEFAULT_MAX_CLIP_SECONDS, minimum=2.0)
 
 
 def center_crop(

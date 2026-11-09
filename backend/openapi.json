@@ -1093,8 +1093,7 @@
             "type": "array"
           },
           "keycloak_enabled": {
-            "description": "DEPRECATED duplicate of :attr:`oidc_enabled`.\n\nA browser holding a cached SPA bundle from before the rename against a\nfreshly-upgraded backend is a real deployment state, and that bundle reads\nthis key to decide whether to render the SSO button. Emitted for **one minor\nrelease**; removal ticket: \"drop AuthMethodsResponse.keycloak_enabled\".\n\nComputed rather than a second stored field on purpose — the two can never\nreport different values, and deletion is one block rather than a hunt for\nevery constructor call site.",
-            "readOnly": true,
+            "default": false,
             "title": "Keycloak Enabled",
             "type": "boolean"
           },
@@ -1169,8 +1168,7 @@
           "mfa_required",
           "login_banner_enabled",
           "login_banner_text",
-          "login_banner_classification",
-          "keycloak_enabled"
+          "login_banner_classification"
         ],
         "title": "AuthMethodsResponse",
         "type": "object"

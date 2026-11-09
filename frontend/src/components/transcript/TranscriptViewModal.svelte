@@ -25,7 +25,7 @@
   import { createEventDispatcher, tick } from 'svelte';
   import type { Speaker } from '$lib/types/speaker';
   import type { GroupedTranscriptSegment } from '$lib/types/media';
-  import type { TranscriptSegment } from '$lib/types/media';
+  import type { TranscriptSegment, TranscriptSourceFile } from '$lib/types/media';
   import type { SearchOccurrence } from '$stores/search';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';
@@ -48,7 +48,7 @@
   // Only `file` is required — grouping is resolved here via the shared
   // `resolveGroupedSegments` helper (the same one `TranscriptDisplay` uses), so the page
   // does not need to compute or pass it twice.
-  export let file: any = null;
+  export let file: TranscriptSourceFile | null = null;
   export let totalSegments = 0;
   export let hasMoreSegments = false;
   export let loadingMoreSegments = false;

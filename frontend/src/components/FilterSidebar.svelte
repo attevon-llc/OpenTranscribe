@@ -135,7 +135,7 @@
   }));
 
   // Component refs
-  let collectionsFilterRef: any;
+  let collectionsFilterRef: CollectionsFilter | undefined;
 
   /** @type {Speaker[]} */
   let allSpeakers: FilterSpeaker[] = [];

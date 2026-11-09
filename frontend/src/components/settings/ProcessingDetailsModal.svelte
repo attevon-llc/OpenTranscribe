@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { SystemStats } from '$lib/settings/adminLoaders';
   import { formatDateTime, formatElapsed } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { QUEUE_NAME_KEYS } from '$lib/i18n/keyMaps';
@@ -7,7 +8,7 @@
 
   export let isOpen = false;
   export let section = 'performance';
-  export let stats: any = {};
+  export let stats: SystemStats;
 
   function close() {
     isOpen = false;

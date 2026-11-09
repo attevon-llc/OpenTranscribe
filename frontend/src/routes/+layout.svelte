@@ -52,17 +52,17 @@
   // Heavy, conditionally shown components are loaded with a dynamic import so every visitor
   // (the login page included) doesn't download them before first paint. Each one is fetched
   // the moment its condition is known, never on a click, so behaviour is unchanged.
-  let SettingsModal: Component<any> | null = null;
+  let SettingsModal: Awaited<ReturnType<typeof loadSettingsModal>>['default'] | null = null;
   // Painted while SettingsModal's chunk is still in flight, so the dialog opens at once and its
   // sidebar and content fill in afterwards. Small enough to be prefetched on idle (below).
-  let SettingsModalShell: Component<any> | null = null;
+  let SettingsModalShell: Awaited<ReturnType<typeof loadSettingsModalShell>>['default'] | null = null;
   let shellShown = false;
-  let FirstRunWizard: Component<any> | null = null;
-  let ErasureRequestBanner: Component<any> | null = null;
+  let FirstRunWizard: typeof import('../components/FirstRunWizard.svelte').default | null = null;
+  let ErasureRequestBanner: typeof import('../components/ErasureRequestBanner.svelte').default | null = null;
   let DemoBanner: Component | null = null;
-  let QuotaExceededModal: Component<any> | null = null;
-  let LegalGateModal: Component<any> | null = null;
-  let IdleTimeoutDialog: Component<any> | null = null;
+  let QuotaExceededModal: typeof import('$lib/cloud/components/QuotaExceededModal.svelte').default | null = null;
+  let LegalGateModal: typeof import('$lib/cloud/components/LegalGateModal.svelte').default | null = null;
+  let IdleTimeoutDialog: typeof import('../components/IdleTimeoutDialog.svelte').default | null = null;
 
   // The modal renders itself only while the store says open, and mounts already open, so a
   // deep link or event that opens settings before the chunk lands is not lost.
@@ -195,7 +195,7 @@
   let bannerClassification: 'UNCLASSIFIED' | 'CUI' | 'FOUO' | 'CONFIDENTIAL' | 'SECRET' | 'TOP SECRET' | 'TOP SECRET//SCI' = 'UNCLASSIFIED';
   // Needed only on deployments that enable the banner, so it is fetched when that is known
   // rather than shipped to every visitor with the layout.
-  let ClassificationBanner: Component<any> | null = null;
+  let ClassificationBanner: typeof import('$lib/components/ClassificationBanner.svelte').default | null = null;
   function ensureClassificationBanner(wanted: boolean) {
     if (!wanted || ClassificationBanner) return;
     void import("$lib/components/ClassificationBanner.svelte").then((m) => (ClassificationBanner = m.default));

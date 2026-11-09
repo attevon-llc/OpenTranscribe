@@ -17,7 +17,7 @@ interface SegmentLike {
 export function resolveGroupedSegments<T extends SegmentLike>(
   transcriptSegments: T[],
   groupedSegmentsRaw: GroupedTranscriptSegment[] | undefined | null
-): GroupedSegmentView[] {
+): GroupedSegmentView<T>[] {
   const segmentsByUuid = new Map<string, T>();
   for (const segment of transcriptSegments || []) {
     if (segment?.uuid != null) segmentsByUuid.set(String(segment.uuid), segment);
@@ -25,7 +25,7 @@ export function resolveGroupedSegments<T extends SegmentLike>(
 
   const claimed = new Set<string>();
 
-  function mapGroup(group: GroupedTranscriptSegment): GroupedSegmentView {
+  function mapGroup(group: GroupedTranscriptSegment): GroupedSegmentView<T> {
     const segments: T[] = [];
     for (const raw of group.segment_uuids || []) {
       const uuid = String(raw);

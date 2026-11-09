@@ -1,3 +1,4 @@
+import type { FileVoiceprintConsentState } from '$lib/api/privacy';
 /**
  * Where a derived value came from — deliberately NOT specific to dates.
  *
@@ -205,7 +206,7 @@ export interface MediaFileDetail extends MediaFile {
    * sends no tags, so this deliberately lives here and not on `MediaFile`.
    */
   tags?: Tag[];
-  transcript_segments?: unknown[];
+  transcript_segments?: TranscriptSegment[];
   grouped_segments?: GroupedTranscriptSegment[];
   total_segments?: number;
   speakers?: unknown[];
@@ -338,12 +339,12 @@ export interface TranscriptSegment {
  *
  * `segments` stays open for the same reason `GroupedTranscriptSegment.segments` does.
  */
-export interface GroupedSegmentView {
+export interface GroupedSegmentView<S = TranscriptSegment> {
   isOverlapGroup: boolean;
   overlapGroupId?: string;
   startTime: number;
   endTime: number;
-  segments: any[];
+  segments: S[];
   /** Index of the first segment in the flat array — drives reading progress. */
   startSegmentIndex: number;
 }
@@ -356,4 +357,21 @@ export interface DurationRange {
 export interface DateRange {
   from: Date | null;
   to: Date | null;
+}
+
+/**
+ * The slice of a file the transcript components read: its identity and the transcript
+ * payload. Every field is optional because the components render before the detail
+ * request lands and are mounted with partial files in tests. The index signature keeps it
+ * assignable to the file-detail page's loose file object (`SegmentBearingFile`), which
+ * carries many more fields that these components pass through untouched.
+ */
+export interface TranscriptSourceFile {
+  uuid?: string;
+  status?: string;
+  user_id?: string;
+  voiceprint_consent?: FileVoiceprintConsentState;
+  transcript_segments?: TranscriptSegment[];
+  grouped_segments?: GroupedTranscriptSegment[];
+  [key: string]: unknown;
 }

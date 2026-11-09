@@ -48,6 +48,12 @@ export interface PolicyValues {
   password_blocklist_enabled: string;
 }
 
+/** The password fields the policy panel edits on the Local tab's form object. */
+export interface PasswordPolicyFormData extends PolicyValues {
+  password_policy_profile: string;
+  password_hibp_enabled: boolean;
+}
+
 export interface EffectiveRules {
   minLength: number;
   /** Minimum for an account protected by MFA; equals `minLength` unless the tier differs. */

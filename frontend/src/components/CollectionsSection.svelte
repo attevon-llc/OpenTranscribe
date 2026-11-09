@@ -21,7 +21,7 @@
     isExpanded = !isExpanded;
   }
 
-  function handleCollectionsUpdated(event: any) {
+  function handleCollectionsUpdated(event: CustomEvent<{ collections: Collection[] }>) {
     // Re-emit the event to parent component
     collections = event.detail.collections;
     dispatch('collectionsUpdated', { collections: event.detail.collections });

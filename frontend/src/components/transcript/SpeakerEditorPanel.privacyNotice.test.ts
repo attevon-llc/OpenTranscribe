@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({ getEffective: vi.fn() }));
 vi.mock('$lib/api/privacy', () => ({ PrivacyApi: api }));
 
 import SpeakerEditorPanel from './SpeakerEditorPanel.svelte';
+import type { SpeakerEditorEntry } from '$lib/types/speaker';
 import { loadEffectivePrivacy, resetEffectivePrivacy } from '$stores/privacyPolicy';
 
 const ON = { enabled: true, locked_by: null };
@@ -21,7 +22,7 @@ const effective = (voiceOn: boolean, genderOn: boolean) => ({
   gender_inference: genderOn ? ON : { enabled: false, locked_by: 'organization' },
 });
 
-const speaker = (over: Record<string, unknown> = {}) => ({
+const speaker = (over: Partial<SpeakerEditorEntry> = {}): SpeakerEditorEntry => ({
   uuid: 's1',
   name: 'SPEAKER_00',
   display_name: '',
@@ -30,7 +31,7 @@ const speaker = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function mountPanel(speakers: unknown[], fileUuid = 'file-77') {
+function mountPanel(speakers: SpeakerEditorEntry[], fileUuid = 'file-77') {
   return render(SpeakerEditorPanel, { props: { file: { uuid: fileUuid }, speakerList: speakers } });
 }
 

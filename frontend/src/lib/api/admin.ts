@@ -21,7 +21,7 @@ export interface AuditLogEntry {
   outcome: string;
   source_ip: string;
   user_agent: string;
-  details: Record<string, any>;
+  details: Record<string, unknown>;
   target_user_id?: number | null;
   organization_id?: number | null;
   /** Whose tenant the resource belongs to: an organization or one person's workspace. */

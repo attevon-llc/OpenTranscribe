@@ -109,6 +109,51 @@ export interface Speaker {
   suggestion?: SpeakerSuggestion | null;
 }
 
+/** One transcript segment of a speaker, as `GET /files/{uuid}/speakers` lists them. */
+export interface SpeakerSegmentTimestamp {
+  uuid?: string;
+  segment_index?: number;
+  start_time: number;
+}
+
+/** A speaker-profile recommendation for one speaker. */
+export interface SpeakerProfileSuggestion {
+  name: string;
+  suggestion_type?: string;
+  confidence: number;
+  confidence_percentage?: number;
+  reason?: string;
+}
+
+/** Another recording in which a labelled speaker was matched. */
+export interface CrossVideoMatch {
+  title?: string;
+  media_file_title?: string;
+  same_speaker?: boolean;
+  confidence?: number;
+}
+
+/**
+ * A speaker as the editor panel renders it: the stored speaker plus the display flags the
+ * backend precomputes (`speakers_list.py::_build_speaker_dict`) and two UI-only toggles.
+ */
+export interface SpeakerEditorEntry extends Speaker {
+  suggested_name?: string | null;
+  suggestion_source?: string | null;
+  profile_suggestions?: SpeakerProfileSuggestion[];
+  cross_video_matches?: CrossVideoMatch[];
+  segment_timestamps?: SpeakerSegmentTimestamp[];
+  has_llm_suggestion?: boolean;
+  total_suggestions?: number;
+  show_suggestions_section?: boolean;
+  is_high_confidence?: boolean;
+  is_medium_confidence?: boolean;
+  input_placeholder?: string;
+  show_profile_badge?: boolean;
+  showMatches?: boolean;
+  showSuggestions?: boolean;
+}
+
 /**
  * Response from the merge speakers API
  */

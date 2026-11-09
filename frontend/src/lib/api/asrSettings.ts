@@ -99,6 +99,7 @@ export interface UserASRSettingsCreate {
   region?: string;
   base_url?: string;
   is_active?: boolean;
+  is_shared?: boolean;
 }
 
 export interface UserASRSettingsUpdate {
@@ -110,6 +111,7 @@ export interface UserASRSettingsUpdate {
   region?: string;
   base_url?: string;
   is_active?: boolean;
+  is_shared?: boolean;
 }
 
 export interface UserASRSettingsResponse {

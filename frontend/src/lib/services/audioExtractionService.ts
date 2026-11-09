@@ -46,7 +46,7 @@ class AudioExtractionService {
     file: File;
     config?: Partial<AudioExtractionConfig>;
     resolve: (value: ExtractedAudio) => void;
-    reject: (error: any) => void;
+    reject: (reason: unknown) => void;
   }> = [];
   private isProcessing: boolean = false;
 
@@ -195,7 +195,7 @@ class AudioExtractionService {
       });
 
       // Capture FFmpeg metadata output
-      const metadataFromFFmpeg: Record<string, any> = {};
+      const metadataFromFFmpeg: Record<string, string> = {};
       let captureMetadata = false;
 
       const logHandler = ({ message }: { message: string }) => {

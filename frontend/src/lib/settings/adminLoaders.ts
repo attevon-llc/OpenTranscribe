@@ -10,8 +10,92 @@ import { UserApprovalsApi } from '$lib/api/userApprovals';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** The /system/stats payload as SystemStatisticsPanel consumes it; the placeholder defines the shape. */
-export type SystemStats = ReturnType<typeof initialSystemStats>;
+/** A model entry of the stats payload. Only `name` is guaranteed; the rest is per-model detail. */
+export interface ModelStats {
+  name: string;
+  description?: string;
+  purpose?: string;
+}
+
+/** The diarization entry also reports which backend is configured vs. actually running. */
+export interface DiarizationModelStats extends ModelStats {
+  configured_backend?: string;
+  configured_description?: string;
+  effective_backend?: string;
+  using_fallback?: boolean;
+}
+
+/** A recently finished or running task row in the stats payload. */
+export interface RecentTaskStats {
+  id: string;
+  type: string;
+  status: string;
+  created_at: string;
+  elapsed: number;
+}
+
+/** The /system/stats payload as SystemStatisticsPanel consumes it. */
+export interface SystemStats {
+  users: { total: number; new: number };
+  files: { total: number; new: number; total_duration: number; segments: number };
+  transcripts?: { total_segments_is_estimate?: boolean };
+  tasks: {
+    total: number;
+    pending: number;
+    running: number;
+    completed: number;
+    failed: number;
+    success_rate: number;
+    avg_processing_time: number;
+    recent: RecentTaskStats[];
+  };
+  speakers: { total: number; avg_per_file: number; total_is_estimate?: boolean };
+  models: {
+    whisper: ModelStats;
+    diarization: DiarizationModelStats;
+    search_embedding?: ModelStats;
+    llm?: ModelStats;
+  };
+  system: {
+    cpu: {
+      total_percent: string;
+      per_cpu: number[];
+      logical_cores: number;
+      physical_cores: number;
+    };
+    memory: { total: string; available: string; used: string; percent: string };
+    disk: { total: string; used: string; free: string; percent: string };
+    gpus: GpuStats[];
+    uptime: string;
+    platform: string;
+    python_version: string;
+    whisper_model?: string;
+    device_mode?: string;
+    force_cpu_mode?: boolean;
+    chat_reranker_threads?: { threads: number | null; source: string; setting?: string };
+  };
+  throughput: {
+    total_completed: number;
+    last_1h: number;
+    last_3h: number;
+    rate_1h: number;
+    rate_3h: number;
+  };
+  eta: {
+    remaining: number;
+    files_per_hour: number;
+    hours_remaining: number | null;
+    est_completion: string | null;
+  };
+  file_timing: {
+    files: number;
+    avg_secs: number;
+    min_secs: number;
+    max_secs: number;
+    avg_mins: number;
+  };
+  queues: Record<string, number>;
+}
 
 export interface SearchIndexStatus {
   indexed_files: number;
@@ -39,7 +123,7 @@ export interface GpuStats {
 export type AdminUserRow = Record<string, unknown>;
 
 /** Placeholder stats shown before the first load, so the panel renders with zeros, not undefined. */
-export function initialSystemStats(t: Translate) {
+export function initialSystemStats(t: Translate): SystemStats {
   return {
     users: { total: 0, new: 0 },
     files: { total: 0, new: 0, total_duration: 0, segments: 0 },
@@ -84,7 +168,7 @@ export function initialSystemStats(t: Translate) {
           memory_percent: 'N/A',
           utilization_percent: 'N/A',
           temperature_celsius: null,
-        } as GpuStats,
+        },
       ],
       uptime: t('common.unknown'),
       platform: t('common.unknown'),

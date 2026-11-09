@@ -109,7 +109,8 @@
   $: allowListOpen = (formData.oidc_allowed_groups ?? '').trim() === '';
 
   /** Claim names (never values) the provider's discovery document advertised. */
-  $: discoveredClaims = (testResult?.success && testResult.details?.claims_supported) || undefined;
+  $: claimsSupported = testResult?.success ? testResult.details?.claims_supported : undefined;
+  $: discoveredClaims = Array.isArray(claimsSupported) ? claimsSupported.map(String) : undefined;
   $: rolesClaimAdvertised = testResult?.success
     ? (testResult.details?.roles_claim_advertised as string | undefined)
     : undefined;

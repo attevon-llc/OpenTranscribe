@@ -4,12 +4,13 @@
  * writes back. No I/O; `speakerLoader` and `speakerSave` hold the request flows.
  */
 import type { Translate } from '$lib/i18n';
+import type { SpeakerProfileSuggestion } from '$lib/types/speaker';
 import type { SpeakerInfo } from '$stores/transcriptStore';
 
 /** A speaker as the page holds it: the backend row plus UI-only flags. */
 export interface SpeakerItem extends SpeakerInfo {
   profile?: { uuid: string; name: string } | null;
-  profile_suggestions?: Array<Record<string, unknown>>;
+  profile_suggestions?: SpeakerProfileSuggestion[];
   [key: string]: unknown;
 }
 

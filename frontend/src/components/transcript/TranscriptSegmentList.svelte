@@ -2,7 +2,7 @@
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import SanitizedHtml from '$components/ui/SanitizedHtml.svelte';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
-  import type { GroupedSegmentView, TranscriptSegment } from '$lib/types/media';
+  import type { GroupedSegmentView, TranscriptSegment, TranscriptSourceFile } from '$lib/types/media';
   import type { Speaker } from '$lib/types/speaker';
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import SegmentSpeakerDropdown from '$components/SegmentSpeakerDropdown.svelte';
@@ -14,7 +14,7 @@
   import { translateSpeakerLabel } from '$lib/i18n';
   import { fileFrozen } from '$lib/legalHold/fileHoldContext';
 
-  export let file: any = null;
+  export let file: TranscriptSourceFile | null = null;
   export let groupedTranscriptSegments: GroupedSegmentView[] = [];
   export let speakerList: Speaker[] = [];
   export let diarizationDisabled: boolean = false;
@@ -63,7 +63,7 @@
   // spans). Regression from issue #755, which introduced this helper in place of the
   // literal `highlightTextWithMatches(...)` call the markup used to make directly.
   function segmentHighlight(
-    segment: any,
+    segment: TranscriptSegment,
     query: string,
     matches: SearchMatch[],
     currentIdx: number,

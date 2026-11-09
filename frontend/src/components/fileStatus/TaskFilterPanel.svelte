@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { UserFileStatusSummary } from '$lib/types/fileStatus';
   import { t } from '$stores/locale';
   import DateRangePicker from '$components/ui/DateRangePicker.svelte';
   import FilterChipButton from '$components/ui/FilterChipButton.svelte';
@@ -10,7 +11,7 @@
   export let taskAgeFilter: string;
   export let taskDateFrom: string;
   export let taskDateTo: string;
-  export let fileStatus: any = null;
+  export let fileStatus: UserFileStatusSummary | null = null;
 
   /* The task query is keyed on `yyyy-MM-dd` strings, so the Date-based shared
      control is converted at this boundary. Parsed at an explicit local

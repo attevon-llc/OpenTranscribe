@@ -2,6 +2,7 @@
   import { SvelteSet, SvelteURLSearchParams } from 'svelte/reactivity';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
+  import type { DetailedFileStatus, UserFileStatusSummary, UserTask } from '$lib/types/fileStatus';
   import axiosInstance from '$lib/axios';
   import { apiCache, cacheKey, CacheTTL } from '$lib/apiCache';
   import { user } from '$stores/auth';
@@ -25,11 +26,11 @@
 
   // Component state
   let loading = false;
-  let error: any = null;
-  let fileStatus: any = null;
-  let selectedFile: any = null;
-  let detailedStatus: any = null;
-  let retryingFiles = new SvelteSet();
+  let error: string | null = null;
+  let fileStatus: UserFileStatusSummary | null = null;
+  let selectedFile: string | null = null;
+  let detailedStatus: DetailedFileStatus | null = null;
+  let retryingFiles = new SvelteSet<string>();
 
   // Auto-refresh settings (enabled by default)
   // WebSocket push handles real-time updates; this is a fallback safety net to catch any
@@ -40,9 +41,9 @@
   );
 
   // Tasks section state
-  let tasks: any[] = [];
+  let tasks: UserTask[] = [];
   let tasksLoading = false;
-  let tasksError: any = null;
+  let tasksError: string | null = null;
   let showTasksSection = false;
 
   // Restore tasks section state from session storage
@@ -59,7 +60,7 @@
   let taskAgeFilter = 'all'; // 'all', 'today', 'week', 'month', 'older'
   let taskDateFrom = '';
   let taskDateTo = '';
-  let filteredTasks: any[] = [];
+  let filteredTasks: UserTask[] = [];
 
   // Task pagination state
   let taskPage = 1;
@@ -68,7 +69,7 @@
   let filtersReady = false;
 
   // WebSocket subscription
-  let unsubscribeWebSocket: any = null;
+  let unsubscribeWebSocket: (() => void) | null = null;
   let lastProcessedNotificationId = '';
 
   // Push-based cache invalidation listener
@@ -199,7 +200,7 @@
     window.open(url, '_blank', 'noopener');
   }
 
-  async function fetchDetailedStatus(fileId: any) {
+  async function fetchDetailedStatus(fileId: string) {
     try {
       const response = await axiosInstance.get(`/my-files/${fileId}/status`);
       detailedStatus = response.data;
@@ -217,7 +218,7 @@
     unlockScroll();
   }
 
-  async function retryFile(fileId: any) {
+  async function retryFile(fileId: string) {
     if (retryingFiles.has(fileId)) return;
 
     retryingFiles.add(fileId);
@@ -284,7 +285,7 @@
     }
   }
 
-  function showMessage(message: any, type: any) {
+  function showMessage(message: string, type: 'success' | 'error') {
     if (type === 'success') {
       toastStore.success(message);
     } else {

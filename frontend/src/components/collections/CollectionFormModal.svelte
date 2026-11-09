@@ -3,7 +3,6 @@
     uuid: string;
     name: string;
     is_system_default?: boolean;
-    [key: string]: any;
   };
 </script>
 

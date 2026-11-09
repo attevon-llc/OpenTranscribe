@@ -13,7 +13,7 @@
   export let diarizationDisabled: boolean = false;
   export let isEditingSpeakers: boolean = false;
   export let isDownloading: boolean = false;
-  export let currentDownload: any = undefined;
+  export let currentDownload: { status?: string } | undefined = undefined;
   export let isVideoFile: boolean = false;
   export let canEmbedSubtitles: boolean = false;
   /** A DOCX/PDF export is rendering on the server; the two document entries wait for it. */

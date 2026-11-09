@@ -95,6 +95,8 @@ scripts/
 # queues) -- without this exception it never reaches the image and every one
 # of those five services reports unhealthy forever (issue #631).
 !scripts/celery_pool_healthcheck.py
+# Every image's CMD (scale foundations lane B): without this exception the API cannot start.
+!scripts/api-start.sh
 pyproject.toml
 
 # OS generated files

@@ -61,11 +61,20 @@ def _environment(service: dict[str, Any]) -> dict[str, str]:
     return {key: _resolve(str(value)) for key, value in env.items()}
 
 
-def _api_pool() -> int:
-    from app.core.config import Settings
+#: Lane C's readiness probe holds one connection per API process (app/db/probe_engine.py), on
+#: top of the request pool, so it counts against the budget.
+READINESS_CONNECTIONS_PER_PROCESS = 1
 
-    fields = Settings.model_fields
-    return int(fields["DB_POOL_SIZE"].default) + int(fields["DB_MAX_OVERFLOW"].default)
+
+def _api_rows(service: dict[str, Any]) -> tuple[int, int]:
+    """``(connections per API process, processes)`` as the container resolves them.
+
+    Read from the backend service's compose environment, not the coded ``Settings`` defaults:
+    those describe a bare process, while the container sets its own pool and process count.
+    """
+    env = _environment(service)
+    pool = int(env["DB_POOL_SIZE"]) + int(env["DB_MAX_OVERFLOW"])
+    return pool + READINESS_CONNECTIONS_PER_PROCESS, int(env["UVICORN_WORKERS"])
 
 
 def budget_rows(compose: dict[str, Any]) -> list[tuple[str, int, int]]:
@@ -78,8 +87,9 @@ def budget_rows(compose: dict[str, Any]) -> list[tuple[str, int, int]]:
         command = _resolve(" ".join(str(command).split()))
         env = _environment(service)
         if name == "backend":
-            # One uvicorn process (no --workers), pool from the coded settings default.
-            rows.append((name, _api_pool(), 1))
+            # UVICORN_WORKERS uvicorn processes, each with its own pool and probe connection.
+            per_process, workers = _api_rows(service)
+            rows.append((name, per_process, workers))
             continue
         if "celery" not in command or (" worker" not in command and " beat" not in command):
             continue
@@ -151,7 +161,10 @@ def test_the_budget_arithmetic_catches_an_overrun() -> None:
     oversized = {
         "services": {
             "postgres": {"command": "postgres -c max_connections=${PG_MAX_CONNECTIONS:-50}"},
-            "backend": {"command": "uvicorn app.main:app"},
+            "backend": {
+                "command": "uvicorn app.main:app",
+                "environment": ["DB_POOL_SIZE=15", "DB_MAX_OVERFLOW=15", "UVICORN_WORKERS=2"],
+            },
             "worker": {
                 "command": "celery -A app.core.celery worker -Q cpu --concurrency=${C:-8}",
                 "environment": ["DB_POOL_SIZE=${P:-2}", "DB_MAX_OVERFLOW=${O:-3}"],
@@ -177,4 +190,26 @@ def test_env_example_matches_the_compose_defaults(compose) -> None:
     assert documented("WORKER_DB_POOL_SIZE") == "2"
     assert documented("WORKER_DB_MAX_OVERFLOW") == "0"
     assert documented("THREADED_WORKER_DB_MAX_OVERFLOW") == "3"
-    assert int(documented("DB_POOL_SIZE")) + int(documented("DB_MAX_OVERFLOW")) == _api_pool()
+    env = _environment(compose["services"]["backend"])
+    assert documented("DB_POOL_SIZE") == env["DB_POOL_SIZE"]
+    assert documented("DB_MAX_OVERFLOW") == env["DB_MAX_OVERFLOW"]
+    assert documented("UVICORN_WORKERS") == env["UVICORN_WORKERS"]
+
+
+def test_more_api_workers_than_the_connection_budget_allows_fails(compose) -> None:
+    """Negative control: eight workers on the default ``max_connections`` must overrun it."""
+    eight = {**compose, "services": {k: dict(v) for k, v in compose["services"].items()}}
+    backend = dict(eight["services"]["backend"])
+    backend["environment"] = [
+        item
+        for item in backend["environment"]
+        if not str(item).startswith(("UVICORN_WORKERS=", "DB_POOL_SIZE=", "DB_MAX_OVERFLOW="))
+    ] + ["UVICORN_WORKERS=8", "DB_POOL_SIZE=15", "DB_MAX_OVERFLOW=15"]
+    eight["services"]["backend"] = backend
+    total = sum(capacity * processes for _, capacity, processes in budget_rows(eight))
+    assert total > _max_connections(eight) - SUPERUSER_RESERVED_CONNECTIONS
+
+
+def test_the_default_worker_count_is_two(compose) -> None:
+    """Owner decision (scale plan Q1): two API processes, sized for an 8 GB host."""
+    assert _api_rows(compose["services"]["backend"])[1] == 2

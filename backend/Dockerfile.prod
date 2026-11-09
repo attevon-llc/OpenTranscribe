@@ -540,17 +540,14 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # reads the same variable to size its threadpool; sizing rule in app/core/threadpool.py.
 ENV UVICORN_LIMIT_CONCURRENCY=512
 
-# Command to run the application in production (no reload).
-#
-# --proxy-headers makes uvicorn honour X-Forwarded-Proto/-For from the reverse proxy, so
-# request.url.scheme is https behind TLS termination and request.client.host is the real
-# peer rather than the proxy. Without it the app cannot tell http from https, which
-# affects redirect/cookie decisions (issue #284 A0.5).
-#
-# --forwarded-allow-ips is deliberately restricted to the loopback/private ranges a
-# sidecar or in-cluster proxy connects from. Do NOT set it to "*": that tells uvicorn to
-# trust forwarding headers from ANY peer, which is the same spoofing hole the audit
-# middleware had. Application-level trust is enforced separately and independently by
-# RATE_LIMIT_TRUSTED_PROXIES via app/utils/client_ip.py.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", \
-     "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"]
+# API processes in this container (uvicorn reads UVICORN_WORKERS itself; scripts/api-start.sh
+# starts it). 1 = one process, the right setting under an orchestrator that scales by
+# replicas. UVICORN_LIMIT_CONCURRENCY above is PER PROCESS. The health-check and graceful
+# timeouts are raised from uvicorn's 5 s / unbounded so a GIL-saturated but healthy worker is
+# not SIGKILLed by the supervisor and SIGTERM drains WebSockets within a bound.
+ENV UVICORN_WORKERS=2 \
+    UVICORN_TIMEOUT_WORKER_HEALTHCHECK=30 \
+    UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN=30
+
+# Production start: no reload; proxy-header flags and the Prometheus directory are in the script.
+CMD ["/app/scripts/api-start.sh"]

@@ -11,19 +11,16 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
 from fastapi.responses import JSONResponse
+from sqlalchemy import ColumnElement
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.speakers_list_filters import SPEAKER_FILTER_DEFAULT_LIMIT
-from app.api.endpoints.speakers_list_filters import _filter_speakers_query
-from app.api.endpoints.speakers_list_filters import _get_first_segment_timestamps_for_speakers
-from app.api.endpoints.speakers_list_filters import _get_segment_counts_for_speakers
 from app.api.endpoints.speakers_list_filters import _get_unique_speakers_for_filter
 from app.api.endpoints.speakers_list_filters import _resolve_file_uuid_to_id
 from app.api.endpoints.speakers_list_filters import _resolve_profile_filter_id
 from app.api.endpoints.speakers_list_filters import _sort_speakers
-from app.api.endpoints.speakers_list_filters import _speaker_number_order
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.speaker import Speaker
@@ -34,6 +31,9 @@ from app.services.permission_service import file_ids_in_scope
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import redact_speaker_rows
 from app.services.request_context import RequestContext
+from app.services.speaker_list_queries import first_segment_timestamps_by_speaker
+from app.services.speaker_list_queries import list_speakers_page
+from app.services.speaker_list_queries import segment_counts_by_speaker
 from app.services.speaker_provenance_view import attach_speaker_provenance
 from app.services.speaker_provenance_view import provenance_for_dict
 from app.services.speaker_status_service import SpeakerStatusService
@@ -346,8 +346,6 @@ def list_speakers(
         List[dict]: Speaker objects with embedded suggestion data and profile information.
     """
     try:
-        from sqlalchemy.orm import joinedload
-
         # Fast path: filter mode only needs aggregated display names
         # Skip loading all speaker objects, profiles, and media files
         if for_filter:
@@ -376,9 +374,6 @@ def list_speakers(
             file_uuid, current_user, db, organization_id=ctx.org_id, bypass=ctx.bypass
         )
 
-        query = db.query(Speaker).options(
-            joinedload(Speaker.profile), joinedload(Speaker.media_file)
-        )
         # A caller who sees all in scope gets every speaker of the tenant; when file_id is
         # provided, permission was
         # already checked by _resolve_file_uuid_to_id (which applies the
@@ -387,32 +382,34 @@ def list_speakers(
         # the general listing has no per-file permission check to catch it,
         # so a caller's OWN quarantined file's speakers would otherwise leak
         # here even though the file itself 404s for them).
+        criteria: list[ColumnElement[bool]] = []
         if ctx.bypass.sees_all_in_scope:
-            query = query.filter(Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)))
-        elif file_id is not None:
-            pass  # Viewing specific file — permission already checked
-        else:
-            query = query.filter(
+            criteria.append(Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)))
+        elif file_id is None:
+            criteria += [
                 Speaker.user_id == current_user.id,
                 Speaker.media_file_id.in_(file_ids_in_scope(ctx.org_id)),
-            )
-            query = query.filter(file_is_available(Speaker.media_file_id))
-        query = _filter_speakers_query(query, verified_only, file_id)
-        if file_id is None:
-            # Bounded by default: an owner's whole library is hundreds of thousands of rows.
-            page = limit if limit is not None else SPEAKER_LIST_DEFAULT_LIMIT
-            query = query.order_by(*_speaker_number_order()).offset(skip).limit(page)
-        speakers = query.all()
+                file_is_available(Speaker.media_file_id),
+            ]
+        # Bounded by default: an owner's whole library is hundreds of thousands of rows.
+        speakers = list_speakers_page(
+            db,
+            criteria,
+            verified_only=verified_only,
+            file_id=file_id,
+            skip=skip,
+            page_size=limit if limit is not None else SPEAKER_LIST_DEFAULT_LIMIT,
+        )
         speakers = _sort_speakers(speakers)
 
         # Pre-calculate segment counts for all speakers in one query
         speaker_ids = [s.id for s in speakers]
-        segment_counts = _get_segment_counts_for_speakers(speaker_ids, db)
+        segment_counts = segment_counts_by_speaker(db, speaker_ids)
 
         # Pre-fetch first 4 segment timestamps per speaker for jump-to-timestamp UI
         all_timestamps: dict[int, list[dict[str, Any]]] = {}
         if file_id is not None and speaker_ids:
-            all_timestamps = _get_first_segment_timestamps_for_speakers(speaker_ids, file_id, db)
+            all_timestamps = first_segment_timestamps_by_speaker(db, speaker_ids, file_id)
 
         # Batch-fetch all speaker suggestions (3 OS calls total vs 3N before).
         # The tenant scope each suggestion query is gated by is resolved HERE,

@@ -18,13 +18,14 @@ from app.db.base import get_db
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.user import User
-from app.services.file_availability import exclude_unavailable
 from app.services.file_availability import unavailable_list_exempt
 from app.services.permission_service import org_scope_pred
 from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
 from app.services.privacy.redact_view import hide_machine_identities
 from app.services.request_context import RequestContext
+from app.services.speaker_list_queries import speakers_linked_to_profile
+from app.services.speaker_list_queries import speakers_named
 from app.services.uuid_helpers import require_speaker_access
 
 logger = logging.getLogger(__name__)
@@ -112,23 +113,19 @@ def _get_profile_based_occurrences(
     bypass: PlatformBypass = PlatformBypass.none(),
 ) -> list[dict[str, Any]]:
     """Get cross-media occurrences for a speaker with a profile."""
-    query = (
-        db.query(Speaker)
-        .join(MediaFile)
-        .filter(
-            Speaker.profile_id == speaker.profile_id,
-        )
-    )
-    if not bypass.sees_all_in_scope:
-        query = query.filter(Speaker.user_id == current_user.id)
-    query = exclude_unavailable(query, include_quarantined=unavailable_list_exempt(bypass))
+    if speaker.profile_id is None:
+        return []
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
-    if tenant_pred is not None:
-        query = query.filter(tenant_pred)
     # Each candidate is judged by its OWN file's switch: a link a voiceprint made in a file
     # whose voiceprints are off is not a link (its profile_id reads None after this), so the
     # speaker connects nothing. ``speaker`` arrives already redacted.
-    profile_speakers = query.all()
+    profile_speakers = speakers_linked_to_profile(
+        db,
+        speaker.profile_id,
+        owner_user_id=None if bypass.sees_all_in_scope else current_user.id,
+        tenant_pred=tenant_pred,
+        include_quarantined=unavailable_list_exempt(bypass),
+    )
     hide_machine_identities(PrivacyView(db), profile_speakers)
 
     result: list[dict[str, Any]] = []
@@ -174,21 +171,15 @@ def _get_display_name_based_occurrences(
         return result
 
     # Find other speakers with the same display name
-    similar_q = (
-        db.query(Speaker)
-        .join(MediaFile)
-        .filter(
-            Speaker.display_name == speaker.display_name,
-            Speaker.id != speaker.id,
-        )
-    )
-    if not bypass.sees_all_in_scope:
-        similar_q = similar_q.filter(Speaker.user_id == current_user.id)
-    similar_q = exclude_unavailable(similar_q, include_quarantined=unavailable_list_exempt(bypass))
     tenant_pred = org_scope_pred(MediaFile.organization_id, organization_id)
-    if tenant_pred is not None:
-        similar_q = similar_q.filter(tenant_pred)
-    similar_speakers = similar_q.all()
+    similar_speakers = speakers_named(
+        db,
+        speaker.display_name,
+        excluding_speaker_id=speaker.id,
+        owner_user_id=None if bypass.sees_all_in_scope else current_user.id,
+        tenant_pred=tenant_pred,
+        include_quarantined=unavailable_list_exempt(bypass),
+    )
     hide_machine_identities(PrivacyView(db), similar_speakers)
 
     for similar_speaker in similar_speakers:

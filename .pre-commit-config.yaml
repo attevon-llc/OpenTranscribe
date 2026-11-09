@@ -162,7 +162,7 @@ repos:
         verbose: true
       - id: frontend-build
         name: Frontend Build Verification (eslint + svelte-check + vite build)
-        entry: scripts/frontend-check.sh
+        entry: scripts/frontend-check.sh --no-claude
         language: system
         files: ^frontend/src/
         types_or: [svelte, ts, javascript, css, html]

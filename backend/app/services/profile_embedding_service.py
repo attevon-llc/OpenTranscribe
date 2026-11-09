@@ -52,7 +52,9 @@ def _clear_profile_embedding_from_opensearch(profile_uuid: str) -> None:
 
         remove_profile_embedding(profile_uuid)
     except Exception as e:
-        logger.warning(f"Could not clear profile {profile_uuid} embedding from OpenSearch: {e}")
+        logger.warning(
+            f"Could not clear profile {profile_uuid} embedding from OpenSearch: {e}", exc_info=True
+        )
 
 
 def _store_profile_embedding_to_opensearch(
@@ -84,7 +86,9 @@ def _store_profile_embedding_to_opensearch(
             )
         )
     except Exception as e:
-        logger.warning(f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}")
+        logger.warning(
+            f"Failed to sync profile {profile_id} embedding to OpenSearch: {e}", exc_info=True
+        )
         return False
 
 
@@ -230,8 +234,10 @@ def _check_profiles_exist_in_opensearch(
                         return False
                     return True
                 except Exception as retry_err:
-                    logger.error(f"Profile check retry after repair failed: {retry_err}")
-        logger.warning(f"Profile document check failed: {e}, proceeding with KNN query")
+                    logger.exception(f"Profile check retry after repair failed: {retry_err}")
+        logger.warning(
+            f"Profile document check failed: {e}, proceeding with KNN query", exc_info=True
+        )
 
     return True
 
@@ -290,7 +296,7 @@ def _execute_knn_search(
                     response = opensearch_client.search(index=index_name, body=query)
                     return _extract_matches_from_response(response, threshold)
                 except Exception as retry_err:
-                    logger.error(f"KNN search retry after repair failed: {retry_err}")
+                    logger.exception(f"KNN search retry after repair failed: {retry_err}")
         logger.error(f"Error in OpenSearch KNN search: {e}")
         if strict:
             raise OpenSearchUnavailableError(f"profile kNN failed: {e}") from e
@@ -573,7 +579,7 @@ class ProfileEmbeddingService:
                         profile, profile_id, speakers, speaker_embeddings
                     )
                 except Exception as e:
-                    logger.error(f"Error updating profile {profile_id} in batch: {e}")
+                    logger.exception(f"Error updating profile {profile_id} in batch: {e}")
                     results[profile_id] = False
 
             db.commit()
@@ -581,7 +587,7 @@ class ProfileEmbeddingService:
             logger.info(f"Batch updated {success_count} profiles successfully")
 
         except Exception as e:
-            logger.error(f"Error in batch profile embedding update: {e}")
+            logger.exception(f"Error in batch profile embedding update: {e}")
             db.rollback()
             for profile_id in profile_ids:
                 results[profile_id] = False
@@ -616,7 +622,7 @@ class ProfileEmbeddingService:
             return list(result) if result else None
 
         except Exception as e:
-            logger.error(f"Error retrieving profile embedding for profile {profile_id}: {e}")
+            logger.exception(f"Error retrieving profile embedding for profile {profile_id}: {e}")
             return None
 
     @staticmethod

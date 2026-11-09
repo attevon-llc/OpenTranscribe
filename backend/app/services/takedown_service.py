@@ -363,7 +363,9 @@ def quarantine_file(
 
             set_object_legal_hold(media.storage_path, True)
         except Exception as e:  # advisory; never break the takedown
-            logger.warning(f"Storage legal-hold enable failed for file {file.id}: {e}")
+            logger.warning(
+                f"Storage legal-hold enable failed for file {file.id}: {e}", exc_info=True
+            )
 
     # Presigned-URL revocation (issue #907): every object a URL can be minted for (the
     # original, thumbnail and playback rendition; the rendition is not under legal hold, it
@@ -519,7 +521,9 @@ def release_file(
 
             set_object_legal_hold(media.storage_path, False)
         except Exception as e:  # advisory; never break the release
-            logger.warning(f"Storage legal-hold disable failed for file {file.id}: {e}")
+            logger.warning(
+                f"Storage legal-hold disable failed for file {file.id}: {e}", exc_info=True
+            )
 
     # Presigned-URL untag (issue #907), retried — see this function's docstring for why a
     # failure here is worse than the legal-hold sibling's. Independent of

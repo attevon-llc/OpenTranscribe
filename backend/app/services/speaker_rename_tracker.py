@@ -115,5 +115,7 @@ class SpeakerRenameTracker:
                 logger.info(f"Queued chunk speaker-rename propagation for {queued} file(s)")
             return queued
         except Exception as exc:  # a rename must not fail on dispatch
-            logger.warning(f"Could not queue chunk-plane speaker rename propagation: {exc}")
+            logger.warning(
+                f"Could not queue chunk-plane speaker rename propagation: {exc}", exc_info=True
+            )
             return 0

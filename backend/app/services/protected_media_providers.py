@@ -142,7 +142,10 @@ def _load_providers() -> list[ProtectedMediaProvider]:
             module = importlib.import_module(module_info.name)
         except Exception as exc:
             logger.warning(
-                "Skipping protected-media plugin %s: import failed: %s", module_info.name, exc
+                "Skipping protected-media plugin %s: import failed: %s",
+                module_info.name,
+                exc,
+                exc_info=True,
             )
             continue
         try:
@@ -152,6 +155,7 @@ def _load_providers() -> list[ProtectedMediaProvider]:
                 "Skipping protected-media plugin %s: get_provider() failed: %s",
                 module_info.name,
                 exc,
+                exc_info=True,
             )
             continue
         if provider is not None:
@@ -189,6 +193,7 @@ def get_protected_media_auth_config(user_id: int | None = None) -> list[dict[str
                 "Protected-media provider %s failed in get_public_auth_config: %s",
                 type(provider).__name__,
                 exc,
+                exc_info=True,
             )
             continue
         if config:

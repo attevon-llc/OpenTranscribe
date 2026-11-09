@@ -425,7 +425,9 @@ def _invalidate_caches(impact: SpeakerImpact) -> None:
             redis_cache.invalidate_speakers(owner_id)
             redis_cache.invalidate_user_files(owner_id)
         except Exception as e:  # caches expire on their own TTL
-            logger.debug(f"Speaker cleanup: cache invalidation failed (non-critical): {e}")
+            logger.debug(
+                f"Speaker cleanup: cache invalidation failed (non-critical): {e}", exc_info=True
+            )
 
 
 def _resync_speaker_docs(db: Session, speaker_ids: set[int]) -> None:

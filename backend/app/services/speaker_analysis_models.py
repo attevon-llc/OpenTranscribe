@@ -85,7 +85,7 @@ class EmbeddingModelAdapter:
                 self._service.extract_embedding_from_waveform(waveform, sample_rate),
             )
         except Exception as e:
-            logger.debug("Embedding extraction failed: %s", e)
+            logger.warning("Embedding extraction failed: %s", e, exc_info=True)
             return None
 
     def cleanup(self) -> None:
@@ -117,7 +117,7 @@ class GenderModelAdapter:
             result: tuple[str, float] | None = self._service._run_inference(audio_np)
             return result
         except Exception as e:
-            logger.debug("Gender inference failed: %s", e)
+            logger.warning("Gender inference failed: %s", e, exc_info=True)
             return None
 
     def cleanup(self) -> None:
@@ -180,4 +180,4 @@ class MultiModelRunner:
             try:
                 model.cleanup()
             except Exception as e:
-                logger.debug("Model cleanup failed for %s: %s", model.name, e)
+                logger.debug("Model cleanup failed for %s: %s", model.name, e, exc_info=True)

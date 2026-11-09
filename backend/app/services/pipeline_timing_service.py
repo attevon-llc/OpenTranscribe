@@ -256,5 +256,5 @@ def record_pipeline_timing(
             db.commit()
         return True
     except Exception as e:
-        logger.debug(f"record_pipeline_timing({task_id}) failed: {e}")
+        logger.warning(f"record_pipeline_timing({task_id}) failed: {e}", exc_info=True)
         return False

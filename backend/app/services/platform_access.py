@@ -118,7 +118,9 @@ def warn_if_forced_single_with_orgs(db: Session) -> None:
     try:
         has_org = db.scalar(select(exists().where(Organization.is_active.is_(True))))
     except Exception:
-        logger.warning("Could not check organizations for the TENANCY_MODE=single notice")
+        logger.warning(
+            "Could not check organizations for the TENANCY_MODE=single notice", exc_info=True
+        )
         return
     if has_org:
         logger.warning(

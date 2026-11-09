@@ -119,7 +119,7 @@ def resolve_file(*, file_id: int | None = None, file_uuid: str | None = None) ->
                 else query.filter(MediaFile.uuid == str(file_uuid)).first()
             )
     except Exception as exc:  # reporting must never break the task
-        logger.debug("post-processing status: file lookup failed (%s)", exc)
+        logger.warning("post-processing status: file lookup failed (%s)", exc, exc_info=True)
         return None
     if row is None:
         return None
@@ -176,13 +176,13 @@ def report(
                 "" if started is None else _fmt(started),
             )
         except Exception as exc:  # the frame still goes out
-            logger.debug("post-processing status: Redis write failed (%s)", exc)
+            logger.debug("post-processing status: Redis write failed (%s)", exc, exc_info=True)
         entry: dict[str, Any] = {"state": state.value, "at": now}
         if started is not None:
             entry["started_at"] = started
         return _publish(ref, {"file_id": ref.uuid, "tasks": {task.value: entry}})
     except Exception as exc:  # reporting must never break the task
-        logger.debug("post-processing status: report failed (%s)", exc)
+        logger.warning("post-processing status: report failed (%s)", exc, exc_info=True)
         return False
 
 
@@ -207,11 +207,11 @@ def report_plan(
 
             get_request_redis().eval(_PLAN_LUA, 1, _KEY.format(file_id=ref.id), *args)
         except Exception as exc:  # the frame still goes out
-            logger.debug("post-processing status: Redis plan write failed (%s)", exc)
+            logger.debug("post-processing status: Redis plan write failed (%s)", exc, exc_info=True)
         tasks = {t.value: {"state": s.value, "at": run_at} for t, s in decisions.items()}
         return _publish(ref, {"file_id": ref.uuid, "run_at": run_at, "tasks": tasks})
     except Exception as exc:
-        logger.debug("post-processing status: plan failed (%s)", exc)
+        logger.warning("post-processing status: plan failed (%s)", exc, exc_info=True)
         return False
 
 
@@ -264,6 +264,7 @@ def _will_autoretry(exc: BaseException) -> bool:
         max_retries = getattr(task, "max_retries", None)
         return max_retries is None or int(task.request.retries) < int(max_retries)
     except Exception:
+        logger.debug("post-processing status: retry classification failed", exc_info=True)
         return False
 
 
@@ -303,7 +304,9 @@ def tracks_post_processing(
                         else resolve_file(file_id=int(value))
                     )
             except Exception as exc:
-                logger.debug("post-processing status: cannot resolve %s (%s)", file_param, exc)
+                logger.debug(
+                    "post-processing status: cannot resolve %s (%s)", file_param, exc, exc_info=True
+                )
             started_at = time.time()
             if ref is not None and announce_start:
                 report(task, PostProcessingState.STARTED, ref=ref, at=started_at)

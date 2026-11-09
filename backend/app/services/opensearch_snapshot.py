@@ -32,6 +32,9 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import OpenSearchException
+
 logger = logging.getLogger(__name__)
 
 # Repository name we own + manage idempotently.
@@ -66,7 +69,8 @@ def is_reachable(client: Any | None = None) -> bool:
         return False
     try:
         return bool(client.ping())
-    except Exception:  # any failure means "not reachable"
+    except OpenSearchException:  # any cluster/transport failure means "not reachable"
+        logger.debug("OpenSearch ping failed", exc_info=True)
         return False
 
 
@@ -80,7 +84,7 @@ def ensure_repository(client: Any) -> None:
     """
     try:
         existing = client.snapshot.get_repository(repository=REPO_NAME)
-    except Exception:  # "not found" raises; treat as needs-create
+    except NotFoundError:  # "not found" raises; treat as needs-create
         existing = None
 
     if existing and REPO_NAME in existing:
@@ -118,8 +122,8 @@ def voiceprint_doc_count(client: Any) -> int | None:
 
     try:
         return int(client.count(index=f"{get_speaker_index()}*")["count"])
-    except Exception as exc:  # a diagnostic; unreadable is not zero
-        logger.debug("Could not count voiceprint documents: %s", exc)
+    except OpenSearchException as exc:  # a diagnostic; unreadable is not zero
+        logger.warning("Could not count voiceprint documents: %s", exc, exc_info=True)
         return None
 
 
@@ -147,8 +151,8 @@ def list_snapshot_names(client: Any) -> list[str]:
         resp = client.snapshot.get(
             repository=REPO_NAME, snapshot="_all", request_timeout=_REQUEST_TIMEOUT_S
         )
-    except Exception as exc:  # missing repo / unreachable → no names
-        logger.debug("Could not list OpenSearch snapshots: %s", exc)
+    except OpenSearchException as exc:  # missing repo / unreachable → no names
+        logger.warning("Could not list OpenSearch snapshots: %s", exc, exc_info=True)
         return []
     names: list[str] = []
     for snap in resp.get("snapshots", []):
@@ -188,7 +192,9 @@ def prune_snapshots(client: Any, cfg: dict[str, Any]) -> list[str]:
             )
             deleted.append(name)
         except Exception as exc:  # one bad delete shouldn't abort the run
-            logger.warning("Could not delete old OpenSearch snapshot %s: %s", name, exc)
+            logger.warning(
+                "Could not delete old OpenSearch snapshot %s: %s", name, exc, exc_info=True
+            )
     return deleted
 
 
@@ -279,7 +285,7 @@ def snapshot_status() -> dict[str, Any]:
     try:
         repos = client.snapshot.get_repository(repository=REPO_NAME)
         result["repository_registered"] = bool(repos and REPO_NAME in repos)
-    except Exception:  # not registered yet
+    except NotFoundError:  # not registered yet
         result["repository_registered"] = False
     names = sorted(list_snapshot_names(client), reverse=True)
     if names:

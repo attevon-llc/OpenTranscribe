@@ -243,7 +243,7 @@ class ProgressTracker:
             pipe.execute()
             self._last_write_time = time.time()
         except Exception as e:
-            logger.debug(f"Failed to write progress state: {e}")
+            logger.debug(f"Failed to write progress state: {e}", exc_info=True)
 
     @classmethod
     def get_state(cls, task_type: str, user_id: int) -> ProgressState | None:
@@ -254,7 +254,7 @@ class ProgressTracker:
             if raw:
                 return ProgressState.from_dict(json.loads(raw))
         except Exception as e:
-            logger.debug(f"Failed to read progress state: {e}")
+            logger.debug(f"Failed to read progress state: {e}", exc_info=True)
         return None
 
     @classmethod
@@ -283,7 +283,7 @@ class ProgressTracker:
             if stale:
                 r.srem(index_key, *stale)
         except Exception as e:
-            logger.debug(f"Failed to read active tasks: {e}")
+            logger.debug(f"Failed to read active tasks: {e}", exc_info=True)
         return results
 
 
@@ -320,4 +320,4 @@ def emit_progress_notification(
         }
         r.publish("websocket_notifications", json.dumps(notification))
     except Exception as e:
-        logger.debug(f"Failed to emit progress notification: {e}")
+        logger.debug(f"Failed to emit progress notification: {e}", exc_info=True)

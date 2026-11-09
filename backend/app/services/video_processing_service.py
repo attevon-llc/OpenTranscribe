@@ -27,6 +27,7 @@ from app.db.session_utils import session_scope
 from app.services.audio_extraction import AudioExtractionMixin
 from app.services.media_revocation_cache import legacy_audio_keys
 from app.services.minio_bucket_admin import MinIOService
+from app.services.storage_absence import is_absent_error
 from app.services.video_subtitle_burn import VideoSubtitleBurnMixin
 
 if TYPE_CHECKING:
@@ -87,7 +88,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 f"Sent download progress update: user={user_id}, file={file_id}, status={status}"
             )
         except Exception as e:
-            logger.error(f"Failed to send download progress update: {e}")
+            logger.exception(f"Failed to send download progress update: {e}")
 
     def _send_download_progress_sync(
         self,
@@ -111,7 +112,7 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 self._send_download_progress(user_id, file_id, status, progress, error)
             )
         except Exception as e:
-            logger.error(f"Failed to send download progress update (sync): {e}")
+            logger.exception(f"Failed to send download progress update (sync): {e}")
 
     def _ensure_cache_bucket_exists(self) -> None:
         """Ensure the cache bucket exists."""
@@ -206,7 +207,9 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
             # Check if cached video exists
             self.minio_service.stat_object(self.cache_bucket, cache_key)
             return True
-        except Exception:
+        except Exception as exc:
+            if not is_absent_error(exc):
+                logger.warning("video cache probe failed for %s", cache_key, exc_info=True)
             return False
 
     @staticmethod
@@ -309,8 +312,10 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
         object, and a sweep that still matched on filename alone would delete the
         OTHER file's renders — turning a fixed collision into a destructive one.
 
-        Best-effort: object storage being unavailable must not fail a delete that
-        has already removed the rows.
+        Raises:
+            StorageDeleteIncompleteError: The listing failed, so whether burned-in renders
+                of this file survive is unknown. Returning ``[]`` here made an outage look
+                like "there are none" and an erasure audited complete over a surviving video.
         """
         base = filename.rsplit(".", 1)[0] if "." in filename else filename
         owned = f"{self.DERIVED_CACHE_PREFIX}{file_id}_{base}"
@@ -326,9 +331,13 @@ class VideoProcessingService(VideoSubtitleBurnMixin, AudioExtractionMixin):
                 for obj in objects
                 if obj.object_name and pattern.match(obj.object_name)
             ]
-        except Exception as e:  # listing is a best-effort sweep
-            logger.warning(f"Could not list masked derived renders for {filename}: {e}")
-            return []
+        except Exception as e:
+            logger.exception(f"Could not list masked derived renders for {filename}: {e}")
+            from app.services.storage_versions import StorageDeleteIncompleteError
+
+            raise StorageDeleteIncompleteError(
+                self.cache_bucket, [f"{owned}_*"], "could not list masked derived renders"
+            ) from e
 
     def clear_derived_cache(self, file_id: int, filename: str) -> RemovalResult:
         """Delete a file's derived-cache objects. **Takes no DB session.**

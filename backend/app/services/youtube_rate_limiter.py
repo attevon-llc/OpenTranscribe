@@ -98,7 +98,7 @@ class YouTubeRateLimiter:
                 )
                 self._redis.ping()
             except Exception as e:
-                logger.warning(f"Redis rate limiter unavailable: {e}")
+                logger.warning(f"Redis rate limiter unavailable: {e}", exc_info=True)
                 self._redis = None
         return self._redis
 
@@ -163,7 +163,7 @@ class YouTubeRateLimiter:
 
         except Exception as e:
             # Graceful degradation: allow if Redis check fails
-            logger.warning(f"Rate limiter check failed: {e}. Allowing request.")
+            logger.warning(f"Rate limiter check failed: {e}. Allowing request.", exc_info=True)
             return (True, "", None)
 
     @staticmethod
@@ -190,7 +190,7 @@ class YouTubeRateLimiter:
             oldest_ts = oldest[0][1]
             return max(1, int(float(oldest_ts) + window_seconds - now))
         except Exception as e:
-            logger.warning(f"Failed to compute retry-after for {key}: {e}")
+            logger.warning(f"Failed to compute retry-after for {key}: {e}", exc_info=True)
             return None
 
     def record_download(self, user_id: int) -> None:
@@ -216,7 +216,7 @@ class YouTubeRateLimiter:
             client.expire(day_key, 86400)  # Auto-expire after 24 hours
 
         except Exception as e:
-            logger.warning(f"Failed to record download: {e}")
+            logger.warning(f"Failed to record download: {e}", exc_info=True)
 
     def get_remaining_quota(self, user_id: int) -> dict:
         """Get remaining downloads for user."""
@@ -266,7 +266,7 @@ class YouTubeRateLimiter:
                 "daily_limit": policy.user_rate_limit_per_day,
             }
         except Exception as e:
-            logger.warning(f"Failed to get quota: {e}")
+            logger.warning(f"Failed to get quota: {e}", exc_info=True)
             return {
                 "hourly_remaining": -1,
                 "daily_remaining": -1,

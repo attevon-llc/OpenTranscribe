@@ -215,11 +215,11 @@ frontend/src/components/ErasureRequestBanner.test.ts	11	pre-existing duplicated 
 frontend/src/components/FileUploader.sources.test.ts	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/FileUploader.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/FilterSidebar.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/Navbar.aboutModal.test.ts	7	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/Navbar.aboutModal.test.ts	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.aboutModalFailure.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/Navbar.mobileNotifications.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/Navbar.notificationsMount.test.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/Navbar.supportAccess.test.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/Navbar.notificationsMount.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
+frontend/src/components/Navbar.supportAccess.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/PerFileModelSelect.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/SelectiveReprocessModal.flow.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/SelectiveReprocessModal.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -256,7 +256,6 @@ frontend/src/components/fileStatus/TasksGrid.svelte	2	pre-existing duplicated bl
 frontend/src/components/gallery/GalleryHeader.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/GalleryPrimaryActions.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/GallerySelectionActions.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/gallery/GallerySupportGate.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/QuarantineModal.basis.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/QuarantineModal.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/gallery/VirtualGrid.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -422,7 +421,6 @@ frontend/src/components/tags/TagList.svelte	2	pre-existing duplicated blocks of 
 frontend/src/components/tags/TagManagerModal.behaviour.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/tags/TagManagerModal.contract.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/transcript/SpeakerEditorPanel.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/transcript/TranscriptActionsBar.supportAccess.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/transcript/TranscriptSegmentList.svelte	5	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/ui/ConnectionStatusBanner.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/ui/DateRangePicker.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

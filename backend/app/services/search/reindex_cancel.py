@@ -66,6 +66,8 @@ from __future__ import annotations
 import json
 import logging
 
+from redis.exceptions import RedisError
+
 logger = logging.getLogger(__name__)
 
 #: Per-owner cancellation flag. The value names the coordinator run being
@@ -109,12 +111,12 @@ def cancel_target(user_id: int) -> str | None:
 
     try:
         return _decode(get_request_redis().get(CANCEL_KEY.format(user_id=user_id)))
-    except Exception as e:
+    except RedisError as e:
         # Fails OPEN, deliberately and as it always has: an unreachable Redis
         # reads as "no cancellation" so a reindex keeps working rather than
         # aborting mid-corpus. The opposite direction would let a Redis blip
         # silently truncate a re-embed.
-        logger.warning(f"Could not read the reindex cancellation flag: {e}")
+        logger.warning(f"Could not read the reindex cancellation flag: {e}", exc_info=True)
         return None
 
 
@@ -152,8 +154,8 @@ def clear_cancel(user_id: int) -> None:
 
     try:
         get_request_redis().delete(CANCEL_KEY.format(user_id=user_id))
-    except Exception as e:
-        logger.warning(f"Could not clear the reindex cancellation flag: {e}")
+    except RedisError as e:
+        logger.warning(f"Could not clear the reindex cancellation flag: {e}", exc_info=True)
 
 
 def consume_pending_cancel(user_id: int, run_id: str) -> bool:
@@ -240,8 +242,8 @@ def clear_fanout(triggered_by: int) -> None:
 
     try:
         get_request_redis().delete(FANOUT_KEY.format(admin_id=triggered_by))
-    except Exception as e:
-        logger.warning(f"Could not clear the reindex fan-out record: {e}")
+    except RedisError as e:
+        logger.warning(f"Could not clear the reindex fan-out record: {e}", exc_info=True)
 
 
 def request_cancel(targets: dict[int, str]) -> list[int]:

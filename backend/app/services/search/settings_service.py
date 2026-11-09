@@ -2,6 +2,8 @@
 
 import logging
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.embedding_models import OPENSEARCH_DEFAULT_MODEL
 from app.core.embedding_models import OPENSEARCH_EMBEDDING_MODELS
 
@@ -136,5 +138,8 @@ def _set_setting(key: str, value: str, description: str = "") -> None:
         from app.core import settings_cache
 
         settings_cache.invalidate(key)
-    except Exception as e:
-        logger.error(f"Could not save setting '{key}': {e}")
+    except SQLAlchemyError as e:
+        # Re-raised: a caller that is told nothing would report a setting as saved
+        # when it was not (the module's own rule for _get_setting).
+        logger.exception(f"Could not save setting '{key}': {e}")
+        raise

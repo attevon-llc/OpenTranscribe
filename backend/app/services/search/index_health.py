@@ -28,6 +28,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.services.opensearch_service import probe_knn_health
 from app.services.opensearch_service import reset_knn_health_cache
@@ -149,8 +152,8 @@ def clear_corruption_notice(index_name: str) -> None:
                 return
             sss.set_setting(db, key, False, f"'{index_name}' vector plane recovered")
             logger.info(f"Vector plane of {index_name} recovered; corruption alert re-armed")
-    except Exception as e:  # never break the health check
-        logger.error(f"Could not clear the corruption notice for {index_name}: {e}")
+    except SQLAlchemyError as e:  # never break the health check
+        logger.exception(f"Could not clear the corruption notice for {index_name}: {e}")
 
 
 def rebuild_chunks_index() -> bool:
@@ -194,8 +197,10 @@ def rebuild_chunks_index() -> bool:
             if opensearch_client.indices.exists_alias(name=CHUNKS_ALIAS_NAME):
                 opensearch_client.indices.delete_alias(index=index_name, name=CHUNKS_ALIAS_NAME)
                 logger.info(f"Removed alias '{CHUNKS_ALIAS_NAME}' ahead of rebuild")
-        except Exception as e:  # a missing alias must not block the rebuild
-            logger.info(f"No alias '{CHUNKS_ALIAS_NAME}' to remove before rebuild ({e})")
+        except OpenSearchException as e:  # a missing alias must not block the rebuild
+            logger.info(
+                f"No alias '{CHUNKS_ALIAS_NAME}' to remove before rebuild ({e})", exc_info=True
+            )
 
         opensearch_client.indices.delete(index=index_name, ignore=[404])
         logger.warning(f"Deleted corrupted index {index_name}; recreating from mapping")

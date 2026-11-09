@@ -35,6 +35,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.config import settings
 from app.core.constants import NEURAL_BOOTSTRAP_ALERT_AFTER_ATTEMPTS
 from app.core.constants import NEURAL_BOOTSTRAP_BASE_BACKOFF_SECONDS
@@ -332,8 +334,8 @@ def bootstrap_status() -> dict[str, Any]:
 
             next_at_ts = float(raw_next_at)
             retry_at = datetime.fromtimestamp(next_at_ts, tz=UTC).isoformat()
-    except Exception as e:
-        logger.warning(f"Could not read neural bootstrap attempt state: {e}")
+    except (RedisError, ValueError) as e:
+        logger.warning(f"Could not read neural bootstrap attempt state: {e}", exc_info=True)
 
     return {
         "state": state,
@@ -372,8 +374,11 @@ def run_bootstrap_tick() -> dict[str, Any]:
         from app.core.redis import get_request_redis
 
         redis_client = get_request_redis()
-    except Exception as e:
-        logger.warning(f"Neural bootstrap: Redis unavailable ({e}); attempting bootstrap anyway")
+    except (RedisError, OSError) as e:
+        logger.warning(
+            f"Neural bootstrap: Redis unavailable ({e}); attempting bootstrap anyway",
+            exc_info=True,
+        )
 
     if redis_client is not None:
         try:
@@ -386,8 +391,10 @@ def run_bootstrap_tick() -> dict[str, Any]:
                     "attempts": attempts,
                     "retry_at": float(raw_next_at),
                 }
-        except Exception as e:
-            logger.warning(f"Neural bootstrap: could not read backoff state ({e}); proceeding")
+        except (RedisError, ValueError) as e:
+            logger.warning(
+                f"Neural bootstrap: could not read backoff state ({e}); proceeding", exc_info=True
+            )
 
     attempts = _increment_attempts(redis_client)
 
@@ -431,8 +438,10 @@ def _increment_attempts(redis_client: Any) -> int:
         attempts = int(redis_client.incr(_ATTEMPTS_KEY))
         redis_client.expire(_ATTEMPTS_KEY, _ATTEMPT_KEY_TTL_SECONDS)
         return attempts
-    except Exception as e:
-        logger.warning(f"Neural bootstrap: could not increment attempt counter ({e})")
+    except (RedisError, ValueError) as e:
+        logger.warning(
+            f"Neural bootstrap: could not increment attempt counter ({e})", exc_info=True
+        )
         return 1
 
 
@@ -442,8 +451,8 @@ def _record_failure(redis_client: Any, error_text: str, next_at: float) -> None:
     try:
         redis_client.set(_LAST_ERROR_KEY, error_text, ex=_ATTEMPT_KEY_TTL_SECONDS)
         redis_client.set(_NEXT_AT_KEY, str(next_at), ex=_ATTEMPT_KEY_TTL_SECONDS)
-    except Exception as e:
-        logger.warning(f"Neural bootstrap: could not record failure state ({e})")
+    except RedisError as e:
+        logger.warning(f"Neural bootstrap: could not record failure state ({e})", exc_info=True)
 
 
 def _clear_attempt_state(redis_client: Any = None) -> None:
@@ -453,5 +462,5 @@ def _clear_attempt_state(redis_client: Any = None) -> None:
 
             redis_client = get_request_redis()
         redis_client.delete(_ATTEMPTS_KEY, _NEXT_AT_KEY, _LAST_ERROR_KEY)
-    except Exception as e:
-        logger.warning(f"Neural bootstrap: could not clear attempt state ({e})")
+    except (RedisError, OSError) as e:
+        logger.warning(f"Neural bootstrap: could not clear attempt state ({e})", exc_info=True)

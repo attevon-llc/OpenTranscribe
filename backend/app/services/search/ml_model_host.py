@@ -28,7 +28,9 @@ class MLModelHost:
 
         def configure_ml_settings(self) -> bool: ...
 
-        def get_model_status(self, model_id: str) -> dict[str, Any]: ...
+        def get_model_status(
+            self, model_id: str, *, raise_on_error: bool = False
+        ) -> dict[str, Any]: ...
 
         def list_models(
             self, deployed_only: bool = False, *, raise_on_error: bool = False

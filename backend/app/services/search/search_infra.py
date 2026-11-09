@@ -9,6 +9,8 @@ import logging
 import threading
 from typing import TYPE_CHECKING
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.services.search.fusion import FusionConfig
 from app.services.search.fusion import resolve_fusion
 from app.services.search.fusion import search_pipeline_id
@@ -98,6 +100,10 @@ def _chunks_index_verified(client: "OpenSearch", index_name: str) -> bool:
             if not client.indices.exists(index=index_name):
                 return False
             _index_verified = True
-        except Exception:
+        except OpenSearchException:
+            logger.warning(
+                f"Could not probe for the chunks index {index_name}; reading as absent",
+                exc_info=True,
+            )
             return False
     return True

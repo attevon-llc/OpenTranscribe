@@ -4,6 +4,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.services.opensearch_service import client as _client
 
 logger = logging.getLogger(__name__)
@@ -132,8 +134,8 @@ class OrphanProbeMixin:
                     "aggs": {"ceiling": {"max": {"field": counter_field}}},
                 },
             )
-        except Exception as exc:  # the walk degrades, it must not fail
-            logger.debug(f"Could not read the orphan ceiling: {exc}")
+        except OpenSearchException as exc:  # the walk degrades, it must not fail
+            logger.warning(f"Could not read the orphan ceiling: {exc}", exc_info=True)
             return None
 
         value = (response.get("aggregations") or {}).get("ceiling", {}).get("value")

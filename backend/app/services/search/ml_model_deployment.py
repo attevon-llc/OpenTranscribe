@@ -6,6 +6,9 @@ Mixed into :class:`~app.services.search.ml_model_service.OpenSearchMLModelServic
 import logging
 import time
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.services.search.ml_model_registration import _REGISTRATION_MAX_WAIT
 from app.services.search.ml_model_registration import _REGISTRATION_POLL_INTERVAL
 from app.services.search.ml_model_registration import MLModelRegistrationMixin
@@ -80,8 +83,8 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
             # Wait for deployment
             return self._wait_for_deployment(model_id, task_id)
 
-        except Exception as e:
-            logger.error(f"Failed to deploy model {model_id}: {e}")
+        except (OpenSearchException, KeyError, TypeError) as e:
+            logger.exception(f"Failed to deploy model {model_id}: {e}")
             return False
 
     def _wait_for_deployment(
@@ -129,8 +132,8 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
                 logger.debug(f"Deployment task {task_id} state: {state}")
                 time.sleep(poll_interval)
 
-            except Exception as e:
-                logger.warning(f"Error polling deployment task: {e}")
+            except (OpenSearchException, KeyError, TypeError) as e:
+                logger.warning(f"Error polling deployment task: {e}", exc_info=True)
                 time.sleep(poll_interval)
 
         logger.error(f"Model deployment timed out after {max_wait}s")
@@ -152,7 +155,11 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
 
         try:
             expected = get_search_embedding_dimension()
-        except Exception:  # a settings read must not break deployment
+        except SQLAlchemyError:  # a settings read must not break deployment
+            logger.warning(
+                "Could not read the expected embedding dimension; verifying without it",
+                exc_info=True,
+            )
             expected = None
 
         ok, detail = self.verify_model_can_embed(model_id, expected_dimension=expected)
@@ -209,7 +216,10 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
                     "target_response": ["sentence_embedding"],
                 },
             )
-        except Exception as exc:  # any failure means "cannot embed"
+        except OpenSearchException as exc:  # any failure means "cannot embed"
+            logger.warning(
+                f"Embedding verification request failed for {model_id}: {exc}", exc_info=True
+            )
             return False, f"prediction request failed: {exc}"
 
         try:
@@ -250,8 +260,8 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
             logger.info(f"Model {model_id} undeployed")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to undeploy model {model_id}: {e}")
+        except OpenSearchException as e:
+            logger.exception(f"Failed to undeploy model {model_id}: {e}")
             return False
 
     def _await_deployable_state(
@@ -285,7 +295,7 @@ class MLModelDeploymentMixin(MLModelRegistrationMixin):
 
     def _deploy_registered(self, model_name: str, model_id: str) -> str | None:
         """Bring an already-registered model to DEPLOYED (waiting out an in-flight actor)."""
-        status = self.get_model_status(model_id)
+        status = self.get_model_status(model_id, raise_on_error=True)
         if status.get("deployed"):
             logger.info(f"Model {model_name} already deployed: {model_id}")
             return self._verified_or_none(model_name, model_id)

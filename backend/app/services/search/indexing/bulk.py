@@ -7,6 +7,8 @@ import time
 from collections.abc import Iterator
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.services.opensearch_service import client as _client
 from app.services.opensearch_service.client import call_idempotent_write
@@ -86,8 +88,11 @@ def _suspended_refresh_for_large_index(
             .get("index", {})
             .get("refresh_interval")
         )
-    except Exception as e:
-        logger.debug(f"Could not read refresh_interval for {index_name}, skipping suspension: {e}")
+    except OpenSearchException as e:
+        logger.warning(
+            f"Could not read refresh_interval for {index_name}, skipping suspension: {e}",
+            exc_info=True,
+        )
         yield
         return
 
@@ -108,10 +113,11 @@ def _suspended_refresh_for_large_index(
             )
             _client.opensearch_client.indices.refresh(index=index_name)
             logger.info(f"Restored refresh_interval={restored!r} on {index_name} and refreshed")
-        except Exception as e:
+        except OpenSearchException as e:
             logger.warning(
                 f"Failed to restore refresh_interval on {index_name}: {e}. "
-                f'Run `PUT /{index_name}/_settings -d \'{{"index":{{"refresh_interval":"1s"}}}}\'`'
+                f'Run `PUT /{index_name}/_settings -d \'{{"index":{{"refresh_interval":"1s"}}}}\'`',
+                exc_info=True,
             )
 
 
@@ -329,8 +335,8 @@ class BulkIndexMixin:
                 response = call_idempotent_write(
                     _client.opensearch_client.bulk, body=bulk_body, refresh=False
                 )
-            except Exception as e:
-                logger.error(f"Retry attempt {attempt} bulk call failed: {e}")
+            except OpenSearchException as e:
+                logger.exception(f"Retry attempt {attempt} bulk call failed: {e}")
                 continue
 
             if not response.get("errors"):

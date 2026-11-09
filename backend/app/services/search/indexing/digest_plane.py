@@ -3,6 +3,9 @@
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import client as _client
@@ -75,9 +78,12 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 # the outer handler would report the whole digest index as failed.
                 try:
                     resolve_recorded_date_for_file(db, file_id)
-                except Exception as date_exc:  # enrichment, never fatal
+                except SQLAlchemyError as date_exc:  # enrichment, never fatal
                     logger.warning(
-                        "Could not resolve recorded_date for file %s: %s", file_id, date_exc
+                        "Could not resolve recorded_date for file %s: %s",
+                        file_id,
+                        date_exc,
+                        exc_info=True,
                     )
 
                 row = generate_file_artifacts(db, file_id)
@@ -125,7 +131,9 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 )
             return written
         except Exception as exc:  # chunks are indexed; do not fail the caller
-            logger.error(f"Could not index digest plane for file {file_uuid}: {exc}")
+            # Per-file boundary: artifact generation spans the DB and arbitrary
+            # extractors, and 0 reports "nothing written" while the traceback records why.
+            logger.exception(f"Could not index digest plane for file {file_uuid}: {exc}")
             return 0
 
     def _prune_stale_digests(self, file_uuid: str, *, keep_count: int) -> int:
@@ -170,6 +178,6 @@ class DigestPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"orphan id(s) but the digest-plane predicate deleted {deleted}"
                 )
             return deleted
-        except Exception as e:  # logged; the new documents are already indexed
-            logger.error(f"Could not prune stale digest sections for file {file_uuid}: {e}")
+        except OpenSearchException as e:  # logged; the new documents are already indexed
+            logger.exception(f"Could not prune stale digest sections for file {file_uuid}: {e}")
             return 0

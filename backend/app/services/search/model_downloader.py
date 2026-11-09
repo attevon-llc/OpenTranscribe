@@ -172,8 +172,8 @@ def ensure_model_downloaded(model_name: str, cache_dir: Path | None = None) -> P
     except urllib.error.URLError as e:
         logger.warning(f"Network error downloading model (this is OK if offline): {e}")
         return None
-    except Exception as e:
-        logger.error(f"Failed to download model {model_name}: {e}")
+    except (OSError, ValueError) as e:
+        logger.exception(f"Failed to download model {model_name}: {e}")
         return None
 
 
@@ -193,9 +193,10 @@ def _fetch_model_config(config_url: str, config_path: Path) -> bool:
     try:
         urllib.request.urlretrieve(config_url, config_path)  # noqa: S310 - https URL built from the fixed artifacts.opensearch.org catalog  # nosec B310
         return config_path.exists() and config_path.stat().st_size > 0
-    except Exception as e:
+    except OSError as e:
         logger.warning(
-            f"config.json unavailable ({e}); cannot register {config_path.parent.name} offline"
+            f"config.json unavailable ({e}); cannot register {config_path.parent.name} offline",
+            exc_info=True,
         )
         return False
 
@@ -254,8 +255,8 @@ def _update_manifest(cache_dir: Path, model_name: str, model_info: dict[str, Any
         with open(manifest_path, "w") as f:
             json.dump(manifest, f, indent=2)
         logger.debug(f"Updated manifest: {manifest_path}")
-    except Exception as e:
-        logger.warning(f"Could not update manifest: {e}")
+    except (OSError, TypeError, ValueError) as e:
+        logger.warning(f"Could not update manifest: {e}", exc_info=True)
 
 
 def check_internet_connectivity(timeout: float = 5.0) -> bool:
@@ -282,5 +283,5 @@ def check_internet_connectivity(timeout: float = 5.0) -> bool:
         # OpenSearch's own remote-registration path -- exactly the branch this
         # check exists to avoid needing.
         return True
-    except Exception:
+    except (OSError, ValueError):
         return False

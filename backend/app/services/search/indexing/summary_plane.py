@@ -3,6 +3,8 @@
 import logging
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 from app.services.ingest_artifacts import index_mapping as digest_mapping
 from app.services.opensearch_service import client as _client
@@ -110,7 +112,9 @@ class SummaryPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                 )
             return written
         except Exception as exc:  # chunks are indexed; do not fail the caller
-            logger.error(f"Could not index summary plane for file {file_uuid}: {exc}")
+            # Per-file boundary, same shape as the digest plane: 0 reports "nothing
+            # written" while the traceback records why.
+            logger.exception(f"Could not index summary plane for file {file_uuid}: {exc}")
             return 0
 
     def _prune_stale_summary_leaves(self, file_uuid: str, *, keep_count: int) -> int:
@@ -154,6 +158,6 @@ class SummaryPlaneMixin(BulkIndexMixin, OrphanProbeMixin):
                     f"orphan id(s) but the summary-plane predicate deleted {deleted}"
                 )
             return deleted
-        except Exception as e:  # logged; the new documents are already indexed
-            logger.error(f"Could not prune stale summary leaves for file {file_uuid}: {e}")
+        except OpenSearchException as e:  # logged; the new documents are already indexed
+            logger.exception(f"Could not prune stale summary leaves for file {file_uuid}: {e}")
             return 0

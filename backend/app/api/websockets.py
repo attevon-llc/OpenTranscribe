@@ -564,7 +564,8 @@ def _local_claims(token: str) -> dict[str, Any] | None:
     """
     try:
         claims: dict[str, Any] = verify_token(token)
-    except Exception:
+    except AuthenticationError:
+        # An external verifier accepted this socket, so there is no local claim set to bound it.
         logger.debug("Socket token is not a local access token", exc_info=True)
         return None
     return claims

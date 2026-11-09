@@ -8,9 +8,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
 from kombu.exceptions import KombuError
-from minio.error import S3Error
 from sqlalchemy.orm import Session
-from urllib3.exceptions import HTTPError
 
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
@@ -117,8 +115,8 @@ def _profile_avatar_url(profile: SpeakerProfile, bypass: PlatformBypass) -> str 
     if profile.avatar_path:
         try:
             avatar_url = get_file_url(profile.avatar_path, expires=bypass.presign_ttl(3600))
-        except (S3Error, HTTPError, ValueError, OSError):
-            logger.warning(f"Failed to get avatar URL for profile {profile.uuid}", exc_info=True)
+        except Exception:  # get_file_url wraps every failure in a bare Exception
+            logger.exception(f"Failed to get avatar URL for profile {profile.uuid}")
     return avatar_url
 
 

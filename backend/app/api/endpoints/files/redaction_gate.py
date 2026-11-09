@@ -20,6 +20,7 @@ from app.core.db_overload import reraise_db_overload
 from app.core.tenancy import UNSCOPED
 from app.core.tenancy import OrgScope
 from app.core.tenancy import _Unscoped
+from app.db.request_deadline import RequestDeadlineExceededError
 from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
@@ -193,7 +194,7 @@ def claim_and_dispatch_redaction_scan(
     try:
         db_file.redaction_status = redaction_defaults.REDACTION_STATUS_PENDING
         db.commit()
-    except SQLAlchemyError as e:
+    except (SQLAlchemyError, RequestDeadlineExceededError) as e:
         db.rollback()
         # An overload is the request's 503; nothing was claimed, so the retry finds the
         # file exactly as it was.

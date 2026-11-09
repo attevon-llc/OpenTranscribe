@@ -14,6 +14,7 @@ import time
 from types import SimpleNamespace
 from typing import Any
 from typing import cast
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -161,7 +162,9 @@ class TestOptionalAuthHonoursTheRevocationEpoch:
             url=SimpleNamespace(path="/api/x"),
             scope={},
         )
-        return deps_module.get_optional_current_user(cast(Any, request), cast(Any, None))
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+        return deps_module.get_optional_current_user(cast(Any, request), cast(Any, db))
 
     def test_the_tokens_iat_claim_reaches_the_revocation_check(self, seen_issued_at):
         issued = int(time.time()) - 30

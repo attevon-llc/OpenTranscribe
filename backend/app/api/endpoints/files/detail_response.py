@@ -10,10 +10,8 @@ from typing import Any
 
 from fastapi import HTTPException
 from fastapi import status
-from minio.error import S3Error
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
-from urllib3.exceptions import HTTPError
 
 from app.api.error_handlers import ErrorHandler
 from app.core.db_overload import reraise_db_overload
@@ -202,8 +200,8 @@ def set_file_urls(db_file: MediaFile, bypass: PlatformBypass = PlatformBypass.no
                     str(db_file.thumbnail_path),
                     expires=bypass.presign_ttl(settings.THUMBNAIL_URL_EXPIRE_SECONDS),
                 )
-            except (S3Error, HTTPError, ValueError, OSError) as e:
-                logger.warning(f"Failed to generate presigned thumbnail URL: {e}", exc_info=True)
+            except Exception:  # get_file_url wraps every failure in a bare Exception
+                logger.exception("Failed to generate presigned thumbnail URL")
                 # Fallback to API endpoint (requires auth)
                 db_file.thumbnail_url = f"/api/files/{db_file.uuid}/thumbnail"
 

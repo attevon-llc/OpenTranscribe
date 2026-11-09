@@ -25,6 +25,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
+from minio.error import MinioException
 from minio.error import S3Error
 from pydantic import BaseModel
 from pydantic import Field
@@ -198,7 +199,7 @@ def _read_header_or_503(file_id: str, storage_path: str) -> bytes:
 
     try:
         return range_read(storage_path, 0, HEADER_READ_SIZE)
-    except (S3Error, HTTPError, OSError) as read_err:
+    except (MinioException, HTTPError, OSError) as read_err:
         logger.error(f"header read for validation of {file_id} failed: {read_err}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

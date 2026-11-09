@@ -136,16 +136,20 @@ def test_timing_non_admin_forbidden(client, user_token_headers, path):
 # ---------------------------------------------------------------------------
 
 
-def test_get_timing_not_found(client, admin_token_headers):
+def test_get_timing_not_found(client, admin_token_headers, monkeypatch):
     """An unknown task_id with no Redis/Postgres data → 404."""
+    monkeypatch.setattr("app.utils.benchmark_timing.fetch_all_strict", lambda _task_id: {})
     missing = f"no-such-task-{uuid.uuid4()}"
     response = client.get(f"/api/admin/timing/{missing}", headers=admin_token_headers)
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert response.json()["detail"] == f"No timing data found for task_id={missing}"
 
 
-def test_get_timing_returns_persisted_row(client, admin_token_headers, admin_user, db_session):
+def test_get_timing_returns_persisted_row(
+    client, admin_token_headers, admin_user, db_session, monkeypatch
+):
     """A persisted row is returned with the postgres source + serialized fields."""
+    monkeypatch.setattr("app.utils.benchmark_timing.fetch_all_strict", lambda _task_id: {})
     row = _make_timing_row(db_session, admin_user)
     response = client.get(f"/api/admin/timing/{row.task_id}", headers=admin_token_headers)
     assert response.status_code == status.HTTP_200_OK

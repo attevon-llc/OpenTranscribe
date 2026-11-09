@@ -19,6 +19,7 @@ from typing import cast
 import pytest
 from psycopg2 import errors as pg_errors
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.endpoints import embedding_migration
@@ -34,7 +35,7 @@ OVERLOADS = [
     RequestDeadlineExceededError("request deadline passed"),
 ]
 OVERLOAD_IDS = ["pool_timeout", "statement_timeout", "deadline"]
-ORDINARY = RuntimeError("an ordinary failure")
+ORDINARY = SQLAlchemyError("an ordinary failure")
 
 
 class _Session:
@@ -60,8 +61,9 @@ def test_the_migration_status_raises_an_overload(error):
         embedding_migration._compute_ground_truth_status(cast(Any, _Session(error)))
 
 
-def test_the_migration_status_still_degrades_on_an_ordinary_failure():
-    assert embedding_migration._compute_ground_truth_status(cast(Any, _Session(ORDINARY))) is None
+def test_the_migration_status_ground_truth_raises_on_an_ordinary_failure():
+    with pytest.raises(SQLAlchemyError):
+        embedding_migration._compute_ground_truth_status(cast(Any, _Session(ORDINARY)))
 
 
 def _collections_raise(monkeypatch, error: BaseException) -> None:

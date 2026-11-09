@@ -8,10 +8,8 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
-from minio.error import S3Error
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from urllib3.exceptions import HTTPError
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
@@ -270,10 +268,8 @@ def get_speaker_media_preview(
                 expires=ctx.bypass.presign_ttl(settings.MEDIA_URL_EXPIRE_SECONDS),
                 content_type=source.content_type,
             )
-        except (S3Error, HTTPError, ValueError, OSError) as e:
-            logger.warning(
-                "Failed to generate presigned URL for %s: %s", source.object_name, e, exc_info=True
-            )
+        except Exception:  # get_file_url wraps every failure in a bare Exception
+            logger.exception("Failed to generate presigned URL for %s", source.object_name)
 
     # Longest transcript segment for this speaker
     from app.models.media import TranscriptSegment

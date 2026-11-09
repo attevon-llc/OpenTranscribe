@@ -1,389 +1,1086 @@
-backend/app/api/endpoints/admin_settings.py	1	ratchet: may only go down
-backend/app/api/endpoints/asr_local_model.py	1	ratchet: may only go down
-backend/app/api/endpoints/asr_connection_tests.py	2	ratchet: may only go down
-backend/app/api/endpoints/asr_provider_catalog.py	1	ratchet: may only go down
-backend/app/api/endpoints/auth/dependencies.py	2	ratchet: may only go down
-backend/app/api/endpoints/auth/oidc.py	2	ratchet: may only go down
-backend/app/api/endpoints/auth/saml.py	1	ratchet: may only go down
-backend/app/api/endpoints/auth/sessions.py	2	ratchet: may only go down
-backend/app/api/endpoints/combined_speaker_migration.py	3	ratchet: may only go down
-backend/app/api/endpoints/embedding_migration.py	4	ratchet: may only go down
-backend/app/api/endpoints/engine_settings.py	2	ratchet: may only go down
-backend/app/api/endpoints/files/__init__.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/media_delivery.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/complete_upload.py	4	ratchet: may only go down
-backend/app/api/endpoints/files/crud.py	3	ratchet: may only go down
-backend/app/api/endpoints/files/detail_response.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/post_processing.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/redaction_gate.py	2	ratchet: may only go down
-backend/app/api/endpoints/files/subtitles.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/summary_status.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/transcript_document_export.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/upload.py	1	ratchet: may only go down
-backend/app/api/endpoints/files/upload_dispatch.py	3	ratchet: may only go down
-backend/app/api/endpoints/files/url_video_import.py	1	ratchet: may only go down
-backend/app/api/endpoints/llm_connection_tests.py	1	ratchet: may only go down
-backend/app/api/endpoints/llm_local_endpoints.py	1	ratchet: may only go down
-backend/app/api/endpoints/llm_model_discovery.py	1	ratchet: may only go down
-backend/app/api/endpoints/llm_status.py	1	ratchet: may only go down
-backend/app/api/endpoints/local_models.py	4	ratchet: may only go down
-backend/app/api/endpoints/search_index_health.py	3	ratchet: may only go down
-backend/app/api/endpoints/speaker_attribute_migration.py	3	ratchet: may only go down
-backend/app/api/endpoints/speaker_clusters.py	2	ratchet: may only go down
-backend/app/api/endpoints/speaker_profiles.py	3	ratchet: may only go down
-backend/app/api/endpoints/speakers.py	2	ratchet: may only go down
-backend/app/api/endpoints/speakers_merge.py	2	ratchet: may only go down
-backend/app/api/endpoints/speakers_profile_workflow.py	2	ratchet: may only go down
-backend/app/api/endpoints/speakers_suggestions.py	1	ratchet: may only go down
-backend/app/api/endpoints/transcript_segments.py	1	ratchet: may only go down
-backend/app/api/endpoints/watch_sources.py	1	ratchet: may only go down
-backend/app/api/websockets.py	8	ratchet: may only go down
-backend/app/auth/audit.py	4	ratchet: may only go down
-backend/app/auth/audit_query.py	2	ratchet: may only go down
-backend/app/auth/ldap_auth.py	2	ratchet: may only go down
-backend/app/auth/ldap_directory.py	1	ratchet: may only go down
-backend/app/auth/lockout.py	1	ratchet: may only go down
-backend/app/auth/lockout_store.py	1	ratchet: may only go down
-backend/app/auth/mfa.py	3	ratchet: may only go down
-backend/app/auth/oidc/claims.py	1	ratchet: may only go down
-backend/app/auth/oidc/flow.py	1	ratchet: may only go down
-backend/app/auth/password_history.py	1	ratchet: may only go down
-backend/app/auth/pki_auth.py	1	ratchet: may only go down
-backend/app/auth/pki_certificate.py	1	ratchet: may only go down
-backend/app/auth/pki_ocsp.py	3	ratchet: may only go down
-backend/app/auth/pki_revocation.py	4	ratchet: may only go down
-backend/app/auth/rate_limit.py	2	ratchet: may only go down
-backend/app/auth/refresh_tokens.py	1	ratchet: may only go down
-backend/app/auth/session.py	1	ratchet: may only go down
-backend/app/auth/token_service.py	5	ratchet: may only go down
-backend/app/core/backup_metrics.py	4	ratchet: may only go down
-backend/app/core/broker_orphans.py	6	ratchet: may only go down
-backend/app/core/celery_worker_lifecycle.py	5	ratchet: may only go down
-backend/app/core/celery_metrics.py	2	ratchet: may only go down
-backend/app/core/infra_requeue_reset.py	1	ratchet: may only go down
-backend/app/core/stage_timing.py	2	ratchet: may only go down
-backend/app/core/task_cancellation.py	2	ratchet: may only go down
-backend/app/core/task_liveness.py	11	ratchet: may only go down
-backend/app/core/task_replay.py	7	ratchet: may only go down
-backend/app/core/worker_metrics.py	9	ratchet: may only go down
-backend/app/db/migrations.py	1	ratchet: may only go down
-backend/app/main.py	4	ratchet: may only go down
-backend/app/services/backup_s3.py	4	ratchet: may only go down
-backend/app/services/erasure_index_reconcile.py	1	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/erasure_receipt/destroy_extras.py	6	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/erasure_receipt/flow.py	1	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/erasure_receipt/measure.py	1	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/erasure_receipt/receipt.py	1	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/file_availability.py	3	moved with the notification predicates from takedown_predicates.py (#1101): the same three fail-closed handlers, no new one
-backend/app/services/media_revocation_cache.py	3	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/media_revocation_probe.py	3	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/scheduled_erasure_service.py	1	moved from self_erasure_service.py (issue 1105): the due-erasure executor's per-entry handler, one bad entry must not stop the pass; ratchet: may only go down
-backend/app/startup/maintenance.py	8	ratchet: may only go down
-backend/app/startup/warmups.py	7	ratchet: may only go down
-backend/app/scripts/batch_speaker_matching.py	1	ratchet: may only go down
-backend/app/scripts/probe_torch_thread_scope.py	1	ratchet: may only go down
-backend/app/scripts/reingest_minio.py	2	ratchet: may only go down
-backend/app/scripts/whisper_batch_diag.py	1	ratchet: may only go down
-backend/app/services/account_purge.py	3	ratchet: may only go down
-backend/app/services/account_security_service.py	1	ratchet: may only go down
-backend/app/services/audio_extraction.py	1	ratchet: may only go down
-backend/app/services/ai_insights_companion.py	2	ratchet: may only go down
-backend/app/services/analytics_service.py	3	ratchet: may only go down
-backend/app/services/asr/assemblyai_provider.py	1	ratchet: may only go down
-backend/app/services/asr/aws_provider.py	2	ratchet: may only go down
-backend/app/services/asr/azure_provider.py	3	ratchet: may only go down
-backend/app/services/asr/deepgram_provider.py	1	ratchet: may only go down
-backend/app/services/asr/factory.py	2	ratchet: may only go down
-backend/app/services/asr/gladia_provider.py	3	ratchet: may only go down
-backend/app/services/asr/google_provider.py	1	ratchet: may only go down
-backend/app/services/asr/model_discovery.py	1	ratchet: may only go down
-backend/app/services/asr/openai_provider.py	1	ratchet: may only go down
-backend/app/services/asr/pyannote_provider.py	3	ratchet: may only go down
-backend/app/services/asr/speechmatics_provider.py	1	ratchet: may only go down
-backend/app/services/audio_segment_utils.py	1	ratchet: may only go down
-backend/app/services/backup_alerts.py	2	ratchet: may only go down
-backend/app/services/bedrock_settings.py	1	ratchet: may only go down
-backend/app/services/cache_management_service.py	3	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/chat/fanout.py	1	ratchet: may only go down
-backend/app/services/chat/legs.py	1	ratchet: may only go down
-backend/app/services/chat/limits.py	7	ratchet: may only go down
-backend/app/services/chat/mapreduce/reducers.py	1	ratchet: may only go down
-backend/app/services/chat/planner.py	1	ratchet: may only go down
-backend/app/services/chat/planning_steps.py	1	ratchet: may only go down
-backend/app/services/chat/query_rewriter.py	1	ratchet: may only go down
-backend/app/services/chat/reranker.py	2	ratchet: may only go down
-backend/app/services/chat/reranker_threads.py	2	ratchet: may only go down
-backend/app/services/chat/retrieval_cache.py	8	ratchet: may only go down
-backend/app/services/chat/settings.py	1	ratchet: may only go down
-backend/app/services/clustering/admin_ops.py	2	ratchet: may only go down
-backend/app/services/clustering/cluster_identity.py	1	ratchet: may only go down
-backend/app/services/clustering/queries.py	1	ratchet: may only go down
-backend/app/services/clustering/recluster.py	3	ratchet: may only go down
-backend/app/services/clustering/recluster_groups.py	1	ratchet: may only go down
-backend/app/services/content_audit.py	1	ratchet: may only go down
-backend/app/services/diarization/pyannote_provider.py	2	ratchet: may only go down
-backend/app/services/download_events.py	3	ratchet: may only go down
-backend/app/services/email_service.py	1	ratchet: may only go down
-backend/app/services/embedding_mode_service.py	5	ratchet: may only go down
-backend/app/services/erasure_ledger_service.py	11	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/file_cleanup_cycle.py	3	ratchet: may only go down
-backend/app/services/file_cleanup_service.py	4	ratchet: may only go down
-backend/app/services/gdpr_erasure_steps.py	1	ratchet: may only go down
-backend/app/services/gdpr_voiceprint_erasure.py	4	ratchet: may only go down
-backend/app/services/huggingface_token.py	2	ratchet: may only go down
-backend/app/services/imohash_service.py	2	ratchet: may only go down
-backend/app/services/ingest_artifacts/textrank.py	1	ratchet: may only go down
-backend/app/services/llm_bedrock.py	3	ratchet: may only go down
-backend/app/services/llm_context_window.py	1	ratchet: may only go down
-backend/app/services/llm_health.py	1	ratchet: may only go down
-backend/app/services/llm_json_extract.py	2	ratchet: may only go down
-backend/app/services/llm_reasoning.py	2	ratchet: may only go down
-backend/app/services/llm_service.py	3	ratchet: may only go down
-backend/app/services/llm_summarization.py	1	ratchet: may only go down
-backend/app/services/local_models/runner.py	1	ratchet: may only go down
-backend/app/services/local_models/supervisor.py	2	ratchet: may only go down
-backend/app/services/local_models/worker_report.py	2	ratchet: may only go down
-backend/app/services/media_download_metadata.py	2	ratchet: may only go down
-backend/app/services/media_download_playlist.py	1	ratchet: may only go down
-backend/app/services/media_download_service.py	3	ratchet: may only go down
-backend/app/services/media_download_thumbnails.py	4	ratchet: may only go down
-backend/app/services/media_mirror_service.py	2	ratchet: may only go down
-backend/app/services/media_source_resolution.py	2	ratchet: may only go down
-backend/app/services/migration_lock_service.py	1	ratchet: may only go down
-backend/app/services/migration_progress_service.py	7	ratchet: may only go down
-backend/app/services/minio_bucket_admin.py	4	ratchet: may only go down
-backend/app/services/minio_service.py	6	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/multipart_upload.py	5	ratchet: may only go down
-backend/app/services/native_embedding_client.py	1	ratchet: may only go down
-backend/app/services/notification_service.py	1	ratchet: may only go down
-backend/app/services/opensearch_erasure.py	9	ratchet: may only go down
-backend/app/services/opensearch_service/client.py	2	ratchet: may only go down
-backend/app/services/opensearch_service/clusters.py	4	ratchet: may only go down
-backend/app/services/opensearch_service/indices.py	1	ratchet: may only go down
-backend/app/services/opensearch_service/matching.py	2	ratchet: may only go down
-backend/app/services/opensearch_service/profiles.py	5	ratchet: may only go down
-backend/app/services/opensearch_service/repair.py	10	ratchet: may only go down
-backend/app/services/opensearch_service/speaker_collections.py	4	ratchet: may only go down
-backend/app/services/opensearch_service/speaker_maintenance.py	3	ratchet: may only go down
-backend/app/services/opensearch_service/speaker_metadata.py	4	ratchet: may only go down
-backend/app/services/opensearch_service/speaker_read.py	5	ratchet: may only go down
-backend/app/services/opensearch_service/speaker_write.py	5	ratchet: may only go down
-backend/app/services/opensearch_service/transcripts.py	2	ratchet: may only go down
-backend/app/services/opensearch_snapshot.py	6	ratchet: may only go down
-backend/app/services/pipeline_timing_service.py	1	ratchet: may only go down
-backend/app/services/platform_access.py	1	ratchet: may only go down
-backend/app/services/post_processing_status.py	7	ratchet: may only go down
-backend/app/services/privacy/purge.py	2	ratchet: may only go down
-backend/app/services/profile_embedding_service.py	8	ratchet: may only go down
-backend/app/services/progress_tracker.py	4	ratchet: may only go down
-backend/app/services/protected_media_plugins/mediacms.py	1	ratchet: may only go down
-backend/app/services/protected_media_providers.py	3	ratchet: may only go down
-backend/app/services/redaction/detectors/llm.py	2	ratchet: may only go down
-backend/app/services/redaction/detectors/pii_presidio.py	3	ratchet: may only go down
-backend/app/services/redaction/detectors/toxicity.py	2	ratchet: may only go down
-backend/app/services/redaction/device.py	3	ratchet: may only go down
-backend/app/services/redaction/reveal_audit.py	1	ratchet: may only go down
-backend/app/services/redaction/service.py	7	ratchet: may only go down
-backend/app/services/redaction/spans.py	1	ratchet: may only go down
-backend/app/services/redis_cache_service.py	7	ratchet: may only go down
-backend/app/services/search/chunk_retrieval.py	2	ratchet: may only go down
-backend/app/services/search/sentence_splitter.py	2	ratchet: may only go down
-backend/app/services/search/collapse_bodies.py	1	ratchet: may only go down
-backend/app/services/search/collapsed_search.py	2	ratchet: may only go down
-backend/app/services/search/hybrid_search_service.py	2	ratchet: may only go down
-backend/app/services/search/index_admin.py	6	ratchet: may only go down
-backend/app/services/search/index_health.py	2	ratchet: may only go down
-backend/app/services/search/indexing/bulk.py	3	ratchet: may only go down
-backend/app/services/search/indexing/chunk_plane.py	1	ratchet: may only go down
-backend/app/services/search/indexing/digest_plane.py	3	ratchet: may only go down
-backend/app/services/search/indexing/orphans.py	1	ratchet: may only go down
-backend/app/services/search/indexing/summary_plane.py	2	ratchet: may only go down
-backend/app/services/search/ml_model_deployment.py	5	ratchet: may only go down
-backend/app/services/search/ml_model_registration.py	3	ratchet: may only go down
-backend/app/services/search/ml_model_service.py	2	ratchet: may only go down
-backend/app/services/search/model_downloader.py	4	ratchet: may only go down
-backend/app/services/search/neural_bootstrap.py	6	ratchet: may only go down
-backend/app/services/search/pipelines.py	4	ratchet: may only go down
-backend/app/services/search/reindex_cancel.py	3	ratchet: may only go down
-backend/app/services/search/settings_service.py	1	ratchet: may only go down
-backend/app/services/search/search_infra.py	1	ratchet: may only go down
-backend/app/services/search/split_bm25.py	1	ratchet: may only go down
-backend/app/services/search/suggestions.py	1	ratchet: may only go down
-backend/app/services/search/summary_plane_search.py	1	ratchet: may only go down
-backend/app/services/search/two_phase_search.py	2	ratchet: may only go down
-backend/app/services/smart_speaker_suggestion_service.py	1	ratchet: may only go down
-backend/app/services/speaker_analysis_models.py	3	ratchet: may only go down
-backend/app/services/speaker_cleanup.py	1	ratchet: may only go down
-backend/app/services/speaker_embedding_service.py	5	ratchet: may only go down
-backend/app/api/endpoints/speaker_match_notify.py	1	ratchet: may only go down
-backend/app/api/health.py	1	moved from main.py (9 to 4 there; 5 handlers collapsed into this one); ratchet: may only go down
-backend/app/services/speaker_matching/match_handling.py	1	ratchet: may only go down
-backend/app/services/speaker_matching/match_queries.py	1	ratchet: may only go down
-backend/app/services/speaker_matching/match_storage.py	1	ratchet: may only go down
-backend/app/services/speaker_matching/processing.py	1	ratchet: may only go down
-backend/app/services/speaker_matching/propagation.py	1	ratchet: may only go down
-backend/app/services/speaker_rename_tracker.py	1	ratchet: may only go down
-backend/app/services/speaker_status_service.py	2	ratchet: may only go down
-backend/app/services/storage_backend.py	1	ratchet: may only go down
-backend/app/services/storage_presign_identity.py	3	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/services/storage_recovery_service.py	4	ratchet: may only go down
-backend/app/services/subtitle_service.py	1	ratchet: may only go down
-backend/app/services/tag_service.py	2	ratchet: may only go down
-backend/app/services/takedown_notices.py	4	ratchet: may only go down
-backend/app/services/takedown_notification_service.py	1	ratchet: may only go down
-backend/app/services/takedown_service.py	2	ratchet: may only go down
-backend/app/services/task_recovery_post_transcription.py	9	ratchet: may only go down
-backend/app/services/task_recovery_retry.py	7	ratchet: may only go down
-backend/app/services/task_recovery_stuck.py	6	ratchet: may only go down
-backend/app/services/task_row_supersede.py	1	ratchet: may only go down
-backend/app/services/topic_extraction_service.py	6	ratchet: may only go down
-backend/app/services/transcription_retry.py	3	ratchet: may only go down
-backend/app/services/video_processing_service.py	7	ratchet: may only go down
-backend/app/services/voiceprint_orphan_sweep.py	1	ratchet: may only go down
-backend/app/services/watch_email_service.py	1	ratchet: may only go down
-backend/app/services/watch_sources/fs_events/dispatcher.py	1	ratchet: may only go down
-backend/app/services/watch_sources/fs_events/handler.py	1	ratchet: may only go down
-backend/app/services/watch_sources/fs_events/observers.py	3	ratchet: may only go down
-backend/app/services/watch_sources/fs_events/status.py	4	ratchet: may only go down
-backend/app/services/watch_sources/fs_events/supervisor.py	2	ratchet: may only go down
-backend/app/services/watch_sources/processing.py	3	ratchet: may only go down
-backend/app/services/watch_sources/s3_client.py	2	ratchet: may only go down
-backend/app/services/watch_sources/smb_client.py	4	ratchet: may only go down
-backend/app/services/youtube_rate_limiter.py	5	ratchet: may only go down
-backend/app/tasks/analytics.py	1	ratchet: may only go down
-backend/app/tasks/auto_labeling.py	1	ratchet: may only go down
-backend/app/tasks/cleanup.py	6	ratchet: may only go down
-backend/app/tasks/combined_speaker_analysis_task.py	4	ratchet: may only go down
-backend/app/tasks/embedding_consistency_repair.py	2	ratchet: may only go down
-backend/app/tasks/embedding_migration_v4.py	3	ratchet: may only go down
-backend/app/tasks/embedding_migration_v4_finalize.py	5	ratchet: may only go down
-backend/app/tasks/embedding_migration_v4_scope.py	3	ratchet: may only go down
-backend/app/tasks/embedding_migration_v4_writer.py	1	ratchet: may only go down
-backend/app/tasks/erasure_reconciliation.py	3	ratchet: may only go down
-backend/app/tasks/imohash_recompute.py	2	ratchet: may only go down
-backend/app/tasks/ingest_artifacts_task.py	1	ratchet: may only go down
-backend/app/tasks/media_download.py	2	ratchet: may only go down
-backend/app/tasks/media_playlist_processing.py	5	ratchet: may only go down
-backend/app/tasks/migration_pipeline.py	3	ratchet: may only go down
-backend/app/tasks/opensearch_integrity_task.py	3	ratchet: may only go down
-backend/app/tasks/recovery.py	5	ratchet: may only go down
-backend/app/tasks/recovery_tasks.py	1	ratchet: may only go down
-backend/app/tasks/redaction_task.py	2	ratchet: may only go down
-backend/app/tasks/rediarize_task.py	10	ratchet: may only go down
-backend/app/tasks/reindex_completion.py	1	ratchet: may only go down
-backend/app/tasks/reindex_index_ops.py	9	ratchet: may only go down
-backend/app/tasks/reindex_run_state.py	1	ratchet: may only go down
-backend/app/tasks/reindex_task.py	4	ratchet: may only go down
-backend/app/tasks/rename_digest_task.py	2	ratchet: may only go down
-backend/app/tasks/rename_propagation_task.py	8	ratchet: may only go down
-backend/app/tasks/search_file_field_tasks.py	3	ratchet: may only go down
-backend/app/tasks/search_indexing_task.py	4	ratchet: may only go down
-backend/app/tasks/search_maintenance_task.py	3	ratchet: may only go down
-backend/app/tasks/search_reembed_task.py	1	ratchet: may only go down
-backend/app/tasks/speaker_attribute_inference.py	1	ratchet: may only go down
-backend/app/tasks/speaker_attribute_migration_task.py	1	ratchet: may only go down
-backend/app/tasks/speaker_attribute_task.py	6	ratchet: may only go down
-backend/app/tasks/speaker_clustering.py	1	ratchet: may only go down
-backend/app/tasks/speaker_embedding_consistency.py	2	ratchet: may only go down
-backend/app/tasks/speaker_embedding_migration.py	6	ratchet: may only go down
-backend/app/tasks/speaker_embedding_task.py	5	ratchet: may only go down
-backend/app/tasks/speaker_identification_task.py	8	ratchet: may only go down
-backend/app/tasks/summarization.py	4	ratchet: may only go down
-backend/app/tasks/summary_retry.py	4	ratchet: may only go down
-backend/app/tasks/tenant_backfill_task.py	3	ratchet: may only go down
-backend/app/tasks/thumbnail.py	2	ratchet: may only go down
-backend/app/tasks/thumbnail_migration.py	4	ratchet: may only go down
-backend/app/tasks/topic_extraction.py	5	ratchet: may only go down
-backend/app/tasks/transcript_document.py	3	ratchet: may only go down
-backend/app/tasks/transcription/cloud_asr.py	2	ratchet: may only go down
-backend/app/tasks/transcription/context.py	2	ratchet: may only go down
-backend/app/tasks/transcription/core.py	4	ratchet: may only go down
-backend/app/tasks/transcription/diarize_task.py	2	ratchet: may only go down
-backend/app/tasks/transcription/dispatch.py	2	ratchet: may only go down
-backend/app/tasks/transcription/downstream.py	5	ratchet: may only go down
-backend/app/tasks/transcription/embeddings.py	4	ratchet: may only go down
-backend/app/tasks/transcription/enrich.py	5	ratchet: may only go down
-backend/app/tasks/transcription/finalize.py	1	ratchet: may only go down
-backend/app/tasks/transcription/metadata_extractor.py	1	ratchet: may only go down
-backend/app/tasks/transcription/notifications.py	8	ratchet: may only go down
-backend/app/tasks/transcription/pipeline_error.py	4	ratchet: may only go down
-backend/app/tasks/transcription/postprocess.py	10	ratchet: may only go down
-backend/app/tasks/transcription/preprocess.py	7	ratchet: may only go down
-backend/app/tasks/transcription/queue_consumers.py	2	ratchet: may only go down
-backend/app/tasks/transcription/run_ownership.py	3	ratchet: may only go down
-backend/app/tasks/transcription/speaker_processor.py	2	ratchet: may only go down
-backend/app/tasks/transcription/waveform_generator.py	3	ratchet: may only go down
-backend/app/tasks/utility.py	2	ratchet: may only go down
-backend/app/tasks/watch_source_tasks.py	4	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/tasks/waveform.py	2	ratchet: may only go down
-backend/app/tasks/waveform_generation.py	3	ratchet: may only go down
-backend/app/tasks/youtube_processing.py	3	ratchet: may only go down
-backend/app/transcription/config.py	3	ratchet: may only go down
-backend/app/transcription/cuda_health.py	4	ratchet: may only go down
-backend/app/transcription/diarizer.py	4	ratchet: may only go down
-backend/app/transcription/diar_sidecar_status.py	4	ratchet: may only go down
-backend/app/transcription/diarizer_native.py	2	ratchet: may only go down
-backend/app/transcription/engine/audio_loader.py	3	ratchet: may only go down
-backend/app/transcription/engine/metrics.py	7	ratchet: may only go down
-backend/app/transcription/engine/diarization_overlap.py	2	ratchet: may only go down
-backend/app/transcription/engine/gpu_stages.py	5	ratchet: may only go down
-backend/app/transcription/engine/split_stages.py	1	ratchet: may only go down
-backend/app/transcription/model_manager.py	2	ratchet: may only go down
-backend/app/transcription/transcriber.py	2	ratchet: may only go down
-backend/app/transcription/vram_budget.py	1	ratchet: may only go down
-backend/app/utils/benchmark_timing.py	7	ratchet: may only go down
-backend/app/utils/boot_once.py	1	ratchet: may only go down
-backend/app/utils/encryption.py	7	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/utils/file_validation.py	1	ratchet: may only go down
-backend/app/utils/gpu_stats.py	2	ratchet: may only go down
-backend/app/utils/hardware_detection.py	8	ratchet: may only go down
-backend/app/utils/nvml_monitor.py	2	ratchet: may only go down
-backend/app/utils/prompt_manager.py	1	ratchet: may only go down
-backend/app/utils/pyannote_utils.py	2	ratchet: may only go down
-backend/app/utils/segment_dedup.py	1	ratchet: may only go down
-backend/app/utils/stats_helpers.py	3	ratchet: may only go down
-backend/app/utils/task_cancel.py	2	ratchet: may only go down
-backend/app/utils/stuck_file_recovery.py	1	ratchet: may only go down
-backend/app/utils/file_retry.py	3	ratchet: may only go down
-backend/app/utils/task_secret_handoff.py	1	v0.6.1 merge: release handler; ratchet: may only go down
-backend/app/utils/text_preprocessing.py	2	ratchet: may only go down
-backend/app/services/thumbnail.py	3	ratchet: may only go down
-backend/app/utils/vram_profiler.py	1	ratchet: may only go down
-backend/app/utils/websocket_notify.py	1	ratchet: may only go down
-scripts/benchmark-diarization.py	1	ratchet: may only go down
-scripts/benchmark-thorough.py	2	ratchet: may only go down
-scripts/benchmark_concurrent_uploads.py	2	ratchet: may only go down
-scripts/benchmark_engine_compare.py	3	ratchet: may only go down
-scripts/benchmark_engine_queue.py	9	ratchet: may only go down
-scripts/benchmark_engine_single.py	2	ratchet: may only go down
-scripts/benchmark_projection.py	1	ratchet: may only go down
-scripts/benchmark_upload_baseline.py	1	ratchet: may only go down
-scripts/benchmark_upload_matrix.py	2	ratchet: may only go down
-scripts/check-schema-drift.py	1	ratchet: may only go down
-scripts/cleanup-test-data.py	4	ratchet: may only go down
-scripts/cleanup-test-users.py	1	ratchet: may only go down
-scripts/diar-native-der-parity.py	1	ratchet: may only go down
-scripts/download-models.py	15	v0.6.1 merge: release handler; ratchet: may only go down
-scripts/measure_embedding_window.py	1	ratchet: may only go down
-scripts/onnx_benchmark_providers.py	2	ratchet: may only go down
-scripts/organize-all-screenshots.py	1	ratchet: may only go down
-scripts/preconvert-onnx-models.py	3	ratchet: may only go down
-scripts/soak_seed_audio.py	1	ratchet: may only go down
-scripts/spike-onnx-export-v2.py	12	ratchet: may only go down
-scripts/update-a11y-baseline.py	1	ratchet: may only go down
-scripts/verify-embedding-models.py	2	ratchet: may only go down
-scripts/vram-probe-diarization-cpu.py	1	ratchet: may only go down
-scripts/vram-probe-diarization-mps.py	2	ratchet: may only go down
-scripts/vram-probe-diarization.py	8	ratchet: may only go down
-scripts/whole-stack-vram-probe.py	3	ratchet: may only go down
-scripts/release-tests/lib/os-probe.py	4	diagnostic probe for the release rehearsal: every failure is the payload and is reported as data to a release check, never swallowed (new in v0.6.0 master)
-scripts/bench_parallel/monitors.py	2	ratchet: may only go down
-scripts/pyannote_direct/audio_io.py	2	ratchet: may only go down
-scripts/pyannote_direct/driver.py	2	ratchet: may only go down
-scripts/pyannote_direct/pipeline.py	2	ratchet: may only go down
-scripts/pyannote_direct/vram.py	3	ratchet: may only go down
-scripts/e2e_bench/backend_api.py	1	ratchet: may only go down
-scripts/e2e_bench/cli.py	1	ratchet: may only go down
-scripts/rag_bench/cli.py	1	ratchet: may only go down
-scripts/chat_probe/conversation.py	1	ratchet: may only go down
-scripts/chat_probe/stack_state.py	3	ratchet: may only go down
+backend/app/api/endpoints/admin_settings.py::_reload_protected_media_providers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/asr_connection_tests.py::test_asr_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/asr_connection_tests.py::test_saved_asr_config#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/asr_local_model.py::restart_gpu_worker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/asr_provider_catalog.py::get_providers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/dependencies.py::get_optional_current_user#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/dependencies.py::get_optional_current_user#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/oidc.py::_complete_oidc_login#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/oidc.py::_store_session_id_token#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/saml.py::_complete_saml_sls#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/sessions.py::_end_federated_session#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/auth/sessions.py::logout#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/combined_speaker_migration.py::stop_combined_migration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/combined_speaker_migration.py::stop_combined_migration#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/combined_speaker_migration.py::stop_combined_migration#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/embedding_migration.py::_compute_ground_truth_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/embedding_migration.py::stop_migration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/embedding_migration.py::stop_migration#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/embedding_migration.py::stop_migration#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/engine_settings.py::_sidecar_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/engine_settings.py::get_engine_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/__init__.py::upload_media_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/complete_upload.py::_fingerprint_object#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/complete_upload.py::complete_upload#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/complete_upload.py::complete_upload#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/complete_upload.py::complete_upload#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/crud.py::update_media_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/crud.py::update_media_file#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/crud.py::update_media_file#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/detail_response.py::set_file_urls#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/media_delivery.py::download_stream.<locals>.event_stream#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/post_processing.py::get_post_processing_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/subtitles.py::bulk_export_stream.<locals>.event_stream#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/summary_status.py::get_summary_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/transcript_document_export.py::_claim_or_existing_job#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/upload.py::process_file_upload#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/upload_dispatch.py::_mark_upload_dispatch_failed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/upload_dispatch.py::_mark_upload_dispatch_failed#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/upload_dispatch.py::dispatch_thumbnail_for_video#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/files/url_video_import.py::_notify_url_file_created#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/llm_connection_tests.py::test_llm_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/llm_local_endpoints.py::_probe_local_endpoint#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/llm_model_discovery.py::_get_stored_api_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/llm_status.py::get_llm_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/local_models.py::_current_download#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/local_models.py::cancel_local_model_download#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/local_models.py::start_local_model_download#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/local_models.py::start_local_model_download#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/search_index_health.py::_probe_index_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/search_index_health.py::get_index_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/search_index_health.py::get_index_health#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_attribute_migration.py::stop_attribute_migration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_attribute_migration.py::stop_attribute_migration#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_attribute_migration.py::stop_attribute_migration#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_clusters.py::get_speaker_media_preview#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_clusters.py::trigger_recluster#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_match_notify.py::send_bulk_update_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_profiles.py::_dispatch_profile_rename_propagation#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_profiles.py::_profile_avatar_url#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speaker_profiles.py::delete_speaker_profile#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers.py::_propagate_speaker_rename_to_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers.py::update_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers_merge.py::_update_opensearch_speaker_merge#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers_merge.py::merge_speakers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers_profile_workflow.py::auto_create_or_assign_profile#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers_profile_workflow.py::auto_create_or_assign_profile#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/speakers_suggestions.py::_reject_speaker_suggestion#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/transcript_segments.py::_handle_speaker_change#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/endpoints/watch_sources.py::_fs_events_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/health.py::_run_probe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::ConnectionManager._write#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::_authenticate_handshake#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::_dispatch_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::_serve_authenticated#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::_try_authenticate_token#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::_try_authenticate_token#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::publish_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/api/websockets.py::redis_subscriber#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/audit.py::AuditLogger._add_typed_fields#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/audit.py::AuditLogger._get_opensearch_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/audit.py::AuditLogger._index_to_opensearch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/audit.py::AuditLogger._write_fallback_log#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/audit_query.py::_build_audit_opensearch_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/audit_query.py::query_audit_logs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/ldap_auth.py::_resolve_login_config#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/ldap_auth.py::ldap_authenticate#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/ldap_directory.py::_close_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/lockout.py::_check_and_record_attempt_redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/lockout_store.py::_get_redis_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/mfa.py::MFAService._consume_totp_code#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/mfa.py::MFAService.verify_backup_code#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/mfa.py::MFAService.verify_totp#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/oidc/claims.py::validate_token#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/oidc/flow.py::call_federated_logout#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/password_history.py::_matches_current_password#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_auth.py::pki_authenticate#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_certificate.py::parse_certificate#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_ocsp.py::_build_ocsp_request#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_ocsp.py::_get_ocsp_responder_cert#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_ocsp.py::_parse_ocsp_response#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_revocation.py::_load_issuer_certificate#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_revocation.py::_parse_and_verify_crl#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_revocation.py::_parse_and_verify_crl#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/pki_revocation.py::_verify_crl_signature#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/rate_limit.py::_create_limiter#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/rate_limit.py::_redis_reachable#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/refresh_tokens.py::RefreshTokenOps.verify_refresh_token#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/session.py::get_redis_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/token_service.py::TokenService._issued_before_user_epoch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/token_service.py::TokenService.cleanup_expired_tokens#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/token_service.py::TokenService.is_token_revoked#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/token_service.py::TokenService.revoke_all_user_tokens_pending_audit#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/auth/token_service.py::TokenService.stamp_user_revocation_epoch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/backup_metrics.py::update_backup_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/backup_metrics.py::update_media_mirror_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/backup_metrics.py::update_search_indexing_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/backup_metrics.py::update_task_row_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/broker_orphans.py::discard_run_deliveries#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/broker_orphans.py::held_by_live_workers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/broker_orphans.py::queued_run_ids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/broker_orphans.py::queued_run_ids#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/broker_orphans.py::reclaim_orphaned_deliveries#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/broker_orphans.py::requeue_own_delivery_to_front#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_metrics.py::queue_snapshot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_metrics.py::update_transcription_lease_metrics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_worker_lifecycle.py::_cap_torch_threads_to_cpu_quota#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_worker_lifecycle.py::preload_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_worker_lifecycle.py::preload_models#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_worker_lifecycle.py::preload_models#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/celery_worker_lifecycle.py::start_watch_source_fs_events#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/infra_requeue_reset.py::_collect#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/stage_timing.py::record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/stage_timing.py::record#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_cancellation.py::_flag_is_set#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_cancellation.py::clear_cancel#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::_beat#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::_current_stage_id#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::_hand_back#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::_release#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::clear_infra_requeues#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::clear_run_markers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::files_requeued_at_least#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::infra_requeues#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::mark_queued#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::probe_runs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_liveness.py::record_infra_requeue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::_beat_all#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::is_alive#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::on_task_end#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::on_task_start#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::reclaim_lost_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::reclaim_lost_tasks#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/task_replay.py::replay_tracked_ids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::configure#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::mark_child_dead#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::on_task_postrun#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::on_task_prerun#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::on_task_prerun#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::set_gpu_concurrency#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::start_listener#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/core/worker_metrics.py::task_label#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/db/migrations.py::run_migrations#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/main.py::_drain_websockets#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/main.py::_lifespan_body#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/main.py::_lifespan_body#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/main.py::_lifespan_body#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/scripts/batch_speaker_matching.py::batch_process_speaker_matches#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/scripts/probe_torch_thread_scope.py::_run_on_thread.<locals>.body#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/scripts/reingest_minio.py::_reingest_with_throttle#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/scripts/reingest_minio.py::_reingest_with_throttle#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/scripts/whisper_batch_diag.py::run_sweep#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/account_purge.py::purge_account_external_copies#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/account_purge.py::purge_account_external_copies#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/account_purge.py::purge_account_external_copies#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/account_security_service.py::notify_email_changed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/ai_insights_companion.py::_claim_guard#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/ai_insights_companion.py::_release_guard#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/analytics_service.py::AnalyticsService.compute_analytics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/analytics_service.py::AnalyticsService.refresh_analytics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/analytics_service.py::AnalyticsService.save_analytics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/assemblyai_provider.py::AssemblyAIProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/aws_provider.py::AWSTranscribeProvider.transcribe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/aws_provider.py::AWSTranscribeProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/azure_provider.py::AzureASRProvider._transcribe_with_diarization.<locals>._on_transcribed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/azure_provider.py::AzureASRProvider._transcribe_without_diarization.<locals>._on_recognized#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/azure_provider.py::AzureASRProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/deepgram_provider.py::DeepgramProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/factory.py::ASRProviderFactory._active_config_row#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/factory.py::ASRProviderFactory.create_for_user#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/gladia_provider.py::GladiaProvider._err_detail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/gladia_provider.py::GladiaProvider.transcribe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/gladia_provider.py::GladiaProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/google_provider.py::GoogleASRProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/model_discovery.py::resolve_loadable_model_name#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/openai_provider.py::OpenAIASRProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider._err_detail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.transcribe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/speechmatics_provider.py::SpeechmaticsProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/audio_extraction.py::AudioExtractionMixin.peek_cached_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/audio_segment_utils.py::extract_audio_segment_np#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/backup_alerts.py::notify_backup_result#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/backup_alerts.py::notify_mirror_result#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/backup_s3.py::list_backups_s3#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/backup_s3.py::prune_backups_s3#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/backup_s3.py::s3_bucket_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/backup_s3.py::test_s3_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/bedrock_settings.py::server_credential_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/cache_management_service.py::_bucket_is_versioned#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/cache_management_service.py::reclaim_legacy_audio_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/cache_management_service.py::reclaim_legacy_audio_cache#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/fanout.py::_run_enrichment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/legs.py::_run_leg#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::_drop_legacy_counter#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::acquire_stream_slot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::check_hourly_limit#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::clear_cancel#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::is_cancelled#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::release_stream_slot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/limits.py::request_cancel#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/mapreduce/reducers.py::BatchReducer._condense#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/planner.py::build_plan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/planning_steps.py::_validate_plan_speakers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/query_rewriter.py::rewrite_query#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/reranker.py::get_reranker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/reranker.py::rerank#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/reranker_threads.py::_get_pool#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/reranker_threads.py::_on_fresh_thread.<locals>.body#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::_embed_query#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::bump_corpus_version#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::corpus_version#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::find_semantic_match#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::get_cached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::get_cached#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::remember_semantic#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/retrieval_cache.py::set_cached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/chat/settings.py::get_chat_settings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/admin_ops.py::merge_clusters#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/admin_ops.py::split_cluster#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/cluster_identity.py::promote_cluster_to_profile#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/queries.py::list_clusters#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/recluster.py::_clear_old_clusters#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/recluster.py::_progress_reporter.<locals>._report#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/recluster.py::_refresh_speaker_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/clustering/recluster_groups.py::_store_centroid#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/content_audit.py::_already_recorded#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/diarization/pyannote_provider.py::PyAnnoteCloudDiarizationProvider._safe_response_text#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/diarization/pyannote_provider.py::PyAnnoteCloudDiarizationProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/download_events.py::_publish#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/download_events.py::release_document_export_guard#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/download_events.py::release_download_prep_guard#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/email_service.py::EmailService._designated_config#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/embedding_mode_service.py::EmbeddingModeService._detect_dimension_from_documents#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/embedding_mode_service.py::EmbeddingModeService._get_cached_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/embedding_mode_service.py::EmbeddingModeService._set_cached_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/embedding_mode_service.py::EmbeddingModeService.clear_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/embedding_mode_service.py::EmbeddingModeService.detect_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_index_reconcile.py::check_subjects#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::_append_journal#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::_audit#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::_file_journal_records#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::_object_journal_records#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::_object_journal_records.<locals>._fetch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::append_receipt_line#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::record_outcome#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::record_request#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::record_resurrection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::reopen_entry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_ledger_service.py::restore_from_journal#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/destroy_extras.py::abort_multipart#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/destroy_extras.py::erase_derived_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/destroy_extras.py::erase_lockout#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/destroy_extras.py::erase_mirror#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/destroy_extras.py::erase_object_prefixes#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/destroy_extras.py::erase_temp_objects#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/flow.py::_schedule_reverify#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/measure.py::_one#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/erasure_receipt/receipt.py::persist_receipt#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_availability.py::filter_suppressed_file_uuids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_availability.py::is_notification_suppressed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_availability.py::is_notification_suppressed_for_uuid#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_cycle.py::FileCleanupService.force_cleanup_orphaned_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_cycle.py::FileCleanupService.run_cleanup_cycle#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_cycle.py::FileCleanupService.run_cleanup_cycle#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_service.py::_load_purge_plan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_service.py::delete_file_storage_artifacts#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_service.py::delete_file_storage_artifacts#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/file_cleanup_service.py::purge_media_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/gdpr_erasure_steps.py::_erase_avatar_objects#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/gdpr_voiceprint_erasure.py::_erase_profile_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/gdpr_voiceprint_erasure.py::count_speaker_docs_by_ids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/gdpr_voiceprint_erasure.py::delete_speaker_docs_by_query#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/gdpr_voiceprint_erasure.py::delete_speaker_docs_by_query#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/huggingface_token.py::_resolve_uncached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/huggingface_token.py::check_token#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/imohash_service.py::compute_from_minio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/imohash_service.py::compute_from_path#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/ingest_artifacts/textrank.py::_stemmer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_bedrock.py::check_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_bedrock.py::stream_converse#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_bedrock.py::stream_converse#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_context_window.py::read_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_health.py::LLMHealthMixin.health_check#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_json_extract.py::LLMJsonExtractMixin._parse_summary_response#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_json_extract.py::LLMJsonExtractMixin._repair_truncated_json#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_reasoning.py::probe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_reasoning.py::read_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_service.py::LLMService.create_from_system_settings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_service.py::LLMService.create_from_system_settings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_service.py::is_llm_available.<locals>._check#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/llm_summarization.py::LLMSummarizationMixin._summarize_section#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/local_models/runner.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/local_models/supervisor.py::_Progress.publish#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/local_models/supervisor.py::_resolve_plan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/local_models/worker_report.py::read_loaded_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/local_models/worker_report.py::report_loaded_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_metadata.py::MediaMetadataMixin._extract_basic_metadata#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_metadata.py::MediaMetadataMixin._extract_technical_metadata#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_playlist.py::_process_playlist_videos#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_service.py::MediaDownloadService._download_and_stage_media#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_service.py::MediaDownloadService._download_and_stage_media#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_service.py::MediaDownloadService._get_protected_provider#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_thumbnails.py::_download_media_thumbnail_sync#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_thumbnails.py::_get_thumbnail_with_fallback#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_thumbnails.py::_get_thumbnail_with_fallback#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_download_thumbnails.py::_get_thumbnail_with_fallback#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_mirror_service.py::s3_bucket_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_mirror_service.py::test_s3_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_revocation_cache.py::drop_bulk_result#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_revocation_cache.py::remove_cache_copies#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_revocation_cache.py::remove_cache_copies#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_revocation_probe.py::_run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_revocation_probe.py::_run#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_revocation_probe.py::_run#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_source_resolution.py::MediaSourceResolver._get_db_sources#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/media_source_resolution.py::MediaSourceResolver._get_user_media_sources#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_lock_service.py::MigrationLockService._redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.clear_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.complete_migration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.force_stop#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.get_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.increment_processed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.redis_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/migration_progress_service.py::MigrationProgressService.start_migration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_bucket_admin.py::MinIOService.ensure_prefix_expiry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_bucket_admin.py::MinIOService.ensure_prefix_expiry#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_bucket_admin.py::MinIOService.prefix_stats#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_bucket_admin.py::MinIOService.remove_lifecycle_rule#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_service.py::cleanup_temp_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_service.py::get_file_url#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_service.py::range_read#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_service.py::remove_object_reported#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_service.py::set_object_legal_hold#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/minio_service.py::write_object_quarantine_tag#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/multipart_upload.py::abort_upload#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/multipart_upload.py::abort_uploads_for_object#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/multipart_upload.py::build_upload_plan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/multipart_upload.py::ensure_abort_incomplete_lifecycle#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/multipart_upload.py::ensure_abort_incomplete_lifecycle#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/native_embedding_client.py::embed_waveform#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/notification_service.py::_get_file_metadata_safe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_cluster_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_profile_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_profile_docs#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_speaker_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_speaker_docs#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_summary_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_transcript_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_transcript_chunks#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_erasure.py::_erase_transcript_doc#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/client.py::probe_knn_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/client.py::probe_knn_health#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/clusters.py::delete_cluster_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/clusters.py::store_cluster_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/clusters.py::update_cluster_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/clusters.py::update_cluster_embedding#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/indices.py::ensure_indices_exist#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/matching.py::batch_find_matching_speakers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/matching.py::msearch_speaker_similarities#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/profiles.py::find_matching_profiles#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/profiles.py::get_profile_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/profiles.py::msearch_profile_knn_batch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/profiles.py::store_profile_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/profiles.py::store_profile_embedding_v4#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_drop_rebuild_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_repair_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_repair_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_repair_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_repair_index#4	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::check_and_repair_indices#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::check_and_repair_indices#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_collections.py::bulk_update_collection_assignments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_collections.py::get_speakers_in_collection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_collections.py::move_speaker_to_profile_collection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_collections.py::update_speaker_collections#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_maintenance.py::cleanup_orphaned_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_maintenance.py::cleanup_orphaned_speaker_embeddings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_maintenance.py::merge_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_metadata.py::find_speaker_across_media#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_metadata.py::update_speaker_display_name#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_metadata.py::update_speaker_profile#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_metadata.py::update_speaker_segment_count#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::get_all_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::get_speaker_document#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::get_speaker_embeddings_batch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding_v4#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_write.py::bulk_add_speaker_embeddings_v4#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/transcripts.py::index_transcript#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/transcripts.py::update_transcript_title#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_snapshot.py::ensure_repository#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_snapshot.py::is_reachable#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_snapshot.py::list_snapshot_names#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_snapshot.py::prune_snapshots#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_snapshot.py::snapshot_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_snapshot.py::voiceprint_doc_count#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/pipeline_timing_service.py::record_pipeline_timing#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/platform_access.py::warn_if_forced_single_with_orgs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::_will_autoretry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::report#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::report#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::report_plan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::report_plan#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::resolve_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/post_processing_status.py::tracks_post_processing.<locals>.decorator.<locals>.wrapper#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/privacy/purge.py::read_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/privacy/purge.py::write_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::ProfileEmbeddingService.batch_update_profile_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::ProfileEmbeddingService.batch_update_profile_embeddings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::ProfileEmbeddingService.get_profile_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::_check_profiles_exist_in_opensearch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::_check_profiles_exist_in_opensearch#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::_clear_profile_embedding_from_opensearch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::_execute_knn_search#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/profile_embedding_service.py::_store_profile_embedding_to_opensearch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/progress_tracker.py::ProgressTracker._write_state#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/progress_tracker.py::ProgressTracker.get_active_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/progress_tracker.py::ProgressTracker.get_state#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/progress_tracker.py::emit_progress_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/protected_media_plugins/mediacms.py::MediacmsProvider.can_handle#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/protected_media_providers.py::_load_providers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/protected_media_providers.py::_load_providers#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/protected_media_providers.py::get_protected_media_auth_config#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/llm.py::_detect_one#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/llm.py::detect_with_llm#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/pii_presidio.py::_build_analyzer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/pii_presidio.py::_build_analyzer#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/pii_presidio.py::_get_analyzer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/toxicity.py::_get_pipe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/detectors/toxicity.py::_place_on_device#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/device.py::_best_gpu#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/device.py::_cuda_available#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/device.py::resolve_device#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/reveal_audit.py::audit_unredacted_reveal#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService._run_llm_detector#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService.detect_and_store#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService.detect_and_store#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService.detect_and_store#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService.detect_segment_spans#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService.detect_segment_spans#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/service.py::RedactionService.redetect_edited_segment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redaction/spans.py::_coerce#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::RedisCacheService._push_invalidation#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::RedisCacheService.delete_pattern#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::RedisCacheService.get#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::RedisCacheService.invalidate_tags_for_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::RedisCacheService.redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::RedisCacheService.set#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/redis_cache_service.py::_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/scheduled_erasure_service.py::execute_due_requests#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/chunk_retrieval.py::retrieve_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/chunk_retrieval.py::retrieve_digests#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/collapse_bodies.py::_bm25_leg_is_starved#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/collapsed_search.py::_backfill_starved_groups#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/collapsed_search.py::_search_with_collapse#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/hybrid_search_service.py::HybridSearchService._check_neural_search_available#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/hybrid_search_service.py::HybridSearchService._get_neural_model_id#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_admin.py::_apply_pending_additive_steps#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_admin.py::_check_index_version#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_admin.py::ensure_chunks_index_exists#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_admin.py::recreate_index_for_dimension#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_admin.py::recreate_index_for_dimension#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_admin.py::survey_speaker_id_coverage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_health.py::clear_corruption_notice#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/index_health.py::rebuild_chunks_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/bulk.py::BulkIndexMixin._retry_failed_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/bulk.py::_suspended_refresh_for_large_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/bulk.py::_suspended_refresh_for_large_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/chunk_plane.py::ChunkPlaneMixin._prune_stale_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/digest_plane.py::DigestPlaneMixin._index_digest_plane#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/digest_plane.py::DigestPlaneMixin._index_digest_plane#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/digest_plane.py::DigestPlaneMixin._prune_stale_digests#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/orphans.py::OrphanProbeMixin._probe_ceiling#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/summary_plane.py::SummaryPlaneMixin._index_summary_plane#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/indexing/summary_plane.py::SummaryPlaneMixin._prune_stale_summary_leaves#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_deployment.py::MLModelDeploymentMixin._verified_or_none#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_deployment.py::MLModelDeploymentMixin._wait_for_deployment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_deployment.py::MLModelDeploymentMixin.deploy_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_deployment.py::MLModelDeploymentMixin.undeploy_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_deployment.py::MLModelDeploymentMixin.verify_model_can_embed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_registration.py::MLModelRegistrationMixin._wait_for_registration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_registration.py::MLModelRegistrationMixin.register_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_registration.py::MLModelRegistrationMixin.register_model_from_url#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_service.py::OpenSearchMLModelService.configure_ml_settings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/ml_model_service.py::OpenSearchMLModelService.get_model_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/model_downloader.py::_fetch_model_config#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/model_downloader.py::_update_manifest#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/model_downloader.py::check_internet_connectivity#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/model_downloader.py::ensure_model_downloaded#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/neural_bootstrap.py::_clear_attempt_state#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/neural_bootstrap.py::_increment_attempts#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/neural_bootstrap.py::_record_failure#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/neural_bootstrap.py::bootstrap_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/neural_bootstrap.py::run_bootstrap_tick#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/neural_bootstrap.py::run_bootstrap_tick#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/pipelines.py::_get_model_id_from_service#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/pipelines.py::ensure_neural_ingest_pipeline#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/pipelines.py::ensure_neural_ingest_pipeline#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/pipelines.py::ensure_search_pipeline_exists#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/reindex_cancel.py::cancel_target#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/reindex_cancel.py::clear_cancel#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/reindex_cancel.py::clear_fanout#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/search_infra.py::_chunks_index_verified#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/sentence_splitter.py::_get_nltk_tokenizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/sentence_splitter.py::split_into_sentences#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/settings_service.py::_set_setting#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/split_bm25.py::_hydrate_page_highlights#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/suggestions.py::get_suggestions#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/summary_plane_search.py::search_summary_plane#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/two_phase_search.py::_search_with_two_phase#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/search/two_phase_search.py::_search_with_two_phase#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/smart_speaker_suggestion_service.py::_check_opensearch_profiles_exist#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_analysis_models.py::EmbeddingModelAdapter.process_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_analysis_models.py::GenderModelAdapter.process_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_analysis_models.py::MultiModelRunner.cleanup#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_cleanup.py::_invalidate_caches#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService._load_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embedding_from_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embedding_from_segment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embedding_from_waveform#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_embedding_service.py::SpeakerEmbeddingService.extract_embeddings_for_segments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_matching/match_handling.py::handle_speaker_match#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_matching/match_queries.py::match_speaker_to_profiles#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_matching/match_storage.py::create_speaker_match_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_matching/processing.py::process_single_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_matching/propagation.py::propagate_profile_assignment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_rename_tracker.py::SpeakerRenameTracker.flush#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_status_service.py::SpeakerStatusService.refresh_all_speaker_statuses#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/speaker_status_service.py::SpeakerStatusService.update_speaker_status_in_db#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_backend.py::ensure_bucket_cors#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_presign_identity.py::_derived_identity_works#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_presign_identity.py::ensure_presign_identity#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_presign_identity.py::read_native_s3_revocation_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_recovery_service.py::fetch_youtube_metadata#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_recovery_service.py::fingerprint_object#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_recovery_service.py::reingest_objects#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/storage_recovery_service.py::reingest_objects#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/subtitle_service.py::SubtitleService.build_subtitle_archive#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/tag_service.py::on_tags_changed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/tag_service.py::on_tags_changed#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_notices.py::audit_takedown#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_notices.py::audit_unresolved_lookup#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_notices.py::notify_owner_release#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_notices.py::notify_owner_takedown#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_notification_service.py::_deliver#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_service.py::quarantine_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/takedown_service.py::release_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_false_positive_failed_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_false_positive_failed_tasks#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_incomplete_post_transcription_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_incomplete_post_transcription_files#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_incomplete_post_transcription_files#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_incomplete_post_transcription_files#4	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_incomplete_post_transcription_files#5	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_stuck_llm_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_post_transcription.py::TaskRecoveryPostTranscriptionMixin.recover_stuck_llm_tasks#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.recover_oom_error_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.recover_oom_error_files#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.recover_retriable_error_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.recover_stuck_downloading_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.recover_stuck_pending_download_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.recover_user_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_retry.py::TaskRecoveryRetryMixin.schedule_file_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_stuck.py::TaskRecoveryStuckMixin.fix_inconsistent_media_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_stuck.py::TaskRecoveryStuckMixin.recover_orphaned_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_stuck.py::TaskRecoveryStuckMixin.recover_orphaned_tasks#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_stuck.py::TaskRecoveryStuckMixin.recover_stuck_files_without_celery_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_stuck.py::TaskRecoveryStuckMixin.recover_stuck_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_recovery_stuck.py::TaskRecoveryStuckMixin.reset_abandoned_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/task_row_supersede.py::record_superseded#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/thumbnail.py::generate_and_upload_thumbnail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/thumbnail.py::generate_thumbnail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/thumbnail.py::generate_thumbnail_from_url#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/topic_extraction_service.py::TopicExtractionService._call_llm_for_extraction#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/topic_extraction_service.py::TopicExtractionService._parse_llm_response#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/topic_extraction_service.py::TopicExtractionService._store_suggestion#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/topic_extraction_service.py::TopicExtractionService._store_suggestion#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/topic_extraction_service.py::TopicExtractionService.apply_suggestions#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/topic_extraction_service.py::TopicExtractionService.create_from_settings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/transcription_retry.py::_retry_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/transcription_retry.py::run_cancel_requested#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/transcription_retry.py::run_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::VideoProcessingService._create_chunk_generator.<locals>.generate_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::VideoProcessingService._get_object_size#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::VideoProcessingService._masked_video_cache_keys#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::VideoProcessingService._send_download_progress#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::VideoProcessingService._send_download_progress_sync#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::VideoProcessingService.is_video_cached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/video_processing_service.py::_parse_range_header#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/voiceprint_orphan_sweep.py::sweep_orphan_voiceprints#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_email_service.py::send_email#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/dispatcher.py::ScanDispatcher._dispatch_locked#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/handler.py::WatchEventHandler.dispatch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/observers.py::stop_observer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/observers.py::stop_observer#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/observers.py::watchdog_available#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/status.py::_client#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/status.py::clear#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/status.py::get_many#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/status.py::publish#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/supervisor.py::FsEventSupervisor._select_observer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/fs_events/supervisor.py::stop_supervisor#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/processing.py::_notify_file_created#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/processing.py::_record_error#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/processing.py::import_single_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/s3_client.py::S3WatchClient.download_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/s3_client.py::S3WatchClient.test_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/smb_client.py::SMBWatchClient.close#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/smb_client.py::SMBWatchClient.download_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/smb_client.py::SMBWatchClient.list_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/watch_sources/smb_client.py::SMBWatchClient.test_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/youtube_rate_limiter.py::YouTubeRateLimiter._seconds_until_oldest_expires#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/youtube_rate_limiter.py::YouTubeRateLimiter.check_rate_limit#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/youtube_rate_limiter.py::YouTubeRateLimiter.get_remaining_quota#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/youtube_rate_limiter.py::YouTubeRateLimiter.record_download#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/youtube_rate_limiter.py::YouTubeRateLimiter.redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_remove_public_bucket_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_run_imohash_recompute#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_run_one_time_embedding_normalization#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_run_search_maintenance#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_run_startup_recovery#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_run_thumbnail_migration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_setup_minio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/maintenance.py::_setup_minio#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_initialize_neural_search#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_log_password_blocklist_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_log_tenancy_mode_at_startup#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_provision_native_diarizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_register_chat_usage_hook#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_start_pii_warmup#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/startup/warmups.py::_start_reranker_warmup#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/analytics.py::analyze_transcript_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/auto_labeling.py::auto_label_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/cleanup.py::_purge_expired_loop#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/cleanup.py::emergency_file_recovery#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/cleanup.py::orphan_upload_sweeper#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/cleanup.py::orphan_upload_sweeper#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/cleanup.py::orphan_upload_sweeper#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/cleanup.py::orphan_upload_sweeper#4	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/combined_speaker_analysis_task.py::_combined_result_writer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/combined_speaker_analysis_task.py::_combined_result_writer#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/combined_speaker_analysis_task.py::_orchestrate_combined#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/combined_speaker_analysis_task.py::analyze_speakers_combined_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_consistency_repair.py::_prepare_batch_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_consistency_repair.py::_run_repair_phase#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4.py::extract_v4_embeddings_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4.py::extract_v4_embeddings_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4.py::migrate_speaker_embeddings_v4_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_finalize.py::_count_profile_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_finalize.py::finalize_v4_migration_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_finalize.py::finalize_v4_migration_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_finalize.py::migrate_profile_documents_to_v4#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_finalize.py::migrate_profile_documents_to_v4#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_scope.py::_clear_v4_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_scope.py::_count_skipped_by_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_scope.py::_take_skipped_by_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/embedding_migration_v4_writer.py::_bulk_write_v4_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/erasure_reconciliation.py::erasure_reconciliation_sweep#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/erasure_reconciliation.py::erasure_reconciliation_sweep#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/erasure_reconciliation.py::notify_hold_released#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/imohash_recompute.py::recompute_all#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/imohash_recompute.py::recompute_all#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/ingest_artifacts_task.py::dispatch_file_facts#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_download.py::prepare_bulk_subtitles_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_download.py::prepare_media_download_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_playlist_processing.py::_dispatch_playlist_video_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_playlist_processing.py::_notify_playlist_file_created#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_playlist_processing.py::_process_playlist_with_db#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_playlist_processing.py::_send_playlist_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/media_playlist_processing.py::process_youtube_playlist_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/migration_pipeline.py::_process_file_segments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/migration_pipeline.py::cleanup_gpu_memory#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/migration_pipeline.py::process_batch_pipelined#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/opensearch_integrity_task.py::get_index_overview#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::_check_opensearch_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::periodic_health_check_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::periodic_health_check_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::recover_user_files_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::startup_recovery_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery_tasks.py::_tier_b_probe_duration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/redaction_task.py::_mark_redaction_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/redaction_task.py::_notify#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_after_speakers_changed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_dispatch_downstream#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_prepare_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_record_failure#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_record_failure#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_resolve_asr_provider#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::_voiceprint_stage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::rediarize_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::rediarize_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rediarize_task.py::rediarize_task#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_completion.py::_cleanup_orphaned_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_check_and_recreate_stale_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_check_and_recreate_stale_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_check_and_recreate_stale_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_ensure_neural_pipeline_ready#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_force_merge_after_reindex#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_periodic_refresh#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_refresh_index_and_clear_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_restore_normal_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_index_ops.py::_set_bulk_indexing_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_run_state.py::_clear_stale_progress#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_task.py::reindex_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_task.py::reindex_batch_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_task.py::reindex_transcripts_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/reindex_task.py::reindex_transcripts_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_digest_task.py::regenerate_rename_digests#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_digest_task.py::regenerate_rename_digests#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::_current_file_title#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::_current_speaker_name#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::_dispatch_digest_regeneration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::_file_if_voiceprints_off#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::_finish#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::dispatch_speaker_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::propagate_speaker_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/rename_propagation_task.py::propagate_title_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_file_field_tasks.py::update_file_access_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_file_field_tasks.py::update_file_tags_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_file_field_tasks.py::update_file_tags_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_indexing_task.py::backfill_speaker_id_fields_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_indexing_task.py::backfill_speaker_id_fields_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_indexing_task.py::index_transcript_search_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_indexing_task.py::index_transcript_search_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_maintenance_task.py::_dispatch_reindex_tasks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_maintenance_task.py::_get_indexed_uuids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_maintenance_task.py::_run_search_maintenance#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/search_reembed_task.py::_reembed_degraded_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_inference.py::_run_gender_inference_parallel#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_migration_task.py::detect_speaker_attributes_batch_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_task.py::_attributes_already_predicted#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_task.py::_create_and_start_task_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_task.py::_dispatch_llm_speaker_identification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_task.py::_resolve_file_id_for_tracking#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_task.py::_update_attr_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_attribute_task.py::detect_speaker_attributes_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_clustering.py::cluster_speakers_for_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_consistency.py::_check_and_dispatch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_consistency.py::_get_opensearch_speaker_uuids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_migration.py::_bulk_update_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_migration.py::_normalize_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_migration.py::_normalize_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_migration.py::_normalize_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_migration.py::_run_normalize_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_migration.py::_sample_check_normalized#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_task.py::_fail_embedding_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_task.py::_skip_for_policy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_task.py::_stage_audio_for_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_task.py::extract_speaker_embeddings_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_embedding_task.py::extract_speaker_embeddings_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::_build_metadata_context#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::_gender_cross_reference_context#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::_load_identification_inputs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::_mark_identification_failed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::_store_alignment_results#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::_store_metadata_hints_as_suggestions#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::identify_speakers_llm_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/speaker_identification_task.py::identify_speakers_llm_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summarization.py::_generate_llm_summary#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summarization.py::_persist_summary#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summarization.py::summarize_transcript_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summarization.py::summarize_transcript_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summary_retry.py::_reset_and_queue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summary_retry.py::_reset_and_queue#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summary_retry.py::check_llm_availability#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/summary_retry.py::reset_summary_for_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/tenant_backfill_task.py::_backfill_file_uuid_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/tenant_backfill_task.py::_speaker_indices#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/tenant_backfill_task.py::_update_by_query#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/thumbnail.py::generate_thumbnail_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/thumbnail.py::generate_thumbnail_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/thumbnail_migration.py::_migrate_single_thumbnail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/thumbnail_migration.py::_migrate_single_thumbnail#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/thumbnail_migration.py::migrate_thumbnails_to_webp#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/thumbnail_migration.py::migrate_thumbnails_to_webp#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/topic_extraction.py::_handle_task_error#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/topic_extraction.py::_handle_task_error#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/topic_extraction.py::_mark_task_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/topic_extraction.py::_trigger_batch_grouping#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/topic_extraction.py::extract_topics_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcript_document.py::_fail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcript_document.py::_record_export#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcript_document.py::prepare_transcript_document_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/cloud_asr.py::_run_parallel_cloud_asr_and_diarization#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/cloud_asr.py::_run_parallel_cloud_asr_and_diarization#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/context.py::_handle_outer_exception#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/context.py::_poisoned_requeue_allowed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/core.py::_claim_gpu_split_diarize_dispatch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/core.py::_cleanup_wav_quietly#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/core.py::_running_at_retry_priority#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/core.py::transcribe_gpu_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/diarize_task.py::diarize_gpu_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/diarize_task.py::diarize_gpu_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/dispatch.py::dispatch_batch_transcription#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/dispatch.py::dispatch_batch_transcription#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/downstream.py::_get_collection_prompt_uuid#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/downstream.py::_owner_llm_configured#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/downstream.py::trigger_automatic_summarization#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/downstream.py::trigger_automatic_summarization#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/downstream.py::trigger_automatic_summarization#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/embeddings.py::_fetch_existing_v4_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/embeddings.py::_should_use_native_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/embeddings.py::_store_native_centroids_in_v4_staging#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/embeddings.py::_update_v4_profile_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/enrich.py::_dispatch_redaction#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/enrich.py::_dispatch_speaker_attributes#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/enrich.py::_dispatch_speaker_clustering#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/enrich.py::_index_transcript#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/enrich.py::enrich_and_dispatch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/finalize.py::_process_and_save_critical#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/metadata_extractor.py::extract_media_metadata#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::_invalidate_user_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::get_file_metadata#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::send_completion_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::send_completion_notification#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::send_notification_via_redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::send_notification_with_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::send_transcript_ready_notification#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/notifications.py::send_transcript_ready_notification#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/pipeline_error.py::_cancelled_run_owner#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/pipeline_error.py::_flush_error_timing#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/pipeline_error.py::_log_oom_diagnostics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/pipeline_error.py::on_pipeline_error#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_cleanup_temp#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_dispatch_embedding_stage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_dispatch_post_stage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_finalize#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_fire_completion_metering#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_persist_timing_row#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_record_postprocess_failure#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_run_completed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_schedule_timing_tail_flush#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/postprocess.py::_store_v4_centroids#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::_dispatch_playback_rendition_if_needed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::_dispatch_waveform_if_missing#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::_extract_metadata_best_effort#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::_mark_pipeline_error#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::_preprocess_video#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::_preprocess_video#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/preprocess.py::stage_engine_shared_volume_wav#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/queue_consumers.py::_gpu_diarize_consumer_present#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/queue_consumers.py::_gpu_transcribe_consumer_present#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/run_ownership.py::_duplicate_delivery_reason#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/run_ownership.py::_superseded_reason#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/run_ownership.py::replaced_by_newer_run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/speaker_processor.py::create_or_get_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/speaker_processor.py::create_speaker_mapping#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/waveform_generator.py::WaveformGenerator._extract_single_waveform#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/waveform_generator.py::WaveformGenerator.generate_from_16khz_wav#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/transcription/waveform_generator.py::WaveformGenerator.generate_waveform_data#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/utility.py::update_gpu_stats#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/utility.py::update_gpu_stats#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/watch_source_tasks.py::_log_legal_refusal_hourly#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/watch_source_tasks.py::_notify_scan_complete#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/watch_source_tasks.py::stitch_and_import#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/watch_source_tasks.py::stitch_and_import#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/waveform.py::_download_temp_audio_safe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/waveform.py::_download_to_temp_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/waveform_generation.py::_generate_waveform_for_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/waveform_generation.py::generate_waveform_data_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/waveform_generation.py::generate_waveform_data_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/youtube_processing.py::process_youtube_url_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/youtube_processing.py::process_youtube_url_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/youtube_processing.py::process_youtube_url_task#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/config.py::TranscriptionConfig._resolve_diarizer_backend#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/config.py::TranscriptionConfig._resolve_model_name#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/config.py::TranscriptionConfig._vram_based_concurrency#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/cuda_health.py::cuda_context_healthy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/cuda_health.py::cuda_context_healthy#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/cuda_health.py::free_cached_vram#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/cuda_health.py::mark_context_poisoned#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diar_sidecar_status.py::_sidecar_healthy_uncached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diar_sidecar_status.py::_sidecar_ready_uncached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diar_sidecar_status.py::diarizer_require_sidecar#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diar_sidecar_status.py::sidecar_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diarizer.py::SpeakerDiarizer._run_pipeline_with_oom_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diarizer.py::SpeakerDiarizer.embed_window#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diarizer.py::SpeakerDiarizer.load_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diarizer.py::SpeakerDiarizer.load_model#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diarizer_native.py::NativeSpeakerDiarizer.diarize#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/diarizer_native.py::NativeSpeakerDiarizer.diarize#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/audio_loader.py::cleanup_shared_volume_wav#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/audio_loader.py::load_from_shared_volume#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/audio_loader.py::write_wav_to_shared_volume#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/diarization_overlap.py::_AsyncDiarization.__init__.<locals>._run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/diarization_overlap.py::_get_total_vram_mb#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/gpu_stages.py::_GpuRawStage.run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/gpu_stages.py::_GpuRawStage.run.<locals>._preload_diarizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/gpu_stages.py::_GpuStage._finalize_job_result#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/gpu_stages.py::_GpuStage.run.<locals>._load_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/gpu_stages.py::_GpuStage.run.<locals>._preload_diarizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector._get_redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector._hset#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector.decrement_in_flight#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector.decrement_ready_queue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector.get_snapshot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector.increment_in_flight#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/metrics.py::MetricsCollector.increment_ready_queue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/engine/split_stages.py::_DiarizerOnlyStage.run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/model_manager.py::ModelManager._build_diarizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/model_manager.py::ModelManager._cleanup_gpu#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/transcriber.py::Transcriber.unload_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/transcriber.py::_is_crisperwhisper_model#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/transcription/vram_budget.py::configure_from_device#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::capture_queue_depth#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::capture_queue_depth#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::fetch_all#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::mark#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::mark_many#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::pipeline_task_id#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/benchmark_timing.py::record_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/boot_once.py::run_once_per_boot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::_decrypt_fernet_legacy#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::_get_fernet_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::decrypt_api_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::decrypt_value#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::encrypt_api_key#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::encrypt_value#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/encryption.py::test_encryption#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/file_retry.py::is_file_safe_to_delete#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/file_retry.py::media_object_is_resolvable#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/file_retry.py::reset_file_for_retry#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/file_validation.py::validate_uploaded_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/gpu_stats.py::_query_gpu_memory_torch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/gpu_stats.py::query_gpu_stats#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig._bind_cuda_device#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig._get_optimal_batch_size#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig.get_vram_usage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig.optimize_memory_usage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig.optimize_memory_usage#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig.should_use_hybrid_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::HardwareConfig.validate_configuration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/hardware_detection.py::resolve_cuda_device_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/nvml_monitor.py::_ensure_init#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/nvml_monitor.py::get_gpu_memory#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/prompt_manager.py::increment_prompt_usage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/pyannote_utils.py::build_native_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/pyannote_utils.py::extract_overlap_regions#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/segment_dedup.py::split_sentences_nltk#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/stats_helpers.py::get_models_info#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/stats_helpers.py::get_models_info#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/stats_helpers.py::get_queue_depths#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/stuck_file_recovery.py::check_for_stuck_files#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/task_cancel.py::_schedule_cancellation_reconcile#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/task_cancel.py::cancel_active_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/task_secret_handoff.py::discard_task_secret#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/text_preprocessing.py::_get_stopwords#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/text_preprocessing.py::_tokenize#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/vram_profiler.py::VRAMProfiler.save_to_redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/utils/websocket_notify.py::_publish#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/bench_parallel/monitors.py::DockerStatsMonitor._sample#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/bench_parallel/monitors.py::VramMonitor._sample#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark-diarization.py::get_nvml_info#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark-thorough.py::get_process_rss_mb#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark-thorough.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_concurrent_uploads.py::_db_query#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_concurrent_uploads.py::_one_upload#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_compare.py::_audio_duration_s#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_compare.py::compare_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_compare.py::compare_file#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::_audio_duration_s#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::_llen_queue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::_poll_task_completion#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::_resolve_file_duration_from_db#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::monitor_queues#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::run_direct_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::run_direct_mode.<locals>._process_one#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::run_queue_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_queue.py::run_queue_mode.<locals>._process_one#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_single.py::_probe_duration_ffprobe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_engine_single.py::_probe_duration_wave#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_projection.py::read_benchmark_csv#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_upload_baseline.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_upload_matrix.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/benchmark_upload_matrix.py::main#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/chat_probe/conversation.py::run_question#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/chat_probe/stack_state.py::restore_state#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/chat_probe/stack_state.py::restore_state#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/chat_probe/stack_state.py::restore_state#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/check-schema-drift.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/cleanup-test-data.py::_delete_artifacts#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/cleanup-test-data.py::_report_orphan_profile_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/cleanup-test-data.py::_sweep_store_planes#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/cleanup-test-data.py::_sweep_store_planes#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/cleanup-test-users.py::_delete_users#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/diar-native-der-parity.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::_fetch_model_config#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_chat_reranker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_nltk_data#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_nltk_data#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_opensearch_neural_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_pyannote_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_redaction_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_redaction_models#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_redaction_models#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_sentence_transformers#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_speaker_attribute_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::download_whisperx_models#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::fetch_diarization_pipeline#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::validate_gated_model_access#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/download-models.py::validate_gated_model_access#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/e2e_bench/backend_api.py::get_task_id_for_file_via_api#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/e2e_bench/cli.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/measure_embedding_window.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/onnx_benchmark_providers.py::bench_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/onnx_benchmark_providers.py::bench_segmentation#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/organize-all-screenshots.py::optimize_image#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/preconvert-onnx-models.py::convert_segmentation_to_onnx#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/preconvert-onnx-models.py::convert_segmentation_to_onnx#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/preconvert-onnx-models.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/audio_io.py::annotation_to_rttm#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/audio_io.py::load_waveform#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/driver.py::run_benchmark#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/driver.py::run_benchmark#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/pipeline.py::load_pipeline#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/pipeline.py::load_pipeline#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/vram.py::get_gpu_info#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/vram.py::get_gpu_info#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/pyannote_direct/vram.py::get_mps_driver_allocated_mb#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/rag_bench/cli.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/release-tests/lib/os-probe.py::_gpu#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/release-tests/lib/os-probe.py::_gpu#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/release-tests/lib/os-probe.py::_gpu#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/release-tests/lib/os-probe.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/soak_seed_audio.py::download_many#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_segmentation_v2#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_segmentation_v2#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_segmentation_v2#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_segmentation_v2#4	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_segmentation_v2#5	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_segmentation_v2#6	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_wespeaker_backbone#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_wespeaker_backbone#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_wespeaker_backbone#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_wespeaker_backbone#4	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_wespeaker_backbone#5	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/spike-onnx-export-v2.py::try_export_wespeaker_backbone#6	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/update-a11y-baseline.py::main#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/verify-embedding-models.py::_request#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/verify-embedding-models.py::check_availability#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization-cpu.py::_rss_mb#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization-mps.py::MPSSampler._run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization-mps.py::run_small_batch_sweep#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::NVMLSampler._run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::NVMLSampler.start#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::_load_nvml#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::get_gpu_info#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::get_gpu_info#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::run_one#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::run_one#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/vram-probe-diarization.py::run_one#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/whole-stack-vram-probe.py::Sampler._run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/whole-stack-vram-probe.py::_load_nvml#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+scripts/whole-stack-vram-probe.py::run_sweep#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

@@ -141,7 +141,7 @@ def test_queue_depths_outage_is_unknown_not_zero(monkeypatch):
     import app.core.celery_metrics as cm
     from app.utils.stats_helpers import get_queue_depths
 
-    def _down():
+    def _down(**_kwargs):
         raise RedisError("down")
 
     monkeypatch.setattr(cm, "queue_snapshot", _down)

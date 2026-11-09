@@ -25,10 +25,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 
 vi.mock('$lib/api/chatStream', async () =>
-  (await import('../test-mocks/chatStreamHarness')).chatStreamMock()
+  (await import('$testMocks/chatStreamHarness')).chatStreamMock()
 );
 vi.mock('$lib/api/chatApi', async () =>
-  (await import('../test-mocks/chatStreamHarness')).chatApiMock()
+  (await import('$testMocks/chatStreamHarness')).chatApiMock()
 );
 
 import * as chatApi from '$lib/api/chatApi';
@@ -40,7 +40,7 @@ import {
   script,
   streamChatMessage,
   createChatHarness,
-} from '../test-mocks/chatStreamHarness';
+} from '$testMocks/chatStreamHarness';
 
 const { stream, prepare } = createChatHarness(chatStore, chatApi);
 

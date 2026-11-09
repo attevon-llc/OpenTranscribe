@@ -5,8 +5,8 @@
  * `$lib/api/chatStream` and `$lib/api/chatApi` mocked. The mock factories live here so each
  * test file declares them in one line:
  *
- *   vi.mock('$lib/api/chatStream', async () => (await import('../test-mocks/chatStreamHarness')).chatStreamMock());
- *   vi.mock('$lib/api/chatApi', async () => (await import('../test-mocks/chatStreamHarness')).chatApiMock());
+ *   vi.mock('$lib/api/chatStream', async () => (await import('$testMocks/chatStreamHarness')).chatStreamMock());
+ *   vi.mock('$lib/api/chatApi', async () => (await import('$testMocks/chatStreamHarness')).chatApiMock());
  *
  * This module must not import `./chat` statically: the mock factory imports it while `./chat`
  * is still loading, which would be a cycle.

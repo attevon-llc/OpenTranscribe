@@ -299,7 +299,9 @@ def test_the_batch_matching_script_skips_a_speaker_whose_scope_is_off(
         def __init__(self, db, embedding_service):
             pass
 
-        def find_and_store_speaker_matches(self, speaker_id, embedding, user_id, threshold):
+        def find_and_store_speaker_matches(
+            self, speaker_id, embedding, user_id, threshold, diagnostics=None
+        ):
             matched.append(speaker_id)
             return []
 

@@ -1,17 +1,12 @@
 import axios from 'axios';
 import { isCloudEdition } from '$lib/edition';
-import { parseRetryAfter, retryAfterFromHeaders } from '$lib/utils/retryAfter';
+import { parseRetryAfter } from '$lib/utils/retryAfter';
 import {
   isSessionEndingCode,
   SUPPORT_ERROR_TOAST,
   supportGrantErrorCode,
 } from '$lib/supportAccess/errors';
 import { SUPPORT_GRANT_HEADER, getSupportAccessHeaders } from '$lib/supportAccess/headers';
-
-/** Methods safe to replay after a 503 (safe methods; never POST/PATCH/DELETE). */
-const BUSY_RETRY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-/** Longest Retry-After honoured; a larger value is clamped, jitter is added on top. */
-const BUSY_RETRY_MAX_WAIT_S = 10;
 
 // Create axios instance with consistent base URL for all environments
 // This ensures the same behavior in development and production with nginx
@@ -257,29 +252,12 @@ axiosInstance.interceptors.response.use(
       }
     }
 
-    // Server busy (scale lane A2): a 503 carrying Retry-After means "overloaded, come back
-    // shortly", NOT "your session is gone" (Retry-After forms, delay-seconds or HTTP-date:
-    // https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Retry-After).
-    // It therefore never reaches the 401 refresh / sign-out paths below. Read methods are
-    // replayed ONCE by re-sending error.config through the instance, tracked by a flag on the
-    // config (the pattern on https://axios.rest/pages/advanced/retry). Method safety and the
-    // jitter are our own design: that page does not check methods and MDN gives no client
-    // guidance. Writes reject with `retryAfterSeconds` set and `getErrorMessage` renders the
-    // translated "server is busy" sentence.
+    // Server busy (scale lane A2): a 503 with Retry-After never reaches the 401 refresh /
+    // sign-out paths below. The policy lives in $lib/utils/busyRetry, loaded on first use.
     if (error.response?.status === 503) {
-      const busyWait = retryAfterFromHeaders(error.response.headers);
-      if (busyWait !== null) {
-        error.retryAfterSeconds = busyWait;
-        const cfg = error.config;
-        const method = String(cfg?.method ?? 'get').toUpperCase();
-        if (cfg && !cfg._busyRetry && BUSY_RETRY_METHODS.has(method)) {
-          cfg._busyRetry = true;
-          const waitMs = Math.min(busyWait, BUSY_RETRY_MAX_WAIT_S) * 1000 + Math.random() * 1000;
-          await new Promise((resolve) => setTimeout(resolve, waitMs));
-          return axiosInstance(cfg);
-        }
-        return Promise.reject(error);
-      }
+      const { handleBusy } = await import('$lib/utils/busyRetry');
+      const handled = handleBusy(error, (config) => axiosInstance(config));
+      if (handled) return handled;
     }
 
     // Quota exceeded (cloud edition): the backend returns HTTP 402 when an upload

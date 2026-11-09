@@ -51,6 +51,16 @@ def _transcribe(audio_path: str, min_speakers: int | None, max_speakers: int | N
     return eng.process(JobSpec(audio_path=audio_path, task_id="ds-measure")).segments
 
 
+def _der_or_none(turns: list, hyp_turns: list) -> float | None:
+    """DER, or None when pyannote.metrics rejects degenerate input (e.g. no reference turns)."""
+    try:
+        return round(der(turns, hyp_turns, collar=0.25)["der"], 4)
+    except (ValueError, ZeroDivisionError):
+        # A missing metrics package (ImportError) must still surface.
+        logger.warning("DER undefined for this file; recording None", exc_info=True)
+        return None
+
+
 def _score(assigned: list[dict], turns: list, max_island: int) -> dict:
     """Score per-word speakers vs reference turns: WSER + bleed-island count."""
     hyp_words = flatten_words(assigned)
@@ -66,13 +76,7 @@ def _score(assigned: list[dict], turns: list, max_island: int) -> dict:
         for s in assigned
         if s.get("speaker") and s.get("start") is not None and s.get("end") is not None
     ]
-    try:
-        der_val: float | None = round(der(turns, hyp_turns, collar=0.25)["der"], 4)
-    except (ValueError, ZeroDivisionError):
-        # pyannote.metrics rejects degenerate inputs (e.g. no reference turns); an
-        # ImportError for a missing metrics package must still surface.
-        logger.warning("DER undefined for this file; recording None", exc_info=True)
-        der_val = None
+    der_val = _der_or_none(turns, hyp_turns)
     return {
         "wser": round(res["wser"], 4),
         "t_wser": round(res["t_wser"], 4),

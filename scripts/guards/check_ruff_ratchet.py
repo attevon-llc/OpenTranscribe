@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Guard: per-function complexity and per-file broad-except counts may not grow.
 
-Two ratchets over ``backend/app scripts backend/alembic`` (tests excluded), both read
+Two ratchets over ``backend/app backend/scripts scripts backend/alembic`` (tests excluded), both read
 from ruff run with ``--isolated --ignore-noqa`` so neither a config ignore nor a
 ``noqa`` comment can hide a finding:
 
@@ -34,7 +34,7 @@ import _baseline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINES = REPO_ROOT / 'scripts' / 'guards' / 'baselines'
-TARGETS = ('backend/app', 'scripts', 'backend/alembic')
+TARGETS = ('backend/app', 'backend/scripts', 'scripts', 'backend/alembic')
 PINNED_RUFF = '0.17.3'
 MAX_COMPLEXITY = 15
 _SCORE = re.compile(r'`(?P<name>[^`]+)` is too complex \((?P<score>\d+) >')

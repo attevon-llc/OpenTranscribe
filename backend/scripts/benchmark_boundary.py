@@ -213,6 +213,27 @@ def finalize_from_cache(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return Engine(cfg).run_cpu_finalize(raw).segments
 
 
+def _build_assigned(
+    file_id: str,
+    audio_path: str,
+    model: str,
+    source_language: str,
+    min_speakers: int,
+    max_speakers: int,
+    cache_dir: Path,
+) -> list[dict[str, Any]] | None:
+    """Build and finalize one file; ``None`` after logging the traceback so the corpus continues."""
+    try:
+        payload = build_or_load_rawinfer(
+            file_id, audio_path, model, source_language, min_speakers, max_speakers, cache_dir
+        )
+        return finalize_from_cache(payload)
+    except Exception:  # per-file isolation boundary: the caller counts it and fails the run
+        logging.getLogger(__name__).exception("building/finalizing %s (%s) failed", file_id, model)
+        log(f"  ERROR building/finalizing {file_id} ({model}); see traceback above")
+        return None
+
+
 def _resolve_reference(ref_dir: Path, file_id: str, model: str) -> dict[str, Any]:
     """Locate the reference for a file. Returns {kind, path} or {kind: 'none'}."""
     safe_model = model.replace("/", "_")
@@ -538,6 +559,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def _verdict(build_failures: int, flagged: list[dict[str, Any]]) -> int:
+    """Log the run outcome and return the process exit code (nonzero on any failure or flag)."""
+    if build_failures:
+        log(f"DONE with {build_failures} file(s) that failed to build/finalize")
+        return 1
+    if flagged:
+        log(f"DONE with {len(flagged)} regression flag(s) — see summary.md")
+        return 1
+    log("DONE — no regressions")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     require_container()
     args = parse_args(argv)
@@ -581,22 +614,16 @@ def main(argv: list[str] | None = None) -> int:
         for rec in run_records:
             file_id, audio_path = rec["file_id"], rec["audio_path"]
             log(f"[{model}] {file_id}  ({rec.get('filename', '')})")
-            try:
-                payload = build_or_load_rawinfer(
-                    file_id,
-                    audio_path,
-                    model,
-                    source_language,
-                    min_speakers,
-                    max_speakers,
-                    cache_dir,
-                )
-                assigned = finalize_from_cache(payload)
-            except Exception:  # per-file isolation loop: keep the corpus going, fail the run
-                logging.getLogger(__name__).exception(
-                    "building/finalizing %s (%s) failed", file_id, model
-                )
-                log(f"  ERROR building/finalizing {file_id} ({model}); see traceback above")
+            assigned = _build_assigned(
+                file_id,
+                audio_path,
+                model,
+                source_language,
+                min_speakers,
+                max_speakers,
+                cache_dir,
+            )
+            if assigned is None:
                 build_failures += 1
                 continue
 
@@ -656,14 +683,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         log("no OFF+ON pairs scored — skipping aggregate/summary (off-only or all-skipped run)")
 
-    if build_failures:
-        log(f"DONE with {build_failures} file(s) that failed to build/finalize")
-        return 1
-    if flagged:
-        log(f"DONE with {len(flagged)} regression flag(s) — see summary.md")
-        return 1
-    log("DONE — no regressions")
-    return 0
+    return _verdict(build_failures, flagged)
 
 
 if __name__ == "__main__":

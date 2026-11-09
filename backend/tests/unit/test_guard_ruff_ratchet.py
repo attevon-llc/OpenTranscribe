@@ -194,3 +194,7 @@ def test_write_baseline_requires_real_reason_and_records_findings(tmp_path: Path
 
 def test_real_repo_passes_with_committed_baselines() -> None:
     assert guard.main([]) == 0
+
+
+def test_operator_scripts_directory_is_scanned() -> None:
+    assert "backend/scripts" in guard.TARGETS

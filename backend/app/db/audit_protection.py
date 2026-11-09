@@ -20,11 +20,6 @@ def guard_trigger_name(table: str) -> str:
     return f"trg_audit_guard_{table}"
 
 
-def truncate_trigger_name(table: str) -> str:
-    """Name of the statement-level TRUNCATE trigger on ``table``."""
-    return f"trg_audit_guard_truncate_{table}"
-
-
 @dataclass(frozen=True)
 class ProtectedTable:
     """One protected table.

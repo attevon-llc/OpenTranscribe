@@ -35,17 +35,6 @@ class WatchFileStatus(StrEnum):
     WAITING_FOR_PARTS = "waiting_for_parts"
 
 
-class SkipReason(StrEnum):
-    """Why a tracked file was skipped."""
-
-    DUPLICATE_SAME_SOURCE = "duplicate_same_source"
-    DUPLICATE_OTHER_SOURCE = "duplicate_other_source"
-    DUPLICATE_EXISTING = "duplicate_existing"
-    TOO_OLD = "too_old"
-    INVALID_TYPE = "invalid_type"
-    VALIDATION_FAILED = "validation_failed"
-
-
 # ----- shared processing config -----
 
 

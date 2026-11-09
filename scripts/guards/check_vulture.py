@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Guard: no new unused code (vulture, min confidence 60) in production sources.
 
-Runs vulture over ``backend/app scripts``. Tests are not scanned, so code used only by tests
+Runs vulture over ``backend/app backend/scripts scripts``. Tests are not scanned, so code used only by tests
 is reported: production code with no production caller is dead. Routes, celery tasks,
 validators, signal handlers, event listeners and Locust tasks/hooks are registered by decorator
 and are ignored.
@@ -32,7 +32,7 @@ import _baseline
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BASELINE_PATH = REPO_ROOT / 'scripts' / 'guards' / 'baselines' / 'vulture.txt'
 WHITELIST = 'scripts/guards/vulture_whitelist.py'
-TARGETS = ('backend/app', 'scripts')
+TARGETS = ('backend/app', 'backend/scripts', 'scripts')
 PINNED_VULTURE = '2.16'
 MIN_CONFIDENCE = '60'
 IGNORE_DECORATORS = (

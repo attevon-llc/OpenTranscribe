@@ -1,19 +1,11 @@
 """Pydantic schemas for speaker clustering."""
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
 from pydantic import Field
 
 # --- Speaker Cluster ---
-
-
-class SpeakerClusterBase(BaseModel):
-    """Base schema for speaker clusters."""
-
-    label: str | None = None
-    description: str | None = None
 
 
 class SpeakerClusterUpdate(BaseModel):
@@ -23,54 +15,10 @@ class SpeakerClusterUpdate(BaseModel):
     description: str | None = None
 
 
-class GenderComposition(BaseModel):
-    """Gender composition summary for a cluster."""
-
-    male_count: int = 0
-    female_count: int = 0
-    unknown_count: int = 0
-    total_with_gender: int = 0
-    dominant_gender: str | None = None
-    gender_coherence: float | None = None
-    gender_label: str | None = None
-    has_gender_conflict: bool = False
-
-
-class SpeakerClusterResponse(SpeakerClusterBase):
-    """Response schema for a speaker cluster."""
-
-    uuid: UUID
-    user_id: int
-    member_count: int = 0
-    promoted_to_profile_id: int | None = None
-    promoted_to_profile_uuid: UUID | None = None
-    promoted_to_profile_name: str | None = None
-    suggested_name: str | None = None
-    quality_score: float | None = None
-    gender_composition: GenderComposition | None = None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 # --- Speaker Inbox ---
 
 
 # --- Batch Operations ---
-
-
-class MinorityAnalysisItem(BaseModel):
-    """Analysis of a minority-gender speaker in a cluster."""
-
-    speaker_uuid: UUID
-    speaker_name: str
-    predicted_gender: str
-    sim_to_centroid: float
-    avg_sim_to_majority: float
-    avg_sim_to_minority_peers: float | None = None
-    outlier_score: float
-    recommendation: str  # likely_outlier, borderline, likely_valid
 
 
 class ClusterUnassignRequest(BaseModel):
@@ -131,14 +79,3 @@ class ClusterPromoteRequest(BaseModel):
 
 
 # --- Paginated Responses ---
-
-
-class PaginatedClusterResponse(BaseModel):
-    """Paginated list of clusters."""
-
-    items: list[SpeakerClusterResponse] = []
-    total: int = 0
-    page: int = 1
-    per_page: int = 20
-    pages: int = 0
-    last_clustered_at: datetime | None = None

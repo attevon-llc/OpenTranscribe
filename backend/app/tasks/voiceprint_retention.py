@@ -210,19 +210,6 @@ def stale_profiles_left_empty(db: Session, cutoff: datetime, file_ids: list[int]
     return sorted(str(r[0]) for r in rows)
 
 
-def stale_profile_count(db: Session, cutoff: datetime) -> int:
-    """Profiles not interacted with since the cutoff (the admin privacy page's count)."""
-    from sqlalchemy import func
-
-    from app.models.speaker import SpeakerProfile
-
-    return int(
-        db.execute(
-            select(func.count()).where(SpeakerProfile.last_interaction_at < cutoff)
-        ).scalar_one()
-    )
-
-
 def dispatch_files_purge(file_ids: list[int]) -> str:
     """Queue the two-pass privacy purge for these files. Returns the task id.
 

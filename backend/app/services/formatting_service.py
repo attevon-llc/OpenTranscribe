@@ -541,22 +541,6 @@ class FormattingService:
         return status_classes.get(status.lower(), "status-unknown")
 
     @staticmethod
-    def calculate_percentage(value: float, total: float) -> float:
-        """
-        Calculate percentage with safe division.
-
-        Args:
-            value: The value to calculate percentage for
-            total: The total value
-
-        Returns:
-            Percentage as float (0-100)
-        """
-        if total == 0 or value is None or total is None:
-            return 0.0
-        return min(100.0, max(0.0, (value / total) * 100))
-
-    @staticmethod
     def format_processing_time(
         created_at: datetime | None, completed_at: datetime | None
     ) -> str | None:

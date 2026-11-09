@@ -280,9 +280,6 @@ SEARCH_BULK_BATCH_SIZE=100
 # Neural ingest batch size: documents per embedding call (default: 5)
 SEARCH_NEURAL_BATCH_SIZE=5
 
-# Reindex refresh interval: flush Lucene segments every N files (default: 100)
-SEARCH_REINDEX_REFRESH_INTERVAL=100
-
 # Over-fetch ceiling for the client-side sort of collapsed groups (default: 1000)
 SEARCH_MAX_OVERFETCH=1000
 
@@ -1452,7 +1449,6 @@ laptop or single home server; none of these need setting for a normal install.
 | `SEARCH_CHUNK_OVERLAP_WORDS` | 40 | sliding-window overlap between chunks |
 | `SEARCH_BULK_BATCH_SIZE` | 100 | chunks per OpenSearch bulk request |
 | `SEARCH_NEURAL_BATCH_SIZE` | 5 | documents per embedding call |
-| `SEARCH_REINDEX_REFRESH_INTERVAL` | 100 | flush a Lucene segment every N files |
 | `SEARCH_LARGE_TRANSCRIPT_CHUNKS` | 500 | bulk loads this large disable refresh for the load |
 | `REINDEX_PARALLEL_WORKERS` | 4 | parallel reindex workers |
 | `SEARCH_COLLAPSE_MAX_CONCURRENT` | 20 | concurrent inner_hits searches; 0 = sequential |

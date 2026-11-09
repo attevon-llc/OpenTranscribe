@@ -203,18 +203,6 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
             return False
         return True
 
-    def is_youtube_url(self, url: str) -> bool:
-        """
-        Check if URL is a YouTube URL (for backward compatibility and special handling).
-
-        Args:
-            url: URL to check
-
-        Returns:
-            True if YouTube URL, False otherwise
-        """
-        return bool(YOUTUBE_URL_PATTERN.match(url.strip()))
-
     def is_playlist_url(self, url: str) -> bool:
         """
         Check if URL is a YouTube playlist URL.
@@ -778,26 +766,6 @@ class MediaDownloadService(PlaylistMixin, MediaMetadataMixin):
                 logger.debug(f"Cleaned up temporary directory: {temp_dir}")
             except Exception as e:
                 logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")
-
-    # Backward compatibility aliases
-    def is_valid_youtube_url(self, url: str) -> bool:
-        """Alias for is_valid_media_url for backward compatibility."""
-        return self.is_valid_media_url(url)
-
-    def process_youtube_url_sync(
-        self,
-        url: str,
-        db: Session,
-        user: User,
-        media_file: MediaFile,
-        progress_callback: Callable[[int, str], None] | None = None,
-    ) -> MediaFile:
-        """Alias for process_media_url_sync for backward compatibility."""
-        return self.process_media_url_sync(url, db, user, media_file, progress_callback)
-
-    def _prepare_youtube_metadata(self, url: str, youtube_info: dict[str, Any]) -> dict[str, Any]:
-        """Alias for _prepare_media_metadata for backward compatibility."""
-        return self._prepare_media_metadata(url, youtube_info)
 
 
 # Backward compatibility alias

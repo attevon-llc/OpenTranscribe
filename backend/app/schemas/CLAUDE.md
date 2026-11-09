@@ -105,51 +105,12 @@ value falls back to. They were dead code while the write path accepted a bare `d
   `QuarantinedFile` used to expose integer `user_id`/`organization_id`/`quarantined_by` too; it now
   carries `owner_uuid`/`organization_uuid`/`quarantined_by_email` (issue #576). Don't copy the former. `Task.id` is a *string* Celery id by
   design; `TranscriptSegmentUpdate.id` is request-only.
-- **Some schemas were dead documentation and have been deleted (issue #567 / E8, 2026-08-24).**
-  `api/endpoints/search.py` declares no `response_model` at all — it hand-builds a dict instead —
-  so most of `search.py`'s response schemas were never actually wired to anything. E8 enumerated
-  the whole package mechanically (a class is dead iff it has ≤1 whole-repo reference AND is not a
-  base class of anything else in `schemas/` AND is not in `__init__.py`'s imports/`__all__`) and
-  deleted exactly 30 classes across 7 files, 8 of them in `search.py`
-  (`SuggestionItemSchema`, `FilterOptionsSchema`, `ReindexRequestSchema`, `ReindexStatusSchema`,
-  `EmbeddingModelsResponseSchema`, `NeuralModelsResponseSchema`, `NeuralModelStatusSchema`,
-  `SetActiveNeuralModelSchema`). The rest of `search.py` (`SetEmbeddingModelSchema`,
-  `SearchOccurrenceSchema`, `SearchHitSchema`, `SearchResponseSchema`, `EmbeddingModelSchema`,
-  `NeuralModelInfoSchema`, `SummarySectionMatchSchema`, `SummaryHitSchema`) legitimately
-  survives the same method — each is referenced as a nested field type by a sibling class in the
-  same file, which is real usage even though the endpoint itself never puts any of them behind a
-  `response_model`. ⚠️ **A prior version of this note also named `CustomVocabularyResponse`,
-  `UserASRSettingsResponse`, `ASRSettingsList`, and `SpeakerClusterResponse` as dead — that was
-  wrong.** `CustomVocabularyResponse`, `UserASRSettingsResponse`, and `ASRSettingsList` are all
-  re-exported through `schemas/__init__.py`'s `__all__` (E8's method excludes anything
-  re-exported for exactly this reason — a re-export is a real, if indirect, consumer), and
-  `UserASRSettingsResponse` is additionally referenced as a nested field type by
-  `ASRSettingsList`/`ASRStatusResponse` in its own file (`asr_settings.py`).
-  `SpeakerClusterResponse` is the odd one out: it is **not** re-exported via `__init__.py` at
-  all (`rg SpeakerClusterResponse --type py` finds only `speaker_cluster.py` itself) — its sole
-  surviving reference is `PaginatedClusterResponse` using it as a nested field type
-  (`items: list[SpeakerClusterResponse]`) in that same file. It survives on the nested-field-type
-  rule alone, not the re-export rule.
-
-  **Phase B (2026-08-24) found and deleted 6 more**, all backend-only:
-  `speaker_cluster.py`'s `OutlierAnalysisResponse`/`BatchVerifyResponse`/`ReclusterResponse`
-  and `summary.py`'s `SpeakerInfo`/`ContentSection`/`SummaryMetadata` (the last three carried a
-  stale `# Legacy schemas kept for backward compatibility` comment — nothing actually read
-  them). **E8's original pass missed these because its `rg` hit-count wasn't scoped to
-  `backend/`**: `frontend/src/lib/types/speakerCluster.ts` and `.../types/summary.ts` declare
-  hand-authored TypeScript mirrors of the identical names, which pushed the whole-repo hit
-  count above E8's ≤1 threshold and hid genuinely dead Python classes behind an unrelated
-  same-named TS type. **Re-running this enumeration must scope the reference count to
-  `backend/`, or count only Python-file hits** — a same-named frontend type is not a Python
-  consumer. Deleting `OutlierAnalysisResponse` leaves `MinorityAnalysisItem` (same file) as a
-  fresh second-order orphan — its only remaining reference was the field type usage inside the
-  now-deleted class — deliberately left alone per the same "don't chase in the same pass"
-  discipline as the first round.
-
-  Re-running the (corrected) enumerator after these 6 deletions surfaces further second-order
-  orphans on top of the original 5 — deliberately not chased in the same pass; check the
-  audit-remediation branch's Phase B re-audit notes before assuming this list is now
-  exhaustive.
+- **Dead schemas get deleted, including second-order orphans (#567, v0.7.0 L04).** A response
+  schema no endpoint puts behind a `response_model` and no sibling nests is dead documentation.
+  `scripts/guards/check_vulture.py` flags an unused class; deleting one can orphan the classes it
+  nested, so re-run it until it reports nothing (`search.py` and `speaker_cluster.py` shrank this
+  way). A frontend type of the same name is a hand-written mirror, not a Python consumer: count
+  references under `backend/` only. A re-export in `schemas/__init__.py` is not a consumer either.
 - **There is exactly one tag shape (#326).** `tag.py:Tag` (`uuid`/`name`/`source`) is what
   `/api/tags` (as `TagWithCount`), `POST /api/tags`, `POST /api/tags/files/{uuid}/tags` **and**
   `MediaFileDetail.tags` all serve. `MediaFileDetail.tags` was `list[str]` until #326 — don't

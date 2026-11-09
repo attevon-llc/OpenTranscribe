@@ -612,51 +612,6 @@ class ErrorCategorizationService:
             return None
         return str(ErrorCategorizationService.get_error_info(str(stored_error))["user_message"])
 
-    @staticmethod
-    def should_show_enhanced_notification(error_message: str | None) -> bool:
-        """Determine if an enhanced error notification should be shown.
-
-        This method identifies errors that warrant special attention from users,
-        such as file quality issues or speech detection problems that require
-        user action rather than simple retries.
-
-        Args:
-            error_message: The error message to evaluate for notification level.
-
-        Returns:
-            True if enhanced notification is recommended, False for standard
-            notifications. Enhanced notifications typically include additional
-            guidance and more prominent display.
-
-        Enhanced notifications are triggered for:
-            - File quality and corruption issues
-            - Speech detection failures
-            - Any error that requires user intervention to resolve
-
-        Regular notifications are used for:
-            - Network errors (temporary)
-            - Processing errors (retryable)
-            - Generic system errors
-
-        Example:
-            >>> should_show_enhanced_notification("corrupted file")  # True
-            >>> should_show_enhanced_notification("network timeout")  # False
-        """
-        if not error_message:
-            return False
-
-        error_lower = error_message.lower()
-
-        # Show enhanced notifications for quality and speech issues
-        quality_issues = any(
-            pattern in error_lower for pattern in ErrorCategorizationService.FILE_QUALITY_PATTERNS
-        )
-        speech_issues = any(
-            pattern in error_lower for pattern in ErrorCategorizationService.NO_SPEECH_PATTERNS
-        )
-
-        return quality_issues or speech_issues
-
 
 _FIXED_MESSAGE_HANDLERS: tuple[Callable[[], tuple[UserErrorReason, str, list[str]]], ...] = (
     ErrorCategorizationService._handle_file_quality_error,

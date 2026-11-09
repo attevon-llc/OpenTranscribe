@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from app.transcription.engine.job import RawTranscriptResult
 
 from app.transcription.engine.config import EngineConfig
-from app.transcription.engine.metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,6 @@ class Engine:
 
     def __init__(self, config: EngineConfig) -> None:
         self.config = config
-        self.metrics = MetricsCollector()
 
     def warmup(self) -> None:
         """Validate backend wiring at worker startup.

@@ -3,10 +3,7 @@
 ## Purpose
 
 Everything between the API/Celery entry points and the data layer: well over 100 top-level modules plus subpackages (`ls` this directory); endpoints and
-tasks should stay thin and call in here. `interfaces.py` declares the structural `Protocol`
-contracts (`StorageService`, `SearchService`, `CacheService`, `NotificationService`) that
-`minio_service`, `opensearch_service`, `redis_cache_service`, and `utils/websocket_notify`
-already satisfy — depend on the Protocol, not the concrete module, at new seams.
+tasks should stay thin and call in here.
 
 ## Where things live
 

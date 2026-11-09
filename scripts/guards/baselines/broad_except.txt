@@ -555,7 +555,6 @@ backend/app/services/speaker_matching/match_storage.py::create_speaker_match_rec
 backend/app/services/speaker_matching/processing.py::process_single_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/propagation.py::propagate_profile_assignment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_rename_tracker.py::SpeakerRenameTracker.flush#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/speaker_status_service.py::SpeakerStatusService.refresh_all_speaker_statuses#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_status_service.py::SpeakerStatusService.update_speaker_status_in_db#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/storage_backend.py::ensure_bucket_cors#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/storage_presign_identity.py::_derived_identity_works#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -610,13 +609,10 @@ backend/app/services/topic_extraction_service.py::TopicExtractionService.create_
 backend/app/services/transcription_retry.py::_retry_file#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/transcription_retry.py::run_cancel_requested#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/transcription_retry.py::run_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/video_processing_service.py::VideoProcessingService._create_chunk_generator.<locals>.generate_chunks#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/video_processing_service.py::VideoProcessingService._get_object_size#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/video_processing_service.py::VideoProcessingService._masked_video_cache_keys#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/video_processing_service.py::VideoProcessingService._send_download_progress#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/video_processing_service.py::VideoProcessingService._send_download_progress_sync#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/video_processing_service.py::VideoProcessingService.is_video_cached#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/video_processing_service.py::_parse_range_header#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/voiceprint_orphan_sweep.py::sweep_orphan_voiceprints#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/watch_email_service.py::send_email#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/watch_sources/fs_events/dispatcher.py::ScanDispatcher._dispatch_locked#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -728,7 +724,6 @@ backend/app/tasks/reindex_index_ops.py::_check_and_recreate_stale_index#2	1	re-k
 backend/app/tasks/reindex_index_ops.py::_check_and_recreate_stale_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/reindex_index_ops.py::_ensure_neural_pipeline_ready#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/reindex_index_ops.py::_force_merge_after_reindex#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/reindex_index_ops.py::_periodic_refresh#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/reindex_index_ops.py::_refresh_index_and_clear_cache#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/reindex_index_ops.py::_restore_normal_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/reindex_index_ops.py::_set_bulk_indexing_mode#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -921,13 +916,6 @@ backend/app/transcription/engine/gpu_stages.py::_GpuRawStage.run.<locals>._prelo
 backend/app/transcription/engine/gpu_stages.py::_GpuStage._finalize_job_result#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/engine/gpu_stages.py::_GpuStage.run.<locals>._load_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/engine/gpu_stages.py::_GpuStage.run.<locals>._preload_diarizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector._get_redis#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector._hset#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector.decrement_in_flight#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector.decrement_ready_queue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector.get_snapshot#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector.increment_in_flight#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/transcription/engine/metrics.py::MetricsCollector.increment_ready_queue#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/engine/split_stages.py::_DiarizerOnlyStage.run#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/model_manager.py::ModelManager._build_diarizer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/transcription/model_manager.py::ModelManager._cleanup_gpu#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

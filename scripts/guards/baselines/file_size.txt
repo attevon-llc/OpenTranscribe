@@ -1,4 +1,4 @@
-backend/app/core/config.py	1457	v0.6.1 merge: release growth; split by concern planned
+backend/app/core/config.py	1456	v0.6.1 merge: release growth; split by concern planned
 backend/app/services/llm_service.py	1098	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FileUploader.svelte::script	824	v0.6.1 merge: release growth; split by concern planned
 frontend/src/components/FilterSidebar.svelte::script	749	oversize: split by concern planned

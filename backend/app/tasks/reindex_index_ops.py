@@ -94,8 +94,7 @@ def _set_bulk_indexing_mode() -> None:
     """Temporarily disable refresh_interval for faster bulk ingestion.
 
     During large reindex operations, the default 1-second refresh creates
-    unnecessary Lucene segments. Explicit _periodic_refresh() calls still
-    work independently of this setting.
+    unnecessary Lucene segments.
     """
     try:
         from app.services.opensearch_service import opensearch_client
@@ -143,34 +142,6 @@ def _force_merge_after_reindex() -> None:
             logger.info("Force merge initiated (running in background)")
     except Exception as e:
         logger.warning(f"Force merge after reindex failed (non-fatal): {e}")
-
-
-def _periodic_refresh(files_since_refresh: int) -> int:
-    """Trigger a Lucene segment flush if enough files have been indexed.
-
-    Called periodically during large reindex operations to keep search
-    results fresh rather than waiting until the very end.
-
-    Args:
-        files_since_refresh: Number of files indexed since the last refresh.
-
-    Returns:
-        0 if refresh was triggered (counter reset), otherwise the unchanged count.
-    """
-    interval = settings.SEARCH_REINDEX_REFRESH_INTERVAL
-    if files_since_refresh < interval:
-        return files_since_refresh
-
-    try:
-        from app.services.opensearch_service import opensearch_client
-
-        if opensearch_client:
-            opensearch_client.indices.refresh(index=settings.OPENSEARCH_CHUNKS_INDEX)
-            logger.info(f"Periodic index refresh after {files_since_refresh} files")
-    except Exception as e:
-        logger.warning(f"Periodic index refresh failed: {e}")
-
-    return 0
 
 
 def _index_structure_lock() -> "AbstractContextManager[bool]":

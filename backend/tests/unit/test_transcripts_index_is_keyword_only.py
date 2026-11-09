@@ -125,13 +125,3 @@ def test_the_module_exposes_no_search_function_at_all() -> None:
         "the package re-export came back; nothing consumed it and it shadowed the real "
         "endpoint's name"
     )
-
-
-def test_the_search_service_protocol_promises_only_what_exists() -> None:
-    """A Protocol member no implementation honours advertises a phantom capability."""
-    from app.services.interfaces import SearchService
-
-    members = {n for n in vars(SearchService) if not n.startswith("_")}
-
-    assert "search_transcripts" not in members
-    assert {"index_transcript", "remove_speaker_embedding"} <= members

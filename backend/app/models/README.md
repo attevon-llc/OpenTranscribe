@@ -73,9 +73,6 @@ Every model must be exported from `__init__.py`, the canonical import surface (a
 - `watch_source.py` - `WatchSource`, `WatchSourceFile` (auto-import from local / S3 / SMB)
 - `email_notification_config.py` - `EmailNotificationConfig`, `WatchSourceEmail`
 
-### Mixins
-- `mixins.py` - `UUIDMixin` and `TimestampMixin` (no model currently uses `UUIDMixin`; each declares its own `uuid` column)
-
 ## 👤 User (`user.py`)
 
 Table `user`. Highlights (see the file for the full column list):

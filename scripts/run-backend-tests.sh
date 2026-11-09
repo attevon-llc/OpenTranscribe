@@ -28,7 +28,11 @@
 #                                                   # Accepted in ANY position, with an
 #                                                   # optional explicit <sha> after it.
 #   ./scripts/run-backend-tests.sh --failures       # list failures, no re-run
-#   ./scripts/run-backend-tests.sh --log            # path to the full log
+#   ./scripts/run-backend-tests.sh --log            # path to this checkout's latest full log
+#
+# Artifacts: $OT_TEST_OUT_DIR (default /tmp/ot-backend-tests) / <12-hex hash of this checkout's
+# path> / {last.log,last.xml,last.meta, runs/<timestamp>-<pid>.{log,xml}}. The newest
+# OT_TEST_KEEP_RUNS (default 10) runs of THIS checkout are kept; other checkouts are never touched.
 #   ./scripts/run-backend-tests.sh --throwaway-db [--keep] [pytest args]
 #                                                   # run against a private, disposable Postgres
 #                                                   # (container ot-testdb-<random-hex>, tmpfs,
@@ -57,7 +61,14 @@ cd "$REPO_ROOT/backend" || exit 2
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-OUT_DIR="${OT_TEST_OUT_DIR:-/tmp/ot-backend-tests}"
+# OT_TEST_OUT_DIR is the BASE dir. Artifacts live in a per-checkout subdirectory keyed by a hash of
+# this checkout's toplevel path, so concurrent runs from different git worktrees can never
+# overwrite each other, and `--summary` / `--failures` / `--log` only ever describe THIS checkout's
+# last run (they previously read one shared last.* and re-reported another worktree's results).
+OUT_BASE="${OT_TEST_OUT_DIR:-/tmp/ot-backend-tests}"
+CHECKOUT_KEY="$(printf '%s' "$REPO_ROOT" | sha256sum | cut -c1-12)"
+OUT_DIR="$OUT_BASE/$CHECKOUT_KEY"
+KEEP_RUNS="${OT_TEST_KEEP_RUNS:-10}"
 LOG="$OUT_DIR/last.log"
 XML="$OUT_DIR/last.xml"
 # Provenance of the published artifacts: which commit was checked out, and when. Without it
@@ -71,9 +82,14 @@ META="$OUT_DIR/last.meta"
 # has the short one overwrite last.* and then the reporting modes describe the
 # WRONG run — which happened: a full-suite run was still going when a 16-test run
 # clobbered its artifacts, so `--summary` reported 16 tests.
-RUN_LOG="$OUT_DIR/run-$$.log"
-RUN_XML="$OUT_DIR/run-$$.xml"
-mkdir -p "$OUT_DIR"
+# Every run also keeps its OWN uniquely named files (timestamp + pid) under runs/, so the path
+# printed at the end of a run stays valid after a later run replaces last.*.
+RUN_ID="$(date +%Y%m%dT%H%M%S)-$$"
+RUNS_DIR="$OUT_DIR/runs"
+RUN_LOG="$RUNS_DIR/$RUN_ID.log"
+RUN_XML="$RUNS_DIR/$RUN_ID.xml"
+mkdir -p "$RUNS_DIR"
+echo "$REPO_ROOT" > "$OUT_DIR/checkout-path"
 # shellcheck source=lib/throwaway-pg.sh
 source "$SCRIPT_DIR/lib/throwaway-pg.sh"
 # An interrupted run never reaches the publish step below, so its PID-scoped files were left
@@ -370,8 +386,13 @@ echo -e "${BLUE}Running the backend suite once; artifacts in $OUT_DIR${NC}" >&2
     2>&1 | tee "$RUN_LOG"
 rc=${PIPESTATUS[0]}
 
-# Publish atomically, only now that this run is complete.
-mv -f "$RUN_LOG" "$LOG"
+# Publish atomically (copy to a temp name in the same dir, then rename), only now that this run
+# is complete. The per-run files stay put; last.* is the pointer to this checkout's newest run.
+publish_last() {
+    local src="$1" dest="$2"
+    cp -f -- "$src" "$dest.tmp.$$" && mv -f -- "$dest.tmp.$$" "$dest"
+}
+publish_last "$RUN_LOG" "$LOG"
 
 # ⚠️ THE EVIDENCE AND ITS PROVENANCE ARE PUBLISHED TOGETHER OR NOT AT ALL.
 #
@@ -388,18 +409,33 @@ mv -f "$RUN_LOG" "$LOG"
 # DESTROYED, so the only thing that can no longer happen is a fresh-looking pass.
 PUBLISHED_XML=false
 if [[ -f "$RUN_XML" ]]; then
-    mv -f "$RUN_XML" "$XML"
-    printf 'sha=%s\nepoch=%s\n' \
+    publish_last "$RUN_XML" "$XML"
+    printf 'sha=%s\nepoch=%s\nrun=%s\n' \
         "$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)" \
-        "$(date +%s)" > "$META"
+        "$(date +%s)" "$RUN_ID" > "$META.tmp.$$" && mv -f -- "$META.tmp.$$" "$META"
     PUBLISHED_XML=true
 else
     rm -f "$META"
     echo >&2
     echo -e "${RED}NOT MEASURED: pytest wrote no JUnit XML to $RUN_XML, so this run produced" >&2
     echo -e "  no evidence. Removed $META: a stale $XML must not" >&2
-    echo -e "  inherit this run's commit and timestamp. Full output: $LOG${NC}" >&2
+    echo -e "  inherit this run's commit and timestamp. Full output: $RUN_LOG${NC}" >&2
 fi
+
+# Keep the newest $KEEP_RUNS runs of THIS checkout; prune only validated files inside its own
+# runs/ dir (names are timestamp-prefixed, so a lexical sort is chronological).
+prune_old_runs() {
+    [[ -n "$RUNS_DIR" && -d "$RUNS_DIR" && "$KEEP_RUNS" =~ ^[0-9]+$ ]] || return 0
+    local f stem
+    local -a logs=()
+    mapfile -t logs < <(find "$RUNS_DIR" -maxdepth 1 -name '*.log' -printf '%f\n' | sort -r)
+    for f in "${logs[@]:$KEEP_RUNS}"; do
+        stem="${f%.log}"
+        [[ "$stem" =~ ^[0-9]{8}T[0-9]{6}-[0-9]+$ ]] || continue
+        rm -f -- "$RUNS_DIR/$stem.log" "$RUNS_DIR/$stem.xml"
+    done
+}
+prune_old_runs
 
 echo
 # Never summarise from an artifact this run did not produce — a tally that belongs to the
@@ -413,9 +449,9 @@ if [[ $rc -ne 0 ]]; then
     # failures, and listing them under a fresh run's exit code is worse than listing none.
     $PUBLISHED_XML && report_failures
     echo
-    echo -e "${RED}Full output: $LOG${NC}"
+    echo -e "${RED}Full output: $RUN_LOG${NC}"
     echo -e "${YELLOW}Re-report without re-running: $0 --failures${NC}"
 else
-    echo -e "${GREEN}Full output: $LOG  (re-report with $0 --summary)${NC}"
+    echo -e "${GREEN}Full output: $RUN_LOG  (re-report with $0 --summary)${NC}"
 fi
-exit $rc
+exit "$rc"

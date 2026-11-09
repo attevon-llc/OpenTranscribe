@@ -21,7 +21,7 @@ Usage::
     scripts/analyze-test-timing.py run.xml --baseline baseline.xml
     scripts/analyze-test-timing.py run.xml --json
 
-``scripts/run-backend-tests.sh`` writes the XML this reads (``$OT_TEST_OUT_DIR/last.xml``,
+``scripts/run-backend-tests.sh`` writes the XML this reads (``$OT_TEST_OUT_DIR/<checkout-hash>/last.xml``,
 default ``/tmp/ot-backend-tests``). Never re-run the suite just to get numbers — run it
 once and read the artifact repeatedly.
 """

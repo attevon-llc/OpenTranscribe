@@ -93,13 +93,19 @@ def _run(out_dir: Path, shim: Path | None, *args: str) -> subprocess.CompletedPr
     )
 
 
+def _ck(base: Path) -> Path:
+    """This checkout's artifact dir under the base, as the script itself reports it (`--log`)."""
+    log = _run(base, None, "--log").stdout.strip()
+    return Path(log).parent
+
+
 def _seed_previous_run(out_dir: Path, *, sha: str, epoch: int | None = None) -> None:
     """A complete, correctly-published artifact from some EARLIER run."""
     import time
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "last.xml").write_text(_JUNIT)
-    (out_dir / "last.meta").write_text(f"sha={sha}\nepoch={epoch or int(time.time())}\n")
+    _ck(out_dir).mkdir(parents=True, exist_ok=True)
+    (_ck(out_dir) / "last.xml").write_text(_JUNIT)
+    (_ck(out_dir) / "last.meta").write_text(f"sha={sha}\nepoch={epoch or int(time.time())}\n")
 
 
 # ---------------------------------------------------------------------------------------
@@ -116,11 +122,11 @@ def test_a_run_that_wrote_no_xml_destroys_the_stale_freshness_claim(tmp_path: Pa
     result = _run(out_dir, shim, "tests/unit")
 
     assert result.returncode == 4, f"the runner must propagate pytest's status\n{result.stderr}"
-    assert (out_dir / "last.xml").exists(), (
+    assert (_ck(out_dir) / "last.xml").exists(), (
         "the previous run's XML is a real artifact and is deliberately kept; only its "
         "freshness claim dies"
     )
-    assert not (out_dir / "last.meta").exists(), (
+    assert not (_ck(out_dir) / "last.meta").exists(), (
         "last.meta survived a run that produced no XML. If it now carries THIS run's sha, "
         "`--require-fresh --summary` will pass on the previous run's evidence — the exact "
         f"P0 --require-fresh was added to close.\nstderr:\n{result.stderr}"
@@ -142,8 +148,8 @@ def test_a_successful_run_publishes_the_xml_and_its_provenance_together(tmp_path
     result = _run(out_dir, shim, "tests/unit")
 
     assert result.returncode == 0, result.stderr
-    assert (out_dir / "last.xml").exists()
-    meta = (out_dir / "last.meta").read_text()
+    assert (_ck(out_dir) / "last.xml").exists()
+    meta = (_ck(out_dir) / "last.meta").read_text()
     assert f"sha={_head_sha()}" in meta, meta
     assert "epoch=" in meta, meta
 

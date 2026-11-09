@@ -73,9 +73,11 @@ Moved intact from `scripts/CLAUDE.md` ("Which script to reach for"). Read this b
   pulled from the actual transcript, real chat answer from the real model — 3/3 passed (99s),
   llm-test-vllm correctly stopped afterward since this run started it.
 - ⚠️ **`run-backend-tests.sh --summary` runs NO tests** — it re-reports
-  `/tmp/ot-backend-tests/last.xml`. `test-matrix.sh` leg 1.2 is that command, so on 2026-09-06
+  `/tmp/ot-backend-tests/<checkout-hash>/last.xml` (per-checkout since 2026-11-09). `test-matrix.sh` leg 1.2 is that command, so on 2026-09-06
   the matrix's "backend test summary" leg passed by reading a **986-byte, two-day-old, 5-test**
   artifact from a different commit. `--require-fresh [<sha>]` (leg 1.2 now passes it) refuses an
   artifact with no `last.meta`, from a different commit, or older than `OT_SUMMARY_MAX_AGE_S`
   (default 7200) — missing metadata is a refusal, not a pass. The run path writes `last.meta`
   (`sha=`/`epoch=`) when it publishes.
+
+- **Test-runner artifacts are per checkout and per run** — `run-backend-tests.sh` writes to `$OT_TEST_OUT_DIR` (default `/tmp/ot-backend-tests`) `/<12-hex hash of the checkout path>/` with `last.{log,xml,meta}` plus `runs/<timestamp>-<pid>.{log,xml}`; `--summary`/`--failures`/`--log` read only THIS checkout's last run (parallel worktrees used to overwrite one shared `last.log`). Newest `OT_TEST_KEEP_RUNS` (10) runs kept per checkout; the end-of-run "Full output:" path is the per-run log.

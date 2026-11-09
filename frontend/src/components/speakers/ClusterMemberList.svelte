@@ -123,6 +123,45 @@
   </div>
 {/if}
 
+{#snippet memberRow(member: SpeakerClusterMember, showOutlier: boolean)}
+    {#if isSelectable}
+      <input type="checkbox" checked={isChecked(member.speaker_uuid)} on:change={() => handleToggleMember(member.speaker_uuid)} />
+    {/if}
+    {#if member.has_audio_clip}
+      <button
+        class="member-play-btn"
+        class:playing={$audioPlaybackStore.activeSpeakerUuid === member.speaker_uuid && $audioPlaybackStore.isPlaying}
+        on:click|stopPropagation={() => dispatch('preview', { speaker_uuid: member.speaker_uuid })}
+        on:mouseenter={() => dispatch('prefetch', { speaker_uuid: member.speaker_uuid })}
+        title={$t('speakers.audioClip.play')}
+      >
+        {#if $audioPlaybackStore.activeSpeakerUuid === member.speaker_uuid && $audioPlaybackStore.isPlaying}
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="4" height="12" rx="1" /><rect x="9" y="2" width="4" height="12" rx="1" /></svg>
+        {:else}
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
+        {/if}
+      </button>
+    {/if}
+    <span class="member-name">{member.display_name || member.speaker_name}</span>
+    <span class="member-file">{member.media_file_title || ''}</span>
+    <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
+    <GenderBadge
+      gender={member.predicted_gender}
+      confidence={member.gender_confidence}
+      confirmed={member.gender_confirmed_by_user}
+    />
+      {#if showOutlier && outlierMap.has(member.speaker_uuid)}
+        {@const analysis = outlierMap.get(member.speaker_uuid)}
+        {#if analysis}
+          <span class="outlier-badge {badgeClass(analysis.recommendation)}" title={`Centroid sim: ${(analysis.sim_to_centroid * 100).toFixed(0)}%, Avg to majority: ${(analysis.avg_sim_to_majority * 100).toFixed(0)}%`}>
+            {badgeLabel(analysis)}
+          </span>
+        {/if}
+      {/if}
+    {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
+{/snippet}
+
+
 <!-- Member list -->
 <div class="member-list">
   {#if minorityMembers.length > 0}
@@ -140,41 +179,7 @@
         class="member-row gender-outlier"
         class:split-selectable={isSelectable}
       >
-        {#if isSelectable}
-          <input type="checkbox" checked={isChecked(member.speaker_uuid)} on:change={() => handleToggleMember(member.speaker_uuid)} />
-        {/if}
-        {#if member.has_audio_clip}
-          <button
-            class="member-play-btn"
-            class:playing={$audioPlaybackStore.activeSpeakerUuid === member.speaker_uuid && $audioPlaybackStore.isPlaying}
-            on:click|stopPropagation={() => dispatch('preview', { speaker_uuid: member.speaker_uuid })}
-            on:mouseenter={() => dispatch('prefetch', { speaker_uuid: member.speaker_uuid })}
-            title={$t('speakers.audioClip.play')}
-          >
-            {#if $audioPlaybackStore.activeSpeakerUuid === member.speaker_uuid && $audioPlaybackStore.isPlaying}
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="4" height="12" rx="1" /><rect x="9" y="2" width="4" height="12" rx="1" /></svg>
-            {:else}
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
-            {/if}
-          </button>
-        {/if}
-        <span class="member-name">{member.display_name || member.speaker_name}</span>
-        <span class="member-file">{member.media_file_title || ''}</span>
-        <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
-        <GenderBadge
-          gender={member.predicted_gender}
-          confidence={member.gender_confidence}
-          confirmed={member.gender_confirmed_by_user}
-        />
-        {#if outlierMap.has(member.speaker_uuid)}
-          {@const analysis = outlierMap.get(member.speaker_uuid)}
-          {#if analysis}
-            <span class="outlier-badge {badgeClass(analysis.recommendation)}" title={`Centroid sim: ${(analysis.sim_to_centroid * 100).toFixed(0)}%, Avg to majority: ${(analysis.avg_sim_to_majority * 100).toFixed(0)}%`}>
-              {badgeLabel(analysis)}
-            </span>
-          {/if}
-        {/if}
-        {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
+        {@render memberRow(member, true)}
       </div>
     {/each}
 
@@ -188,33 +193,7 @@
       class="member-row"
       class:split-selectable={isSelectable}
     >
-      {#if isSelectable}
-        <input type="checkbox" checked={isChecked(member.speaker_uuid)} on:change={() => handleToggleMember(member.speaker_uuid)} />
-      {/if}
-      {#if member.has_audio_clip}
-        <button
-          class="member-play-btn"
-          class:playing={$audioPlaybackStore.activeSpeakerUuid === member.speaker_uuid && $audioPlaybackStore.isPlaying}
-          on:click|stopPropagation={() => dispatch('preview', { speaker_uuid: member.speaker_uuid })}
-          on:mouseenter={() => dispatch('prefetch', { speaker_uuid: member.speaker_uuid })}
-          title={$t('speakers.audioClip.play')}
-        >
-          {#if $audioPlaybackStore.activeSpeakerUuid === member.speaker_uuid && $audioPlaybackStore.isPlaying}
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="2" width="4" height="12" rx="1" /><rect x="9" y="2" width="4" height="12" rx="1" /></svg>
-          {:else}
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 2l10 6-10 6V2z" /></svg>
-          {/if}
-        </button>
-      {/if}
-      <span class="member-name">{member.display_name || member.speaker_name}</span>
-      <span class="member-file">{member.media_file_title || ''}</span>
-      <span class="member-confidence">{member.confidence != null && !isNaN(member.confidence) ? (member.confidence * 100).toFixed(0) + '%' : '\u2014'}</span>
-      <GenderBadge
-        gender={member.predicted_gender}
-        confidence={member.gender_confidence}
-        confirmed={member.gender_confirmed_by_user}
-      />
-      {#if member.verified}<span class="verified-badge">{$t('speakers.verified')}</span>{/if}
+      {@render memberRow(member, false)}
     </div>
   {/each}
 </div>

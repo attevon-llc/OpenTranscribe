@@ -347,7 +347,6 @@ frontend/src/components/settings/watchSources/WatchSourceFilesModal.test.ts	1	pr
 frontend/src/components/sharing/CurrentSharesList.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/sharing/ShareCollectionModal.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/sharing/ShareTargetSearch.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/components/speakers/ClusterMemberList.svelte	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/speakers/ClusterMemberList.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/speakers/ClustersTab.svelte	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/components/speakers/InboxTab.svelte	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

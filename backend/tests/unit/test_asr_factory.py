@@ -33,6 +33,7 @@ from typing import Any
 from typing import cast
 
 import pytest
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app import models
@@ -62,11 +63,13 @@ class _FakeQuery:
 
 
 class _RaisingQuery:
-    """A query object whose ``.filter()`` raises something that is NOT ``ValueError`` —
-    an unrelated bug, not a documented decrypt failure."""
+    """A query object whose ``.filter()`` raises ``exc``."""
+
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
 
     def filter(self, *args, **kwargs):
-        raise AttributeError("boom: unrelated attribute-access bug, not a decrypt failure")
+        raise self._exc
 
 
 class _FakeDB(Session):
@@ -87,17 +90,14 @@ class _FakeDB(Session):
 
 
 # --------------------------------------------------------------------------
-# 1. Broad except swallows an unrelated bug, not just the documented ValueError
+# 1. Only a database failure falls back; an unrelated bug is not swallowed
 # --------------------------------------------------------------------------
 
 
-def test_create_for_user_falls_back_on_unexpected_exception_type(caplog):
-    """The except clause is a bare ``except Exception`` — it must catch an
-    ``AttributeError`` from the lookup path exactly as it catches the documented
-    decrypt ``ValueError``, and it must log a warning while doing so."""
+def test_create_for_user_falls_back_on_a_database_error_and_logs_the_traceback(caplog):
     db = _FakeDB(
         setting=SimpleNamespace(setting_value="42"),
-        asr_query=_RaisingQuery(),
+        asr_query=_RaisingQuery(OperationalError("SELECT", {}, Exception("db down"))),
     )
 
     with caplog.at_level(logging.WARNING, logger=FACTORY_LOGGER):
@@ -106,7 +106,17 @@ def test_create_for_user_falls_back_on_unexpected_exception_type(caplog):
     assert isinstance(provider, LocalASRProvider)
     warnings = [r for r in caplog.records if r.name == FACTORY_LOGGER]
     assert any("Failed to load ASR config" in r.message for r in warnings)
-    assert any("boom: unrelated attribute-access bug" in r.message for r in warnings)
+    assert any(r.exc_info or r.exc_text for r in warnings)
+
+
+def test_create_for_user_does_not_swallow_an_unrelated_bug():
+    db = _FakeDB(
+        setting=SimpleNamespace(setting_value="42"),
+        asr_query=_RaisingQuery(AttributeError("boom: unrelated attribute-access bug")),
+    )
+
+    with pytest.raises(AttributeError, match="unrelated attribute-access bug"):
+        ASRProviderFactory.create_for_user(user_id=1, db=db)
 
 
 # --------------------------------------------------------------------------

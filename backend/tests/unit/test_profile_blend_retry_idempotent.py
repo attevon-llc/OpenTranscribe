@@ -68,7 +68,7 @@ def index(monkeypatch, speaker_os_seams) -> dict[str, Any]:
     )
     monkeypatch.setattr(
         "app.services.opensearch_service.get_profile_embedding",
-        lambda profile_uuid: speaker_os_seams["profiles"].get(str(profile_uuid)),
+        lambda profile_uuid, **_kw: speaker_os_seams["profiles"].get(str(profile_uuid)),
     )
     monkeypatch.setattr("app.services.opensearch_service.update_speaker_profile", lambda **kw: True)
     monkeypatch.setattr(

@@ -13,6 +13,7 @@ import types
 from datetime import datetime
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core import celery_worker_lifecycle as lifecycle_module
 from app.services.local_models import worker_report
@@ -70,10 +71,10 @@ def test_an_unreadable_record_is_skipped_not_fatal(client):
 
 class _DownRedis:
     def set(self, *args, **kwargs):
-        raise ConnectionError("redis is down")
+        raise RedisConnectionError("redis is down")
 
     def scan_iter(self, *args, **kwargs):
-        raise ConnectionError("redis is down")
+        raise RedisConnectionError("redis is down")
 
 
 def test_a_dead_redis_never_stops_a_worker_starting_or_a_page_loading():

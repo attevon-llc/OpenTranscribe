@@ -18,6 +18,7 @@ from typing import Any
 
 import numpy as np
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCannotLink
@@ -322,7 +323,7 @@ def test_a_failed_centroid_store_makes_the_pass_partial_but_keeps_the_clusters(
     db_session.commit()
 
     def refuse(**_kwargs: Any) -> bool:
-        raise RuntimeError("opensearch is down")
+        raise OpenSearchConnectionError("N/A", "opensearch is down", Exception("x"))
 
     monkeypatch.setattr("app.services.opensearch_service.store_cluster_embedding", refuse)
 

@@ -23,7 +23,15 @@ def _run(client, **kwargs):
         return list(speaker_read.iter_speaker_embeddings(1, **kwargs))
 
 
-def test_no_client_yields_nothing():
+def test_no_client_raises_when_search_is_enabled(monkeypatch):
+    """An empty iterator would hand clustering a partial set that reads as complete."""
+    monkeypatch.setattr(speaker_read.settings, "OPENSEARCH_ENABLED", True)
+    with pytest.raises(OpenSearchUnavailableError):
+        _run(None)
+
+
+def test_no_client_yields_nothing_when_search_is_disabled(monkeypatch):
+    monkeypatch.setattr(speaker_read.settings, "OPENSEARCH_ENABLED", False)
     assert _run(None) == []
 
 

@@ -60,7 +60,7 @@ def knn(monkeypatch) -> dict[str, int]:
     """Serve the batch suggestion reads from recorders and count how often they ran."""
     calls = {"embeddings": 0, "msearch": 0}
 
-    def embeddings(uuids):
+    def embeddings(uuids, **_kw):
         calls["embeddings"] += 1
         return {str(u): [1.0, 0.0, 0.0, 0.0] for u in uuids}
 

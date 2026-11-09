@@ -844,7 +844,7 @@ def test_batch_suggestions_run_with_the_database_unreachable(db_session, normal_
     monkeypatch.setattr("app.services.opensearch_service.opensearch_client", _FakeClient())
     monkeypatch.setattr(
         "app.services.opensearch_service.get_speaker_embeddings_batch",
-        lambda uuids: {u: [1.0, 0.0, 0.0] for u in uuids},
+        lambda uuids, **_kw: {u: [1.0, 0.0, 0.0] for u in uuids},
     )
 
     seen_orgs: list[Any] = []

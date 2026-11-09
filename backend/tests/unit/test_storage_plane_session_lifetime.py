@@ -516,7 +516,9 @@ def test_clear_derived_cache_opens_no_session_and_targets_all_variants(
         deleted.extend(keys)
         return len(keys)
 
-    service = vps.VideoProcessingService(SimpleNamespace(delete_objects=_record_delete))
+    service = vps.VideoProcessingService(
+        SimpleNamespace(delete_objects=_record_delete, list_objects=lambda *_a, **_k: iter(()))
+    )
     service.clear_derived_cache(int(media_file.id), "talk.mp4")
 
     assert tracker.opened == 0, (

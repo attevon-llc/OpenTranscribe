@@ -284,7 +284,7 @@ class TestSuggestionOrgGate:
 
         seen_orgs: list[Any] = []
 
-        def fake_embeddings(speaker_uuids):
+        def fake_embeddings(speaker_uuids, **_kw):
             return {u: [0.1] * 256 for u in speaker_uuids}
 
         def fake_msearch(speaker_embeddings, user_id, threshold, organization_id=None, **kwargs):

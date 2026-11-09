@@ -13,6 +13,7 @@ from datetime import UTC
 from datetime import datetime
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.constants import WHISPER_WORKER_PREFIXES
 from app.services.local_models import worker_report
@@ -174,7 +175,7 @@ class TestActiveReportsWhatWorkersLoaded:
         self, client, user_token_headers, monkeypatch
     ):
         def boom():
-            raise ConnectionError("redis is down")
+            raise RedisConnectionError("redis is down")
 
         monkeypatch.setattr("app.core.redis.get_probe_redis", boom)
 

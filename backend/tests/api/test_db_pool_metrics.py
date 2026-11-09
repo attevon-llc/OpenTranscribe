@@ -26,7 +26,7 @@ def test_metrics_report_the_pool_capacity(client):
     assert _sample(body, "db_pool_capacity") == settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW
 
 
-def test_checked_out_connections_follow_the_pool(client, uncached_metrics_page):
+def test_checked_out_connections_follow_the_pool(client):
     before = _sample(client.get("/metrics").text, "db_pool_checked_out")
 
     with engine.connect(), engine.connect():

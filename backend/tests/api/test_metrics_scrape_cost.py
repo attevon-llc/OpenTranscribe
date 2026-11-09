@@ -40,9 +40,7 @@ def settings_reads(monkeypatch):
     return calls
 
 
-def test_job_metrics_are_read_from_the_db_at_most_once_per_ttl(
-    client, monkeypatch, settings_reads, uncached_metrics_page
-):
+def test_job_metrics_are_read_from_the_db_at_most_once_per_ttl(client, monkeypatch, settings_reads):
     # A controllable clock far ahead of any real monotonic reading, so whatever an
     # earlier test in this worker left behind is already stale.
     now = [1.0e12]

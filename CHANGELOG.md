@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Broad `except Exception` handlers in `app/auth` and `app/core` (84) now catch only the failures their code can recover from (redis-py, kombu, SQLAlchemy, cryptography, ldap3, OpenSearch, ValueError/TypeError) and log with the traceback; anything else propagates instead of being read as "not found" or "not reused". The LDAP login and OIDC federated-logout catch-alls are gone, so an unexpected error there is now a logged 500 rather than a silent failed login. Metric-scrape and cache-warm failures that were logged at DEBUG are now WARNING with a traceback.
+
 - Frontend lint: the eight judgement rules (`no-explicit-any`, `require-each-key`, `no-useless-assignment`, `infinite-reactive-loop`, `prefer-svelte-reactivity`, `no-at-html-tags`, `no-reactive-reassign`, `no-immutable-reactive-statements`) are now errors and their baseline is empty. Lists use stable keys, collections that Svelte tracks use `SvelteSet`/`SvelteMap`, every highlight `{@html}` goes through the new `SanitizedHtml` component, reactive edge-detection lives in named `sync*` functions, and explicit `any` is replaced by real types. Behaviour fixes found on the way: seeking to 0 s in a transcript, and a stale `Duration` type on audio-extraction metadata.
 
 - `scripts/download-models.py` and `scripts/cleanup-test-data.py` are now thin entry points over the `scripts/model_download/` and `scripts/cleanup_test_data/` packages. The downloader package is listed file by file in `release-manifest.txt`, and every container that runs the downloader mounts it beside the script.

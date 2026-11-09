@@ -37,6 +37,7 @@ from typing import Any
 
 import pyotp
 import qrcode
+import redis
 from passlib.context import CryptContext
 
 from app.core.config import settings
@@ -344,14 +345,17 @@ class MFAService:
             from app.core.redis import get_request_redis
 
             claimed = get_request_redis().set(key, "1", nx=True, ex=ttl)
-        except Exception as exc:  # Redis availability is a deployment concern
+        except (redis.RedisError, OSError) as exc:  # Redis availability is a deployment concern
             if settings.MFA_REQUIRE_REDIS:
-                logger.error("TOTP replay protection unavailable (%s); refusing code", exc)
+                logger.error(
+                    "TOTP replay protection unavailable (%s); refusing code", exc, exc_info=True
+                )
                 return False
             logger.warning(
                 "TOTP replay protection unavailable (%s); accepting code. "
                 "Set MFA_REQUIRE_REDIS=true to fail closed instead.",
                 exc,
+                exc_info=True,
             )
             return True
 
@@ -411,8 +415,8 @@ class MFAService:
 
             logger.debug("TOTP verification successful")
             return True
-        except Exception as e:
-            logger.error(f"TOTP verification error: {str(e)}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"TOTP verification error: {str(e)}", exc_info=True)
             return False
 
     @staticmethod
@@ -513,7 +517,7 @@ class MFAService:
                             "backup codes so all stored hashes use PBKDF2-SHA256."
                         )
                     return True, stored_hash
-            except Exception as e:
+            except (ValueError, TypeError) as e:
                 # An unparseable/unknown hash. Every scheme this app has ever written
                 # is registered in both context branches, so reaching here means a
                 # corrupt or foreign value — WARNING, not DEBUG: this used to be the
@@ -523,6 +527,7 @@ class MFAService:
                     "hash is corrupt or was written by an unregistered scheme",
                     type(e).__name__,
                     e,
+                    exc_info=True,
                 )
                 continue
 

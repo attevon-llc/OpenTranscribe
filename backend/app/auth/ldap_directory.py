@@ -204,8 +204,10 @@ def _close_connection(conn: Connection | None, name: str) -> None:
         return
     try:
         conn.unbind()
-    except Exception as exc:
-        logger.debug("Ignored an error while closing the %s LDAP connection: %s", name, exc)
+    except (LDAPException, OSError) as exc:
+        logger.debug(
+            "Ignored an error while closing the %s LDAP connection: %s", name, exc, exc_info=True
+        )
 
 
 def _connect_and_bind(

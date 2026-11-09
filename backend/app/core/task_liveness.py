@@ -51,6 +51,8 @@ from datetime import UTC
 from datetime import datetime
 from enum import StrEnum
 
+import redis
+
 from app.core.task_config import task_recovery_config
 
 logger = logging.getLogger(__name__)
@@ -96,8 +98,8 @@ def mark_queued(task_id: str) -> None:
             task_recovery_config.TRANSCRIPTION_QUEUE_MAX_WAIT,
             "1",
         )
-    except Exception as e:
-        logger.warning("Could not record transcription %s as queued: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning("Could not record transcription %s as queued: %s", task_id, e, exc_info=True)
 
 
 def clear_run_markers(task_id: str) -> None:
@@ -108,8 +110,13 @@ def clear_run_markers(task_id: str) -> None:
         get_request_redis().delete(
             QUEUED_KEY.format(task_id=task_id), HEARTBEAT_KEY.format(task_id=task_id)
         )
-    except Exception as e:
-        logger.warning("Could not clear the liveness markers of transcription %s: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not clear the liveness markers of transcription %s: %s",
+            task_id,
+            e,
+            exc_info=True,
+        )
 
 
 def _lease_value(started_epoch: float, owner: str | None) -> str:
@@ -124,7 +131,7 @@ def _current_stage_id() -> str | None:
         request = getattr(current_task, "request", None)
         task_id = getattr(request, "id", None) if request is not None else None
         return str(task_id) if task_id else None
-    except Exception:  # outside a worker there is simply no owner
+    except (ImportError, RuntimeError):  # outside a worker there is simply no owner
         return None
 
 
@@ -141,8 +148,8 @@ def _beat(task_id: str, started_epoch: float, *, first: bool, owner: str | None 
             _lease_value(started_epoch, owner),
         )
         pipe.execute()
-    except Exception as e:
-        logger.warning("Transcription %s heartbeat failed: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning("Transcription %s heartbeat failed: %s", task_id, e, exc_info=True)
 
 
 def _hands_back_to_broker(exc: BaseException | None) -> bool:
@@ -174,8 +181,10 @@ def _release(task_id: str) -> None:
 
     try:
         get_request_redis().delete(HEARTBEAT_KEY.format(task_id=task_id))
-    except Exception as e:
-        logger.warning("Could not release the lease of transcription %s: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not release the lease of transcription %s: %s", task_id, e, exc_info=True
+        )
 
 
 def _hand_back(task_id: str) -> None:
@@ -194,8 +203,10 @@ def _hand_back(task_id: str) -> None:
             "1",
         )
         pipe.execute()
-    except Exception as e:
-        logger.warning("Could not hand transcription %s back to the queue: %s", task_id, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not hand transcription %s back to the queue: %s", task_id, e, exc_info=True
+        )
 
 
 @contextmanager
@@ -276,9 +287,12 @@ def probe_runs(task_ids: Iterable[str]) -> dict[str, RunLiveness]:
         keys.append(QUEUED_KEY.format(task_id=task_id))
     try:
         values = get_request_redis().mget(keys)
-    except Exception as e:
+    except (redis.RedisError, OSError) as e:
         logger.warning(
-            "Could not read transcription liveness (treating %d as unknown): %s", len(ids), e
+            "Could not read transcription liveness (treating %d as unknown): %s",
+            len(ids),
+            e,
+            exc_info=True,
         )
         return {task_id: RunLiveness(RunState.UNKNOWN) for task_id in ids}
 
@@ -324,8 +338,10 @@ def record_infra_requeue(file_uuid: str) -> int | None:
     try:
         count = get_request_redis().zincrby(INFRA_REQUEUES_KEY, 1, file_uuid)
         return int(count) if count is not None else None
-    except Exception as e:
-        logger.warning("Could not count an infrastructure requeue of %s: %s", file_uuid, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not count an infrastructure requeue of %s: %s", file_uuid, e, exc_info=True
+        )
         return None
 
 
@@ -335,8 +351,10 @@ def clear_infra_requeues(file_uuid: str) -> None:
 
     try:
         get_request_redis().zrem(INFRA_REQUEUES_KEY, file_uuid)
-    except Exception as e:
-        logger.warning("Could not clear the infrastructure requeues of %s: %s", file_uuid, e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning(
+            "Could not clear the infrastructure requeues of %s: %s", file_uuid, e, exc_info=True
+        )
 
 
 def files_requeued_at_least(threshold: int) -> list[str] | None:
@@ -349,7 +367,7 @@ def files_requeued_at_least(threshold: int) -> list[str] | None:
 
     try:
         members = get_request_redis().zrangebyscore(INFRA_REQUEUES_KEY, threshold, "+inf")
-    except Exception as e:
-        logger.warning("Could not list requeued files: %s", e)
+    except (redis.RedisError, OSError) as e:
+        logger.warning("Could not list requeued files: %s", e, exc_info=True)
         return None
     return [m.decode() if isinstance(m, bytes) else str(m) for m in members]

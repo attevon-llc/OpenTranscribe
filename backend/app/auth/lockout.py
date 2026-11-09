@@ -27,6 +27,8 @@ from typing import Any
 from typing import Protocol
 from typing import TypedDict
 
+import redis
+
 from app.auth.lockout_store import InMemoryLockoutStore
 from app.auth.lockout_store import _get_memory_fallback_store
 from app.auth.lockout_store import _get_store
@@ -564,8 +566,11 @@ def _check_and_record_attempt_redis(
             f"Lockout write for {mask_identifier(identifier)} lost {CAS_MAX_RETRIES} "
             "compare-and-set races; falling back to in-memory tracking"
         )
-    except Exception as e:
-        logger.warning(f"Redis lockout transaction failed, falling back to in-memory: {e}")
+    except (redis.RedisError, OSError, ValueError) as e:
+        logger.warning(
+            f"Redis lockout transaction failed, falling back to in-memory: {e}",
+            exc_info=True,
+        )
 
     record_degradation("account_lockout", "local")
     return _check_and_record_attempt_memory(

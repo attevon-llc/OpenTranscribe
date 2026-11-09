@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.core.config import settings
 
 if TYPE_CHECKING:
@@ -20,14 +22,16 @@ if TYPE_CHECKING:
 
 def _build_audit_opensearch_client() -> OpenSearch | None:
     """Construct an OpenSearch client for audit-log reads (None on failure)."""
+    from opensearchpy import OpenSearch
+
+    from app.core.opensearch_auth import opensearch_connection_kwargs
+
     try:
-        from opensearchpy import OpenSearch
-
-        from app.core.opensearch_auth import opensearch_connection_kwargs
-
         return OpenSearch(**opensearch_connection_kwargs())
-    except Exception as e:  # OpenSearch optional
-        logging.getLogger("audit").warning(f"Failed to build audit OpenSearch client: {e}")
+    except (OpenSearchException, OSError, ValueError) as e:
+        logging.getLogger("audit").warning(
+            f"Failed to build audit OpenSearch client: {e}", exc_info=True
+        )
         return None
 
 
@@ -186,8 +190,8 @@ def query_audit_logs(
         logs = [hit["_source"] for hit in response["hits"]["hits"]]
         total = response["hits"]["total"]["value"]
         return {"logs": logs, "total": total, "offset": offset, "limit": limit}
-    except Exception as e:
-        logging.getLogger("audit").error(f"Error querying audit logs: {e}")
+    except OpenSearchException as e:
+        logging.getLogger("audit").error(f"Error querying audit logs: {e}", exc_info=True)
         return {
             "error": "An internal error occurred while querying audit logs.",
             "logs": [],

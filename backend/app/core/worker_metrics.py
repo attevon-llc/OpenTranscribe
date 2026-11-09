@@ -70,6 +70,9 @@ from app.core import queue_wait
 
 logger = logging.getLogger(__name__)
 
+# What prometheus_client raises for a bad label set or value; anything else is a bug.
+_METRIC_ERRORS = (ValueError, TypeError, KeyError)
+
 WORKER_METRICS_PORT_ENV = "WORKER_METRICS_PORT"
 MULTIPROC_DIR_ENV = "PROMETHEUS_MULTIPROC_DIR"
 
@@ -274,7 +277,7 @@ def task_label(task: Any) -> str:
         return OTHER_TASK
     try:
         registered = name in app.tasks
-    except Exception:  # a label lookup must never fail a task
+    except (AttributeError, TypeError):  # a label lookup must never fail a task
         return OTHER_TASK
     return str(name) if registered else OTHER_TASK
 
@@ -324,7 +327,7 @@ def configure(
         _multiproc_dir = path
         _metrics = WorkerTaskMetrics()
     except Exception as exc:  # metrics must never stop a worker starting
-        logger.warning("Worker metrics could not be enabled: %s", exc)
+        logger.warning("Worker metrics could not be enabled: %s", exc, exc_info=True)
         _metrics = None
         return False
     return True
@@ -370,8 +373,10 @@ def start_listener(**_: Any) -> Any:
         else:
             registry = _metrics.registry
         server = _start_http_server(port, registry)
-    except Exception as exc:  # e.g. port in use; the worker must still run
-        logger.warning("Worker metrics listener could not start on port %s: %s", port, exc)
+    except (OSError, ValueError) as exc:  # e.g. port in use; the worker must still run
+        logger.warning(
+            "Worker metrics listener could not start on port %s: %s", port, exc, exc_info=True
+        )
         return None
     _listener_started = True
     logger.info("Worker metrics listening on port %d (%s)", port, _multiproc_dir or "in-process")
@@ -389,8 +394,10 @@ def mark_child_dead(pid: int | None = None, **_: Any) -> None:
         from prometheus_client import multiprocess
 
         multiprocess.mark_process_dead(pid or os.getpid(), _multiproc_dir)
-    except Exception as exc:  # see module docstring
-        logger.debug("Could not mark worker child %s dead for metrics: %s", pid, exc)
+    except (OSError, ValueError) as exc:  # see module docstring
+        logger.warning(
+            "Could not mark worker child %s dead for metrics: %s", pid, exc, exc_info=True
+        )
 
 
 def remove_owned_dir(**_: Any) -> None:
@@ -409,9 +416,13 @@ def _record(outcome: str, sender: Any) -> None:
         return
     try:
         metrics.record_outcome(sender, outcome)
-    except Exception as exc:  # see module docstring
-        logger.debug(
-            "Could not record a %s for %s: %s", outcome, getattr(sender, "name", None), exc
+    except _METRIC_ERRORS as exc:  # see module docstring
+        logger.warning(
+            "Could not record a %s for %s: %s",
+            outcome,
+            getattr(sender, "name", None),
+            exc,
+            exc_info=True,
         )
 
 
@@ -439,12 +450,12 @@ def on_task_prerun(
         return
     try:
         metrics.task_started(task_id)
-    except Exception as exc:  # see module docstring
-        logger.debug("Could not record the start of %s: %s", task_id, exc)
+    except _METRIC_ERRORS as exc:  # see module docstring
+        logger.warning("Could not record the start of %s: %s", task_id, exc, exc_info=True)
     try:
         metrics.task_dequeued(task if task is not None else sender)
-    except Exception as exc:  # see module docstring
-        logger.debug("Could not record the queue wait of %s: %s", task_id, exc)
+    except _METRIC_ERRORS as exc:  # see module docstring
+        logger.warning("Could not record the queue wait of %s: %s", task_id, exc, exc_info=True)
 
 
 def on_task_postrun(
@@ -455,8 +466,8 @@ def on_task_postrun(
         return
     try:
         metrics.task_finished(task if task is not None else sender, task_id)
-    except Exception as exc:  # see module docstring
-        logger.debug("Could not record the run time of %s: %s", task_id, exc)
+    except _METRIC_ERRORS as exc:  # see module docstring
+        logger.warning("Could not record the run time of %s: %s", task_id, exc, exc_info=True)
 
 
 def set_gpu_concurrency(*, configured: int, host_cap: int | None, effective: int) -> None:
@@ -469,8 +480,8 @@ def set_gpu_concurrency(*, configured: int, host_cap: int | None, effective: int
         if host_cap is not None:
             metrics.gpu_concurrency_host_cap.set(host_cap)
         metrics.gpu_concurrency_effective.set(effective)
-    except Exception as exc:  # see module docstring
-        logger.debug("Could not record the GPU concurrency decision: %s", exc)
+    except _METRIC_ERRORS as exc:  # see module docstring
+        logger.warning("Could not record the GPU concurrency decision: %s", exc, exc_info=True)
 
 
 def connect_signals() -> None:

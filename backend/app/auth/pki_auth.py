@@ -428,8 +428,8 @@ def pki_authenticate(
                     logger.warning(f"Certificate expired: expired at {cert_metadata['not_after']}")
                     return None
 
-        except Exception as e:
-            logger.error(f"Failed to parse certificate: {e}")
+        except (ValueError, TypeError) as e:
+            logger.error(f"Failed to parse certificate: {e}", exc_info=True)
             return None
 
     # Check revocation status if enabled

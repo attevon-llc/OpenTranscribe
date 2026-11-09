@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import event
 from sqlalchemy import inspect
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import UOWTransaction
 
@@ -63,8 +64,8 @@ def _collect(session: Session, _flush_context: UOWTransaction) -> None:
         try:
             if _terminal_status_written(obj) and obj.uuid is not None:
                 session.info.setdefault(_PENDING_KEY, set()).add(str(obj.uuid))
-        except Exception as e:  # bookkeeping must never fail a status write
-            logger.debug("Could not inspect a file status write: %s", e)
+        except SQLAlchemyError as e:  # bookkeeping must never fail a status write
+            logger.warning("Could not inspect a file status write: %s", e, exc_info=True)
 
 
 def _clear(session: Session) -> None:

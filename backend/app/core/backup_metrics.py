@@ -34,6 +34,7 @@ from datetime import datetime
 
 from prometheus_client import REGISTRY
 from prometheus_client import Counter
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.metrics import backup_last_status
@@ -45,6 +46,9 @@ from app.core.metrics import media_mirror_last_success_timestamp_seconds
 from app.core.metrics import media_mirror_runs_total
 
 logger = logging.getLogger(__name__)
+
+# What a scrape-time sampler can hit: the DB, or a persisted value that no longer parses.
+_SCRAPE_ERRORS = (SQLAlchemyError, ValueError, TypeError)
 
 #: How stale the backup/media-mirror gauges may be on ``/metrics``. Both jobs run
 #: on a schedule measured in hours; a minute of lag is invisible on any alert.
@@ -130,8 +134,8 @@ def update_backup_metrics(db: Session | None = None) -> None:
             with contextlib.suppress(ValueError, TypeError):
                 backup_last_status.set(1 if json.loads(raw_result).get("ok") else 0)
         _sync_run_counters(vals)
-    except Exception as exc:  # scrape must never fail on DB issues
-        logger.debug("Backup metric sampling skipped: %s", exc)
+    except _SCRAPE_ERRORS as exc:  # scrape must never fail on DB issues
+        logger.warning("Backup metric sampling skipped: %s", exc, exc_info=True)
 
 
 def update_media_mirror_metrics(db: Session | None = None) -> None:
@@ -189,8 +193,8 @@ def update_media_mirror_metrics(db: Session | None = None) -> None:
             (("success", mm.KEY_RUNS_SUCCESS), ("failure", mm.KEY_RUNS_FAILURE)),
             vals,
         )
-    except Exception as exc:  # scrape must never fail on DB issues
-        logger.debug("Media mirror metric sampling skipped: %s", exc)
+    except _SCRAPE_ERRORS as exc:  # scrape must never fail on DB issues
+        logger.warning("Media mirror metric sampling skipped: %s", exc, exc_info=True)
 
 
 def update_search_indexing_metrics(db: Session | None = None) -> None:
@@ -210,8 +214,8 @@ def update_search_indexing_metrics(db: Session | None = None) -> None:
             finally:
                 own.close()
         search_indexing_files_awaiting_reindex.set(count)
-    except Exception as exc:  # scrape must never fail on DB issues
-        logger.debug("Search indexing metric sampling skipped: %s", exc)
+    except _SCRAPE_ERRORS as exc:  # scrape must never fail on DB issues
+        logger.warning("Search indexing metric sampling skipped: %s", exc, exc_info=True)
 
 
 def update_task_row_metrics(db: Session | None = None) -> None:
@@ -231,8 +235,8 @@ def update_task_row_metrics(db: Session | None = None) -> None:
             finally:
                 own.close()
         task_rows_superseded_active.set(count)
-    except Exception as exc:  # scrape must never fail on DB issues
-        logger.debug("Task row metric sampling skipped: %s", exc)
+    except _SCRAPE_ERRORS as exc:  # scrape must never fail on DB issues
+        logger.warning("Task row metric sampling skipped: %s", exc, exc_info=True)
 
 
 def refresh_job_metrics() -> None:

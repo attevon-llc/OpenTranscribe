@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 import httpx
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509 import ocsp
@@ -134,8 +135,11 @@ def _get_ocsp_responder_cert(
         responder_cert.verify_directly_issued_by(issuer_cert)
         logger.debug(f"OCSP responder certificate verified as issued by CA for serial {serial_str}")
         return responder_cert
-    except Exception as e:
-        logger.warning(f"OCSP responder certificate not issued by CA for serial {serial_str}: {e}")
+    except (ValueError, TypeError, InvalidSignature, UnsupportedAlgorithm) as e:
+        logger.warning(
+            f"OCSP responder certificate not issued by CA for serial {serial_str}: {e}",
+            exc_info=True,
+        )
         return None
 
 
@@ -331,8 +335,8 @@ def _build_ocsp_request(
         builder = builder.add_certificate(cert, issuer_cert, hashes.SHA256())
         ocsp_request = builder.build()
         return ocsp_request.public_bytes(serialization.Encoding.DER)
-    except Exception as e:
-        logger.error(f"Failed to build OCSP request: {e}")
+    except (ValueError, TypeError, UnsupportedAlgorithm) as e:
+        logger.error(f"Failed to build OCSP request: {e}", exc_info=True)
         return None
 
 
@@ -473,8 +477,8 @@ def _parse_ocsp_response(
         logger.warning(f"OCSP response status UNKNOWN for serial {serial_str}")
         return None
 
-    except Exception as e:
-        logger.error(f"Failed to parse OCSP response: {e}")
+    except (ValueError, TypeError, UnsupportedAlgorithm) as e:
+        logger.error(f"Failed to parse OCSP response: {e}", exc_info=True)
         return None
 
 

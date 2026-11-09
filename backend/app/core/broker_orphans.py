@@ -83,9 +83,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import redis
+from kombu.exceptions import KombuError
+
 from app.core.task_config import task_recovery_config
 
 logger = logging.getLogger(__name__)
+
+# What reading the broker can raise: kombu's own errors, redis-py's, a socket, or a payload
+# that does not decode. Anything else is a bug and propagates.
+_BROKER_ERRORS = (KombuError, redis.RedisError, OSError, ValueError)
 
 #: The pipeline stages that hold a run lease while they execute. Only their messages can be
 #: judged orphaned: every other ``acks_late`` task has no liveness signal to compare against.
@@ -318,13 +325,13 @@ def queued_run_ids() -> set[str] | None:
     """:func:`read_queued_run_ids` over the app's own broker connection; None when unreadable."""
     try:
         conn = _broker_connection()
-    except Exception as e:  # conclude nothing from an unreadable broker
-        logger.warning("Could not read the queued stages: %s", e)
+    except _BROKER_ERRORS as e:  # conclude nothing from an unreadable broker
+        logger.warning("Could not read the queued stages: %s", e, exc_info=True)
         return None
     try:
         return read_queued_run_ids(conn.default_channel.client)
-    except Exception as e:
-        logger.warning("Could not read the queued stages: %s", e)
+    except _BROKER_ERRORS as e:
+        logger.warning("Could not read the queued stages: %s", e, exc_info=True)
         return None
     finally:
         conn.release()
@@ -479,8 +486,10 @@ def discard_run_deliveries(run_id: str, client: Any = None) -> int:
                 discard_delivery(client, delivery.tag)
                 dropped += 1
         return dropped
-    except Exception as e:  # best effort; the stage's ownership check still guards
-        logger.warning("Could not discard the broker deliveries of run %s: %s", run_id, e)
+    except _BROKER_ERRORS as e:  # best effort; the stage's ownership check still guards
+        logger.warning(
+            "Could not discard the broker deliveries of run %s: %s", run_id, e, exc_info=True
+        )
         return 0
     finally:
         if conn is not None:
@@ -510,8 +519,8 @@ def requeue_own_delivery_to_front(stage_id: str, connection: Any = None) -> bool
                     mark_queued(delivery.run_id)
                 return restore_to_front(delivery.tag, connection=conn)
         return False
-    except Exception as e:  # the caller falls back to Reject(requeue=True)
-        logger.warning("Could not requeue stage %s at the front: %s", stage_id, e)
+    except _BROKER_ERRORS as e:  # the caller falls back to Reject(requeue=True)
+        logger.warning("Could not requeue stage %s at the front: %s", stage_id, e, exc_info=True)
         return False
     finally:
         if owns_connection:
@@ -528,8 +537,8 @@ def held_by_live_workers(timeout: float = 3.0) -> set[str] | None:
 
         inspect = celery_app.control.inspect(timeout=timeout)
         replies = [inspect.active(), inspect.reserved(), inspect.scheduled()]
-    except Exception as e:
-        logger.warning("Could not ask the workers what they hold: %s", e)
+    except _BROKER_ERRORS as e:
+        logger.warning("Could not ask the workers what they hold: %s", e, exc_info=True)
         return None
     held: set[str] = set()
     for reply in replies:
@@ -705,8 +714,8 @@ def reclaim_orphaned_deliveries(
         )
         summary["lost_runs"] = recover_lost_runs(exclude=in_broker)
         return summary
-    except Exception as e:  # conclude nothing from an unreadable broker
-        logger.warning("Orphaned-delivery sweep skipped: %s", e)
+    except _BROKER_ERRORS as e:  # conclude nothing from an unreadable broker
+        logger.warning("Orphaned-delivery sweep skipped: %s", e, exc_info=True)
         summary["error"] = 1
         return summary
     finally:

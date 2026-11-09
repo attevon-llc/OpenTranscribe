@@ -65,6 +65,10 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
+import redis
+from kombu.exceptions import KombuError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.metrics import celery_queue_depth
 from app.core.metrics import celery_queue_oldest_message_age_seconds
 from app.core.metrics import celery_queue_oldest_unacked_age_seconds
@@ -75,6 +79,9 @@ from app.core.metrics import transcription_runs_without_lease
 from app.core.queues import CeleryQueues
 
 logger = logging.getLogger(__name__)
+
+# Broker, database, or a stored value that no longer parses; anything else is a bug.
+_SCRAPE_ERRORS = (KombuError, redis.RedisError, SQLAlchemyError, OSError, ValueError, TypeError)
 
 _PRIORITY_STEPS = range(10)
 
@@ -193,8 +200,8 @@ def queue_snapshot(
                 counts["oldest_unacked_age"] = max(counts["oldest_unacked_age"], age)
 
         return result
-    except Exception as exc:  # scrape must never fail on broker issues
-        logger.debug("Queue snapshot skipped: %s", exc)
+    except _SCRAPE_ERRORS as exc:  # scrape must never fail on broker issues
+        logger.warning("Queue snapshot skipped: %s", exc, exc_info=True)
         return {name: _empty_counts() for name in names}
 
 
@@ -308,5 +315,5 @@ def update_transcription_lease_metrics() -> None:
         requeued = files_requeued_at_least(threshold)
         if requeued is not None:
             transcription_files_infra_requeued.set(_count_in_flight(requeued))
-    except Exception as exc:  # scrape must never fail on a backing store
-        logger.debug("Transcription lease metrics skipped: %s", exc)
+    except _SCRAPE_ERRORS as exc:  # scrape must never fail on a backing store
+        logger.warning("Transcription lease metrics skipped: %s", exc, exc_info=True)

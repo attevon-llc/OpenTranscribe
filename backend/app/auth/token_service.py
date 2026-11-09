@@ -28,6 +28,7 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+import redis
 from joserfc import jwt
 from joserfc.jwk import OctKey
 from sqlalchemy.orm import Session
@@ -341,9 +342,11 @@ class TokenService(RefreshTokenOps):
         stamped = True
         try:
             store.set(key, str(epoch), ex=ttl)
-        except Exception as exc:
+        except (redis.RedisError, OSError) as exc:
             record_degradation("token_revocation", "database")
-            logger.warning("Could not stamp revocation epoch for user %s: %s", user_uuid, exc)
+            logger.warning(
+                "Could not stamp revocation epoch for user %s: %s", user_uuid, exc, exc_info=True
+            )
             stamped = False
             self._mark_degraded()
         if not stamped or self._degraded:
@@ -370,11 +373,12 @@ class TokenService(RefreshTokenOps):
             return False
         try:
             marker = self.store.get(f"{USER_REVOCATION_EPOCH_PREFIX}{user_uuid}")
-        except Exception:
+        except (redis.RedisError, OSError):
             logger.critical(
                 "Redis lookup failed for the revocation epoch (jti=%s...); falling back "
                 "to the database.",
                 jti[:8],
+                exc_info=True,
             )
             return is_revoked_from_database(db, jti, user_uuid)
         if marker is None:
@@ -452,11 +456,12 @@ class TokenService(RefreshTokenOps):
             key = f"{REVOKED_TOKEN_PREFIX}{token.jti}"
             try:
                 self.store.set(key, "revoked", ex=ttl_seconds)
-            except Exception:
+            except (redis.RedisError, OSError):
                 record_degradation("token_revocation", "database")
                 logger.critical(
                     "Cache write failed for revoked token (jti=%s...); the database record stands.",
                     str(token.jti)[:8],
+                    exc_info=True,
                 )
 
             # Update database record
@@ -516,7 +521,7 @@ class TokenService(RefreshTokenOps):
 
         try:
             result = store.get(key)
-        except Exception:
+        except (redis.RedisError, OSError):
             # Redis was reachable at startup and died since.
             self._mark_degraded()
             logger.critical(
@@ -524,6 +529,7 @@ class TokenService(RefreshTokenOps):
                 "to the database. Revocation is NOT shared across replicas while "
                 "this persists.",
                 jti[:8],
+                exc_info=True,
             )
             return is_revoked_from_database(db, jti, user_uuid)
         if result is not None:

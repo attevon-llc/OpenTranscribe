@@ -16,6 +16,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
 
+from opensearchpy.exceptions import OpenSearchException
+
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.core.config import settings
@@ -111,11 +113,11 @@ class AuditLogger:
             return None
 
         if self._opensearch_client is None:
+            from opensearchpy import OpenSearch
+
+            from app.core.opensearch_auth import opensearch_connection_kwargs
+
             try:
-                from opensearchpy import OpenSearch
-
-                from app.core.opensearch_auth import opensearch_connection_kwargs
-
                 self._opensearch_client = OpenSearch(
                     **opensearch_connection_kwargs(
                         timeout=_AUDIT_WRITE_TIMEOUT_SECONDS,
@@ -123,8 +125,8 @@ class AuditLogger:
                         retry_on_timeout=False,
                     )
                 )
-            except Exception as e:
-                self._logger.warning(f"Failed to initialize OpenSearch client: {e}")
+            except (OpenSearchException, OSError, ValueError) as e:
+                self._logger.warning(f"Failed to initialize OpenSearch client: {e}", exc_info=True)
                 return None
 
         return self._opensearch_client
@@ -184,8 +186,8 @@ class AuditLogger:
             # Append event as JSON line
             with open(fallback_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(event, default=str, ensure_ascii=False) + "\n")
-        except Exception as e:
-            self._logger.error(f"Failed to write to audit fallback log: {e}")
+        except (OSError, ValueError) as e:
+            self._logger.error(f"Failed to write to audit fallback log: {e}", exc_info=True)
 
     def _index_to_opensearch(self, event: dict) -> None:
         """Index audit event to OpenSearch."""
@@ -201,7 +203,7 @@ class AuditLogger:
         try:
             self._ensure_index(client, index_name)
             client.index(index=index_name, body=event)
-        except Exception as e:
+        except (OpenSearchException, OSError) as e:
             # Forget the index: if it was deleted underneath us, the next write
             # re-creates it with the proper mapping instead of trusting the cache.
             self._known_indices.discard(index_name)
@@ -212,7 +214,8 @@ class AuditLogger:
             log = self._logger.error if rejected else self._logger.warning
             log(
                 f"Failed to index audit event {event.get('event_type')} to OpenSearch"
-                f"{' (document rejected; it is only in the fallback file)' if rejected else ''}: {e}"
+                f"{' (document rejected; it is only in the fallback file)' if rejected else ''}: {e}",
+                exc_info=True,
             )
             # Use fallback logging if enabled
             if settings.AUDIT_LOG_FALLBACK_ENABLED:
@@ -258,10 +261,11 @@ class AuditLogger:
                 index=index_name,
                 body={"properties": {k: _AUDIT_PROPERTIES[k] for k in _TYPED_FIELDS}},
             )
-        except Exception as e:
+        except OpenSearchException as e:
             self._logger.warning(
                 f"Could not add typed content-audit fields to {index_name}: {e}. "
-                "Filtering by them is unreliable in this index until next month's."
+                "Filtering by them is unreliable in this index until next month's.",
+                exc_info=True,
             )
 
     def log(

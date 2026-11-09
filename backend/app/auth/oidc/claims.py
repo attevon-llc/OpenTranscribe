@@ -384,8 +384,8 @@ async def validate_token(
             cert_valid_until=cert_claims["cert_valid_until"],
             cert_fingerprint=cert_claims["cert_fingerprint"],
         )
-    except Exception as e:
+    except (httpx.HTTPError, JoseError, ValueError) as e:
         # JWT signature/claim failures are handled in _decode_token; this catches the
-        # rest (network, malformed JWKS) so a login attempt can never 500.
-        logger.error(f"Error validating OIDC token: {type(e).__name__}: {e}")
+        # rest (network, malformed JWKS/userinfo) so those fail the login, not 500 it.
+        logger.error(f"Error validating OIDC token: {type(e).__name__}: {e}", exc_info=True)
         return None

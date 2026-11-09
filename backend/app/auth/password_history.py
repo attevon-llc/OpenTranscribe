@@ -135,8 +135,11 @@ def _matches_current_password(db: Session, user_id: int, plain_password: str) ->
 
     try:
         return bool(verify_password(plain_password, str(user.hashed_password)))
-    except Exception:
-        logger.debug("Current-password comparison skipped: stored hash is unreadable")
+    except ValueError:
+        # passlib's UnknownHashError (the EXTERNAL_AUTH_NO_PASSWORD sentinel) is a ValueError.
+        logger.debug(
+            "Current-password comparison skipped: stored hash is unreadable", exc_info=True
+        )
         return False
 
 

@@ -29,14 +29,12 @@ import time
 from collections.abc import Callable
 from datetime import UTC
 from datetime import datetime
-from typing import TYPE_CHECKING
 from typing import Any
+
+import redis
 
 from app.core.config import settings
 from app.core.degradation import record_degradation
-
-if TYPE_CHECKING:
-    import redis
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +55,6 @@ def get_redis_client() -> redis.Redis | None:
         Logs a warning on connection failure.
     """
     try:
-        import redis
-
         client = redis.Redis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
@@ -68,11 +64,8 @@ def get_redis_client() -> redis.Redis | None:
         # Test connection
         client.ping()
         return client
-    except ImportError:
-        logger.warning("Redis package not available, using in-memory storage")
-        return None
-    except Exception as e:
-        logger.warning(f"Redis connection failed, using in-memory storage: {e}")
+    except (redis.RedisError, OSError, ValueError) as e:
+        logger.warning(f"Redis connection failed, using in-memory storage: {e}", exc_info=True)
         return None
 
 

@@ -25,7 +25,7 @@ STEP_KINDS = frozenset({"click", "hover", "focus", "wait", "press", "settings", 
 
 #: Masked on every screen: the navbar bell renders an unread-count pill that exists in one
 #: notification state and not the other (same reasoning as test_visual_regression.py).
-GLOBAL_MASKS = (".notifications-btn",)
+GLOBAL_MASKS = (".notifications-btn", ".toast-container")
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,13 @@ _APP = (
         steps=("scroll:.comments-wrapper",),
         ready=".transcript-segment",
     ),
-    Screen("search", "/search?q=the", ready=".search-page, main"),
+    Screen(
+        "search",
+        "/search?q=the",
+        ready=".search-page, main",
+        # "N results in <time> ms": the server's search time changes the text width per run.
+        masks=(".result-summary",),
+    ),
     Screen(
         "chat",
         "/chat",

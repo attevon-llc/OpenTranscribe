@@ -440,6 +440,10 @@ def capture(
             page.add_style_tag(content=session.inject_css)
         for step in screen.steps:
             run_step(page, step)
+        if not any(step.startswith(("hover:", "focus:")) for step in screen.steps):
+            # A click step leaves the pointer over its target, so the hover colour of whatever
+            # sits there differs run to run depending on timing.
+            page.mouse.move(0, 0)
         stabilize(page)
         masks = [*GLOBAL_MASKS, *screen.masks]
         png = page.screenshot(

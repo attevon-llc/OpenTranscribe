@@ -307,7 +307,8 @@
     const url = new URL(window.location.href);
     url.searchParams.delete('q');
     url.searchParams.delete('page');
-    goto(url.toString(), { replace: true });
+    const remaining = url.searchParams.toString();
+    goto(resolve(remaining ? `/search?${remaining}` : '/search'), { replace: true });
   }
 
   function handlePageChange(event: CustomEvent<number>) {
@@ -749,7 +750,8 @@
       title={previewData.title}
       subtitle={previewCurrentSpeaker}
       currentTime={previewCurrentTime}
-      jumpToHref="/files/{previewData.fileUuid}?t={previewCurrentTime || previewData.startTime}"
+      jumpToFileId={previewData.fileUuid}
+      jumpToTime={previewCurrentTime || previewData.startTime}
       closeTitle={$t('search.closePreview')}
       closeAriaLabel={$t('search.closePreviewAriaLabel')}
       mediaUrl={previewMediaUrl}

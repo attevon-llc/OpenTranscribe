@@ -1,9 +1,9 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import type { Notification } from '$stores/websocket';
   import {
-    fileLinkFor,
     iconFor,
     notificationTone,
     shortenFilename,
@@ -17,11 +17,11 @@
   export let now: number;
 
   const dispatch = createEventDispatcher<{
-    open: { ids: string[]; link: string };
+    open: { ids: string[]; fileId: string };
     dismiss: { ids: string[] };
   }>();
 
-  $: link = fileLinkFor(notification.data?.file_id);
+  $: fileId = notification.data?.file_id;
   $: filename = notification.data?.filename;
   $: processing = notification.status === 'processing';
 </script>
@@ -51,11 +51,11 @@
       />
     {/if}
 
-    {#if link}
+    {#if fileId}
       <a
-        href={link}
+        href={resolve('/files/[id]', { id: fileId })}
         class="notification-action"
-        on:click|preventDefault={() => dispatch('open', { ids: [notification.id], link })}
+        on:click|preventDefault={() => dispatch('open', { ids: [notification.id], fileId })}
       >
         {typeof filename === 'string' && filename ? shortenFilename(filename) : $t('common.viewFile')}
       </a>

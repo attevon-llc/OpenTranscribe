@@ -8,6 +8,7 @@
 </script>
 
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * The tag manager's pane for one selected tag: rename (with the merge
    * warning a rename onto an existing name triggers), facts, the files that
@@ -265,7 +266,7 @@
       <ul class="touches-list">
         {#each files as file (file.uuid)}
           <li>
-            <a class="touches-link" href={`/files/${file.uuid}`} title={file.display_title}>
+            <a class="touches-link" href={resolve('/files/[id]', { id: file.uuid })} title={file.display_title}>
               <span class="touches-title">{file.display_title}</span>
               {#if file.formatted_duration}
                 <span class="touches-meta">{file.formatted_duration}</span>

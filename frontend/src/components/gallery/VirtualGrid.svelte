@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { cachedThumbnail } from '$lib/thumbnailCache';
@@ -183,7 +184,7 @@
       // Guard against double-clicks — ignore if already navigating
       if (navigatingTo) return;
       navigatingTo = file.uuid;
-      goto(`/files/${file.uuid}`);
+      goto(resolve('/files/[id]', { id: file.uuid }));
     }
   }
 
@@ -252,7 +253,7 @@
                 </label>
               {/if}
               <a
-                href={isSelecting ? '#' : `/files/${file.uuid}`}
+                href={isSelecting ? '#' : resolve('/files/[id]', { id: file.uuid })}
                 class="file-card-link"
                 on:click={(e) => handleCardClick(file, e)}
                 on:mousedown={() => handleCardMouseDown(file)}

@@ -25,7 +25,7 @@ Its non-obvious rule: `ALLOWED_URI_REGEXP` allows only `http(s):` and `mailto:`,
 which **blocks relative URLs**. That is intentional — model text must never be
 able to mint an app-internal link (`/settings`, `/files/…`) that looks like it
 came from OpenTranscribe. Citations are rendered separately, from the structured
-`sources` frame, via `citationHref()`.
+`sources` frame, via `citationQuery()`.
 
 ### Code, math and the reading face
 

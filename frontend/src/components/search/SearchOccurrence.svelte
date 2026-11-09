@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import type { SearchOccurrence } from '$stores/search';
   import { t } from '$stores/locale';
   import { sanitizeHighlightHtml } from '$lib/utils/sanitizeHtml';
@@ -12,7 +13,7 @@
   <div class="occurrence-header">
     <a
       class="timestamp-link"
-      href="/files/{fileUuid}?t={occurrence.start_time}"
+      href={resolve(`/files/[id]?t=${occurrence.start_time}`, { id: fileUuid })}
       title="{$t('search.jumpTo')} {formatClock(occurrence.start_time)}"
     >
       {formatClock(occurrence.start_time)}

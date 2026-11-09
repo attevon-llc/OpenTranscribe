@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * Knowledge-panel-style facts for one transcript hit: the metadata the compact result
    * card deliberately leaves out (docs/design/search_results_ux_audit.md). `panel` is the
@@ -65,9 +66,9 @@
     }
   }
 
-  function searchHref(param: string, value: string): string {
+  function searchQuery(param: string, value: string): `?${string}` {
     const q = query ? `q=${encodeURIComponent(query)}&` : '';
-    return `/search?${q}${param}=${encodeURIComponent(value)}`;
+    return `?${q}${param}=${encodeURIComponent(value)}`;
   }
 
   // A modified or non-primary click keeps the browser's own link behaviour (new tab/window).
@@ -151,7 +152,7 @@
         <li>
           <a
             class="chip chip-link tag"
-            href={searchHref('tags', tag)}
+            href={resolve(`/search${searchQuery('tags', tag)}`)}
             title={$t('search.filterByTag', { name: tag })}
             on:click={(e) => applyInPlace(e, () => dispatch('filterTag', tag))}
           >
@@ -169,7 +170,7 @@
         <li>
           <a
             class="chip chip-link collection"
-            href={searchHref('collection', collection.uuid)}
+            href={resolve(`/search${searchQuery('collection', collection.uuid)}`)}
             title={$t('search.filterByCollection', { name: collection.name })}
             on:click={(e) => applyInPlace(e, () => dispatch('filterCollection', collection.uuid))}
           >
@@ -181,7 +182,7 @@
   {/if}
 
   {#if variant === 'panel'}
-    <a class="open-file" href="/files/{hit.file_uuid}">{$t('search.openFile')}</a>
+    <a class="open-file" href={resolve('/files/[id]', { id: hit.file_uuid })}>{$t('search.openFile')}</a>
   {/if}
 </section>
 

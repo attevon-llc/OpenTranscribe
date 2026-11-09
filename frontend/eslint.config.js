@@ -72,8 +72,8 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-expressions': 'error',
       'no-undef': 'off', // TS + svelte handle this; avoids false positives on browser/Svelte globals
       'no-case-declarations': 'warn',
-      'no-empty': 'warn',
-      'prefer-const': 'warn',
+      'no-empty': 'error',
+      'prefer-const': 'error',
       // New in this codebase's eslint.config.js as of the eslint 9->10 bump (@eslint/js
       // 10 added it to `recommended`). False-positives across ~25 files on the standard
       // `let x = initial; $: x = ...` idiom: the declaration's initial value looks
@@ -83,19 +83,19 @@ export default tseslint.config(
       'no-useless-assignment': 'warn',
       // Svelte legacy-debt → warn for now (real, but pre-existing; fixed in later phases).
       'svelte/require-each-key': 'warn', // Phase 6.2 adds keys
-      'svelte/no-navigation-without-resolve': 'warn',
+      'svelte/no-navigation-without-resolve': 'error',
       'svelte/prefer-svelte-reactivity': 'warn',
       'svelte/infinite-reactive-loop': 'warn',
-      'svelte/no-unused-svelte-ignore': 'warn',
+      'svelte/no-unused-svelte-ignore': 'error',
       'svelte/no-at-html-tags': 'warn', // all {@html} sites audited as DOMPurify-sanitized
-      'svelte/no-useless-mustaches': 'warn',
+      'svelte/no-useless-mustaches': 'error',
       'svelte/no-immutable-reactive-statements': 'warn',
       'svelte/no-reactive-reassign': 'warn',
       // Repo convention is the $lib/$components/$stores aliases. Assets and the build scripts
       // in frontend/scripts (imported by the src/bundleBudget*.test.ts gate tests) have no alias, and
       // neither has the project-root vite.config / kit.config.js (imported by src/viteConfig.test.ts).
       'no-restricted-imports': [
-        'warn',
+        'error',
         {
           patterns: [
             {

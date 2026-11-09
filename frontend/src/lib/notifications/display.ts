@@ -100,7 +100,3 @@ export function shortenFilename(filename: string, max = 40): string {
     ? `${name.slice(0, keep)}...${extension ? `.${extension}` : ''}`
     : filename;
 }
-
-export function fileLinkFor(fileId: string | undefined | null): string | null {
-  return fileId ? `/files/${fileId}` : null;
-}

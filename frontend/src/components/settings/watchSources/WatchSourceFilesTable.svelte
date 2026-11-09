@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * The per-file import history table for one watch source (#489).
    *
@@ -71,10 +72,6 @@
     if (file.skip_reason) return skipReasonLabel(file.skip_reason);
     return '';
   }
-
-  function libraryHref(file: WatchSourceFile): string | null {
-    return file.media_file_uuid ? `/files/${file.media_file_uuid}` : null;
-  }
 </script>
 
 <table class="files-table">
@@ -108,8 +105,8 @@
           />
         </td>
         <td class="file-cell" title={file.remote_path}>
-          {#if libraryHref(file)}
-            <a href={libraryHref(file)}>{file.filename}</a>
+          {#if file.media_file_uuid}
+            <a href={resolve('/files/[id]', { id: file.media_file_uuid })}>{file.filename}</a>
           {:else}
             {file.filename}
           {/if}

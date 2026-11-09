@@ -178,7 +178,7 @@
       <a
         href="/docs/"
         target="_blank"
-        rel="noopener noreferrer"
+        rel="noopener noreferrer external"
         class="dropdown-item"
         on:click={handleDocs}
         title={$t('nav.documentation')}

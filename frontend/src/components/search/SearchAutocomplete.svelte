@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import axiosInstance from '$lib/axios';
@@ -121,7 +122,7 @@
 
     // If it's a file suggestion, navigate directly to the file
     if (suggestion.type === 'title' && suggestion.file_uuid) {
-      goto(`/files/${suggestion.file_uuid}`);
+      goto(resolve('/files/[id]', { id: suggestion.file_uuid }));
       return;
     }
 

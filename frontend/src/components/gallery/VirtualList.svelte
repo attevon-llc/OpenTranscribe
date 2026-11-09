@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import './file-list-grid.css';
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { goto } from '$app/navigation';
@@ -145,7 +146,7 @@
       e.preventDefault();
       if (navigatingTo) return;
       navigatingTo = file.uuid;
-      goto(`/files/${file.uuid}`);
+      goto(resolve('/files/[id]', { id: file.uuid }));
     }
   }
 
@@ -225,7 +226,7 @@
         {/if}
 
         <a
-          href={isSelecting ? '#' : `/files/${file.uuid}`}
+          href={isSelecting ? '#' : resolve('/files/[id]', { id: file.uuid })}
           class="file-list-link"
           on:click={(e) => handleRowClick(file, e)}
           on:mousedown={() => handleRowMouseDown(file)}

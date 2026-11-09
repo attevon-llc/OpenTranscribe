@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { goto } from '$app/navigation';
   import { t } from '$stores/locale';
   import { isUuid } from '$lib/supportAccess/format';
@@ -19,7 +20,7 @@
       return;
     }
     invalid = false;
-    void goto(`/files/${uuid}`);
+    void goto(resolve('/files/[id]', { id: uuid }));
   }
 </script>
 

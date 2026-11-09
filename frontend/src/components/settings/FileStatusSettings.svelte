@@ -149,7 +149,7 @@
       <ul class="file-list">
         {#each data.problem_files.files as f (f.uuid)}
           <li>
-            <a class="file-name" href={`/files/${f.uuid}`}>{f.filename}</a>
+            <a class="file-name" href={resolve('/files/[id]', { id: f.uuid })}>{f.filename}</a>
             <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
             <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
           </li>
@@ -164,7 +164,7 @@
       <ul class="file-list">
         {#each data.recent_files.files as f (f.uuid)}
           <li>
-            <a class="file-name" href={`/files/${f.uuid}`}>{f.filename}</a>
+            <a class="file-name" href={resolve('/files/[id]', { id: f.uuid })}>{f.filename}</a>
             <span class="file-age">{formatFileAge(f.upload_time, $locale) || f.formatted_file_age}</span>
             <Badge variant={variantFor(f.status)}>{translateFileStatus($t, f.status, f.display_status)}</Badge>
           </li>

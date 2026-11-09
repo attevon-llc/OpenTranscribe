@@ -40,8 +40,8 @@
       "over_hard": 11,
       "debt": {
         "files_over_hard": 11,
-        "lines_above_hard": 11944,
-        "lines_above_soft": 20832
+        "lines_above_hard": 12160,
+        "lines_above_soft": 21048
       }
     },
     "Tests (py/ts/js/sh)": {
@@ -55,7 +55,7 @@
       "debt": {
         "files_over_hard": 0,
         "lines_above_hard": 0,
-        "lines_above_soft": 4004
+        "lines_above_soft": 4008
       }
     },
     "Svelte <script> logic": {

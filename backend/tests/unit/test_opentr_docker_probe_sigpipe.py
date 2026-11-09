@@ -802,9 +802,13 @@ def test_the_installers_undetermined_verdict_is_never_persisted_as_cpu() -> None
         "configure_docker_runtime is back to using check_gpu_support as a boolean, "
         "which silently merges exit 2 into the CPU-fallback branch"
     )
-    undetermined = caller_code.split("-eq 2", 1)
-    assert len(undetermined) == 2, f"no `-eq 2` branch in configure_docker_runtime:\n{caller}"
-    branch = undetermined[1].split("else", 1)[0]
+    assert "-eq 2" in caller_code, f"no `-eq 2` branch in configure_docker_runtime:\n{caller}"
+    assert "docker_runtime_undetermined" in caller_code.split("-eq 2", 1)[1].split("else", 1)[0]
+    branch = "\n".join(
+        line
+        for line in _function_source(text, "docker_runtime_undetermined").splitlines()
+        if not line.lstrip().startswith("#")
+    )
     assert "exit 1" in branch, (
         "the 'could not determine' branch must be able to REFUSE rather than persist a "
         f"guess into .env; found no `exit 1` before the next branch:\n{branch}"

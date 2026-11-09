@@ -151,7 +151,9 @@ def test_https_rerun_path_also_locks_permissions():
     assert "NGINX_SERVER_NAME=" in writer
     assert "ensure_env_permissions" in writer
     # Both the interactive and the unattended branch must go through that one writer.
-    https = _function_body(source, "configure_https_settings")
+    https = _function_body(source, "configure_https_settings") + _function_body(
+        source, "https_unattended"
+    )
     assert https.count("write_nginx_server_name_to_env") >= 2, (
         "configure_https_settings must write NGINX_SERVER_NAME via the permission-locking "
         "writer on both the interactive and the unattended path"

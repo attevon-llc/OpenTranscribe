@@ -204,6 +204,9 @@ def _installer_harness() -> str:
                 "_upsert_env",
                 "_set_frontend_bind_host",
                 "write_nginx_server_name_to_env",
+                "https_unattended",
+                "print_https_intro",
+                "https_generate_certificates",
                 "configure_https_settings",
             )
         ),

@@ -198,7 +198,15 @@ def test_the_old_wildcard_backend_default_is_reported_as_stale(tmp_path):
 def _https_step(tmp_path: Path, env_text: str, env: dict[str, str], keys: str = "") -> str:
     """Run the installer's real configure_https_settings(); ``keys`` answers its prompts."""
     (tmp_path / ".env").write_text(env_text, encoding="utf-8")
-    body = extract_function(INSTALLER, "configure_https_settings").replace("</dev/tty", "")
+    body = "\n".join(
+        extract_function(INSTALLER, n)
+        for n in [
+            "https_unattended",
+            "print_https_intro",
+            "https_generate_certificates",
+            "configure_https_settings",
+        ]
+    ).replace("</dev/tty", "")
     helpers = (
         "is_unattended",
         "ot_log_unattended",
@@ -237,7 +245,15 @@ def test_declining_https_asks_before_publishing_plain_http_on_the_lan(
     out = _https_step(tmp_path, ENV_TEMPLATE, {}, "n" + lan_answer)
 
     # `read -p` prints its prompt only to a terminal, so check the source for it.
-    body = extract_function(INSTALLER, "configure_https_settings")
+    body = "\n".join(
+        extract_function(INSTALLER, n)
+        for n in [
+            "https_unattended",
+            "print_https_intro",
+            "https_generate_certificates",
+            "configure_https_settings",
+        ]
+    )
     assert "Expose directly on your LAN without HTTPS? (y/N)" in body
     assert "Skipping HTTPS setup" in out
     assert _bind_line(tmp_path) == [f"FRONTEND_BIND_HOST={expected}"]
@@ -273,5 +289,13 @@ def test_a_rerun_never_changes_an_existing_choice(tmp_path):
 
 
 def test_the_https_prompt_says_credentials_cross_the_network_in_clear():
-    body = extract_function(INSTALLER, "configure_https_settings")
+    body = "\n".join(
+        extract_function(INSTALLER, n)
+        for n in [
+            "https_unattended",
+            "print_https_intro",
+            "https_generate_certificates",
+            "configure_https_settings",
+        ]
+    )
     assert "Sign-in passwords and transcripts travel across your network as plain text" in body

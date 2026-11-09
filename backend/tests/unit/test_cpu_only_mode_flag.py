@@ -173,7 +173,16 @@ def _detect_hardware(tmp_path: Path, force_cpu: str) -> tuple[str, str]:
         COLOURS
         + 'DETECTED_PLATFORM="linux"; ARCH="x86_64"\n'
         + f'FORCE_CPU="{force_cpu}"\n'
-        + extract_function(INSTALLER, "detect_hardware_acceleration")
+        + "\n".join(
+            extract_function(INSTALLER, n)
+            for n in [
+                "detect_cpu_cores",
+                "use_cpu_defaults",
+                "detect_nvidia_gpu",
+                "detect_apple_silicon",
+                "detect_hardware_acceleration",
+            ]
+        )
         + "detect_hardware_acceleration\n"
         + 'echo "RESULT $DETECTED_DEVICE $COMPUTE_TYPE $BATCH_SIZE $USE_GPU_RUNTIME"\n'
     )

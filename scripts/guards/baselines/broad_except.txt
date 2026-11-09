@@ -179,7 +179,7 @@ backend/app/services/analytics_service.py::AnalyticsService.compute_analytics#1	
 backend/app/services/analytics_service.py::AnalyticsService.refresh_analytics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/analytics_service.py::AnalyticsService.save_analytics#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/assemblyai_provider.py::AssemblyAIProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/asr/aws_provider.py::AWSTranscribeProvider.transcribe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/aws_provider.py::AWSTranscribeProvider._cleanup_s3_objects#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/aws_provider.py::AWSTranscribeProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/azure_provider.py::AzureASRProvider._transcribe_with_diarization.<locals>._on_transcribed#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/azure_provider.py::AzureASRProvider._transcribe_without_diarization.<locals>._on_recognized#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

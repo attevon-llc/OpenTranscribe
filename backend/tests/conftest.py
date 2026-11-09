@@ -381,6 +381,10 @@ pytest_plugins = [
     # `local_model_redis`: one throwaway redis:7-alpine per xdist worker on a free loopback
     # port, for the model-download lock/state/supervisor/endpoint suites (#1246). Opt-in.
     "fixtures.throwaway_redis",
+    # `migration_state_store`: an in-memory Redis for the migration lock and progress records, so
+    # the migration endpoints (which refuse to start when Redis is unreadable) can be exercised.
+    # Opt-in; nothing autouse.
+    "fixtures.migration_state_store",
     # `document_export`: runs the DOCX/PDF transcript export end to end in process (route, then
     # the Celery task body) with storage and Redis recorded, so a test reads the bytes a user
     # would download (#1278). Opt-in; nothing autouse.

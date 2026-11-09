@@ -14,10 +14,11 @@ Celery dispatch is no-opped by the conftest ``_skip_celery_dispatch`` fixture:
 ``task.delay(...)`` returns a fake ``AsyncResult`` with ``id == "test-task-id"``.
 The ``/start`` tests assert that fake envelope is surfaced.
 
-Under tests Redis is unreachable (``SKIP_REDIS``; ``MigrationProgressService``
-degrades to ``redis_client is None`` → ``is_running() == False`` and
-``get_status()`` returns the default not-running dict), so the dispatch path is
-deterministic and ``/stop`` / ``DELETE /progress`` report the not-running paths.
+The migration lock and progress records live in Redis, which is not reachable under tests
+(``SKIP_REDIS``). The ``migration_state_store`` fixture stands an in-memory store in for it, so
+the dispatch path is deterministic and ``/stop`` / ``DELETE /progress`` report the not-running
+paths. With Redis unreadable, ``/start`` refuses (503) instead of risking a second migration;
+the outage tests at the end of the file pin that.
 
 ``combined_speaker_migration.py`` recently adopted ``ErrorHandler``; these
 tests characterize its committed behavior (the error helper only fires on an
@@ -30,6 +31,8 @@ import os
 
 import pytest
 from fastapi import status
+
+pytestmark = pytest.mark.usefixtures("migration_state_store")
 
 # Mirrors conftest's stack detection: False on the dev host (OpenSearch reachable
 # on localhost:5180), True on bare CI runners — both response shapes are pinned.
@@ -264,3 +267,25 @@ def test_combined_clear_progress(client, super_admin_token_headers):
     response = client.delete(f"{COMBINED}/progress", headers=super_admin_token_headers)
     assert response.status_code == status.HTTP_200_OK
     assert response.json()["status"] in ("cleared", "error")
+
+
+# ---------------------------------------------------------------------------
+# An unreadable Redis is an outage, not an idle system
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", [f"{EMBEDDING}/start?force=true", f"{EMBEDDING}/start"])
+def test_embedding_start_is_refused_while_redis_cannot_be_read(
+    client, super_admin_token_headers, monkeypatch, path
+):
+    from app.services.migration_lock_service import MigrationLockService
+    from app.services.migration_progress_service import MigrationProgressService
+
+    # What each service's accessor yields once its ping to Redis has failed.
+    monkeypatch.setattr(MigrationLockService, "_redis", property(lambda _self: None))
+    monkeypatch.setattr(MigrationProgressService, "redis_client", property(lambda _self: None))
+
+    response = client.post(path, headers=super_admin_token_headers)
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert "Cannot tell whether a migration is already running" in response.json()["detail"]

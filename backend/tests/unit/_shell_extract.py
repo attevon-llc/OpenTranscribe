@@ -72,23 +72,6 @@ def run_shell(snippet: str, env: dict[str, str] | None = None, cwd: Path | None 
     return (proc.stdout + proc.stderr).strip()
 
 
-def extract_case_block(script: Path, start_label: str, end_label: str) -> str:
-    """Pull one `case` arm out of a script, from its label through the NEXT
-    label's line (exclusive) — sed can't stop at a bare `;;`, since the block
-    itself contains a nested `case ... esac` with its own `;;` terminators.
-    """
-    out = subprocess.run(
-        ["sed", "-n", f"/^{start_label}/,/^{end_label}/p", str(script)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert out.strip(), f"{start_label} not found in {script.name}"
-    body = out.split(start_label, 1)[1]
-    body = body.rsplit(end_label, 1)[0]
-    return body
-
-
 requires_install_scripts = pytest.mark.skipif(
     not INSTALLER.exists(), reason="install scripts not present in this checkout"
 )

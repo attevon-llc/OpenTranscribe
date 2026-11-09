@@ -24,7 +24,6 @@ from __future__ import annotations
 import contextlib
 import http.server
 import logging
-import socket
 import threading
 
 import numpy as np
@@ -39,11 +38,12 @@ from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
 from app.transcription.model_manager import ModelManager
 from app.utils.hardware_detection import HardwareConfig
 from app.utils.vram_profiler import VRAMProfiler
+from tests.fixtures.net import free_port
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
 #:
-#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: `free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
 #: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
 #: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
 #: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
@@ -51,13 +51,6 @@ from app.utils.vram_profiler import VRAMProfiler
 #: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
 #: ephemeral-port pool plus diarizer_native's readiness caches.
 pytestmark = pytest.mark.xdist_group("diar_native_state")
-
-
-def _free_port() -> int:
-    """A real TCP port on localhost, bound then released — not merely an unused number."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 class FakeSpeakerDiarizer(SpeakerDiarizer):
@@ -123,7 +116,7 @@ def healthz_server():
     Yields (port, httpd) so a test can shut it down mid-test to produce REAL
     unreachability (connection refused) rather than a patched exception.
     """
-    port = _free_port()
+    port = free_port()
     httpd = http.server.HTTPServer(("127.0.0.1", port), _HealthzOnlyHandler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -278,7 +271,7 @@ class TestOverlapDiarizationEnabled:
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
         monkeypatch.setattr(
             "app.transcription.diar_sidecar_status._DEFAULT_URL",
-            f"http://127.0.0.1:{_free_port()}",
+            f"http://127.0.0.1:{free_port()}",
         )
         tc = TranscriptionConfig(diarizer_backend="native")
 
@@ -390,7 +383,7 @@ class TestRealFailover:
         A real closed TCP port (ECONNREFUSED), not a patched exception. The fallback must
         both work (produce a usable diarizer) and be observable (logged).
         """
-        closed_port = _free_port()  # bound-then-released: guaranteed nothing is listening
+        closed_port = free_port()  # bound-then-released: guaranteed nothing is listening
         monkeypatch.setattr(
             "app.transcription.diar_sidecar_status._DEFAULT_URL",
             f"http://127.0.0.1:{closed_port}",
@@ -582,7 +575,7 @@ class TestOverlapMidJobFailureDegradesSafely:
         with a main thread that might still be transcribing.
         """
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
-        port = _free_port()
+        port = free_port()
         httpd = http.server.HTTPServer(("127.0.0.1", port), _MidJobFailureHandler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -648,7 +641,7 @@ class TestOverlapMidJobFailureDegradesSafely:
         constructing the in-process engine — the exact operation that is unsafe to run
         concurrently with a main-thread transcription.
         """
-        port = _free_port()
+        port = free_port()
         httpd = http.server.HTTPServer(("127.0.0.1", port), _MidJobFailureHandler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
@@ -731,7 +724,7 @@ class TestSaturatedSidecarSkipsSecondAttempt:
         """
         _SaturatedSidecarHandler.post_count["count"] = 0
         monkeypatch.delenv("DIAR_OVERLAP", raising=False)
-        port = _free_port()
+        port = free_port()
         # ⚠️ ThreadingHTTPServer, NOT HTTPServer — this is the whole falsifiability of the
         # test. A single-threaded server handles one request at a time, and do_POST sleeps
         # 2.0s against a 0.2s client budget, so a SECOND POST would sit unaccepted in the

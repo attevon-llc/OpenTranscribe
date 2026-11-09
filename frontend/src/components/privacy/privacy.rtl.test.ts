@@ -10,16 +10,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    Object.entries(vars ?? {}).reduce(
-      (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
-      en[key] ?? key
-    );
-  return { t: readable(t), locale: readable('ar') };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).englishLocale({ code: 'ar' })
+);
 vi.mock('$lib/api/privacy', async (importOriginal) => {
   const actual = await importOriginal<typeof import('$lib/api/privacy')>();
   return { ...actual, PrivacyApi: { getPurgeStatus: vi.fn(), getEffective: vi.fn() } };

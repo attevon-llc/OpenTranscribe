@@ -37,10 +37,11 @@ import app.transcription.diarizer_native as diarizer_native
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.utils import scratch_volume
+from tests.fixtures.net import free_port
 from tests.state_resets import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive the sidecar modules'
-#: module-level state, run on ONE xdist worker. `_free_port()` binds port 0, reads the
+#: module-level state, run on ONE xdist worker. `free_port()` binds port 0, reads the
 #: number, then CLOSES the socket and returns it, so another worker can be handed the same
 #: ephemeral port before the caller's `HTTPServer` binds it. Seven modules use that helper and
 #: none were grouped, which is why a DIFFERENT diar test failed on each full-suite run while
@@ -634,12 +635,6 @@ class TestReuseObservability:
 # -- sidecar_ready() TTL cache -------------------------------------------------------------
 
 
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
 def _make_counting_readyz_handler(state: dict):
     class _Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # stdlib handler method name
@@ -660,7 +655,7 @@ def _make_counting_readyz_handler(state: dict):
 @contextlib.contextmanager
 def _counting_sidecar(state: dict):
     """A real HTTP sidecar stand-in that counts /readyz hits; yields its base URL."""
-    port = _free_port()
+    port = free_port()
     httpd = http.server.HTTPServer(("127.0.0.1", port), _make_counting_readyz_handler(state))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()

@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import socket
 import subprocess
 import sys
 import time
@@ -52,6 +51,9 @@ from pathlib import Path
 
 import pytest
 import requests
+
+from tests.fixtures.net import free_port
+from tests.fixtures.net import tcp_reachable
 
 # HOST port the container is published on (the test process probes this). A --fresh stack
 # offsets it; the harness reports the resolved value as OT_RESOLVED_MOCK_LLM_PORT.
@@ -63,18 +65,6 @@ HOST_PORT = int(
 CONTAINER_PORT = 5199
 CONTAINER_HOSTNAME = "mock-llm"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-llm-server.py"
-
-
-def _reachable(host: str, port: int, timeout: float = 0.3) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        return sock.connect_ex((host, port)) == 0
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
 
 
 def _serving_http(port: int, timeout: float = 1.0) -> bool:
@@ -163,7 +153,7 @@ def mock_llm_url() -> Iterator[str]:
         yield f"http://127.0.0.1:{HOST_PORT}/v1"
         return
 
-    port = _free_port()
+    port = free_port()
     proc = subprocess.Popen(  # fixed argv, no shell
         [sys.executable, str(SERVER), "--port", str(port)],
         stdout=subprocess.DEVNULL,
@@ -190,7 +180,7 @@ def mock_llm_base_url_for_backend() -> str:
     is invisible to the backend container, and a test that configured the app
     with a host ``localhost`` URL would fail confusingly rather than skip.
     """
-    if not _reachable("127.0.0.1", HOST_PORT):
+    if not tcp_reachable("127.0.0.1", HOST_PORT):
         pytest.skip(
             "mock LLM container not running — start with './opentr.sh start dev --with-mock-llm'"
         )

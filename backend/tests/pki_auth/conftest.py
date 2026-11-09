@@ -73,19 +73,6 @@ def dod_cac_certificate_pem():
 
 
 @pytest.fixture
-def piv_certificate_pem():
-    """Generate a test certificate with PIV-style DN."""
-    return generate_test_certificate(
-        common_name="JONES.JANE.M",
-        email="jane.jones@agency.gov",
-        organization="U.S. Government",
-        organizational_unit="Federal Agency",
-        days_valid=365,
-        days_before=0,
-    )
-
-
-@pytest.fixture
 def mock_request():
     """Create a mock FastAPI request object."""
     request = MagicMock()

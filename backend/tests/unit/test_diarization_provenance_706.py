@@ -30,7 +30,6 @@ interesting operationally (a log line), not as a persisted third state.
 
 from __future__ import annotations
 
-import socket
 import uuid as uuid_pkg
 from contextlib import contextmanager
 
@@ -48,12 +47,13 @@ from app.transcription.diarizer_native import NATIVE_MODEL_NAME
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.transcription.engine.job import JobResult
 from app.transcription.engine.job import RawInferenceResult
+from tests.fixtures.net import free_port
 from tests.unit._plan_contexts import plan_context
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
 #:
-#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: `free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
 #: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
 #: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
 #: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
@@ -61,12 +61,6 @@ from tests.unit._plan_contexts import plan_context
 #: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
 #: ephemeral-port pool plus diarizer_native's readiness caches.
 pytestmark = [pytest.mark.unit, pytest.mark.xdist_group("diar_native_state")]
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +136,7 @@ class TestNativeSpeakerDiarizerIdentity:
         ``diarize()`` falls back internally — the caller never sees an exception, only a
         result — so the resolved identity can ONLY come from the object that did the work.
         """
-        closed_port = _free_port()
+        closed_port = free_port()
         monkeypatch.setattr("app.transcription.diarizer.SpeakerDiarizer", _FakePyannoteFallback)
         config = TranscriptionConfig(diarizer_backend="native")
         native = NativeSpeakerDiarizer(config, base_url=f"http://127.0.0.1:{closed_port}")

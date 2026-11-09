@@ -14,25 +14,16 @@ import { tick } from 'svelte';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-vi.mock('$stores/supportSession', async () => {
-  const { writable } = await import('svelte/store');
-  return { supportSessionGate: writable({ active: false, readOnly: false }) };
-});
+vi.mock('$stores/supportSession', async () =>
+  (await import('$testMocks/navbarMocks')).supportSessionMock()
+);
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/') } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$stores/auth', async () => {
   const { writable } = await import('svelte/store');
-  return {
-    user: writable({ role: 'admin', email: 'a@example.com' }),
-    token: writable('t'),
-    logout: vi.fn(),
-    fetchUserInfo: vi.fn().mockResolvedValue(undefined),
-  };
+  return (await import('$testMocks/navbarMocks')).authMock({ token: writable('t') });
 });
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  return { t: readable((k: string) => k), locale: readable('en') };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/navbarMocks')).localeMock());
 vi.mock('$stores/websocket', async () => {
   const { readable } = await import('svelte/store');
   return {
@@ -46,13 +37,7 @@ vi.mock('$stores/websocket', async () => {
     },
   };
 });
-vi.mock('$stores/recording', async () => {
-  const { readable } = await import('svelte/store');
-  return {
-    recordingStore: readable({ hasActiveRecording: false }),
-    recordingManager: {},
-  };
-});
+vi.mock('$stores/recording', async () => (await import('$testMocks/navbarMocks')).recordingMock());
 vi.mock('$stores/uploads', () => ({ uploadsStore: {} }));
 vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: { open: vi.fn() } }));

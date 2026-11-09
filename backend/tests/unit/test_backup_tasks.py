@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import contextlib
 import shutil
-import socket
 import time
 import uuid
 from datetime import UTC
@@ -60,6 +59,7 @@ from app.tasks import backup_tasks
 from app.utils.task_lock import TaskLockManager
 from tests.docker_ops import remove_container
 from tests.docker_ops import run_container
+from tests.fixtures.net import free_port
 
 pytestmark = pytest.mark.xdist_group("backup_system_settings")
 
@@ -184,12 +184,6 @@ def test_run_backup_skips_perform_backup_when_lock_not_acquired(monkeypatch):
 
 
 # --- real-Redis proof of the overlap guard ----------------------------------
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
 @pytest.fixture
 def real_lock_manager(monkeypatch):
     """A ``TaskLockManager`` wired to a throwaway, unauthenticated Redis.
@@ -201,7 +195,7 @@ def real_lock_manager(monkeypatch):
     if shutil.which("docker") is None:
         pytest.skip("docker is not on PATH — cannot start a throwaway Redis for this test")
 
-    port = _free_port()
+    port = free_port()
     name = f"ot-test-redis-backup-tasks-{uuid.uuid4().hex[:10]}"
     # No `except` here: the precondition check above is the intended skip
     # path (docker missing entirely, e.g. some CI runners). If the docker CLI

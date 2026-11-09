@@ -16,7 +16,6 @@ from uuid import uuid4
 
 from starlette.requests import Request
 
-from app.auth.direct_auth import create_access_token
 from app.core.config import settings
 
 USER_UUID = "019ec90a-1b2c-7def-8000-0000000000ee"
@@ -72,12 +71,6 @@ def _real_request(*, path: str = "/api/files", headers: list | None = None) -> R
             "client": ("10.0.0.9", 40000),
         }
     )
-
-
-def _access_token(**claim_overrides: Any) -> str:
-    claims = {"sub": USER_UUID, "role": "user"}
-    claims.update(claim_overrides)
-    return create_access_token(claims)
 
 
 def _persist_user(db_session, **overrides: Any):

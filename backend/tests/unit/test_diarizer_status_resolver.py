@@ -27,7 +27,6 @@ from __future__ import annotations
 import contextlib
 import http.server
 import logging
-import socket
 import threading
 from collections.abc import Iterator
 
@@ -35,12 +34,13 @@ import pytest
 
 from app.transcription.diar_sidecar_status import _ENGINE_DESCRIPTIONS
 from app.transcription.diar_sidecar_status import describe_diarizer_status
+from tests.fixtures.net import free_port
 from tests.state_resets import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.
 #:
-#: `_free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
+#: `free_port()` binds port 0, reads the number, then CLOSES the socket and returns it — so
 #: between that close and the caller's `HTTPServer((host, port))` bind, another worker can be
 #: handed the same ephemeral port. Seven modules use that helper and none were grouped, which
 #: is why a DIFFERENT diar test failed on each full-suite run while every one of them passed in
@@ -48,13 +48,6 @@ from tests.state_resets import reset_readiness_cache
 #: (backend/tests/CLAUDE.md's `--dist loadgroup` note); here the shared state is the machine's
 #: ephemeral-port pool plus diarizer_native's readiness caches.
 pytestmark = pytest.mark.xdist_group("diar_native_state")
-
-
-def _free_port() -> int:
-    """A real TCP port on localhost, bound then released — not merely an unused number."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 def _make_handler(readyz: int):
@@ -79,7 +72,7 @@ def _make_handler(readyz: int):
 @contextlib.contextmanager
 def _sidecar(readyz: int) -> Iterator[str]:
     """A real HTTP sidecar stand-in; yields its base URL."""
-    port = _free_port()
+    port = free_port()
     httpd = http.server.HTTPServer(("127.0.0.1", port), _make_handler(readyz))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -167,7 +160,7 @@ class TestConfiguredNativeButUnreachable:
         _db_unavailable(monkeypatch)
         monkeypatch.setattr(
             "app.transcription.diar_sidecar_status._DEFAULT_URL",
-            f"http://127.0.0.1:{_free_port()}",
+            f"http://127.0.0.1:{free_port()}",
         )
 
         status = describe_diarizer_status()
@@ -210,7 +203,7 @@ class TestUnknownConfiguredValue:
         _db_unavailable(monkeypatch)
         monkeypatch.setattr(
             "app.transcription.diar_sidecar_status._DEFAULT_URL",
-            f"http://127.0.0.1:{_free_port()}",
+            f"http://127.0.0.1:{free_port()}",
         )
         caplog.set_level(logging.WARNING)
 

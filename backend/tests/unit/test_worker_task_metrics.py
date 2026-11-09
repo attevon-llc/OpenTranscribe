@@ -13,7 +13,6 @@ Contract pinned here:
 from __future__ import annotations
 
 import os
-import socket
 import subprocess
 import sys
 import textwrap
@@ -26,6 +25,7 @@ from celery import Celery
 from celery import signals
 
 from app.core import worker_metrics
+from tests.fixtures.net import free_port
 
 WORKER_ARGV = ["celery", "-A", "app.core.celery", "worker", "-Q", "cpu"]
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -265,16 +265,10 @@ class TestWiring:
             assert handler in live, f"{handler.__name__} is not connected to {signal.name}"
 
 
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
 def test_prefork_children_including_recycled_ones_reach_the_one_listener(tmp_path):
     """Real fork, real files, real HTTP scrape -- in a subprocess, because multiprocess
     mode is a process-global switch the pytest process must not inherit."""
-    port = _free_port()
+    port = free_port()
     script = textwrap.dedent(
         f"""
         import os, sys, urllib.request

@@ -4,16 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 vi.mock('$lib/api/speakerHistory', () => ({ getSpeakerIdentityHistory: vi.fn() }));
 
 // Real English copy with interpolation, so the rendered sentences are the shipped ones.
-vi.mock('$stores/locale', async () => {
-  const { readable } = await import('svelte/store');
-  const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    Object.entries(vars ?? {}).reduce(
-      (text, [name, value]) => text.replace(`{{${name}}}`, String(value)),
-      en[key] ?? key
-    );
-  return { t: readable(t), locale: readable('en') };
-});
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).englishLocale());
 
 import { getSpeakerIdentityHistory } from '$lib/api/speakerHistory';
 import SpeakerIdentityHistory from './SpeakerIdentityHistory.svelte';

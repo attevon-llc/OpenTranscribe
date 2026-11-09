@@ -28,13 +28,6 @@ def enable_mfa_settings():
         yield
 
 
-@pytest.fixture
-def require_mfa_settings():
-    """Additionally require MFA for login tests."""
-    with patch.object(settings, "MFA_REQUIRED", True):
-        yield
-
-
 class TestMFAStatus:
     """Test GET /api/auth/mfa/status endpoint."""
 

@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import socket
 import subprocess
 import sys
 import time
@@ -50,6 +49,9 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+
+from tests.fixtures.net import free_port
+from tests.fixtures.net import tcp_reachable
 
 # Never a bare literal — the `readiness-probe-target` audit detector requires
 # the probe port to be derived from the env var, not a hardcoded constant.
@@ -65,22 +67,10 @@ CONTAINER_HOSTNAME = "mock-asr"
 SERVER = Path(__file__).resolve().parents[3] / "scripts" / "mock-asr-server.py"
 
 
-def _reachable(host: str, port: int, timeout: float = 0.3) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(timeout)
-        return sock.connect_ex((host, port)) == 0
-
-
-def _free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 def _wait_until_serving(port: int, deadline_s: float = 10.0) -> bool:
     end = time.monotonic() + deadline_s
     while time.monotonic() < end:
-        if _reachable("127.0.0.1", port):
+        if tcp_reachable("127.0.0.1", port):
             return True
         time.sleep(0.1)
     return False
@@ -93,11 +83,11 @@ def mock_asr_url() -> Iterator[str]:
     Reuses the compose container when it is up, otherwise starts a subprocess
     for the session. Never skips: one of the two always works.
     """
-    if _reachable("127.0.0.1", HOST_PORT):
+    if tcp_reachable("127.0.0.1", HOST_PORT):
         yield f"http://127.0.0.1:{HOST_PORT}"
         return
 
-    port = _free_port()
+    port = free_port()
     proc = subprocess.Popen(  # fixed argv, no shell
         [sys.executable, str(SERVER), "--port", str(port)],
         stdout=subprocess.DEVNULL,
@@ -124,7 +114,7 @@ def mock_asr_base_url_for_backend() -> str:
     host is invisible to the backend container, and a test that configured the
     app with a host ``localhost`` URL would fail confusingly rather than skip.
     """
-    if not _reachable("127.0.0.1", HOST_PORT):
+    if not tcp_reachable("127.0.0.1", HOST_PORT):
         pytest.skip(
             "mock ASR container not running — start with './opentr.sh start dev --with-mock-asr'"
         )

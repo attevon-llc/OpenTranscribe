@@ -1023,7 +1023,12 @@ overlay_banner() {
     authentik)
       echo "🔐 Adding Authentik test container (docker-compose.authentik.yml)"
       echo "   Authentik URL: http://localhost:${AUTHENTIK_PORT:-9022}"
-      echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / ${AUTHENTIK_BOOTSTRAP_PASSWORD:-admin_password}" ;;
+      # Only the shipped default is shown; a password the operator configured is never echoed.
+      if [ -n "${AUTHENTIK_BOOTSTRAP_PASSWORD:-}" ]; then
+        echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / (AUTHENTIK_BOOTSTRAP_PASSWORD from your environment)"
+      else
+        echo "   Bootstrap credentials: ${AUTHENTIK_BOOTSTRAP_EMAIL:-admin@example.com} / admin_password"
+      fi ;;
     smb)
       echo "🗄️  Adding SMB test container (docker-compose.smb-test.yml)"
       echo "   SMB share: smb://localhost:${SMB_TEST_PORT:-4450}/media  (testuser / testpass)" ;;
@@ -1229,6 +1234,9 @@ fresh_diar_native_models_dir() {
 fresh_prepare_diar_native_models_dir() {
   local dir="$1"
   mkdir -p "$dir"
+  # docker -v reads a relative source as a VOLUME NAME and refuses it, so the helper
+  # container (and with it the ownership fix) never ran for the .fresh/<name>/ path.
+  dir="$(cd "$dir" && pwd -P)"
   local owner
   owner=$(stat -c '%u' "$dir" 2>/dev/null || stat -f '%u' "$dir" 2>/dev/null || echo "unknown")
   [ "$owner" = "1000" ] && return 0
@@ -1382,10 +1390,15 @@ fresh_generate_baked_overlay() {
   mkdir -p "$FRESH_OVERLAY_DIR"
   local file="${FRESH_OVERLAY_DIR}/${name}-baked.yml"
   local resolved
+  # stdout only: compose prints warnings (unset variables, ...) on stderr, and folding them
+  # into the JSON made jq reject it, so every service was skipped and the overlay came out
+  # empty -- a "baked" stack that still bind-mounted ./backend.
   # shellcheck disable=SC2086
-  if ! resolved="$(docker compose $files config --format json 2>&1)"; then
+  if ! resolved="$(docker compose $files config --format json 2>/dev/null)" \
+    || ! jq -e . >/dev/null 2>&1 <<<"$resolved"; then
     echo "❌ --no-bindmount: 'docker compose config' failed while generating the baked overlay:" >&2
-    echo "$resolved" >&2
+    # shellcheck disable=SC2086
+    docker compose $files config --format json 2>&1 >/dev/null | tail -20 >&2
     exit 1
   fi
   {
@@ -2456,8 +2469,10 @@ start_app() {
         shift
         ;;
       *)
-        echo "⚠️  Unknown flag: $1"
-        shift
+        # Fatal, not a warning: a typo of --fresh (`--frsh t1`) used to be skipped and the
+        # command then ran against the LIVE stack -- for `reset`, deleting its data.
+        echo "❌ Unknown flag: $1 (see ./opentr.sh help)" >&2
+        exit 2
         ;;
     esac
   done
@@ -3419,8 +3434,10 @@ reset_and_init() {
         shift
         ;;
       *)
-        echo "⚠️  Unknown flag: $1"
-        shift
+        # Fatal, not a warning: a typo of --fresh (`--frsh t1`) used to be skipped and the
+        # command then ran against the LIVE stack -- for `reset`, deleting its data.
+        echo "❌ Unknown flag: $1 (see ./opentr.sh help)" >&2
+        exit 2
         ;;
     esac
   done
@@ -4218,6 +4235,7 @@ case "$1" in
       reset_and_init "$@"  # Pass all remaining arguments
     else
       echo "❌ Reset cancelled."
+      exit 1
     fi
     ;;
 
@@ -4270,7 +4288,13 @@ case "$1" in
   shell)
     SERVICE=${2:-backend}
     echo "🔧 Opening shell in $SERVICE container..."
-    docker compose exec "$SERVICE" /bin/bash || docker compose exec "$SERVICE" /bin/sh
+    # Pick the shell first: `bash || sh` also started sh whenever the user left bash
+    # with a non-zero status (the last command they ran failed).
+    if docker compose exec -T "$SERVICE" sh -c 'command -v bash' >/dev/null 2>&1; then
+      docker compose exec "$SERVICE" /bin/bash
+    else
+      docker compose exec "$SERVICE" /bin/sh
+    fi
     ;;
 
   backup)
@@ -4431,6 +4455,7 @@ case "$1" in
       remove_system
     else
       echo "❌ Remove cancelled."
+      exit 1
     fi
     ;;
 
@@ -4441,6 +4466,7 @@ case "$1" in
       purge_system
     else
       echo "❌ Purge cancelled."
+      exit 1
     fi
     ;;
 
@@ -4743,25 +4769,32 @@ case "$1" in
 
         echo ""
         echo "▶  [1/2] Per-stage latency (3 runs on 0.5h file)..."
-        docker exec -e PYTHONPATH=/app "$WORKER" \
+        if ! docker exec -e PYTHONPATH=/app "$WORKER" \
           python /app/scripts/benchmark_engine_single.py \
             --audio "$FAST_AUDIO" \
             --runs 3 \
-            --output "/tmp/${SINGLE_CSV}"
+            --output "/tmp/${SINGLE_CSV}"; then
+          echo "❌ Per-stage benchmark failed -- no results to copy. Bench stack left running for inspection."
+          exit 1
+        fi
 
         echo ""
         echo "▶  [2/2] Queue throughput (concurrency=3, max 5 files)..."
-        docker exec -e PYTHONPATH=/app "$WORKER" \
+        if ! docker exec -e PYTHONPATH=/app "$WORKER" \
           python /app/scripts/benchmark_engine_queue.py \
             --audio-dir "$AUDIO_DIR" \
             --max-files 5 \
             --concurrency 3 \
-            --output "/tmp/${QUEUE_CSV}"
+            --output "/tmp/${QUEUE_CSV}"; then
+          echo "❌ Queue benchmark failed -- no results to copy. Bench stack left running for inspection."
+          exit 1
+        fi
 
         # Copy results out
         mkdir -p "$RESULTS_DIR"
-        docker cp "${WORKER}:/tmp/${SINGLE_CSV}" "${RESULTS_DIR}/${SINGLE_CSV}"
-        docker cp "${WORKER}:/tmp/${QUEUE_CSV}"  "${RESULTS_DIR}/${QUEUE_CSV}"
+        docker cp "${WORKER}:/tmp/${SINGLE_CSV}" "${RESULTS_DIR}/${SINGLE_CSV}" \
+          && docker cp "${WORKER}:/tmp/${QUEUE_CSV}" "${RESULTS_DIR}/${QUEUE_CSV}" \
+          || { echo "❌ Could not copy the benchmark results out of ${WORKER}."; exit 1; }
 
         echo ""
         echo "✅ Results saved to:"
@@ -4825,8 +4858,18 @@ case "$1" in
         shift 2  # drop "bench rag"
         while [[ $# -gt 0 ]]; do
           case "$1" in
-            --fresh)       RAG_FRESH_NAME="$2"; shift 2 ;;
-            --port-offset) RAG_PORT_OFFSET="$2"; shift 2 ;;
+            --fresh|--port-offset)
+              if [[ $# -lt 2 ]]; then
+                echo "❌ $1 requires a value."
+                exit 1
+              fi
+              # start sanitizes the name into the project/offset-file name; match it.
+              if [[ "$1" == "--fresh" ]]; then
+                RAG_FRESH_NAME="$(fresh_sanitize_name "$2")"
+              else
+                RAG_PORT_OFFSET="$2"
+              fi
+              shift 2 ;;
             *)             RAG_ARGS+=("$1"); shift ;;
           esac
         done
@@ -4931,4 +4974,7 @@ case "$1" in
     ;;
 esac
 
-exit 0
+# The dispatcher's status is the last command the chosen arm ran. A bare `exit 0` here
+# discarded it, so `healthcheck-all` and the restart-* commands reported success to CI
+# after returning non-zero.
+exit $?

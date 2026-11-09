@@ -14,13 +14,16 @@ Usage:
     docker exec opentranscribe-celery-worker python -u /app/scripts/benchmark_migration.py --all
 """
 
+import logging
 import sys
 import time
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, "/app")
 
 
-def main():
+def main() -> int:
     from sqlalchemy import create_engine
     from sqlalchemy import func
     from sqlalchemy.orm import sessionmaker
@@ -70,7 +73,7 @@ def main():
     if not files:
         print("  No completed files found. Exiting.", flush=True)
         db.close()
-        return
+        return 1
 
     # Phase 1: Load primary model
     print("  Phase 1: Loading WeSpeaker v4 embedding model...", flush=True)
@@ -103,7 +106,8 @@ def main():
         prep_start = time.time()
         try:
             prepared = prepare_file(file_uuid)
-        except Exception as e:
+        except Exception as e:  # per-file isolation loop: count, report, exit nonzero
+            logger.exception("prepare_file failed for %s", file_uuid)
             print(
                 f"  [{i + 1:>4}/{len(files)}] {file_uuid[:12]}... PREP FAILED: {e}",
                 flush=True,
@@ -148,7 +152,8 @@ def main():
                 f"prep={prep_time:.2f}s GPU={gpu_time:.2f}s total={total:.2f}s",
                 flush=True,
             )
-        except Exception as e:
+        except Exception as e:  # per-file isolation loop: count, report, exit nonzero
+            logger.exception("GPU stage failed for %s", file_uuid)
             print(
                 f"  [{i + 1:>4}/{len(files)}] {file_uuid[:12]}... GPU FAILED: {e}",
                 flush=True,
@@ -162,7 +167,7 @@ def main():
 
     if seq_processed == 0:
         print("  No files were successfully processed.", flush=True)
-        return
+        return 1
 
     avg_prep = sum(prep_times) / len(prep_times)
     avg_gpu = sum(gpu_times) / len(gpu_times)
@@ -204,8 +209,10 @@ def main():
                 prepared_files.append((fuuid, prepared))
             else:
                 pipe_skipped += 1
-        except Exception as e:
+        except Exception as e:  # per-file isolation loop: count, report, exit nonzero
+            logger.exception("pipelined prepare_file failed for %s", fuuid)
             print(f"    Prep failed for {fuuid[:12]}...: {e}", flush=True)
+            failed += 1
     pipe_prep_time = time.time() - pipe_prep_start
     db2.close()
 
@@ -275,6 +282,7 @@ def main():
         print("  (* = your actual file count)", flush=True)
 
     print(f"\n{'=' * 70}", flush=True)
+    return 1 if failed or pipe_failed else 0
 
 
 def _fmt(seconds: float) -> str:
@@ -290,4 +298,4 @@ def _fmt(seconds: float) -> str:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -16,6 +16,7 @@ Exit code 0 = all passed, 1 = a subtest failed.
 from __future__ import annotations
 
 import contextlib
+import logging
 import subprocess
 import sys
 import tempfile
@@ -39,6 +40,7 @@ from app.tasks.watch_source_tasks import scan_single
 FOX = "the quick brown fox jumps over the lazy dog"
 WATCH_ROOT = Path(settings.WATCH_FOLDER_PATH or "/watch")
 
+logger = logging.getLogger(__name__)
 _results: list[tuple[str, bool, str]] = []
 
 
@@ -181,7 +183,8 @@ def test_beat_due_logic() -> None:
             ok,
             f"(due dispatched={due_id in dispatched}, not-due skipped={not_due_id not in dispatched})",
         )
-    except Exception as e:
+    except Exception as e:  # test-case boundary: record the failure, run the next case
+        logger.exception("beat due-logic failed")
         record("beat due-logic", False, f"error: {e}")
     finally:
         for sid in (due_id, not_due_id):
@@ -265,7 +268,8 @@ def test_import_and_transcribe(timeout: int = 360) -> None:
             len(hits) >= 2,
             f"({len(segs)} segments, matched {hits})",
         )
-    except Exception as e:
+    except Exception as e:  # test-case boundary: record the failure, run the next case
+        logger.exception("import+transcribe failed")
         record("import+transcribe", False, f"error: {e}")
     finally:
         if source_id:
@@ -315,7 +319,8 @@ def test_dedup() -> None:
             imported == 1 and dup == 1,
             f"(imported={imported}, dup={dup})",
         )
-    except Exception as e:
+    except Exception as e:  # test-case boundary: record the failure, run the next case
+        logger.exception("dedup failed")
         record("dedup", False, f"error: {e}")
     finally:
         if source_id:
@@ -374,7 +379,8 @@ def test_multipart(timeout: int = 180) -> None:
             stitched >= 1 and parts == 3,
             f"(stitched={stitched}, parts={parts})",
         )
-    except Exception as e:
+    except Exception as e:  # test-case boundary: record the failure, run the next case
+        logger.exception("multipart failed")
         record("multipart", False, f"error: {e}")
     finally:
         if source_id:
@@ -433,7 +439,8 @@ def test_s3_import() -> None:
             source_id = src.id
         res = scan_single.run(source_id)
         record("s3 import (boto3 → MinIO)", res.get("imported", 0) == 1, f"({res})")
-    except Exception as e:
+    except Exception as e:  # test-case boundary: record the failure, run the next case
+        logger.exception("s3 import failed")
         record("s3 import", False, f"error: {e}")
     finally:
         if source_id:

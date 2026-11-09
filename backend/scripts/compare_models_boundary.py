@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import argparse
 import copy
+import logging
+import sys
 import time
 
 from app.transcription.boundary_resolver import BoundarySmoothingConfig
@@ -29,6 +31,8 @@ from app.utils.diarization_metrics import map_hyp_to_ref
 from app.utils.diarization_metrics import read_rttm
 from app.utils.diarization_metrics import wser
 from app.utils.segment_postprocess import finalize_segments
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_timestamps(words: list[dict]) -> dict:
@@ -65,7 +69,7 @@ def _score(segs: list[dict], turns: list) -> dict:
     return {"wser": res["wser"], "islands": len(isl), "n_words": len(hyp)}
 
 
-def main() -> None:
+def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--audio", required=True)
     ap.add_argument("--rttm", required=True)
@@ -86,6 +90,7 @@ def main() -> None:
         f"\n{'model':<26} {'gpu_s':>6} {'words':>6} {'ts_ok':>6} {'WSER_off':>9} {'WSER_on':>8} "
         f"{'isl_off':>7} {'isl_on':>6}"
     )
+    failed: list[str] = []
     for model in [m.strip() for m in args.models.split(",") if m.strip()]:
         try:
             eng = Engine(EngineConfig.from_environment(model_name=model, **base))
@@ -100,9 +105,11 @@ def main() -> None:
                 f"{model:<26} {gpu_s:>6.1f} {off['n_words']:>6} {flag:>6} "
                 f"{off['wser']:>9.4f} {on['wser']:>8.4f} {off['islands']:>7} {on['islands']:>6}"
             )
-        except Exception as e:  # report per-model failure, keep going
-            print(f"{model:<26} FAILED: {str(e)[:60]}")
+        except Exception:  # per-model isolation loop: report, keep going, exit nonzero
+            logger.exception("model %s failed", model)
+            failed.append(model)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -55,8 +55,6 @@ def query_tags():
         for ft, tag_name, filename in detailed:
             print(f"FileTag ID: {ft.id}, File: {filename}, Tag: {tag_name}")
 
-    except Exception as e:
-        print(f"Error querying database: {e}")
     finally:
         db.close()
 

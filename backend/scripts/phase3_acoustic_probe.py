@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import sys
 
 import numpy as np
 
@@ -19,7 +20,7 @@ def _l2(v: np.ndarray) -> np.ndarray:
     return v / n if n else v
 
 
-def main() -> None:
+def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--audio", required=True)
     ap.add_argument("--min-speakers", type=int, default=2)
@@ -41,11 +42,11 @@ def main() -> None:
     diarize_df, _overlap, centroids = diar.diarize(audio)
     if not centroids:
         print("FAIL: no speaker centroids produced")
-        return
+        return 1
     labels = [lab for lab in centroids if centroids[lab] is not None]
     if len(labels) < 2:
         print("FAIL: <2 speaker centroids")
-        return
+        return 1
     print("speakers:", labels, "centroid dim:", np.asarray(centroids[labels[0]]).shape)
 
     emb = diar._pipeline._embedding
@@ -67,7 +68,7 @@ def main() -> None:
                 v = arr.reshape(-1)
                 if v.size:
                     return v, desc
-            except Exception as ex:
+            except (RuntimeError, ValueError, TypeError) as ex:  # wrong tensor rank for this model
                 last = f"{desc}: {type(ex).__name__}: {str(ex)[:70]}"
         print("  embed failed:", last)
         return None, None
@@ -100,7 +101,8 @@ def main() -> None:
         f"\nPROBE RESULT: {ok}/{len(labels)} windows matched their own speaker — "
         f"{'embedding accessor WORKS, safe to wire Phase 3' if ok == len(labels) else 'NEEDS WORK'}"
     )
+    return 0 if ok == len(labels) else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

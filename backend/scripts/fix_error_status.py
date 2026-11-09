@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -30,6 +32,10 @@ from app.utils.error_classification import categorize_error
 from app.utils.error_classification import should_retry
 from app.utils.file_retry import reset_file_for_retry
 from app.utils.task_utils import update_media_file_status
+
+logger = logging.getLogger(__name__)
+# Items that failed during this run; main() exits nonzero if any.
+failures: list[str] = []
 
 RETRIABLE_CATEGORIES = (
     ErrorCategory.DUPLICATE_KEY,
@@ -85,9 +91,11 @@ def _fix_completed_files(db, files, dry_run):
                     f"{filename} ({segments} segments, {category.value})"
                 )
             count += 1
-        except Exception as e:
+        except Exception as e:  # per-file isolation loop: roll back, count, exit nonzero
+            logger.exception("fixing %s failed", file.uuid)
             print(f"  ERROR fixing {file.uuid}: {e}")
             db.rollback()
+            failures.append(str(file.uuid))
 
     print(f"\nFixed {count}/{len(files)} actually-completed files\n")
     return count
@@ -117,9 +125,12 @@ def _reset_retriable_files(db, files, dry_run):
                     print(f"  Reset: {file.uuid} - {filename} ({category.value})")
                 else:
                     print(f"  Failed to reset {file.uuid}")
-        except Exception as e:
+                    failures.append(str(file.uuid))
+        except Exception as e:  # per-file isolation loop: roll back, count, exit nonzero
+            logger.exception("resetting %s failed", file.uuid)
             print(f"  ERROR resetting {file.uuid}: {e}")
             db.rollback()
+            failures.append(str(file.uuid))
 
     print(f"\nReset {count}/{len(files)} retriable files\n")
     return count
@@ -137,9 +148,10 @@ def _tag_permanent_errors(db, files, dry_run):
     if not dry_run:
         try:
             db.commit()
-        except Exception as e:
-            print(f"  ERROR committing tags: {e}")
+        except SQLAlchemyError:
+            logger.exception("committing permanent-error tags failed")
             db.rollback()
+            failures.append("tag-commit")
 
     print(f"Tagged {len(files)} permanent failures:")
     for cat, count in sorted(category_counts.items(), key=lambda x: -x[1]):
@@ -148,7 +160,7 @@ def _tag_permanent_errors(db, files, dry_run):
     return len(files)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="Fix files incorrectly marked as ERROR")
     parser.add_argument(
         "--dry-run", action="store_true", help="Show what would be done without making changes"
@@ -184,11 +196,15 @@ def main():
         print(f"Files tagged as permanent error: {tagged_count}")
         if args.dry_run:
             print("\n(DRY RUN - no changes were made)")
-
+        if failures:
+            print(f"\n{len(failures)} item(s) FAILED: {', '.join(failures[:10])}")
+            return 1
+        return 0
     finally:
         db.close()
         engine.dispose()
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    sys.exit(main())

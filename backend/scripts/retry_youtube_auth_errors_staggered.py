@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -25,8 +26,10 @@ from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.utils.file_retry import reset_file_for_retry
 
+logger = logging.getLogger(__name__)
 
-def main():
+
+def main() -> int:
     parser = argparse.ArgumentParser(description="Retry YouTube auth errors with staggered delays")
     parser.add_argument(
         "--dry-run", action="store_true", help="Show what would be done without making changes"
@@ -59,7 +62,7 @@ def main():
         total_files = len(auth_errors)
         if total_files == 0:
             print("No YouTube auth error files found to retry.")
-            return
+            return 0
 
         num_batches = (total_files + args.batch_size - 1) // args.batch_size
 
@@ -72,6 +75,7 @@ def main():
             print("\n*** DRY RUN MODE - No changes will be made ***\n")
 
         reset_count = 0
+        failed_count = 0
         for batch_num in range(num_batches):
             start_idx = batch_num * args.batch_size
             end_idx = min(start_idx + args.batch_size, total_files)
@@ -106,10 +110,13 @@ def main():
                         print(f"  Queued: {filename}")
                     else:
                         print(f"  Failed to reset: {filename}")
+                        failed_count += 1
 
-                except Exception as e:
+                except Exception as e:  # per-file isolation loop: roll back, count, exit nonzero
+                    logger.exception("retry of file %s failed", file.id)
                     print(f"  ERROR: {file.id} - {e}")
                     db.rollback()
+                    failed_count += 1
 
             # Delay before next batch (except after last batch)
             if batch_num < num_batches - 1 and not args.dry_run:
@@ -121,6 +128,10 @@ def main():
             print(f"Would queue {total_files} files for retry")
         else:
             print(f"Queued {reset_count}/{total_files} files for retry")
+        if failed_count:
+            print(f"{failed_count} file(s) FAILED to queue")
+            return 1
+        return 0
 
     finally:
         db.close()
@@ -128,4 +139,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    logging.basicConfig(level=logging.INFO)
+    sys.exit(main())

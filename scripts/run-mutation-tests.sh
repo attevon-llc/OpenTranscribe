@@ -416,7 +416,11 @@ _verify_survivor_locked() {
     backup=$(mktemp)
     cp "$BACKEND/$path" "$backup"
     # shellcheck disable=SC2064  # expand $backup and $path NOW, not when the trap fires
-    trap "cp '$backup' '$BACKEND/$path' 2>/dev/null; rm -f '$backup'" INT TERM ERR EXIT
+    trap "cp '$backup' '$BACKEND/$path' 2>/dev/null; rm -f '$backup'" ERR EXIT
+    # INT/TERM must end the run: restoring the file and then carrying on would grade the
+    # remaining mutants against the unmutated source (EXIT restores it).
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
 
     # The hunk is applied via its CONTEXT lines, not by line number: mutmut prints the
     # diff relative to the mutated FUNCTION, so `@@ -24,7 +24,7 @@` is not a file offset.

@@ -1177,7 +1177,7 @@ Environment Variables:
     VERSION                   Semantic version (e.g., v1.2.3) - overrides VERSION file
     DOCKERHUB_USERNAME        Docker Hub username (default: davidamacey)
     PLATFORMS                 Explicit OVERRIDE of the per-component platform table
-                               (see `$0 list-platforms`) — unset by default, so each
+                               (see \`$0 list-platforms\`) — unset by default, so each
                                component builds only its declared platforms.
     USE_REMOTE_BUILDER        Use remote ARM64 builder for faster builds (default: false)
     REMOTE_BUILDER_NAME       Remote builder name (default: opentranscribe-multiarch)
@@ -1256,6 +1256,13 @@ main() {
         exit 0
     fi
 
+    # Usage text needs no Docker either: without this, `help` first ran the docker/login/builder
+    # checks below (and failed on a host with no Docker) before printing it.
+    if [ "${BUILD_TARGET}" = "help" ] || [ "${BUILD_TARGET}" = "--help" ] || [ "${BUILD_TARGET}" = "-h" ]; then
+        show_usage
+        exit 0
+    fi
+
     if ! assert_platform_table_matches_scan_components; then
         print_error "Refusing to continue: the platform table and the scan-component list disagree"
         exit 1
@@ -1267,7 +1274,7 @@ main() {
         SEMVER="${VERSION}"
     elif [ -f "VERSION" ]; then
         # Read VERSION from file
-        SEMVER=$(cat VERSION | tr -d '[:space:]')
+        SEMVER=$(tr -d '[:space:]' < VERSION)
     else
         # Default version if neither exists
         SEMVER="v0.0.0"
@@ -1440,10 +1447,6 @@ main() {
         cleanup)
             print_info "Cleanup mode - removing old partial version tags..."
             cleanup_old_tags
-            exit 0
-            ;;
-        help|--help|-h)
-            show_usage
             exit 0
             ;;
         *)

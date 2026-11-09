@@ -154,7 +154,11 @@ restore_live_stack() {
 }
 # On EXIT so an aborted or failed scenario still puts the host back. INT/TERM too: a
 # Ctrl-C mid-rehearsal used to leave the operator's stack down with no hint why.
-trap restore_live_stack EXIT INT TERM
+# INT/TERM must END the run: a handler that returns hands control back to the interrupted
+# rehearsal, which would carry on against the stack just torn down. EXIT does the restoring.
+trap restore_live_stack EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Scenario D (cold-cache model download). Its criteria are read from the evidence it writes
 # under COLD_CACHE_ROOT, via the same oracle the scenario uses, so this stage and the

@@ -74,37 +74,6 @@ ac_wait_for_frontend() {
     return 1
 }
 
-ac_register_admin() {
-    # First-user registration becomes super-admin. Idempotent: returns silently
-    # if registration fails because the user already exists.
-    local email="$1"
-    local password="$2"
-    local full_name="${3:-${TEST_ADMIN_FULL_NAME:-QA Bot}}"
-    ac_log "registering $email"
-    # UserCreate schema requires email + password; full_name is optional but
-    # we send it for completeness. There is NO 'username' field — it was
-    # rejected by pydantic 'extra=forbid' validation in earlier runs.
-    local payload
-    payload=$(printf '{"email":"%s","password":"%s","full_name":"%s"}' \
-        "$email" "$password" "$full_name")
-    local response code
-    response=$(curl -sS -o /tmp/ac_register_resp.$$ -w '%{http_code}' \
-        -X POST "$API_BASE/auth/register" \
-        -H "Content-Type: application/json" \
-        -d "$payload" 2>/dev/null || echo 000)
-    code="$response"
-    if [[ "$code" =~ ^2 ]]; then
-        ac_log "register OK ($code)"
-    elif [[ "$code" == "409" || "$code" == "400" ]]; then
-        ac_warn "register returned $code — assuming user already exists"
-    else
-        ac_warn "register failed with HTTP $code:"
-        cat /tmp/ac_register_resp.$$ >&2
-        echo >&2
-    fi
-    rm -f /tmp/ac_register_resp.$$
-}
-
 ac_login() {
     local email="$1"
     local password="$2"
@@ -161,9 +130,6 @@ if isinstance(d, dict):
 sys.exit("could not extract file uuid: " + json.dumps(d)[:200])
 '
 }
-
-# Backward-compat alias for any callers still using the old name
-ac_upload_from_url() { ac_upload_file "$@"; }
 
 # Dump everything needed to diagnose a failed pipeline run BEFORE the caller
 # dies and the harness tears the stack down.
@@ -410,10 +376,6 @@ ac_wait_for_file_status() {
     ac_die "file $file_uuid never reached completed status within ${timeout}s"
 }
 
-ac_get_file() {
-    ac_curl "$API_BASE/files/$1"
-}
-
 ac_get_segments() {
     # Returns transcript segments JSON for a file (uuid).
     # IMPORTANT: /content returns the raw audio file body, NOT JSON. The
@@ -453,10 +415,6 @@ else:
 
 ac_list_files() {
     ac_curl "$API_BASE/files"
-}
-
-ac_list_speakers() {
-    ac_curl "$API_BASE/speakers" 2>/dev/null || ac_curl "$API_BASE/speakers/"
 }
 
 ac_search() {

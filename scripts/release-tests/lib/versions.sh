@@ -59,11 +59,6 @@ ver_lt() {
     [[ "$a" != "$b" ]] && [[ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)" == "$a" ]]
 }
 
-ver_lte() {
-    local a="${1#v}" b="${2#v}"
-    [[ "$a" == "$b" ]] || ver_lt "$a" "$b"
-}
-
 # ------------------------------------------------------------------- the target
 
 # The release under test. This can only come from the VERSION file: when the

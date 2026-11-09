@@ -70,8 +70,7 @@ ot_drain_gpu_workers() {
 # Check if Docker is running and exit if not
 check_docker() {
   local docker_output
-  docker_output=$(docker info 2>&1)
-  if [ $? -eq 0 ]; then
+  if docker_output=$(docker info 2>&1); then
     return 0
   fi
 

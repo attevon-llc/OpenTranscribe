@@ -1564,7 +1564,7 @@ phase_10_assert_and_report() {
     # it as VARCHAR (lowercase: completed) after the v073 enum→varchar
     # migration. The IDs and filenames must match exactly; only the case of
     # the status string changes — that's the migration doing its job.
-    if diff -q <(tr 'A-Z' 'a-z' < "$pre/media_files.txt") <(tr 'A-Z' 'a-z' < "$post/media_files.txt") >/dev/null 2>&1; then
+    if diff -q <(tr '[:upper:]' '[:lower:]' < "$pre/media_files.txt") <(tr '[:upper:]' '[:lower:]' < "$post/media_files.txt") >/dev/null 2>&1; then
         as_record PASS "media_file rows preserved (case-insensitive)"
     else
         as_record FAIL "media_file rows preserved (case-insensitive)" \

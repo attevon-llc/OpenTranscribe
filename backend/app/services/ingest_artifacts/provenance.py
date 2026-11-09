@@ -28,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 from typing import Literal
 from typing import TypedDict
+from typing import final
 
 #: Discriminator value for transcript-derived text.
 KIND_SEGMENT_IDS = "segment_ids"
@@ -40,6 +41,7 @@ KIND_CHAR_RANGE = "char_range"
 PROVENANCE_KINDS: tuple[str, ...] = (KIND_SEGMENT_IDS, KIND_CHAR_RANGE)
 
 
+@final
 class SegmentProvenance(TypedDict):
     """Transcript provenance: which ``TranscriptSegment`` rows produced this sentence."""
 
@@ -49,6 +51,7 @@ class SegmentProvenance(TypedDict):
     end_time: float
 
 
+@final
 class CharRangeProvenance(TypedDict, total=False):
     """Document provenance: a half-open character range into the parsed IR text."""
 
@@ -159,4 +162,6 @@ def provenance_timespan(payload: Provenance) -> tuple[float, float] | None:
     """
     if payload.get("kind") != KIND_SEGMENT_IDS:
         return None
-    return float(payload["start_time"]), float(payload["end_time"])  # type: ignore[typeddict-item]
+    if "start_time" not in payload or "end_time" not in payload:
+        return None
+    return float(payload["start_time"]), float(payload["end_time"])

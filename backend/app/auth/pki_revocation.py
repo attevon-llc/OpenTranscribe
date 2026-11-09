@@ -17,7 +17,11 @@ import httpx
 from cryptography import x509
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.backends import default_backend
-from cryptography.x509.oid import ExtensionOID
+from cryptography.hazmat.primitives.asymmetric import dsa
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ed448
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.auth.pki_ocsp import _cache_lock
 from app.auth.pki_ocsp import _check_ocsp
@@ -25,6 +29,14 @@ from app.core.config import settings
 from app.core.process_auth_settings import get_process_auth_settings
 
 logger = logging.getLogger(__name__)
+
+_CRL_ISSUER_KEY_TYPES = (
+    rsa.RSAPublicKey,
+    dsa.DSAPublicKey,
+    ec.EllipticCurvePublicKey,
+    ed25519.Ed25519PublicKey,
+    ed448.Ed448PublicKey,
+)
 
 _CRL_CLOCK_SKEW = timedelta(minutes=5)
 
@@ -130,7 +142,14 @@ def _verify_crl_signature(
     try:
         # The cryptography library provides is_signature_valid method for CRL
         # This verifies the CRL was signed by the issuer certificate's public key
-        if crl.is_signature_valid(issuer_cert.public_key()):  # type: ignore[arg-type]
+        issuer_key = issuer_cert.public_key()
+        if not isinstance(issuer_key, _CRL_ISSUER_KEY_TYPES):
+            logger.warning(
+                "CRL signature verification error: unsupported issuer key type %s",
+                type(issuer_key).__name__,
+            )
+            return False
+        if crl.is_signature_valid(issuer_key):
             logger.debug("CRL signature verified successfully")
             return True
         else:
@@ -155,9 +174,9 @@ def _get_crl_urls(cert: x509.Certificate) -> list[str] | None:
         List of CRL URLs or None if not found
     """
     try:
-        crl_dp = cert.extensions.get_extension_for_oid(ExtensionOID.CRL_DISTRIBUTION_POINTS)
+        crl_dp = cert.extensions.get_extension_for_class(x509.CRLDistributionPoints)
         crl_urls = []
-        for dp in crl_dp.value:  # type: ignore[attr-defined]
+        for dp in crl_dp.value:
             if dp.full_name:
                 for name in dp.full_name:
                     if isinstance(name, x509.UniformResourceIdentifier):

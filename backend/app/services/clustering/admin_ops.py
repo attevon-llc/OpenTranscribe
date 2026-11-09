@@ -147,8 +147,12 @@ def merge_clusters(
                 second_uuid, user_id, organization_id
             ).with_for_update().first()
 
-        source = self._scoped_cluster_query(source_uuid, user_id, organization_id).first()
-        target = self._scoped_cluster_query(target_uuid, user_id, organization_id).first()
+        source: SpeakerCluster | None = self._scoped_cluster_query(
+            source_uuid, user_id, organization_id
+        ).first()
+        target: SpeakerCluster | None = self._scoped_cluster_query(
+            target_uuid, user_id, organization_id
+        ).first()
 
         if not source or not target:
             logger.warning(
@@ -194,7 +198,7 @@ def merge_clusters(
         target_uuid,
         len(blocked),
     )
-    return target  # type: ignore[no-any-return]
+    return target
 
 
 def split_cluster(

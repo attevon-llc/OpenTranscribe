@@ -351,7 +351,7 @@ def _write_if_still_active(
 
 def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> MediaFile | None:
     """Update media file status."""
-    media_file = get_refreshed_object(db, MediaFile, file_id)
+    media_file: MediaFile | None = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
         logger.warning(f"Media file {file_id} not found")
         return None
@@ -379,7 +379,7 @@ def update_media_file_status(db: Session, file_id: int, status: FileStatus) -> M
 
     db.commit()
     db.refresh(media_file)
-    return media_file  # type: ignore[no-any-return]
+    return media_file
 
 
 def update_media_file_from_task_status(db: Session, file_id: int) -> MediaFile | None:
@@ -397,14 +397,14 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> MediaFile |
     """
     from sqlalchemy import func as sa_func
 
-    media_file = get_refreshed_object(db, MediaFile, file_id)
+    media_file: MediaFile | None = get_refreshed_object(db, MediaFile, file_id)
     if not media_file:
         logger.warning(f"Media file {file_id} not found")
         return None
 
     # Skip if the file is already in a terminal state
     if media_file.status in [FileStatus.COMPLETED, FileStatus.ERROR]:
-        return media_file  # type: ignore[no-any-return]
+        return media_file
 
     # Single SQL query: conditional counts per status
     row = (
@@ -421,7 +421,7 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> MediaFile |
 
     if not row or row.total == 0:
         logger.warning(f"No tasks found for media file {file_id}")
-        return media_file  # type: ignore[no-any-return]
+        return media_file
 
     # Determine the appropriate media file status
     if row.pending > 0 or row.in_progress > 0:
@@ -435,7 +435,7 @@ def update_media_file_from_task_status(db: Session, file_id: int) -> MediaFile |
     if media_file.status != new_status:
         return update_media_file_status(db, file_id, new_status)
 
-    return media_file  # type: ignore[no-any-return]
+    return media_file
 
 
 def get_task_summary_for_media_file(db: Session, file_id: int) -> dict[str, Any]:

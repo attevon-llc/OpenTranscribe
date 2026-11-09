@@ -21,6 +21,8 @@ Every dispatch runs at ``CPUPriority.MAINTENANCE``: no user is waiting on it.
 import io
 import logging
 from typing import Any
+from typing import NotRequired
+from typing import TypedDict
 
 from app.core import constants
 from app.core.celery import celery_app
@@ -35,6 +37,15 @@ from app.services.minio_service import upload_file
 from app.services.thumbnail import generate_thumbnail_from_url
 
 logger = logging.getLogger(__name__)
+
+
+class _MigrationSummary(TypedDict):
+    files_found: int
+    files_migrated: int
+    files_skipped: int
+    files_failed: int
+    has_more: bool
+    error: NotRequired[str]
 
 
 def one_time_pass_done(key: str) -> bool:
@@ -75,7 +86,7 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20, after_id: int = 
     Returns:
         Dictionary with migration statistics
     """
-    summary = {
+    summary: _MigrationSummary = {
         "files_found": 0,
         "files_migrated": 0,
         "files_skipped": 0,
@@ -133,9 +144,9 @@ def migrate_thumbnails_to_webp(self: Any, batch_size: int = 20, after_id: int = 
 
     except Exception as e:
         logger.error(f"Error in thumbnail migration task: {e}")
-        summary["error"] = str(e)  # type: ignore[assignment]
+        summary["error"] = str(e)
 
-    return summary
+    return dict(summary)
 
 
 def _load_migration_batch(batch_size: int, after_id: int = 0) -> tuple[list[dict], bool]:

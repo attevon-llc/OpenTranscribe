@@ -492,14 +492,14 @@ class SpeakerEmbeddingService:
 
         # Stack all embeddings and compute mean
         stacked = np.vstack(embeddings)
-        aggregated = np.mean(stacked, axis=0)
+        aggregated: np.ndarray = np.mean(stacked, axis=0)
 
         # L2 normalize the aggregated embedding
         norm = np.linalg.norm(aggregated)
         if norm > 0:
             aggregated = aggregated / norm
 
-        return aggregated  # type: ignore[no-any-return]
+        return aggregated
 
     def get_embedding_dimension(self) -> int:
         """Get the dimension of the embeddings produced by the model."""

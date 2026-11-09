@@ -7,6 +7,8 @@ magic numbers shared across the application. Domain groups live beside it:
 ``chat_defaults``, ``llm_defaults`` and ``redaction_defaults``.
 """
 
+from typing import Final
+
 # File upload constants
 UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB chunks for file uploads
 # Speaker-profile avatar ceiling. Enforced while the body streams by
@@ -19,7 +21,7 @@ DEFAULT_FILE_NAME = "unnamed_file"
 THUMBNAIL_MAX_DIMENSION = 1280  # Longest edge - Full HD for crisp display on any screen
 THUMBNAIL_QUALITY_WEBP = 75  # WebP quality (replaces JPEG 85)
 THUMBNAIL_QUALITY_JPEG = 70  # JPEG fallback quality
-THUMBNAIL_FORMAT = "webp"  # Primary format
+THUMBNAIL_FORMAT: Final = "webp"  # Primary format
 
 # Speaker matching confidence thresholds
 SPEAKER_CONFIDENCE_HIGH = 0.75  # Auto-accept (green)

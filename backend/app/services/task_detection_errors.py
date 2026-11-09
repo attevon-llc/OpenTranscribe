@@ -79,7 +79,9 @@ class TaskDetectionErrorsMixin:
         )
         tasks_by_file: dict[int, list] = {}
         for task in active_dl_tasks:
-            tasks_by_file.setdefault(task.media_file_id, []).append(task)  # type: ignore[arg-type]
+            if task.media_file_id is None:
+                continue
+            tasks_by_file.setdefault(task.media_file_id, []).append(task)
 
         for media_file in downloading_files:
             file_tasks = tasks_by_file.get(media_file.id, [])

@@ -194,16 +194,20 @@ def classify_playback(probe: MediaProbe, audio_stream_index: int | None = None) 
 
 
 def _int_or_none(value: object) -> int | None:
+    if not isinstance(value, int | float | str):
+        return None
     try:
-        return int(value)  # type: ignore[call-overload,no-any-return]
-    except (TypeError, ValueError):
+        return int(value)
+    except ValueError:
         return None
 
 
 def _float_or_none(value: object) -> float | None:
+    if not isinstance(value, int | float | str):
+        return None
     try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
+        return float(value)
+    except ValueError:
         return None
 
 

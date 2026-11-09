@@ -417,18 +417,21 @@ def extract_v4_embeddings_task(
 
     try:
         prepared = prepare_file(file_uuid, include_profile=True)
+
+        def _record_success(_file_uuid: str) -> None:
+            migration_progress.increment_processed(success=True)
+
+        def _record_failure(failed_uuid: str, _error: Exception | None) -> None:
+            migration_progress.increment_processed(success=False, file_uuid=failed_uuid)
+
         if prepared:
             process_batch_pipelined(
                 prepared_files=[(file_uuid, prepared)],
                 runner=runner,
                 result_writer=_embedding_result_writer,
                 is_running_check=migration_progress.is_running,
-                on_file_success=lambda _: migration_progress.increment_processed(  # type: ignore[arg-type]
-                    success=True
-                ),
-                on_file_failure=lambda f, _: migration_progress.increment_processed(  # type: ignore[arg-type]
-                    success=False, file_uuid=f
-                ),
+                on_file_success=_record_success,
+                on_file_failure=_record_failure,
                 min_duration=SPEAKER_SHORT_SEGMENT_MIN_DURATION,
             )
         else:

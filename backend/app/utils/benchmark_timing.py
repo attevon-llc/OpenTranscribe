@@ -31,6 +31,9 @@ from contextlib import contextmanager
 from functools import lru_cache
 from typing import Any
 
+from redis.typing import EncodableT
+from redis.typing import FieldT
+
 from app.core.env import env_bool
 
 logger = logging.getLogger(__name__)
@@ -102,9 +105,11 @@ def mark_many(task_id: str | None, markers: dict[str, float | str]) -> None:
 
         client = get_redis()
         key = _hash_key(task_id)
-        payload = {k: str(v) if not isinstance(v, str) else v for k, v in markers.items()}
+        payload: dict[FieldT, EncodableT] = {
+            k: str(v) if not isinstance(v, str) else v for k, v in markers.items()
+        }
         pipe = client.pipeline(transaction=False)
-        pipe.hset(key, mapping=payload)  # type: ignore[arg-type]
+        pipe.hset(key, mapping=payload)
         pipe.expire(key, BENCHMARK_HASH_TTL_SECONDS)
         pipe.execute()
     except Exception as e:

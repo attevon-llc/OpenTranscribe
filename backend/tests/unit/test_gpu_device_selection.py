@@ -193,3 +193,23 @@ def test_hardware_detection_has_no_hardcoded_cuda_zero_selection():
     src = (REPO_ROOT / "backend/app/utils/hardware_detection.py").read_text()
     assert 'torch.device("cuda:0")' not in src
     assert "torch.cuda.set_device(0)" not in src
+
+
+def test_nvml_unavailable_is_remembered_without_a_bool_in_the_library_slot(monkeypatch):
+    """A failed NVML load is latched in its own flag; ``_nvml`` stays a library or None."""
+    import app.utils.nvml_monitor as nvml
+
+    monkeypatch.setattr(nvml, "_nvml", None)
+    monkeypatch.setattr(nvml, "_nvml_unavailable", False)
+
+    def no_library(_name):
+        raise OSError("libnvidia-ml.so.1: cannot open shared object file")
+
+    monkeypatch.setattr(nvml.ctypes, "CDLL", no_library)
+    assert nvml._ensure_init(0) is False
+    assert nvml._nvml is None
+    assert nvml._nvml_unavailable is True
+    # latched: a later call does not try to load the library again
+    monkeypatch.setattr(nvml.ctypes, "CDLL", lambda _n: pytest.fail("retried a missing library"))
+    assert nvml._ensure_init(0) is False
+    assert nvml.get_gpu_memory(0) is None

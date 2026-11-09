@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from benchmark_table import print_table
+
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -402,28 +404,8 @@ def run_direct_mode(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _fmt_val(val: Any) -> str:
-    if val is None:
-        return '—'
-    if isinstance(val, bool):
-        return 'Y' if val else 'N'
-    return str(val)
-
-
 def print_file_table(rows: list[FileRow]) -> None:
-    dicts = [r.as_dict() for r in rows]
-    widths = {col: len(col) for col in _FILE_COLUMNS}
-    for d in dicts:
-        for col in _FILE_COLUMNS:
-            widths[col] = max(widths[col], len(_fmt_val(d.get(col))))
-
-    header = '  '.join(col.ljust(widths[col]) for col in _FILE_COLUMNS)
-    sep = '  '.join('-' * widths[col] for col in _FILE_COLUMNS)
-    print(header)
-    print(sep)
-    for d in dicts:
-        line = '  '.join(_fmt_val(d.get(col)).ljust(widths[col]) for col in _FILE_COLUMNS)
-        print(line)
+    print_table([r.as_dict() for r in rows], _FILE_COLUMNS)
 
 
 def compute_summary(

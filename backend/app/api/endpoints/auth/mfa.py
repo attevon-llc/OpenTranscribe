@@ -43,6 +43,7 @@ from app.schemas.user import MFAVerifyRequest
 from app.schemas.user import MFAVerifyResponse
 from app.schemas.user import MFAVerifySetupRequest
 from app.schemas.user import MFAVerifySetupResponse
+from app.services.mfa_queries import get_user_mfa
 
 router = APIRouter()
 
@@ -66,7 +67,7 @@ def get_mfa_status(
     and the only caller of this route is the in-app security settings panel.
     """
     # Check if user has MFA configured
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
+    user_mfa = get_user_mfa(db, current_user.id)
 
     mfa_enabled = _is_mfa_enabled(db)
 
@@ -118,7 +119,7 @@ def setup_mfa(
         )
 
     # Check if user already has MFA enabled
-    existing_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
+    existing_mfa = get_user_mfa(db, current_user.id)
     if existing_mfa and existing_mfa.totp_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -211,7 +212,7 @@ def verify_mfa_setup(
         )
 
     # Get user's MFA record
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
+    user_mfa = get_user_mfa(db, current_user.id)
 
     if not user_mfa:
         raise HTTPException(
@@ -417,7 +418,7 @@ def disable_mfa(
         )
 
     # Get user's MFA record
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == current_user.id).first()
+    user_mfa = get_user_mfa(db, current_user.id)
 
     if not user_mfa or not user_mfa.totp_enabled:
         raise HTTPException(

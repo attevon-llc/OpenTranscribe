@@ -33,8 +33,10 @@ from app.schemas.auth_config import AuthConfigAuditResponse
 from app.schemas.auth_config import AuthConfigResponse
 from app.schemas.auth_config import AuthConfigStatusResponse
 from app.services import auth_config_keys
+from app.services.auth_config_queries import list_configs_in_category
 from app.services.auth_config_service import MAX_AUDIT_LOG_LIMIT
 from app.services.auth_config_service import AuthConfigService
+from app.services.user_lookup import get_email_by_user_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -168,7 +170,7 @@ def get_all_configs(
     result: dict[str, list[AuthConfigResponse]] = {}
 
     for category in VALID_CATEGORIES:
-        configs = db.query(AuthConfig).filter(AuthConfig.category == category).all()
+        configs = list_configs_in_category(db, category)
         result[category] = []
 
         for config in configs:
@@ -401,10 +403,7 @@ def get_audit_log(
     actor_ids = {audit.changed_by for audit in audits if audit.changed_by is not None}
     actor_emails: dict[int, str] = {}
     if actor_ids:
-        actor_emails = {
-            row.id: row.email
-            for row in db.query(User.id, User.email).filter(User.id.in_(actor_ids)).all()
-        }
+        actor_emails = get_email_by_user_id(db, actor_ids)
 
     return [
         AuthConfigAuditResponse(

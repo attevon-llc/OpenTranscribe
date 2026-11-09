@@ -25,6 +25,8 @@ from app.api.endpoints.auth import get_current_admin_user
 from app.db.base import get_db
 from app.models.pipeline_timing import FilePipelineTiming
 from app.models.user import User
+from app.services.pipeline_timing_queries import get_timing_by_task_id
+from app.services.pipeline_timing_queries import list_recent_timing_rows
 from app.services.pipeline_timing_service import build_row_payload
 from app.utils import benchmark_timing
 
@@ -66,7 +68,7 @@ def get_timing(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Timing store (Redis) is unavailable; this is not the same as no data.",
         ) from exc
-    persisted = db.query(FilePipelineTiming).filter(FilePipelineTiming.task_id == task_id).first()
+    persisted = get_timing_by_task_id(db, task_id)
 
     if not raw and not persisted:
         raise HTTPException(
@@ -96,10 +98,7 @@ def list_recent_timings(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Return the most recent persisted timing rows, most-recent first."""
-    q = db.query(FilePipelineTiming).order_by(FilePipelineTiming.created_at.desc())
-    if user_id is not None:
-        q = q.filter(FilePipelineTiming.user_id == user_id)
-    rows = q.limit(limit).all()
+    rows = list_recent_timing_rows(db, limit, user_id)
     return {
         "count": len(rows),
         "items": [_row_to_dict(r) for r in rows],
@@ -116,12 +115,7 @@ def list_recent_timings_summary(
 
     Useful for dashboards that don't need the 30+ individual markers.
     """
-    rows = (
-        db.query(FilePipelineTiming)
-        .order_by(FilePipelineTiming.created_at.desc())
-        .limit(limit)
-        .all()
-    )
+    rows = list_recent_timing_rows(db, limit)
     items = []
     for r in rows:
         items.append(

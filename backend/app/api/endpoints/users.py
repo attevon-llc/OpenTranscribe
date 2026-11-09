@@ -35,6 +35,9 @@ from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
 from app.schemas.user import UserSearchResult
 from app.services.request_context import RequestContext
+from app.services.user_lookup import get_user_by_email
+from app.services.user_lookup import list_users_by_id
+from app.services.user_lookup import search_directory
 from app.services.uuid_helpers import get_user_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -72,7 +75,7 @@ def create_user(user_data: UserCreate, db: Session) -> User:
         HTTPException: 400 if the email is taken or the role is invalid.
     """
     # Check if email already exists
-    db_user = db.query(User).filter(User.email == user_data.email).first()
+    db_user = get_user_by_email(db, user_data.email)
     if db_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
@@ -147,7 +150,7 @@ def list_users(
     """
     List users (admin only) with optional pagination.
     """
-    users = db.query(User).order_by(User.id).offset(offset).limit(limit).all()
+    users = list_users_by_id(db, offset, limit)
     return users
 
 
@@ -195,35 +198,12 @@ def search_users(
     (``mask_email_for_display``) — even an exhaustive scrape at the allowed rate
     cannot recover a real address from it.
     """
-    from sqlalchemy import exists
-    from sqlalchemy import or_
-
-    from app.models.organization import OrganizationMembership
-
-    # Correlated EXISTS against the outer `user` row, so the tenant gate is one
-    # subquery rather than a join that could duplicate rows per membership.
-    caller_org_member = exists().where(
-        OrganizationMembership.user_id == User.id,
-        OrganizationMembership.organization_id == ctx.org_id,
-    )
-    any_org_member = exists().where(OrganizationMembership.user_id == User.id)
-    tenant_gate = caller_org_member if ctx.is_org_context else ~any_org_member
-
-    pattern = f"%{q}%"
-    users = (
-        db.query(User)
-        .filter(
-            User.id != ctx.user.id,
-            User.is_active.is_(True),
-            tenant_gate,
-            or_(
-                User.email.ilike(pattern),
-                User.full_name.ilike(pattern),
-            ),
-        )
-        .order_by(User.full_name, User.email)
-        .limit(20)
-        .all()
+    users = search_directory(
+        db,
+        text_query=q,
+        caller_user_id=ctx.user.id,
+        org_id=ctx.org_id,
+        is_org_context=ctx.is_org_context,
     )
 
     return [

@@ -12,7 +12,6 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth import get_current_active_superuser
@@ -36,7 +35,6 @@ from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser
 from app.core.security import get_password_hash
 from app.db.base import get_db
-from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.schemas.admin import LockedAccount
 from app.schemas.admin import LockedAccountsList
@@ -48,6 +46,10 @@ from app.services.account_security_service import audit_password_change
 from app.services.account_security_service import audit_role_change
 from app.services.account_security_service import enforce_password_policy
 from app.services.account_security_service import revoke_all_sessions
+from app.services.session_queries import list_active_sessions
+from app.services.user_lookup import get_user_by_lower_email
+from app.services.user_lookup import get_user_by_uuid
+from app.services.user_lookup import get_users_by_lower_emails
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -84,7 +86,7 @@ def admin_reset_user_password(
     the attacker.
     """
     client_ip, user_agent = _get_client_info(request)
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -134,7 +136,7 @@ def admin_unlock_account(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -201,7 +203,7 @@ def admin_list_locked_accounts(
     identifiers = [a["identifier"] for a in accounts]
     by_email: dict[str, User] = {}
     if identifiers:
-        for u in db.query(User).filter(func.lower(User.email).in_(identifiers)).all():
+        for u in get_users_by_lower_emails(db, identifiers):
             by_email[str(u.email).lower()] = u
 
     enriched = []
@@ -261,7 +263,7 @@ def admin_reset_lockout_counter(
             detail="Could not reset lockout state (concurrent write); retry",
         )
 
-    matched = db.query(User).filter(func.lower(User.email) == normalized).first()
+    matched = get_user_by_lower_email(db, normalized)
 
     audit_logger.log(
         event_type=AuditEventType.AUTH_LOCKOUT_COUNTER_RESET,
@@ -311,7 +313,7 @@ def admin_lock_account(
     """Admin lock of user account. Only a super_admin may lock a super_admin."""
     client_ip, user_agent = _get_client_info(request)
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -377,7 +379,7 @@ def admin_terminate_user_sessions(
     """
     client_ip, user_agent = _get_client_info(request)
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -425,19 +427,11 @@ def admin_get_user_sessions(
     current_user: User = Depends(get_current_admin_user),
 ) -> dict[str, list[dict[str, str | None]]]:
     """View all active sessions for a user."""
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    sessions = (
-        db.query(RefreshToken)
-        .filter(
-            RefreshToken.user_id == user.id,
-            RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > datetime.now(UTC),
-        )
-        .all()
-    )
+    sessions = list_active_sessions(db, user.id)
 
     return {
         "sessions": [
@@ -466,7 +460,7 @@ def admin_change_user_role(
     if new_role not in VALID_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

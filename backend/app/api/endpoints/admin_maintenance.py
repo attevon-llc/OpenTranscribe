@@ -25,6 +25,8 @@ from app.models.user import User
 from app.services import system_settings_service
 from app.services.account_security_service import assert_not_last_super_admin
 from app.services.request_context import RequestContext
+from app.services.speaker_profile_queries import list_all_speaker_profiles
+from app.services.user_lookup import get_user_by_uuid
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -50,7 +52,7 @@ def admin_erase_user(
     ``erase_user`` service the cloud ``user.deleted`` webhook calls. Idempotent;
     SLA 30 days. The erasure is audit-logged by the service.
     """
-    target = db.query(User).filter(User.uuid == user_uuid).first()
+    target = get_user_by_uuid(db, user_uuid)
     if target is None:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -309,10 +311,9 @@ def repair_profile_embeddings(
     instead of the true centroid of all assigned speakers.
     """
     ctx.bypass.require_deployment_scope("Repairing profile embeddings")
-    from app.models.speaker import SpeakerProfile
     from app.services.profile_embedding_service import ProfileEmbeddingService
 
-    profiles = db.query(SpeakerProfile).all()
+    profiles = list_all_speaker_profiles(db)
     if not profiles:
         return {"status": "ok", "message": "No profiles found", "total": 0}
 

@@ -8,7 +8,6 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.admin_system_metrics import get_cpu_usage
@@ -31,6 +30,7 @@ from app.services.account_security_service import DeletedUser
 from app.services.account_security_service import assert_not_last_super_admin
 from app.services.account_security_service import audit_user_deleted
 from app.services.user_deletion_service import delete_user_account
+from app.services.user_lookup import list_users_by_name
 
 # No basicConfig here — this module is imported via the API router before
 # configure_logging() runs; a default root handler would double every log line.
@@ -268,10 +268,7 @@ def get_admin_users(
     existing frontend code. Use limit/offset for larger user bases.
     """
     try:
-        users = (
-            db.query(User).order_by(func.lower(User.full_name)).offset(offset).limit(limit).all()
-        )
-        return users
+        return list_users_by_name(db, offset, limit)
     except (HTTPException, DomainError):
         # Re-raise deliberate HTTP responses unchanged. The broad handler below turns
         # anything it catches into a 500, which would report a deliberate 401/403/404/422

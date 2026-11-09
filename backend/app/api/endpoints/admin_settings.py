@@ -3,24 +3,19 @@
 import logging
 from datetime import UTC
 from datetime import datetime
-from datetime import timedelta
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import status
-from sqlalchemy import and_
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import selectinload
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_admin_user
 from app.core.exceptions import DomainError
 from app.core.queues import CeleryQueues
 from app.db.base import get_db
-from app.models.media import FileStatus
 from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.admin import CacheClearResponse
@@ -40,8 +35,10 @@ from app.schemas.admin import RetentionRunResponse
 from app.schemas.admin import RetryConfig
 from app.schemas.admin import RetryConfigUpdate
 from app.services import system_settings_service
+from app.services.admin_file_queries import list_retention_eligible_files
 from app.services.platform_bypass import audit_metadata_access
 from app.services.request_context import RequestContext
+from app.services.user_lookup import get_email_by_user_id
 from app.utils.media_origin import same_source_origin
 
 # No basicConfig here — this module is imported via the API router before
@@ -144,30 +141,11 @@ def update_garbage_cleanup_configuration(
 def _get_retention_eligible_files(
     db: Session, retention_days: int, delete_error_files: bool
 ) -> list[MediaFile]:
-    """Query files eligible for deletion under the given retention parameters.
-
-    Applies the sweep's own guard (``tasks.cleanup.retention_guard_pred``: held, quarantined
-    and trashed files are never taken), so the preview lists what a run would delete.
-    """
+    """Files a retention run would delete, under the sweep's own never-take guard."""
     from app.tasks.cleanup import retention_guard_pred
 
-    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-    eligible_statuses = [FileStatus.COMPLETED]
-    if delete_error_files:
-        eligible_statuses.append(FileStatus.ERROR)
-
-    return (
-        db.query(MediaFile)
-        .options(selectinload(MediaFile.speakers))
-        .filter(
-            or_(
-                and_(MediaFile.completed_at.isnot(None), MediaFile.completed_at < cutoff),
-                and_(MediaFile.completed_at.is_(None), MediaFile.upload_time < cutoff),
-            ),
-            MediaFile.status.in_([s.value for s in eligible_statuses]),
-            retention_guard_pred(),
-        )
-        .all()
+    return list_retention_eligible_files(
+        db, retention_days, delete_error_files, retention_guard_pred()
     )
 
 
@@ -329,8 +307,7 @@ def preview_retention_deletion(
 
     # Build user lookup for owner names
     user_ids = list({f.user_id for f in files})
-    users = db.query(User).filter(User.id.in_(user_ids)).all()
-    user_map = {u.id: u.email for u in users}
+    user_map = get_email_by_user_id(db, user_ids)
 
     now_utc = datetime.now(UTC)
     total_size = sum(f.file_size or 0 for f in files)

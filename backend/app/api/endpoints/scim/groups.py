@@ -37,18 +37,20 @@ from app.api.endpoints.scim.filters import parse_pagination
 from app.api.endpoints.scim.patch_ops import parse_group_operation
 from app.api.endpoints.scim.users import _is_uuid
 from app.api.endpoints.scim.users import _scim_json
-from app.auth.roles import ROLE_SUPER_ADMIN
 from app.db.base import get_db
 from app.models.group import UserGroup
-from app.models.group import UserGroupMember
 from app.models.scim_token import SCIMToken
-from app.models.user import User
 from app.schemas.scim import SCIMGroupRequest
 from app.schemas.scim import SCIMPatchRequest
 from app.schemas.scim import group_resource
 from app.schemas.scim import list_response
 from app.services import scim_group_service
 from app.services import scim_service
+from app.services.scim_queries import get_group_by_uuid
+from app.services.scim_queries import get_group_members
+from app.services.scim_queries import list_groups_page
+from app.services.user_lookup import get_first_super_admin
+from app.services.user_lookup import get_users_by_uuids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -62,7 +64,7 @@ def _owner_id(db: Session, token: SCIMToken) -> int:
     """Who owns a group this token creates. See the module docstring."""
     if token.created_by is not None:
         return int(token.created_by)
-    fallback = db.query(User).filter(User.role == ROLE_SUPER_ADMIN).order_by(User.id).first()
+    fallback = get_first_super_admin(db)
     if fallback is None:  # pragma: no cover - a deployment always seeds one
         raise SCIMError(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -73,11 +75,7 @@ def _owner_id(db: Session, token: SCIMToken) -> int:
 
 def _load_group(db: Session, group_id: str) -> UserGroup:
     """Resolve a SCIM group id (our ``user_group.uuid``) or raise 404."""
-    group = (
-        db.query(UserGroup).filter(UserGroup.uuid == group_id).first()
-        if _is_uuid(group_id)
-        else None
-    )
+    group = get_group_by_uuid(db, group_id) if _is_uuid(group_id) else None
     if group is None:
         raise not_found("Group", group_id)
     return group
@@ -85,12 +83,7 @@ def _load_group(db: Session, group_id: str) -> UserGroup:
 
 def _members(db: Session, group: UserGroup) -> list[dict[str, str]]:
     """Every member of *group*, as SCIM references, whatever wrote the row."""
-    rows = (
-        db.query(User)
-        .join(UserGroupMember, UserGroupMember.user_id == User.id)
-        .filter(UserGroupMember.group_id == group.id)
-        .all()
-    )
+    rows = get_group_members(db, group.id)
     return [{"value": str(u.uuid), "display": str(u.full_name or u.email)} for u in rows]
 
 
@@ -101,7 +94,7 @@ def _resolve_member_ids(db: Session, scim_ids: set[str]) -> set[int]:
     added ten people and added eight has no way to notice.
     """
     valid = {i for i in scim_ids if _is_uuid(i)}
-    rows = db.query(User).filter(User.uuid.in_(valid)).all() if valid else []
+    rows = get_users_by_uuids(db, valid) if valid else []
     found = {str(u.uuid) for u in rows}
     missing = scim_ids - found
     if missing:
@@ -119,14 +112,9 @@ def list_groups(
 ) -> JSONResponse:
     """List or search groups. Supports ``displayName eq``."""
     offset, limit = parse_pagination(startIndex, count)
-    query = db.query(UserGroup)
 
     parsed = parse_eq_filter(filter, allowed=GROUP_FILTER_ATTRS)
-    if parsed:
-        query = query.filter(UserGroup.name == parsed[1])
-
-    total = query.order_by(None).count()
-    rows = query.order_by(UserGroup.id).offset(offset).limit(limit).all()
+    rows, total = list_groups_page(db, parsed[1] if parsed else None, offset, limit)
     return _scim_json(
         list_response(
             [group_resource(g, members=_members(db, g)) for g in rows],

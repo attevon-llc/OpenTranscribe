@@ -376,14 +376,9 @@ def _banner_requirement(db: Session | None) -> tuple[bool, datetime | None]:
         return cast(tuple[bool, datetime | None], cached)
 
     try:
-        from app.models.auth_config import AuthConfig
+        from app.services.auth_config_queries import get_configs_by_keys
 
-        rows = {
-            row.config_key: row
-            for row in db.query(AuthConfig)
-            .filter(AuthConfig.config_key.in_(("login_banner_enabled", "login_banner_text")))
-            .all()
-        }
+        rows = get_configs_by_keys(db, ("login_banner_enabled", "login_banner_text"))
     except Exception as exc:
         from app.core.db_overload import reraise_db_overload
 

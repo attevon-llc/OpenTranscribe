@@ -31,6 +31,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import User as UserSchema
 from app.schemas.user import UserCreate
+from app.services.user_lookup import get_user_by_email
 
 router = APIRouter()
 
@@ -116,7 +117,7 @@ def register(
     # Check if email already exists. Not the guarantee: a concurrent registration of
     # the same address can pass this check too, and the unique index on user.email
     # refuses its insert below, which is answered exactly like this.
-    user_exists = db.query(User).filter(User.email == user_in.email).first()
+    user_exists = get_user_by_email(db, user_in.email)
 
     if user_exists:
         _refuse_registered_email()
@@ -224,7 +225,7 @@ def request_password_reset_endpoint(
     from app.auth.password_reset import request_password_reset
 
     if not local_auth_enabled(db):
-        account = db.query(User).filter(User.email == body.email).first()
+        account = get_user_by_email(db, body.email)
         if not is_break_glass_account(account):
             return {"message": _RESET_REQUEST_MESSAGE}
 

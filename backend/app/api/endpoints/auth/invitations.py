@@ -46,6 +46,7 @@ from app.schemas.invitation import InvitationCreate
 from app.schemas.invitation import InvitationLookupRequest
 from app.schemas.invitation import InvitationLookupResponse
 from app.schemas.invitation import InvitationResponse
+from app.services.invitation_queries import list_invitations as list_invitations_query
 from app.services.uuid_helpers import get_by_uuid
 
 logger = logging.getLogger(__name__)
@@ -130,10 +131,7 @@ def list_invitations(
     current_user: User = Depends(get_current_admin_user),
 ) -> Any:
     """List invitations (admin). Pending only unless ``include_inactive``."""
-    query = db.query(UserInvitation)
-    if not include_inactive:
-        query = query.filter(UserInvitation.used_at.is_(None), UserInvitation.revoked_at.is_(None))
-    invitations = query.order_by(UserInvitation.created_at.desc()).limit(500).all()
+    invitations = list_invitations_query(db, include_inactive)
     return [_as_response(i) for i in invitations]
 
 

@@ -48,6 +48,7 @@ from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import Token
 from app.schemas.user import TokenRefreshRequest
+from app.services.user_lookup import get_user_by_uuid
 from app.utils.websocket_notify import publish_token_revocation
 
 router = APIRouter()
@@ -141,7 +142,7 @@ def refresh_access_token(
         )
     user_uuid_str = str(user_uuid_str_raw)
     user_uuid = UUID(user_uuid_str)
-    user = db.query(User).filter(User.uuid == user_uuid).first()
+    user = get_user_by_uuid(db, user_uuid)
 
     if not user:
         logger.warning(f"Token refresh failed: user not found (uuid={user_uuid_str[:8]}...)")
@@ -354,7 +355,7 @@ def _revoke_and_identify(
     subject = claims.get("sub") if claims else None
     if not subject:
         return failed, None, None
-    user = db.query(User).filter(User.uuid == UUID(str(subject))).first()
+    user = get_user_by_uuid(db, UUID(str(subject)))
     if user is None:
         return failed, None, None
     return failed, int(user.id), str(user.email)

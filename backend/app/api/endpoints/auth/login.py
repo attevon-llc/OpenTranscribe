@@ -2,8 +2,6 @@
 
 import logging
 import os
-from datetime import UTC
-from datetime import datetime
 from typing import NoReturn
 from uuid import UUID
 
@@ -15,7 +13,6 @@ from fastapi import Response
 from fastapi import status
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.authenticators import _authenticate_production_user
@@ -50,6 +47,9 @@ from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
 from app.schemas.user import Token
+from app.services.session_queries import lock_active_sessions
+from app.services.user_lookup import get_user_by_email_or_ldap_uid
+from app.services.user_lookup import get_user_by_uuid
 
 router = APIRouter()
 
@@ -143,8 +143,8 @@ def _resolve_lockout_account(db: Session, username: str, user_uuid_str: str) -> 
     """
     try:
         if user_uuid_str:
-            return db.query(User).filter(User.uuid == UUID(user_uuid_str)).first()
-        return db.query(User).filter((User.email == username) | (User.ldap_uid == username)).first()
+            return get_user_by_uuid(db, UUID(user_uuid_str))
+        return get_user_by_email_or_ldap_uid(db, username)
     except Exception as exc:
         # An overload is the request's 503, like one anywhere else on this path; only a
         # failure of this query itself is the fail-secure refusal below.
@@ -321,7 +321,6 @@ def _enforce_concurrent_session_limit(
     Raises:
         HTTPException: 429 when the cap is reached under the ``reject`` policy.
     """
-    from app.models.refresh_token import RefreshToken
 
     # Lock the USER row first and hold it until the new session is minted (the
     # refresh-token insert commits it). Locking only the existing session rows below
@@ -332,16 +331,7 @@ def _enforce_concurrent_session_limit(
 
     # Row locks on the existing active sessions, so the eviction below works on a
     # stable set. Cannot use with_for_update() on an aggregate, so count the rows.
-    sessions_stmt = (
-        select(RefreshToken)
-        .where(
-            RefreshToken.user_id == user_db.id,
-            RefreshToken.revoked_at.is_(None),
-            RefreshToken.expires_at > datetime.now(UTC),
-        )
-        .with_for_update()
-    )
-    active_session_rows = db.execute(sessions_stmt).scalars().all()
+    active_session_rows = lock_active_sessions(db, user_db.id)
     active_sessions = len(active_session_rows)
 
     if active_sessions >= max_concurrent_sessions:
@@ -534,7 +524,7 @@ def login_for_access_token(
 
         # Get user from database
         user_uuid = UUID(user_uuid_str)
-        user_db = db.query(User).filter(User.uuid == user_uuid).first()
+        user_db = get_user_by_uuid(db, user_uuid)
         if not user_db:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

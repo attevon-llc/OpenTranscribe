@@ -40,10 +40,8 @@ from app.auth.roles import ROLE_ADMIN
 from app.auth.roles import ROLE_USER
 from app.db.base import get_db
 from app.models.group import MAPPING_SOURCE_LDAP
-from app.models.group import MEMBERSHIP_SOURCES_PROTECTED
 from app.models.group import GroupMapping
 from app.models.group import UserGroup
-from app.models.group import UserGroupMember
 from app.models.user import User
 from app.schemas.group_mapping import GroupMapping as GroupMappingSchema
 from app.schemas.group_mapping import GroupMappingCreate
@@ -51,6 +49,10 @@ from app.schemas.group_mapping import GroupMappingUpdate
 from app.schemas.group_mapping import MappingTestGroup
 from app.schemas.group_mapping import MappingTestRequest
 from app.schemas.group_mapping import MappingTestResponse
+from app.services.group_mapping_queries import get_groups_by_ids
+from app.services.group_mapping_queries import list_directory_member_rows
+from app.services.group_mapping_queries import list_mappings
+from app.services.group_mapping_queries import list_mappings_for_source
 from app.services.idp_group_mapping_service import RoleNotGrantableError
 from app.services.idp_group_mapping_service import assert_grantable_role
 from app.services.idp_group_mapping_service import normalize_claim_value
@@ -81,17 +83,7 @@ def _member_counts(db: Session, mappings: list[GroupMapping]) -> dict[int, int]:
     group_ids = {int(m.user_group_id) for m in mappings if m.user_group_id is not None}
     if not group_ids:
         return {}
-    rows = (
-        db.query(UserGroupMember.group_id, UserGroupMember.source)
-        .filter(
-            UserGroupMember.group_id.in_(group_ids),
-            # Everything a directory pass owns. `manual` and `scim` are excluded
-            # because neither is derived from a mapping — see
-            # models/group.MEMBERSHIP_SOURCES_PROTECTED.
-            UserGroupMember.source.notin_(MEMBERSHIP_SOURCES_PROTECTED),
-        )
-        .all()
-    )
+    rows = list_directory_member_rows(db, group_ids)
     counts: dict[int, int] = {}
     for group_id, _source in rows:
         counts[int(group_id)] = counts.get(int(group_id), 0) + 1
@@ -130,7 +122,7 @@ def _assert_claim_free(db: Session, source: str, claim_value: str, exclude_id: i
     both into a 400 with a readable message instead of a 500 from the driver.
     """
     normalized = normalize_claim_value(source, claim_value)
-    for existing in db.query(GroupMapping).filter(GroupMapping.source == source).all():
+    for existing in list_mappings_for_source(db, source):
         if exclude_id is not None and existing.id == exclude_id:
             continue
         if normalize_claim_value(source, str(existing.claim_value)) == normalized:
@@ -147,10 +139,7 @@ def list_group_mappings(
     current_user: User = Depends(get_current_active_superuser),
 ) -> Any:
     """List every configured mapping, newest last."""
-    query = db.query(GroupMapping)
-    if source:
-        query = query.filter(GroupMapping.source == source)
-    mappings = query.order_by(GroupMapping.source, GroupMapping.id).all()
+    mappings = list_mappings(db, source)
     counts = _member_counts(db, mappings)
     return [
         _to_schema(m, counts.get(int(m.user_group_id), 0) if m.user_group_id else 0)
@@ -318,11 +307,7 @@ def test_group_mapping(
         claims = list(payload.claim_values or [])
 
     grants = resolve_grants(db, payload.source, claims)
-    groups = (
-        db.query(UserGroup).filter(UserGroup.id.in_(grants.group_ids)).all()
-        if grants.group_ids
-        else []
-    )
+    groups = get_groups_by_ids(db, grants.group_ids) if grants.group_ids else []
     matched = set(grants.matched_claims)
     effective = ROLE_ADMIN if (legacy_admin or grants.grants_admin) else ROLE_USER
     return MappingTestResponse(

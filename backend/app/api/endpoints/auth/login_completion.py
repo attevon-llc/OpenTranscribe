@@ -35,8 +35,8 @@ from app.core.auth_types import AUTH_TYPE_OIDC
 from app.core.auth_types import AUTH_TYPE_PKI
 from app.core.config import settings
 from app.models.user import User
-from app.models.user_mfa import UserMFA
 from app.services import audit_outbox
+from app.services.mfa_queries import get_user_mfa
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,7 @@ def _check_mfa_requirement(
     if user.auth_type in [AUTH_TYPE_PKI, AUTH_TYPE_OIDC] and actual_auth_method != AUTH_TYPE_LOCAL:
         return None
 
-    user_mfa = db.query(UserMFA).filter(UserMFA.user_id == user.id).first()
+    user_mfa = get_user_mfa(db, user.id)
 
     if user_mfa and user_mfa.totp_enabled:
         # User has MFA enabled - return MFA token instead of access token

@@ -28,9 +28,9 @@ from app.models.collection import CollectionMember
 from app.models.media import Comment
 from app.models.media import MediaFile
 from app.models.organization import Organization
-from app.models.organization import OrganizationMembership
 from app.models.sharing import CollectionShare
 from app.models.user import User
+from tests.fixtures.tag_world import join
 
 COMMENTS = "/api/comments"
 
@@ -58,11 +58,6 @@ def _mk_org(db) -> Organization:
     db.commit()
     db.refresh(org)
     return org
-
-
-def _join(db, org: Organization, user: User, role: str = "org:member") -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role=role))
-    db.commit()
 
 
 def _mk_file(db, owner: User, org_id: int | None, *, legal_hold: bool = False) -> MediaFile:
@@ -163,27 +158,27 @@ def _cell(db_session, name: str) -> Cell:
 
     org = _mk_org(db)
     author, me = _mk_user(db, "author"), _mk_user(db, "member")
-    _join(db, org, author)
+    join(db, org, author)
     if name == "org_member_own_file":
-        _join(db, org, me)
+        join(db, org, me)
         return Cell(me, org.id, "org:member", _mk_file(db, me, org.id))
     mf = _mk_file(db, author, org.id)
     if name == "org_member_via_org_collection":
-        _join(db, org, me)
+        join(db, org, me)
         _mk_collection(db, author, org.id, mf)
         return Cell(me, org.id, "org:member", mf)
     if name == "org_member_viewer_share":
-        _join(db, org, me)
+        join(db, org, me)
         coll = _mk_collection(db, author, org.id, mf, visibility="restricted")
         _share(db, coll, author, me, "viewer")
         return Cell(me, org.id, "org:member", mf)
     if name == "org_member_editor_share":
-        _join(db, org, me)
+        join(db, org, me)
         coll = _mk_collection(db, author, org.id, mf, visibility="restricted")
         _share(db, coll, author, me, "editor")
         return Cell(me, org.id, "org:member", mf)
     if name == "org_admin_via_org_collection":
-        _join(db, org, me, role="org:admin")
+        join(db, org, me, role="org:admin")
         _mk_collection(db, author, org.id, mf)
         return Cell(me, org.id, "org:admin", mf)
     raise AssertionError(f"unknown cell {name}")

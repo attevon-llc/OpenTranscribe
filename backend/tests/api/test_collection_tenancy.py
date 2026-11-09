@@ -29,46 +29,15 @@ import pytest
 from app.models.collection import Collection
 from app.models.collection import CollectionMember
 from app.models.media import MediaFile
-from app.models.organization import Organization
-from app.models.organization import OrganizationMembership
 from app.models.topic import TopicSuggestion
 from app.models.user import User
+from tests.fixtures.tag_world import join
+from tests.fixtures.tag_world import make_org
+from tests.fixtures.tag_world import make_user
 
 
 def _unique(prefix: str) -> str:
     return f"{prefix} {uuid_pkg.uuid4().hex[:8]}"
-
-
-def _mk_user(db, label: str) -> User:
-    user = User(
-        email=f"{label}_{uuid_pkg.uuid4().hex[:8]}@example.com",
-        full_name=f"{label} user",
-        hashed_password="x",
-        is_active=True,
-        is_superuser=False,
-        role="user",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-def _mk_org(db, label: str) -> Organization:
-    org = Organization(
-        external_org_id=f"org_{label}_{uuid_pkg.uuid4().hex[:8]}",
-        name=f"{label} Org",
-        is_active=True,
-    )
-    db.add(org)
-    db.commit()
-    db.refresh(org)
-    return org
-
-
-def _join(db, org: Organization, user: User, role: str = "org:member") -> None:
-    db.add(OrganizationMembership(organization_id=org.id, user_id=user.id, role=role))
-    db.commit()
 
 
 def _mk_file(db, user: User, org_id: int | None) -> MediaFile:
@@ -126,14 +95,14 @@ def _listed(client, ownership: str = "mine") -> dict[str, dict]:
 def org_world(db_session):
     """Org A (alice admin, bob member), org B (alice member), and carol outside both."""
     db = db_session
-    org_a = _mk_org(db, "A")
-    org_b = _mk_org(db, "B")
-    alice = _mk_user(db, "alice")
-    bob = _mk_user(db, "bob")
-    carol = _mk_user(db, "carol")
-    _join(db, org_a, alice, role="org:admin")
-    _join(db, org_a, bob)
-    _join(db, org_b, alice)
+    org_a = make_org(db, "A")
+    org_b = make_org(db, "B")
+    alice = make_user(db, "alice")
+    bob = make_user(db, "bob")
+    carol = make_user(db, "carol")
+    join(db, org_a, alice, role="org:admin")
+    join(db, org_a, bob)
+    join(db, org_b, alice)
     return type(
         "World",
         (),

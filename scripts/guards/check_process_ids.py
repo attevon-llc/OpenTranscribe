@@ -92,7 +92,7 @@ def tracked_files(repo_root: Path) -> list[str]:
     if git is None:
         msg = 'git not found on PATH; cannot list tracked files'
         raise _baseline.ScanError(msg)
-    out = subprocess.run(  # nosec B603  absolute git path, fixed argv
+    out = subprocess.run(  # absolute git path, fixed argv  # nosec B603
         [git, 'ls-files', '-z'], cwd=repo_root, capture_output=True, text=True, check=True
     ).stdout
     return [p for p in out.split('\0') if p]

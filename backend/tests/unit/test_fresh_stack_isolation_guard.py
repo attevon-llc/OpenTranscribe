@@ -43,7 +43,7 @@ def _run(
         echo PASSED
         """
     )
-    return subprocess.run(  # nosec B603 B607 - fixed argv, stub docker
+    return subprocess.run(  # fixed argv, stub docker  # nosec B603 B607
         ["bash", "-c", script],
         env={
             "PATH": f"{bin_dir}:/usr/bin:/bin",

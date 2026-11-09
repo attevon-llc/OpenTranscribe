@@ -14,7 +14,7 @@ safe) and fails if the shutdown ``SystemExit`` ever comes back as anything but a
 from __future__ import annotations
 
 import os
-import subprocess  # nosec B404 - runs this interpreter on a fixed script
+import subprocess  # runs this interpreter on a fixed script  # nosec B404
 import sys
 import textwrap
 
@@ -84,7 +84,7 @@ def test_the_shutdown_systemexit_is_reported_as_a_lost_worker_not_a_result():
     factor = _load_factor()
     pool_wait, process_timeout = _budget(factor)
     try:
-        proc = subprocess.run(  # nosec B603 - fixed argv, no shell
+        proc = subprocess.run(  # fixed argv, no shell  # nosec B603
             [sys.executable, "-I", "-c", _SCRIPT.replace("__POOL_WAIT_S__", str(pool_wait))],
             capture_output=True,
             text=True,

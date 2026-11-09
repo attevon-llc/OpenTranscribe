@@ -73,7 +73,7 @@ def _docker_ps(filters: list[str], fmt: str) -> list[str]:
         argv += ["--filter", spec]
     argv += ["--format", fmt]
     try:
-        completed = subprocess.run(  # nosec B603 -- fixed argv, no shell
+        completed = subprocess.run(  # fixed argv, no shell  # nosec B603
             argv,
             capture_output=True,
             text=True,

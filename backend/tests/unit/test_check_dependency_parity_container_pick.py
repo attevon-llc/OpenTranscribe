@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import stat
-import subprocess  # nosec B404 - runs the repo's own script against a stub
+import subprocess  # runs the repo's own script against a stub  # nosec B404
 from pathlib import Path
 
 import pytest
@@ -57,7 +57,7 @@ def _run(
         env["OT_PARITY_VENV_PIP"] = str(venv_pip)
     if project is not None:
         env["COMPOSE_PROJECT_NAME"] = project
-    proc = subprocess.run(  # nosec B603 - fixed argv
+    proc = subprocess.run(  # fixed argv  # nosec B603
         ["bash", str(script)], capture_output=True, text=True, env=env, timeout=60, check=False
     )
     return proc, log.read_text(encoding="utf-8") if log.exists() else ""

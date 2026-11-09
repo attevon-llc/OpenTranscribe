@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import os
-import subprocess  # nosec B404 - runs two of this repo's own scripts with fixed argv
+import subprocess  # runs two of this repo's own scripts with fixed argv  # nosec B404
 import sys
 import tempfile
 from collections.abc import Callable
@@ -61,7 +61,7 @@ def _table(header: list[str], rows: list[list[str]]) -> str:
 
 
 def _script_rows(*argv: str) -> list[list[str]]:
-    out = subprocess.run(  # nosec B603 - fixed argv, repo-local script
+    out = subprocess.run(  # fixed argv, repo-local script  # nosec B603
         list(argv), cwd=REPO_ROOT, check=True, capture_output=True, text=True
     ).stdout
     return [line.split('\t') for line in out.splitlines() if line.strip()]

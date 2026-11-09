@@ -33,7 +33,7 @@ def _run(tmp_path: Path, project: str) -> str:
         start_stack_or_die "mock llm" mock-llm --with-mock-llm
         """
     )
-    result = subprocess.run(  # nosec B603 B607 - fixed argv, stub opentr.sh
+    result = subprocess.run(  # fixed argv, stub opentr.sh  # nosec B603 B607
         ["bash", "-c", script],
         env={"PATH": "/usr/bin:/bin", "OT_ARGS_LOG": str(args_log)},
         capture_output=True,

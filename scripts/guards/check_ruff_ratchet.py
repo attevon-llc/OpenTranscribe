@@ -39,7 +39,7 @@ _SCORE = re.compile(r'`(?P<name>[^`]+)` is too complex \((?P<score>\d+) >')
 
 
 def _ruff(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # nosec B603  fixed argv, our own interpreter
+    return subprocess.run(  # fixed argv, our own interpreter  # nosec B603
         [sys.executable, '-m', 'ruff', *args],
         cwd=root,
         capture_output=True,

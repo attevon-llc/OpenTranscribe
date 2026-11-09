@@ -47,7 +47,7 @@ from app.core.config import settings
 from app.models.user import User
 
 PROVIDER = "oidc"
-TOKEN = "an-external-token"  # nosec B105 — an opaque test string
+TOKEN = "an-external-token"  # an opaque test string  # nosec B105
 LIMIT_MINUTES = 60
 
 

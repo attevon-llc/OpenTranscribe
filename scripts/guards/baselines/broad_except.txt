@@ -173,7 +173,6 @@ backend/app/services/speaker_matching/match_queries.py::match_speaker_to_profile
 backend/app/services/speaker_matching/match_storage.py::create_speaker_match_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/processing.py::process_single_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/propagation.py::propagate_profile_assignment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/topic_extraction_service.py::TopicExtractionService._parse_llm_response#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/watch_sources/fs_events/dispatcher.py::ScanDispatcher._dispatch_locked#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/watch_sources/fs_events/handler.py::WatchEventHandler.dispatch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/watch_sources/fs_events/observers.py::stop_observer#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

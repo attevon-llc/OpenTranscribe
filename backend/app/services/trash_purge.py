@@ -28,6 +28,7 @@ from typing import Any
 
 from sqlalchemy import and_
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.auth.audit_events import TENANT_SCOPE_ORG
@@ -92,7 +93,7 @@ def _record_purge(audit: dict[str, Any]) -> None:
             audit_outbox.stage(db, **audit)
             db.commit()
             audit_outbox.deliver_staged(db)
-    except Exception:  # see the module docstring
+    except (SQLAlchemyError, OSError):  # see the module docstring
         logger.error("trash purge: could not record file.purge for %s", audit, exc_info=True)
 
 
@@ -173,7 +174,7 @@ def _purge_candidates(
     for file_id, file_uuid in candidates:
         try:
             outcome, residual = purge_one(file_id, trigger=trigger, defer_citation_scrub=destroyed)
-        except Exception:  # one bad file must not stop the pass
+        except Exception:  # one bad file must not stop the pass  # boundary: per-item isolation, counted in summary.failed
             logger.exception("trash purge: failed on file %s (%s)", file_id, file_uuid)
             summary.failed += 1
             continue

@@ -13,6 +13,8 @@ from dataclasses import asdict
 from dataclasses import dataclass
 from dataclasses import field
 
+from redis.exceptions import RedisError
+
 from app.core.redis import get_request_redis
 
 logger = logging.getLogger(__name__)
@@ -242,7 +244,7 @@ class ProgressTracker:
             pipe.expire(index_key, _TTL_ACTIVE)
             pipe.execute()
             self._last_write_time = time.time()
-        except Exception as e:
+        except (RedisError, TypeError, ValueError) as e:
             logger.debug(f"Failed to write progress state: {e}", exc_info=True)
 
     @classmethod
@@ -253,7 +255,7 @@ class ProgressTracker:
             raw = r.get(f"{_KEY_PREFIX}:{task_type}:{user_id}")
             if raw:
                 return ProgressState.from_dict(json.loads(raw))
-        except Exception as e:
+        except (RedisError, ValueError, TypeError) as e:
             logger.debug(f"Failed to read progress state: {e}", exc_info=True)
         return None
 
@@ -282,7 +284,7 @@ class ProgressTracker:
                     results.append(state.to_dict())
             if stale:
                 r.srem(index_key, *stale)
-        except Exception as e:
+        except (RedisError, ValueError, TypeError) as e:
             logger.debug(f"Failed to read active tasks: {e}", exc_info=True)
         return results
 
@@ -319,5 +321,5 @@ def emit_progress_notification(
             "data": data,
         }
         r.publish("websocket_notifications", json.dumps(notification))
-    except Exception as e:
+    except (RedisError, TypeError, ValueError) as e:
         logger.debug(f"Failed to emit progress notification: {e}", exc_info=True)

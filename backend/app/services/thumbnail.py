@@ -102,7 +102,7 @@ def generate_thumbnail(
             f"Error generating thumbnail with ffmpeg: {e.stderr.decode() if e.stderr else str(e)}"
         )
         return None
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.exception(f"Error generating thumbnail: {str(e)}")
         return None
 
@@ -164,13 +164,13 @@ def generate_thumbnail_from_url(
                     if "error" in line.lower() or "invalid" in line.lower():
                         stderr_msg = line
                         break
-            except Exception:
+            except (UnicodeDecodeError, AttributeError):
                 logger.debug("could not decode ffmpeg stderr", exc_info=True)
                 stderr_msg = str(e.stderr)
 
         logger.error(f"FFmpeg error: {stderr_msg or str(e)}")
         return None
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.error(f"Error generating thumbnail from URL: {str(e)}", exc_info=True)
         return None
 
@@ -235,6 +235,8 @@ def generate_and_upload_thumbnail(
 
         return storage_path
 
-    except Exception as e:
+    except (
+        Exception
+    ) as e:  # boundary: minio_service.upload_file wraps client failures in a bare Exception
         logger.exception(f"Error generating and uploading thumbnail: {str(e)}")
         return None

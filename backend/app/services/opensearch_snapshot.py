@@ -191,7 +191,9 @@ def prune_snapshots(client: Any, cfg: dict[str, Any]) -> list[str]:
                 repository=REPO_NAME, snapshot=name, request_timeout=_REQUEST_TIMEOUT_S
             )
             deleted.append(name)
-        except Exception as exc:  # one bad delete shouldn't abort the run
+        except (
+            Exception
+        ) as exc:  # boundary: per-item isolation, one bad delete must not abort the prune
             logger.warning(
                 "Could not delete old OpenSearch snapshot %s: %s", name, exc, exc_info=True
             )
@@ -216,7 +218,7 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
 
     try:
         ensure_repository(client)
-    except Exception as exc:  # most often path.repo not allow-listed
+    except OpenSearchException as exc:  # most often path.repo not allow-listed
         # "error" is rendered on GET /admin/backup and /admin/backup/status --
         # never interpolate the raw exception text, only its class name (#914).
         msg = (
@@ -257,7 +259,9 @@ def perform_snapshot(cfg: dict[str, Any], ts: str | None = None) -> dict[str, An
             "pruned": pruned,
             "voiceprints": voiceprints,
         }
-    except Exception as exc:  # snapshot failure is recorded, never raised
+    except (
+        Exception
+    ) as exc:  # boundary: task body, failure is recorded in the result dict, never raised
         duration = round(time.monotonic() - started, 2)
         logger.exception("OpenSearch snapshot failed")
         return {

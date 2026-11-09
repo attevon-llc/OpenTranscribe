@@ -120,7 +120,9 @@ class SubtitleService:
                     cfg,
                     reveal_categories or set(),
                 )
-            except Exception:
+            except (
+                Exception
+            ):  # boundary: redaction fail-closed, any masking failure withholds the text
                 # FAIL CLOSED. The assignment used to sit inside a
                 # `contextlib.suppress(Exception)`, so a masking failure left
                 # `seg.text` as the raw DB text and every downstream formatter
@@ -410,7 +412,7 @@ class SubtitleService:
                         continue
                     zf.writestr(f"{base_name}.{ext}", content.encode("utf-8"))
                     exported += 1
-                except Exception:  # one bad file shouldn't abort the batch
+                except Exception:  # boundary: per-item isolation, counted in `skipped`
                     logger.exception("Subtitle export skipped file %s", file_id)
                     skipped += 1
         return buf.getvalue(), exported, skipped

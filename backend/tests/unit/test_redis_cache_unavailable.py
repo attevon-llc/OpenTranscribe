@@ -18,11 +18,13 @@ policy.
 
 from __future__ import annotations
 
+from redis.exceptions import ConnectionError as RedisConnectionError
+
 import app.services.redis_cache_service as cache_module
 from app.services.redis_cache_service import RedisCacheService
 
 
-class _ConnectionRefusedError(Exception):
+class _ConnectionRefusedError(RedisConnectionError):
     """Stand-in for redis.exceptions.ConnectionError."""
 
 
@@ -111,6 +113,12 @@ def _capture_kwargs_module(captured: list[dict]):
 
         def ping(self):
             return True
+
+        def publish(self, *_args):
+            return 0
+
+        def close(self):
+            return None
 
     return type("_RedisModule", (), {"Redis": staticmethod(_Client)})
 

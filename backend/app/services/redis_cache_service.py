@@ -20,6 +20,8 @@ import logging
 import time
 from typing import Any
 
+from redis.exceptions import RedisError
+
 from app.core.config import settings
 from app.core.redis import redis_tls_kwargs
 
@@ -32,7 +34,7 @@ def _record(result: str) -> None:
         from app.core.metrics import cache_operations_total
 
         cache_operations_total.labels(cache="redis", result=result).inc()
-    except Exception:  # metrics must never break caching
+    except (ImportError, ValueError):  # metrics must never break caching
         logger.debug("cache metric not recorded", exc_info=True)  # pragma: no cover
 
 
@@ -110,7 +112,7 @@ class RedisCacheService:
             self._redis.ping()
             self._unavailable_until = None
             logger.info("Redis cache service connected (db=1)")
-        except Exception as e:
+        except (RedisError, OSError) as e:
             self._redis = None
             self._unavailable_until = time.monotonic() + _UNAVAILABLE_COOLDOWN_SECONDS
             logger.warning(
@@ -135,7 +137,7 @@ class RedisCacheService:
             if raw is not None:
                 _record("hit")
                 return json.loads(raw)
-        except Exception as e:
+        except (RedisError, OSError, ValueError) as e:
             logger.debug(f"Cache GET error for {key}: {e}", exc_info=True)
         _record("miss")
         return None
@@ -147,7 +149,7 @@ class RedisCacheService:
             return
         try:
             client.setex(key, ttl, json.dumps(value, default=str))
-        except Exception as e:
+        except (RedisError, OSError, TypeError, ValueError) as e:
             logger.debug(f"Cache SET error for {key}: {e}", exc_info=True)
 
     def delete_pattern(self, pattern: str) -> int:
@@ -179,9 +181,9 @@ class RedisCacheService:
             if batch:
                 deleted += int(client.delete(*batch))
             return deleted
-        except Exception as e:
-            # Fakes and some transports raise builtin OSError subclasses, not
-            # RedisError; any failure here must leave the caller's write intact.
+        except (RedisError, OSError) as e:
+            # Some transports raise builtin OSError subclasses, not RedisError;
+            # any failure here must leave the caller's write intact.
             logger.warning(f"Cache DELETE error for {pattern}: {e}", exc_info=True)
             return 0
 
@@ -257,7 +259,7 @@ class RedisCacheService:
             )
             notify_client.publish("websocket_notifications", notification)
             notify_client.close()
-        except Exception as e:
+        except (RedisError, OSError, TypeError, ValueError) as e:
             logger.debug(f"Cache invalidation push error: {e}", exc_info=True)
 
 

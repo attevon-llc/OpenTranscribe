@@ -53,8 +53,12 @@ from typing import TYPE_CHECKING
 from typing import Literal
 from typing import Protocol
 
+import urllib3
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from minio import Minio
+
+from minio.error import MinioException
 
 from app.core.config import settings
 from app.core.constants import STORAGE_QUARANTINE_TAG_KEY
@@ -244,11 +248,11 @@ def ensure_presign_identity() -> bool:
         _ensure_result = False
         return False
 
-    try:
-        from minio.credentials import StaticProvider
-        from minio.minioadmin import MinioAdmin
-        from minio.minioadmin import MinioAdminException
+    from minio.credentials import StaticProvider
+    from minio.minioadmin import MinioAdmin
+    from minio.minioadmin import MinioAdminException
 
+    try:
         endpoint, secure = storage_backend.storage_endpoint()
         admin = MinioAdmin(
             endpoint=endpoint,
@@ -279,7 +283,12 @@ def ensure_presign_identity() -> bool:
 
         _ensure_result = True
         return True
-    except Exception as e:  # must never break presigning
+    except (
+        MinioAdminException,
+        urllib3.exceptions.HTTPError,
+        OSError,
+        ValueError,
+    ) as e:  # must never break presigning
         # The credentials are derived, so every process agrees on the identity. If another
         # process provisioned it, this one can sign with it even though its own admin call
         # failed; otherwise this process would sign with root while another process reported
@@ -316,7 +325,12 @@ def _derived_identity_works() -> bool:
         client = Minio(endpoint, access_key=access_key, secret_key=secret_key, secure=secure)
         client.presigned_get_object(settings.MEDIA_BUCKET_NAME, "_opentranscribe/probes/identity")
         return True
-    except Exception:  # "does not answer" is the answer
+    except (
+        MinioException,
+        urllib3.exceptions.HTTPError,
+        OSError,
+        ValueError,
+    ):  # "does not answer" is the answer
         logger.debug("derived presign identity probe failed", exc_info=True)
         return False
 
@@ -499,7 +513,11 @@ def read_native_s3_revocation_policy(
     bucket = settings.MEDIA_BUCKET_NAME
     try:
         policy_json: str | None = client.get_bucket_policy(bucket)
-    except Exception as e:  # no policy, or no permission to read it
+    except (
+        MinioException,
+        urllib3.exceptions.HTTPError,
+        OSError,
+    ) as e:  # no policy, or no permission to read it
         code = getattr(e, "code", None) or type(e).__name__
         if code != "NoSuchBucketPolicy":
             logger.debug("bucket policy read failed: %s", code, exc_info=True)

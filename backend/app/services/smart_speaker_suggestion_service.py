@@ -27,6 +27,7 @@ from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.core.embedding_models import get_speaker_index
 from app.models.media import MediaFile
 from app.models.speaker import Speaker
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ def _check_opensearch_profiles_exist(
             )
             return False
         return True
-    except Exception as e:
+    except CLUSTER_UNAVAILABLE_ERRORS as e:
         logger.warning(
             f"Profile document check failed: {e}, proceeding with KNN query", exc_info=True
         )

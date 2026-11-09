@@ -18,7 +18,10 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.constants import FUZZY_MATCH_THRESHOLD
@@ -397,7 +400,7 @@ def on_tags_changed(
         for uid in sorted(users):
             redis_cache.invalidate_tags(uid)
             redis_cache.invalidate_user_files(uid)
-    except Exception as e:
+    except (RedisError, OSError, SQLAlchemyError) as e:
         logger.debug(f"Tag cache invalidation failed (non-critical): {e}", exc_info=True)
 
     if affected:
@@ -406,7 +409,7 @@ def on_tags_changed(
             from app.tasks import search_file_field_tasks
 
             search_file_field_tasks.update_file_tags_index.delay(affected)
-        except Exception as e:
+        except (KombuError, OSError) as e:
             logger.warning(
                 f"Could not enqueue the tag reindex for {len(affected)} files: {e}", exc_info=True
             )

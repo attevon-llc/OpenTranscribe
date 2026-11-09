@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session_utils import session_scope
 from app.models.pipeline_timing import FilePipelineTiming
@@ -255,6 +256,6 @@ def record_pipeline_timing(
             db.execute(stmt)
             db.commit()
         return True
-    except Exception as e:
+    except (SQLAlchemyError, TypeError, ValueError) as e:
         logger.warning(f"record_pipeline_timing({task_id}) failed: {e}", exc_info=True)
         return False

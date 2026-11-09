@@ -12,6 +12,7 @@ import logging
 import uuid
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.models.organization import Organization
@@ -69,7 +70,7 @@ def test_db_error_fails_closed_to_multi_without_latching(db_session, monkeypatch
     def _flaky(*args, **kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
-            raise RuntimeError("database went away")
+            raise OperationalError("statement", {}, Exception("database went away"))
         return real_scalar(*args, **kwargs)
 
     monkeypatch.setattr(db_session, "scalar", _flaky)

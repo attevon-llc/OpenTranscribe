@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.services.profile_embedding_service import ProfileEmbeddingRecomputeError
 from app.services.profile_embedding_service import ProfileEmbeddingService
@@ -126,7 +127,7 @@ def test_unreadable_members_are_skipped_but_the_rest_are_averaged():
 @pytest.mark.parametrize("strict", [False, True])
 def test_unexpected_failure_rolls_back(strict):
     db = _db(_profile(), [_speaker()])
-    db.query.side_effect = RuntimeError("db down")
+    db.query.side_effect = OperationalError("statement", {}, Exception("db down"))
     if strict:
         with pytest.raises(ProfileEmbeddingRecomputeError, match="db down"):
             _run(db, strict=True)

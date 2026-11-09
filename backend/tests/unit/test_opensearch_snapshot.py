@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from opensearchpy.exceptions import NotFoundError
+from opensearchpy.exceptions import RequestError
 
 from app.services import backup_config
 from app.services import backup_retention
@@ -137,8 +138,8 @@ def test_perform_snapshot_unsupported_when_repo_register_fails(caplog):
     # log. "path.repo" appears in the advice regardless, so it is not asserted here --
     # it would pass for any exception and prove nothing.
     client = _fake_client(repo_exists=False)
-    client.snapshot.create_repository.side_effect = Exception(
-        "repository_exception: [opentranscribe_backup] location [...] doesn't match path.repo"
+    client.snapshot.create_repository.side_effect = RequestError(
+        400, "repository_exception: [opentranscribe_backup] location [...] doesn't match path.repo"
     )
     with (
         mock.patch.object(oss, "_client", return_value=client),
@@ -148,7 +149,7 @@ def test_perform_snapshot_unsupported_when_repo_register_fails(caplog):
             {"retention_daily": 7, "retention_weekly": 4, "retention_monthly": 12}
         )
     assert res["status"] == "unsupported"
-    assert "could not be registered (Exception)" in res["error"]
+    assert "could not be registered (RequestError)" in res["error"]
     assert "repository_exception" not in res["error"]
     assert "repository_exception" in caplog.text
     client.snapshot.create.assert_not_called()

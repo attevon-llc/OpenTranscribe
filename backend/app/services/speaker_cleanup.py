@@ -58,14 +58,20 @@ from dataclasses import field
 from typing import TYPE_CHECKING
 from typing import Any
 
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SearchIndexError
+from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 
 if TYPE_CHECKING:
     from app.models.speaker import SpeakerCluster
 
 logger = logging.getLogger(__name__)
+
+# Refreshing a centroid/embedding touches Postgres and the vector index.
+_REFRESH_ERRORS = (SQLAlchemyError, SearchIndexError, *CLUSTER_UNAVAILABLE_ERRORS, ValueError)
 
 _Fail = Callable[[str, object], None]
 
@@ -338,7 +344,7 @@ def _refresh_clusters(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
                 logger.warning(f"Centroid of cluster {cluster_uuid} not rebuildable ({e}); erasing")
                 to_erase.append(cluster_uuid)
         db.commit()
-    except Exception:  # reported below, never swallowed
+    except _REFRESH_ERRORS:  # reported below, never swallowed
         db.rollback()
         logger.exception("Could not refresh the clusters a speaker change touched")
         fail(STAGE_CLUSTERS, "could not refresh cluster centroids")
@@ -374,7 +380,7 @@ def _refresh_profiles(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
                 )
                 db.commit()
                 to_erase.append(profile_uuid)
-        except Exception:  # reported below, never swallowed
+        except _REFRESH_ERRORS:  # reported below, never swallowed
             db.rollback()
             logger.exception(f"Could not refresh profile {profile_id} after a speaker change")
             fail(STAGE_PROFILES, "could not refresh a profile embedding")
@@ -404,7 +410,7 @@ def _reindex_files(db: Session, impact: SpeakerImpact, fail: _Fail) -> None:
             .all()
         )
         db.commit()
-    except Exception:  # reported below, never swallowed
+    except SQLAlchemyError:  # reported below, never swallowed
         db.rollback()
         logger.exception("Could not read the files whose index planes name a removed speaker")
         fail(STAGE_INDEX, "could not queue the transcript reindex")
@@ -424,7 +430,7 @@ def _invalidate_caches(impact: SpeakerImpact) -> None:
 
             redis_cache.invalidate_speakers(owner_id)
             redis_cache.invalidate_user_files(owner_id)
-        except Exception as e:  # caches expire on their own TTL
+        except (RedisError, OSError) as e:  # caches expire on their own TTL
             logger.debug(
                 f"Speaker cleanup: cache invalidation failed (non-critical): {e}", exc_info=True
             )
@@ -459,7 +465,7 @@ def _resync_speaker_docs(db: Session, speaker_ids: set[int]) -> None:
             .all()
         )
         db.commit()
-    except Exception:  # logged; the document keeps its old label until the next speaker sync
+    except SQLAlchemyError:  # logged; the document keeps its old label until the next speaker sync
         db.rollback()
         logger.exception("Could not read the relabelled speakers to resync their documents")
         return

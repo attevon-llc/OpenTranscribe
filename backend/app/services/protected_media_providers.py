@@ -140,7 +140,9 @@ def _load_providers() -> list[ProtectedMediaProvider]:
     for module_info in pkgutil.iter_modules(search_path, _PLUGIN_PACKAGE + "."):
         try:
             module = importlib.import_module(module_info.name)
-        except Exception as exc:
+        except (
+            Exception
+        ) as exc:  # boundary: third-party plugin isolation, a bad plugin must not stop the rest
             logger.warning(
                 "Skipping protected-media plugin %s: import failed: %s",
                 module_info.name,
@@ -150,7 +152,7 @@ def _load_providers() -> list[ProtectedMediaProvider]:
             continue
         try:
             provider = _provider_from_module(module)
-        except Exception as exc:
+        except Exception as exc:  # boundary: third-party plugin isolation
             logger.warning(
                 "Skipping protected-media plugin %s: get_provider() failed: %s",
                 module_info.name,
@@ -188,7 +190,7 @@ def get_protected_media_auth_config(user_id: int | None = None) -> list[dict[str
             continue
         try:
             config = describe(user_id=user_id) if _accepts_user_id(describe) else describe()
-        except Exception as exc:
+        except Exception as exc:  # boundary: third-party plugin isolation
             logger.warning(
                 "Protected-media provider %s failed in get_public_auth_config: %s",
                 type(provider).__name__,

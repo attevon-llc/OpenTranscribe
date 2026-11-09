@@ -7,6 +7,7 @@ import logging
 from datetime import UTC
 from datetime import datetime
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.task_config import RECOVERY_ATTEMPT_MARKER
@@ -69,7 +70,9 @@ class TaskRecoveryPostTranscriptionMixin:
                         f"[Post-transcription recovery] Dispatched analytics task "
                         f"{result.id} for file {incomplete.media_file_id}"
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # boundary: per-item isolation, counted in stats[dispatch_errors]
                     stats["dispatch_errors"] += 1
                     logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch analytics "
@@ -88,7 +91,9 @@ class TaskRecoveryPostTranscriptionMixin:
                         f"[Post-transcription recovery] Dispatched speaker ID task "
                         f"{result.id} for file {incomplete.media_file_id}"
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # boundary: per-item isolation, counted in stats[dispatch_errors]
                     stats["dispatch_errors"] += 1
                     logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch speaker ID "
@@ -107,7 +112,9 @@ class TaskRecoveryPostTranscriptionMixin:
                         f"[Post-transcription recovery] Dispatched summary task "
                         f"{result.id} for file {incomplete.media_file_id}"
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # boundary: per-item isolation, counted in stats[dispatch_errors]
                     stats["dispatch_errors"] += 1
                     logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch summary "
@@ -126,7 +133,9 @@ class TaskRecoveryPostTranscriptionMixin:
                         f"[Post-transcription recovery] Dispatched topic extraction task "
                         f"{result.id} for file {incomplete.media_file_id}"
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # boundary: per-item isolation, counted in stats[dispatch_errors]
                     stats["dispatch_errors"] += 1
                     logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch topics "
@@ -149,7 +158,9 @@ class TaskRecoveryPostTranscriptionMixin:
                         f"[Post-transcription recovery] Dispatched search indexing task "
                         f"{result.id} for file {incomplete.media_file_id}"
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # boundary: per-item isolation, counted in stats[dispatch_errors]
                     stats["dispatch_errors"] += 1
                     logger.exception(
                         f"[Post-transcription recovery] Failed to dispatch search indexing "
@@ -206,7 +217,7 @@ class TaskRecoveryPostTranscriptionMixin:
                 task.updated_at = datetime.now(UTC)
                 stats["tasks_marked_failed"] += 1
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error marking stuck task {task.id} as failed: {e}")
                 db.rollback()
 
@@ -214,7 +225,7 @@ class TaskRecoveryPostTranscriptionMixin:
             db.commit()
             if stats["tasks_marked_failed"] > 0:
                 logger.info(f"Marked {stats['tasks_marked_failed']} stuck LLM tasks as failed")
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.exception(f"Error committing stuck task recovery: {e}")
             db.rollback()
             return {"tasks_marked_failed": 0}
@@ -279,7 +290,7 @@ class TaskRecoveryPostTranscriptionMixin:
                     continue
                 stats["tasks_reset"] += 1
 
-            except Exception as e:
+            except Exception as e:  # boundary: per-item isolation in the recovery sweep
                 logger.exception(f"Error resetting false-positive task {task.id}: {e}")
                 db.rollback()
 
@@ -287,7 +298,7 @@ class TaskRecoveryPostTranscriptionMixin:
             db.commit()
             if stats["tasks_reset"] > 0:
                 logger.info(f"Reset {stats['tasks_reset']} false-positive failed tasks")
-        except Exception as e:
+        except SQLAlchemyError as e:
             logger.exception(f"Error committing false-positive task recovery: {e}")
             db.rollback()
             return {"tasks_reset": 0}

@@ -140,7 +140,12 @@ class ReverifyScope:
         """Conditions on ``Speaker`` that keep a query inside the scope."""
         found: list[ColumnElement[bool]] = []
         if self.organization_id is not None:
-            found.append(Speaker.organization_id == self.organization_id)
+            # The tenant is the FILE's: the pipeline never stamps speaker.organization_id.
+            found.append(
+                Speaker.media_file_id.in_(
+                    select(MediaFile.id).where(MediaFile.organization_id == self.organization_id)
+                )
+            )
         if self.user_id is not None:
             found.append(Speaker.user_id == self.user_id)
         return found

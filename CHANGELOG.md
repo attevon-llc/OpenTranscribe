@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Performance (#1337): `collection_permission_ranks` is driven from indexes instead of a seq scan with six correlated subplans per collection; deleting a file no longer rewrites `chat_message` unless a citation names it, probed through a new concurrently built GIN index `ix_chat_message_citations_gin` (no revision: `app/db/chat_indexes.py`, built by the post-start index runner).
+
+
 - Lint suppressions audited: 922 `noqa` comments that suppressed nothing (rules not enabled, or no longer triggered), 217 unused `type: ignore` comments and 29 `nosec` ids bandit never reports were removed; the remaining active ones were fixed (hoisted imports, renamed aliases, `__all__`, narrowed `pytest.raises`, typed frontend form state) or given a written reason. mypy now runs with `warn_unused_ignores = true`, so a stale ignore fails the hook. The suppressions guard baseline went from 598 reasonless entries to 6.
 - Password sign-in records `auth.login.success` and `auth.session.created` through the audit outbox, in the same transaction as the new session and its `last_login_at` stamp, and delivers them after the response is sent (scale foundations Lane E). Sign-in no longer waits on two OpenSearch writes (0.6-1.95 s each under load); if the audit log is down the relay delivers them within a minute instead of writing the fallback file. Every sign-in path now stamps `last_login_at` in the session's own commit, so a session and its stamp land together.
 - No database connection is held while sign-in hashes the password (PBKDF2, 600,000 iterations): the request's read transaction ends first, the account row is read on a connection returned before the hash, and the ORM fallback check releases its connection too.

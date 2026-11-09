@@ -181,7 +181,7 @@ def test_plan_above_s3_ceiling_is_never_a_single_put(s3_backend, monkeypatch):
 
 def test_plan_falls_back_when_multipart_setup_fails(s3_backend, monkeypatch):
     def boom(*_args, **_kwargs):
-        raise RuntimeError("bucket unreachable")
+        raise OSError("bucket unreachable")
 
     monkeypatch.setattr(mp, "create_upload", boom)
     # None makes /files/prepare withhold a URL, which sends the browser to the

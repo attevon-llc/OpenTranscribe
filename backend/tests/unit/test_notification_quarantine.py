@@ -22,6 +22,7 @@ import uuid as uuid_pkg
 from contextlib import contextmanager
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
@@ -186,7 +187,7 @@ class TestIsNotificationSuppressedFailsClosed:
         """A DB error while checking quarantine must suppress, not leak."""
 
         def boom():
-            raise RuntimeError("db unreachable")
+            raise OperationalError("SELECT", {}, Exception("db unreachable"))
 
         monkeypatch.setattr("app.db.session_utils.session_scope", boom)
 

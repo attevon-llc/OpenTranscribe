@@ -36,9 +36,8 @@ _MIGRATION_LOCK_POLL_INTERVAL_SECONDS = 2
 def _wait_for_migration_lock_to_clear() -> None:
     """Back off briefly while a v4 embedding migration holds the lock.
 
-    Best-effort: if Redis is unreachable ``is_active()`` returns False and
-    this is a no-op, matching MigrationLockService's own fail-open behavior
-    for lock state (a lock that cannot be observed cannot be waited on).
+    Fails closed: if Redis is unreachable the lock state is unknown, which counts as
+    active, so this backs off for the bounded wait and then proceeds anyway.
     """
     from app.services.migration_lock_service import migration_lock
 

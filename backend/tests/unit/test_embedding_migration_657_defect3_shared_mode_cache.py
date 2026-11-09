@@ -18,6 +18,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.services.embedding_mode_service import MODE_V3
 from app.services.embedding_mode_service import MODE_V4
@@ -86,7 +87,7 @@ class TestSharedModeCacheVisibleAcrossProcesses:
 
     def test_redis_outage_falls_back_to_local_cache_within_ttl(self, monkeypatch):
         def _broken_redis():
-            raise ConnectionError("redis down")
+            raise RedisConnectionError("redis down")
 
         monkeypatch.setattr("app.core.redis.get_request_redis", _broken_redis)
 

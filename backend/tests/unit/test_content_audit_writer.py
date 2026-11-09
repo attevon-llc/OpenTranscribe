@@ -13,6 +13,7 @@ from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.auth.audit_events import AuditEventType
 from app.core.constants import AUDIT_CONTENT_ACCESS_SETTING_KEY
@@ -196,7 +197,7 @@ def test_an_export_is_never_collapsed(db_session, written, auditing_on, redis):
 
 def test_redis_down_still_writes_the_event(db_session, written, auditing_on, monkeypatch):
     def _down():
-        raise ConnectionError("redis is down")
+        raise RedisConnectionError("redis is down")
 
     monkeypatch.setattr("app.core.redis.get_probe_redis", _down)
 

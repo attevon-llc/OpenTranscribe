@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from app.services.llm_bedrock import BedrockNotConfiguredError
 from app.services.llm_bedrock import BedrockStreamError
@@ -379,7 +380,10 @@ def test_client_construction_failure_is_reported_in_band():
 
 def test_api_call_failure_is_reported_in_band():
     client = MagicMock()
-    client.converse_stream.side_effect = RuntimeError("AccessDeniedException")
+    client.converse_stream.side_effect = ClientError(
+        {"Error": {"Code": "AccessDeniedException", "Message": "AccessDeniedException"}},
+        "ConverseStream",
+    )
     with patch("app.services.llm_bedrock._client", return_value=client):
         out = _drain()
 

@@ -9,6 +9,7 @@ ALL migrations complete.
 A 4-hour TTL acts as a safety net if the backend crashes mid-migration.
 """
 
+import enum
 import logging
 
 import redis
@@ -20,6 +21,18 @@ logger = logging.getLogger(__name__)
 
 _LOCK_KEY = "embedding_migration:lock"
 _LOCK_TTL_SECONDS = 4 * 60 * 60  # 4 hours
+
+
+class LockState(enum.Enum):
+    """What an observer can know about the lock.
+
+    ``UNKNOWN`` is its own state because "Redis could not be read" is not evidence that no
+    migration is running: reading it as released would let a second migration start.
+    """
+
+    RELEASED = "released"
+    ACTIVE = "active"
+    UNKNOWN = "unknown"
 
 
 class MigrationLockService:
@@ -77,13 +90,25 @@ class MigrationLockService:
         logger.info("Migration lock decremented (ref_count=%d)", count)
         return False
 
-    def is_active(self) -> bool:
-        """Check whether any migration is holding the lock."""
+    def state(self) -> LockState:
+        """Read the lock: held, released, or unobservable (Redis down)."""
         client = self._redis
         if not client:
-            return False
-        val = client.get(_LOCK_KEY)
-        return val is not None and int(val) > 0
+            return LockState.UNKNOWN
+        try:
+            val = client.get(_LOCK_KEY)
+        except RedisError:
+            logger.error("Migration lock: could not read the lock state", exc_info=True)
+            self._client = None
+            return LockState.UNKNOWN
+        return LockState.ACTIVE if val is not None and int(val) > 0 else LockState.RELEASED
+
+    def is_active(self) -> bool:
+        """Whether to behave as if a migration holds the lock.
+
+        Fails closed: an unobservable lock (``LockState.UNKNOWN``) counts as active.
+        """
+        return self.state() is not LockState.RELEASED
 
 
 # Singleton instance

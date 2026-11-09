@@ -21,14 +21,13 @@ would be a rule nobody can check the truth of; the two Dockerfiles are near-iden
 whose behaviour differs entirely, and the broken form is the one that *looks* correct. The
 build is tiny (two `alpine` stages, no RUN), so it costs a second and proves the mechanism.
 
-Marked ``integration``: it needs a working docker daemon, so it must not run in the CPU-only
-CI job or the fast unit suite.
+The two real docker builds that prove the hazard live in
+``tests/integration/test_dockerfile_targetarch_build.py``; they need a docker daemon.
 """
 
 from __future__ import annotations
 
 import re
-import shutil
 from pathlib import Path
 
 import pytest
@@ -87,24 +86,3 @@ def test_the_per_arch_stages_the_selection_needs_still_exist(dockerfile: Path):
             f"`diar-native-bin-{arch}` stage — the substitution would resolve to a stage "
             "that does not exist"
         )
-
-
-# ------------------------------------------------------- behavioural: build both forms
-
-
-pytestmark_docker = pytest.mark.skipif(
-    shutil.which("docker") is None, reason="docker is not available on this host"
-)
-
-_BROKEN = """\
-ARG TARGETARCH
-FROM alpine:3.20 AS base-amd64
-FROM alpine:3.20 AS base-arm64
-FROM base-${TARGETARCH} AS chosen
-"""
-
-_FIXED = """\
-FROM alpine:3.20 AS base-amd64
-FROM alpine:3.20 AS base-arm64
-FROM base-${TARGETARCH} AS chosen
-"""

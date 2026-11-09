@@ -25,12 +25,14 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _baseline as bl
 
 _HERE = Path(__file__).resolve().parent
 _DEFAULT_BASELINE = _HERE / 'baselines' / 'knip.txt'
@@ -39,23 +41,6 @@ _TOOL_TIMEOUT_SECONDS = 600
 _CYCLE_LINE = re.compile(r'^\s*\d+\)\s+(?P<chain>.+?)\s*$')
 _ALL_CLEAR = 'No circular dependency found'
 _NON_ISSUE_KEYS = frozenset({'file'})
-
-
-def _load_baseline_lib():
-    path = _HERE / '_baseline.py'
-    spec = importlib.util.spec_from_file_location('_guard_baseline_knip', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise RuntimeError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return module
-
-
-bl = _load_baseline_lib()
 
 
 def _symbol(item: object) -> str:

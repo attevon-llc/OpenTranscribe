@@ -47,11 +47,13 @@ Usage::
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import re
 import subprocess
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _baseline as bl
 
 _HERE = Path(__file__).resolve().parent
 _PREFIX = 'frontend/src/'
@@ -59,22 +61,6 @@ _THEME_CSS = 'frontend/src/styles/theme.css'
 _TOKEN_SOURCE_DIR = 'frontend/src/styles/'
 _TOKEN_BLOCK_SELECTORS = frozenset({':root', "[data-theme='dark']", '[data-theme="dark"]'})
 
-
-def _load_baseline_lib():
-    path = _HERE / '_baseline.py'
-    spec = importlib.util.spec_from_file_location('_guard_baseline_style_literals', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise RuntimeError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return module
-
-
-bl = _load_baseline_lib()
 
 CATEGORIES = (
     'colour',
@@ -603,23 +589,18 @@ def main(argv: list[str] | None = None) -> int:
     except (bl.ScanError, ValueError) as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
-    if args.tighten:
-        changed = bl.tighten(baseline_path, findings, baseline) if baseline_path.exists() else 0
-        print(f'tightened {changed} baseline lines in {baseline_path}')
-        baseline = bl.load(baseline_path)
-    errors = bl.compare(findings, baseline, unit='style literals that belong in design tokens')
-    if errors:
-        print(
-            'stylesheet literals must use design tokens (frontend/src/styles/CLAUDE.md):',
-            file=sys.stderr,
-        )
-        for line in errors:
-            print(f'  {line}', file=sys.stderr)
-        return 1
-    print(
-        f'style literals: {sum(findings.values())} in {len(findings)} entries, within the baseline'
+    return bl.finish_ratchet(
+        args,
+        baseline_path,
+        findings,
+        baseline,
+        unit='style literals that belong in design tokens',
+        heading='stylesheet literals must use design tokens (frontend/src/styles/CLAUDE.md):',
+        ok_message=(
+            f'style literals: {sum(findings.values())} in {len(findings)} entries,'
+            ' within the baseline'
+        ),
     )
-    return 0
 
 
 if __name__ == '__main__':

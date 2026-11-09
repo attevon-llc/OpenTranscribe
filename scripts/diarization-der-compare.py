@@ -22,23 +22,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from pyannote.core import Annotation, Segment
 from pyannote.metrics.diarization import DiarizationErrorRate
-
-
-def read_rttm(path: Path) -> Annotation:
-    """Parse an RTTM file into a pyannote Annotation."""
-    ann = Annotation(uri=path.stem)
-    with open(path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if not parts or parts[0] != 'SPEAKER':
-                continue
-            start = float(parts[3])
-            dur = float(parts[4])
-            speaker = parts[7]
-            ann[Segment(start, start + dur)] = speaker
-    return ann
+from rttm_io import read_rttm
 
 
 def group_runs(rttm_dir: Path) -> dict[str, list[Path]]:

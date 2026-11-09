@@ -43,33 +43,18 @@ from __future__ import annotations
 
 import argparse
 import ast
-import importlib.util
 import re
 import sys
 from pathlib import Path
-from types import ModuleType
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _baseline as bl
 
 _HERE = Path(__file__).resolve().parent
 _VERSIONS = Path('backend') / 'alembic' / 'versions'
 _DEFAULT_BASELINE = _HERE / 'baselines' / 'migration_safety.txt'
 _ALLOWLIST_REL = Path('scripts') / 'guards' / 'allowlists' / 'migration_safety.txt'
 
-
-def _load_baseline_lib() -> ModuleType:
-    path = _HERE / '_baseline.py'
-    spec = importlib.util.spec_from_file_location('_guard_baseline_migration_safety', path)
-    if spec is None or spec.loader is None:
-        msg = f'cannot load {path}'
-        raise RuntimeError(msg)
-    module = sys.modules.get(spec.name)
-    if module is None:
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-    return module
-
-
-bl = _load_baseline_lib()
 
 FuncDef = ast.FunctionDef | ast.AsyncFunctionDef
 

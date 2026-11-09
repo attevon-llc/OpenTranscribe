@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -27,6 +26,10 @@ if TYPE_CHECKING:
     from app.services.diarization.types import DiarizeResult
 
 logger = logging.getLogger(__name__)
+
+#: Providers translate vendor failures into ``ASRProviderError`` / ``DiarizationProviderFailedError``
+#: (both RuntimeErrors); transport and bad-payload failures arrive as OSError / ValueError.
+_PROVIDER_ERRORS = (RuntimeError, OSError, ValueError)
 
 
 def _convert_asr_result_to_segments(result: ASRResult, media_file_id: int) -> list[dict]:
@@ -141,23 +144,20 @@ def _run_parallel_cloud_asr_and_diarization(
     with ThreadPoolExecutor(max_workers=2, thread_name_prefix="cloud-parallel") as pool:
         asr_future = pool.submit(run_asr)
         diarize_future = pool.submit(run_diarize)
-
-        for future in (asr_future, diarize_future):
-            with contextlib.suppress(Exception):
-                future.result()  # Errors collected below
+    # Leaving the pool context waited for both legs; each outcome is collected below.
 
     # Collect results
     try:
         asr_result = asr_future.result()
-    except Exception as e:
+    except _PROVIDER_ERRORS as e:
         asr_error = e
-        logger.error("Parallel cloud ASR failed: %s", e)
+        logger.error("Parallel cloud ASR failed", exc_info=True)
 
     try:
         diarize_result = diarize_future.result()
-    except Exception as e:
+    except _PROVIDER_ERRORS as e:
         diarize_error = e
-        logger.error("Parallel cloud diarization failed: %s", e)
+        logger.error("Parallel cloud diarization failed", exc_info=True)
 
     # ASR failure is fatal — can't proceed without transcript
     if asr_error:

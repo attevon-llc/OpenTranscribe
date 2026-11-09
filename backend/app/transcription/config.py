@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import Any
 from typing import ClassVar
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core.config import settings
 from app.core.env import env_bool
 from app.core.env import env_int
@@ -327,9 +329,9 @@ class TranscriptionConfig:
                 )
                 if setting and setting.value:
                     raw = str(setting.value)
-        except Exception:
+        except SQLAlchemyError:
             # DB not available (e.g., during testing, worker startup race) — fall back to env
-            logger.debug("Could not read asr.local_model from DB, using env var")
+            logger.debug("Could not read asr.local_model from DB, using env var", exc_info=True)
 
         from app.services.asr.model_discovery import resolve_loadable_model_name
 
@@ -363,9 +365,11 @@ class TranscriptionConfig:
                 )
                 if setting and setting.value:
                     raw = str(setting.value)
-        except Exception:
+        except SQLAlchemyError:
             # DB not available (e.g., during testing, worker startup race) — fall back to env
-            logger.debug("Could not read engine.diarizer_backend from DB, using env var")
+            logger.debug(
+                "Could not read engine.diarizer_backend from DB, using env var", exc_info=True
+            )
 
         from app.transcription.engine.backends import VALID_DIARIZER_BACKENDS
 
@@ -435,8 +439,9 @@ class TranscriptionConfig:
                 total_mb = torch.cuda.get_device_properties(0).total_memory / (1024**2)
                 concurrent = int((total_mb - 7000) // 4000)
                 return max(1, min(concurrent, 12))
-        except Exception as e:
-            logger.debug(f"Auto-concurrent VRAM detection failed: {e}")
+        except (ImportError, RuntimeError):
+            # torch.cuda.OutOfMemoryError and CUDA driver failures are RuntimeErrors.
+            logger.debug("Auto-concurrent VRAM detection failed", exc_info=True)
         return 1
 
     @staticmethod

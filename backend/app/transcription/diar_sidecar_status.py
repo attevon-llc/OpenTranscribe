@@ -10,6 +10,7 @@ module globals; callers that only need a probe import from here and never pull i
 
 from __future__ import annotations
 
+import http.client
 import logging
 import os
 import threading
@@ -18,6 +19,8 @@ import urllib.error
 import urllib.request
 from typing import TYPE_CHECKING
 from typing import Any
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.env import is_truthy
 from app.services.asr.errors import retry_after_from_headers
@@ -48,6 +51,9 @@ _DEFAULT_URL = os.environ.get("DIAR_NATIVE_URL", "http://diar-native:8701")
 # serves nothing. Measured in exactly that state: three consecutive calls each paid the full
 # 5 s behind a nominally 3 s cache — the cache was a no-op in its only real use case.
 _PROBE_TIMEOUT_S = 5.0
+
+#: urllib raises OSError subclasses (URLError, timeouts); a torn response raises HTTPException.
+_PROBE_ERRORS = (OSError, http.client.HTTPException)
 _READY_CACHE_TTL_S_CONFIGURED = float(os.environ.get("DIAR_NATIVE_READY_CACHE_TTL_S", "8"))
 _READY_CACHE_TTL_S = max(_READY_CACHE_TTL_S_CONFIGURED, _PROBE_TIMEOUT_S + 1.0)
 if _READY_CACHE_TTL_S != _READY_CACHE_TTL_S_CONFIGURED:
@@ -119,7 +125,8 @@ def _sidecar_healthy_uncached(url: str) -> bool:
             f"{url}/healthz", timeout=_PROBE_TIMEOUT_S
         ) as resp:
             return bool(resp.status == 200)
-    except Exception:  # unreachable for any reason means "not healthy"
+    except _PROBE_ERRORS:  # unreachable for any reason means "not healthy"
+        logger.debug("diar-native sidecar /healthz probe failed", exc_info=True)
         return False
 
 
@@ -153,7 +160,8 @@ def sidecar_status(base_url: str | None = None) -> dict:
             # A 0.2.0 sidecar answers /healthz with the bare string "ok", so the body is
             # not guaranteed to be an object. A non-dict means "no reason available".
             result = body if isinstance(body, dict) else {}
-    except Exception:  # a missing reason must never fail the caller
+    except (*_PROBE_ERRORS, ValueError):  # a missing reason must never fail the caller
+        logger.debug("diar-native sidecar /healthz body unreadable", exc_info=True)
         result = {}
     # Stamp AFTER the request, never before — same reasoning as _cached_probe: sampling the
     # clock first would bill the timeout against the entry's own lifetime and it could be
@@ -259,7 +267,8 @@ def _sidecar_ready_uncached(url: str) -> bool:
             status.get("models_reason", "no reason given"),
         )
         return False
-    except Exception:  # unreachable for any reason means "not ready"
+    except _PROBE_ERRORS:  # unreachable for any reason means "not ready"
+        logger.debug("diar-native sidecar /readyz probe failed", exc_info=True)
         return False
 
 
@@ -459,7 +468,10 @@ def diarizer_require_sidecar() -> bool:
             )
             if setting and setting.value is not None:
                 raw = str(setting.value)
-    except Exception:
+    except SQLAlchemyError:
         # DB not available (e.g. during testing, worker startup race) — fall back to env.
-        logger.debug("Could not read engine.diarizer_require_sidecar from DB, using env var")
+        logger.debug(
+            "Could not read engine.diarizer_require_sidecar from DB, using env var",
+            exc_info=True,
+        )
     return is_truthy(str(raw))

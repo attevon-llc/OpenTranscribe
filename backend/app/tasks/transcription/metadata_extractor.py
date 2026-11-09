@@ -482,8 +482,8 @@ def extract_media_metadata(file_path: str) -> dict[str, Any] | None:
                 if metadata_list:
                     extracted_metadata = metadata_list[0]
                     logger.info(f"Successfully extracted {len(extracted_metadata)} metadata fields")
-        except Exception as et_err:
-            logger.warning(f"Error using Python ExifTool: {et_err}")
+        except (exiftool.exceptions.ExifToolException, OSError, ValueError):
+            logger.warning("Error using Python ExifTool", exc_info=True)
 
     # Fallback to command-line ExifTool if the Python library fails
     if not extracted_metadata:

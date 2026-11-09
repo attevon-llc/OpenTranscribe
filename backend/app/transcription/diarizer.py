@@ -20,6 +20,7 @@ from app.core import privacy_env  # noqa: F401  -- telemetry opt-outs before pya
 from app.transcription import vram_budget
 from app.transcription.config import TranscriptionConfig
 from app.transcription.diarize_result import DiarizeResult
+from app.transcription.errors import MODEL_LOAD_ERRORS
 from app.utils.pyannote_utils import build_native_embeddings
 from app.utils.pyannote_utils import extract_overlap_regions
 
@@ -106,7 +107,7 @@ class SpeakerDiarizer:
                 raise PermissionError(msg)
             self._model_name = PYANNOTE_V4_MODEL
             logger.info(f"Loaded PyAnnote v4 model: {PYANNOTE_V4_MODEL}")
-        except Exception as e:
+        except MODEL_LOAD_ERRORS as e:
             logger.warning(
                 f"Failed to load v4 model '{PYANNOTE_V4_MODEL}': {e}. "
                 f"Trying fallback: {PYANNOTE_V3_FALLBACK}",
@@ -139,7 +140,7 @@ class SpeakerDiarizer:
                     raise PermissionError(msg)
                 self._model_name = PYANNOTE_V3_FALLBACK
                 logger.info(f"Loaded fallback model: {PYANNOTE_V3_FALLBACK}")
-            except Exception as fallback_e:
+            except MODEL_LOAD_ERRORS as fallback_e:
                 raise RuntimeError(
                     f"Could not load PyAnnote diarization model. "
                     f"Primary: {e}, Fallback: {fallback_e}"
@@ -429,8 +430,11 @@ class SpeakerDiarizer:
             out = embedder(wf)
             arr = out.detach().cpu().numpy() if hasattr(out, "detach") else np.asarray(out)
             return arr.reshape(-1)
-        except Exception as exc:  # never break diarization on a re-check embed
-            logger.debug("embed_window failed (%s); skipping acoustic re-check for window", exc)
+        except (RuntimeError, ValueError):  # never break diarization on a re-check embed
+            # RuntimeError covers torch.cuda.OutOfMemoryError and CUDA driver failures.
+            logger.debug(
+                "embed_window failed; skipping acoustic re-check for window", exc_info=True
+            )
             return None
 
     def _run_pipeline_with_oom_retry(
@@ -462,7 +466,8 @@ class SpeakerDiarizer:
                         f"(original: {current_batch})"
                     )
                 return raw_output
-            except Exception as e:
+            except (RuntimeError, OSError, ValueError) as e:
+                # torch.cuda.OutOfMemoryError is a RuntimeError; HF auth failures are OSErrors.
                 if self._is_oom_error(e):
                     last_error = e
                     logger.warning(

@@ -75,7 +75,7 @@ def _is_crisperwhisper_model(model_name: str) -> bool:
         from app.services.asr.model_discovery import resolve_loadable_model_name
 
         resolved = resolve_loadable_model_name(model_name)
-    except Exception:  # fall back to raw name substring match
+    except ImportError:  # faster_whisper-free context: fall back to raw name substring match
         resolved = model_name
     return "crisper" in resolved.lower() or "crisper" in model_name.lower()
 
@@ -478,6 +478,7 @@ class Transcriber:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-        except Exception as e:
-            logger.debug(f"cuda cleanup skipped: {e}")
+        except (ImportError, RuntimeError):
+            # torch.cuda.OutOfMemoryError and CUDA driver failures are RuntimeErrors.
+            logger.debug("cuda cleanup skipped", exc_info=True)
         logger.info("Transcriber model unloaded")

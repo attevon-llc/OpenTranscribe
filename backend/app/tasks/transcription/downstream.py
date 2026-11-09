@@ -5,6 +5,7 @@ Summarization, topic extraction, analytics, and speaker clustering.
 
 import logging
 
+from kombu.exceptions import KombuError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.enums import PostProcessingState
@@ -85,8 +86,8 @@ def _owner_llm_configured(file_id: int) -> bool:
         with session_scope() as db:
             owner = db.query(MediaFile.user_id).filter(MediaFile.id == file_id).scalar()
             return owner is not None and LLMService.is_configured_for_user(db, int(owner))
-    except Exception as e:  # the plan then waits for the tasks to report
-        logger.warning(f"LLM availability check failed for file {file_id}: {e}")
+    except SQLAlchemyError:  # the plan then waits for the tasks to report
+        logger.warning("LLM availability check failed for file %s", file_id, exc_info=True)
         return True
 
 
@@ -233,14 +234,16 @@ def trigger_automatic_summarization(
                                 logger.info(
                                     f"Selective speaker clustering dispatched for file {file_id}"
                                 )
-                            except Exception as sc_err:
-                                logger.warning(f"Failed to dispatch speaker clustering: {sc_err}")
+                            except (KombuError, OSError):
+                                logger.warning(
+                                    "Failed to dispatch speaker clustering", exc_info=True
+                                )
                                 decisions[PostProcessingTask.SPEAKER_CLUSTERING] = (
                                     PostProcessingState.FAILED
                                 )
 
-            except Exception as e:
-                logger.warning(f"Failed to look up file for clustering dispatch: {e}")
-    except Exception as e:
-        logger.warning(f"Failed to start automatic tasks for file {file_id}: {e}")
+            except SQLAlchemyError:
+                logger.warning("Failed to look up file for clustering dispatch", exc_info=True)
+    except (SQLAlchemyError, KombuError, OSError):
+        logger.warning("Failed to start automatic tasks for file %s", file_id, exc_info=True)
     return decisions

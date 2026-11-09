@@ -22,6 +22,7 @@ from typing import Any
 from celery import chain
 from celery import group
 from celery.canvas import Signature
+from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import PipelinePlanRefusedError
@@ -496,8 +497,8 @@ def dispatch_batch_transcription(
             chains.append(pipeline)
             task_ids.append(task_id)
 
-        except Exception as e:
-            logger.error(f"Failed to build pipeline for {file_uuid}: {e}")
+        except Exception:  # boundary: per-file isolation, one bad file must not stop the batch
+            logger.exception("Failed to build pipeline for %s", file_uuid)
 
     if not chains:
         return {"batch_id": None, "task_ids": []}
@@ -517,8 +518,8 @@ def dispatch_batch_transcription(
             json.dumps({"file_uuids": file_uuids, "task_ids": task_ids}),
             ex=86400,
         )
-    except Exception as e:
-        logger.warning(f"Failed to store batch metadata: {e}")
+    except (RedisError, OSError):
+        logger.warning("Failed to store batch metadata", exc_info=True)
 
     logger.info(
         f"Dispatched batch of {len(chains)} pipelines "

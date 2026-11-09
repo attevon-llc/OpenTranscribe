@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi import status
+from sqlalchemy.exc import OperationalError
 
 from tests.fixtures.net import free_port
 
@@ -29,7 +30,7 @@ def _db_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     runs against."""
 
     def _boom():
-        raise RuntimeError("db unavailable in test")
+        raise OperationalError("select", {}, Exception("db unavailable in test"))
 
     monkeypatch.setattr("app.db.session_utils.session_scope", _boom)
 

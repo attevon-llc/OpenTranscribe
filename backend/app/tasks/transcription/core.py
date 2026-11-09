@@ -213,13 +213,12 @@ def _dispatch_gpu_split_diarize_chain(
 
 def _running_at_retry_priority() -> bool:
     """Whether the GPU stage executing now was published at the retry priority."""
-    try:
-        from celery import current_task
+    from celery import current_task
 
-        delivery = getattr(current_task.request, "delivery_info", None) or {}
-        return delivery.get("priority") == GPUPriority.TRANSCRIPTION_RETRY
-    except Exception:  # outside a worker: a fresh run
-        return False
+    # Outside a worker there is no current task, so getattr yields None: a fresh run.
+    request = getattr(current_task, "request", None)
+    delivery = getattr(request, "delivery_info", None) or {}
+    return delivery.get("priority") == GPUPriority.TRANSCRIPTION_RETRY
 
 
 class CloudASRUnusableError(RuntimeError):
@@ -321,8 +320,8 @@ def _cleanup_wav_quietly(local_wav_path: str) -> None:
         from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
 
         cleanup_shared_volume_wav(local_wav_path)
-    except Exception as cleanup_err:  # cleanup must not mask the real outcome
-        logger.debug("WAV cleanup skipped: %s", cleanup_err)
+    except (ImportError, OSError):  # cleanup must not mask the real outcome
+        logger.debug("WAV cleanup skipped", exc_info=True)
 
 
 def _finish_failed_or_aborted(
@@ -372,7 +371,6 @@ def _finish_failed_or_aborted(
     # WAV cleanup, because the requeued attempt needs that WAV.
     requeue_if_context_poisoned(task_id, file_uuid, exc, stage="GPU transcription")
     _cleanup_wav_quietly(local_wav_path)
-    logger.error(f"GPU transcription failed for file {file_uuid}: {exc}")
     outcome = _handle_transcription_failure(ctx, task_id, str(exc), "gpu_processing_error")
     if is_cancelled(outcome):
         return outcome
@@ -661,7 +659,8 @@ def transcribe_gpu_task(self: Any, preprocess_context: dict) -> dict:
             # including ones that go on to succeed (a real, pre-existing defect in the existing
             # `autoretry_for` policy below — worth this comment, not a fix here).
             retry_transcribe_gpu_exception(self, exc, file_uuid)
-        except Exception as e:
+        except Exception as e:  # boundary: GPU task body; records the failure, then re-raises
+            logger.exception("GPU transcription failed for file %s", file_uuid)
             return _finish_failed_or_aborted(
                 ctx, task_id, file_uuid, locals().get("local_wav_path", ""), e
             )

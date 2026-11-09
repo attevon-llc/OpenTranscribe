@@ -221,8 +221,12 @@ def _fetch_existing_v4_embeddings(profile_id: int, current_file_speaker_uuids: s
             existing_emb = hit["_source"].get("embedding")
             if existing_emb and hit["_id"] not in current_file_speaker_uuids:
                 found.append(np.array(existing_emb))
-    except Exception as e:
-        logger.debug(f"v4 staging: Could not fetch existing v4 docs for profile {profile_id}: {e}")
+    except OpenSearchException:
+        logger.warning(
+            "v4 staging: Could not fetch existing v4 docs for profile %s",
+            profile_id,
+            exc_info=True,
+        )
 
     return found
 
@@ -281,8 +285,8 @@ def _update_v4_profile_embeddings(
             )
             update_count += 1
 
-        except Exception as e:
-            logger.warning(f"v4 staging: Error updating profile {profile_id}: {e}")
+        except (OpenSearchException, ValueError):
+            logger.warning("v4 staging: Error updating profile %s", profile_id, exc_info=True)
 
     return update_count
 
@@ -385,8 +389,8 @@ def _store_native_centroids_in_v4_staging(
                     for item in response.get("items", [])
                     if not item.get("index", {}).get("error")
                 )
-        except Exception as e:
-            logger.warning(f"v4 staging: bulk embedding upsert failed: {e}")
+        except OpenSearchException:
+            logger.warning("v4 staging: bulk embedding upsert failed", exc_info=True)
 
     # Phase 2: Update consolidated profile embeddings in v4
     profile_update_count = 0

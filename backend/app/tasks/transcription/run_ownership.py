@@ -30,6 +30,10 @@ from __future__ import annotations
 
 import logging
 
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.db.session_utils import session_scope
 from app.models.media import Task
 from app.utils.task_utils import TASK_STATUS_COMPLETED
@@ -39,6 +43,9 @@ from app.utils.task_utils import TASK_STATUS_SKIPPED
 logger = logging.getLogger(__name__)
 
 SUPERSEDED = "superseded"
+
+#: Run-state reads touch Postgres, the Redis liveness keys and the Celery result backend.
+_STATE_READ_ERRORS = (SQLAlchemyError, RedisError, KombuError, OSError)
 
 _TERMINAL = (TASK_STATUS_COMPLETED, TASK_STATUS_FAILED, TASK_STATUS_SKIPPED)
 
@@ -52,8 +59,8 @@ def _superseded_reason(task_id: str) -> tuple[str | None, int | None]:
     """
     try:
         return _read_superseded_reason(task_id)
-    except Exception as e:
-        logger.warning("Could not check whether run %s was superseded: %s", task_id, e)
+    except _STATE_READ_ERRORS:
+        logger.warning("Could not check whether run %s was superseded", task_id, exc_info=True)
         return None, None
 
 
@@ -80,8 +87,8 @@ def _duplicate_delivery_reason(task_id: str) -> str | None:
 
         if AsyncResult(stage_id, app=celery_app).state == "SUCCESS":
             return "this stage already completed"
-    except Exception as e:  # see docstring
-        logger.debug("Could not read the result of stage %s: %s", stage_id, e)
+    except _STATE_READ_ERRORS:  # see docstring
+        logger.warning("Could not read the result of stage %s", stage_id, exc_info=True)
     return None
 
 
@@ -108,8 +115,8 @@ def replaced_by_newer_run(task_id: str) -> bool:
                 .first()
             )
             return newer is not None
-    except Exception as e:  # see docstring
-        logger.warning("Could not check whether run %s was replaced: %s", task_id, e)
+    except _STATE_READ_ERRORS:  # see docstring
+        logger.warning("Could not check whether run %s was replaced", task_id, exc_info=True)
         return False
 
 

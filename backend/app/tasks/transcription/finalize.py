@@ -10,6 +10,8 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.core import stage_timing
 from app.core.config import settings
 from app.core.enums import TranscriptionStage
@@ -246,7 +248,8 @@ def _process_and_save_critical(
         from app.services.embedding_mode_service import EmbeddingModeService
 
         embedding_mode = EmbeddingModeService.get_current_mode()
-    except Exception:
+    except SQLAlchemyError:
+        logger.warning("Could not read the embedding mode; recording it as unknown", exc_info=True)
         embedding_mode = None
 
     # How the plan ran speaker detection, for the provenance record (#1229). A post stage

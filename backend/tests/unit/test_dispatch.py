@@ -38,6 +38,8 @@ from unittest.mock import patch
 
 import pytest
 from kombu.exceptions import OperationalError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from app.core.config import settings
 from app.core.exceptions import ASRConfigurationError
@@ -358,7 +360,7 @@ class TestGpuTranscribeConsumerPresent:
 
     def test_fails_closed_on_exception(self, monkeypatch):
         def _boom(timeout=None):
-            raise RuntimeError("broker unreachable")
+            raise OperationalError("broker unreachable")
 
         monkeypatch.setattr(_INSPECT, _boom)
 
@@ -585,7 +587,7 @@ class TestOnPipelineError:
         task = make_task(media_file)
 
         def _broken_scope():
-            raise RuntimeError("DB down")
+            raise SAOperationalError("select", {}, Exception("DB down"))
 
         with patch(_PE_SESSION_SCOPE, _broken_scope):
             self._run(media_file, task.id)
@@ -665,7 +667,7 @@ class TestDispatchBatchTranscription:
     def test_redis_failure_non_fatal(self, db_session, dispatch_seams, make_media_file):
         """Batch tracking is a convenience; losing it must not lose the transcriptions."""
         media_file = make_media_file(FileStatus.PENDING)
-        dispatch_seams.get_redis.side_effect = RuntimeError("Redis down")
+        dispatch_seams.get_redis.side_effect = RedisConnectionError("Redis down")
 
         result = self._dispatch([str(media_file.uuid)])
 

@@ -9,6 +9,9 @@ broadcast before publishing into ``gpu-transcribe`` / ``gpu-diarize``. Both prob
 import logging
 import time
 
+from kombu.exceptions import KombuError
+from redis.exceptions import RedisError
+
 from app.core.celery import celery_app
 from app.core.queues import CeleryQueues
 
@@ -60,10 +63,12 @@ def _gpu_transcribe_consumer_present() -> bool:
                 if any(q.get("name") == CeleryQueues.GPU_TRANSCRIBE for q in queues or []):
                     present = True
                     break
-    except Exception as e:
+    except (KombuError, RedisError, OSError):
         logger.warning(
-            f"Failed to verify a live '{CeleryQueues.GPU_TRANSCRIBE}' consumer "
-            f"(falling back to '{CeleryQueues.GPU}'): {e}"
+            "Failed to verify a live %r consumer (falling back to %r)",
+            CeleryQueues.GPU_TRANSCRIBE,
+            CeleryQueues.GPU,
+            exc_info=True,
         )
         present = False
 
@@ -113,10 +118,12 @@ def _gpu_diarize_consumer_present() -> bool:
                 if any(q.get("name") == CeleryQueues.GPU_DIARIZE for q in queues or []):
                     present = True
                     break
-    except Exception as e:
+    except (KombuError, RedisError, OSError):
         logger.warning(
-            f"Failed to verify a live '{CeleryQueues.GPU_DIARIZE}' consumer "
-            f"(falling back to '{CeleryQueues.GPU}'): {e}"
+            "Failed to verify a live %r consumer (falling back to %r)",
+            CeleryQueues.GPU_DIARIZE,
+            CeleryQueues.GPU,
+            exc_info=True,
         )
         present = False
 

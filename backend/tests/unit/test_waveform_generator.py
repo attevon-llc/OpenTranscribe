@@ -196,16 +196,17 @@ class TestGenerateWaveformData:
         result = generator.generate_waveform_data(str(missing))
         assert result is None
 
-    def test_unexpected_internal_error_is_caught_and_returns_none(self, generator, tmp_path):
-        """generate_waveform_data must not propagate — the pipeline treats a crashed waveform
-        stage as non-fatal, so an unexpected exception anywhere inside must degrade to None."""
+    def test_unexpected_internal_error_propagates_to_the_task_boundary(self, generator, tmp_path):
+        """A programming error is not an absorbed outage: generate_waveform_data lets it reach
+        ``generate_waveform_task``, whose handler logs it and retries."""
         wav_path = tmp_path / "full.wav"
         _write_wav(wav_path, duration_s=1.0, sample_rate=16000)
 
-        with patch.object(generator, "_probe_audio_file", side_effect=RuntimeError("boom")):
-            result = generator.generate_waveform_data(str(wav_path))
-
-        assert result is None
+        with (
+            patch.object(generator, "_probe_audio_file", side_effect=RuntimeError("boom")),
+            pytest.raises(RuntimeError, match="boom"),
+        ):
+            generator.generate_waveform_data(str(wav_path))
 
 
 # ---------------------------------------------------------------------------

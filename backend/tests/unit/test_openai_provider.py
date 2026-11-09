@@ -64,7 +64,7 @@ from types import SimpleNamespace
 from unittest.mock import mock_open
 from unittest.mock import patch
 
-import httpx
+import httpx2
 import openai
 import pytest
 
@@ -276,14 +276,12 @@ def test_audio_file_handle_is_closed_even_when_the_api_call_raises(tmp_path):
 
 
 def _rate_limit_error(retry_after: str | None = "20") -> openai.RateLimitError:
-    req = httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
+    # openai 3.x types `response` as httpx2.Response (its own httpx dependency), so the
+    # fake response is built from httpx2 as well.
+    req = httpx2.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
     headers = {"Retry-After": retry_after} if retry_after else {}
-    resp = httpx.Response(429, request=req, headers=headers)
-    # openai's stub types `response` against its own vendored httpx re-export, which
-    # mypy sees as a distinct (structurally identical) type from the real httpx.Response
-    # constructed above — a real caller passes the SDK's own httpx.Response and never
-    # hits this mismatch.
-    return openai.RateLimitError("Rate limit reached", response=resp, body=None)  # type: ignore[arg-type]
+    resp = httpx2.Response(429, request=req, headers=headers)
+    return openai.RateLimitError("Rate limit reached", response=resp, body=None)
 
 
 def test_rate_limit_error_is_classified_as_asr_rate_limited(tmp_path):
@@ -305,11 +303,11 @@ def test_authentication_error_stays_a_plain_runtime_error(tmp_path):
     provider classified everything as retryable.
     """
     fake_client = _fake_client()
-    req = httpx.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
-    resp = httpx.Response(401, request=req)
+    req = httpx2.Request("POST", "https://api.openai.com/v1/audio/transcriptions")
+    resp = httpx2.Response(401, request=req)
     fake_client.audio.transcriptions.create.side_effect = openai.AuthenticationError(
         "Invalid API key",
-        response=resp,  # type: ignore[arg-type]  # see _rate_limit_error() above
+        response=resp,
         body=None,
     )
     provider = _provider("gpt-4o-transcribe")

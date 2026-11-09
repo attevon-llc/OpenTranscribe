@@ -112,7 +112,7 @@ def matching_service(db_session, monkeypatch):
     service = sms.SpeakerMatchingService(db_session, embedding_service=None)
     monkeypatch.setattr(service, "find_and_store_speaker_matches", lambda *a, **k: None)
     monkeypatch.setattr(service, "_propagate_profile_assignment", lambda *a, **k: None)
-    service._stored_profile_embeddings = stored  # type: ignore[attr-defined]
+    monkeypatch.setattr(service, "_stored_profile_embeddings", stored, raising=False)
     return service
 
 

@@ -111,9 +111,11 @@ def test_no_route_still_serves_the_old_path():
     The IdP's registered redirect URI points at the frontend ``/login`` route, never
     at these paths, so this rename required no identity-provider reconfiguration.
     """
+    from fastapi.routing import APIRoute
+
     from app.api.endpoints.auth import router
 
-    paths = [route.path for route in router.routes]  # type: ignore[attr-defined]
+    paths = [route.path for route in router.routes if isinstance(route, APIRoute)]
     assert "/oidc/login" in paths
     assert "/oidc/callback" in paths
     assert not [p for p in paths if VENDOR_NOUN in p.lower()]

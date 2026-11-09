@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import sys
 import time
-import types
 
 import pytest
 
 from app.services.opensearch_service import client as client_mod
+from tests.helpers import make_stub_module
 
 
 @pytest.fixture(autouse=True)
@@ -26,8 +26,7 @@ def _clean_singleton():
 
 
 def _install_fake_sentence_transformer(monkeypatch, factory):
-    stub = types.ModuleType("sentence_transformers")
-    stub.SentenceTransformer = factory  # type: ignore[attr-defined]
+    stub = make_stub_module("sentence_transformers", SentenceTransformer=factory)
     monkeypatch.setitem(sys.modules, "sentence_transformers", stub)
 
 

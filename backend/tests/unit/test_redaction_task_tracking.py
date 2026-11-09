@@ -89,9 +89,8 @@ def _make_reprocessing_file_without_segments(db_session, user):
 
 def _task_row_for(db_session, media_file_id: int) -> Task | None:
     db_session.expire_all()
-    return (  # type: ignore[no-any-return]
-        db_session.query(Task).filter(Task.media_file_id == media_file_id).first()
-    )
+    row: Task | None = db_session.query(Task).filter(Task.media_file_id == media_file_id).first()
+    return row
 
 
 @pytest.fixture

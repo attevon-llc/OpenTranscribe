@@ -14,14 +14,15 @@ import sys
 import pytest
 
 from app.services.chat import reranker as reranker_mod
+from tests import state_resets
 from tests.helpers import make_stub_module
 
 
 @pytest.fixture(autouse=True)
 def _clean_reranker_state():
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
     yield
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
 
 
 class _FakeEncoder:

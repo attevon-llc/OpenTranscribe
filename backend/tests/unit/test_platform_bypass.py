@@ -20,7 +20,6 @@ from app.models.collection import Collection
 from app.models.media import MediaFile
 from app.models.organization import Organization
 from app.services.platform_access import TenancyMode
-from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.platform_bypass import PlatformBypass
 from app.services.platform_bypass import audit_metadata_access
 from app.services.platform_bypass import build_bypass
@@ -28,6 +27,7 @@ from app.services.uuid_helpers import get_collection_by_uuid_with_permission
 from app.services.uuid_helpers import get_collection_by_uuid_with_sharing
 from app.services.uuid_helpers import get_file_by_uuid_with_permission
 from app.services.uuid_helpers import require_resource_owner
+from tests.state_resets import reset_tenancy_mode_cache
 
 _AUDIT = "app.auth.audit.audit_logger.log"
 

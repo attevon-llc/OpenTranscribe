@@ -171,9 +171,3 @@ def mark_context_poisoned(reason: str) -> None:
         os.kill(os.getpid(), signal.SIGTERM)
     except Exception as exc:  # the flag above already stops new work
         logger.error("Could not signal worker exit after a poisoned CUDA context: %s", exc)
-
-
-def reset_for_tests() -> None:
-    _POISONED.clear()
-    with _recent_lock:
-        _recent_errors.clear()

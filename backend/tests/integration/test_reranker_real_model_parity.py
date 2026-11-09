@@ -24,6 +24,7 @@ from app.scripts.benchmark_reranker_threads import _QUERY
 from app.scripts.benchmark_reranker_threads import synthetic_passages
 from app.services.chat import reranker as reranker_mod
 from app.services.chat import reranker_threads
+from tests import state_resets
 
 pytestmark = [pytest.mark.integration, pytest.mark.models]
 
@@ -43,9 +44,9 @@ class _Hit:
 def _clean(monkeypatch):
     for var in ("OMP_NUM_THREADS", "TORCH_NUM_THREADS"):
         monkeypatch.delenv(var, raising=False)
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
     yield
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
 
 
 @pytest.fixture

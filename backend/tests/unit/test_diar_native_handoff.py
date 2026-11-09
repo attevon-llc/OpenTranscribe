@@ -34,10 +34,10 @@ import pytest
 
 import app.transcription.diar_sidecar_status as diar_sidecar_status
 import app.transcription.diarizer_native as diarizer_native
-from app.transcription.diar_sidecar_status import reset_readiness_cache
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
 from app.utils import scratch_volume
+from tests.state_resets import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive the sidecar modules'
 #: module-level state, run on ONE xdist worker. `_free_port()` binds port 0, reads the

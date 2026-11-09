@@ -18,10 +18,10 @@ from app.core.redaction_config import EffectiveRedactionConfig
 from app.models.support_access import SupportAccessUse
 from app.models.tag import FileTag
 from app.models.tag import Tag
-from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.platform_bypass import SupportGrantView
 from app.services.platform_bypass import build_bypass
 from app.services.tag_service import normalize_tag_name
+from tests.state_resets import reset_tenancy_mode_cache
 
 
 def _code(response) -> str:

@@ -14,7 +14,7 @@ import pytest
 
 from app.core.config import settings
 from app.models.watch_source import WatchSource
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 CREATE = "/api/watch-sources"
 

@@ -276,9 +276,3 @@ def admit(
         stage, stage_estimate_mb(stage, batch_size=batch_size), timeout_s=admission_timeout_s()
     ) as granted:
         yield granted
-
-
-def reset_for_tests() -> None:
-    global _budget, _configured
-    with _config_lock:
-        _budget, _configured = None, False

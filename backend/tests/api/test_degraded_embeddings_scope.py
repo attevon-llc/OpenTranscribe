@@ -125,7 +125,7 @@ def test_a_super_admin_still_gets_the_deployment_wide_counts(support_world):
 
 def test_a_single_tenant_admin_gets_the_deployment_wide_counts(support_world, monkeypatch):
     from app.core.config import settings
-    from app.services.platform_access import reset_tenancy_mode_cache
+    from tests.state_resets import reset_tenancy_mode_cache
 
     w = support_world
     monkeypatch.setattr(settings, "TENANCY_MODE", "single")
@@ -170,7 +170,7 @@ def test_only_a_super_admin_dispatches_the_deployment_wide_reembed(support_world
 
 def test_a_single_tenant_admin_dispatches_the_reembed(support_world, monkeypatch):
     from app.core.config import settings
-    from app.services.platform_access import reset_tenancy_mode_cache
+    from tests.state_resets import reset_tenancy_mode_cache
 
     w = support_world
     monkeypatch.setattr(settings, "TENANCY_MODE", "single")

@@ -28,6 +28,7 @@ import pytest
 from app.core import chat_defaults
 from app.core.config import settings
 from app.services.chat import reranker as reranker_mod
+from tests import state_resets
 
 _BACKEND = Path(__file__).resolve().parents[2]
 _PREFIX = "chat-rerank-score"
@@ -103,9 +104,9 @@ def _hits(*contents: str) -> list[_Hit]:
 def _isolated(monkeypatch):
     for var in ("OMP_NUM_THREADS", "TORCH_NUM_THREADS"):
         monkeypatch.delenv(var, raising=False)
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
     yield
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
 
 
 @pytest.fixture
@@ -180,7 +181,7 @@ def test_explicit_omp_num_threads_skips_auto_but_not_an_explicit_integer(
     assert model.threads == ["MainThread"], "auto must defer to the operator's torch env"
     assert fake_torch.calls == []
 
-    reranker_mod.reset_reranker_state()
+    state_resets.reset_reranker_state()
     reranker_mod._rerankers[chat_defaults.CHAT_RERANKER_MODEL] = model
     model.threads.clear()
     _configure(monkeypatch, "2")

@@ -16,6 +16,7 @@ import pytest
 
 from app.core import worker_shutdown as ws
 from app.transcription import cuda_health
+from tests import state_resets
 
 CT2_OOM = RuntimeError("CUDA failed with error out of memory")
 TORCH_OOM_MSG = "CUDA out of memory. Tried to allocate 2.44 GiB."
@@ -34,9 +35,9 @@ class OutOfMemoryError(RuntimeError):
 def _clean_state():
     was_set = ws._SHUTDOWN.is_set()
     ws._SHUTDOWN.clear()
-    cuda_health.reset_for_tests()
+    state_resets.reset_cuda_health()
     yield
-    cuda_health.reset_for_tests()
+    state_resets.reset_cuda_health()
     (ws._SHUTDOWN.set() if was_set else ws._SHUTDOWN.clear())
 
 

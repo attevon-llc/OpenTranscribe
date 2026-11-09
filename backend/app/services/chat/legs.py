@@ -98,20 +98,6 @@ def get_executor(max_workers: int = DEFAULT_MAX_PARALLEL_LEGS) -> ThreadPoolExec
     return _executor
 
 
-def reset_executor_for_tests() -> None:
-    """Drop the singleton so a test can rebuild it with a different size.
-
-    Never called from production code. Shutting down with ``wait=False``:
-    tests that use this are expected to have already drained any futures
-    they cared about.
-    """
-    global _executor
-    with _executor_lock:
-        if _executor is not None:
-            _executor.shutdown(wait=False, cancel_futures=True)
-        _executor = None
-
-
 @dataclass(frozen=True)
 class Leg:
     """One unit of fan-out work.

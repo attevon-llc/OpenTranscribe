@@ -17,9 +17,9 @@ from app.core.config import settings
 from app.models.organization import Organization
 from app.services import platform_access
 from app.services.platform_access import TenancyMode
-from app.services.platform_access import reset_tenancy_mode_cache
 from app.services.platform_access import tenancy_mode
 from app.services.platform_access import warn_if_forced_single_with_orgs
+from tests.state_resets import reset_tenancy_mode_cache
 
 
 @pytest.fixture(autouse=True)

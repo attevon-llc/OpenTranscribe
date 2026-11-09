@@ -273,7 +273,7 @@ def test_merge_into_a_system_tag_drops_the_grants(
 ):
     """A grant on the shared vocabulary confers nothing (every account sees it), so none moves."""
     from app.core.config import settings
-    from app.services.platform_access import reset_tenancy_mode_cache
+    from tests.state_resets import reset_tenancy_mode_cache
 
     monkeypatch.setattr(settings, "TENANCY_MODE", "single")
     reset_tenancy_mode_cache()
@@ -372,7 +372,7 @@ def test_promote_404_detail_carries_no_internal_id(
 ):
     """D16, promote path (single-tenant so a plain admin may promote)."""
     from app.core.config import settings
-    from app.services.platform_access import reset_tenancy_mode_cache
+    from tests.state_resets import reset_tenancy_mode_cache
 
     monkeypatch.setattr(settings, "TENANCY_MODE", "single")
     reset_tenancy_mode_cache()

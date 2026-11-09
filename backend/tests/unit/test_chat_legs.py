@@ -13,6 +13,7 @@ import pytest
 
 from app.services.chat import legs
 from app.services.search.chunk_retrieval import ChunkHit
+from tests import state_resets
 
 pytestmark = pytest.mark.unit
 
@@ -20,9 +21,9 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 def _fresh_executor():
     """Each test gets its own executor so tests cannot see each other's threads."""
-    legs.reset_executor_for_tests()
+    state_resets.reset_chat_leg_executor()
     yield
-    legs.reset_executor_for_tests()
+    state_resets.reset_chat_leg_executor()
 
 
 def _hit(uuid: str, index: int, score: float = 1.0) -> ChunkHit:
@@ -163,7 +164,7 @@ def test_get_executor_is_a_process_wide_singleton():
 
 
 def test_get_executor_is_thread_safe_under_concurrent_first_use():
-    legs.reset_executor_for_tests()
+    state_resets.reset_chat_leg_executor()
     seen: list[object] = []
     barrier = threading.Barrier(8)
 

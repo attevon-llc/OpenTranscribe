@@ -62,6 +62,7 @@ from app.db.base import get_db
 from app.main import app
 from app.models.user import User
 from app.services.request_context import RequestContext
+from tests import state_resets
 from tests.conftest import TestingSessionLocal
 from tests.user_owned_rows import make_user
 
@@ -126,7 +127,7 @@ def slow_resolver():
 
     tenant_limits.set_upload_limits_resolver(_blocking_resolver)
     yield calls
-    tenant_limits.reset_resolvers()
+    state_resets.reset_resolvers()
 
 
 @pytest.fixture

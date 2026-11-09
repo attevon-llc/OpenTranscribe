@@ -65,12 +65,6 @@ _owner_cache: dict[tuple[str, str], tuple[str, float]] = {}
 _owner_cache_lock = threading.Lock()
 
 
-def clear_bucket_owner_cache() -> None:
-    """Forget every resolved account id (tests; credentials rotated onto another account)."""
-    with _owner_cache_lock:
-        _owner_cache.clear()
-
-
 # AWS Transcribe LanguageCode is BCP-47 (e.g. "en-US"), NOT a bare ISO-639 code ("en").
 # Map common ISO codes to a sensible AWS default; pass through codes already BCP-47.
 _AWS_LANGUAGE_MAP = {

@@ -583,7 +583,7 @@ def _clear_sidecar_readiness_cache():
     Clearing costs two dict `.clear()` calls per test. Leaving it uncleared costs a failure
     that reproduces only under a particular test ordering, which is the most expensive kind.
     """
-    from app.transcription.diar_sidecar_status import reset_readiness_cache
+    from tests.state_resets import reset_readiness_cache
 
     reset_readiness_cache()
     yield

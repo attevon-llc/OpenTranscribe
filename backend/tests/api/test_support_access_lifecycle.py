@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.core.exceptions import DomainError
 from app.models.support_access import SupportAccessGrant
 from app.services import support_access_lifecycle as lifecycle
-from app.services.platform_access import reset_tenancy_mode_cache
+from tests.state_resets import reset_tenancy_mode_cache
 
 
 def _code(response) -> str:

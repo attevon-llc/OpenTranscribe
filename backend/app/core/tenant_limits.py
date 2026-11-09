@@ -243,18 +243,6 @@ def set_redaction_floor_resolver(resolver: RedactionFloorResolver) -> None:
     _redaction_floor_resolver = resolver
 
 
-def reset_resolvers() -> None:
-    """Restore the community resolvers (primarily for tests)."""
-    global _retention_resolver, _min_retention_resolver, _upload_limits_resolver
-    global _chat_limits_resolver, _allowed_models_resolver, _redaction_floor_resolver
-    _retention_resolver = _community_retention_resolver
-    _min_retention_resolver = _community_min_retention_resolver
-    _upload_limits_resolver = _community_upload_limits_resolver
-    _chat_limits_resolver = _community_chat_limits_resolver
-    _allowed_models_resolver = _community_allowed_models_resolver
-    _redaction_floor_resolver = _community_redaction_floor_resolver
-
-
 class RetentionResolverError(Exception):
     """The per-org retention resolver failed, so the effective retention is unknown."""
 

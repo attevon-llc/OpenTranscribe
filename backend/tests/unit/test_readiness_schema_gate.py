@@ -19,6 +19,7 @@ from alembic.migration import MigrationContext
 from app.core.config import settings
 from app.db import migrations
 from app.db.base import engine
+from tests import state_resets
 
 pytestmark = pytest.mark.asyncio
 
@@ -44,7 +45,7 @@ def ready(monkeypatch):
     monkeypatch.setattr(redis_module, "get_probe_redis", lambda: _Pong())
 
     async def call(*, migrate_on_startup: bool, head: str) -> tuple[int, dict]:
-        health.reset_readiness_state()
+        state_resets.reset_readiness_state()
         monkeypatch.setattr(settings, "RUN_MIGRATIONS_ON_STARTUP", migrate_on_startup)
         monkeypatch.setattr(migrations, "get_alembic_head", lambda: head)
         result = await health.readiness_check()

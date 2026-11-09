@@ -12,13 +12,13 @@ from __future__ import annotations
 import pytest
 
 from app.core.tenant_limits import TenantChatLimits
-from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import resolve_allowed_models
 from app.core.tenant_limits import resolve_chat_limits
 from app.core.tenant_limits import set_allowed_models_resolver
 from app.core.tenant_limits import set_chat_limits_resolver
 from app.services.chat.settings import ChatSettings
 from app.services.chat.settings import apply_tenant_limits
+from tests.state_resets import reset_resolvers
 
 
 @pytest.fixture(autouse=True)

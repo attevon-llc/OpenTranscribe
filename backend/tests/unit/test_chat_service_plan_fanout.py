@@ -16,7 +16,6 @@ from unittest.mock import patch
 import pytest
 
 from app.services.chat import fanout as chat_fanout
-from app.services.chat import legs
 from app.services.chat import planner
 from app.services.chat.router import INTENT_LOOKUP
 from app.services.chat.router import INTENT_RECURRENCE
@@ -28,6 +27,7 @@ from app.services.chat.trace import ListTraceRecorder
 from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
 from app.services.search.chunk_retrieval import ChunkHit
+from tests import state_resets
 
 pytestmark = pytest.mark.unit
 
@@ -50,9 +50,9 @@ def _route(*, wants_aggregate=False, wants_recurrence=False, wants_digest=False)
 
 @pytest.fixture(autouse=True)
 def _fresh_executor():
-    legs.reset_executor_for_tests()
+    state_resets.reset_chat_leg_executor()
     yield
-    legs.reset_executor_for_tests()
+    state_resets.reset_chat_leg_executor()
 
 
 def _settings(**overrides):

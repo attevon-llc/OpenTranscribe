@@ -29,12 +29,12 @@ from fastapi import status
 
 from app.core import redaction_defaults
 from app.core.tenant_limits import RedactionFloor
-from app.core.tenant_limits import reset_resolvers
 from app.core.tenant_limits import set_redaction_floor_resolver
 from app.models.media import MediaFile
 from app.models.media import TranscriptSegment
 from app.models.organization import Organization
 from app.models.organization import OrganizationMembership
+from tests.state_resets import reset_resolvers
 
 FORCED_WORD = "acquisition"
 CLEAN_TEXT = "the quarterly numbers look fine"

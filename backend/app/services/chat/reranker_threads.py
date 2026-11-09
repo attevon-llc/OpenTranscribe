@@ -231,12 +231,3 @@ def score_pairs(model: Any, pairs: list[tuple[str, str]]) -> Any:
     if pool is None:
         return model.predict(pairs)
     return pool.submit(model.predict, pairs).result()
-
-
-def shutdown_for_tests() -> None:
-    """Stop the scoring pool and forget that it ever failed to start. For tests only."""
-    global _pool, _pool_unavailable
-    with _pool_lock:
-        pool, _pool, _pool_unavailable = _pool, None, False
-    if pool is not None:
-        pool.shutdown(wait=True)

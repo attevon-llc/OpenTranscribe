@@ -26,8 +26,8 @@ from app.models.erasure import ErasureLedgerEntry
 from app.models.media import TranscriptSegment
 from app.models.sharing import CollectionShare
 from app.models.support_access import SupportAccessUse
-from app.services.platform_access import reset_tenancy_mode_cache
 from tests.fixtures.speaker_cleanup_seams import make_speaker
+from tests.state_resets import reset_tenancy_mode_cache
 
 _AT = datetime(2026, 1, 2, tzinfo=UTC)
 

@@ -46,14 +46,6 @@ def _testing() -> bool:
     return os.environ.get("TESTING", "").lower() == "true"
 
 
-def reset_tenancy_mode_cache() -> None:
-    """Forget the cached detection (tests, and a forced-mode change at runtime)."""
-    global _multi_latched, _single_until
-    with _lock:
-        _multi_latched = False
-        _single_until = 0.0
-
-
 def _detect_auto(db: Session) -> tuple[TenancyMode, bool]:
     """Auto mode detection. Returns ``(mode, positive)``.
 

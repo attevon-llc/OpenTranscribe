@@ -34,10 +34,10 @@ from collections.abc import Iterator
 import pytest
 
 from app.services.native_embedding_client import native_embedding_available
-from app.transcription.diar_sidecar_status import reset_readiness_cache
 from app.transcription.diar_sidecar_status import sidecar_healthy
 from app.transcription.diar_sidecar_status import sidecar_ready
 from app.transcription.diarizer_native import NativeSpeakerDiarizer
+from tests.state_resets import reset_readiness_cache
 
 #: All diar-native tests that stand up a real HTTP server, or drive diarizer_native's
 #: module-level state, run on ONE xdist worker.

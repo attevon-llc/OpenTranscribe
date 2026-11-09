@@ -62,9 +62,6 @@ WHITELIST = (
     _.ProfileShape,
     _.on_start,
     _.on_stop,
-    # The probe tests reset the module's cached readiness snapshot between cases; production
-    # never resets it (the snapshot self-expires after READINESS_CACHE_SECONDS).
-    _.reset_readiness_state,
     # [extension-seam] Plug-in registration points: the cloud edition (a separate repository that pins this core) calls them at startup, so no call site exists in this tree. Each is exercised by tests.
     _.set_capability_resolver,
     _.set_allowed_models_resolver,
@@ -107,15 +104,6 @@ WHITELIST = (
     # [test-observation] Test-only state resets of process-wide singletons and caches; the tests need a reset between cases and production never resets them. Moving each into a fixture would touch 20+ test files.
     _.reset_capability_resolver,
     _.reset_privacy_ceiling_resolver,
-    _.reset_resolvers,
-    _.reset_tenancy_mode_cache,
-    _.reset_readiness_cache,
-    _.reset_reranker_state,
-    _.reset_sentence_splitter_state,
-    _.reset_executor_for_tests,
-    _.reset_for_tests,
-    _.clear_discovery_caches,
-    _.clear_bucket_owner_cache,
     # [test-observation] A test asserts a production invariant through it (security, tenancy, audit or lifecycle); deleting it would delete the only assertion of that invariant, not just a helper.
     _.assert_real_timings,
     _.bucket_policy_denies_quarantined_reads,

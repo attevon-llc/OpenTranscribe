@@ -67,13 +67,6 @@ def _cache_put(cache: TTLCache[str, dict[str, Any]], key: str, value: dict[str, 
         cache[key] = value
 
 
-def clear_discovery_caches() -> None:
-    """Drop cached metadata and keys (admin config change, or test isolation)."""
-    with _lock:
-        _discovery_cache.clear()
-        _jwks_cache.clear()
-
-
 async def _fetch_json(url: str, timeout: float, purpose: str) -> dict[str, Any] | None:
     """GET *url* and return its JSON object, or None on any failure.
 

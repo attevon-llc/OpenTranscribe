@@ -43,7 +43,7 @@ def _db_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _clear_probe_cache():
-    from app.transcription.diar_sidecar_status import reset_readiness_cache
+    from tests.state_resets import reset_readiness_cache
 
     reset_readiness_cache()
     yield

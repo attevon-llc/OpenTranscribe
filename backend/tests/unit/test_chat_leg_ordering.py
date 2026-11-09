@@ -36,6 +36,7 @@ from app.services.chat.trace import Outcome
 from app.services.chat.trace import QueryStage
 from app.services.chat.trace import TraceEvent
 from app.services.search.chunk_retrieval import ChunkHit
+from tests import state_resets
 
 pytestmark = pytest.mark.unit
 
@@ -67,7 +68,7 @@ def release():
     - The executor is a **process-wide singleton** whose ``max_workers`` is fixed
       by whichever caller built it first, so a test inheriting a 1-worker pool
       would serialise the legs and pass regardless of collection order.
-    - ``reset_executor_for_tests`` calls ``shutdown(cancel_futures=True)``, which
+    - ``state_resets.reset_chat_leg_executor`` calls ``shutdown(cancel_futures=True)``, which
       **cannot cancel an already-running future**. A leg blocking on a bare
       ``time.sleep(5)`` therefore keeps occupying a worker in that shared pool for
       five seconds after its test has finished — bleeding into whatever runs next.
@@ -75,13 +76,13 @@ def release():
       them the moment the test ends.
     """
     gate = threading.Event()
-    legs_mod.reset_executor_for_tests()
+    state_resets.reset_chat_leg_executor()
     legs_mod.get_executor(4)
     try:
         yield gate
     finally:
         gate.set()
-        legs_mod.reset_executor_for_tests()
+        state_resets.reset_chat_leg_executor()
 
 
 def _returning(index: int) -> Callable[[], list[ChunkHit]]:

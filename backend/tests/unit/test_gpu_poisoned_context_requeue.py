@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from celery.exceptions import Reject
 
+from tests import state_resets
 from tests.unit._plan_contexts import plan_context
 
 POISONED = RuntimeError("parallel_for failed: cudaErrorInvalidDevice: invalid device ordinal")
@@ -22,11 +23,10 @@ POISONED = RuntimeError("parallel_for failed: cudaErrorInvalidDevice: invalid de
 
 @pytest.fixture(autouse=True)
 def _fresh_cuda_health():
-    from app.transcription import cuda_health
 
-    cuda_health.reset_for_tests()
+    state_resets.reset_cuda_health()
     yield
-    cuda_health.reset_for_tests()
+    state_resets.reset_cuda_health()
 
 
 @pytest.fixture

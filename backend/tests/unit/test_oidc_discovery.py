@@ -32,6 +32,7 @@ from app.auth.oidc.claims import _claim_by_path
 from app.auth.oidc.claims import _normalize_roles
 from app.auth.oidc.endpoints import _get_realm_urls
 from app.utils.url_validation import PinnedTarget
+from tests import state_resets
 
 AUTHENTIK_DISCOVERY = (
     "https://auth.example.com/application/o/opentranscribe/.well-known/openid-configuration"
@@ -98,7 +99,7 @@ def fake_http(monkeypatch):
     """Route oidc_discovery's HTTP calls to FakeAsyncClient and skip the SSRF DNS check."""
     FakeAsyncClient.routes = {}
     FakeAsyncClient.calls = []
-    oidc_discovery.clear_discovery_caches()
+    state_resets.clear_discovery_caches()
     monkeypatch.setattr(oidc_discovery.httpx, "AsyncClient", FakeAsyncClient)
 
     # resolve_pinned_target resolves DNS; example.com hosts must not be looked up. The stub
@@ -121,7 +122,7 @@ def fake_http(monkeypatch):
 
     monkeypatch.setattr(oidc_discovery, "resolve_pinned_target", _no_dns)
     yield FakeAsyncClient
-    oidc_discovery.clear_discovery_caches()
+    state_resets.clear_discovery_caches()
 
 
 def _cfg(**kwargs) -> OIDCConfig:

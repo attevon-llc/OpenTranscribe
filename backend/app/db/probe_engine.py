@@ -59,12 +59,6 @@ def get_probe_engine() -> Engine:
 _schema_ok_at: str | None = None
 
 
-def reset_schema_cache() -> None:
-    """Forget the cached schema result (tests only)."""
-    global _schema_ok_at
-    _schema_ok_at = None
-
-
 def _check_schema(conn: Any, checks: dict[str, str]) -> str:
     """Compare the DB revision to the shipped head; "ok" is remembered per head."""
     global _schema_ok_at

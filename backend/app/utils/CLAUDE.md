@@ -206,7 +206,7 @@ nothing changed" is the expected symptom, not a second bug:
 
 The chunking latch is **deliberate and must not be removed**: a retry lets one re-index chunk
 its early files with the regex and its later files with punkt, which disagree on abbreviations
-— one corpus chunked two ways in a single pass. `reset_sentence_splitter_state()` is for tests
+— one corpus chunked two ways in a single pass. `tests/state_resets.py::reset_sentence_splitter_state()` is for tests
 only. Restart with `./opentr.sh restart-backend` (Celery workers do **not** hot-reload the way
 the dev API does).
 

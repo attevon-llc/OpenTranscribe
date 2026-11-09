@@ -24,6 +24,7 @@ from fixtures.auth_read_commit import is_auth_read_commit
 
 from app.models.chat import ChatConversation
 from app.services.llm_stream import LLMStreamEvent
+from tests import state_resets
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -900,7 +901,7 @@ def test_answer_budget_shows_the_tenant_cap_instead_of_applying_it_silently(
     try:
         response = client.get("/api/chat/answer-budget", headers=auth_headers)
     finally:
-        tenant_limits.reset_resolvers()
+        state_resets.reset_resolvers()
 
     assert response.status_code == 200, response.text
     assert response.json()["default_tokens"] == 600

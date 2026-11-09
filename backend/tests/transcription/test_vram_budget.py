@@ -23,6 +23,7 @@ from app.core.worker_shutdown import TranscriptionAbortedError
 from app.transcription import vram_budget
 from app.transcription.vram_budget import VramAdmissionTimeoutError
 from app.transcription.vram_budget import VramBudget
+from tests import state_resets
 from tests.helpers import make_stub_module
 
 
@@ -36,9 +37,9 @@ def _reset_budget(monkeypatch):
         "GPU_STAGE_VRAM_MB_DIARIZATION",
     ):
         monkeypatch.delenv(name, raising=False)
-    vram_budget.reset_for_tests()
+    state_resets.reset_vram_budget()
     yield
-    vram_budget.reset_for_tests()
+    state_resets.reset_vram_budget()
 
 
 def _wait_until(predicate, timeout: float = 2.0) -> None:

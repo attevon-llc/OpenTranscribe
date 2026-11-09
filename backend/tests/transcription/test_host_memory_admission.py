@@ -29,6 +29,7 @@ from app.core.worker_shutdown import TranscriptionAbortedError
 from app.transcription import config as config_mod
 from app.transcription import host_memory_admission as ham
 from app.transcription.host_memory_admission import HostMemoryAdmissionTimeoutError
+from tests import state_resets
 from tests.unit._plan_contexts import plan_context
 
 
@@ -41,9 +42,9 @@ def _clean(monkeypatch):
         "GPU_VRAM_ADMISSION_TIMEOUT_S",
     ):
         monkeypatch.delenv(name, raising=False)
-    ham.reset_for_tests()
+    state_resets.reset_host_memory_gate()
     yield
-    ham.reset_for_tests()
+    state_resets.reset_host_memory_gate()
 
 
 @pytest.fixture

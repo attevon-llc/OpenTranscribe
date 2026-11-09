@@ -181,9 +181,3 @@ def task_slot(stage: str) -> Iterator[int]:
         return
     with gate.reserve(stage, 1, timeout_s=admission_timeout_s()) as granted:
         yield granted
-
-
-def reset_for_tests() -> None:
-    global _gate
-    with _lock:
-        _gate = None

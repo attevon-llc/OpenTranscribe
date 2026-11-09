@@ -58,6 +58,11 @@ def count_statements(
     ``SessionLocal()`` during a request, so the app engine is listened to as well; a statement
     seen by both an engine and one of its connections is counted once.
     """
+    # The login-banner gate answers from a process-level cache after its first read, so the
+    # first block would count one more statement than a later one. Start every block cold.
+    from app.core.process_auth_settings import clear_process_auth_settings_cache
+
+    clear_process_auth_settings_cache()
     listen_on: list[Engine | Connection] = list(targets)
     if include_app_engine:
         from app.db.base import engine as app_engine

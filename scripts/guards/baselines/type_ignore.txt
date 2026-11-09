@@ -66,5 +66,3 @@ backend/app/utils/stats_helpers.py::call-overload	1	reasoned type: ignore commen
 backend/app/utils/task_utils.py::no-any-return	4	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/app/utils/url_validation.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/scripts/benchmark_migration.py::assignment	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/api/test_asr_config_is_active.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/unit/test_cloud_asr.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane

@@ -84,6 +84,18 @@ def _dg_response(
 # ── 1. _group_words_into_segments boundary conditions ──────────────────────────────────
 
 
+def test_words_with_no_confidence_do_not_crash_segment_averaging():
+    words = [
+        ASRWord("a", 0.0, 1.0, None),
+        ASRWord("b", 1.1, 2.0, 0.5),
+        ASRWord("c", 2.1, 3.0, None),
+    ]
+    segments = _group_words_into_segments(words, "fallback")
+    assert segments[0].confidence == 0.5
+    unscored = _group_words_into_segments([ASRWord("a", 0.0, 1.0, None)], "fallback")
+    assert unscored[0].confidence is None
+
+
 def test_gap_of_exactly_0_499_seconds_does_not_split():
     words = [ASRWord("a", 0.0, 1.0), ASRWord("b", 1.499, 2.0)]  # gap = 0.499
     segments = _group_words_into_segments(words, "fallback")

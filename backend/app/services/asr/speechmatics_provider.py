@@ -27,6 +27,7 @@ from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
+from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +192,7 @@ class SpeechmaticsProvider(ASRProvider):
         def flush() -> None:
             if not cur_words:
                 return
-            avg_conf = sum(w.confidence for w in cur_words) / len(cur_words)
+            avg_conf = mean_word_confidence(cur_words)
             segments.append(
                 ASRSegment(
                     text=" ".join(w.word for w in cur_words),

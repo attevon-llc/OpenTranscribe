@@ -192,7 +192,7 @@ class TestConvertAsrResultToSegments:
                     # that at runtime -- a provider's raw JSON can (and does)
                     # supply None despite the hint, which is exactly the
                     # defensive path this test exists to cover.
-                    words=[ASRWord(word="hi", start=0.0, end=0.5, confidence=None)],  # type: ignore[arg-type]
+                    words=[ASRWord(word="hi", start=0.0, end=0.5, confidence=None)],
                 )
             ],
             language="en",

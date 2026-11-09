@@ -22,6 +22,7 @@ from .types import ASRConfig
 from .types import ASRResult
 from .types import ASRSegment
 from .types import ASRWord
+from .types import mean_word_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +241,7 @@ class AssemblyAIProvider(ASRProvider):
                         )
                         for x in chunk_words
                     ]
-                    avg_conf = sum(aw.confidence for aw in asr_words) / len(asr_words)
+                    avg_conf = mean_word_confidence(asr_words)
                     segments.append(
                         ASRSegment(
                             text=text,

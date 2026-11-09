@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
@@ -39,7 +40,17 @@ class ASRWord:
     word: str
     start: float
     end: float
-    confidence: float = 1.0
+    confidence: float | None = 1.0
+
+
+def mean_word_confidence(words: Iterable[ASRWord]) -> float | None:
+    """Average confidence of the words that report one; ``None`` if none do.
+
+    A provider's raw JSON can carry ``null`` for a word's confidence, so the average
+    is over the scored words only rather than treating a missing score as 0 or 1.
+    """
+    scores = [w.confidence for w in words if w.confidence is not None]
+    return sum(scores) / len(scores) if scores else None
 
 
 @dataclass

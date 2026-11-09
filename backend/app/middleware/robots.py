@@ -12,24 +12,31 @@ deliberately public instance (issue #628's demo); nothing here should stop that.
 
 from __future__ import annotations
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.base import RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp
+from starlette.types import Message
+from starlette.types import Receive
+from starlette.types import Scope
+from starlette.types import Send
 
 from app.core.config import settings
 
 
-class RobotsHeaderMiddleware(BaseHTTPMiddleware):
-    """Adds `X-Robots-Tag: noindex, nofollow` to every response under `API_PREFIX`."""
+class RobotsHeaderMiddleware:
+    """Pure ASGI: adds `X-Robots-Tag: noindex, nofollow` to every response under `API_PREFIX`."""
 
     def __init__(self, app: ASGIApp) -> None:
-        super().__init__(app)
+        self.app = app
         self._prefix = settings.API_PREFIX
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        response = await call_next(request)
-        if request.url.path.startswith(self._prefix):
-            response.headers["X-Robots-Tag"] = "noindex, nofollow"
-        return response
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not scope["path"].startswith(self._prefix):
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_header(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["X-Robots-Tag"] = "noindex, nofollow"
+            await send(message)
+
+        await self.app(scope, receive, send_with_header)

@@ -22,22 +22,23 @@ Edge cases:
     The ``/api`` prefix is intentionally kept (bounded cardinality).
   - **CSRF-rejected / pre-routing requests** never had ``request_id``/``user_id``
     set by inner layers, so those fields are absent/empty — correct.
-  - **SSE / StreamingResponse**: ``call_next`` returns at response START, so the
+  - **SSE / StreamingResponse**: the status is captured at ``http.response.start``, so the
     recorded duration is time-to-first-byte, not the stream's lifetime. Accepted.
-  - **WebSockets** bypass BaseHTTPMiddleware entirely (http scopes only).
+  - **WebSockets** and lifespan scopes pass straight through (http scopes only).
   - ``/metrics`` and ``/metrics/queues`` scrapes are skipped to avoid feedback
     noise (and per-poll cost when an autoscaler polls the queue page).
-No blocking I/O happens in ``dispatch``.
+No blocking I/O happens in ``__call__``.
 """
 
 import logging
 import time
-from collections.abc import Awaitable
-from collections.abc import Callable
 
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp
+from starlette.types import Message
+from starlette.types import Receive
+from starlette.types import Scope
+from starlette.types import Send
 
 from app.core.db_metrics import observe_request_connection_hold
 from app.core.db_metrics import observe_request_query_count
@@ -53,28 +54,36 @@ access_logger = logging.getLogger("access")
 _SCRAPE_PATHS = frozenset({"/metrics", "/metrics/queues"})
 
 
-class ObservabilityMiddleware(BaseHTTPMiddleware):
-    """Outermost middleware: per-request metrics and a structured access log."""
+class ObservabilityMiddleware:
+    """Pure ASGI, outermost middleware: per-request metrics and a structured access log."""
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         # Skip self-scrape noise entirely; do not even count the counter.
-        if request.url.path in _SCRAPE_PATHS:
-            return await call_next(request)
+        if scope["type"] != "http" or scope["path"] in _SCRAPE_PATHS:
+            await self.app(scope, receive, send)
+            return
 
+        request = Request(scope)
         token = start_request_counter()
         http_requests_in_flight.inc()
         start = time.perf_counter()
         status = 500
+
+        async def capture_status(message: Message) -> None:
+            nonlocal status
+            if message["type"] == "http.response.start":
+                status = message["status"]
+            await send(message)
+
         try:
-            response = await call_next(request)
-            status = response.status_code
-            return response
+            await self.app(scope, receive, capture_status)
         finally:
             duration = time.perf_counter() - start
             method = request.method
-            route = route_label(getattr(request.scope.get("route"), "path", None))
+            route = route_label(getattr(scope.get("route"), "path", None))
             status_str = str(status)
 
             http_request_duration_seconds.labels(

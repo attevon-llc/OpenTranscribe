@@ -12,11 +12,12 @@ and Swagger UI don't use cookies and therefore aren't vulnerable to CSRF.
 import logging
 import secrets
 
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.base import RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-from starlette.responses import Response
+from starlette.types import ASGIApp
+from starlette.types import Receive
+from starlette.types import Scope
+from starlette.types import Send
 
 from app.auth.cookies import ACCESS_COOKIE
 from app.auth.cookies import CSRF_COOKIE
@@ -82,34 +83,57 @@ def _is_exempt(path: str) -> bool:
     return normalized in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES)
 
 
-class CSRFMiddleware(BaseHTTPMiddleware):
-    """Validates CSRF double-submit token on non-safe, cookie-authenticated requests."""
+def _csrf_failure(request: Request, path: str, reason: str) -> JSONResponse:
+    logger.warning(f"CSRF token {reason} on {request.method} {path}")
+    return JSONResponse({"detail": "CSRF token missing or invalid"}, status_code=403)
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+
+class CSRFMiddleware:
+    """Pure ASGI: validates the CSRF double-submit token on non-safe, cookie-authenticated requests.
+
+    Only headers and cookies are read (via ``Request(scope)``); the body is never consumed.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        rejection = self._check(request)
+        if rejection is not None:
+            await rejection(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+    @staticmethod
+    def _check(request: Request) -> JSONResponse | None:
+        """The 403 to send, or None when the request may proceed."""
         # Safe methods never need CSRF
         if request.method in _SAFE_METHODS:
-            return await call_next(request)
+            return None
 
         path = request.url.path
 
         # Exempt paths (login, register, etc.)
         if _is_exempt(path):
-            return await call_next(request)
+            return None
 
         # WebSocket paths
         if any(path.startswith(p) for p in _WS_PREFIXES):
-            return await call_next(request)
+            return None
 
-        # If the request uses Bearer authentication, skip CSRF
-        # (API clients use tokens directly and aren't vulnerable to CSRF)
+        # Bearer authentication: API clients use tokens directly, not vulnerable to CSRF
         auth_header = request.headers.get("authorization", "")
         if auth_header.startswith("Bearer "):
-            return await call_next(request)
+            return None
 
-        # No auth cookie of any kind — the browser attaches no credentials, so a
-        # forged request has nothing to ride on.
+        # No auth cookie of any kind: a forged request has nothing to ride on.
         if not any(name in request.cookies for name in _AUTH_COOKIES):
-            return await call_next(request)
+            return None
 
         # Double-submit CSRF validation. The csrf_token cookie is minted with the
         # REFRESH token's lifetime (app/auth/cookies.py), so an idle session still
@@ -118,17 +142,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         header_csrf = request.headers.get("x-csrf-token", "")
 
         if not cookie_csrf or not header_csrf:
-            logger.warning(f"CSRF token missing on {request.method} {path}")
-            return JSONResponse(
-                {"detail": "CSRF token missing or invalid"},
-                status_code=403,
-            )
+            return _csrf_failure(request, path, "missing")
 
         if not secrets.compare_digest(cookie_csrf, header_csrf):
-            logger.warning(f"CSRF token mismatch on {request.method} {path}")
-            return JSONResponse(
-                {"detail": "CSRF token missing or invalid"},
-                status_code=403,
-            )
+            return _csrf_failure(request, path, "mismatch")
 
-        return await call_next(request)
+        return None

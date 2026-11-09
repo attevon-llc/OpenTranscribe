@@ -6,12 +6,15 @@ throughout the request lifecycle for audit logging correlation.
 """
 
 import uuid
-from collections.abc import Awaitable
-from collections.abc import Callable
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.datastructures import MutableHeaders
+from starlette.requests import HTTPConnection
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp
+from starlette.types import Message
+from starlette.types import Receive
+from starlette.types import Scope
+from starlette.types import Send
 
 # The correlation slot lives in app.core.request_context and is shared with
 # app.auth.audit. This module used to declare its OWN ContextVar("request_id"),
@@ -30,9 +33,9 @@ __all__ = [
 ]
 
 
-class AuditMiddleware(BaseHTTPMiddleware):
+class AuditMiddleware:
     """
-    Middleware that assigns unique request IDs for audit log correlation.
+    Pure ASGI middleware that assigns unique request IDs for audit log correlation.
 
     The request ID is:
     - Generated as a UUID4 if not provided
@@ -43,43 +46,34 @@ class AuditMiddleware(BaseHTTPMiddleware):
 
     REQUEST_ID_HEADER = "X-Request-ID"
 
-    async def dispatch(
-        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        """
-        Process the request and add request ID tracking.
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
 
-        Args:
-            request: The incoming request
-            call_next: The next middleware/handler in the chain
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-        Returns:
-            The response with X-Request-ID header added
-        """
-        # Get request ID from header or generate new one
+        request = Request(scope)
         request_id = request.headers.get(self.REQUEST_ID_HEADER)
         if not request_id:
             request_id = str(uuid.uuid4())
 
-        # Set in context variable for audit logging
         set_request_id(request_id)
 
-        # Also set on request state for easy access in handlers
+        # scope["state"] is shared with every inner layer and handler.
         request.state.request_id = request_id
-
-        # Extract client info for audit logging
         request.state.client_ip = self._get_client_ip(request)
         request.state.user_agent = request.headers.get("User-Agent", "")
 
-        # Process request
-        response = await call_next(request)
+        async def send_with_request_id(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)[self.REQUEST_ID_HEADER] = request_id
+            await send(message)
 
-        # Add request ID to response headers
-        response.headers[self.REQUEST_ID_HEADER] = request_id
+        await self.app(scope, receive, send_with_request_id)
 
-        return response
-
-    def _get_client_ip(self, request: Request) -> str:
+    def _get_client_ip(self, request: HTTPConnection) -> str:
         """
         Extract the client IP address from the request.
 

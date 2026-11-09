@@ -6,8 +6,7 @@
 `release-tests/`, `e2e/`, `lib/`, `pki/`, `tests/`). **`scripts/README.md` (~900 lines) already documents the
 build / offline-package / model-download / remote-builder family in depth — read it for those
 and don't duplicate it here.** It does not mention the other ~60 files (test gates, e2e,
-benchmarks, one-off SQL) and contains **zero destructive-operation warnings**. That is what
-this file is for.
+benchmarks, one-off SQL) and has **zero destructive-operation warnings**; that is what this file is for. Ratchet guards (`scripts/guards/`, baselines vs allowlists): `scripts/notes/ratchet-guards.md`.
 
 ## Which script to reach for
 

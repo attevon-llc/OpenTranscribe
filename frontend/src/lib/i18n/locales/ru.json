@@ -2221,7 +2221,6 @@
   "uploader.useCtrlV": "Для вставки нажмите Ctrl+V (Cmd+V на Mac)",
   "uploader.readyToPaste": "Готово к вставке - нажмите Ctrl+V (Cmd+V на Mac)",
   "uploader.clipboardRequiresHttps": "Доступ к буферу обмена требует HTTPS. Вставьте вручную сочетанием Ctrl+V.",
-  "uploader.urlProcessingCancelled": "Обработка URL прервана",
   "uploader.calculating": "Вычисляется...",
   "uploader.tooLarge": "слишком велик: {{size}}",
   "uploader.unsupportedFormat": "формат не поддерживается",

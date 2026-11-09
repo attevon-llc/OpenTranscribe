@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { goto, preloadCode } from '$app/navigation';
-  import { page } from '$app/state';
   import { login, getAuthMethods, loginWithPKI, verifyMFA, accountLifecycle, clearAccountLifecycle, changeOwnPassword, logout, sessionEndReason, type AuthMethods } from "$stores/auth";
   import { resendEmailVerification } from '$lib/api/invitations';
   import { onMount, onDestroy } from 'svelte';
@@ -13,7 +13,7 @@
   import ClassificationBanner from '$lib/components/ClassificationBanner.svelte';
   import LoginBanner from '$components/LoginBanner.svelte';
   import MfaEnrollment from '$components/mfa/MfaEnrollment.svelte';
-  import Spinner from '../../components/ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import DemoSignIn from '$components/demo/DemoSignIn.svelte';
   import { createRetryCountdown } from '$lib/utils/retryAfter';
   import { isValidLoginIdentifier, forcedChangeError } from '$lib/auth/loginIdentifier';
@@ -35,7 +35,7 @@
   });
 
   // Import logo asset for proper Vite processing
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   // Form data
   let email = "";
@@ -58,7 +58,7 @@
   /** Show the "signing in" screen, then navigate home. */
   function redirectHome() {
     loginSuccess = true;
-    setTimeout(() => goto('/', { replace: true }), SIGNED_IN_REDIRECT_DELAY_MS);
+    setTimeout(() => goto(resolve('/'), { replace: true }), SIGNED_IN_REDIRECT_DELAY_MS);
   }
 
   // MFA state. `mfaToken` is a short-lived half-token: memory only, never
@@ -454,7 +454,7 @@
     // Navigate immediately rather than through the usual "signing in"
     // flourish: the hold has already dropped, so the shell would render its
     // redirect placeholder over this page for the whole delay.
-    goto('/', { replace: true });
+    goto(resolve('/'), { replace: true });
   }
 
   /** Abandon the forced change: end the session and return to the sign-in form. */
@@ -1005,7 +1005,7 @@
            directory owns those credentials. -->
       {#if authMethods.local_enabled}
         <div class="forgot-password-row">
-          <a href="/forgot-password" class="forgot-password-link">
+          <a href={resolve('/forgot-password')} class="forgot-password-link">
             {$t('auth.forgotPassword')}
           </a>
         </div>
@@ -1084,7 +1084,7 @@
     {#if authMethods.allow_registration}
       <div class="auth-links">
         <span class="auth-link-text">{$t('auth.needAccountPrefix')} <a
-          href="/register"
+          href={resolve('/register')}
           class="auth-link"
         >{$t('auth.register')}</a></span>
       </div>

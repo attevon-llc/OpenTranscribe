@@ -1,7 +1,7 @@
 import type { NewTakedownNotice, NoticeType } from '$lib/api/takedownNotices';
 
 /** How a takedown justifies itself: a recorded notice, a new one, or an explicit "no notice". */
-export type BasisMode = 'existing' | 'new' | 'operator';
+type BasisMode = 'existing' | 'new' | 'operator';
 
 export interface NoticeDraft {
   noticeType: NoticeType;

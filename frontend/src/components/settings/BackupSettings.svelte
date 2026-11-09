@@ -2,11 +2,11 @@
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import { onMount, onDestroy } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import MediaMirrorSettings from './MediaMirrorSettings.svelte';
-  import { toastStore } from '../../stores/toast';
+  import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
-  import { settingsModalStore } from '../../stores/settingsModalStore';
+  import { settingsModalStore } from '$stores/settingsModalStore';
   import {
     getBackupSettings,
     updateBackupSettings,
@@ -269,22 +269,6 @@
   // ---- Reactive change detection -------------------------------------------
 
   $: {
-    enabled;
-    schedule;
-    destination;
-    retentionDaily;
-    retentionWeekly;
-    retentionMonthly;
-    encrypt;
-    passphraseFile;
-    includeOpensearch;
-    destinationType;
-    s3EndpointUrl;
-    s3Region;
-    s3Bucket;
-    s3Prefix;
-    s3AccessKeyId;
-    s3SecretKey;
     hasChanges =
       enabled !== origEnabled ||
       schedule !== origSchedule ||

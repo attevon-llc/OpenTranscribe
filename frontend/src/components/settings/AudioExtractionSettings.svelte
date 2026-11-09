@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
-  import { getAudioExtractionSettings, updateAudioExtractionSettings, type AudioExtractionSettings } from '$lib/api/audioExtractionSettings';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import { getAudioExtractionSettings, updateAudioExtractionSettings } from '$lib/api/audioExtractionSettings';
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
 

@@ -97,7 +97,7 @@ class RecordingManager {
         }));
         await this.loadAudioDevices();
       }
-    } catch (error) {
+    } catch {
       // Recording initialization failed - recordingSupported will remain false
     }
   }
@@ -112,7 +112,7 @@ class RecordingManager {
         audioDevices,
         selectedDeviceId: audioDevices[0]?.deviceId || '',
       }));
-    } catch (error) {
+    } catch {
       // Audio device enumeration failed - will use default device
     }
   }
@@ -370,7 +370,7 @@ class RecordingManager {
       recordingStore.update((state) => ({ ...state, audioLevel }));
 
       this.animationFrame = requestAnimationFrame(() => this.updateAudioLevel());
-    } catch (error) {
+    } catch {
       // Audio level update failed - not critical for recording functionality
     }
   }

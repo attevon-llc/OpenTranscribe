@@ -3,7 +3,7 @@
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';
   import { isOnline } from '$stores/network';
-  import { loadProtectedMediaAuthConfig, getAuthConfigForUrl, type ProtectedMediaAuthConfig } from '$lib/services/configService';
+  import { getAuthConfigForUrl, type ProtectedMediaAuthConfig } from '$lib/services/configService';
   import { getDownloadSettings, getDownloadSystemDefaults, type DownloadSystemDefaults } from '$lib/api/downloadSettings';
   import Spinner from '$components/ui/Spinner.svelte';
   import LegalDocumentViewer from '$components/legal/LegalDocumentViewer.svelte';
@@ -14,7 +14,6 @@
 
   const dispatch = createEventDispatcher<{
     urlChange: { url: string };
-    cancel: void;
   }>();
 
   // Download quality options
@@ -111,14 +110,6 @@
         toastStore.info($t('uploader.useCtrlV'));
       }
     }
-  }
-
-  function handleCancel() {
-    if (processingUrl) {
-      toastStore.info($t('uploader.urlProcessingCancelled'));
-    }
-    resetState();
-    dispatch('cancel');
   }
 </script>
 

@@ -5,9 +5,9 @@
  * a key (`has_*`), never the key.
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
-export interface SharedCredential {
+interface SharedCredential {
   config_uuid: string;
   name: string;
   has_api_key: boolean;

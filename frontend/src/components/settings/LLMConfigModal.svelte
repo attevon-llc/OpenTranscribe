@@ -9,15 +9,14 @@
     type LLMProvider,
     type ProviderDefaults,
     type LocalEndpointStatus
-  } from '../../lib/api/llmSettings';
-  import { toastStore } from '../../stores/toast';
+  } from '$lib/api/llmSettings';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import {
     SCHEMA_DEFAULT_MAX_TOKENS,
     blankForm,
     formFromConfig,
-    isBedrockPairIncomplete,
     isFormValid as formIsValid,
     isConnectionTestValid as connectionTestIsValid,
     awsFields,
@@ -36,9 +35,9 @@
     type AnthropicModel
   } from '$lib/settings/llmModelDiscovery';
   import { user } from '$stores/auth';
-  import Spinner from '../ui/Spinner.svelte';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
   import LLMLocalDiscovery from './LLMLocalDiscovery.svelte';
   import LLMBedrockFields from './LLMBedrockFields.svelte';
 
@@ -142,7 +141,6 @@
   // Bedrock account fields: any admin sees whether the server's own AWS credentials resolve.
   $: isAdmin = $user?.role === 'admin' || $user?.role === 'super_admin';
   $: bedrockDefaults = getProviderDefaults('bedrock');
-  $: bedrockPairIncomplete = isBedrockPairIncomplete(formData);
 
   // Unsaved changes modal
   let showUnsavedChangesModal = false;
@@ -443,7 +441,8 @@
   $: {
     const _anyOpen = show || showUnsavedChangesModal;
     if (_anyOpen !== _llmConfigModalWasOpen) {
-      _anyOpen ? lockScroll() : unlockScroll();
+      if (_anyOpen) lockScroll();
+      else unlockScroll();
       _llmConfigModalWasOpen = _anyOpen;
     }
   }

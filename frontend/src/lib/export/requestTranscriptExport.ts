@@ -22,7 +22,7 @@ import axiosInstance from '$lib/axios';
 import { parseContentDispositionFilename } from '$lib/export/contentDisposition';
 
 /** Resolved i18n strings the server renders into the exported document. */
-export interface TranscriptExportLabels {
+interface TranscriptExportLabels {
   speaker_default_label: string;
   user_comment_label: string;
   comment_type_label: string;

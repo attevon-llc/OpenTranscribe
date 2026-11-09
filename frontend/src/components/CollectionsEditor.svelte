@@ -91,7 +91,7 @@
       // Add file to collection
       const payload = { media_file_ids: [fileId] };
       const addUrl = `/collections/${collectionId}/media`;
-      const response = await axiosInstance.post(addUrl, payload);
+      await axiosInstance.post(addUrl, payload);
 
       // Add collection to local list if not already present
       if (!collections.some(c => c.uuid === collectionToAdd.uuid)) {

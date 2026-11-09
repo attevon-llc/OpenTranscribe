@@ -2247,7 +2247,6 @@
   "uploader.useCtrlV": "استخدم Ctrl+V (أو Cmd+V على Mac) للصق",
   "uploader.readyToPaste": "جاهز للصق - استخدم Ctrl+V (أو Cmd+V على Mac)",
   "uploader.clipboardRequiresHttps": "يتطلب الوصول إلى الحافظة اتصال HTTPS. استخدم Ctrl+V للصق يدويًا.",
-  "uploader.urlProcessingCancelled": "تم إلغاء معالجة الرابط",
   "uploader.calculating": "جارٍ الحساب...",
   "uploader.tooLarge": "كبير جدًا: {{size}}",
   "uploader.unsupportedFormat": "صيغة غير مدعومة",

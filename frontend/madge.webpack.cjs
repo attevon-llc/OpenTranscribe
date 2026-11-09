@@ -7,6 +7,9 @@ module.exports = {
       $lib: `${__dirname}/src/lib`,
       $components: `${__dirname}/src/components`,
       $stores: `${__dirname}/src/stores`,
+      $styles: `${__dirname}/src/styles`,
+      $assets: `${__dirname}/src/assets`,
+      $testMocks: `${__dirname}/src/test-mocks`,
     },
   },
 };

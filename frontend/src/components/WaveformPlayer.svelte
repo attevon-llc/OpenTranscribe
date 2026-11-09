@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import axiosInstance from '$lib/axios';
-  import { theme } from '../stores/theme.js';
+  import { theme } from '$stores/theme.js';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
   import Spinner from './ui/Spinner.svelte';
@@ -20,7 +20,6 @@
   let isLoadingWaveform = false;
   let waveformError: string = '';
   let isDragging = false;
-  let animationFrameId: number | null = null;
   // A click/keyboard seek that arrives before `duration` is known (e.g. the
   // player hasn't reported its duration yet) used to be silently discarded —
   // the interaction had no effect and gave no feedback. Queue it and flush
@@ -340,9 +339,7 @@
 
   // Reactive updates - redraw when waveform data or playhead position changes
   // Use currentTime directly in the expression to ensure it's tracked as a dependency
-  $: if (canvas && ctx && waveformData.length > 0) {
-    // Track currentTime changes by referencing it
-    const _ = currentTime;
+  $: if (canvas && ctx && waveformData.length > 0 && currentTime !== undefined) {
     drawWaveform();
   }
 
@@ -364,19 +361,6 @@
       handleResize();
     }
     loadWaveformData();
-
-    // Cleanup function
-    return () => {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-    };
-  });
-
-  onDestroy(() => {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-    }
   });
 </script>
 

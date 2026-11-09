@@ -46,7 +46,7 @@ const POST_PROCESSING_TIERS = {
   auto_label: 'ai',
 } as const satisfies Record<string, Exclude<TierKey, 'main'>>;
 
-export type PostProcessingKey = keyof typeof POST_PROCESSING_TIERS;
+type PostProcessingKey = keyof typeof POST_PROCESSING_TIERS;
 export type JobTaskKey = 'import' | 'transcription' | 'diarization' | PostProcessingKey;
 
 const POST_KEYS = Object.keys(POST_PROCESSING_TIERS) as PostProcessingKey[];
@@ -99,7 +99,7 @@ const DIARIZE_INDEX = TRANSCRIPTION_STAGES.indexOf('diarize');
 /** A task that is running but reports no number is shown half done. */
 const INDETERMINATE_PERCENT = 50;
 
-export interface JobSubtask {
+interface JobSubtask {
   key: string;
   state: TaskState;
   durationSeconds: number | null;

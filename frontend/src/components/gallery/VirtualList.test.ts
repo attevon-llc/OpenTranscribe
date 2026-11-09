@@ -38,9 +38,7 @@ const mockPrefetch = vi.hoisted(() => ({
 vi.mock('$lib/prefetch', () => mockPrefetch);
 
 import VirtualList from './VirtualList.svelte';
-import { gotoCalls } from '../../test-mocks/app-navigation';
-
-const ROW_HEIGHT = 44;
+import { gotoCalls } from '$testMocks/app-navigation';
 
 function file(uuid: string, overrides: Partial<MediaFile> = {}): MediaFile {
   return {
@@ -178,7 +176,7 @@ describe('interaction', () => {
     await fireEvent.click(link, { ctrlKey: true });
 
     expect(gotoCalls).toHaveLength(0);
-    expect(mockGalleryStore.handleMultiSelect).toHaveBeenCalledWith('f0', true, false);
+    expect(mockGalleryStore.handleMultiSelect).toHaveBeenCalledWith('f0', false);
   });
 
   it('toggles selection via the checkbox without navigating, while in selecting mode', async () => {

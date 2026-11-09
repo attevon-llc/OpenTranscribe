@@ -76,7 +76,7 @@ export function formFromConfig(config: UserLLMSettings): LLMFormData {
 }
 
 /** A key id without a secret (or the reverse) can never authenticate. */
-export function isBedrockPairIncomplete(form: LLMFormData): boolean {
+function isBedrockPairIncomplete(form: LLMFormData): boolean {
   return Boolean(form.aws_access_key_id.trim()) !== Boolean(form.aws_secret_access_key.trim());
 }
 

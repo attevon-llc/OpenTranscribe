@@ -85,15 +85,6 @@ export interface PaginatedResponse<T> {
   last_clustered_at?: string | null;
 }
 
-export interface BatchVerifyRequest {
-  speaker_uuids: string[];
-  action: 'accept' | 'assign' | 'name' | 'skip';
-  profile_uuid?: string;
-  display_name?: string;
-  /** Lift the user's earlier unassignment for this ONE speaker (422 with more). */
-  override_unassignment?: boolean;
-}
-
 export interface BatchVerifyResponse {
   updated_count: number;
   failed_count: number;
@@ -124,11 +115,6 @@ export interface OutlierAnalysisResponse {
   majority_gender: string;
   minority_gender: string;
   minority_analysis: MinorityAnalysisItem[];
-}
-
-export interface ClusterUnassignRequest {
-  speaker_uuids: string[];
-  blacklist: boolean;
 }
 
 export interface SpeakerProfile {

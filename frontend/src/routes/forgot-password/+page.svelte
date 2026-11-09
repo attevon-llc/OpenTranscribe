@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import axiosInstance from '$lib/axios';
   import { t } from '$stores/locale';
 
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   let email = '';
   let loading = false;
@@ -51,7 +51,7 @@
       </div>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {:else}
       <form on:submit|preventDefault={handleSubmit} class="auth-form">
@@ -81,7 +81,7 @@
       </form>
 
       <div class="auth-links">
-        <a href="/login" class="auth-link">{$t('auth.backToLogin')}</a>
+        <a href={resolve('/login')} class="auth-link">{$t('auth.backToLogin')}</a>
       </div>
     {/if}
   </div>

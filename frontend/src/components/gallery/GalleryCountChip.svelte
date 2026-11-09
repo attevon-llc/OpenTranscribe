@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { galleryState, galleryViewMode } from '$stores/gallery';
+  import { galleryState } from '$stores/gallery';
   import { t } from '$stores/locale';
   import { fade, scale } from 'svelte/transition';
 
@@ -7,7 +7,6 @@
   export let filesLoaded: number = 0;
 
   $: displayText = getDisplayText($galleryState.totalFiles, filesLoaded, loading);
-  $: isListView = $galleryViewMode === 'list';
 
   function getDisplayText(total: number, loaded: number, isLoading: boolean): string {
     if (isLoading && loaded === 0) {

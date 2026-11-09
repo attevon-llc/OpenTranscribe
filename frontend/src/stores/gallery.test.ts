@@ -66,24 +66,24 @@ describe('handleMultiSelect', () => {
   });
 
   it('shift-click selects the inclusive range from the anchor', () => {
-    galleryStore.handleMultiSelect('a', false, false); // sets the anchor
-    galleryStore.handleMultiSelect('c', false, true); // shift-click
+    galleryStore.handleMultiSelect('a', false); // sets the anchor
+    galleryStore.handleMultiSelect('c', true); // shift-click
 
     const selected = get(galleryStore).selectedFiles;
     expect([...selected].sort()).toEqual(['a', 'b', 'c']);
   });
 
   it('falls back to a single toggle when shift-clicked with no anchor set', () => {
-    galleryStore.handleMultiSelect('b', false, true);
+    galleryStore.handleMultiSelect('b', true);
 
     expect([...get(galleryStore).selectedFiles]).toEqual(['b']);
   });
 
   it('falls back to toggling just the target when the anchor id no longer exists in the file list', () => {
-    galleryStore.handleMultiSelect('a', false, false); // selects 'a', sets it as anchor
+    galleryStore.handleMultiSelect('a', false); // selects 'a', sets it as anchor
     galleryStore.setFiles([file('b'), file('c')]); // 'a' is gone (e.g. deleted)
 
-    galleryStore.handleMultiSelect('c', false, true);
+    galleryStore.handleMultiSelect('c', true);
 
     // The anchor can't be resolved to an index in the (now-different) file list, so the
     // range-select math is skipped in favor of toggling only the clicked file. 'a' is
@@ -94,10 +94,10 @@ describe('handleMultiSelect', () => {
   });
 
   it('derives isSelecting from whether anything ended up selected', () => {
-    galleryStore.handleMultiSelect('a', true, false);
+    galleryStore.handleMultiSelect('a', false);
     expect(get(galleryStore).isSelecting).toBe(true);
 
-    galleryStore.handleMultiSelect('a', true, false); // toggle back off
+    galleryStore.handleMultiSelect('a', false); // toggle back off
     expect(get(galleryStore).isSelecting).toBe(false);
   });
 });

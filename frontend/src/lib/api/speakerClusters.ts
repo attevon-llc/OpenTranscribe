@@ -12,6 +12,7 @@ import type {
   OutlierAnalysisResponse,
   SpeakerProfile,
 } from '$lib/types/speakerCluster';
+import type { MergeSpeakersResponse } from '$lib/types/speaker';
 
 /**
  * How long a UI shows "propagating" after a speaker rename before giving up on
@@ -174,7 +175,7 @@ export async function deleteProfile(uuid: string): Promise<void> {
 export async function mergeSpeakers(
   sourceUuid: string,
   targetUuid: string
-): Promise<import('$lib/types/speaker').MergeSpeakersResponse> {
+): Promise<MergeSpeakersResponse> {
   const response = await axiosInstance.post(`/speakers/${sourceUuid}/merge/${targetUuid}`);
   return response.data;
 }

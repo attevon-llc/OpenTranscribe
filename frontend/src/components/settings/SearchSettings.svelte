@@ -7,9 +7,9 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import { createPoller } from '$lib/utils/poller';
   import { toastStore } from '$stores/toast';
-  import ConfirmationModal from '../ConfirmationModal.svelte';
+  import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import StatusChip from './StatusChip.svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import ReindexLiveProgress from './ReindexLiveProgress.svelte';
 
   let showModelChangeModal = false;
@@ -118,7 +118,7 @@
     toastStore.success($t('search.reindexComplete'));
   }
 
-  function handleReindexStopped(event: CustomEvent<{ stats: any; reason: string }>) {
+  function handleReindexStopped() {
     reindexProgress = null;
     isReindexing = false;
     isStopping = false;
@@ -375,9 +375,6 @@
   $: selectedModel = models.find(m => m.model_id === selectedModelId);
 
   // Derive overall health status for the chip
-  $: healthAllGreen = indexHealth
-    ? Object.values(indexHealth).every(i => i.status === 'green')
-    : true;
   $: hasRedIndices = indexHealth
     ? Object.values(indexHealth).some(i => i.status === 'red')
     : false;

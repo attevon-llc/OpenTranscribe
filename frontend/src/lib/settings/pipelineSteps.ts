@@ -16,7 +16,7 @@ import { PIPELINE_ENGINE_KEYS } from '$lib/settings/pipelineKeys';
 import type { SettingsSection } from '$stores/settingsModalStore';
 import { fixTargets, isPipelineIssueCode, issueKey } from './pipelineIssues';
 
-export interface IssueViewModel {
+interface IssueViewModel {
   code: string;
   severity: PipelineSeverity;
   /** Copy for a code this build knows; null otherwise. */
@@ -26,7 +26,7 @@ export interface IssueViewModel {
   fixSections: SettingsSection[];
 }
 
-export interface StepViewModel {
+interface StepViewModel {
   step: PipelineStepName;
   titleKey: string;
   purposeKey: string;

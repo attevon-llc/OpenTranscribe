@@ -6,11 +6,11 @@
  * status says only whether one is in effect and where it comes from.
  */
 
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 const BASE = '/admin/hf-token';
 
-export type HfTokenSource = 'app' | 'environment' | 'none';
+type HfTokenSource = 'app' | 'environment' | 'none';
 
 export interface HfTokenStatus {
   is_set: boolean;

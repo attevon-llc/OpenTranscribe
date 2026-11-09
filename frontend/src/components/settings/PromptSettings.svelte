@@ -2,7 +2,7 @@
   import MenuIcon from '$components/ui/MenuIcon.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount } from 'svelte';
-  import { PromptsApi, type SummaryPrompt, type ActivePromptResponse, type SummaryPromptCreate, type SummaryPromptUpdate, type SharedPromptLibrary } from '$lib/api/prompts';
+  import { PromptsApi, type SummaryPrompt } from '$lib/api/prompts';
   import BaseModal from '$components/ui/BaseModal.svelte';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import Spinner from '$components/ui/Spinner.svelte';

@@ -11,7 +11,6 @@ import axiosInstance from '$lib/axios';
 import type {
   AnswerBudget,
   ChatAdminSettings,
-  ChatProject,
   ChatProjectDetail,
   ChatProjectList,
   ChatScope,

@@ -2,7 +2,7 @@
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { lockScroll, unlockScroll } from '$lib/scrollLock';
-  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults, type ConnectionTestResponse, type UserLLMConfigurationsList } from '$lib/api/llmSettings';
+  import { LLMSettingsApi, llmProviderDisplayName, type UserLLMSettings, type ProviderDefaults } from '$lib/api/llmSettings';
   import ConfirmationModal from '$components/ConfirmationModal.svelte';
   import LLMConfigModal from './LLMConfigModal.svelte';
   import { toastStore } from '$stores/toast';
@@ -54,10 +54,7 @@
   let systemSummaryLoading = false;
 
   // Connection status for active configuration
-  let connectionStatus: 'unknown' | 'connected' | 'disconnected' = 'unknown';
   let statusMessage = '';
-  let statusLastChecked: Date | null = null;
-  let checkingStatus = false;
 
   // Load initial data — parallelize independent calls
   onMount(async () => {
@@ -109,10 +106,8 @@
 
           // Use last test result from configurations data instead of re-testing
           const stored = connectionFromStoredTest(currentSettings);
-          connectionStatus = stored.status;
           if (stored.status !== 'unknown') {
             statusMessage = stored.message;
-            statusLastChecked = stored.lastChecked;
           }
         } else {
           currentSettings = null;
@@ -179,24 +174,16 @@
 
   async function checkCurrentStatus() {
     if (!hasSettings || !activeConfigurationId) {
-      connectionStatus = 'unknown';
       statusMessage = '';
       return;
     }
 
-    checkingStatus = true;
-
     try {
       const result = await LLMSettingsApi.testCurrentSettings();
-      connectionStatus = result.success ? 'connected' : 'disconnected';
       statusMessage = result.message;
-      statusLastChecked = new Date();
     } catch (err: unknown) {
-      connectionStatus = 'disconnected';
       statusMessage = getErrorMessage(err, $t('settings.llmProvider.testFailed'));
-      statusLastChecked = new Date();
     } finally {
-      checkingStatus = false;
       void llmStatusStore.invalidate();
     }
   }
@@ -342,9 +329,7 @@
       activeConfigurationId = null;
       currentSettings = null;
       hasSettings = false;
-      connectionStatus = 'unknown';
       statusMessage = '';
-      statusLastChecked = null;
 
       void llmStatusStore.invalidate();
 

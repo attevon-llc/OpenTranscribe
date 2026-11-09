@@ -8,7 +8,7 @@
  */
 export type DerivedSource = 'container' | 'filename' | 'transcript' | 'llm' | 'manual' | 'none';
 
-export interface DerivedCandidate {
+interface DerivedCandidate {
   source: DerivedSource;
   date?: string | null;
   confidence?: number | null;

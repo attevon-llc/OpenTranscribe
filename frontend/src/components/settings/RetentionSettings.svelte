@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatDateTime, formatFileSize } from '$lib/utils/formatting';
   import { onMount, onDestroy } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import TrashRetentionSetting from '$components/settings/TrashRetentionSetting.svelte';
   import axiosInstance from '$lib/axios';
@@ -13,9 +13,9 @@
     SectionDataKey,
     fetchRetentionConfig,
   } from '$lib/settings/sectionData';
-  import { toastStore } from '../../stores/toast';
+  import { toastStore } from '$stores/toast';
   import { t, locale } from '$stores/locale';
-  import { settingsModalStore } from '../../stores/settingsModalStore';
+  import { settingsModalStore } from '$stores/settingsModalStore';
 
   // ---- Types ---------------------------------------------------------------
 
@@ -265,11 +265,6 @@
   // ---- Reactive change detection -------------------------------------------
 
   $: {
-    retentionEnabled;
-    retentionDays;
-    runTime;
-    timezone;
-    deleteErrorFiles;
     hasChanges =
       retentionEnabled !== origEnabled ||
       retentionDays !== origDays ||

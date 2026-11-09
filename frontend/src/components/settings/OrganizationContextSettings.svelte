@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import Spinner from '../ui/Spinner.svelte';
+  import Spinner from '$components/ui/Spinner.svelte';
   import {
     getOrganizationContext,
     updateOrganizationContext,
@@ -28,7 +28,6 @@
   let originalContextText = '';
   let originalIncludeInDefaultPrompts = true;
   let originalIncludeInCustomPrompts = false;
-  let originalIsShared = false;
 
   $: settingsChanged =
     contextText !== originalContextText ||
@@ -63,7 +62,6 @@
       originalContextText = settings.context_text;
       originalIncludeInDefaultPrompts = settings.include_in_default_prompts;
       originalIncludeInCustomPrompts = settings.include_in_custom_prompts;
-      originalIsShared = settings.is_shared;
 
       sharedContexts = shared.shared_contexts || [];
     } catch (err) {
@@ -131,7 +129,6 @@
 
     try {
       await updateOrganizationContext({ is_shared: newShared });
-      originalIsShared = newShared;
       toastStore.success(
         newShared ? $t('settings.orgContext.shareEnabled') : $t('settings.orgContext.shareDisabled'),
         3000

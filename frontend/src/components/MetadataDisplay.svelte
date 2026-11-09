@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { MediaFileDetail } from '$lib/types/media';
   import { slide } from 'svelte/transition';
-  import { formatDate, formatDuration } from '$lib/utils/formatting';
+  import { formatDate } from '$lib/utils/formatting';
   import { authStore } from '$stores/auth';
   import { t, locale } from '$stores/locale';
   import axiosInstance from '$lib/axios';
@@ -81,7 +81,7 @@
           <div class="metadata-item">
             <span class="metadata-label">{$t('metadata.source')}:</span>
             <span class="metadata-value">
-              <a href={file.source_url} target="_blank" rel="noopener noreferrer" class="source-link">
+              <a href={file.source_url} target="_blank" rel="noopener noreferrer external" class="source-link">
                 {file.source_url.length > 50 ? file.source_url.substring(0, 47) + '...' : file.source_url}
               </a>
             </span>

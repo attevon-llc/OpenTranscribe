@@ -30,9 +30,8 @@
   // while the stored values are still on the way.
   let configsReady = false;
   let configs: Record<string, any> = {};
-  let hasUnsavedChanges = false;
   let policyRefresh = 0;
-  let backendNotReady = false; // Backend is fully implemented
+  const backendNotReady = false; // Backend is fully implemented
 
   /**
    * The Local tab renders one form, but its fields belong to FOUR backend
@@ -253,7 +252,6 @@
     try {
       await AuthConfigApi.updateCategory(category, config);
       toastStore.success($t('settings.authentication.configSaved', { category }));
-      hasUnsavedChanges = false;
       await loadConfigs(true);
     } catch (error) {
       console.error(`Failed to save ${category} config:`, error);
@@ -293,9 +291,7 @@
 
     if (failed.length === 0) {
       toastStore.success($t('settings.authentication.localConfigSaved'));
-      hasUnsavedChanges = false;
     } else {
-      // Leave hasUnsavedChanges set: something in the form did not reach the server.
       toastStore.error(
         $t('settings.authentication.configSavePartialFailure', { categories: failed.join(', ') })
       );
@@ -333,9 +329,6 @@
     }
   }
 
-  function handleChange() {
-    hasUnsavedChanges = true;
-  }
 </script>
 
 <div class="auth-settings">
@@ -404,7 +397,6 @@
               config={localTabConfig}
               refreshKey={policyRefresh}
               on:save={(e: CustomEvent<any>) => handleLocalSave(e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -417,7 +409,6 @@
               config={configs.ldap || {}}
               on:save={(e: CustomEvent<any>) => handleSave('ldap', e.detail)}
               on:test={(e: CustomEvent<any>) => handleTestConnection('ldap', e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -432,7 +423,6 @@
               testResult={oidcTestResult}
               on:save={(e: CustomEvent<any>) => handleSave('oidc', e.detail)}
               on:test={(e: CustomEvent<any>) => handleTestConnection('oidc', e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -444,7 +434,6 @@
             <Component
               config={configs.pki || {}}
               on:save={(e: CustomEvent<any>) => handleSave('pki', e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={4} label={$t('settings.authentication.loadingConfig')} />
@@ -457,7 +446,6 @@
               config={configs.proxy || {}}
               sharedSecretIsSet={configs.proxy?.proxy_shared_secret_is_set}
               on:save={(e: CustomEvent<any>) => handleSave('proxy', e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={4} label={$t('settings.authentication.loadingConfig')} />
@@ -470,7 +458,6 @@
               config={configs.saml || {}}
               privateKeyIsSet={configs.saml?.saml_sp_private_key_is_set}
               on:save={(e: CustomEvent<any>) => handleSave('saml', e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={5} label={$t('settings.authentication.loadingConfig')} />
@@ -494,7 +481,6 @@
             <Component
               config={configs.session || {}}
               on:save={(e: CustomEvent<any>) => handleSave('session', e.detail)}
-              on:change={handleChange}
             />
           {:else}
             <SettingsSkeleton variant="form" count={3} label={$t('settings.authentication.loadingConfig')} />

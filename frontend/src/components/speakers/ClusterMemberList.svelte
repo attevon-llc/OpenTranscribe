@@ -28,11 +28,6 @@
     (outlierAnalysis?.minority_analysis ?? []).map((item) => [item.speaker_uuid, item])
   );
 
-  // Outlier counts
-  $: outlierCount = (outlierAnalysis?.minority_analysis ?? []).filter(
-    (a) => a.recommendation === 'likely_outlier'
-  ).length;
-
   // Gender grouping: split members into majority and minority groups
   $: hasGenderConflict = cluster.gender_composition?.has_gender_conflict ?? false;
   $: dominantGender = cluster.gender_composition?.dominant_gender ?? null;

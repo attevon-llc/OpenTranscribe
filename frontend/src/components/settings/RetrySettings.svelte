@@ -2,8 +2,8 @@
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import SettingsCard from '$components/settings/transcription/SettingsCard.svelte';
   import { onMount } from 'svelte';
-  import { AdminSettingsApi, type RetryConfig } from '../../lib/api/adminSettings';
-  import { toastStore } from '../../stores/toast';
+  import { AdminSettingsApi, type RetryConfig } from '$lib/api/adminSettings';
+  import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
 
@@ -15,7 +15,6 @@
   // Form state
   let retryLimitEnabled = true;
   let maxRetries = 3;
-  let hasChanges = false;
 
   // Track original values for change detection
   let originalRetryLimitEnabled = true;
@@ -33,7 +32,6 @@
       maxRetries = config.max_retries;
       originalRetryLimitEnabled = retryLimitEnabled;
       originalMaxRetries = maxRetries;
-      hasChanges = false;
     } catch (err: unknown) {
       console.error('Error loading retry config:', err);
       toastStore.error($t('settings.retry.loadFailed'));
@@ -42,16 +40,7 @@
     }
   }
 
-  function checkForChanges() {
-    hasChanges = retryLimitEnabled !== originalRetryLimitEnabled || maxRetries !== originalMaxRetries;
-  }
-
-  $: {
-    // Reactive change detection
-    retryLimitEnabled;
-    maxRetries;
-    checkForChanges();
-  }
+  $: hasChanges = retryLimitEnabled !== originalRetryLimitEnabled || maxRetries !== originalMaxRetries;
 
   async function saveConfig() {
     saving = true;
@@ -62,7 +51,6 @@
       });
       originalRetryLimitEnabled = config.retry_limit_enabled;
       originalMaxRetries = config.max_retries;
-      hasChanges = false;
       toastStore.success($t('settings.retry.saved'));
     } catch (err: unknown) {
       console.error('Error saving retry config:', err);

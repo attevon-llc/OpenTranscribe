@@ -17,7 +17,7 @@ export type PrivacyLayer = 'platform' | 'instance' | 'organization' | 'user' | '
 /** A file's recorded voiceprint consent: the uploader's claim, never verified by the product. */
 export type FileVoiceprintConsentState = 'unspecified' | 'granted' | 'declined';
 /** The layers ABOVE a user's own switch, i.e. the ones that can lock it. */
-export type UserLockLayer = 'platform' | 'instance' | 'organization';
+type UserLockLayer = 'platform' | 'instance' | 'organization';
 /** What a purge deletes. Named profiles, avatars and people's own assignments are always kept. */
 export type PurgeTarget = 'voiceprints' | 'inferred_gender';
 
@@ -69,10 +69,10 @@ export interface PurgeAccepted {
 export type PurgeState = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
 
 /** Counts grouped per store: `postgres` (database rows) and `opensearch` (documents). */
-export type PurgeCounts = Record<string, Record<string, number>>;
+type PurgeCounts = Record<string, Record<string, number>>;
 
 /** Where an administrator reads the purge back: one audit event per target, same task id. */
-export interface PurgeAuditRef {
+interface PurgeAuditRef {
   event_type: string;
   task_id: string;
 }

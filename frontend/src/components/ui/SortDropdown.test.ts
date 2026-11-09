@@ -52,7 +52,7 @@ const searchSortOptions: SortOption[] = [
 
 describe('SortDropdown', () => {
   it('draws a distinct icon in front of every sort field (gallery and search)', async () => {
-    const { container } = render(SortDropdown, {
+    render(SortDropdown, {
       props: {
         sortOptions: searchSortOptions,
         sortBy: 'upload_time',

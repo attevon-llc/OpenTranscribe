@@ -5,7 +5,7 @@
  * classifier that suppresses toasts for "LLM not configured" errors specifically.
  * A wrong branch here shows the wrong spinner or fires an error toast nobody wants.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { handleFileNotification, type FileNotificationContext } from './notificationHandler';
 import type { Notification } from '$stores/websocket';
 

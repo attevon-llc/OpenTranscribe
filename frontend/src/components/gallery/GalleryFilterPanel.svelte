@@ -1,7 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { t } from '$stores/locale';
   import FilterSidebar from '$components/FilterSidebar.svelte';
   import FilterPanelToggle from '$components/ui/FilterPanelToggle.svelte';
   import GalleryHiddenFilter from './GalleryHiddenFilter.svelte';

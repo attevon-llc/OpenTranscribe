@@ -11,7 +11,7 @@
  * made it and the file's voiceprints are off. This is the current state; every change is in
  * the speaker's identity history (`SpeakerIdentityEvent`).
  */
-export interface SpeakerIdentity {
+interface SpeakerIdentity {
   source: 'human' | 'voiceprint' | 'voiceprint_link';
   at?: string | null; // ISO timestamp
   by?: { uuid: string; name?: string | null } | null;
@@ -63,7 +63,7 @@ export interface SpeakerIdentityEvent {
 }
 
 /** Where the CURRENT recommendation in `suggested_name` came from (backend `SpeakerSuggestion`). */
-export interface SpeakerSuggestion {
+interface SpeakerSuggestion {
   source?: string | null; // "voice_match" | "profile_match" | "llm_analysis" | ...
   confidence?: number | null;
   detail?: Record<string, unknown> | null;

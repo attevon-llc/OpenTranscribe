@@ -134,13 +134,13 @@
     if (isSelecting) {
       e.preventDefault();
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
-        galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+        galleryStore.handleMultiSelect(file.uuid, e.shiftKey);
       } else {
         galleryStore.toggleFileSelection(file.uuid);
       }
     } else if (e.ctrlKey || e.metaKey || e.shiftKey) {
       e.preventDefault();
-      galleryStore.handleMultiSelect(file.uuid, e.ctrlKey || e.metaKey, e.shiftKey);
+      galleryStore.handleMultiSelect(file.uuid, e.shiftKey);
     } else {
       e.preventDefault();
       if (navigatingTo) return;
@@ -162,7 +162,7 @@
   function handleCheckboxLabelClick(fileId: string, e: MouseEvent) {
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
       e.preventDefault();
-      galleryStore.handleMultiSelect(fileId, e.ctrlKey || e.metaKey, e.shiftKey);
+      galleryStore.handleMultiSelect(fileId, e.shiftKey);
     }
   }
 

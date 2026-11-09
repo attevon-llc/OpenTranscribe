@@ -11,9 +11,9 @@ import axiosInstance from '$lib/axios';
 const BASE = '/admin/data-integrity';
 
 /** Why a sweep declined to delete: an empty Postgres side, or too large a share to do unasked. */
-export type SweepRefusal = 'empty_valid_set' | 'ratio_guard';
+type SweepRefusal = 'empty_valid_set' | 'ratio_guard';
 
-export interface IndexSweepStats {
+interface IndexSweepStats {
   total_docs: number;
   orphaned_docs: number;
   deleted_docs: number;
@@ -23,7 +23,7 @@ export interface IndexSweepStats {
   rechecked_present: number;
 }
 
-export interface SearchOrphanSummary {
+interface SearchOrphanSummary {
   total_orphans_found: number;
   total_deleted: number;
   dry_run: boolean;
@@ -39,7 +39,7 @@ export interface SearchOrphanReport {
   unavailable: boolean;
 }
 
-export interface StorageOrphanFile {
+interface StorageOrphanFile {
   file_id: number;
   user_id: number;
   objects: number;

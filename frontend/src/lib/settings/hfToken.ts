@@ -6,7 +6,7 @@ import type { HfTokenStatus, HfTokenTestCode } from '$lib/api/hfToken';
 
 const P = 'settings.engineSettings.hfToken';
 
-export type HfTokenBadge = 'app' | 'environment' | 'none' | 'unknown';
+type HfTokenBadge = 'app' | 'environment' | 'none' | 'unknown';
 
 export interface HfTokenView {
   badge: HfTokenBadge;

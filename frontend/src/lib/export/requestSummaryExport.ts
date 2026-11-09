@@ -25,7 +25,7 @@ import axiosInstance from '$lib/axios';
 import { parseContentDispositionFilename } from '$lib/export/contentDisposition';
 
 /** Resolved i18n strings the server renders into the exported document. */
-export interface SummaryExportLabels {
+interface SummaryExportLabels {
   title: string;
   executiveSummary: string;
   briefSummary: string;

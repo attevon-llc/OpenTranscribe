@@ -14,7 +14,6 @@
   import { getCertificateInfo, type CertificateInfo } from '$lib/api/certificate';
 
   let certificate: CertificateInfo | undefined;
-  let loadFailed = false;
 
   onMount(async () => {
     try {
@@ -22,7 +21,6 @@
     } catch {
       // Non-fatal: the rest of the security panel is unaffected, so this
       // degrades to showing nothing rather than breaking the page.
-      loadFailed = true;
     }
   });
 

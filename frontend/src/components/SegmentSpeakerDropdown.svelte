@@ -247,11 +247,6 @@
     closeDropdown();
   }
 
-  function isCurrentSpeaker(speakerUuid: string): boolean {
-    if (!segment.speaker) return false;
-    return segment.speaker.uuid === speakerUuid;
-  }
-
   function renderPortal() {
     if (!portalContainer) return;
 

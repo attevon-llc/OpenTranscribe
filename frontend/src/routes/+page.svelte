@@ -99,10 +99,10 @@
   let error: string | null = null;
 
   // Animation and smooth update state
-  let fileMap = new Map<string, MediaFile>();
+  const fileMap = new Map<string, MediaFile>();
   let pendingNewFiles = new Set<string>();
   let pendingDeletions = new Set<string>();
-  let refreshTimeouts = new Map<string, number>();
+  const refreshTimeouts = new Map<string, number>();
 
   // Scroll container ref for virtual scrolling
   let scrollableContentEl: HTMLElement | null = null;
@@ -137,13 +137,6 @@
 
   // WebSocket subscription
   let unsubscribeFileStatus: (() => void) | undefined;
-
-  // Define WebSocket update type
-  interface FileStatusUpdate {
-    file_id: string;  // UUID
-    status: 'pending' | 'processing' | 'completed' | 'error';
-    progress?: number;
-  }
 
   // Filter state — restore from gallery store for navigation persistence
   let searchQuery: string = $galleryState.filterSearchQuery;
@@ -191,7 +184,7 @@
   }
 
   // Fetch media files with smooth update support and pagination
-  async function fetchFiles(isInitialLoad: boolean = false, skipAnimation: boolean = false) {
+  async function fetchFiles() {
     // Reset pagination on new fetch
     galleryStore.resetPagination();
 
@@ -342,35 +335,6 @@
     });
   }
 
-  // Smooth file list updates without full re-render
-  function updateFilesSmooth(newFiles: MediaFile[]) {
-    const newFileMap = new Map<string, MediaFile>();
-    newFiles.forEach(file => newFileMap.set(file.uuid, file));
-
-    // Identify truly new files (not in current list)
-    const existingIds = new Set(files.map(f => f.uuid));
-    const newIds = newFiles.map(f => f.uuid).filter(uuid => !existingIds.has(uuid));
-
-    // Only mark files as new if this is not an initial load
-    // (Don't highlight on page navigation, only on actual new uploads)
-    if (files.length > 0 && newIds.length > 0) {
-      // Mark new files for entrance animation
-      newIds.forEach(uuid => pendingNewFiles.add(uuid));
-      pendingNewFiles = new Set(pendingNewFiles);
-
-      // Clear new file markers after animation
-      setTimeout(() => {
-        newIds.forEach(uuid => pendingNewFiles.delete(uuid));
-        pendingNewFiles = new Set(pendingNewFiles);
-      }, 600);
-    }
-
-    // Update the files array
-    files = newFiles;
-    galleryStore.setFiles(newFiles);
-    updateFileMap();
-  }
-
   // Add a single new file smoothly to the top
   function addNewFileSmooth(newFile: MediaFile) {
     // Check if file already exists
@@ -426,7 +390,7 @@
     }
 
     const timeoutId = setTimeout(() => {
-      fetchFiles(false, true); // Skip animation for throttled refreshes
+      fetchFiles();
       refreshTimeouts.delete(key);
     }, delay);
 
@@ -509,21 +473,6 @@
 
 
 
-  // Toggle file selection
-  function toggleFileSelection(fileId: string, event: Event) {
-    if (event) {
-      event.stopPropagation();
-      event.preventDefault();
-    }
-
-    galleryStore.toggleFileSelection(fileId);
-  }
-
-  // Select all files
-  function selectAllFiles() {
-    galleryStore.selectAllFiles();
-  }
-
   // Clear selection
   function clearSelection() {
     galleryStore.clearSelection();
@@ -563,7 +512,7 @@
     galleryStore.resetFilters();
 
     // Skip animation when resetting filters to avoid highlighting previously filtered items
-    fetchFiles(false, true);
+    fetchFiles();
   }
 
   // Delete moves the selection to the trash (#1101); the confirmation says for how long.
@@ -588,7 +537,7 @@
           if (restored === null) return;
           if (restored) toastStore.success($t('gallery.undoDone'));
           else toastStore.error($t('gallery.undoFailed'));
-          fetchFiles(false, true);
+          fetchFiles();
         };
         toastStore.show($t('gallery.trashedSuccess', { count: outcome.trashed.length }), 'success', 8000, {
           action: { label: $t('gallery.undo'), onClick: () => void onUndo() },
@@ -943,7 +892,7 @@
 
   // Subscribe to WebSocket file status updates to update file status in real-time
   // Track processed notifications to avoid duplicate processing
-  let processedNotificationIds = new Set<string>();
+  const processedNotificationIds = new Set<string>();
   let previousActiveUploadCount = 0;
   let pendingNotifications: any[] = [];
   let wsFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -968,7 +917,7 @@
     // Process all notifications, collecting updates into fileMap without
     // triggering Svelte reactivity per-notification (prevents freeze with bulk processing)
     let filesUpdated = false;
-    let needsRefreshIds: string[] = [];
+    const needsRefreshIds: string[] = [];
 
     unprocessedNotifications.forEach(notification => {
       if (notification.type === 'file_deleted' && notification.data?.file_id) {
@@ -1156,7 +1105,7 @@
       const id = (event as CustomEvent<{ file_id?: string }>).detail?.file_id;
       if (id && fileMap.has(String(id))) removeFileSmooth(String(id));
     };
-    const handleFileRestored = () => fetchFiles(false, true);
+    const handleFileRestored = () => fetchFiles();
     window.addEventListener('file-trashed', handleFileTrashed);
     window.addEventListener('file-restored', handleFileRestored);
 
@@ -1182,7 +1131,7 @@
       };
       tick().then(() => requestAnimationFrame(tryRestore));
     } else {
-      fetchFiles(true); // Fresh load
+      fetchFiles();
     }
 
     // Setup infinite scroll observer (will observe sentinel via reactive statement)
@@ -1304,9 +1253,9 @@
       openQuarantineModal();
     });
     // A hide, an unhide or a new hidden-files mode (#1102) changes which files this list shows.
-    const unsubscribeHidden = galleryStore.onHiddenChanged(() => fetchFiles(false, true));
+    const unsubscribeHidden = galleryStore.onHiddenChanged(() => fetchFiles());
     // The computed "Legal hold" collection replaces a selected real one (the store cleared its copy).
-    const unsubscribeHeld = galleryStore.onHeldChanged((held) => { if (held) selectedCollectionId = null; fetchFiles(false, true); });
+    const unsubscribeHeld = galleryStore.onHeldChanged((held) => { if (held) selectedCollectionId = null; fetchFiles(); });
 
     const unsubscribeDeleteSelected = galleryStore.onDeleteSelectedTrigger(() => {
       deleteSelectedFiles();

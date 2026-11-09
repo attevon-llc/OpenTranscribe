@@ -6,7 +6,7 @@
  * admins (`/org-admin/support-access`) and a personal-workspace owner
  * (`/users/me/support-access`). All of them 404 outside multi-tenant mode.
  */
-import axiosInstance from '../axios';
+import axiosInstance from '$lib/axios';
 
 export type AccessLevel = 'read' | 'write';
 export type GrantMode = 'approved' | 'break_glass';
@@ -19,7 +19,7 @@ export interface UserRef {
   email: string;
 }
 
-export interface OrgRef {
+interface OrgRef {
   uuid: string;
   name: string;
   slug: string | null;

@@ -14,21 +14,17 @@ import type {
   ExtractionError,
   AudioExtractionConfig,
   VideoMetadata,
-} from '../types/audioExtraction';
-import { DEFAULT_EXTRACTION_CONFIG } from '../types/audioExtraction';
-import {
-  mapFFmpegMetadata,
-  estimateAudioSize,
-  calculateCompressionRatio,
-} from '../utils/metadataMapper';
-import { websocketStore } from '../../stores/websocket';
+} from '$lib/types/audioExtraction';
+import { DEFAULT_EXTRACTION_CONFIG } from '$lib/types/audioExtraction';
+import { calculateCompressionRatio } from '$lib/utils/metadataMapper';
+import { websocketStore } from '$stores/websocket';
 import { get } from 'svelte/store';
 // Hashing runs in a Web Worker so the UI stays responsive. Audio extraction runs on
 // VIDEO files — the largest inputs the app accepts (15 GB limit) — and the previous
 // main-thread `file.arrayBuffer()` + `crypto.subtle.digest` buffered the whole file
 // into memory and blocked the event loop for its duration (issue #302).
 import { fingerprintFile } from '$lib/services/fileFingerprint';
-import { t } from '../../stores/locale';
+import { t } from '$stores/locale';
 import { generateId } from '$lib/utils/ids';
 
 /**
@@ -44,11 +40,6 @@ class AudioExtractionService {
 
   // Event handlers
   private progressHandlers: Set<(progress: ExtractionProgress) => void> = new Set();
-  private errorHandlers: Set<(error: ExtractionError) => void> = new Set();
-
-  // Current extraction tracking for notifications
-  private currentExtractionId: string | null = null;
-  private currentFileName: string | null = null;
 
   // Queue management for sequential processing
   private extractionQueue: Array<{
@@ -615,14 +606,6 @@ class AudioExtractionService {
   }
 
   /**
-   * Register error handler
-   */
-  public onError(handler: (error: ExtractionError) => void): () => void {
-    this.errorHandlers.add(handler);
-    return () => this.errorHandlers.delete(handler);
-  }
-
-  /**
    * Emit progress event and send to notification panel
    */
   private emitProgress(
@@ -651,13 +634,6 @@ class AudioExtractionService {
         silent: false,
       });
     }
-  }
-
-  /**
-   * Emit error event
-   */
-  private emitError(error: ExtractionError): void {
-    this.errorHandlers.forEach((handler) => handler(error));
   }
 
   /**

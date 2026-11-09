@@ -41,7 +41,7 @@ export async function copyToClipboard(
     await navigator.clipboard.writeText(text);
     onSuccess?.();
     return { success: true };
-  } catch (err) {
+  } catch {
     return copyWithFallback(text, onSuccess, onError);
   }
 }
@@ -80,7 +80,7 @@ function copyWithFallback(
     } else {
       throw new Error('execCommand copy failed');
     }
-  } catch (fallbackError) {
+  } catch {
     const error = get(t)('clipboard.operationFailed');
     onError?.(error);
     return { success: false, error };

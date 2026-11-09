@@ -32,7 +32,6 @@
   // State
   let collections: Collection[] = [];
   let sharedCollections: SharedCollection[] = [];
-  let loadingShared = false;
   let showShareModal = false;
   let shareModalCollectionUuid = '';
   let shareModalCollectionName = '';
@@ -191,13 +190,10 @@
 
   // Fetch shared collections
   async function fetchSharedCollections() {
-    loadingShared = true;
     try {
       sharedCollections = await SharingApi.fetchSharedCollections();
     } catch (err: unknown) {
       console.error('Error fetching shared collections:', err);
-    } finally {
-      loadingShared = false;
     }
   }
 

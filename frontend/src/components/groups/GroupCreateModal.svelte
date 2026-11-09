@@ -5,12 +5,9 @@
   import { toastStore } from '$stores/toast';
   import { t } from '$stores/locale';
   import { getErrorMessage } from '$lib/utils/apiError';
-  import BaseModal from '../ui/BaseModal.svelte';
+  import BaseModal from '$components/ui/BaseModal.svelte';
 
   export let isOpen = false;
-  // Kept for callers that pass noBackdrop (not used by BaseModal)
-  export let noBackdrop = false;
-  $: { noBackdrop; }
 
   const dispatch = createEventDispatcher<{
     created: Group;

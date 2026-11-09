@@ -10,9 +10,9 @@ import axiosInstance from '$lib/axios';
 
 export type NoticeType = 'dmca' | 'court_order' | 'abuse_report' | 'aup' | 'other';
 export type StoredNoticeType = NoticeType | 'operator_action';
-export type LinkStatus = 'open' | 'counter_notice' | 'upheld' | 'released';
+type LinkStatus = 'open' | 'counter_notice' | 'upheld' | 'released';
 
-export interface TakedownLink {
+interface TakedownLink {
   uuid: string;
   file_uuid: string;
   /** The live title while the file exists; null once it was purged. */

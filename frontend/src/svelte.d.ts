@@ -6,7 +6,7 @@ declare module '*.svelte' {
 
 // Custom event types for Svelte actions
 declare namespace svelteHTML {
-  interface HTMLAttributes<T> {
+  interface HTMLAttributes<_T> {
     'on:click_outside'?: (event: CustomEvent) => void;
   }
 }

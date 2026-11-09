@@ -3,7 +3,6 @@ backend/app/api/endpoints/user_settings_audio_extraction.py	1	pre-existing dupli
 backend/app/api/endpoints/user_settings_recording.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/auth/audit.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/auth/oidc/config.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/app/auth/pki_provisioning.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/auth/saml/config.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/db/schema_detect/auth_identity.py	10	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/db/schema_detect/ingest_tenancy.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -17,7 +16,6 @@ backend/app/models/user_media_source.py	1	pre-existing duplicated blocks of 100+
 backend/app/schemas/processing_request.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/gdpr_erasure_steps.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/llm_reasoning.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/app/services/opensearch_service/indices.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/opensearch_service/speaker_write.py	6	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/search/chunking_service.py	8	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/search/hybrid_search_service.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
@@ -25,8 +23,6 @@ backend/app/services/search/indexing_service.py	2	pre-existing duplicated blocks
 backend/app/services/search/summary_plane_search.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/search/summary_search.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/services/user_deletion_service.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/app/tasks/embedding_consistency_repair.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-backend/app/tasks/transcription/pipelines.py	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/app/utils/task_utils.py	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/endpoints/test_admin_auth_config_audit_routes.py	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 backend/tests/api/endpoints/test_admin_auth_config_routes.py	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

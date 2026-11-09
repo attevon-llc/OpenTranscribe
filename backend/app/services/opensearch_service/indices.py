@@ -22,6 +22,46 @@ from app.services.search.availability_field import AVAILABILITY_MAPPING
 logger = logging.getLogger(__name__)
 
 
+def _speaker_index_body(dimension: int) -> dict:
+    """Settings and mappings shared by every versioned speaker index (v3 and v4)."""
+    return {
+        "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0, "knn": True}},
+        "mappings": {
+            "properties": {
+                "document_type": {"type": "keyword"},
+                "speaker_id": {"type": "integer"},
+                "speaker_uuid": {"type": "keyword"},
+                "profile_id": {"type": "integer"},
+                "profile_uuid": {"type": "keyword"},
+                "profile_name": {"type": "keyword"},
+                "user_id": {"type": "integer"},
+                # Tenant scope (cloud-edition seam; absent on personal docs)
+                "organization_id": {"type": "integer"},
+                # Trash state of the per-file voiceprint's file (#1101)
+                AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
+                "name": {"type": "keyword"},
+                "display_name": {"type": "keyword"},
+                "collection_ids": {"type": "integer"},
+                "media_file_id": {"type": "integer"},
+                "segment_count": {"type": "integer"},
+                "speaker_count": {"type": "integer"},
+                "created_at": {"type": "date"},
+                "updated_at": {"type": "date"},
+                "embedding": {
+                    "type": "knn_vector",
+                    "dimension": dimension,
+                    "method": {
+                        "name": "hnsw",
+                        "space_type": "cosinesimil",
+                        "engine": "lucene",
+                        "parameters": {"ef_construction": 128, "m": 24},
+                    },
+                },
+            }
+        },
+    }
+
+
 def _ensure_versioned_speaker_index(index_name: str, dimension: int) -> None:
     """Create a versioned speaker index if it doesn't exist."""
     if not _client.opensearch_client:
@@ -29,43 +69,9 @@ def _ensure_versioned_speaker_index(index_name: str, dimension: int) -> None:
     try:
         if _client.opensearch_client.indices.exists(index=index_name):
             return
-        config = {
-            "settings": {"index": {"number_of_shards": 1, "number_of_replicas": 0, "knn": True}},
-            "mappings": {
-                "properties": {
-                    "document_type": {"type": "keyword"},
-                    "speaker_id": {"type": "integer"},
-                    "speaker_uuid": {"type": "keyword"},
-                    "profile_id": {"type": "integer"},
-                    "profile_uuid": {"type": "keyword"},
-                    "profile_name": {"type": "keyword"},
-                    "user_id": {"type": "integer"},
-                    # Tenant scope (cloud-edition seam; absent on personal docs)
-                    "organization_id": {"type": "integer"},
-                    # Trash state of the per-file voiceprint's file (#1101)
-                    AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
-                    "name": {"type": "keyword"},
-                    "display_name": {"type": "keyword"},
-                    "collection_ids": {"type": "integer"},
-                    "media_file_id": {"type": "integer"},
-                    "segment_count": {"type": "integer"},
-                    "speaker_count": {"type": "integer"},
-                    "created_at": {"type": "date"},
-                    "updated_at": {"type": "date"},
-                    "embedding": {
-                        "type": "knn_vector",
-                        "dimension": dimension,
-                        "method": {
-                            "name": "hnsw",
-                            "space_type": "cosinesimil",
-                            "engine": "lucene",
-                            "parameters": {"ef_construction": 128, "m": 24},
-                        },
-                    },
-                }
-            },
-        }
-        _client.opensearch_client.indices.create(index=index_name, body=config)
+        _client.opensearch_client.indices.create(
+            index=index_name, body=_speaker_index_body(dimension)
+        )
         logger.info(f"Created versioned speaker index: {index_name} (dim={dimension})")
     except CLUSTER_UNAVAILABLE_ERRORS as e:
         logger.error(f"Error creating speaker index {index_name}: {e}")
@@ -340,53 +346,9 @@ def create_speaker_index_v4(index_name: str | None = None) -> bool:
             logger.info(f"V4 speaker index already exists: {index_name}")
             return True
 
-        speaker_index_config = {
-            "settings": {
-                "index": {
-                    "number_of_shards": 1,
-                    "number_of_replicas": 0,
-                    "knn": True,
-                }
-            },
-            "mappings": {
-                "properties": {
-                    "document_type": {"type": "keyword"},
-                    "speaker_id": {"type": "integer"},
-                    "speaker_uuid": {"type": "keyword"},
-                    "profile_id": {"type": "integer"},
-                    "profile_uuid": {"type": "keyword"},
-                    "profile_name": {"type": "keyword"},
-                    "user_id": {"type": "integer"},
-                    # Tenant scope (cloud-edition seam; absent on personal docs)
-                    "organization_id": {"type": "integer"},
-                    # Trash state of the per-file voiceprint's file (#1101)
-                    AVAILABILITY_FIELD: AVAILABILITY_MAPPING,
-                    "name": {"type": "keyword"},
-                    "display_name": {"type": "keyword"},
-                    "collection_ids": {"type": "integer"},
-                    "media_file_id": {"type": "integer"},
-                    "segment_count": {"type": "integer"},
-                    "speaker_count": {"type": "integer"},
-                    "created_at": {"type": "date"},
-                    "updated_at": {"type": "date"},
-                    "embedding": {
-                        "type": "knn_vector",
-                        "dimension": PYANNOTE_EMBEDDING_DIMENSION_V4,  # 256-dim for v4
-                        "method": {
-                            "name": "hnsw",
-                            "space_type": "cosinesimil",
-                            "engine": "lucene",
-                            "parameters": {
-                                "ef_construction": 128,
-                                "m": 24,
-                            },
-                        },
-                    },
-                }
-            },
-        }
-
-        _client.opensearch_client.indices.create(index=index_name, body=speaker_index_config)
+        _client.opensearch_client.indices.create(
+            index=index_name, body=_speaker_index_body(PYANNOTE_EMBEDDING_DIMENSION_V4)
+        )
         logger.info(f"Created v4 speaker index: {index_name}")
         return True
 

@@ -25,6 +25,8 @@ from app.services.search.reindex_cancel import read_fanout
 from app.services.search.reindex_cancel import request_cancel
 from app.services.search.reindex_lock import ReindexLockUnavailableError
 from app.services.search.reindex_lock import running_reindex_run_id as _running_reindex_run_id
+from app.services.search_reindex_queries import count_indexable_files
+from app.services.search_reindex_queries import titles_for_uuids
 
 logger = logging.getLogger(__name__)
 
@@ -249,8 +251,6 @@ def get_degraded_embeddings(
     request's bypass sees the whole scope). A single-tenant deployment lists everything.
     """
     from app.db.session_utils import session_scope
-    from app.models.media import MediaFile
-    from app.services.permission_service import org_scope_pred
     from app.services.search.embedding_provenance import survey_degraded_files
 
     files, truncated = survey_degraded_files(limit=limit)
@@ -267,12 +267,13 @@ def get_degraded_embeddings(
     single_tenant = ctx.bypass.mode is TenancyMode.SINGLE
     file_uuids = [f.file_uuid for f in files]
     with session_scope() as db:
-        query = db.query(MediaFile.uuid, MediaFile.filename).filter(MediaFile.uuid.in_(file_uuids))
-        if not single_tenant:
-            query = query.filter(org_scope_pred(MediaFile.organization_id, ctx.org_id))
-            if not ctx.bypass.sees_all_in_scope:
-                query = query.filter(MediaFile.user_id == current_user.id)
-        titles = {str(row[0]): row[1] for row in query.all()}
+        titles = titles_for_uuids(
+            db,
+            file_uuids,
+            organization_id=ctx.org_id,
+            owner_user_id=None if ctx.bypass.sees_all_in_scope else current_user.id,
+            tenant_scoped=not single_tenant,
+        )
 
     # Single-tenant: every surveyed file is listed, an unknown one under its uuid.
     listed = [f for f in files if single_tenant or f.file_uuid in titles]
@@ -352,33 +353,16 @@ def reindex_status(
     Returns:
         Dict with total_files, indexed_files, pending info, current model.
     """
-    from sqlalchemy import exists
-    from sqlalchemy import select
 
     from app.db.session_utils import session_scope
-    from app.models.media import FileStatus
-    from app.models.media import MediaFile
-    from app.models.media import TranscriptSegment
     from app.services.opensearch_service import opensearch_client
     from app.services.search.settings_service import get_search_embedding_settings
     from app.services.search.tenant_scope import org_filter_clauses
-    from app.utils.db_helpers import owned_in_tenant
 
     current_user = ctx.user
     with session_scope() as db:
         # Only count completed files that have transcript segments (indexable)
-        has_segments = exists(
-            select(TranscriptSegment.id).where(TranscriptSegment.media_file_id == MediaFile.id)
-        )
-        total_files = (
-            db.query(MediaFile)
-            .filter(
-                owned_in_tenant(MediaFile, user_id=current_user.id, organization_id=ctx.org_id),
-                MediaFile.status == FileStatus.COMPLETED,
-                has_segments,
-            )
-            .count()
-        )
+        total_files = count_indexable_files(db, user_id=current_user.id, organization_id=ctx.org_id)
 
     # Count indexed files in OpenSearch chunks index (skip redundant exists check)
     indexed_files = 0

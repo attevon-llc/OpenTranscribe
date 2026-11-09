@@ -10,9 +10,7 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Request
 from fastapi import status
-from sqlalchemy import func
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
 
 from app.api.deps_context import get_current_context
 from app.auth.audit import audit_logger
@@ -34,6 +32,13 @@ from app.schemas.group import GroupMemberUpdate
 from app.schemas.group import GroupUpdate
 from app.schemas.user import UserBrief
 from app.services.group_file_index_service import reindex_group_shared_files
+from app.services.group_queries import count_members
+from app.services.group_queries import get_membership
+from app.services.group_queries import group_name_taken
+from app.services.group_queries import list_groups_for_member
+from app.services.group_queries import list_members_with_users
+from app.services.group_queries import member_counts_by_group
+from app.services.group_queries import roles_by_group
 from app.services.request_context import RequestContext
 from app.services.uuid_helpers import get_by_uuid
 from app.services.uuid_helpers import require_resource_owner
@@ -98,15 +103,7 @@ def _same_tenant(db: Session, user_id: int, ctx: RequestContext) -> bool:
 
 def _get_membership(db: Session, group_id: int, user_id: int) -> UserGroupMember | None:
     """Get a user's membership record in a group."""
-    result: UserGroupMember | None = (
-        db.query(UserGroupMember)
-        .filter(
-            UserGroupMember.group_id == group_id,
-            UserGroupMember.user_id == user_id,
-        )
-        .first()
-    )
-    return result
+    return get_membership(db, group_id, user_id)
 
 
 def _require_group_admin(db: Session, group: UserGroup, user_id: int) -> UserGroupMember:
@@ -139,7 +136,7 @@ def _reindex_group_shared_files(db: Session, group_id: int) -> None:
 
 def _build_group_response(db: Session, group: UserGroup, current_user_id: int) -> GroupSchema:
     """Build a Group response schema with computed fields."""
-    member_count = db.query(UserGroupMember).filter(UserGroupMember.group_id == group.id).count()
+    member_count = count_members(db, group.id)
     my_membership = _get_membership(db, group.id, current_user_id)
     my_role = my_membership.role if my_membership else None
 
@@ -170,17 +167,8 @@ def list_groups(
     # Membership already limits this to the caller's own groups; the tenant term (v388)
     # additionally keeps an org-context session from listing personal-scope groups and
     # vice versa, so switching scope switches which groups exist.
-    tenant_term = (
-        UserGroup.organization_id == ctx.org_id
-        if ctx.is_org_context
-        else UserGroup.organization_id.is_(None)
-    )
-    groups = (
-        db.query(UserGroup)
-        .join(UserGroupMember, UserGroupMember.group_id == UserGroup.id)
-        .options(joinedload(UserGroup.owner))
-        .filter(UserGroupMember.user_id == current_user.id, tenant_term)
-        .all()
+    groups = list_groups_for_member(
+        db, current_user.id, organization_id=ctx.org_id if ctx.is_org_context else None
     )
 
     if not groups:
@@ -189,24 +177,10 @@ def list_groups(
     group_ids = [g.id for g in groups]
 
     # Batch: member counts per group
-    count_rows = (
-        db.query(UserGroupMember.group_id, func.count(UserGroupMember.id))
-        .filter(UserGroupMember.group_id.in_(group_ids))
-        .group_by(UserGroupMember.group_id)
-        .all()
-    )
-    counts = {gid: cnt for gid, cnt in count_rows}
+    counts = member_counts_by_group(db, group_ids)
 
     # Batch: current user's role per group
-    role_rows = (
-        db.query(UserGroupMember.group_id, UserGroupMember.role)
-        .filter(
-            UserGroupMember.group_id.in_(group_ids),
-            UserGroupMember.user_id == current_user.id,
-        )
-        .all()
-    )
-    roles = {gid: role for gid, role in role_rows}
+    roles = roles_by_group(db, group_ids, current_user.id)
 
     results = []
     for group in groups:
@@ -244,15 +218,7 @@ def create_group(
     # create pass this check and then die on an IntegrityError — a 500 in place of the 400.
     # So a group name is unique per owner across all of their tenants; widening that is a
     # separate schema decision, not something to imply here.
-    existing = (
-        db.query(UserGroup)
-        .filter(
-            UserGroup.owner_id == current_user.id,
-            UserGroup.name == group_in.name,
-        )
-        .first()
-    )
-    if existing:
+    if group_name_taken(db, current_user.id, group_in.name):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Group with name '{group_in.name}' already exists",
@@ -305,12 +271,7 @@ def get_group(
         )
 
     # Load members with user info
-    members_db = (
-        db.query(UserGroupMember)
-        .options(joinedload(UserGroupMember.user))
-        .filter(UserGroupMember.group_id == group.id)
-        .all()
-    )
+    members_db = list_members_with_users(db, group.id)
 
     members = []
     for m in members_db:
@@ -360,21 +321,14 @@ def update_group(
     update_data = group_update.model_dump(exclude_unset=True)
 
     # Check name uniqueness if changing name
-    if "name" in update_data and update_data["name"] != group.name:
-        existing = (
-            db.query(UserGroup)
-            .filter(
-                UserGroup.owner_id == group.owner_id,
-                UserGroup.name == update_data["name"],
-                UserGroup.id != group.id,
-            )
-            .first()
+    renaming = "name" in update_data and update_data["name"] != group.name
+    if renaming and group_name_taken(
+        db, group.owner_id, update_data["name"], exclude_group_id=group.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Group with name '{update_data['name']}' already exists",
         )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Group with name '{update_data['name']}' already exists",
-            )
 
     for field, value in update_data.items():
         setattr(group, field, value)

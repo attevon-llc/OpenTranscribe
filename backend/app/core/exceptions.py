@@ -28,7 +28,20 @@ class OpenTranscribeError(Exception):
 
 
 class StorageError(OpenTranscribeError):
-    """MinIO/S3 storage operation failures."""
+    """MinIO/S3 storage operation failures.
+
+    Raised by ``services/minio_service`` with ``raise ... from exc`` so the library
+    exception stays on ``__cause__``. A missing object is not this: ``download_file`` keeps
+    raising ``FileNotFoundError`` for it, which callers map to a 404.
+    """
+
+
+class StorageUnavailableError(StorageError):
+    """The store gave no usable answer: connection or DNS failure, timeout, or a 5xx.
+
+    Distinct from a plain :class:`StorageError` (the store answered and refused, e.g.
+    ``AccessDenied``) so a caller can retry or degrade on an outage but not on a refusal.
+    """
 
 
 class SearchIndexError(OpenTranscribeError):
@@ -37,6 +50,18 @@ class SearchIndexError(OpenTranscribeError):
 
 class LLMServiceError(OpenTranscribeError):
     """LLM provider communication failures."""
+
+
+class LLMUnavailableError(LLMServiceError):
+    """The provider could not be reached or did not answer in time (connect, timeout, network)."""
+
+
+class LLMResponseError(LLMServiceError):
+    """The provider answered but the answer is unusable: non-200, bad JSON, or no content.
+
+    The message carries the status or the shape problem only, never the response body,
+    which can echo the prompt (transcript text).
+    """
 
 
 class ASRConfigurationError(OpenTranscribeError):

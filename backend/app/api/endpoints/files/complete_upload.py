@@ -36,6 +36,7 @@ from urllib3.exceptions import HTTPError
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
 from app.core.exceptions import DomainError
+from app.core.exceptions import StorageError
 from app.core.locked_settings import effective_whisper_model
 from app.db.base import get_db
 from app.legal.processing_gate import check_processing_allowed_for_file
@@ -376,7 +377,7 @@ def complete_upload(
             logger.warning(f"Rejecting presigned upload {request.file_id}: {validation_detail}")
             try:
                 delete_file(storage_path)
-            except Exception:  # delete_file wraps every storage failure in a bare Exception
+            except StorageError:
                 logger.exception("cleanup of rejected object failed (non-fatal)")
             db.delete(db_file)
             db.commit()

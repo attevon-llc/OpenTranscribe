@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.core.exceptions import DomainError
+from app.core.exceptions import StorageError
 from app.db.base import get_db
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerCluster
@@ -268,7 +269,7 @@ def get_speaker_media_preview(
                 expires=ctx.bypass.presign_ttl(settings.MEDIA_URL_EXPIRE_SECONDS),
                 content_type=source.content_type,
             )
-        except Exception:  # get_file_url wraps every failure in a bare Exception
+        except StorageError:
             logger.exception("Failed to generate presigned URL for %s", source.object_name)
 
     best_seg = longest_segment_of_speaker(db, speaker.id)

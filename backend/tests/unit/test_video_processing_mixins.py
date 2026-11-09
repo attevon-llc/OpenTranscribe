@@ -15,6 +15,7 @@ from typing import cast
 
 import pytest
 
+from app.core.exceptions import StorageError
 from app.core.redaction_config import EffectiveRedactionConfig
 from app.services import audio_extraction
 from app.services.audio_extraction import AudioExtractionMixin
@@ -62,7 +63,7 @@ class _Storage:
 
     def stat_object(self, bucket: str, key: str) -> SimpleNamespace:
         if key not in self.cached:
-            raise FileNotFoundError(key)
+            raise StorageError("Storage error while reading object stats: NoSuchKey")
         return SimpleNamespace(content_type=self.cached[key])
 
 

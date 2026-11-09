@@ -395,3 +395,6 @@ The three rules are in `backend/app/services/transcript_document/CLAUDE.md` ("Ex
 - Docs: `docs-site/docs/features/llm-integration.md`,
   `docs-site/docs/features/transcription.md`,
   `docs-site/docs/configuration/neural-search-setup.md`.
+
+
+**Typed errors:** `MinIOService` raises `StorageError` / `StorageUnavailableError`, `LLMService` raises `LLMUnavailableError` / `LLMResponseError`; narrow callers to these, never `Exception`.

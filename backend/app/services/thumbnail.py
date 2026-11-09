@@ -235,8 +235,6 @@ def generate_and_upload_thumbnail(
 
         return storage_path
 
-    except (
-        Exception
-    ) as e:  # boundary: minio_service.upload_file wraps client failures in a bare Exception
+    except Exception as e:  # per-item boundary: a thumbnail failure never fails the upload
         logger.exception(f"Error generating and uploading thumbnail: {str(e)}")
         return None

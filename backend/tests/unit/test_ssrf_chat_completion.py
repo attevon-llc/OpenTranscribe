@@ -323,7 +323,7 @@ class TestRedirectsAreNotFollowed:
         try:
             # `match=`, not a bare `Exception`: a bare one is satisfied by a typo in the
             # setup line above just as well as by the refusal this test claims to prove.
-            with pytest.raises(Exception, match=r"LLM API error: 302"):
+            with pytest.raises(Exception, match=r"LLM API error: HTTP 302"):
                 service.chat_completion([{"role": "user", "content": "hi"}])
         finally:
             service.close()

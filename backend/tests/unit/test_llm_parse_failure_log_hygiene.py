@@ -20,6 +20,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.core.exceptions import LLMResponseError
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
@@ -150,7 +151,7 @@ def test_non_json_http_body_logs_no_content(monkeypatch, caplog):
     service = _service(LLMProvider.OPENAI, body, monkeypatch)
     caplog.set_level(logging.DEBUG)
 
-    with pytest.raises(Exception, match="Invalid JSON response"):
+    with pytest.raises(LLMResponseError, match="not valid JSON"):
         service.chat_completion([{"role": "user", "content": "hi"}])
 
     _assert_no_leak(caplog, fingerprint_of=body)

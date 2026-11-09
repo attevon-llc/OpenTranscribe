@@ -16,7 +16,7 @@ _ABSENT_S3_CODES = frozenset({"NoSuchKey", "NoSuchBucket", "ResourceNotFound"})
 def is_absent_error(exc: BaseException) -> bool:
     """True when ``exc`` (or anything in its cause chain) is a definite "object absent" answer.
 
-    ``MinIOService`` wraps every client failure in a plain ``Exception`` and keeps the real
+    ``MinIOService`` wraps every client failure in a ``StorageError`` and keeps the real
     ``S3Error`` only in ``__cause__``, so the chain is walked. Connection errors, timeouts,
     5xx and AccessDenied are NOT absence: the storage did not answer the question.
     """

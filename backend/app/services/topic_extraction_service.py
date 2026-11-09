@@ -26,6 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.enums import PostProcessingTask
+from app.core.exceptions import LLMServiceError
 from app.core.languages import DEFAULT_LLM_OUTPUT_LANGUAGE
 from app.core.languages import LLM_OUTPUT_LANGUAGES
 from app.db.session_utils import session_scope
@@ -36,7 +37,9 @@ from app.schemas.topic import LLMSuggestionResponse
 from app.services import post_processing_status
 from app.services.file_provenance import llm_facts
 from app.services.file_provenance import record_stage
+from app.services.llm_budget import LLMBudgetExceededError
 from app.services.llm_service import LLMConfigurationError
+from app.services.llm_service import LLMEndpointBlockedError
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMProvider
 from app.services.redaction.config import EffectiveRedactionConfig
@@ -628,7 +631,7 @@ IMPORTANT GUIDELINES:
             # Parse response
             return self._parse_llm_response(response.content, llm_service.config.provider)
 
-        except Exception as e:  # LLMService wraps provider failures in a bare Exception
+        except (LLMServiceError, LLMEndpointBlockedError, LLMBudgetExceededError) as e:
             logger.exception(f"Error calling LLM for suggestion extraction: {e}")
             return None
 

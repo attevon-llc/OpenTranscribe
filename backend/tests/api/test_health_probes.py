@@ -14,6 +14,7 @@ import httpx
 import pytest
 from anyio import to_thread
 from sqlalchemy import create_engine
+from sqlalchemy.pool import QueuePool
 
 from app.api import health
 from app.core.config import settings
@@ -54,7 +55,24 @@ async def test_liveness_answers_with_the_database_unreachable(monkeypatch):
     assert set(r.json()) == {"status", "version"}
 
 
-async def test_readiness_answers_while_the_request_pool_is_exhausted():
+async def test_readiness_answers_while_the_request_pool_is_exhausted(monkeypatch):
+    # A small pool exhausts exactly like the production one, but takes 3 server connections, not
+    # 30: under xdist the shared suite Postgres runs out of max_connections otherwise ("too many
+    # clients"), which made this test depend on what the other workers were doing.
+    pool_size, max_overflow = 2, 1
+    monkeypatch.setattr(settings, "DB_POOL_SIZE", pool_size)
+    monkeypatch.setattr(settings, "DB_MAX_OVERFLOW", max_overflow)
+    cargs, cparams = engine.dialect.create_connect_args(engine.url)
+    small_pool = QueuePool(
+        lambda: engine.dialect.connect(*cargs, **cparams),
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+    )
+    monkeypatch.setattr(engine, "pool", small_pool)
+    # OpenSearch and MinIO are not what this test measures; their real probes resolve unreachable
+    # hostnames in a bare test env and cost 0.4-0.7 s, which swamped the 0.5 s bound below.
+    monkeypatch.setattr(health, "_probe_opensearch", lambda: "ok")
+    monkeypatch.setattr(health, "_probe_minio", lambda: "ok")
     capacity = settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW
     with contextlib.ExitStack() as stack:
         for _ in range(capacity):

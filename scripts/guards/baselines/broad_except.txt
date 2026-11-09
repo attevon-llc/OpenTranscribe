@@ -480,12 +480,6 @@ backend/app/services/search/collapsed_search.py::_backfill_starved_groups#1	1	re
 backend/app/services/search/collapsed_search.py::_search_with_collapse#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/search/hybrid_search_service.py::HybridSearchService._check_neural_search_available#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/search/hybrid_search_service.py::HybridSearchService._get_neural_model_id#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/search/index_admin.py::_apply_pending_additive_steps#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/search/index_admin.py::_check_index_version#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/search/index_admin.py::ensure_chunks_index_exists#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/search/index_admin.py::recreate_index_for_dimension#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/search/index_admin.py::recreate_index_for_dimension#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/search/index_admin.py::survey_speaker_id_coverage#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/search/index_health.py::clear_corruption_notice#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/search/index_health.py::rebuild_chunks_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/search/indexing/bulk.py::BulkIndexMixin._retry_failed_docs#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

@@ -80,6 +80,45 @@ function scanFields(src: WatchSource) {
   };
 }
 
+/** The form a new source opens with; the caller picks the initial type (local needs a mount). */
+export function blankWatchSourceForm(sourceType: SourceType): WatchSourceForm {
+  return {
+    name: '',
+    source_type: sourceType,
+    is_enabled: true,
+    local_path: '',
+    delete_after_import: false,
+    s3_endpoint_url: '',
+    s3_bucket_name: '',
+    s3_prefix: '',
+    s3_region: '',
+    s3_access_key_id: '',
+    s3_secret_key: '',
+    s3_use_ssl: true,
+    smb_server: '',
+    smb_share: '',
+    smb_path: '/',
+    smb_username: '',
+    smb_password: '',
+    smb_domain: '',
+    smb_port: 445,
+    polling_interval_minutes: 15,
+    use_fs_events: false,
+    file_extensions: '',
+    skip_files_older_than_days: 30,
+    recursive: true,
+    auto_transcribe: true,
+    // Blank = use the owner's saved speaker range (issue #1198).
+    min_speakers: null,
+    max_speakers: null,
+    multipart_enabled: false,
+    multipart_regex: DEFAULT_MULTIPART_REGEX,
+    multipart_time_window_hours: 24,
+    multipart_wait_scans: 3,
+    upload_stitched_to_source: false,
+  };
+}
+
 function multipartFields(src: WatchSource) {
   return {
     multipart_enabled: src.multipart_enabled,

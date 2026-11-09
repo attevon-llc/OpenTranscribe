@@ -24,6 +24,10 @@ from sqlalchemy.orm import sessionmaker
 if TYPE_CHECKING:
     from tests.testrun_marker import LiveRunMarker
 
+# Shell tests run opentr.sh from the checkout root; without this it links the main checkout's
+# .env into a worktree and leaves the link behind (see tests/unit/test_opentr_dry_run_and_identity.py).
+os.environ.setdefault("OPENTR_NO_ENV_LINK", "1")
+
 # Add backend directory to Python path for imports
 _backend_dir = Path(__file__).parent.parent
 if str(_backend_dir) not in sys.path:

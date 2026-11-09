@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# opentr.sh links the main checkout's .env into a worktree it runs in; the shell tests run it
+# from the checkout root, so they would litter the worktree. This opts the whole process out.
+os.environ.setdefault("OPENTR_NO_ENV_LINK", "1")
 
 
 INSTALLER = REPO_ROOT / "setup-opentranscribe.sh"

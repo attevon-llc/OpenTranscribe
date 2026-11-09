@@ -595,6 +595,9 @@ LIBRARY_CONSUMED_COMPOSE_ENV: dict[str, str] = {
     "PYANNOTE_METRICS_ENABLED": "pyannote telemetry switch (app/core/privacy_env.py)",
     "HF_HUB_DISABLE_TELEMETRY": "huggingface_hub telemetry switch (app/core/privacy_env.py)",
     "DENO_NO_UPDATE_CHECK": "deno update-check switch for yt-dlp's JS runtime",
+    "UVICORN_WORKERS": "uvicorn CLI reads it (click auto_envvar_prefix=UVICORN) via backend/scripts/api-start.sh",
+    "UVICORN_TIMEOUT_WORKER_HEALTHCHECK": "uvicorn CLI reads it (click auto_envvar_prefix=UVICORN) via backend/scripts/api-start.sh",
+    "UVICORN_TIMEOUT_GRACEFUL_SHUTDOWN": "uvicorn CLI reads it (click auto_envvar_prefix=UVICORN) via backend/scripts/api-start.sh",
 }
 
 

@@ -66,28 +66,37 @@
 
   // The modal renders itself only while the store says open, and mounts already open, so a
   // deep link or event that opens settings before the chunk lands is not lost.
-  $: if ($isAuthenticated && !lifecycleHold && $settingsModalStore.isOpen && !SettingsModal) {
+  function ensureSettingsModal(wanted: boolean) {
+    if (!wanted || SettingsModal) return;
     void loadSettingsModal().then((m) => (SettingsModal = m.default));
     if (!SettingsModalShell) void loadSettingsModalShell().then((m) => (SettingsModalShell = m.default));
   }
+  $: ensureSettingsModal($isAuthenticated && !lifecycleHold && $settingsModalStore.isOpen);
+
   // The real modal skips its enter animation when it takes over from the shell.
-  $: if ($settingsModalStore.isOpen && SettingsModalShell && !SettingsModal) shellShown = true;
-  $: if (!$settingsModalStore.isOpen) shellShown = false;
+  function syncShellShown(open: boolean, shell: Component<any> | null, modal: Component<any> | null) {
+    if (!open) shellShown = false;
+    else if (shell && !modal) shellShown = true;
+  }
+  $: syncShellShown($settingsModalStore.isOpen, SettingsModalShell, SettingsModal);
 
   // Warm the shell, the modal and the default section once the browser is idle after sign-in, so
   // the first open does not wait on the network. The user menu warms them again on hover/focus.
   let settingsPrefetchScheduled = false;
-  $: if ($isAuthenticated && !lifecycleHold && !settingsPrefetchScheduled) {
+  function scheduleSettingsPrefetch(ready: boolean) {
+    if (!ready || settingsPrefetchScheduled) return;
     settingsPrefetchScheduled = true;
     whenIdle(() => prefetchSettingsModal());
   }
+  $: scheduleSettingsPrefetch($isAuthenticated && !lifecycleHold);
   // Warm the JS of every destination the navbar and the gallery lead to. SvelteKit's own
   // `data-sveltekit-preload-code="eager"` is not enough here: it scans the DOM once per
   // navigation, and the navbar only exists after auth resolves, so those links are missed until
   // the first click, which is the click that needs it. A click on Search/Chat/a file then finds
   // its route chunks already in the cache instead of fetching them (and their imports) in series.
   let routePrefetchScheduled = false;
-  $: if ($isAuthenticated && !lifecycleHold && $capabilities.loaded && !routePrefetchScheduled) {
+  function scheduleRoutePrefetch(ready: boolean) {
+    if (!ready || routePrefetchScheduled) return;
     routePrefetchScheduled = true;
     const routes: RouteId[] = ["/search", "/speakers", "/files/[id]", "/file-status"];
     if (isCapabilityEnabled($capabilities, "chat.rag")) routes.push("/chat/[[conversationId]]");
@@ -98,32 +107,41 @@
       for (const route of routes) void preloadCode(route).catch(() => {});
     }, 600);
   }
+  $: scheduleRoutePrefetch($isAuthenticated && !lifecycleHold && $capabilities.loaded);
   // The wizard only acts for the bootstrap super_admin (it checks completion on mount), and
   // Settings can only re-open it for that same role.
-  $: if ($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin' && !FirstRunWizard) {
+  function ensureFirstRunWizard(wanted: boolean) {
+    if (!wanted || FirstRunWizard) return;
     void import("../components/FirstRunWizard.svelte").then((m) => (FirstRunWizard = m.default));
   }
+  $: ensureFirstRunWizard($isAuthenticated && !lifecycleHold && $user?.role === 'super_admin');
   // Lazy: the banner only matters while an erasure request is open (self-service erasure, #1354).
-  $: if ($isAuthenticated && !lifecycleHold && !ErasureRequestBanner) {
+  function ensureErasureBanner(wanted: boolean) {
+    if (!wanted || ErasureRequestBanner) return;
     void import("../components/ErasureRequestBanner.svelte").then(
       (m) => (ErasureRequestBanner = m.default)
     );
   }
+  $: ensureErasureBanner($isAuthenticated && !lifecycleHold);
   // Lazy: only a public demo deployment ever shows it (#628).
   function loadDemoBanner() {
     if (DemoBanner) return;
     void import("$components/demo/DemoBanner.svelte").then((m) => (DemoBanner = m.default));
   }
   $: if ($demoMode) loadDemoBanner();
-  $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && !QuotaExceededModal) {
-    void import("$lib/cloud/components/QuotaExceededModal.svelte").then((m) => (QuotaExceededModal = m.default));
+  function ensureCloudModals(signedIn: boolean, externalToken: boolean) {
+    if (!isCloudEdition || !signedIn) return;
+    if (!QuotaExceededModal) {
+      void import("$lib/cloud/components/QuotaExceededModal.svelte").then((m) => (QuotaExceededModal = m.default));
+    }
+    if (!LegalGateModal) {
+      void import("$lib/cloud/components/LegalGateModal.svelte").then((m) => (LegalGateModal = m.default));
+    }
+    if (externalToken && !IdleTimeoutDialog) {
+      void import("../components/IdleTimeoutDialog.svelte").then((m) => (IdleTimeoutDialog = m.default));
+    }
   }
-  $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && !LegalGateModal) {
-    void import("$lib/cloud/components/LegalGateModal.svelte").then((m) => (LegalGateModal = m.default));
-  }
-  $: if (isCloudEdition && $isAuthenticated && !lifecycleHold && $token === 'external' && !IdleTimeoutDialog) {
-    void import("../components/IdleTimeoutDialog.svelte").then((m) => (IdleTimeoutDialog = m.default));
-  }
+  $: ensureCloudModals($isAuthenticated && !lifecycleHold, $token === 'external');
 
   /**
    * Routes reachable without a session — the ONE definition.
@@ -165,10 +183,12 @@
   // once the session and the tenancy mode are both known; it clears silently if the grant
   // is no longer active or the deployment is not multi-tenant.
   let supportRestoreTried = false;
-  $: if ($isAuthenticated && $capabilities.loaded && !supportRestoreTried) {
+  function restoreSupportSession(ready: boolean) {
+    if (!ready || supportRestoreTried) return;
     supportRestoreTried = true;
     void supportSession.restore();
   }
+  $: restoreSupportSession($isAuthenticated && $capabilities.loaded);
 
   // Classification banner state
   let bannerEnabled = false;
@@ -176,9 +196,11 @@
   // Needed only on deployments that enable the banner, so it is fetched when that is known
   // rather than shipped to every visitor with the layout.
   let ClassificationBanner: Component<any> | null = null;
-  $: if (bannerEnabled && $isAuthenticated && !ClassificationBanner) {
+  function ensureClassificationBanner(wanted: boolean) {
+    if (!wanted || ClassificationBanner) return;
     void import("$lib/components/ClassificationBanner.svelte").then((m) => (ClassificationBanner = m.default));
   }
+  $: ensureClassificationBanner(bannerEnabled && $isAuthenticated);
 
   /**
    * Handle bfcache (back-forward cache) restoration.

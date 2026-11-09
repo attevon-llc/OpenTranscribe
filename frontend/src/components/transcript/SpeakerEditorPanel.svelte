@@ -40,8 +40,8 @@
   // ordered by Svelte's dependency sort to run BEFORE this one (this block
   // reads `wasSaving`), so the "previous" value would already have been
   // overwritten with the current one by the time the comparison ran.
-  $: {
-    if (wasSaving && !savingSpeakers) {
+  function trackSaveCompletion(saving: boolean) {
+    if (wasSaving && !saving) {
       // The save request just completed — the backend has committed the
       // rename and queued digest regeneration in the background by now.
       propagationPending = true;
@@ -50,8 +50,10 @@
         propagationPending = false;
       }, RENAME_PROPAGATION_TIMEOUT_MS);
     }
-    wasSaving = savingSpeakers;
+    wasSaving = saving;
   }
+
+  $: trackSaveCompletion(savingSpeakers);
 
   function handleRenamePropagation(): void {
     propagationPending = false;

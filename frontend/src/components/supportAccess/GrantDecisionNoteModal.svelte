@@ -20,10 +20,13 @@
   let note = '';
 
   let wasOpen = false;
-  $: if (isOpen !== wasOpen) {
-    wasOpen = isOpen;
-    if (isOpen) note = '';
+  function resetOnOpen(open: boolean) {
+    if (open === wasOpen) return;
+    wasOpen = open;
+    if (open) note = '';
   }
+
+  $: resetOnOpen(isOpen);
 
   function submit() {
     const trimmed = note.trim();

@@ -43,14 +43,18 @@
   // Fetched on first open (keeps ~700 lines out of the root-layout bundle budget). A failed fetch
   // (stale chunk hash after a release, flaky network) must not leave the logo a silent no-op:
   // we reset and tell the user, and the next click retries.
-  let AboutModal: typeof import('svelte').SvelteComponent<{ showModal: boolean }> | null = null;
-  $: if (showAboutModal && !AboutModal) {
-    import('./AboutModal.svelte')
-      .then((m) => (AboutModal = m.default as typeof AboutModal))
-      .catch(() => {
-        showAboutModal = false;
+  let AboutModal: typeof import('./AboutModal.svelte').default | null = null;
+  async function openAbout() {
+    if (!AboutModal) {
+      try {
+        const m = await import('./AboutModal.svelte');
+        AboutModal = m.default;
+      } catch {
         toastStore.error($t('nav.aboutLoadFailed'));
-      });
+        return;
+      }
+    }
+    showAboutModal = true;
   }
 
   // Mobile menu state
@@ -278,7 +282,7 @@
 <nav class="navbar">
   <div class="navbar-container">
     <!-- Far Left: OpenTranscribe Logo -->
-    <NavbarBrand on:about={() => showAboutModal = true} />
+    <NavbarBrand on:about={openAbout} />
 
     <!-- Spacer to push right elements to far right -->
     <div class="navbar-spacer"></div>

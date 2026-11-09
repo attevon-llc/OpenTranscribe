@@ -75,7 +75,7 @@
     const enabled = tabs.map((t, i) => ({ t, i })).filter(({ t }) => !t.disabled);
     if (enabled.length === 0) return;
     const pos = enabled.findIndex(({ i }) => i === index);
-    let nextPos = pos;
+    let nextPos: number;
     // Left/Right follow the visual order, which a right-to-left layout reverses.
     const rtl = (event.currentTarget as HTMLElement).closest('[dir]')?.getAttribute('dir') === 'rtl';
     const key =

@@ -46,22 +46,25 @@
   let announcedFor: string | null = null;
   let fiveDone = false;
   let oneDone = false;
-  $: if (s.active && s.grantUuid) {
-    if (announcedFor !== s.grantUuid) {
-      announcedFor = s.grantUuid;
+  function announce(grantUuid: string | null | undefined, remainingSeconds: number) {
+    if (!grantUuid) return;
+    if (announcedFor !== grantUuid) {
+      announcedFor = grantUuid;
       fiveDone = false;
       oneDone = false;
       announcement = $t('supportAccess.announce.started', { time: timeOfDay });
     }
-    if (!fiveDone && s.remainingSeconds <= 300) {
+    if (!fiveDone && remainingSeconds <= 300) {
       fiveDone = true;
       announcement = $t('supportAccess.announce.fiveMinutes');
     }
-    if (!oneDone && s.remainingSeconds <= 60) {
+    if (!oneDone && remainingSeconds <= 60) {
       oneDone = true;
       announcement = $t('supportAccess.announce.oneMinute');
     }
   }
+
+  $: if (s.active) announce(s.grantUuid, s.remainingSeconds);
 
   async function revoke() {
     confirmOpen = false;

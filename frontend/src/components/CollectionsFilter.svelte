@@ -12,10 +12,8 @@
   let loading = false;
   /** The option shape SearchableMultiSelect expects (its own `Option` type is component-local). */
   type MultiSelectOption = { id: string; name: string; count: number };
-  let dropdownCollections: MultiSelectOption[] = [];
-
   // Reactive: Prepare dropdown collections with proper format
-  $: dropdownCollections = collections.map(collection => ({
+  $: dropdownCollections = collections.map((collection): MultiSelectOption => ({
     id: collection.uuid,
     name: collection.name,
     count: collection.media_count || 0

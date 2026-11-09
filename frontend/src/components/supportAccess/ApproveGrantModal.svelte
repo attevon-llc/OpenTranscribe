@@ -27,11 +27,17 @@
   $: choices = [...new Set([...STEPS.filter((m) => m <= requested), requested])]
     .filter((m) => m >= 15)
     .sort((a, b) => a - b);
-  $: if (isOpen && grant && forGrant !== grant.uuid) {
-    forGrant = grant.uuid;
+  function syncOpenGrant(open: boolean, grantUuid: string | undefined) {
+    if (!open) {
+      forGrant = null;
+      return;
+    }
+    if (!grantUuid || forGrant === grantUuid) return;
+    forGrant = grantUuid;
     duration = requested;
   }
-  $: if (!isOpen) forGrant = null;
+
+  $: syncOpenGrant(isOpen, grant?.uuid);
 </script>
 
 <BaseModal {isOpen} {onClose} title={$t('supportAccess.approve.title')} size="sm">

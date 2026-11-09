@@ -13,6 +13,10 @@
   // identical idiom. Keying aria-controls off `source.id` alone collides
   // across instances, since citation ids restart at 1 per message.
   let instanceUid = 0;
+  function nextInstanceUid(): number {
+    instanceUid += 1;
+    return instanceUid;
+  }
 </script>
 
 <script lang="ts">
@@ -25,7 +29,7 @@
   /** Collapsed by default under long answers; expanded while streaming context. */
   export let expanded = false;
 
-  const instanceId = ++instanceUid;
+  const instanceId = nextInstanceUid();
 
   $: count = sources.length;
 

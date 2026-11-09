@@ -15,8 +15,13 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app import schemas
+from app.services.asr_config_queries import find_asr_config_by_uuid
 from app.services.request_context import RequestContext
-from app.utils.tenant_sharing import shared_visible_in_tenant
+from app.services.user_setting_queries import delete_settings_holding_value
+from app.services.user_setting_queries import find_user_setting
+from app.services.user_setting_queries import list_settings_holding_value
+from app.services.user_setting_queries import list_user_settings_with_value
+from app.services.user_setting_queries import upsert_user_setting
 
 logger = logging.getLogger(__name__)
 
@@ -43,38 +48,13 @@ def _validate_region(provider: str | None, region: str | None) -> None:
 
 def _set_active_asr_configuration(db: Session, user_id: int, config_id: int) -> None:
     """Persist the active ASR configuration ID in UserSetting."""
-    existing = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_asr_config_id",
-        )
-        .first()
-    )
-    if existing:
-        existing.setting_value = str(config_id)
-        db.add(existing)
-    else:
-        db.add(
-            models.UserSetting(
-                user_id=user_id,
-                setting_key="active_asr_config_id",
-                setting_value=str(config_id),
-            )
-        )
+    upsert_user_setting(db, user_id, "active_asr_config_id", config_id)
     db.commit()
 
 
 def _get_active_asr_config_id(db: Session, user_id: int) -> int | None:
     """Return the stored active ASR config integer ID, or None."""
-    setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_asr_config_id",
-        )
-        .first()
-    )
+    setting = find_user_setting(db, user_id, "active_asr_config_id")
     if setting and setting.setting_value:
         with contextlib.suppress(ValueError, TypeError):
             return int(setting.setting_value)
@@ -83,14 +63,7 @@ def _get_active_asr_config_id(db: Session, user_id: int) -> int | None:
 
 def _clear_active_asr_setting(db: Session, user_id: int) -> None:
     """Delete the active_asr_config_id UserSetting row if it exists."""
-    setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == "active_asr_config_id",
-        )
-        .first()
-    )
+    setting = find_user_setting(db, user_id, "active_asr_config_id")
     if setting:
         db.delete(setting)
         db.commit()
@@ -131,18 +104,13 @@ def _get_config_or_404(
     With ``shared_in``, a config shared within that request's active tenant also
     qualifies; another tenant's shared config answers like a missing one.
     """
-    from app.models.user_asr_settings import UserASRSettings
-
-    filters = [UserASRSettings.uuid == config_uuid]
-    if shared_in is not None:
-        filters.append(
-            shared_visible_in_tenant(
-                UserASRSettings.user_id, UserASRSettings.is_shared, user_id, shared_in.org_id
-            )
-        )
-    else:
-        filters.append(UserASRSettings.user_id == user_id)
-    config = db.query(UserASRSettings).filter(*filters).first()
+    config = find_asr_config_by_uuid(
+        db,
+        config_uuid,
+        user_id,
+        shared_org_id=shared_in.org_id if shared_in is not None else None,
+        include_shared=shared_in is not None,
+    )
     if not config:
         raise HTTPException(status_code=404, detail="ASR configuration not found")
     return config
@@ -152,13 +120,9 @@ def _clear_asr_shared_active_references(
     db: Session, config_id: int, *, exclude_user_id: int | None = None
 ) -> None:
     """Remove UserSetting rows pointing to a deleted/unshared ASR config."""
-    q = db.query(models.UserSetting).filter(
-        models.UserSetting.setting_key == "active_asr_config_id",
-        models.UserSetting.setting_value == str(config_id),
+    delete_settings_holding_value(
+        db, "active_asr_config_id", str(config_id), exclude_user_id=exclude_user_id
     )
-    if exclude_user_id is not None:
-        q = q.filter(models.UserSetting.user_id != exclude_user_id)
-    q.delete(synchronize_session=False)
 
 
 def _reset_diarizer_references(db: Session, config_uuids: list[str], user_id: int) -> bool:
@@ -175,28 +139,13 @@ def _reset_diarizer_references(db: Session, config_uuids: list[str], user_id: in
 
     if not config_uuids:
         return False
-    pointers = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.setting_key == DIARIZER_CONFIG_KEY,
-            models.UserSetting.setting_value.in_(config_uuids),
-        )
-        .all()
-    )
+    pointers = list_settings_holding_value(db, DIARIZER_CONFIG_KEY, config_uuids)
     holders = {int(row.user_id) for row in pointers}
     for row in pointers:
         db.delete(row)
     if not holders:
         return False
-    sources = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id.in_(holders),
-            models.UserSetting.setting_key == SOURCE_KEY,
-            models.UserSetting.setting_value == "asr_config",
-        )
-        .all()
-    )
+    sources = list_user_settings_with_value(db, holders, SOURCE_KEY, "asr_config")
     reverted = {int(row.user_id) for row in sources}
     for row in sources:
         db.delete(row)

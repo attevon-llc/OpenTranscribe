@@ -9,10 +9,10 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.endpoints.auth import get_current_active_user
-from app.api.endpoints.user_settings_common import _upsert_user_setting
 from app.db.base import get_db
 from app.schemas.ai_summary_settings import AiSummaryPreference
 from app.schemas.topic import AutoLabelSettingsSchema
+from app.services.user_setting_queries import upsert_user_setting
 
 router = APIRouter()
 
@@ -83,7 +83,7 @@ def update_ai_summary_setting(
     Returns:
         Updated setting and confirmation message.
     """
-    _upsert_user_setting(db, current_user.id, "ai_summary_enabled", enabled)
+    upsert_user_setting(db, current_user.id, "ai_summary_enabled", enabled)
     db.commit()
     state = "enabled" if enabled else "disabled"
     return {

@@ -37,14 +37,22 @@ from app.api.endpoints.pipeline_settings import plan_issues_out
 from app.db.base import get_db
 from app.schemas.pipeline import ASRSwitchResult
 from app.services import asr_provider_policy
+from app.services.asr_config_queries import asr_config_uuid_by_id
+from app.services.asr_config_queries import delete_all_own_asr_configs
+from app.services.asr_config_queries import find_own_asr_config_by_name
+from app.services.asr_config_queries import list_own_asr_configs
+from app.services.asr_config_queries import list_promotable_asr_configs
+from app.services.asr_config_queries import list_shared_asr_configs
+from app.services.asr_config_queries import user_has_asr_config
 from app.services.asr_switch_plan import SwitchOutcome
 from app.services.asr_switch_plan import assess_asr_switch
 from app.services.pipeline_plan_inputs import plan_for_user
 from app.services.request_context import RequestContext
+from app.services.user_setting_queries import list_user_ids_holding_value
+from app.services.user_setting_queries import users_by_id
 from app.utils.encryption import encrypt_api_key
 from app.utils.encryption import test_encryption
 from app.utils.lite_mode import refuse_on_lite
-from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
 
@@ -80,13 +88,9 @@ def _refuse_if_switching_off_strands_holders(
     handled by the caller). Each holder is assessed like ``clear-active`` (#1225, #1228); the
     first refusal wins.
     """
-    query = db.query(models.UserSetting.user_id).filter(
-        models.UserSetting.setting_key == "active_asr_config_id",
-        models.UserSetting.setting_value == str(config.id),
+    holders = list_user_ids_holding_value(
+        db, "active_asr_config_id", str(config.id), exclude_user_id=exclude_user_id
     )
-    if exclude_user_id is not None:
-        query = query.filter(models.UserSetting.user_id != exclude_user_id)
-    holders = [int(row[0]) for row in query.all()]
     for holder_id in holders:
         _refuse_if_introduced(assess_asr_switch(db, holder_id, None, request=request))
 
@@ -98,14 +102,8 @@ def list_asr_settings(
 ) -> Any:
     """List the current user's ASR configurations and those shared within their tenant."""
     current_user = ctx.user
-    from app.models.user_asr_settings import UserASRSettings
 
-    configs = (
-        db.query(UserASRSettings)
-        .filter(UserASRSettings.user_id == current_user.id)
-        .order_by(UserASRSettings.created_at)
-        .all()
-    )
+    configs = list_own_asr_configs(db, current_user.id)
     active_config_id = _get_active_asr_config_id(db, current_user.id)
 
     # Resolve active UUID from the already-fetched list — no 3rd DB query needed.
@@ -116,22 +114,9 @@ def list_asr_settings(
             active_uuid = str(active.uuid)
 
     # Fetch shared configs from other users in the caller's active tenant
-    shared_configs = (
-        db.query(UserASRSettings)
-        .filter(
-            UserASRSettings.is_shared.is_(True),
-            UserASRSettings.user_id != current_user.id,
-            owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
-        )
-        .order_by(UserASRSettings.created_at)
-        .all()
-    )
+    shared_configs = list_shared_asr_configs(db, current_user.id, ctx.org_id)
     owner_ids = {c.user_id for c in shared_configs}
-    owners = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(owner_ids)).all()}
-        if owner_ids
-        else {}
-    )
+    owners = users_by_id(db, owner_ids)
 
     return {
         "configs": [_config_to_dict(c) for c in configs],
@@ -178,14 +163,7 @@ def create_asr_config(
     )
 
     # Duplicate name check
-    existing = (
-        db.query(UserASRSettings)
-        .filter(
-            UserASRSettings.user_id == current_user.id,
-            UserASRSettings.name == settings_in.name,
-        )
-        .first()
-    )
+    existing = find_own_asr_config_by_name(db, current_user.id, settings_in.name)
     if existing:
         raise HTTPException(
             status_code=409,
@@ -210,13 +188,7 @@ def create_asr_config(
 
     # Check before insert whether the user already has any config (determines auto-activate).
     # This avoids a second count query after the INSERT.
-    has_existing = (
-        db.query(UserASRSettings.id)
-        .filter(UserASRSettings.user_id == current_user.id)
-        .limit(1)
-        .scalar()
-        is not None
-    )
+    has_existing = user_has_asr_config(db, current_user.id)
 
     is_shared = bool(settings_in.is_shared)
     config = UserASRSettings(
@@ -303,19 +275,10 @@ def _apply_name_update(
     db: Session, config: Any, settings_in: schemas.UserASRSettingsUpdate, user_id: int
 ) -> None:
     """Rename the config, refusing a name another of the user's configs already holds."""
-    from app.models.user_asr_settings import UserASRSettings
 
     new_name = settings_in.name
     if new_name != config.name:
-        dup = (
-            db.query(UserASRSettings)
-            .filter(
-                UserASRSettings.user_id == user_id,
-                UserASRSettings.name == new_name,
-                UserASRSettings.id != config.id,
-            )
-            .first()
-        )
+        dup = find_own_asr_config_by_name(db, user_id, new_name, exclude_id=config.id)
         if dup:
             raise HTTPException(
                 status_code=409,
@@ -497,7 +460,6 @@ def delete_asr_config(
     the remaining state cannot run comes back in ``pipeline_issues`` (as for
     ``set-active``), with ``config_uuid`` naming the config now active (``null``: none).
     """
-    from app.models.user_asr_settings import UserASRSettings
     from app.services.asr_switch_plan import active_delete_refusal
     from app.services.asr_switch_plan import choose_after_active_delete
 
@@ -505,19 +467,8 @@ def delete_asr_config(
     active_config_id = _get_active_asr_config_id(db, current_user.id)
     was_active = active_config_id == config.id
     config_id = config.id
-    candidates = (
-        db.query(UserASRSettings)
-        .filter(
-            UserASRSettings.user_id == current_user.id,
-            UserASRSettings.id != config_id,
-            # An inactive config is never promoted: it would be active in name only.
-            UserASRSettings.is_active.is_(True),
-        )
-        .order_by(UserASRSettings.id)
-        .all()
-        if was_active
-        else []
-    )
+    # An inactive config is never promoted: it would be active in name only.
+    candidates = list_promotable_asr_configs(db, current_user.id, config_id) if was_active else []
     if was_active:
         refusal = active_delete_refusal(db, current_user.id, candidates, request=request)
         if refusal is not None:
@@ -547,7 +498,7 @@ def delete_asr_config(
     if promoted is not None:
         active_uuid = str(promoted.uuid)
     elif not was_active and active_config_id is not None:
-        still_active = db.query(UserASRSettings.uuid).filter_by(id=active_config_id).scalar()
+        still_active = asr_config_uuid_by_id(db, active_config_id)
         active_uuid = str(still_active) if still_active is not None else None
     return schemas.ASRConfigDeleted(
         message="ASR configuration deleted",
@@ -592,10 +543,8 @@ def delete_all_asr_configs(
     and nothing is deleted, if any member would be stranded), and the members' active
     pointers are cleared with it.
     """
-    from app.models.user_asr_settings import UserASRSettings
 
-    owned = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id)
-    rows = owned.all()
+    rows = list_own_asr_configs(db, current_user.id)
     uuids = [str(row.uuid) for row in rows]
     if uuids:
         # Clearing every config clears the active one, and without a config lite would fall
@@ -611,7 +560,7 @@ def delete_all_asr_configs(
     for config_id in shared_ids:
         _clear_asr_shared_active_references(db, config_id, exclude_user_id=current_user.id)
     reverted = _reset_diarizer_references(db, uuids, current_user.id)
-    owned.delete()
+    delete_all_own_asr_configs(db, current_user.id)
     _clear_active_asr_setting(db, current_user.id)
     db.commit()
     return schemas.ASRConfigDeleted(

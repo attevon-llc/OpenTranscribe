@@ -21,7 +21,6 @@ from app import schemas
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.llm_config_helpers import _get_accessible_config
-from app.api.endpoints.llm_config_helpers import _visible_to
 from app.api.endpoints.llm_endpoint_safety import _assert_safe_llm_endpoint
 from app.auth.rate_limit import get_llm_outbound_rate_limit
 from app.auth.rate_limit import limiter
@@ -32,10 +31,13 @@ from app.services import llm_reasoning
 from app.services.bedrock_settings import BedrockConnection
 from app.services.bedrock_settings import connection_from_encrypted
 from app.services.bedrock_settings import merge_stored
+from app.services.llm_config_queries import find_own_llm_config_by_uuid
+from app.services.llm_config_queries import find_visible_llm_config
 from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider as ServiceLLMProvider
 from app.services.request_context import RequestContext
+from app.services.user_setting_queries import find_user_setting
 from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 
@@ -53,14 +55,7 @@ def _bedrock_for_test(
     """
     stored = None
     if test_request.config_id:
-        row = (
-            db.query(models.UserLLMSettings)
-            .filter(
-                models.UserLLMSettings.uuid == test_request.config_id,
-                models.UserLLMSettings.user_id == current_user.id,
-            )
-            .first()
-        )
+        row = find_own_llm_config_by_uuid(db, test_request.config_id, current_user.id)
         if row is not None and row.api_key and str(row.provider) == "bedrock":
             stored = connection_from_encrypted(str(row.api_key))
     return merge_stored(
@@ -115,14 +110,7 @@ def _run_connection_test(
         effective_api_key = test_request.api_key
         if not effective_api_key and test_request.config_id:
             try:
-                config = (
-                    db.query(models.UserLLMSettings)
-                    .filter(
-                        models.UserLLMSettings.uuid == test_request.config_id,
-                        models.UserLLMSettings.user_id == current_user.id,
-                    )
-                    .first()
-                )
+                config = find_own_llm_config_by_uuid(db, test_request.config_id, current_user.id)
                 if config and config.api_key and str(config.provider) != "bedrock":
                     # Decrypt the stored API key
                     effective_api_key = decrypt_api_key(str(config.api_key))
@@ -247,14 +235,7 @@ def test_active_configuration(
     """
     current_user = ctx.user
     # Get active configuration
-    active_setting = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == current_user.id,
-            models.UserSetting.setting_key == "active_llm_config_id",
-        )
-        .first()
-    )
+    active_setting = find_user_setting(db, current_user.id, "active_llm_config_id")
 
     if not active_setting or not active_setting.setting_value:
         raise HTTPException(
@@ -267,11 +248,7 @@ def test_active_configuration(
     except ValueError as e:
         raise HTTPException(status_code=400, detail="Invalid active configuration ID") from e
 
-    user_config = (
-        db.query(models.UserLLMSettings)
-        .filter(models.UserLLMSettings.id == active_config_id, _visible_to(ctx))
-        .first()
-    )
+    user_config = find_visible_llm_config(db, active_config_id, current_user.id, ctx.org_id)
 
     if not user_config:
         raise HTTPException(

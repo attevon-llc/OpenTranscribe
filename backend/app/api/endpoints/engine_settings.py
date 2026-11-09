@@ -21,7 +21,7 @@ from app import models
 from app.api.endpoints.auth import get_current_active_superuser
 from app.core.env import is_truthy
 from app.db.base import get_db
-from app.models.system_settings import SystemSettings
+from app.services.system_setting_queries import find_system_setting
 from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import set_setting
 from app.utils.lite_mode import refuse_on_lite
@@ -247,7 +247,7 @@ def reset_engine_setting(
             detail=f"Unknown engine setting key '{key}'. Valid keys: {sorted(_KEYS)}",
         )
     db_key = _KEYS[key]
-    row = db.query(SystemSettings).filter(SystemSettings.key == db_key).first()
+    row = find_system_setting(db, db_key)
     if row:
         db.delete(row)
         db.commit()

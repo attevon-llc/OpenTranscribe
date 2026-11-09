@@ -30,14 +30,13 @@ from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.roles import ELEVATED_ROLES
 from app.db.base import get_db
-from app.models.user_asr_settings import UserASRSettings
 from app.schemas.asr_provider_policy import ProviderPolicyEntry
 from app.schemas.asr_provider_policy import ProviderPolicyResponse
 from app.schemas.asr_provider_policy import ProviderPolicyUpdate
 from app.schemas.asr_provider_policy import SharedCredential
 from app.services import asr_provider_policy as policy_service
+from app.services.asr_config_queries import list_admin_shared_asr_configs
 from app.services.request_context import RequestContext
-from app.utils.tenant_sharing import owner_in_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,17 +44,7 @@ router = APIRouter()
 
 def _shared_by_provider(db: Session, org_id: int | None) -> dict[str, list[SharedCredential]]:
     """Admin-shared configs visible in the tenant, grouped by provider."""
-    rows = (
-        db.query(UserASRSettings, models.User)
-        .join(models.User, models.User.id == UserASRSettings.user_id)
-        .filter(
-            UserASRSettings.is_shared.is_(True),
-            models.User.role.in_(ELEVATED_ROLES),
-            owner_in_tenant(UserASRSettings.user_id, org_id),
-        )
-        .order_by(UserASRSettings.created_at)
-        .all()
-    )
+    rows = list_admin_shared_asr_configs(db, org_id, ELEVATED_ROLES)
     grouped: dict[str, list[SharedCredential]] = {}
     for config, owner in rows:
         grouped.setdefault(str(config.provider), []).append(

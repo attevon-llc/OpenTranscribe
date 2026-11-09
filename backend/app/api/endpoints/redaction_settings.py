@@ -38,6 +38,8 @@ from app.schemas.redaction_settings import RedactionSystemDefaults
 from app.services.redaction.config import _load_admin_policy
 from app.services.system_settings_service import get_setting
 from app.services.system_settings_service import set_setting
+from app.services.user_setting_queries import delete_user_settings
+from app.services.user_setting_queries import list_user_settings
 
 logger = logging.getLogger(__name__)
 
@@ -112,14 +114,7 @@ def _read_user_settings(db: Session, user_id: int) -> RedactionSettings:
     Plain helper so route handlers don't call each other (FastAPI route functions
     return Any once decorated, and calling them internally is an anti-pattern).
     """
-    rows = (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key.in_(list(_USER_KEY.values())),
-        )
-        .all()
-    )
+    rows = list_user_settings(db, user_id, list(_USER_KEY.values()))
     stored = {str(r.setting_key): str(r.setting_value) for r in rows}
     values = {
         field: _parse_value(field, stored.get(db_key), _DEFAULTS[field])
@@ -144,11 +139,11 @@ def update_redaction_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> RedactionSettings:
     """Update the user's redaction preferences (only provided fields)."""
-    from app.api.endpoints.user_settings_common import _upsert_user_setting
+    from app.services.user_setting_queries import upsert_user_setting
 
     updates = body.model_dump(exclude_none=True)
     for field, value in updates.items():
-        _upsert_user_setting(db, current_user.id, _USER_KEY[field], _store_value(field, value))
+        upsert_user_setting(db, current_user.id, _USER_KEY[field], _store_value(field, value))
     db.commit()
     return _read_user_settings(db, current_user.id)
 
@@ -159,10 +154,7 @@ def reset_redaction_settings(
     current_user: models.User = Depends(get_current_active_user),
 ) -> dict:
     """Reset the user's redaction preferences to defaults."""
-    db.query(models.UserSetting).filter(
-        models.UserSetting.user_id == current_user.id,
-        models.UserSetting.setting_key.in_(list(_USER_KEY.values())),
-    ).delete(synchronize_session=False)
+    delete_user_settings(db, current_user.id, list(_USER_KEY.values()))
     db.commit()
     return {"message": "Redaction settings reset to defaults"}
 

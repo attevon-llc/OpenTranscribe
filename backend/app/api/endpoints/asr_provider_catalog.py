@@ -16,8 +16,9 @@ from app.core.config import settings
 from app.db.base import get_db
 from app.schemas.asr_settings import ASRModelCapabilities
 from app.services import asr_provider_policy
+from app.services.asr_config_queries import find_shared_asr_config_in_tenant
+from app.services.asr_config_queries import list_own_asr_configs
 from app.services.request_context import RequestContext
-from app.utils.tenant_sharing import owner_in_tenant
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -102,13 +103,11 @@ def get_asr_status(
 ) -> Any:
     """Get ASR configuration status summary for the current user."""
     current_user = ctx.user
-    from app.models.user_asr_settings import UserASRSettings
-
     # Single query: fetch all configs + active_config_id setting in 2 queries total.
     # Resolve active_config from the already-fetched list (no 3rd DB round-trip).
     active_config_id = _get_active_asr_config_id(db, current_user.id)
 
-    configs = db.query(UserASRSettings).filter(UserASRSettings.user_id == current_user.id).all()
+    configs = list_own_asr_configs(db, current_user.id)
     has_settings = len(configs) > 0
 
     active_config = None
@@ -116,15 +115,7 @@ def get_asr_status(
         # Try own configs first, then shared
         active_config = next((c for c in configs if c.id == active_config_id), None)
         if not active_config:
-            active_config = (
-                db.query(UserASRSettings)
-                .filter(
-                    UserASRSettings.id == active_config_id,
-                    UserASRSettings.is_shared.is_(True),
-                    owner_in_tenant(UserASRSettings.user_id, ctx.org_id),
-                )
-                .first()
-            )
+            active_config = find_shared_asr_config_in_tenant(db, active_config_id, ctx.org_id)
             if active_config:
                 has_settings = True
         if active_config is not None and not active_config.is_active:

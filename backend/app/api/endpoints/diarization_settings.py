@@ -54,6 +54,8 @@ from app.schemas.diarization_settings import PyannoteTestCode
 from app.schemas.diarization_settings import validate_pyannote_key
 from app.services.diarization.factory import PYANNOTE_CREDENTIAL_NAME
 from app.services.diarization.factory import PYANNOTE_PROVIDER
+from app.services.diarization_settings_queries import find_user_diarization_settings
+from app.services.user_setting_queries import find_user_setting
 from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
@@ -69,25 +71,11 @@ _AUDIT_DETAILS = {"provider": "pyannote.ai", "purpose": "diarization"}
 
 
 def _own_row(db: Session, user_id: int) -> UserDiarizationSettings | None:
-    return (
-        db.query(UserDiarizationSettings)
-        .filter(
-            UserDiarizationSettings.user_id == user_id,
-            UserDiarizationSettings.provider == PYANNOTE_PROVIDER,
-        )
-        .first()
-    )
+    return find_user_diarization_settings(db, user_id, PYANNOTE_PROVIDER)
 
 
 def _source_row(db: Session, user_id: int) -> models.UserSetting | None:
-    return (
-        db.query(models.UserSetting)
-        .filter(
-            models.UserSetting.user_id == user_id,
-            models.UserSetting.setting_key == DIARIZATION_SOURCE_KEY,
-        )
-        .first()
-    )
+    return find_user_setting(db, user_id, DIARIZATION_SOURCE_KEY)
 
 
 def _is_locked(request: Request) -> bool:

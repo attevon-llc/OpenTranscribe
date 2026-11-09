@@ -22,6 +22,7 @@ from app.api.endpoints import user_settings_speaker_attributes
 from app.api.endpoints import user_settings_transcription
 from app.api.endpoints.auth import get_current_active_user
 from app.db.base import get_db
+from app.services.user_setting_queries import list_user_settings
 
 router = APIRouter()
 
@@ -37,9 +38,7 @@ def get_all_user_settings(
     """
     Get all user settings (for debugging/admin purposes)
     """
-    user_settings = (
-        db.query(models.UserSetting).filter(models.UserSetting.user_id == current_user.id).all()
-    )
+    user_settings = list_user_settings(db, current_user.id)
 
     return {setting.setting_key: setting.setting_value for setting in user_settings}
 

@@ -37,6 +37,7 @@ from app.db.base import get_db
 from app.services.asr.catalog import ASR_PROVIDER_CATALOG
 from app.services.local_models import cache as local_model_cache
 from app.services.local_models import worker_report
+from app.services.system_setting_queries import find_system_setting
 from app.utils.lite_mode import refuse_on_lite
 
 router = APIRouter()
@@ -49,10 +50,9 @@ def get_active_local_model(
     current_user: models.User = Depends(get_current_active_user),
 ) -> Any:
     """Return the active local Whisper model name and available downloaded models."""
-    from app.models.system_settings import SystemSettings
     from app.services.asr.model_discovery import discover_local_models
 
-    setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+    setting = find_system_setting(db, "asr.local_model")
     active_model = setting.value if setting and setting.value else settings.WHISPER_MODEL
 
     # Look up catalog info for the active model
@@ -156,7 +156,7 @@ def set_active_local_model(
 
     from app.models.system_settings import SystemSettings
 
-    setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+    setting = find_system_setting(db, "asr.local_model")
     if setting:
         setting.value = model_name
     else:
@@ -206,10 +206,9 @@ def restart_gpu_worker(
     """
     refuse_on_lite("local_asr_unavailable")
     from app.core.celery import celery_app
-    from app.models.system_settings import SystemSettings
 
     # Read the pending model so we can report it
-    setting = db.query(SystemSettings).filter(SystemSettings.key == "asr.local_model").first()
+    setting = find_system_setting(db, "asr.local_model")
     pending_model = setting.value if setting and setting.value else settings.WHISPER_MODEL
 
     restart_requested_at = datetime.now(UTC).isoformat()

@@ -79,11 +79,11 @@ def main() -> int:
         with session_scope() as db:
             import json
 
-            from app.api.endpoints.user_settings_common import _upsert_user_setting
+            from app.services.user_setting_queries import upsert_user_setting
 
             # Redaction is opt-out by default — enable it for this verification user.
-            _upsert_user_setting(db, user_id, "redaction_enabled", "true")
-            _upsert_user_setting(db, user_id, "redaction_custom_words", json.dumps(["Bluefin"]))
+            upsert_user_setting(db, user_id, "redaction_enabled", "true")
+            upsert_user_setting(db, user_id, "redaction_custom_words", json.dumps(["Bluefin"]))
             db.commit()
             cfg = resolve_effective_config(db, user_id)
             segs = (

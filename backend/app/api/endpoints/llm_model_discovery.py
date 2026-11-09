@@ -19,6 +19,7 @@ from app.auth.rate_limit import get_llm_outbound_rate_limit
 from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.db.base import get_db
+from app.services.llm_config_queries import find_own_llm_config_by_uuid
 from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.url_validation import PinnedTarget
@@ -151,14 +152,7 @@ def _get_stored_api_key(db: Session, config_id: str, user_id: int) -> str | None
     """
     try:
         config_uuid = uuid.UUID(config_id)
-        config = (
-            db.query(models.UserLLMSettings)
-            .filter(
-                models.UserLLMSettings.uuid == config_uuid,
-                models.UserLLMSettings.user_id == user_id,
-            )
-            .first()
-        )
+        config = find_own_llm_config_by_uuid(db, config_uuid, user_id)
         if config and config.api_key and str(config.provider) != "bedrock":
             return decrypt_api_key(str(config.api_key))
     except SecretDecryptionError:

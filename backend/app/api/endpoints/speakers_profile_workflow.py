@@ -11,11 +11,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
 from app.schemas.speaker import SpeakerUpdate
+from app.services import speaker_lookups
 from app.services.opensearch_service import update_speaker_display_name
 from app.services.opensearch_service.client import CLUSTER_UNAVAILABLE_ERRORS
 from app.services.permission_service import org_scope_pred
@@ -23,7 +23,6 @@ from app.services.platform_bypass import PlatformBypass
 from app.services.privacy.redact_view import PrivacyView
 from app.services.speaker_cleanup import reconcile_speaker_impact
 from app.services.speaker_profile_activity import touch_profile_interaction
-from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_ASSIGNED
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_CREATED
 from app.utils.speaker_identity_source import record_human_identity
@@ -60,7 +59,7 @@ def _handle_profile_embedding_updates(
     # Privacy policy (#1280): only the WRITE side is gated. A speaker leaving a profile or
     # cluster is reconciled whatever the switch says (the old aggregate still averages its
     # voice, #1214); what is declined while voiceprints are off is folding a voice IN.
-    file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+    file_id = speaker_lookups.speaker_file_id(db, speaker_id)
     voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
 
     if old_profile_id == new_profile_id:
@@ -116,23 +115,13 @@ def auto_create_or_assign_profile(
     try:
         # The tenant of the speaker's file: a voiceprint only ever joins a profile
         # of the same tenant (None = personal; always None in the community edition).
-        speaker_org_id = (
-            db.query(MediaFile.organization_id)
-            .filter(MediaFile.id == speaker.media_file_id)
-            .scalar()
-        )
+        speaker_org_id = speaker_lookups.file_organization_id(db, speaker.media_file_id)
 
         # The same-named profile of this user in the speaker's tenant, if any. Names
         # are unique per user per tenant (v430), so another tenant's profile of that
         # name is neither linked nor in the way of creating one here.
-        existing_profile = (
-            db.query(SpeakerProfile)
-            .filter(
-                SpeakerProfile.user_id == speaker.user_id,
-                SpeakerProfile.name.ilike(display_name.strip()),
-                org_stamp_is(SpeakerProfile.organization_id, speaker_org_id),
-            )
-            .first()
+        existing_profile = speaker_lookups.profile_by_name_pattern(
+            db, speaker.user_id, display_name.strip(), speaker_org_id
         )
 
         old_profile_id = int(speaker.profile_id) if speaker.profile_id else None
@@ -243,7 +232,7 @@ def _update_profile_embedding(
     # Privacy policy (#1280): only the WRITE side is gated. The profile the speaker left is
     # reconciled whatever the switch says (its aggregate still averages the voice, #1214);
     # folding the voice into the new profile is declined while voiceprints are off.
-    file_id = db.query(Speaker.media_file_id).filter(Speaker.id == speaker_id).scalar()
+    file_id = speaker_lookups.speaker_file_id(db, speaker_id)
     voiceprints_on = file_id is not None and PrivacyView(db).voiceprints(int(file_id)).enabled
 
     # Both callers set ``profile_id`` a moment ago and autoflush is off: without the flush
@@ -271,7 +260,7 @@ def _handle_speaker_labeling_workflow(
         dict with 'auto_applied_count' and 'suggested_count' keys
     """
     # Auto-create profile if needed and assign speaker to it
-    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    speaker = speaker_lookups.speaker_by_id(db, speaker_id)
     if not speaker:
         logger.warning(f"Speaker {speaker_id} disappeared before retroactive matching")
         return {"auto_applied_count": 0, "suggested_count": 0}
@@ -305,7 +294,6 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
     """
     try:
         from app.db.session_utils import session_scope
-        from app.models.media import MediaFile
         from app.services.minio_bucket_admin import MinIOService
         from app.services.video_processing_service import VideoProcessingService
 
@@ -314,11 +302,11 @@ def _clear_video_cache_for_speaker(media_file_id: int) -> None:
         # Read phase: the filename, and nothing else. The scope closes before the
         # five MinIO deletes below, so no transaction spans them.
         with session_scope() as db:
-            row = db.query(MediaFile.filename).filter(MediaFile.id == media_file_id).first()
-        if row is None:
+            filename = speaker_lookups.file_filename(db, media_file_id)
+        if filename is None:
             logger.warning(f"Media file {media_file_id} not found for cache clearing")
             return
-        video_processing_service.clear_derived_cache(media_file_id, str(row[0]))
+        video_processing_service.clear_derived_cache(media_file_id, filename)
     except Exception as e:
         logger.exception(f"Warning: Failed to clear video cache after speaker update: {e}")
 
@@ -360,14 +348,11 @@ def _handle_update_profile_action(
 
     # ``organization_id`` is the tenant of the speaker's file: only a profile of
     # that tenant is renamed through it.
-    profile = (
-        db.query(SpeakerProfile)
-        .filter(
-            SpeakerProfile.id == profile_id,
-            SpeakerProfile.user_id == current_user.id,
-            org_scope_pred(SpeakerProfile.organization_id, organization_id),
-        )
-        .first()
+    profile = speaker_lookups.owned_profile_in_scope(
+        db,
+        profile_id,
+        current_user.id,
+        org_scope_pred(SpeakerProfile.organization_id, organization_id),
     )
 
     if not profile:
@@ -394,9 +379,7 @@ def _load_profile_speaker_names(db: Session, profile_id: int) -> list[tuple[str,
     here rather than in the push loop, so the returned length is the number of
     documents that will actually be written.
     """
-    rows = (
-        db.query(Speaker.uuid, Speaker.display_name).filter(Speaker.profile_id == profile_id).all()
-    )
+    rows = speaker_lookups.speaker_labels_for_profile(db, profile_id)
     return [(str(uuid_), str(name)) for uuid_, name in rows if name]
 
 
@@ -485,8 +468,7 @@ def _get_speaker_profile_uuid(speaker: Speaker, db: Session) -> str | None:
     if speaker.profile:
         return str(speaker.profile.uuid)
 
-    profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == speaker.profile_id).first()
-    return str(profile.uuid) if profile else None
+    return speaker_lookups.profile_uuid(db, speaker.profile_id)
 
 
 def _load_speaker_profile_sync_payload(
@@ -532,8 +514,6 @@ def _get_media_file_uuid(speaker: Speaker, db: Session) -> str | None:
         return str(speaker.media_file.uuid)
 
     if speaker.media_file_id:
-        row = db.query(MediaFile.uuid).filter(MediaFile.id == speaker.media_file_id).first()
-        if row:
-            return str(row[0])
+        return speaker_lookups.file_uuid(db, speaker.media_file_id)
 
     return None

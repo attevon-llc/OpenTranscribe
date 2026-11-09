@@ -20,6 +20,7 @@ from app.api.endpoints.migration_stop import revoke_batch_tasks
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.user import User
+from app.services.speaker_label_queries import attribute_migration_counts
 from app.tasks.speaker_attribute_migration_task import attribute_migration_progress
 
 router = APIRouter()
@@ -36,32 +37,7 @@ def get_attribute_migration_status(
     Returns file counts (total, processed, pending) and progress info.
     """
     try:
-        from sqlalchemy import case
-        from sqlalchemy import exists
-        from sqlalchemy import func
-
-        from app.models.media import FileStatus
-        from app.models.media import MediaFile
-        from app.models.speaker import Speaker as SpeakerModel
-
-        # Single query: count total files with speakers AND pending files
-        # (replaces full ORM hydration that loaded megabytes of JSONB data)
-        has_speakers = exists().where(SpeakerModel.media_file_id == MediaFile.id)
-        has_unpredicted = exists().where(
-            (SpeakerModel.media_file_id == MediaFile.id)
-            & (SpeakerModel.attributes_predicted_at.is_(None))
-        )
-
-        row = (
-            db.query(
-                func.count(MediaFile.id).label("total"),
-                func.sum(case((has_unpredicted, 1), else_=0)).label("pending"),
-            )
-            .filter(MediaFile.status == FileStatus.COMPLETED, has_speakers)
-            .one()
-        )
-        total_with_speakers = row.total or 0
-        pending_count = int(row.pending or 0)
+        total_with_speakers, pending_count = attribute_migration_counts(db)
 
         # Get progress from Redis
         progress = attribute_migration_progress.get_status()

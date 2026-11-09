@@ -15,10 +15,9 @@ from app.api.error_handlers import ErrorHandler
 from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
-from app.models.speaker import SpeakerProfile
 from app.models.user import User
+from app.services import speaker_lookups
 from app.services.opensearch_service import update_speaker_collections
 from app.services.permission_service import PermissionService
 from app.services.privacy.redact_view import PrivacyView
@@ -201,9 +200,8 @@ def _get_embedding_suggestions(
     suggestions: list[dict[str, Any]] = []
 
     # Get speaker object to extract UUID
-    from app.models.speaker import Speaker
 
-    speaker = db.query(Speaker).filter(Speaker.id == speaker_id).first()
+    speaker = speaker_lookups.speaker_by_id(db, speaker_id)
     if not speaker:
         return suggestions
 
@@ -273,14 +271,12 @@ def _get_llm_suggestions(
         and speaker.suggestion_source == "llm_analysis"
     ):
         # Check if suggested_name matches any accessible profiles
-        profile_query = db.query(SpeakerProfile).filter(
-            SpeakerProfile.name.ilike(f"%{speaker.suggested_name}%"),
+        suggested_profile = speaker_lookups.profile_named_like(
+            db,
+            speaker.suggested_name,
+            accessible_profile_ids=accessible_profile_ids,
+            user_id=current_user.id,
         )
-        if accessible_profile_ids is not None:
-            profile_query = profile_query.filter(SpeakerProfile.id.in_(accessible_profile_ids))
-        else:
-            profile_query = profile_query.filter(SpeakerProfile.user_id == current_user.id)
-        suggested_profile = profile_query.first()
 
         matching_service = SpeakerMatchingService(db, None)
         confidence_level = matching_service.get_confidence_level(float(speaker.confidence))
@@ -343,7 +339,7 @@ def get_speaker_profile_suggestions(
             return []
 
         # Get media file for audio processing
-        media_file = db.query(MediaFile).filter(MediaFile.id == speaker.media_file_id).first()
+        media_file = speaker_lookups.file_by_id(db, speaker.media_file_id)
         if not media_file:
             return []
 

@@ -21,10 +21,10 @@ from app.api.error_handlers import ErrorHandler
 from app.api.hold_refusal import refuse_if_frozen
 from app.core.exceptions import DomainError
 from app.db.base import get_db
-from app.models.media import MediaFile
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.models.user import User
+from app.services import speaker_lookups
 from app.services.request_context import RequestContext
 from app.services.speaker_cleanup import SpeakerCleanupIncompleteError
 from app.services.speaker_cleanup import capture_speaker_impact
@@ -35,7 +35,6 @@ from app.services.speaker_identity_rules import lift_profile_blacklist
 from app.services.speaker_profile_activity import touch_profile_interaction
 from app.services.uuid_helpers import require_profile_in_scope
 from app.services.uuid_helpers import require_speaker_access
-from app.utils.db_helpers import org_stamp_is
 from app.utils.speaker_identity_detail import ORIGIN_ACCEPTED_SUGGESTION
 from app.utils.speaker_identity_detail import ORIGIN_PROFILE_CREATED
 from app.utils.speaker_identity_source import after_unlink
@@ -197,7 +196,7 @@ def _accept_speaker_profile_match(
     ``profile_id`` was resolved by ``_resolve_profile_uuid_to_id``, which already
     checked the caller may use it in this tenant and that it is the speaker's tenant.
     """
-    profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
+    profile = speaker_lookups.profile_by_id(db, profile_id)
 
     if not profile:
         raise HTTPException(status_code=404, detail="Speaker profile not found")
@@ -226,56 +225,20 @@ def _accept_speaker_profile_match(
     }
 
 
-def _clusters_promoted_to_holding(db: Session, profile_id: int, speaker_id: int) -> list[Any]:
-    """The clusters promoted to ``profile_id`` that count this speaker as a member."""
-    from sqlalchemy import or_
-
-    from app.models.speaker import SpeakerCluster
-    from app.models.speaker import SpeakerClusterMember
-
-    member_of = (
-        db.query(SpeakerClusterMember.cluster_id)
-        .filter(SpeakerClusterMember.speaker_id == speaker_id)
-        .scalar_subquery()
-    )
-    cluster_id = db.query(Speaker.cluster_id).filter(Speaker.id == speaker_id).scalar_subquery()
-    clusters: list[Any] = (
-        db.query(SpeakerCluster)
-        .filter(
-            SpeakerCluster.promoted_to_profile_id == profile_id,
-            or_(SpeakerCluster.id.in_(member_of), SpeakerCluster.id == cluster_id),
-        )
-        .all()
-    )
-    return clusters
-
-
 def _rejected_profile_ids(db: Session, speaker: Speaker, linked_profile_id: int | None) -> set[int]:
     """The profiles a rejection refuses: the one linked, and the one the suggestion named.
 
     The suggestion's profile is looked up by name among the speaker owner's profiles in
     the speaker file's tenant, the same scope the name-based paths assign in.
     """
-    from sqlalchemy import func
-
     rejected = {linked_profile_id} if linked_profile_id is not None else set()
     if speaker.suggested_name and str(speaker.suggested_name).strip():
-        org_id = (
-            db.query(MediaFile.organization_id)
-            .filter(MediaFile.id == speaker.media_file_id)
-            .scalar()
-        )
-        named = (
-            db.query(SpeakerProfile.id)
-            .filter(
-                SpeakerProfile.user_id == speaker.user_id,
-                func.lower(SpeakerProfile.name) == str(speaker.suggested_name).strip().lower(),
-                org_stamp_is(SpeakerProfile.organization_id, org_id),
-            )
-            .first()
+        org_id = speaker_lookups.file_organization_id(db, speaker.media_file_id)
+        named = speaker_lookups.profile_id_by_lowercased_name(
+            db, speaker.user_id, str(speaker.suggested_name).strip().lower(), org_id
         )
         if named is not None:
-            rejected.add(int(named[0]))
+            rejected.add(named)
     return rejected
 
 
@@ -329,7 +292,9 @@ def _reject_speaker_suggestion(
     # named is recorded too, so no automatic path (retroactive matching above all)
     # applies either identity again.
     if old_profile_id is not None:
-        for cluster in _clusters_promoted_to_holding(db, old_profile_id, int(speaker_id)):
+        for cluster in speaker_lookups.clusters_promoted_to_holding(
+            db, old_profile_id, int(speaker_id)
+        ):
             impact |= detach_from_cluster(
                 db,
                 cluster,
@@ -388,14 +353,8 @@ def _create_new_speaker_profile(
 ) -> dict[str, Any]:
     """Handle creation of a new speaker profile."""
     # Names are unique per user per tenant (v430); the profile joins the file's tenant.
-    existing_profile = (
-        db.query(SpeakerProfile)
-        .filter(
-            SpeakerProfile.user_id == current_user.id,
-            SpeakerProfile.name == profile_name,
-            org_stamp_is(SpeakerProfile.organization_id, speaker.media_file.organization_id),
-        )
-        .first()
+    existing_profile = speaker_lookups.profile_by_exact_name(
+        db, current_user.id, profile_name, speaker.media_file.organization_id
     )
 
     if existing_profile:

@@ -35,12 +35,15 @@ still act, not here (issue #670).
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 import shutil
 import subprocess  # diar-server invoked with a fixed argv list, no shell
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -280,7 +283,34 @@ def ensure_native_models(  # one branch per distinct operator outcome
     ]
     if force:
         argv.append("--force")
+    with _provision_lock(target):
+        return _run_provision(argv, binary, target, force)
 
+
+@contextmanager
+def _provision_lock(directory: str) -> Iterator[None]:
+    """Serialise provisioning across the API's uvicorn workers (``fcntl.flock``).
+
+    Every worker runs startup, so with ``UVICORN_WORKERS`` > 1 they would all start the same
+    export into one directory. The first holds an exclusive lock on ``.provision.lock`` while
+    ``diar-server`` runs; the others block, then find the marker it wrote and return at once.
+    The wait is bounded by the export's own timeout. A directory that cannot hold the lock file
+    degrades to no lock: provisioning never aborts startup.
+    """
+    try:
+        fd = os.open(Path(directory, ".provision.lock"), os.O_CREAT | os.O_RDWR, 0o644)
+    except OSError:
+        yield
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the lock
+
+
+def _run_provision(argv: list[str], binary: str, target: str, force: bool) -> ProvisionResult:
+    """Run ``diar-server provision-models`` and translate its outcome (lock already held)."""
     had_marker = read_marker(target) is not None
     started = time.perf_counter()
     try:

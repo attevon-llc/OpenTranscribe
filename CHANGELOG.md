@@ -164,6 +164,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With more than one API worker, the native diarizer's first-boot model export no longer runs once per worker: workers take an exclusive `fcntl.flock` on `.provision.lock` in the models directory, so the first exports and the rest find its marker.
 - The lite and Blackwell images now start uvicorn with `--proxy-headers` and the restricted `--forwarded-allow-ips`, as the full image always did, so `request.url.scheme` and the client address are right behind a TLS-terminating proxy.
 - The web app no longer treats a busy server as an error: a read request answered with 503 and `Retry-After` is retried once after the advertised wait (capped at 10 s, plus up to 1 s jitter), writes are never replayed and show "The server is busy, please try again in a moment" (all 12 locales), and a 503 never signs the user out.
 - The Vite dev server pre-warms the entry, login and file-detail module graphs and pre-bundles the Video.js player, so the first page load in e2e no longer sometimes stalls with `#email` never visible.

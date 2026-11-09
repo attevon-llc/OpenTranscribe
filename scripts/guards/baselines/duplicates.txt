@@ -416,7 +416,6 @@ frontend/src/lib/api/llmSettings.test.ts	1	pre-existing duplicated blocks of 100
 frontend/src/lib/api/pyannoteCredential.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/api/redactionSettings.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/services/uploadService.test.ts	2	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
-frontend/src/lib/services/uploadService.ts	4	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/lib/supportAccess/wsHandlers.test.ts	1	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/accept-invite/+page.svelte	13	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes
 frontend/src/routes/chat/[[conversationId]]/page.llmAvailability.test.ts	3	pre-existing duplicated blocks of 100+ tokens, merged in the duplicate-code lanes

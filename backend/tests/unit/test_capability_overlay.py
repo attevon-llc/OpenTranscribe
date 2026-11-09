@@ -17,6 +17,7 @@ from typing import cast
 import pytest
 from fastapi import Request
 
+from app.api.capability_dependency import require_capability
 from app.core import capabilities
 from app.core.capabilities import AUDIENCE_PLATFORM
 from app.core.capabilities import CAPABILITY_AUDIENCE
@@ -26,7 +27,6 @@ from app.core.capabilities import PLATFORM_OVERLAY_KEYS
 from app.core.capabilities import get_capabilities
 from app.core.capabilities import get_capabilities_for_viewer
 from app.core.capabilities import is_platform_staff
-from app.core.capabilities import require_capability
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 

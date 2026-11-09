@@ -604,11 +604,13 @@ class TestSelfServiceChangeClearsTheHold:
             order.append("revoke")
             return 1
 
-        def _reissue(*_a, **_k) -> None:
+        def _reissue(*_a, **_k) -> tuple[str, str]:
             order.append("reissue")
+            return "access", "refresh"
 
         monkeypatch.setattr(endpoint, "revoke_all_sessions", _revoke)
         monkeypatch.setattr(endpoint, "reissue_current_session", _reissue)
+        monkeypatch.setattr(endpoint, "set_auth_cookies", lambda *_a, **_k: None)
         return {"order": order}
 
     def _change_password(self, endpoint, user, calls):

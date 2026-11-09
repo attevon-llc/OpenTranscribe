@@ -231,7 +231,7 @@ def _generate_login_tokens(
 
     Args:
         request: FastAPI request object (its scheme decides the cookie Secure flag
-            under ALLOW_INSECURE_COOKIES — see `auth/cookies.py:_secure_for_request`)
+            under ALLOW_INSECURE_COOKIES — see `api/cookies.py:_secure_for_request`)
         db: Database session
         user: User model object
         user_uuid_str: User UUID string
@@ -294,7 +294,7 @@ def _generate_login_tokens(
     )
 
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token, request)
     return response

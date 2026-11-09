@@ -6,7 +6,7 @@ log any 401 response as a console error, and the pre-probe design
 visitors that aborted the login page's own requests.
 """
 
-from app.auth.cookies import REFRESH_COOKIE
+from app.api.cookies import REFRESH_COOKIE
 
 
 class TestSessionProbe:

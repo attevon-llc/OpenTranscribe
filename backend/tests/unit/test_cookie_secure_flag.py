@@ -1,6 +1,6 @@
 """The auth-cookie ``Secure`` flag and its one documented opt-out.
 
-``app/auth/cookies.py`` computes ``_SECURE`` once at import time from
+``app/api/cookies.py`` computes ``_SECURE`` once at import time from
 ``settings.is_hardened``. A hardened deployment (the default — ``ENVIRONMENT``
 defaults to ``production``) sets ``Secure`` on every auth cookie, which is correct
 behind real TLS but is silently dropped by the browser on plain HTTP to anything
@@ -57,7 +57,7 @@ def _request(scheme: str) -> Request:
 
 
 def _reload_cookies_with(monkeypatch: pytest.MonkeyPatch, *, hardened: bool, allow_insecure: bool):
-    """Reload ``app.auth.cookies`` under a specific hardened/override combination.
+    """Reload ``app.api.cookies`` under a specific hardened/override combination.
 
     ``_SECURE`` is a module-level constant computed at import time (like
     ``app.utils.client_ip``'s trusted-proxy list), so exercising a different
@@ -69,7 +69,7 @@ def _reload_cookies_with(monkeypatch: pytest.MonkeyPatch, *, hardened: bool, all
     monkeypatch.setattr(type(settings), "is_hardened", property(lambda self: hardened))
     monkeypatch.setattr(settings, "ALLOW_INSECURE_COOKIES", allow_insecure)
 
-    import app.auth.cookies as cookies
+    import app.api.cookies as cookies
 
     return importlib.reload(cookies)
 
@@ -86,7 +86,7 @@ def _restore_real_cookies_module(monkeypatch: pytest.MonkeyPatch):
     """
     yield
     monkeypatch.undo()
-    import app.auth.cookies as cookies
+    import app.api.cookies as cookies
 
     importlib.reload(cookies)
 

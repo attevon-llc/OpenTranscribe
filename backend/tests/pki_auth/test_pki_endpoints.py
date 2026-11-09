@@ -577,7 +577,7 @@ class TestPKIEndpointThrottling:
     def test_pki_route_registered_with_limiter(self):
         """The slowapi limiter has a registered limit for the pki_login route."""
         from app.api.endpoints.auth import pki as pki_endpoint  # noqa: F401 - importing registers the route with the limiter
-        from app.auth.rate_limit import limiter
+        from app.api.rate_limit import limiter
 
         route_key = "app.api.endpoints.auth.pki.pki_login"
         assert route_key in limiter._route_limits or route_key in limiter._dynamic_route_limits

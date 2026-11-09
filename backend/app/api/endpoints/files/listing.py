@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.api.endpoints.auth import get_current_active_user
-from app.auth.rate_limit import get_directory_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_directory_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.utils import mask_email_for_display
 from app.db.base import get_db
 from app.models.media import MediaFile

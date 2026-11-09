@@ -41,7 +41,7 @@ def fake_request(scheme: str = "https") -> Request:
 
     For a unit test that calls an auth endpoint HELPER directly (bypassing the real
     ASGI request cycle) and needs *something* to satisfy a ``request: Request``
-    parameter — e.g. ``auth/cookies.py:_secure_for_request``, which reads only
+    parameter — e.g. ``api/cookies.py:_secure_for_request``, which reads only
     ``request.url.scheme``. Defaults to ``"https"``, the ordinary case, so a test
     that isn't specifically about the plain-HTTP LAN scenario
     (``ALLOW_INSECURE_COOKIES``) doesn't have to say so.
@@ -192,7 +192,7 @@ def reset_rate_limiter() -> None:
     """Clear EVERY counter the module-level slowapi ``limiter`` holds.
 
     ``Limiter.reset()`` only resets the primary storage (Redis). The limiter is built with
-    ``in_memory_fallback_enabled`` (see ``app.auth.rate_limit._create_limiter``), so when
+    ``in_memory_fallback_enabled`` (see ``app.api.rate_limit._create_limiter``), so when
     Redis is unreachable — always the case on CI and on most host runs — every request is
     counted in a separate in-memory fallback storage that ``reset()`` never touches. Counters
     from one test then eat into the next test's budget on the same xdist worker (#1131/#1133
@@ -200,7 +200,7 @@ def reset_rate_limiter() -> None:
     they are read defensively so a slowapi upgrade degrades to the old behaviour instead of
     breaking every rate-limit test.
     """
-    from app.auth.rate_limit import limiter
+    from app.api.rate_limit import limiter
 
     try:
         limiter.reset()  # primary storage; raises when Redis is unreachable

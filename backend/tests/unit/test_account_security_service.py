@@ -47,11 +47,9 @@ What is pinned here, in order:
 
 from __future__ import annotations
 
-from http.cookies import SimpleCookie
 from unittest.mock import Mock
 
 import pytest
-from fastapi import Response
 
 from app.auth.audit_events import AuditEventType
 from app.auth.session import InMemoryStore
@@ -62,7 +60,6 @@ from app.core.exceptions import InvalidInputError
 from app.core.security import verify_token
 from app.models.refresh_token import RefreshToken
 from app.services import account_security_service
-from tests.helpers import fake_request
 
 
 @pytest.fixture
@@ -85,13 +82,6 @@ def _mint_refresh_token(service: TokenService, db, user) -> RefreshToken:
         db=db, user_id=user.id, user_uuid=str(user.uuid), role=str(user.role)
     )
     return row
-
-
-def _cookie_value(response: Response, name: str) -> str:
-    cookie: SimpleCookie = SimpleCookie()
-    for raw in response.headers.getlist("set-cookie"):
-        cookie.load(raw)
-    return cookie[name].value
 
 
 # ── revoke_all_sessions ──────────────────────────────────────────────────────────────
@@ -159,17 +149,12 @@ def test_reissue_current_session_survives_the_epoch_it_was_just_issued_under(
         isolated_token_service.store.get(f"{USER_REVOCATION_EPOCH_PREFIX}{normal_user.uuid}")
     )
 
-    response = Response()
-    account_security_service.reissue_current_session(
+    access_token, _refresh = account_security_service.reissue_current_session(
         db_session,
         normal_user,
-        response,
-        fake_request(),
         user_agent="pytest",
         ip_address="127.0.0.1",
     )
-
-    access_token = _cookie_value(response, "access_token")
     claims = verify_token(access_token)
 
     # A session reissued after revocation can never predate the epoch it followed.

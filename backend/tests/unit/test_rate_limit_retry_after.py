@@ -26,10 +26,10 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.wrappers import Limit
 from starlette.requests import Request
 
-from app.auth import rate_limit as rate_limit_module
-from app.auth.rate_limit import _extract_retry_seconds
-from app.auth.rate_limit import _retry_after_from_window_stats
-from app.auth.rate_limit import rate_limit_exceeded_handler
+from app.api import rate_limit as rate_limit_module
+from app.api.rate_limit import _extract_retry_seconds
+from app.api.rate_limit import _retry_after_from_window_stats
+from app.api.rate_limit import rate_limit_exceeded_handler
 
 
 def _make_request() -> Request:

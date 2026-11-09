@@ -13,6 +13,7 @@ from fastapi import Response
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.capability_dependency import require_capability
 from app.api.endpoints.admin_system_metrics import get_cpu_usage
 from app.api.endpoints.admin_system_metrics import get_disk_usage
 from app.api.endpoints.admin_system_metrics import get_gpu_usage
@@ -20,7 +21,6 @@ from app.api.endpoints.admin_system_metrics import get_memory_usage
 from app.api.endpoints.admin_system_metrics import get_system_uptime
 from app.api.endpoints.auth import get_current_active_user
 from app.api.endpoints.auth import get_optional_current_user
-from app.core.capabilities import require_capability
 from app.core.config import settings
 from app.core.env import env_bool
 from app.core.exceptions import DomainError

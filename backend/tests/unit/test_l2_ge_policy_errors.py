@@ -215,7 +215,7 @@ def test_unservable_whisper_model_is_422(monkeypatch):
 
 
 def test_require_capability_dependency_404_body_headers_and_str():
-    from app.core.capabilities import require_capability
+    from app.api.capability_dependency import require_capability
 
     dep = require_capability("billing")  # off in community
     with pytest.raises(REFUSAL) as exc:

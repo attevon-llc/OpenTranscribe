@@ -29,9 +29,9 @@ from app import schemas
 from app.api.deps_context import get_current_context
 from app.api.endpoints.asr_config_state import _get_config_or_404
 from app.api.endpoints.auth import get_current_active_user
-from app.auth.rate_limit import get_api_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_api_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.db.base import get_db
 from app.services.asr.base import ASRProvider
 from app.services.request_context import RequestContext

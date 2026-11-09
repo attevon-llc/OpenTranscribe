@@ -133,7 +133,7 @@ def get_current_user(
     When TOKEN_REVOCATION_ENABLED is true, also checks if the token's JTI
     is on the revocation blacklist (FedRAMP AC-12 compliance).
     """
-    from app.auth.cookies import get_access_token_from_cookie
+    from app.api.cookies import get_access_token_from_cookie
 
     # Try Bearer header first, then fall back to httpOnly cookie
     if not token:
@@ -280,7 +280,7 @@ def get_optional_current_user(
     Returns:
         User object if valid token provided, None otherwise
     """
-    from app.auth.cookies import get_access_token_from_cookie
+    from app.api.cookies import get_access_token_from_cookie
 
     # Check for Authorization header first
     authorization = request.headers.get("Authorization")

@@ -26,13 +26,13 @@ SENSITIVE_KEYS = {
 #: the reason is recorded next to it. ``tests/unit/test_auth_config_has_readers``
 #: enforces the membership in both directions.
 #:
-#: * ``jwt_*`` — read at **import time** by ``app/auth/cookies.py`` to compute
+#: * ``jwt_*`` — read at **import time** by ``app/api/cookies.py`` to compute
 #:   ``ACCESS_MAX_AGE`` / ``REFRESH_MAX_AGE``. Honouring a live change for the
 #:   token but not the cookie would end sessions early (cookie expires first)
 #:   or leave a dead cookie behind (token expires first). Everything else in
 #:   the session category is enforced against ``refresh_token`` rows at
 #:   request time and is genuinely live.
-#: * ``rate_limit_enabled`` — ``auth/rate_limit.py`` builds the module-level
+#: * ``rate_limit_enabled`` — ``api/rate_limit.py`` builds the module-level
 #:   ``Limiter(enabled=settings.RATE_LIMIT_ENABLED)`` at import.
 #: * ``rate_limit_auth_per_minute`` — every auth endpoint is decorated
 #:   ``@limiter.limit(get_auth_rate_limit())``, and a decorator argument is

@@ -74,7 +74,7 @@ def test_two_clients_behind_a_trusted_proxy_get_independent_rate_limit_keys(monk
     sending different `X-Forwarded-For` values must resolve to two different rate-limit
     keys. Reading `resolve_client_ip` is what the key function actually calls — this is
     not a re-implementation, it is the real dependency the limiter is built on
-    (`app/auth/rate_limit.py::_get_key_func`).
+    (`app/api/rate_limit.py::_get_key_func`).
     """
     mod = _module_with_proxies(monkeypatch, "172.20.0.0/16")  # the nginx container's subnet
 
@@ -108,7 +108,7 @@ def test_rate_limiter_key_func_is_the_same_resolver_under_test(monkeypatch):
     testing nothing about the actual rate limiter."""
     import inspect
 
-    from app.auth import rate_limit
+    from app.api import rate_limit
 
     assert "resolve_client_ip" in inspect.getsource(rate_limit._get_key_func)
 

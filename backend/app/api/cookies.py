@@ -10,13 +10,10 @@ from fastapi import Request
 from starlette.responses import Response
 
 from app.core.config import settings
-
-ACCESS_COOKIE = "access_token"
-REFRESH_COOKIE = "refresh_token"
-CSRF_COOKIE = "csrf_token"
-#: Binds an in-flight OIDC login to the browser that started it — see
-#: :func:`set_oidc_state_binding`.
-OIDC_STATE_COOKIE = "oidc_state_binding"
+from app.core.cookie_names import ACCESS_COOKIE
+from app.core.cookie_names import CSRF_COOKIE
+from app.core.cookie_names import OIDC_STATE_COOKIE
+from app.core.cookie_names import REFRESH_COOKIE
 
 # Cookie max-age mirrors JWT expiration settings
 ACCESS_MAX_AGE = settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60

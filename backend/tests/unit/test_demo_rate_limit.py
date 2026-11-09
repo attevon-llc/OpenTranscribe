@@ -1,7 +1,7 @@
 """The public demo's per-client-IP ceiling on every route, behind a proxy (#628, #668).
 
 On the demo the auth routes' own limits are not enough: every visitor reaches the read
-surface, which has no per-route limit. ``app/auth/rate_limit.py`` gives the limiter a
+surface, which has no per-route limit. ``app/api/rate_limit.py`` gives the limiter a
 default limit only when ``DEMO_MODE`` is on, and ``app/main.py`` installs slowapi's
 ``SlowAPIASGIMiddleware`` (slowapi docs: default limits apply to undecorated routes only
 through the middleware) only then. These tests drive the real limiter factory and the real
@@ -43,7 +43,7 @@ def demo_app(monkeypatch):
     monkeypatch.setattr(settings, "REDIS_URL", "memory://")
     monkeypatch.setattr(settings, "RATE_LIMIT_TRUSTED_PROXIES", "172.20.0.0/16")
     importlib.reload(importlib.import_module("app.utils.client_ip"))
-    from app.auth import rate_limit
+    from app.api import rate_limit
 
     limiter = rate_limit._create_limiter()
     monkeypatch.setattr(rate_limit, "limiter", limiter)
@@ -92,7 +92,7 @@ def test_an_untrusted_client_cannot_forge_a_fresh_bucket(demo_app):
 
 def test_outside_demo_mode_there_is_no_default_limit(monkeypatch):
     monkeypatch.setattr(settings, "DEMO_MODE", False)
-    from app.auth import rate_limit
+    from app.api import rate_limit
 
     assert rate_limit.demo_default_limits() == []
 

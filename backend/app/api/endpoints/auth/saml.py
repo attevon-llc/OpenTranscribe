@@ -35,14 +35,14 @@ from sqlalchemy.orm import Session
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import _check_mfa_requirement
 from app.api.endpoints.auth.login_completion import record_successful_login
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
 from app.api.saml_request import saml_request_data
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
 from app.auth.revocation_error import RevocationError
 from app.auth.saml.assertion import extract_saml_user_data
 from app.auth.saml.config import SAMLConfig
@@ -321,7 +321,7 @@ def _complete_saml_acs(
     redirect_to = _sanitize_relay_state(request_data["post_data"].get("RelayState"))
 
     response = RedirectResponse(url=redirect_to, status_code=status.HTTP_302_FOUND)
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token, request)
     return response
@@ -364,9 +364,9 @@ def _complete_saml_sls(
     """The synchronous remainder of :func:`saml_sls`, run in the threadpool."""
     auth = _build_auth(request_data, cfg)
 
-    from app.auth.cookies import clear_auth_cookies
-    from app.auth.cookies import get_access_token_from_cookie
-    from app.auth.cookies import get_refresh_token_from_cookie
+    from app.api.cookies import clear_auth_cookies
+    from app.api.cookies import get_access_token_from_cookie
+    from app.api.cookies import get_refresh_token_from_cookie
 
     revocation_failed = False
     processing_failed = False

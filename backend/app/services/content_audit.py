@@ -48,16 +48,12 @@ from app.core.constants import CONTENT_AUDIT_DEDUP_SECONDS
 from app.services import audit_outbox
 
 if TYPE_CHECKING:
-    from fastapi import Request
     from sqlalchemy.orm import Session
 
+    from app.core.request_scope import RequestScope
     from app.models.user import User
     from app.services.platform_bypass import PlatformBypass
 
-    #: The HTTP request an event takes its client address from. Services that only pass a
-    #: request through to the audit name it by this alias, so the web framework is imported
-    #: here, at the audit's HTTP edge, and not again in every service.
-    AuditRequest = Request
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +114,7 @@ class AuditedResource:
         return cls.of("conversation", row)
 
 
-def content_audit_enabled(db: Session, request: Request | None = None) -> bool:
+def content_audit_enabled(db: Session, request: RequestScope | None = None) -> bool:
     """True when the view / media-access / export events are being recorded.
 
     Both gates must be open: the deployment's ``audit.content_access`` capability (a derived
@@ -172,7 +168,7 @@ def _is_view_class(event: AuditEventType, details: dict[str, Any]) -> bool:
 
 def record_content_event(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     *,
     event: AuditEventType,
     actor: User,
@@ -213,7 +209,7 @@ def record_content_event(
 
 
 def _event_kwargs(
-    request: Request | None,
+    request: RequestScope | None,
     event: AuditEventType,
     actor: User,
     resource: AuditedResource,
@@ -249,7 +245,7 @@ def _event_kwargs(
 
 def stage_content_event(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     *,
     event: AuditEventType,
     actor: User,
@@ -276,7 +272,7 @@ def stage_content_event(
 
 def record_file_event(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     *,
     event: AuditEventType,
     actor: User,

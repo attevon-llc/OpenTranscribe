@@ -27,19 +27,19 @@ from fastapi import status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.api.cookies import set_auth_cookies
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import _check_mfa_requirement
 from app.api.endpoints.auth.login_completion import record_successful_login
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
 from app.auth.audit import audit_logger
-from app.auth.cookies import set_auth_cookies
 from app.auth.direct_auth import create_access_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.proxy.assertion import REFUSAL_DETAIL
 from app.auth.proxy.assertion import extract_proxy_assertion
 from app.auth.proxy.config import ProxyConfig
 from app.auth.proxy.provisioning import sync_proxy_user_to_db
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.db.base import get_db

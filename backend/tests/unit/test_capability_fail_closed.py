@@ -14,11 +14,11 @@ from typing import cast
 
 import pytest
 
+from app.api.capability_dependency import require_capability
 from app.core import capabilities
 from app.core.capabilities import COMMUNITY_CAPABILITIES
 from app.core.capabilities import capability_enabled
 from app.core.capabilities import get_capabilities
-from app.core.capabilities import require_capability
 from app.core.capabilities import reset_capability_resolver
 from app.core.capabilities import set_capability_resolver
 from app.core.exceptions import ResourceNotFoundError

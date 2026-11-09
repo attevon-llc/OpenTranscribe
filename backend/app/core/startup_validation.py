@@ -256,7 +256,7 @@ def _validate_production_secrets() -> None:
         raise ValueError("DEBUG must be false in production environment")
 
     # ALLOW_INSECURE_COOKIES strips the auth cookies' Secure flag on plain-HTTP
-    # requests to this deployment (see auth/cookies.py:_secure_for_request) — the
+    # requests to this deployment (see api/cookies.py:_secure_for_request) — the
     # documented, narrow opt-out for a homelab/small-business LAN install with no
     # TLS-terminating reverse proxy. Logged here, not at cookies.py's import time:
     # this function runs after configure_logging(), so under LOG_FORMAT=json this

@@ -405,7 +405,7 @@ class SessionConfig(_CategoryConfig):
     """
 
     #: Restart-required (``auth_config_keys.RESTART_REQUIRED_KEYS``):
-    #: ``auth/cookies.py`` computes cookie max-age from these two at import time,
+    #: ``api/cookies.py`` computes cookie max-age from these two at import time,
     #: so a live change would leave cookie and token lifetimes disagreeing.
     jwt_access_token_expire_minutes: int = Field(default=60, ge=1, le=1440)
     jwt_refresh_token_expire_days: int = Field(default=7, ge=1, le=365)

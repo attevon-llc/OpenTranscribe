@@ -25,13 +25,13 @@ from app.api.endpoints.auth.mfa_tokens import _is_mfa_required
 from app.api.endpoints.auth.mfa_tokens import _user_can_setup_mfa
 from app.api.endpoints.auth.mfa_tokens import _verify_mfa_code
 from app.api.endpoints.auth.mfa_tokens import mfa_token_ttl_seconds
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
 from app.auth.mfa import MFAService
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.core.auth_settings import get_auth_settings
 from app.db.base import get_db
 from app.models.user import User

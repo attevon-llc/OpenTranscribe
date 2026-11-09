@@ -22,12 +22,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.api.cookies import clear_oidc_state_binding
+from app.api.cookies import get_oidc_state_binding
+from app.api.cookies import set_oidc_state_binding
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import record_successful_login
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
 from app.auth.audit import audit_logger
-from app.auth.cookies import clear_oidc_state_binding
-from app.auth.cookies import get_oidc_state_binding
-from app.auth.cookies import set_oidc_state_binding
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.mfa import MFAService
@@ -38,8 +40,6 @@ from app.auth.oidc import exchange_code_for_tokens
 from app.auth.oidc import get_authorization_url
 from app.auth.oidc import sync_oidc_user_to_db
 from app.auth.oidc import validate_token as validate_oidc_token
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
 from app.auth.session import OIDCStateStore
 from app.auth.token_service import token_service
 from app.core.config import settings
@@ -397,7 +397,7 @@ def _complete_oidc_login(
     )
 
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token, request)
     # The flow is complete; the binding cookie has served its purpose.

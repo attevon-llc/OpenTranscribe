@@ -176,10 +176,10 @@ def test_csrf_cookie_outlives_the_access_cookie():
     """Regression: pinning the CSRF cookie to ACCESS_MAX_AGE broke idle refresh."""
     from starlette.responses import Response
 
-    from app.auth.cookies import ACCESS_MAX_AGE
-    from app.auth.cookies import CSRF_COOKIE
-    from app.auth.cookies import REFRESH_MAX_AGE
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import ACCESS_MAX_AGE
+    from app.api.cookies import CSRF_COOKIE
+    from app.api.cookies import REFRESH_MAX_AGE
+    from app.api.cookies import set_auth_cookies
     from tests.helpers import fake_request
 
     response = Response()
@@ -198,8 +198,8 @@ def test_refresh_cookie_is_samesite_strict():
     """It is only ever used by same-site XHR, so it never needs Lax."""
     from starlette.responses import Response
 
-    from app.auth.cookies import REFRESH_COOKIE
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import REFRESH_COOKIE
+    from app.api.cookies import set_auth_cookies
     from tests.helpers import fake_request
 
     response = Response()

@@ -32,11 +32,11 @@ from sqlalchemy.orm import Session
 from app import models
 from app.api.endpoints.auth.dependencies import get_current_active_superuser
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.core import local_whisper_catalog as catalog
 from app.core.redis import get_request_redis
 from app.db.base import get_db

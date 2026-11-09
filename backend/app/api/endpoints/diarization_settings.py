@@ -30,13 +30,13 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.endpoints.auth import get_current_active_user
+from app.api.rate_limit import get_api_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.audit import audit_logger
 from app.auth.audit import request_org_id
 from app.auth.audit_events import AuditEventType
 from app.auth.audit_events import AuditOutcome
-from app.auth.rate_limit import get_api_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import DEFAULT_DIARIZATION_SOURCE
 from app.core.constants import PYANNOTE_DEFAULT_DIARIZATION_MODEL
 from app.core.locked_settings import locked_transcription_fields

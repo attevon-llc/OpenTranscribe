@@ -27,10 +27,10 @@ from fastapi import HTTPException
 from redis.exceptions import RedisError
 from sqlalchemy.orm import Session
 
+from app.api.capability_dependency import require_capability
 from app.api.deps_context import get_current_context
 from app.api.deps_context import refuse_under_support_grant
 from app.api.endpoints.auth import get_current_active_user
-from app.core.capabilities import require_capability
 from app.core.constants import DOCUMENT_EXPORT_GUARD_TTL_S
 from app.db.base import get_db
 from app.models.user import User

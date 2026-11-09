@@ -15,11 +15,11 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
-from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.process_auth_settings import prime_process_auth_settings
+from app.core.request_scope import RequestScope
 from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
 from app.schemas.auth_config_validation import CROSS_FIELD_KEYS
@@ -289,7 +289,7 @@ class AuthConfigService:
         is_sensitive: bool,
         category: str,
         user_id: int,
-        request: Request | None = None,
+        request: RequestScope | None = None,
         data_type: str | None = None,
         description: str | None = None,
     ) -> AuthConfig:
@@ -402,7 +402,9 @@ class AuthConfigService:
             change_type=change_type,
             ip_address=request.client.host if request and request.client else None,
             user_agent=(
-                request.headers.get("user-agent", "")[:512] if request and request.headers else None
+                (request.headers.get("user-agent") or "")[:512]
+                if request and request.headers
+                else None
             ),
         )
         db.add(audit)
@@ -428,7 +430,7 @@ class AuthConfigService:
         db: Session,
         key: str,
         user_id: int,
-        request: Request | None = None,
+        request: RequestScope | None = None,
     ) -> bool:
         """Delete a configuration value with audit logging.
 
@@ -457,7 +459,9 @@ class AuthConfigService:
             change_type="delete",
             ip_address=request.client.host if request and request.client else None,
             user_agent=(
-                request.headers.get("user-agent", "")[:512] if request and request.headers else None
+                (request.headers.get("user-agent") or "")[:512]
+                if request and request.headers
+                else None
             ),
         )
         db.add(audit)
@@ -478,7 +482,7 @@ class AuthConfigService:
         category: str,
         config_dict: dict[str, Any],
         user_id: int,
-        request: Request | None = None,
+        request: RequestScope | None = None,
     ) -> dict[str, AuthConfig]:
         """Update multiple configuration values for a category.
 

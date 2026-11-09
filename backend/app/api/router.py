@@ -139,7 +139,7 @@ def include_router_with_consistency(
 
     dependencies = []
     if capability is not None:
-        from app.core.capabilities import require_capability
+        from app.api.capability_dependency import require_capability
 
         dependencies.append(
             Depends(require_capability(capability, platform_admin_bypass=platform_admin_bypass))

@@ -27,8 +27,8 @@ from fixtures.auth_state_isolation import AUTH_STATE_MODULES as _STATE_MODULES
 from fixtures.auth_state_isolation import AUTH_STATEFUL_GLOBALS as _STATEFUL_GLOBALS
 from starlette.requests import Request
 
+from app.api import rate_limit as rate_limit_module
 from app.auth import lockout_store as lockout_store_module
-from app.auth import rate_limit as rate_limit_module
 from app.auth import session as session_module
 from app.auth.lockout_store import REDIS_REPROBE_SECONDS
 

@@ -28,8 +28,6 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import timedelta
 
-from fastapi import Request
-from fastapi import Response
 from sqlalchemy.orm import Session
 
 from app.auth.audit import audit_logger
@@ -185,12 +183,10 @@ def revoke_all_sessions(db: Session, user: User, *, reason: str) -> int:
 def reissue_current_session(
     db: Session,
     user: User,
-    response: Response,
-    request: Request,
     *,
     user_agent: str | None = None,
     ip_address: str | None = None,
-) -> None:
+) -> tuple[str, str]:
     """Give the caller a working session back after changing their OWN credential.
 
     :func:`revoke_all_sessions` is deliberately total: it kills the session the
@@ -208,13 +204,13 @@ def reissue_current_session(
         db: Session; ``create_refresh_token`` commits, so call this AFTER the
             caller's own commit.
         user: The account whose session is being re-established.
-        response: The outgoing response; auth cookies are set on it.
-        request: The inbound request; its scheme decides the cookie Secure flag
-            under ALLOW_INSECURE_COOKIES (see `auth/cookies.py:_secure_for_request`).
         user_agent: Recorded on the new session row.
         ip_address: Recorded on the new session row.
+
+    Returns:
+        ``(access_token, refresh_token)``; the router sets them as cookies
+        (``api/cookies.py:set_auth_cookies``), which this layer does not know about.
     """
-    from app.auth.cookies import set_auth_cookies
     from app.auth.direct_auth import create_access_token
 
     role = str(user.role)
@@ -232,8 +228,8 @@ def reissue_current_session(
         user_agent=user_agent,
         ip_address=ip_address,
     )
-    set_auth_cookies(response, access_token, refresh_token, request)
     logger.info("Re-issued the caller's session for user %s after a credential change", user.id)
+    return access_token, refresh_token
 
 
 def audit_password_change(

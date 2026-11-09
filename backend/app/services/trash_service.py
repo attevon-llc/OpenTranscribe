@@ -67,8 +67,8 @@ from app.services.hold_guard import held_pred
 from app.services.hold_guard import not_held_pred
 
 if TYPE_CHECKING:
+    from app.core.request_scope import RequestScope
     from app.models.user import User
-    from app.services.content_audit import AuditRequest as Request
     from app.services.platform_bypass import PlatformBypass
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ def _db_now(db: Session) -> Any:
 
 def _stage(
     db: Session,
-    request: Request | None,
+    request: RequestScope | None,
     event: AuditEventType,
     actor: User,
     file: MediaFile,
@@ -118,7 +118,7 @@ def trash_files(
     files: Sequence[MediaFile],
     *,
     actor: User,
-    request: Request | None,
+    request: RequestScope | None,
     bypass: PlatformBypass | None,
 ) -> list[MediaFile]:
     """Move ``files`` to the trash in ONE transaction; return the files this call trashed.
@@ -191,7 +191,7 @@ def restore_files(
     files: Sequence[MediaFile],
     *,
     actor: User,
-    request: Request | None,
+    request: RequestScope | None,
     bypass: PlatformBypass | None,
 ) -> tuple[list[MediaFile], list[MediaFile]]:
     """Bring ``files`` back from the trash; return ``(restored, not_restorable)``.
@@ -238,7 +238,7 @@ def _mark_due(
     files: Sequence[MediaFile],
     *,
     actor: User,
-    request: Request | None,
+    request: RequestScope | None,
     bypass: PlatformBypass | None,
 ) -> tuple[list[MediaFile], list[MediaFile]]:
     """Stage "delete forever" for ``files`` in the open transaction; the caller commits."""
@@ -278,7 +278,7 @@ def mark_for_immediate_purge(
     files: Sequence[MediaFile],
     *,
     actor: User,
-    request: Request | None,
+    request: RequestScope | None,
     bypass: PlatformBypass | None,
 ) -> tuple[list[MediaFile], list[MediaFile]]:
     """Make trashed files due now ("delete forever"); return ``(marked, refused)``.
@@ -298,7 +298,7 @@ def empty_trash(
     files: Sequence[MediaFile],
     *,
     actor: User,
-    request: Request | None,
+    request: RequestScope | None,
     bypass: PlatformBypass | None,
     org_id: int | None,
 ) -> list[MediaFile]:

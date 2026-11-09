@@ -198,7 +198,7 @@ def test_placeholders_allowed_in_development(production_settings):
 def test_allow_insecure_cookies_warns_in_production(production_settings, caplog):
     """The ALLOW_INSECURE_COOKIES relaxation must be visible at boot, in JSON.
 
-    This warning used to live in ``app/auth/cookies.py``, logged at module-import
+    This warning used to live in ``app/api/cookies.py``, logged at module-import
     time — before ``main.py``'s ``configure_logging()`` runs (that module is
     imported transitively via the auth routers, well before line 36 of
     ``main.py``). Under ``LOG_FORMAT=json`` that made it the one boot line NOT

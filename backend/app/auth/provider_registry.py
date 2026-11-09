@@ -22,9 +22,8 @@ from dataclasses import field
 from typing import Any
 from typing import Protocol
 
-from starlette.requests import HTTPConnection
-
 from app.auth.auth_type_admission import core_admits
+from app.core.request_scope import RequestScope
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,7 @@ class ExternalIdentity:
 class TokenVerifier(Protocol):
     """Protocol for external token verifiers (implemented by the cloud layer)."""
 
-    def verify(self, token: str, request: HTTPConnection) -> ExternalIdentity | None:
+    def verify(self, token: str, request: RequestScope) -> ExternalIdentity | None:
         """Return the verified identity, or None if this token isn't ours/valid."""
         ...
 
@@ -109,7 +108,7 @@ def get_registered_providers() -> list[str]:
     return sorted(_verifiers)
 
 
-def verify_external_token(token: str, request: HTTPConnection) -> ExternalIdentity | None:
+def verify_external_token(token: str, request: RequestScope) -> ExternalIdentity | None:
     """Offer a bearer token to every registered verifier, first match wins.
 
     Exceptions are contained per-verifier so external-auth problems can never

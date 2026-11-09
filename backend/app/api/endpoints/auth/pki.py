@@ -15,14 +15,14 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
 from app.api.endpoints.auth.login_completion import record_successful_login
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
 from app.auth.audit import audit_logger
 from app.auth.direct_auth import create_access_token as direct_create_token
 from app.auth.lockout import check_and_record_attempt
 from app.auth.pki_auth import extract_dn_from_headers
 from app.auth.pki_auth import pki_authenticate
 from app.auth.pki_provisioning import sync_pki_user_to_db
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
 from app.auth.token_service import token_service
 from app.core.auth_settings import get_auth_settings
 from app.core.config import settings
@@ -185,7 +185,7 @@ def pki_login(request: Request, response: Response, db: Session = Depends(get_db
     )
 
     # Set httpOnly cookies for browser-based authentication (C2 security hardening)
-    from app.auth.cookies import set_auth_cookies
+    from app.api.cookies import set_auth_cookies
 
     set_auth_cookies(response, access_token, refresh_token, request)
     return response

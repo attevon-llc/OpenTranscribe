@@ -33,9 +33,9 @@ from app.services.pipeline_plan import resolve_pipeline_plan
 from app.services.pipeline_plan_inputs import load_plan_inputs
 
 if TYPE_CHECKING:
-    from fastapi import Request
     from sqlalchemy.orm import Session
 
+    from app.core.request_scope import RequestScope
     from app.models.user_asr_settings import UserASRSettings
 
 #: The plan steps whose blocking issues refuse an ASR switch (rules in the module docstring).
@@ -58,7 +58,7 @@ def assess_asr_switch(
     user_id: int,
     target: UserASRSettings | None,
     *,
-    request: Request | None = None,
+    request: RequestScope | None = None,
     refused_steps: frozenset[str] = REFUSED_STEPS,
 ) -> SwitchOutcome:
     """Plan the user's next file as if ``target`` were the active config.
@@ -93,7 +93,7 @@ def assess_asr_switch(
 
 
 def _transcription_refusal(
-    db: Session, user_id: int, target: UserASRSettings | None, request: Request | None
+    db: Session, user_id: int, target: UserASRSettings | None, request: RequestScope | None
 ) -> PlanIssue | None:
     """The transcription-step refusal a switch to ``target`` would get, if any."""
     refusal = assess_asr_switch(db, user_id, target, request=request).refusal
@@ -105,7 +105,7 @@ def active_delete_refusal(
     user_id: int,
     remaining: list[UserASRSettings],
     *,
-    request: Request | None = None,
+    request: RequestScope | None = None,
 ) -> PlanIssue | None:
     """Why deleting the user's ACTIVE config must be refused, or ``None`` (issue #1228).
 
@@ -126,7 +126,7 @@ def choose_after_active_delete(
     user_id: int,
     remaining: list[UserASRSettings],
     *,
-    request: Request | None = None,
+    request: RequestScope | None = None,
 ) -> UserASRSettings | None:
     """What becomes active once the user's active config is deleted; ``None``: clear.
 

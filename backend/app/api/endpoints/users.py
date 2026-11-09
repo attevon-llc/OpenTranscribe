@@ -16,11 +16,11 @@ from app.api.deps_context import get_current_context
 from app.api.endpoints import users_admin_edit
 from app.api.endpoints import users_self_service
 from app.api.endpoints.auth import get_current_admin_user
+from app.api.rate_limit import get_directory_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 from app.auth.constants import EXTERNAL_AUTH_NO_PASSWORD
 from app.auth.password_history import add_password_to_history
-from app.auth.rate_limit import get_directory_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
 from app.auth.roles import ROLE_USER
 from app.auth.roles import VALID_ROLES
 from app.auth.roles import role_implies_superuser

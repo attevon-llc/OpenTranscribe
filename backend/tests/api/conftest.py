@@ -83,7 +83,7 @@ def rate_limiting_enabled():
     can be flipped per test. Counters are cleared on entry too, because a rate-limited
     request made by a test that did NOT use this fixture would otherwise leak in.
     """
-    from app.auth.rate_limit import limiter
+    from app.api.rate_limit import limiter
     from tests.helpers import reset_rate_limiter
 
     was_enabled = limiter.enabled

@@ -19,9 +19,9 @@ from starlette.types import Receive
 from starlette.types import Scope
 from starlette.types import Send
 
-from app.auth.cookies import ACCESS_COOKIE
-from app.auth.cookies import CSRF_COOKIE
-from app.auth.cookies import REFRESH_COOKIE
+from app.core.cookie_names import ACCESS_COOKIE
+from app.core.cookie_names import CSRF_COOKIE
+from app.core.cookie_names import REFRESH_COOKIE
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ class CSRFMiddleware:
             return None
 
         # Double-submit CSRF validation. The csrf_token cookie is minted with the
-        # REFRESH token's lifetime (app/auth/cookies.py), so an idle session still
+        # REFRESH token's lifetime (app/api/cookies.py), so an idle session still
         # has one to submit when its access cookie has lapsed — no carve-out needed.
         cookie_csrf = request.cookies.get(CSRF_COOKIE, "")
         header_csrf = request.headers.get("x-csrf-token", "")

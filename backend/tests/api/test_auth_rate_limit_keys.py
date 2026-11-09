@@ -18,7 +18,7 @@ import pytest
 from fastapi import status
 from starlette.testclient import TestClient
 
-from app.auth.rate_limit import limiter
+from app.api.rate_limit import limiter
 from app.auth.token_service import token_service
 from app.core.config import settings
 from app.core.constants import LOGIN_IP_BACKSTOP_MULTIPLIER

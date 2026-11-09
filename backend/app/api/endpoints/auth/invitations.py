@@ -24,6 +24,8 @@ from sqlalchemy.orm import Session
 
 from app.api.endpoints.auth.dependencies import get_current_admin_user
 from app.api.endpoints.auth.lifecycle_gates import _get_client_info
+from app.api.rate_limit import get_auth_rate_limit
+from app.api.rate_limit import limiter
 from app.auth.audit import audit_logger
 from app.auth.audit_events import AuditEventType
 from app.auth.invitations import GENERIC_INVALID
@@ -32,8 +34,6 @@ from app.auth.invitations import create_invitation
 from app.auth.invitations import invitation_status
 from app.auth.invitations import lookup_invitation
 from app.auth.invitations import revoke_invitation
-from app.auth.rate_limit import get_auth_rate_limit
-from app.auth.rate_limit import limiter
 from app.auth.roles import ELEVATED_ROLES
 from app.auth.roles import ROLE_SUPER_ADMIN
 from app.core.auth_types import AUTH_TYPE_LOCAL

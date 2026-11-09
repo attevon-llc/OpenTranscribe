@@ -14,9 +14,9 @@ from fastapi import Response
 from app import models
 from app import schemas
 from app.api.endpoints.auth import get_current_active_user
-from app.auth.rate_limit import get_llm_outbound_rate_limit
-from app.auth.rate_limit import limiter
-from app.auth.rate_limit import user_or_ip_key
+from app.api.rate_limit import get_llm_outbound_rate_limit
+from app.api.rate_limit import limiter
+from app.api.rate_limit import user_or_ip_key
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -217,7 +217,7 @@ def test_auth_client_info_uses_shared_resolver():
 def test_rate_limiter_uses_shared_resolver():
     import inspect
 
-    from app.auth import rate_limit
+    from app.api import rate_limit
 
     assert "resolve_client_ip" in inspect.getsource(rate_limit._get_key_func)
 

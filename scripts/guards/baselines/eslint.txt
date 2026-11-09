@@ -16,7 +16,7 @@ frontend/src/components/CommentSection.svelte::max-depth	2	function-size gates a
 frontend/src/components/FileDetailSkeleton.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FileHeader.svelte::svelte/require-each-key	1	lint: burn-down planned
 frontend/src/components/FileUploader.svelte::svelte/require-each-key	1	lint: burn-down planned
-frontend/src/components/FilterSidebar.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
+frontend/src/components/FilterSidebar.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
 frontend/src/components/FilterSidebar.svelte::no-useless-assignment	4	lint: burn-down planned
 frontend/src/components/FilterSidebar.svelte::svelte/require-each-key	5	lint: burn-down planned
 frontend/src/components/IdleTimeoutDialog.svelte::svelte/infinite-reactive-loop	1	lint: burn-down planned
@@ -26,8 +26,6 @@ frontend/src/components/NotificationsPanel.svelte::svelte/infinite-reactive-loop
 frontend/src/components/NotificationsPanel.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/RetrievalQualityNotice.svelte::svelte/no-reactive-reassign	1	lint: burn-down planned
 frontend/src/components/SelectiveReprocessModal.svelte::svelte/infinite-reactive-loop	8	lint: burn-down planned
-frontend/src/components/SettingsModal.svelte::@typescript-eslint/no-explicit-any	2	lint: burn-down planned
-frontend/src/components/SettingsModal.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/components/SettingsModal.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/components/SettingsModal.svelte::svelte/require-each-key	4	lint: burn-down planned
 frontend/src/components/SettingsModal.test.ts::max-lines-per-function	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
@@ -236,9 +234,8 @@ frontend/src/routes/+layout.svelte::@typescript-eslint/no-explicit-any	8	v0.6.1 
 frontend/src/routes/+layout.svelte::complexity	1	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
 frontend/src/routes/+layout.svelte::no-useless-assignment	3	lint: burn-down planned
 frontend/src/routes/+layout.svelte::svelte/infinite-reactive-loop	8	v0.6.1 merge: release lazy ErasureRequestBanner follows the sibling Component<any> lazy-load pattern; typed loader planned
-frontend/src/routes/+page.svelte::@typescript-eslint/no-explicit-any	15	lint: burn-down planned
-frontend/src/routes/+page.svelte::complexity	2	function-size gates added (complexity 15, max-depth 4, max-lines-per-function 150); pre-existing, refactored in the frontend complexity lane
-frontend/src/routes/+page.svelte::svelte/prefer-svelte-reactivity	5	lint: burn-down planned
+frontend/src/routes/+page.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned
+frontend/src/routes/+page.svelte::svelte/prefer-svelte-reactivity	3	lint: burn-down planned
 frontend/src/routes/chat/[[conversationId]]/+page.svelte::no-useless-assignment	2	lint: burn-down planned
 frontend/src/routes/files/[id]/+page.svelte::@typescript-eslint/no-explicit-any	4	lint: burn-down planned
 frontend/src/routes/forgot-password/+page.svelte::@typescript-eslint/no-explicit-any	1	lint: burn-down planned

@@ -1,3 +1,0 @@
-noqa::backend/app/api/endpoints/asr_settings.py	1	suppression: reason to be added
-noqa::backend/app/services/asr/gladia_provider.py	1	suppression: reason to be added
-noqa::backend/app/services/asr/pyannote_provider.py	1	suppression: reason to be added

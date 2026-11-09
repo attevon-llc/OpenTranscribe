@@ -815,3 +815,117 @@ def test_poll_redirect_is_logged_as_a_named_redirect_not_an_opaque_error(
     assert any("redirect" in msg and "303" in msg for msg in poll_warnings), (
         f"expected a poll warning naming the redirect and status code, got: {poll_warnings[:3]}"
     )
+
+
+# ── 16. Job body, poll progress and result parsing, step by step ────────────────────────
+
+
+def _run_gladia(tmp_path, monkeypatch, config, get_responses, events=None):
+    upload_resp = _FakeResponse(json_data={"audio_url": "https://cdn.gladia.io/audio123"})
+    job_resp = _FakeResponse(json_data={"result_url": f"{_BASE}/v2/transcription/job1"})
+    job_capture: dict = {}
+    responses = iter(get_responses)
+    _mock_session(
+        monkeypatch,
+        post_side_effect=_dispatch_post(upload_resp, job_resp, job_capture),
+        get_side_effect=lambda *a, **k: next(responses),
+    )
+    monkeypatch.setattr("time.sleep", lambda *_a, **_k: None)
+    callback = (lambda p, m: events.append((p, m))) if events is not None else None
+    result = _make_provider().transcribe(_make_audio_file(tmp_path), config, callback)
+    return result, job_capture["body"]
+
+
+def test_explicit_language_is_sent_and_auto_detection_is_off(tmp_path, monkeypatch):
+    done = _FakeResponse(json_data={"status": "done"})
+    _, body = _run_gladia(
+        tmp_path, monkeypatch, ASRConfig(language="fr", enable_diarization=False), [done]
+    )
+    assert body == {
+        "audio_url": "https://cdn.gladia.io/audio123",
+        "diarization": False,
+        "detect_language": False,
+        "language": "fr",
+    }
+
+
+def test_auto_language_requests_detection_and_sends_no_language(tmp_path, monkeypatch):
+    done = _FakeResponse(json_data={"status": "done"})
+    _, body = _run_gladia(
+        tmp_path,
+        monkeypatch,
+        ASRConfig(language="auto", enable_diarization=True, vocabulary=["acme"]),
+        [done],
+    )
+    assert body["detect_language"] is True
+    assert "language" not in body
+    assert body["custom_vocabulary"] == ["acme"]
+
+
+def test_progress_sequence_includes_in_flight_poll_updates(tmp_path, monkeypatch):
+    events: list[tuple[float, str]] = []
+    pending = _FakeResponse(json_data={"status": "processing"})
+    done = _FakeResponse(json_data={"status": "done"})
+    _run_gladia(
+        tmp_path,
+        monkeypatch,
+        ASRConfig(language="en", enable_diarization=False),
+        [pending, pending, done],
+        events,
+    )
+    assert [m for _, m in events] == [
+        "Uploading to Gladia…",
+        "Starting Gladia job…",
+        "Gladia transcription in progress…",
+        "Gladia processing…",
+        "Gladia processing…",
+        "Parsing Gladia results…",
+        "Gladia transcription complete",
+    ]
+    assert events[3][0] == pytest.approx(0.3)
+    assert events[4][0] == pytest.approx(0.3 + 1 / 720)
+
+
+def test_result_words_defaults_and_detected_language(tmp_path, monkeypatch):
+    done = _FakeResponse(
+        json_data={
+            "status": "done",
+            "result": {
+                "transcription": {
+                    "utterances": [
+                        {
+                            "text": "hi there",
+                            "start": 0.5,
+                            "end": 1.5,
+                            "confidence": 0.8,
+                            "words": [
+                                {"word": "hi", "start": 0.5, "end": 0.9, "confidence": 0.7},
+                                {"word": "there"},
+                            ],
+                        }
+                    ],
+                    "languages": ["de", "en"],
+                }
+            },
+        }
+    )
+    result, _ = _run_gladia(
+        tmp_path, monkeypatch, ASRConfig(language="auto", enable_diarization=True), [done]
+    )
+    seg = result.segments[0]
+    assert (seg.text, seg.start, seg.end, seg.confidence) == ("hi there", 0.5, 1.5, 0.8)
+    assert [(w.word, w.start, w.end, w.confidence) for w in seg.words] == [
+        ("hi", 0.5, 0.9, 0.7),
+        ("there", 0.0, 0.0, 1.0),
+    ]
+    assert result.language == "de"
+    assert result.has_speakers is False  # diarization on, but no utterance has a speaker
+
+
+def test_language_falls_back_to_the_config_when_gladia_reports_none(tmp_path, monkeypatch):
+    done = _FakeResponse(json_data={"status": "done", "result": {"transcription": {}}})
+    result, _ = _run_gladia(
+        tmp_path, monkeypatch, ASRConfig(language="es", enable_diarization=False), [done]
+    )
+    assert result.language == "es"
+    assert result.segments == []

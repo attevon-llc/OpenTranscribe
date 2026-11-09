@@ -188,13 +188,13 @@ backend/app/services/asr/deepgram_provider.py::DeepgramProvider.validate_connect
 backend/app/services/asr/factory.py::ASRProviderFactory._active_config_row#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/factory.py::ASRProviderFactory.create_for_user#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/gladia_provider.py::GladiaProvider._err_detail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/asr/gladia_provider.py::GladiaProvider.transcribe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/gladia_provider.py::GladiaProvider._poll_result#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/gladia_provider.py::GladiaProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/google_provider.py::GoogleASRProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/model_discovery.py::resolve_loadable_model_name#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/openai_provider.py::OpenAIASRProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider._err_detail#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.transcribe#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider._poll_once#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/pyannote_provider.py::PyAnnoteProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/asr/speechmatics_provider.py::SpeechmaticsProvider.validate_connection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/audio_extraction.py::AudioExtractionMixin.peek_cached_audio#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

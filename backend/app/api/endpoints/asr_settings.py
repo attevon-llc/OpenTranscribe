@@ -258,26 +258,14 @@ def create_asr_config(
     return result
 
 
-@router.put("/config/{config_uuid}")
-def update_asr_config(  # noqa: C901
-    request: Request,
-    config_uuid: UUID,
+def _refuse_if_update_strands_holders(
+    db: Session,
+    config: Any,
     settings_in: schemas.UserASRSettingsUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_active_user),
-) -> Any:
-    """Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).
-
-    Turning a configuration OFF is refused with 409 ``{code, message}`` when a user whose
-    active pointer names it (the owner, or a member of a shared one) would fall back to a
-    default the stored speaker detection or the deployment cannot run (#1225, #1228).
-    """
-    from app.models.user_asr_settings import UserASRSettings
-
-    if settings_in.provider is not None and settings_in.provider.value == "local":
-        refuse_on_lite("local_asr_unavailable")
-
-    config = _get_config_or_404(db, config_uuid, current_user.id)
+    request: Request,
+    current_user: models.User,
+) -> None:
+    """409 when switching the config off, or unsharing it, would strand a user on a default."""
     turning_off = "is_active" in settings_in.model_fields_set and settings_in.is_active is False
     if turning_off and config.is_active:
         _refuse_if_switching_off_strands_holders(db, config, request)
@@ -290,6 +278,14 @@ def update_asr_config(  # noqa: C901
         _refuse_if_switching_off_strands_holders(
             db, config, request, exclude_user_id=current_user.id
         )
+
+
+def _refuse_if_provider_policy_forbids(
+    db: Session,
+    current_user: models.User,
+    config: Any,
+    settings_in: schemas.UserASRSettingsUpdate,
+) -> None:
     supplies_key = any(
         isinstance(getattr(settings_in, field), str) and getattr(settings_in, field).strip()
         for field in ("api_key", "access_key_id")
@@ -302,100 +298,134 @@ def update_asr_config(  # noqa: C901
             carries_credential=bool(supplies_key),
         )
 
+
+def _apply_name_update(
+    db: Session, config: Any, settings_in: schemas.UserASRSettingsUpdate, user_id: int
+) -> None:
+    """Rename the config, refusing a name another of the user's configs already holds."""
+    from app.models.user_asr_settings import UserASRSettings
+
+    new_name = settings_in.name
+    if new_name != config.name:
+        dup = (
+            db.query(UserASRSettings)
+            .filter(
+                UserASRSettings.user_id == user_id,
+                UserASRSettings.name == new_name,
+                UserASRSettings.id != config.id,
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Configuration named '{new_name}' already exists",
+            )
+    config.name = new_name
+
+
+def _apply_provider_update(config: Any, settings_in: schemas.UserASRSettingsUpdate) -> None:
+    new_provider = settings_in.provider.value  # type: ignore[union-attr]
+    if new_provider != config.provider:
+        # Provider change invalidates the existing API key (it belongs to the old
+        # provider's account).  Clear the stored key so the user is prompted to
+        # supply a new one rather than inadvertently inheriting a stale credential.
+        config.api_key = None
+    config.provider = new_provider
+    # Reset test status when provider changes
+    config.test_status = None
+    config.test_message = None
+    config.last_tested = None
+
+
+def _encrypt_replacement_secret(new_value: str | None, failure_detail: str) -> str | None:
+    """Encrypt a deliberately supplied secret; None means "keep the stored one".
+
+    The frontend sends "" when the user edits other fields without touching the secret
+    field, so an empty or whitespace-only string (or null) never replaces the stored value.
+    """
+    if new_value is None or not new_value.strip():
+        return None
+    if not test_encryption():
+        raise HTTPException(status_code=500, detail="Encryption system is not working properly")
+    encrypted = encrypt_api_key(new_value)
+    if not encrypted:
+        raise HTTPException(status_code=500, detail=failure_detail)
+    return encrypted
+
+
+def _apply_sharing_update(
+    db: Session, config: Any, settings_in: schemas.UserASRSettingsUpdate, user_id: int
+) -> None:
+    """Toggle is_shared, stamping or clearing shared_at and detaching other users on unshare."""
+    new_shared = settings_in.is_shared
+    if new_shared and not config.is_shared:
+        config.is_shared = True
+        config.shared_at = datetime.now(UTC)
+    elif not new_shared and config.is_shared:
+        config.is_shared = False
+        config.shared_at = None
+        _clear_asr_shared_active_references(db, config.id, exclude_user_id=user_id)
+
+
+@router.put("/config/{config_uuid}")
+def update_asr_config(
+    request: Request,
+    config_uuid: UUID,
+    settings_in: schemas.UserASRSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_user),
+) -> Any:
+    """Update an existing ASR configuration (on lite, never into a ``local`` one, #1228).
+
+    Turning a configuration OFF is refused with 409 ``{code, message}`` when a user whose
+    active pointer names it (the owner, or a member of a shared one) would fall back to a
+    default the stored speaker detection or the deployment cannot run (#1225, #1228).
+    """
+    if settings_in.provider is not None and settings_in.provider.value == "local":
+        refuse_on_lite("local_asr_unavailable")
+
+    config = _get_config_or_404(db, config_uuid, current_user.id)
+    fields = settings_in.model_fields_set
+    _refuse_if_update_strands_holders(db, config, settings_in, request, current_user)
+    _refuse_if_provider_policy_forbids(db, current_user, config, settings_in)
+
     # Cross-field region validation needs the effective provider (may be from existing config)
-    if "region" in settings_in.model_fields_set:
+    if "region" in fields:
         incoming_provider = settings_in.provider.value if settings_in.provider else config.provider
         _validate_region(incoming_provider, settings_in.region)
 
-    # Name update with duplicate check
-    if "name" in settings_in.model_fields_set:
-        new_name = settings_in.name
-        if new_name != config.name:
-            dup = (
-                db.query(UserASRSettings)
-                .filter(
-                    UserASRSettings.user_id == current_user.id,
-                    UserASRSettings.name == new_name,
-                    UserASRSettings.id != config.id,
-                )
-                .first()
-            )
-            if dup:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Configuration named '{new_name}' already exists",
-                )
-        config.name = new_name
-
-    if "provider" in settings_in.model_fields_set:
-        new_provider = settings_in.provider.value  # type: ignore[union-attr]
-        if new_provider != config.provider:
-            # Provider change invalidates the existing API key (it belongs to the old
-            # provider's account).  Clear the stored key so the user is prompted to
-            # supply a new one rather than inadvertently inheriting a stale credential.
-            config.api_key = None
-        config.provider = new_provider
-        # Reset test status when provider changes
-        config.test_status = None
-        config.test_message = None
-        config.last_tested = None
-
-    if "model_name" in settings_in.model_fields_set:
+    if "name" in fields:
+        _apply_name_update(db, config, settings_in, current_user.id)
+    if "provider" in fields:
+        _apply_provider_update(config, settings_in)
+    if "model_name" in fields:
         config.model_name = settings_in.model_name
 
-    if "api_key" in settings_in.model_fields_set:
-        new_key = settings_in.api_key
-        if new_key is None or (isinstance(new_key, str) and not new_key.strip()):
-            # Empty string or null from the client means "keep the existing key".
-            # The frontend sends "" when the user edits other fields without touching
-            # the API key field.  Only a deliberate non-empty value replaces the key.
-            pass  # Existing key is preserved
-        else:
-            if not test_encryption():
-                raise HTTPException(
-                    status_code=500, detail="Encryption system is not working properly"
-                )
-            encrypted = encrypt_api_key(new_key)
-            if not encrypted:
-                raise HTTPException(status_code=500, detail="Failed to encrypt API key")
-            config.api_key = encrypted
-            # Reset test status only when key actually changes
-            config.test_status = None
+    new_key = _encrypt_replacement_secret(
+        settings_in.api_key if "api_key" in fields else None, "Failed to encrypt API key"
+    )
+    if new_key is not None:
+        config.api_key = new_key
+        # Reset test status only when key actually changes
+        config.test_status = None
 
-    if "access_key_id" in settings_in.model_fields_set:
-        new_akid = settings_in.access_key_id
-        if new_akid is None or (isinstance(new_akid, str) and not new_akid.strip()):
-            pass  # Empty/null means "keep the existing access key ID" (mirrors api_key)
-        else:
-            if not test_encryption():
-                raise HTTPException(
-                    status_code=500, detail="Encryption system is not working properly"
-                )
-            encrypted_akid = encrypt_api_key(new_akid)
-            if not encrypted_akid:
-                raise HTTPException(status_code=500, detail="Failed to encrypt access key ID")
-            config.access_key_id = encrypted_akid
-            config.test_status = None
+    new_akid = _encrypt_replacement_secret(
+        settings_in.access_key_id if "access_key_id" in fields else None,
+        "Failed to encrypt access key ID",
+    )
+    if new_akid is not None:
+        config.access_key_id = new_akid
+        config.test_status = None
 
-    if "base_url" in settings_in.model_fields_set:
+    if "base_url" in fields:
         config.base_url = settings_in.base_url
-
-    if "region" in settings_in.model_fields_set:
+    if "region" in fields:
         config.region = settings_in.region
-
-    if "is_active" in settings_in.model_fields_set:
+    if "is_active" in fields:
         config.is_active = settings_in.is_active
-
-    # Handle is_shared toggle with shared_at timestamp
-    if "is_shared" in settings_in.model_fields_set:
-        new_shared = settings_in.is_shared
-        if new_shared and not config.is_shared:
-            config.is_shared = True
-            config.shared_at = datetime.now(UTC)
-        elif not new_shared and config.is_shared:
-            config.is_shared = False
-            config.shared_at = None
-            _clear_asr_shared_active_references(db, config.id, exclude_user_id=current_user.id)
+    if "is_shared" in fields:
+        _apply_sharing_update(db, config, settings_in, current_user.id)
 
     db.add(config)
     db.commit()

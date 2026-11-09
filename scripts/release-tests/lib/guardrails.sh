@@ -216,20 +216,6 @@ gr_last_test_root() {
     sed -n '1p' "$record"
 }
 
-gr_check_mount_path() {
-    # Called per bind-mount source before docker compose up.
-    local src
-    src="$(gr_realpath "$1")"
-    for protected in "${GR_PROTECTED_PATHS[@]}"; do
-        if gr_path_inside "$src" "$protected"; then
-            gr_die "bind-mount source '$src' resolves under protected path '$protected'"
-        fi
-    done
-    if ! gr_path_inside "$src" "$TEST_ROOT"; then
-        gr_die "bind-mount source '$src' is not under TEST_ROOT '$TEST_ROOT'"
-    fi
-}
-
 gr_check_container_names() {
     # Refuse if any container belonging to the live `opentranscribe` OR
     # `transcribe-app` compose PROJECT is currently RUNNING. We expect the

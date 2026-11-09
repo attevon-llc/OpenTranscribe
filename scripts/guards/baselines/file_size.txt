@@ -2,7 +2,7 @@ opentr.sh	4892	v0.6.1 merge: release growth; +1 for #628 (--demo sets the lite f
 scripts/docker-build-push.sh	1562	oversize: split by concern planned
 scripts/e2e/update-visual-baselines.sh	1326	oversize: split by concern planned
 scripts/fetch-rag-eval-data.sh	1282	oversize: split by concern planned
-scripts/release-tests/lib/guardrails.sh	1281	oversize: split by concern planned
+scripts/release-tests/lib/guardrails.sh	1267	oversize: split by concern planned
 scripts/release-tests/test-upgrade.sh	2926	oversize: split by concern planned
 scripts/run-mutation-tests.sh	1173	oversize: split by concern planned
 scripts/security-scan.sh	1165	oversize: split by concern planned

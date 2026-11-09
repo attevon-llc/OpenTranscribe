@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.system_settings import SystemSettings
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 
@@ -102,6 +103,14 @@ def _resolve_uncached() -> tuple[str | None, bool]:
             exc_info=True,
         )
         return env_token(), False
+    except SecretDecryptionError:
+        # The saved token is unreadable (rotated ENCRYPTION_KEY or a corrupt value): that stays
+        # true until it is saved again, which invalidates the cache, so the answer may be cached.
+        logger.warning(
+            "The saved Hugging Face token cannot be decrypted; using the environment value",
+            exc_info=True,
+        )
+        return env_token(), True
     finally:
         db.close()
     return (stored or env_token()), True

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 pytestmark = pytest.mark.unit
 
@@ -37,5 +38,5 @@ def test_a_task_level_topic_failure_returns_a_code(monkeypatch):
 
 @contextlib.contextmanager
 def _null_scope():
-    raise RuntimeError("no database in this test")
+    raise OperationalError("connect", {}, Exception("no database in this test"))
     yield

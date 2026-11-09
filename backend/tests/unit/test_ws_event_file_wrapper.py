@@ -14,6 +14,7 @@ import uuid as uuid_pkg
 from contextlib import contextmanager
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
@@ -204,7 +205,7 @@ class TestFileUuidSelector:
 
     def test_uuid_selector_fails_closed_on_db_error(self, monkeypatch, sent):
         def boom():
-            raise RuntimeError("db unreachable")
+            raise OperationalError("connect", {}, Exception("db unreachable"))
 
         monkeypatch.setattr("app.db.session_utils.session_scope", boom)
 
@@ -315,7 +316,7 @@ class TestFilterSuppressedFileUuids:
 
     def test_fails_closed_on_db_error(self, monkeypatch):
         def boom():
-            raise RuntimeError("db unreachable")
+            raise OperationalError("connect", {}, Exception("db unreachable"))
 
         monkeypatch.setattr("app.db.session_utils.session_scope", boom)
 
@@ -325,7 +326,7 @@ class TestFilterSuppressedFileUuids:
 class TestIsNotificationSuppressedForUuid:
     def test_fails_closed_on_db_error(self, monkeypatch):
         def boom():
-            raise RuntimeError("db unreachable")
+            raise OperationalError("connect", {}, Exception("db unreachable"))
 
         monkeypatch.setattr("app.db.session_utils.session_scope", boom)
 

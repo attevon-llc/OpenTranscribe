@@ -25,6 +25,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from opensearchpy.exceptions import ConnectionError as OpenSearchConnectionError
 
 # Runs by DEFAULT. This module was gated behind RUN_FEDRAMP_TESTS with the reason
 # "FedRAMP control implementations in development" — but every test in it passes, and did so on the first run once the gate
@@ -451,7 +452,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
 
             # Mock OpenSearch client to fail
             mock_client = MagicMock()
-            mock_client.index.side_effect = Exception("OpenSearch connection failed")
+            mock_client.index.side_effect = OpenSearchConnectionError(
+                "N/A", "OpenSearch connection failed", Exception("OpenSearch connection failed")
+            )
             mock_client.indices.exists.return_value = True
 
             with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
@@ -494,7 +497,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
         ):
             # Mock OpenSearch to fail
             mock_client = MagicMock()
-            mock_client.index.side_effect = Exception("Connection refused")
+            mock_client.index.side_effect = OpenSearchConnectionError(
+                "N/A", "Connection refused", Exception("Connection refused")
+            )
             mock_client.indices.exists.return_value = True
 
             with patch.object(logger, "_get_opensearch_client", return_value=mock_client):
@@ -598,7 +603,9 @@ class TestAuditFallbackOnOpenSearchFailureAU9:
             patch.object(settings, "AUDIT_LOG_ENABLED", True),
         ):
             mock_client = MagicMock()
-            mock_client.index.side_effect = Exception("Connection failed")
+            mock_client.index.side_effect = OpenSearchConnectionError(
+                "N/A", "Connection failed", Exception("Connection failed")
+            )
             mock_client.indices.exists.return_value = True
 
             with patch.object(logger, "_get_opensearch_client", return_value=mock_client):

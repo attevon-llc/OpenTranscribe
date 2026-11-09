@@ -119,6 +119,9 @@ class _NoRedis:
     def eval(self, *a: object, **k: object) -> None:
         raise ConnectionError("redis down")
 
+    def zrem(self, *a: object, **k: object) -> None:
+        raise ConnectionError("redis down")
+
 
 @pytest.fixture
 def no_redis(monkeypatch):

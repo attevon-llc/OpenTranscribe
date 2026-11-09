@@ -77,7 +77,9 @@ def test_a_residual_makes_the_response_and_the_audit_event_report_failure(
     monkeypatch.setattr(
         "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
-            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+            set=lambda key, value, ex=None: store.__setitem__(key, value),
+            get=store.get,
+            zrem=lambda *_args: 0,
         ),
     )
     body = {"targets": ["voiceprints"], "confirm": "PURGE"}
@@ -190,7 +192,9 @@ def status_record(monkeypatch):
     monkeypatch.setattr(
         "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
-            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+            set=lambda key, value, ex=None: store.__setitem__(key, value),
+            get=store.get,
+            zrem=lambda *_args: 0,
         ),
     )
 

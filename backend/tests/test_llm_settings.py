@@ -10,6 +10,7 @@ Every class runs by default: nothing here needs a provider, a key or the network
 no external LLM call is made. (The `RUN_LLM_TESTS` gate these once sat behind is gone.)
 """
 
+import itertools
 from typing import cast
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -475,11 +476,11 @@ class TestLLMServiceIntegration:
 
         with patch("app.db.base.SessionLocal") as mock_session_local:
             mock_db = Mock()
-            # First query: UserSetting active config id; second: the config itself
-            mock_db.query.return_value.filter.return_value.first.side_effect = [
-                active_setting,
-                mock_config,
-            ]
+            # First query: UserSetting active config id; second: the config itself; any later
+            # read (the stored context-window record) finds no row, as a real session would.
+            mock_db.query.return_value.filter.return_value.first.side_effect = itertools.chain(
+                [active_setting, mock_config], itertools.repeat(None)
+            )
             mock_session_local.return_value = mock_db
 
             from app.services.llm_service import LLMService

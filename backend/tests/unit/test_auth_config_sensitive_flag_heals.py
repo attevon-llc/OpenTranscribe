@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.auth_config import AuthConfig
 from app.services.auth_config_service import SENSITIVE_SET_SENTINEL
 from app.services.auth_config_service import AuthConfigService
+from app.utils.encryption import SecretDecryptionError
 
 _ENCRYPT = "app.services.auth_config_service.encrypt_api_key"
 _DECRYPT = "app.services.auth_config_service.decrypt_api_key"
@@ -84,7 +85,7 @@ def test_get_config_decrypts_a_listed_key_even_when_its_row_is_unflagged() -> No
 
 def test_get_config_undecryptable_unflagged_listed_key_reads_as_unset() -> None:
     db = _db_first(_unflagged_ciphertext_row())
-    with patch(_DECRYPT, side_effect=Exception("bad key")):
+    with patch(_DECRYPT, side_effect=SecretDecryptionError("bad key")):
         assert AuthConfigService.get_config(db, "proxy_shared_secret") is None
 
 

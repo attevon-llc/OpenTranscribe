@@ -90,6 +90,9 @@ class _StandInRedis:
     def delete(self, key: str) -> None:
         self.store.pop(key, None)
 
+    def zrem(self, *_args: object) -> int:
+        return 0
+
 
 class _ExplodingRedis:
     """Every operation raises — stands in for an unreachable Redis."""
@@ -101,6 +104,9 @@ class _ExplodingRedis:
         raise ConnectionError("redis is down")
 
     def delete(self, key: str):
+        raise ConnectionError("redis is down")
+
+    def zrem(self, *_args: object):
         raise ConnectionError("redis is down")
 
 

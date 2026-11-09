@@ -22,6 +22,7 @@ These are unit tests over a fake Redis — no broker, no worker, no ffmpeg.
 from __future__ import annotations
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.services import download_events
 from tests.helpers import does_not_raise
@@ -96,7 +97,7 @@ def test_a_redis_failure_during_release_is_swallowed(monkeypatch):
 
     class _Broken:
         def delete(self, key):
-            raise ConnectionError("redis gone")
+            raise RedisConnectionError("redis gone")
 
     monkeypatch.setattr(download_events, "get_request_redis", lambda: _Broken())
 

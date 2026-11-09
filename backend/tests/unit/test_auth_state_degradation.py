@@ -494,14 +494,12 @@ class TestLockoutStoreDegradation:
         """
         captured: dict[str, object] = {}
 
-        class _FromUrlSpy:
-            @staticmethod
-            def from_url(url, **kwargs):
-                captured.update(kwargs)
-                captured["url"] = url
-                return _RecordingRedis([])
+        def _from_url_spy(url, **kwargs):
+            captured.update(kwargs)
+            captured["url"] = url
+            return _RecordingRedis([])
 
-        with patch.dict("sys.modules", {"redis": type("_M", (), {"Redis": _FromUrlSpy})}):
+        with patch.object(lockout_store_module.redis.Redis, "from_url", side_effect=_from_url_spy):
             client = lockout_store_module._get_redis_client()
 
         assert client is not None
@@ -509,10 +507,11 @@ class TestLockoutStoreDegradation:
         assert captured["socket_connect_timeout"] == 5
         assert captured["socket_timeout"] == 5
 
-    def test_a_missing_redis_package_falls_back_rather_than_raising(self):
-        """`ImportError` must degrade, not 500 the login route."""
+    def test_an_unreachable_redis_falls_back_rather_than_raising(self):
+        """A refused connection must degrade to the in-memory store, not 500 the login route."""
         self._reset()
-        with patch.dict("sys.modules", {"redis": None}):
+        unreachable = lockout_store_module.redis.ConnectionError("connection refused")
+        with patch.object(lockout_store_module.redis.Redis, "from_url", side_effect=unreachable):
             assert lockout_store_module._get_redis_client() is None
 
     def test_the_fallback_store_is_a_real_store(self):

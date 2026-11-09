@@ -216,6 +216,9 @@ class _FilteringFakeAuditOS:
         def create(self, index, body):
             pass
 
+        def put_mapping(self, index, body):
+            pass
+
     def __init__(self):
         self.docs: list[dict] = []
         self.indices = self._Indices()

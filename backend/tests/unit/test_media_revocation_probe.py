@@ -123,7 +123,16 @@ def test_an_unwritable_probe_object_is_inconclusive_not_an_error(caplog):
     assert probe is not None and probe.verified is False
     assert probe.missing_permissions == ()
     assert probe.error is not None and "AccessDenied" in probe.error
-    assert [r.levelname for r in caplog.records if r.levelno >= 30] == ["WARNING"]
+    problems = [r for r in caplog.records if r.levelno >= 30]
+    # Inconclusive is a warning, never an error: one record per bucket whose probe write failed
+    # (each with its traceback) and one verdict record.
+    assert {r.levelname for r in problems} == {"WARNING"}
+    assert [r.getMessage().startswith("Takedown probe write to") for r in problems] == [
+        True,
+        True,
+        False,
+    ]
+    assert all(r.exc_info for r in problems[:2])
 
 
 def test_the_opt_out_makes_no_storage_call(monkeypatch):

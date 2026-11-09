@@ -54,7 +54,9 @@ def status_record(monkeypatch) -> dict[str, str]:
     monkeypatch.setattr(
         "app.core.redis.get_request_redis",
         lambda: SimpleNamespace(
-            set=lambda key, value, ex=None: store.__setitem__(key, value), get=store.get
+            set=lambda key, value, ex=None: store.__setitem__(key, value),
+            get=store.get,
+            zrem=lambda *_args: 0,
         ),
     )
     return store

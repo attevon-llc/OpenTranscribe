@@ -125,6 +125,9 @@ class _StandInRedis:
     def delete(self, *keys: str) -> int:
         return sum(1 for key in keys if self.store.pop(key, None) is not None)
 
+    def zrem(self, *_args: object) -> int:
+        return 0
+
 
 class _StandInCat:
     def __init__(self, aliases: dict[str, str], docs: dict[str, int]) -> None:

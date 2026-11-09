@@ -318,7 +318,10 @@ def test_a_resolver_outage_logs_one_traceback_per_pass_not_one_per_file(
 
     kept = {int(f.id) for f in files}
     assert kept.isdisjoint({file_id for file_id, _ in expired})
-    with_traceback = [r for r in caplog.records if r.exc_info]
-    assert len(with_traceback) == 1, [r.getMessage() for r in caplog.records]
-    per_file = [r for r in caplog.records if "keeping file" in r.getMessage()]
+    # Only the sweep's own records: creating the files above also logs (a test host without
+    # Redis cannot clear the files' requeue counters), and that is not the sweep's behaviour.
+    sweep_records = [r for r in caplog.records if r.name == cleanup.__name__]
+    with_traceback = [r for r in sweep_records if r.exc_info]
+    assert len(with_traceback) == 1, [r.getMessage() for r in sweep_records]
+    per_file = [r for r in sweep_records if "keeping file" in r.getMessage()]
     assert len(per_file) >= len(files)

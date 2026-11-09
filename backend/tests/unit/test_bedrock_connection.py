@@ -154,11 +154,16 @@ def test_stream_errors_do_not_echo_the_configurations_secrets():
     from unittest.mock import MagicMock
     from unittest.mock import patch
 
+    from botocore.exceptions import ClientError
+
     from app.services.llm_bedrock import stream_converse
 
     connection = BedrockConnection("us-east-1", KEY_ID, SECRET)
     client = MagicMock()
-    client.converse_stream.side_effect = RuntimeError(f"boom {SECRET} {KEY_ID}")
+    client.converse_stream.side_effect = ClientError(
+        {"Error": {"Code": "ValidationException", "Message": f"boom {SECRET} {KEY_ID}"}},
+        "ConverseStream",
+    )
 
     with patch("app.services.llm_bedrock._client", return_value=client):
         events = list(

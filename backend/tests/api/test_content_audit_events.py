@@ -20,6 +20,7 @@ import uuid as uuid_pkg
 
 import pytest
 from fastapi import status
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.auth.audit import audit_logger
 from app.auth.audit_events import TENANT_SCOPE_ORG
@@ -65,7 +66,7 @@ class _Redis:
 
 class _BrokenRedis:
     def set(self, *args, **kwargs):
-        raise ConnectionError("redis is down")
+        raise RedisConnectionError("redis is down")
 
 
 @pytest.fixture()

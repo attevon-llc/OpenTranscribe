@@ -306,8 +306,10 @@ def batch_recluster(
             "skipped_by_policy_scopes": len(off_scopes),
         }
 
-    except Exception as e:
-        logger.error("Error in batch re-clustering: %s", e)
+    except Exception:
+        # Task-body boundary: the clear above was only flushed, so the rollback restores the
+        # old clusters; an index outage mid-pass therefore never leaves a partial clustering.
+        logger.exception("Error in batch re-clustering")
         self.db.rollback()
         self._rename_tracker.discard()
         self._assigned = SpeakerImpact()

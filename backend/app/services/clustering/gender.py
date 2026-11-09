@@ -77,7 +77,8 @@ def analyze_gender_outliers(
     # Per-file consent (#1356): an opted-out file's voice is not part of any average.
     _declined_here = declined_file_ids(self.db, (s.media_file_id for s in speakers))
     speaker_uuids = [str(s.uuid) for s in speakers if s.media_file_id not in _declined_here]
-    raw_embeddings = get_speaker_embeddings_batch(speaker_uuids)
+    # strict: an outage must not read as "no embeddings", i.e. a clean analysis with no outliers.
+    raw_embeddings = get_speaker_embeddings_batch(speaker_uuids, strict=True)
 
     embeddings: dict[int, np.ndarray] = {}
     for suuid, emb in raw_embeddings.items():

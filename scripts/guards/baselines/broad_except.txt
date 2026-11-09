@@ -297,7 +297,6 @@ backend/app/services/redaction/service.py::RedactionService.detect_segment_spans
 backend/app/services/redaction/service.py::RedactionService.detect_segment_spans#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redaction/service.py::RedactionService.redetect_edited_segment#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/redaction/spans.py::_coerce#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/speaker_matching/match_handling.py::handle_speaker_match#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/match_queries.py::match_speaker_to_profiles#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/match_storage.py::create_speaker_match_record#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/speaker_matching/processing.py::process_single_speaker#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

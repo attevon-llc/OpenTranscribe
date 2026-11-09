@@ -9,12 +9,14 @@ from typing import Any
 
 import numpy as np
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.constants import SPEAKER_CONFIDENCE_MEDIUM
 from app.models.speaker import Speaker
 from app.models.speaker import SpeakerProfile
 from app.services import embedding_mode_service
 from app.services.opensearch_service import add_speaker_embedding
+from app.services.opensearch_service.client import OpenSearchUnavailableError
 from app.services.speaker_matching.thresholds import MATCHING_ORIGIN_TASK
 from app.services.speaker_matching.thresholds import ConfidenceLevel
 from app.services.speaker_profile_activity import touch_profile_interaction
@@ -219,7 +221,15 @@ def _store_blended_centroid(
     from app.services.opensearch_service import get_profile_embedding
     from app.services.opensearch_service import store_profile_embedding
 
-    existing = get_profile_embedding(str(profile.uuid))
+    # strict: an outage must not read as "no centroid yet" -- the write below would then
+    # replace the blended centroid of every earlier voice with this single embedding.
+    try:
+        existing = get_profile_embedding(str(profile.uuid), strict=True)
+    except OpenSearchUnavailableError:
+        logger.exception(
+            "Profile centroid read failed for profile %s; centroid left untouched", profile.uuid
+        )
+        raise
     new_emb = aggregated_embedding.tolist()
     if existing and prior_count > 0:
         old = np.array(existing)
@@ -335,6 +345,7 @@ def handle_speaker_match(
             self, speaker, match, aggregated_embedding, user_id, media_file_id, organization_id
         )
 
+    profile_update_failed = False
     # Incrementally update profile embedding using the embedding we already have
     if match["auto_accept"] and match.get("profile_id"):
         if speaker.profile_id and aggregated_embedding is not None:
@@ -342,8 +353,13 @@ def handle_speaker_match(
                 _blend_into_profile_centroid(
                     self, speaker, aggregated_embedding, fold_in=not already_linked
                 )
-            except Exception as e:
-                logger.warning(f"Incremental profile update failed (non-fatal): {e}")
+            # Per-speaker isolation: the match itself is already stored; the failed centroid
+            # fold-in is reported in the result and repaired by the profile recalculation.
+            except (OpenSearchUnavailableError, SQLAlchemyError):
+                profile_update_failed = True
+                logger.exception(
+                    "Incremental profile update failed for speaker %s (non-fatal)", speaker.id
+                )
 
         # Propagate profile assignment to other similar speakers
         if speaker.profile_id:
@@ -359,6 +375,7 @@ def handle_speaker_match(
         "suggested_name": match["suggested_name"],
         "confidence": match["confidence"],
         "status": "matched",
+        "profile_update_failed": profile_update_failed,
     }
 
 

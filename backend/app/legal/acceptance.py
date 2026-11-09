@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.legal import registry
 from app.models.legal_acceptance import LegalAcceptance
+from app.models.organization import Organization
+from app.models.user import User
 
 
 def find_acceptance(
@@ -109,3 +111,27 @@ def operator_acknowledgment_status(db: Session, user_id: int) -> tuple[bool, boo
     if doc is None:
         return True, False
     return True, find_acceptance(db, user_id, doc) is not None
+
+
+def organization_uuid(db: Session, org_id: int | None) -> uuid_pkg.UUID | None:
+    """The public uuid of organization *org_id*; ``None`` when no organization is given."""
+    if org_id is None:
+        return None
+    return db.execute(select(Organization.uuid).where(Organization.id == org_id)).scalar_one()
+
+
+def list_acceptances_with_email(
+    db: Session, organization_id: int | None = None
+) -> list[tuple[LegalAcceptance, str | None]]:
+    """Stored acceptances, newest first, with the accepting user's email.
+
+    The join is OUTER: a record can outlive the account that made it. *organization_id*
+    narrows the list to rows recorded in that organization.
+    """
+    query = select(LegalAcceptance, User.email).outerjoin(User, User.id == LegalAcceptance.user_id)
+    if organization_id is not None:
+        query = query.where(LegalAcceptance.organization_id == organization_id)
+    rows = db.execute(
+        query.order_by(LegalAcceptance.accepted_at.desc(), LegalAcceptance.id.desc())
+    ).all()
+    return [(r, email) for r, email in rows]

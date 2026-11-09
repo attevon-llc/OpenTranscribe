@@ -34,7 +34,6 @@ from app.auth.rate_limit import limiter
 from app.auth.rate_limit import user_or_ip_key
 from app.core.constants import SUPPORT_ACCESS_REQUEST_RATE_LIMIT
 from app.db.base import get_db
-from app.models.organization import Organization
 from app.models.support_access import SupportAccessGrant
 from app.models.user import User
 from app.schemas.support_access import ApproveBody
@@ -52,8 +51,8 @@ from app.services.request_context import RequestContext
 from app.services.support_access_queries import find_grant
 from app.services.support_access_queries import list_grants
 from app.services.support_access_queries import list_uses
+from app.services.support_access_queries import search_active_organizations
 from app.services.support_access_queries import to_out
-from app.utils.sql_like import escape_like
 
 logger = logging.getLogger(__name__)
 
@@ -143,11 +142,7 @@ def search_target_organizations(
     _admin: User = Depends(get_current_admin_user),
 ) -> list[OrgTargetOut]:
     """Active organizations an admin may request access to (a platform operation)."""
-    query = db.query(Organization).filter(Organization.is_active.is_(True))
-    if q:
-        like = f"%{escape_like(q)}%"
-        query = query.filter(Organization.name.ilike(like, escape="\\"))
-    rows = query.order_by(Organization.name).limit(limit).all()
+    rows = search_active_organizations(db, q, limit)
     return [OrgTargetOut(uuid=str(o.uuid), name=str(o.name), slug=o.slug) for o in rows]
 
 

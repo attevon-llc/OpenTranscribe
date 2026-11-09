@@ -41,6 +41,8 @@ from app.schemas.watch_source import WatchSourceResponse
 from app.schemas.watch_source import WatchSourcesList
 from app.schemas.watch_source import WatchSourceUpdate
 from app.services.request_context import RequestContext
+from app.services.user_lookup import get_user_by_uuid
+from app.services.watch_source_queries import list_sources
 from app.utils.encryption import encrypt_api_key
 
 logger = logging.getLogger(__name__)
@@ -221,20 +223,13 @@ def list_watch_sources(
     Live filesystem-watcher state is prefetched in one Redis MGET for every
     FS-watched local source rather than one GET per row (see ``_fs_events_status``).
     """
-    query = db.query(WatchSource)
     # Own sources in the ACTIVE tenant only (NULL-safe: personal = org-less).
-    org_filter = (
-        WatchSource.organization_id.is_(None)
-        if ctx.org_id is None
-        else WatchSource.organization_id == ctx.org_id
+    sources = list_sources(
+        db,
+        user_id=current_user.id,
+        organization_id=ctx.org_id,
+        all_owners=scope == "all" and ctx.bypass.sees_all_in_scope,
     )
-    if scope == "all" and ctx.bypass.sees_all_in_scope:
-        query = query.filter(org_filter).order_by(WatchSource.created_at.desc())
-    else:
-        query = query.filter(WatchSource.user_id == current_user.id, org_filter).order_by(
-            WatchSource.created_at.desc()
-        )
-    sources = query.all()
     # One Redis MGET for every FS-watched source instead of one GET per row.
     from app.services.watch_sources.fs_events import status as fs_status
 
@@ -280,7 +275,7 @@ def create_watch_source(
     source_uuid = uuid_pkg.uuid4()
     owner_id = current_user.id
     if data.assign_to_user_uuid and ctx.bypass.user_is_admin:
-        target = db.query(User).filter(User.uuid == data.assign_to_user_uuid).first()
+        target = get_user_by_uuid(db, data.assign_to_user_uuid)
         # Another account's workspace is its own tenant (a personal one included), so the
         # platform role reaches it only where the bypass allows a write there. The answer is
         # the same 404 as an unknown account, so the target's existence is not confirmed.

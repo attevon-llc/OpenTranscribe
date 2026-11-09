@@ -39,24 +39,14 @@ from sqlalchemy.orm import Session
 from app.api.deps_context import require_org_admin
 from app.auth.audit_query import query_audit_logs
 from app.db.base import get_db
-from app.models.organization import OrganizationMembership
 from app.services.org_audit_view import member_id_for_uuid
+from app.services.org_audit_view import org_member_user_ids
 from app.services.org_audit_view import with_display_fields
 from app.services.request_context import RequestContext
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-def _org_member_user_ids(db: Session, org_id: int) -> list[int]:
-    """Return the user-ids of all members of ``org_id`` (the audit-scope set)."""
-    rows = (
-        db.query(OrganizationMembership.user_id)
-        .filter(OrganizationMembership.organization_id == org_id)
-        .all()
-    )
-    return [int(r[0]) for r in rows]
 
 
 def org_id_of(ctx: RequestContext) -> int:
@@ -112,7 +102,7 @@ def org_audit_query(
     someone outside the organization is refused (403) before any query runs.
     """
     org_id = org_id_of(ctx)
-    member_ids = _org_member_user_ids(db, org_id)
+    member_ids = org_member_user_ids(db, org_id)
     return {
         "start_date": start_date,
         "end_date": end_date,

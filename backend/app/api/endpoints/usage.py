@@ -23,12 +23,10 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Query
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
 from app.db.base import get_db
-from app.models.usage_event import UsageEvent
 from app.services.chat.pricing import RATES_VERIFIED_ON
 from app.services.chat.pricing import estimate_cost_usd
 from app.services.chat.usage import EVENT_TYPE_CHAT_TOKENS
@@ -36,7 +34,8 @@ from app.services.llm_budget import TOKEN_EVENT_TYPES
 from app.services.llm_budget import status_for
 from app.services.llm_call_events import FEATURE_OF_EVENT_TYPE
 from app.services.request_context import RequestContext
-from app.utils.db_helpers import org_stamp_is
+from app.services.usage_service import daily_token_totals
+from app.services.usage_service import user_events_since
 
 logger = logging.getLogger(__name__)
 
@@ -113,15 +112,7 @@ def get_my_usage(
     """
     since = datetime.now(UTC) - timedelta(days=days)
 
-    events = (
-        db.query(UsageEvent)
-        .filter(
-            UsageEvent.user_id == ctx.user.id,
-            org_stamp_is(UsageEvent.organization_id, ctx.org_id),
-            UsageEvent.created_at >= since,
-        )
-        .all()
-    )
+    events = user_events_since(db, ctx.user.id, ctx.org_id, since)
 
     by_type: dict[str, dict[str, Any]] = {}
     by_feature: dict[str, dict[str, Any]] = {}
@@ -227,22 +218,7 @@ def get_my_daily_usage(
     tokens by feature.
     """
     since = datetime.now(UTC) - timedelta(days=days)
-    day = func.date_trunc("day", UsageEvent.created_at).label("day")
-
-    rows = (
-        db.query(
-            day, UsageEvent.event_type, func.sum(UsageEvent.quantity), func.count(UsageEvent.id)
-        )
-        .filter(
-            UsageEvent.user_id == ctx.user.id,
-            org_stamp_is(UsageEvent.organization_id, ctx.org_id),
-            UsageEvent.event_type.in_(TOKEN_EVENT_TYPES),
-            UsageEvent.created_at >= since,
-        )
-        .group_by(day, UsageEvent.event_type)
-        .order_by(day)
-        .all()
-    )
+    rows = daily_token_totals(db, ctx.user.id, ctx.org_id, since, TOKEN_EVENT_TYPES)
 
     series: dict[str, dict[str, Any]] = {}
     for when, event_type, quantity, count in rows:

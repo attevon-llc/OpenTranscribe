@@ -360,9 +360,9 @@ class TestRequireOrgAdmin:
 class TestOrgAuditScope:
     def test_member_id_set_excludes_other_org(self, two_orgs):
         """The org-scope user-id set contains only the caller's org members."""
-        from app.api.endpoints.org_admin import _org_member_user_ids
+        from app.services.org_audit_view import org_member_user_ids
 
-        ids_a = set(_org_member_user_ids(two_orgs.db, two_orgs.org_a.id))
+        ids_a = set(org_member_user_ids(two_orgs.db, two_orgs.org_a.id))
         assert ids_a == {two_orgs.admin_a.id, two_orgs.member_a.id}
         assert two_orgs.admin_b.id not in ids_a  # org-B's admin is invisible
 

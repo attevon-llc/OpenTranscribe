@@ -29,11 +29,7 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
-from sqlalchemy import ColumnElement
-from sqlalchemy import func
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import aliased
 
 from app.api.deps_context import require_org_admin
 from app.auth.audit_events import AuditEventType
@@ -44,13 +40,14 @@ from app.core.enums import TakedownOrigin
 from app.core.exceptions import DomainError
 from app.db.base import get_db
 from app.models.media import MediaFile
-from app.models.organization import OrganizationMembership
 from app.models.user import User
 from app.schemas.admin import OrgQuarantineActionResponse
 from app.schemas.org_takedown import OrgQuarantinedFile
 from app.schemas.org_takedown import OrgQuarantinedFilesList
 from app.schemas.org_takedown import OrgQuarantineRequest
 from app.schemas.org_takedown import OrgReleaseRequest
+from app.services.org_takedown_queries import find_org_file
+from app.services.org_takedown_queries import list_taken_down_files
 from app.services.request_context import RequestContext
 from app.services.takedown_authority import CODE_NOT_FOUND
 from app.services.takedown_authority import current_origin
@@ -96,11 +93,7 @@ def get_org_takedown_file(db: Session, file_uuid: str, org_id: int) -> MediaFile
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid UUID format: {file_uuid}"
         ) from None
-    file = (
-        db.query(MediaFile)
-        .filter(MediaFile.uuid == parsed, MediaFile.organization_id == org_id)
-        .first()
-    )
+    file = find_org_file(db, parsed, org_id)
     if file is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
     return file
@@ -170,35 +163,8 @@ def list_org_quarantined_files(
     file vanish") with ``can_release`` false and without its reason or actor.
     """
     org_id = _org_id(ctx)
-    condition: ColumnElement[bool] = MediaFile.is_quarantined.is_(True)
-    if include_legal_holds:
-        condition = or_(condition, MediaFile.legal_hold.is_(True))
-    scoped = (MediaFile.organization_id == org_id, condition)
-
-    total = db.query(func.count(MediaFile.id)).filter(*scoped).scalar() or 0
-
-    owner = aliased(User)
-    actor = aliased(User)
-    owner_member = aliased(OrganizationMembership)
-    actor_member = aliased(OrganizationMembership)
-    rows = (
-        db.query(MediaFile, owner, actor, owner_member.id, actor_member.id)
-        .filter(*scoped)
-        .outerjoin(owner, owner.id == MediaFile.user_id)
-        .outerjoin(actor, actor.id == MediaFile.quarantined_by)
-        .outerjoin(
-            owner_member,
-            (owner_member.user_id == MediaFile.user_id) & (owner_member.organization_id == org_id),
-        )
-        .outerjoin(
-            actor_member,
-            (actor_member.user_id == MediaFile.quarantined_by)
-            & (actor_member.organization_id == org_id),
-        )
-        .order_by(MediaFile.quarantined_at.desc().nullslast(), MediaFile.id.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+    rows, total = list_taken_down_files(
+        db, org_id, include_legal_holds=include_legal_holds, offset=offset, limit=limit
     )
 
     files = []
@@ -225,7 +191,7 @@ def list_org_quarantined_files(
                 else None
             )
         files.append(OrgQuarantinedFile(**fields))
-    return OrgQuarantinedFilesList(files=files, total=int(total))
+    return OrgQuarantinedFilesList(files=files, total=total)
 
 
 # One budget shared by both POSTs, keyed by scope rather than by URL: the limiter's default

@@ -24,8 +24,6 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import status
-from sqlalchemy import func
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import RequestContext
@@ -41,12 +39,12 @@ from app.core.constants import ERASURE_RECEIPT_READ_RATE_LIMIT
 from app.db.base import get_db
 from app.models.erasure import ErasureLedgerEntry
 from app.models.erasure import ErasureReceipt
-from app.models.media import MediaFile
 from app.models.user import User
 from app.schemas.erasure_receipt import ErasureLedgerItem
 from app.schemas.erasure_receipt import ErasureLedgerPage
 from app.schemas.erasure_receipt import ErasureReceiptResponse
 from app.schemas.erasure_receipt import IgnoredIndices
+from app.services.erasure_receipt import read_queries
 from app.services.erasure_receipt.inventory import STORES
 from app.services.erasure_receipt.receipt import RETAINED_REASONS
 from app.services.erasure_receipt.stores_external import IGNORED_INDICES_KEY
@@ -86,18 +84,6 @@ def _response(row: ErasureReceipt, entry: ErasureLedgerEntry) -> ErasureReceiptR
     )
 
 
-def _receipts(db: Session, entry: ErasureLedgerEntry) -> list[ErasureReceipt]:
-    return list(
-        db.execute(
-            select(ErasureReceipt)
-            .where(ErasureReceipt.ledger_entry_id == entry.id)
-            .order_by(ErasureReceipt.generated_at.desc(), ErasureReceipt.id.desc())
-        )
-        .scalars()
-        .all()
-    )
-
-
 def _audit_view(entry: ErasureLedgerEntry, viewer: User, org_id: int | None) -> None:
     audit_logger.log(
         event_type=AuditEventType.GDPR_RECEIPT_VIEW,
@@ -120,28 +106,9 @@ def list_erasures(
     current_user: User = Depends(get_current_active_superuser),
 ) -> ErasureLedgerPage:
     """Ledger entries newest first, each with the outcome of its latest receipt."""
-    query = select(ErasureLedgerEntry)
-    count = select(func.count()).select_from(ErasureLedgerEntry)
-    if status_filter:
-        query = query.where(ErasureLedgerEntry.status == status_filter)
-        count = count.where(ErasureLedgerEntry.status == status_filter)
-    entries = (
-        db.execute(
-            query.order_by(ErasureLedgerEntry.requested_at.desc(), ErasureLedgerEntry.id.desc())
-            .offset((page - 1) * per_page)
-            .limit(per_page)
-        )
-        .scalars()
-        .all()
+    entries, total, latest = read_queries.list_ledger_page(
+        db, status=status_filter, page=page, per_page=per_page
     )
-    latest: dict[int, str] = {}
-    if entries:
-        for receipt in db.execute(
-            select(ErasureReceipt)
-            .where(ErasureReceipt.ledger_entry_id.in_([e.id for e in entries]))
-            .order_by(ErasureReceipt.generated_at, ErasureReceipt.id)
-        ).scalars():
-            latest[int(receipt.ledger_entry_id)] = str(receipt.outcome)
     return ErasureLedgerPage(
         items=[
             ErasureLedgerItem(
@@ -157,7 +124,7 @@ def list_erasures(
             )
             for e in entries
         ],
-        total=int(db.execute(count).scalar_one()),
+        total=total,
         page=page,
         per_page=per_page,
     )
@@ -176,13 +143,11 @@ def read_receipts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_superuser),
 ) -> list[ErasureReceiptResponse]:
-    entry = db.execute(
-        select(ErasureLedgerEntry).where(ErasureLedgerEntry.uuid == ledger_uuid)
-    ).scalar_one_or_none()
+    entry = read_queries.get_ledger_entry(db, ledger_uuid)
     if entry is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     _audit_view(entry, current_user, None)
-    return [_response(r, entry) for r in _receipts(db, entry)]
+    return [_response(r, entry) for r in read_queries.list_receipts(db, entry)]
 
 
 @org_router.get(
@@ -199,27 +164,16 @@ def read_org_receipts(
     ctx: RequestContext = Depends(require_org_admin),
 ) -> list[ErasureReceiptResponse]:
     org_id = org_id_of(ctx)
-    entry = db.execute(
-        select(ErasureLedgerEntry).where(
-            ErasureLedgerEntry.uuid == ledger_uuid,
-            ErasureLedgerEntry.subject_type.in_(("org_member", "file")),
-            ErasureLedgerEntry.subject_organization_id == org_id,
-        )
-    ).scalar_one_or_none()
+    entry = read_queries.get_org_ledger_entry(db, ledger_uuid, org_id)
     if entry is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     _audit_view(entry, ctx.user, org_id)
-    return [_response(r, entry) for r in _receipts(db, entry)]
+    return [_response(r, entry) for r in read_queries.list_receipts(db, entry)]
 
 
-def _find_file(db: Session, file_uuid: UUID, org_id: int | None) -> MediaFile:
-    query = select(MediaFile).where(MediaFile.uuid == file_uuid)
-    if org_id is not None:
-        query = query.where(MediaFile.organization_id == org_id)
-    media_file = db.execute(query).scalar_one_or_none()
-    if media_file is None:
+def _require_file(db: Session, file_uuid: UUID, org_id: int | None) -> None:
+    if read_queries.find_file(db, file_uuid, org_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
-    return media_file
 
 
 @admin_router.post("/gdpr/erase-file/{file_uuid}")
@@ -231,7 +185,7 @@ def admin_erase_file(
     """GDPR Art. 17 erasure of ONE recording, through the ledger, with a receipt."""
     from app.services.gdpr_erasure_service import erase_file
 
-    _find_file(db, file_uuid, None)
+    _require_file(db, file_uuid, None)
     return erase_file(
         db,
         file_uuid,
@@ -250,7 +204,7 @@ def org_erase_file(
     """The same, for a recording of the caller's own organization (404 for any other)."""
     from app.services.gdpr_erasure_service import erase_file
 
-    _find_file(db, file_uuid, org_id_of(ctx))
+    _require_file(db, file_uuid, org_id_of(ctx))
     return erase_file(
         db,
         file_uuid,

@@ -16,7 +16,6 @@ from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import selectinload
 
 # Deployment configuration is the super_admin tier: this router
 # holds the SMTP / M365 / Exchange credentials for scan notifications.
@@ -31,6 +30,8 @@ from app.schemas.email_notification import EmailConfigUpdate
 from app.schemas.email_notification import EmailTestResponse
 from app.services.auth_mail_config_service import IN_USE_MESSAGE
 from app.services.auth_mail_config_service import is_designated
+from app.services.watch_email_queries import find_email_config
+from app.services.watch_email_queries import list_email_configs_with_links
 from app.utils.encryption import encrypt_api_key
 from app.utils.smtp_transport import SMTP_DEFAULT_PORT
 from app.utils.smtp_transport import smtp_transport_problem
@@ -91,14 +92,7 @@ def list_email_configs(
     this is the super_admin tier and why there is no owner filter. Secrets are
     never returned — ``_email_to_response`` emits ``has_*`` booleans instead.
     """
-    # ``selectinload`` because ``_email_to_response`` counts ``cfg.links``: without it
-    # that is one extra query per config on a list endpoint.
-    configs = (
-        db.query(EmailNotificationConfig)
-        .options(selectinload(EmailNotificationConfig.links))
-        .order_by(EmailNotificationConfig.name)
-        .all()
-    )
+    configs = list_email_configs_with_links(db)
     return {"configs": [_email_to_response(c) for c in configs]}
 
 
@@ -171,11 +165,7 @@ def update_email_config(
     Refuses with 409 when it would disable the config designated as the auth mailer;
     see the inline comment for why silently breaking password resets is worse.
     """
-    cfg = (
-        db.query(EmailNotificationConfig)
-        .filter(EmailNotificationConfig.uuid == config_uuid)
-        .first()
-    )
+    cfg = find_email_config(db, config_uuid)
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     payload = data.model_dump(exclude_unset=True)
@@ -225,11 +215,7 @@ def delete_email_config(
     the encrypted credentials go with the row and cannot be recovered. Any
     watch-source links to this config are removed by cascade.
     """
-    cfg = (
-        db.query(EmailNotificationConfig)
-        .filter(EmailNotificationConfig.uuid == config_uuid)
-        .first()
-    )
+    cfg = find_email_config(db, config_uuid)
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     # Same reasoning as the disable guard, plus the row itself is unrecoverable.
@@ -261,11 +247,7 @@ def test_email_config(
     """
     from app.services import watch_email_service
 
-    cfg = (
-        db.query(EmailNotificationConfig)
-        .filter(EmailNotificationConfig.uuid == config_uuid)
-        .first()
-    )
+    cfg = find_email_config(db, config_uuid)
     if not cfg:
         raise HTTPException(status_code=404, detail="Email config not found")
     ok, message = watch_email_service.test_connection(cfg)

@@ -22,6 +22,9 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.models.organization import Organization
+from app.models.organization import OrganizationMembership
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,9 +45,6 @@ def resolve_owner_org_id(db: Session, user_id: int) -> int | None:
         The local ``organization.id`` of the owner's first active org, or
         ``None`` for personal scope.
     """
-    from app.models.organization import Organization
-    from app.models.organization import OrganizationMembership
-
     membership = (
         db.query(OrganizationMembership)
         .join(Organization, Organization.id == OrganizationMembership.organization_id)
@@ -58,3 +58,26 @@ def resolve_owner_org_id(db: Session, user_id: int) -> int | None:
     if membership is None:
         return None
     return int(membership.organization_id)
+
+
+def find_active_org_by_external_id(db: Session, external_org_id: str) -> Organization | None:
+    """The active organization mirrored from the identity provider's ``external_org_id``."""
+    return (
+        db.query(Organization)
+        .filter(Organization.external_org_id == external_org_id, Organization.is_active.is_(True))
+        .first()
+    )
+
+
+def find_membership(
+    db: Session, organization_id: int, user_id: int
+) -> OrganizationMembership | None:
+    """The user's membership row in this organization, or ``None``."""
+    return (
+        db.query(OrganizationMembership)
+        .filter(
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.user_id == user_id,
+        )
+        .first()
+    )

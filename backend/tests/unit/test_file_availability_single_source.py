@@ -63,6 +63,7 @@ ALLOWED: dict[str, str] = {
     "services/admin_file_queries.py::list_quarantined_files": _REVIEW,
     "api/endpoints/admin_quarantine.py::release_media_file": _REVIEW,
     "api/endpoints/org_admin_takedown.py::list_org_quarantined_files": _REVIEW,
+    "services/org_takedown_queries.py::list_taken_down_files": _REVIEW,
     "api/endpoints/org_admin_takedown.py::release_org_file": _REVIEW,
     "schemas/admin.py::from_action": (
         "The quarantine/release response of both takedown routes: it REPORTS the flag of the "

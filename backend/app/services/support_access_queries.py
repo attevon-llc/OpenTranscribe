@@ -25,6 +25,7 @@ from app.schemas.support_access import UsePage
 from app.schemas.support_access import UserRef
 from app.services.support_access_service import compute_status
 from app.services.support_access_service import pending_expires_at
+from app.utils.sql_like import escape_like
 from app.utils.uuid_parse import parse_uuid_or_none
 
 STATUSES = ("pending", "active", "denied", "expired", "revoked", "lapsed")
@@ -192,3 +193,12 @@ def find_grant(db: Session, grant_uuid: str) -> SupportAccessGrant | None:
     if parsed is None:
         return None
     return db.query(SupportAccessGrant).filter(SupportAccessGrant.uuid == parsed).first()
+
+
+def search_active_organizations(db: Session, q: str | None, limit: int) -> list[Organization]:
+    """Active organizations whose name contains ``q`` (all of them when blank), by name."""
+    query = db.query(Organization).filter(Organization.is_active.is_(True))
+    if q:
+        like = f"%{escape_like(q)}%"
+        query = query.filter(Organization.name.ilike(like, escape="\\"))
+    return query.order_by(Organization.name).limit(limit).all()

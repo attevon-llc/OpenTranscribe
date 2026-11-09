@@ -15,10 +15,17 @@ must never break its feature wraps the call itself — see
 """
 
 import logging
+from collections.abc import Collection
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import Row
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from app.models.usage_event import UsageEvent
+from app.utils.db_helpers import org_stamp_is
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +86,6 @@ def record_event(
     """
     from sqlalchemy.exc import IntegrityError
 
-    from app.models.usage_event import UsageEvent
-
     try:
         db.add(
             UsageEvent(
@@ -107,3 +112,44 @@ def record_event(
         # the caller the event was already safely recorded (issue #981).
         logger.exception(f"Failed to record usage event '{event_type}'")
         raise
+
+
+def user_events_since(
+    db: Session, user_id: int, organization_id: int | None, since: datetime
+) -> list[UsageEvent]:
+    """Every usage event of ``user_id`` in the active tenant created at or after ``since``."""
+    return (
+        db.query(UsageEvent)
+        .filter(
+            UsageEvent.user_id == user_id,
+            org_stamp_is(UsageEvent.organization_id, organization_id),
+            UsageEvent.created_at >= since,
+        )
+        .all()
+    )
+
+
+def daily_token_totals(
+    db: Session,
+    user_id: int,
+    organization_id: int | None,
+    since: datetime,
+    event_types: Collection[str],
+) -> list[Row[Any]]:
+    """``(day, event_type, summed quantity, event count)`` rows for the given event types, by day."""
+    day = func.date_trunc("day", UsageEvent.created_at).label("day")
+    rows: list[Row[Any]] = (
+        db.query(
+            day, UsageEvent.event_type, func.sum(UsageEvent.quantity), func.count(UsageEvent.id)
+        )
+        .filter(
+            UsageEvent.user_id == user_id,
+            org_stamp_is(UsageEvent.organization_id, organization_id),
+            UsageEvent.event_type.in_(event_types),
+            UsageEvent.created_at >= since,
+        )
+        .group_by(day, UsageEvent.event_type)
+        .order_by(day)
+        .all()
+    )
+    return rows

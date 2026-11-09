@@ -7,14 +7,12 @@ unmodified; the SHA-256 of the exact bytes identifies what an acceptance covers.
 from __future__ import annotations
 
 import re
-import uuid as uuid_pkg
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi import Request
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps_context import get_current_context
@@ -29,7 +27,6 @@ from app.db.base import get_db
 from app.legal import acceptance
 from app.legal import registry
 from app.models.legal_acceptance import LegalAcceptance
-from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.legal import LOCALE_PATTERN
 from app.schemas.legal import LegalAcknowledgmentAdminRecord
@@ -47,12 +44,6 @@ _ORG_ADMIN = "org:admin"
 
 def _coded(status_code: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"code": code, "message": message})
-
-
-def _org_uuid(db: Session, org_id: int | None) -> uuid_pkg.UUID | None:
-    if org_id is None:
-        return None
-    return db.execute(select(Organization.uuid).where(Organization.id == org_id)).scalar_one()
 
 
 def _audit_details(row: LegalAcceptance) -> dict[str, str]:
@@ -90,7 +81,7 @@ def list_legal_documents(
 ) -> list[LegalDocumentSummary]:
     """Every served document with the caller's (and the caller's org's) acknowledgment state."""
     out: list[LegalDocumentSummary] = []
-    org_uuid = _org_uuid(db, ctx.org_id)
+    org_uuid = acceptance.organization_uuid(db, ctx.org_id)
     for doc in registry.list_documents():
         row = acceptance.find_acceptance(db, current_user.id, doc)
         org_row = (
@@ -185,7 +176,7 @@ def acknowledge_legal_document(
         user_agent=None if user_agent == "unknown" else user_agent,
         locale=locale,
         organization_id=ctx.org_id,
-        organization_uuid=_org_uuid(db, ctx.org_id),
+        organization_uuid=acceptance.organization_uuid(db, ctx.org_id),
         scope=body.scope,
     )
     if created:
@@ -222,7 +213,7 @@ def list_legal_acknowledgments(
     ``organization=current`` an org admin sees the rows recorded in their organization.
     The join is OUTER: a record can outlive the account that made it.
     """
-    query = select(LegalAcceptance, User.email).outerjoin(User, User.id == LegalAcceptance.user_id)
+    scope_org_id: int | None = None
     if organization == "current":
         if ctx.org_id is None or ctx.org_role != _ORG_ADMIN:
             raise _coded(
@@ -230,12 +221,10 @@ def list_legal_acknowledgments(
                 "legal_org_acceptance_forbidden",
                 "Only an organization administrator may list the organization's acceptances",
             )
-        query = query.where(LegalAcceptance.organization_id == ctx.org_id)
+        scope_org_id = ctx.org_id
     elif current_user.role not in (ROLE_ADMIN, ROLE_SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    rows = db.execute(
-        query.order_by(LegalAcceptance.accepted_at.desc(), LegalAcceptance.id.desc())
-    ).all()
+    rows = acceptance.list_acceptances_with_email(db, scope_org_id)
     return [
         LegalAcknowledgmentAdminRecord(
             key=r.document_key,

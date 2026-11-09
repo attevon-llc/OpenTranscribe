@@ -18,14 +18,8 @@ vi.mock('$lib/api/asrProviderPolicy', async (importOriginal) => ({
   getProviderPolicy: policyApi.getProviderPolicy,
   updateProviderPolicy: policyApi.updateProviderPolicy,
 }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
-vi.mock('$stores/locale', () => {
-  const t = (key: string, vars?: Record<string, unknown>) =>
-    vars ? `${key}${JSON.stringify(vars)}` : key;
-  return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
-});
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyWithVarsLocale());
 
 import ASRSettings from './ASRSettings.svelte';
 

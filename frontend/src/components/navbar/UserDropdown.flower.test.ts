@@ -6,14 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import UserDropdown from './UserDropdown.svelte';
 import { capabilities, resetCapabilities } from '$stores/capabilities';

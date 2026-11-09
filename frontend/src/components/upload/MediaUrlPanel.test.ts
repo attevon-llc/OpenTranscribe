@@ -19,17 +19,8 @@ vi.mock('$lib/api/downloadSettings', () => ({
   getDownloadSettings: vi.fn().mockResolvedValue({}),
   getDownloadSystemDefaults: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import MediaUrlPanel from './MediaUrlPanel.svelte';
 

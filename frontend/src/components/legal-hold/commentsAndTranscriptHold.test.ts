@@ -21,7 +21,7 @@ vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 import FrozenContextTestHost from './FrozenContextTestHost.svelte';
 import CommentSection from '$components/CommentSection.svelte';

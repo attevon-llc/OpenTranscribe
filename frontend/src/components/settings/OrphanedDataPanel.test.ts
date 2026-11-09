@@ -30,9 +30,7 @@ vi.mock('$stores/locale', async () => {
   };
 });
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 import {
   getSearchOrphanCounts,

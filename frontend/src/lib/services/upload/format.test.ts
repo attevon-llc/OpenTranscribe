@@ -3,14 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('axios', () => ({
   default: { isCancel: (e: unknown) => (e as { cancel?: boolean })?.cancel === true },
 }));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (v: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import { formatTimeRemaining, getErrorMessage, getSourceName } from './format';
 

@@ -9,15 +9,10 @@ const h = vi.hoisted(() => ({
   session: null as unknown as Writable<SessionState>,
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, o?: Record<string, unknown>) => string) => void) => (
-      run((k) => k), () => {}
-    ),
-  },
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-}));
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$lib/api/supportAccess', () => ({
   SupportAccessApi: { revokeGrant: h.revokeGrant },
 }));

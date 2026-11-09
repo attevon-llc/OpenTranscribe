@@ -10,14 +10,7 @@ import { render, fireEvent } from '@testing-library/svelte';
 const mockAxios = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import WaveformPlayer from './WaveformPlayer.svelte';
 

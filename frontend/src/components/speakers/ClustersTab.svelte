@@ -125,6 +125,54 @@
       </div>
     {/if}
 
+  {#snippet clusterItem(cluster: SpeakerCluster)}
+        <div class:merge-source-highlight={mergeMode && mergeSourceUuid === cluster.uuid}>
+          <SpeakerClusterCard
+            {cluster}
+            expanded={expandedCluster === cluster.uuid}
+
+            unassignActive={unassignMode && unassignTargetUuid === cluster.uuid}
+            unassignSelectedCount={unassignMode && unassignTargetUuid === cluster.uuid ? unassignSelectedMembers.size : 0}
+            unassignTotalCount={clusterMembers[cluster.uuid]?.length ?? cluster.member_count}
+            {unassignBlacklist}
+            on:expand
+            on:update
+            on:promote
+            on:delete
+            on:merge
+            on:split
+            on:unassign
+            on:cancelUnassign
+            on:confirmUnassign
+            on:toggleBlacklist
+          >
+            <div slot="members">
+              {#if clusterMembers[cluster.uuid]}
+                <ClusterMemberList
+                  members={clusterMembers[cluster.uuid]}
+                  {cluster}
+                  {splitMode}
+                  {splitTargetUuid}
+                  {splitSelectedMembers}
+                  {unassignMode}
+                  {unassignTargetUuid}
+                  {unassignSelectedMembers}
+                  on:preview
+                  on:prefetch
+                  on:toggleSplitMember
+                  on:toggleUnassignMember
+                  on:cancelSplit
+                  on:confirmSplit
+                  on:outlierAnalysisComplete
+                />
+              {:else}
+                <div class="loading-members">{$t('speakers.members.loading')}</div>
+              {/if}
+            </div>
+          </SpeakerClusterCard>
+        </div>
+  {/snippet}
+
     <div class="cluster-list">
       {#if labeledCount > 0}
         <button class="section-heading-btn identified" aria-expanded={!identifiedCollapsed} on:click={() => dispatch('toggleSection', 'identified')} title={identifiedCollapsed ? $t('speakers.tooltip.expandSection') : $t('speakers.tooltip.collapseSection')}>
@@ -135,51 +183,7 @@
         {#if !identifiedCollapsed}
           {#if identifiedClusters.length > 0}
             {#each identifiedClusters as cluster (cluster.uuid)}
-              <div class:merge-source-highlight={mergeMode && mergeSourceUuid === cluster.uuid}>
-                <SpeakerClusterCard
-                  {cluster}
-                  expanded={expandedCluster === cluster.uuid}
-
-                  unassignActive={unassignMode && unassignTargetUuid === cluster.uuid}
-                  unassignSelectedCount={unassignMode && unassignTargetUuid === cluster.uuid ? unassignSelectedMembers.size : 0}
-                  unassignTotalCount={clusterMembers[cluster.uuid]?.length ?? cluster.member_count}
-                  {unassignBlacklist}
-                  on:expand
-                  on:update
-                  on:promote
-                  on:delete
-                  on:merge
-                  on:split
-                  on:unassign
-                  on:cancelUnassign
-                  on:confirmUnassign
-                  on:toggleBlacklist
-                >
-                  <div slot="members">
-                    {#if clusterMembers[cluster.uuid]}
-                      <ClusterMemberList
-                        members={clusterMembers[cluster.uuid]}
-                        {cluster}
-                        {splitMode}
-                        {splitTargetUuid}
-                        {splitSelectedMembers}
-                        {unassignMode}
-                        {unassignTargetUuid}
-                        {unassignSelectedMembers}
-                        on:preview
-                        on:prefetch
-                        on:toggleSplitMember
-                        on:toggleUnassignMember
-                        on:cancelSplit
-                        on:confirmSplit
-                        on:outlierAnalysisComplete
-                      />
-                    {:else}
-                      <div class="loading-members">{$t('speakers.members.loading')}</div>
-                    {/if}
-                  </div>
-                </SpeakerClusterCard>
-              </div>
+              {@render clusterItem(cluster)}
             {/each}
           {:else}
             <div class="section-empty-note">{$t('speakers.section.allOnOtherPages')}</div>
@@ -196,51 +200,7 @@
         {#if !unidentifiedCollapsed}
           {#if unidentifiedClusters.length > 0}
             {#each unidentifiedClusters as cluster (cluster.uuid)}
-              <div class:merge-source-highlight={mergeMode && mergeSourceUuid === cluster.uuid}>
-                <SpeakerClusterCard
-                  {cluster}
-                  expanded={expandedCluster === cluster.uuid}
-
-                  unassignActive={unassignMode && unassignTargetUuid === cluster.uuid}
-                  unassignSelectedCount={unassignMode && unassignTargetUuid === cluster.uuid ? unassignSelectedMembers.size : 0}
-                  unassignTotalCount={clusterMembers[cluster.uuid]?.length ?? cluster.member_count}
-                  {unassignBlacklist}
-                  on:expand
-                  on:update
-                  on:promote
-                  on:delete
-                  on:merge
-                  on:split
-                  on:unassign
-                  on:cancelUnassign
-                  on:confirmUnassign
-                  on:toggleBlacklist
-                >
-                  <div slot="members">
-                    {#if clusterMembers[cluster.uuid]}
-                      <ClusterMemberList
-                        members={clusterMembers[cluster.uuid]}
-                        {cluster}
-                        {splitMode}
-                        {splitTargetUuid}
-                        {splitSelectedMembers}
-                        {unassignMode}
-                        {unassignTargetUuid}
-                        {unassignSelectedMembers}
-                        on:preview
-                        on:prefetch
-                        on:toggleSplitMember
-                        on:toggleUnassignMember
-                        on:cancelSplit
-                        on:confirmSplit
-                        on:outlierAnalysisComplete
-                      />
-                    {:else}
-                      <div class="loading-members">{$t('speakers.members.loading')}</div>
-                    {/if}
-                  </div>
-                </SpeakerClusterCard>
-              </div>
+              {@render clusterItem(cluster)}
             {/each}
           {:else}
             <div class="section-empty-note">{$t('speakers.section.allOnOtherPages')}</div>

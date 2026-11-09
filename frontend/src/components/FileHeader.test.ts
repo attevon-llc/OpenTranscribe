@@ -13,14 +13,7 @@ import type { MediaFileDetail } from '$lib/types/media';
 
 vi.mock('$lib/axios', () => ({ default: { put: vi.fn() }, isRequestCancelled: () => false }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import FileHeader from './FileHeader.svelte';
 

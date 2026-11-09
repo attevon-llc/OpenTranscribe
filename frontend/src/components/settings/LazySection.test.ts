@@ -2,14 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { Component } from 'svelte';
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import LazySectionTestHost from './LazySectionTestHost.svelte';
 import Probe from './LazySectionProbe.svelte';

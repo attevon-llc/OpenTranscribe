@@ -16,14 +16,7 @@ vi.mock('svelte-range-slider-pips', () => ({
   },
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 const mockGoto = vi.hoisted(() => vi.fn());
 const mockBeforeNavigate = vi.hoisted(() => vi.fn());

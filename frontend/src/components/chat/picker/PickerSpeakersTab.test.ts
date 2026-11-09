@@ -7,15 +7,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor } from '@testing-library/svelte';
 
-vi.mock('$lib/axios', () => {
-  const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
-  return { default: axiosInstance, isRequestCancelled: () => false };
-});
+vi.mock('$lib/axios', async () => (await import('$testMocks/serviceMocks')).axiosInstanceMock());
 
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 import axiosInstance from '$lib/axios';
 import PickerSpeakersTab from './PickerSpeakersTab.svelte';

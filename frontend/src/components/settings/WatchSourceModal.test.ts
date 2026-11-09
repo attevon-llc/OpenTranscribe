@@ -21,17 +21,8 @@ vi.mock('$lib/axios', () => ({
   default: { get: vi.fn().mockResolvedValue({ data: [] }), post: vi.fn() },
 }));
 vi.mock('$lib/api/tags', () => ({ listTags: vi.fn().mockResolvedValue([]) }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import WatchSourceModal from './WatchSourceModal.svelte';
 import type { Capabilities } from '$lib/api/watchSourcesApi';

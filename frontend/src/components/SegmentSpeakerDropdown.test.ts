@@ -16,14 +16,7 @@ import type { TranscriptSegment } from '$lib/types/media';
 const mockScrollLock = vi.hoisted(() => ({ lockScroll: vi.fn(), unlockScroll: vi.fn() }));
 vi.mock('$lib/scrollLock', () => mockScrollLock);
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 const mockAxios = vi.hoisted(() => ({ post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios }));

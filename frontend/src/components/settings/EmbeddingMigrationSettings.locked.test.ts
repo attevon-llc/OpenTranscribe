@@ -3,9 +3,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/locale', () => ({
   t: {
     subscribe: (

@@ -3,10 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import type { LLMStatusState } from '$stores/llmStatus';
 
-vi.mock('$lib/axios', () => {
-  const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
-  return { default: axiosInstance, isRequestCancelled: () => false };
-});
+vi.mock('$lib/axios', async () => (await import('$testMocks/serviceMocks')).axiosInstanceMock());
 
 vi.mock('$lib/api/speakerAttributeSettings', () => ({
   getSpeakerAttributeSettings: vi.fn().mockResolvedValue({
@@ -40,9 +37,7 @@ vi.mock('$stores/llmStatus', () => ({
 
 vi.mock('$stores/speakerAttributePrefs', () => ({ refreshSpeakerAttributePrefs: vi.fn() }));
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 vi.mock('$stores/locale', () => ({
   t: {

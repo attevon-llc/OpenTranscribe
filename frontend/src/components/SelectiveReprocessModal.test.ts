@@ -11,21 +11,12 @@ const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 vi.mock('../lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('../stores/toast', () => ({
   toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 vi.mock('../stores/llmStatus', async () => {
   const { readable } = await import('svelte/store');

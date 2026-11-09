@@ -5,9 +5,7 @@ vi.mock('$lib/axios', () => {
   const axiosInstance = { get: vi.fn(), post: vi.fn(), patch: vi.fn() };
   return { default: axiosInstance, isRequestCancelled: () => false };
 });
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;

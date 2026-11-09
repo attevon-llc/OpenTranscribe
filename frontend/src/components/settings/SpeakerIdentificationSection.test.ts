@@ -9,17 +9,8 @@ const mockAxios = vi.hoisted(() => ({
   delete: vi.fn(),
 }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, vars?: unknown) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 const api = vi.hoisted(() => ({
   getTranscriptionSettings: vi.fn(),

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 
 vi.mock('$lib/axios', () => ({ default: { get: vi.fn() }, isRequestCancelled: () => false }));
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
   const en = (await import('$lib/i18n/locales/en.json')).default as Record<string, string>;

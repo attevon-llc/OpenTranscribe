@@ -17,7 +17,7 @@ vi.mock('$stores/notificationsPanel', async () =>
 );
 vi.mock('$stores/recording', async () => (await import('$testMocks/navbarMocks')).recordingMock());
 vi.mock('$stores/uploads', () => ({ uploadsStore: {} }));
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: { open: vi.fn() } }));
 vi.mock('$lib/prefetch', () => ({
   prefetchSpeakersData: vi.fn(),

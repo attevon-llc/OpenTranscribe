@@ -34,20 +34,9 @@ const mockAxios = vi.hoisted(() => ({
 }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-  locale: {
-    subscribe: (run: (value: string) => void) => {
-      run('en');
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 const mockGetAISuggestions = vi.hoisted(() => vi.fn());
 vi.mock('$lib/api/suggestions', () => ({ getAISuggestions: mockGetAISuggestions }));

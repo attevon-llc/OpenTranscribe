@@ -9,9 +9,7 @@ const { downloadStore, axiosGet, routeFrame } = vi.hoisted(() => ({
 vi.mock('$stores/downloads', () => ({ downloadStore }));
 vi.mock('$lib/axios', () => ({ default: { get: axiosGet } }));
 vi.mock('$lib/websocket/frameRouting', () => ({ routeFrame }));
-vi.mock('$stores/locale', () => ({
-  t: { subscribe: (run: (v: (k: string) => string) => void) => (run((k) => k), () => {}) },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import { dispatchMessage, recoverActiveProgress } from './frameDispatch';
 

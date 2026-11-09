@@ -9,18 +9,9 @@ import { render, fireEvent, waitFor } from '@testing-library/svelte';
 
 const mockAxios = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('$lib/axios', () => ({ default: mockAxios }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$lib/utils/apiError', () => ({ getErrorStatus: () => 409, getErrorMessage: () => 'x' }));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import UploadStepCollections from './UploadStepCollections.svelte';
 import UploadStepTags from './UploadStepTags.svelte';

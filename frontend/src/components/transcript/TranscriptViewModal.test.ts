@@ -19,9 +19,7 @@ vi.mock('$lib/axios', () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
 }));
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { error: vi.fn(), success: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 vi.mock('$stores/locale', () => ({
   t: {

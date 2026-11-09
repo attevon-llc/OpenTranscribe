@@ -27,19 +27,11 @@ vi.mock('$stores/auth', async () => {
   return { user: writable<{ uuid: string; role: string } | null>(null) };
 });
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
-vi.mock('$stores/locale', () => ({
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 import UserManagementTable from './UserManagementTable.svelte';
 import { user as mockUser } from '$stores/auth';

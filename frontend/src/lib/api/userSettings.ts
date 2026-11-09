@@ -92,7 +92,7 @@ export class UserSettingsApi {
 }
 
 // Default values matching backend
-const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
+export const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
   max_recording_duration: 120,
   recording_quality: 'high',
   auto_stop_enabled: true,

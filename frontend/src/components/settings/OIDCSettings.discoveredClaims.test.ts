@@ -2,15 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { vi } from 'vitest';
 
-vi.mock('$stores/locale', () => ({
-  // Identity translator so queries can match on the i18n key.
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import OIDCSettings from './OIDCSettings.svelte';
 

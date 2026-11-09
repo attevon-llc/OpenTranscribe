@@ -18,14 +18,7 @@ import { get } from 'svelte/store';
 const mockToast = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('./toast', () => ({ toastStore: mockToast }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, vars?: Record<string, unknown>) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import { downloadStore } from './downloads';
 

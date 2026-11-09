@@ -43,3 +43,13 @@ export const keyWithVarsLocale = () => {
     vars ? `${key}${JSON.stringify(vars)}` : key;
   return { t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) } };
 };
+
+/**
+ * Identity translator: returns the i18n key whatever vars it is given, so assertions match on the
+ * key. `code` is the `locale` store value; `null` omits the store for components that never read it.
+ */
+export const keyLocale = (options: { code?: string | null } = {}) => {
+  const { code = null } = options;
+  const t = readable((key: string) => key);
+  return code === null ? { t } : { t, locale: readable(code) };
+};

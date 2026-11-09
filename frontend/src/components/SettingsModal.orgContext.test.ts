@@ -14,22 +14,11 @@ vi.mock('$stores/auth', async () => {
   return { user: writable<{ role: string } | null>(null), readAccountLifecycle: () => null };
 });
 
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-  locale: {
-    subscribe: (run: (value: string) => void) => {
-      run('en');
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 vi.mock('$lib/api/organizationContext', () => ({
   getOrganizationContext: vi.fn().mockResolvedValue({

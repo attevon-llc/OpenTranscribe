@@ -23,14 +23,7 @@ vi.mock('$lib/utils/clientBuild', () => ({
   },
 }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 const axiosGet = vi.fn();
 vi.mock('$lib/axios', () => ({ default: { get: (...args: unknown[]) => axiosGet(...args) } }));

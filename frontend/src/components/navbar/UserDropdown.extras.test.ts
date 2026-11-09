@@ -11,14 +11,7 @@ vi.mock('$lib/edition', () => edition);
 vi.mock('$lib/cloud/components/UserMenuExtras.svelte', async () => ({
   default: (await import('./UserMenuExtrasFixture.svelte')).default,
 }));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import UserDropdown from './UserDropdown.svelte';
 

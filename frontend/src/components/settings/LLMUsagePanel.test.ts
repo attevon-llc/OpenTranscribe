@@ -15,9 +15,7 @@ vi.mock('$stores/locale', () => {
     locale: store('en'),
   };
 });
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 const api = vi.hoisted(() => ({
   getMyUsage: vi.fn(),

@@ -6,16 +6,7 @@ vi.mock('$lib/axios', () => ({
   abortAllRequests: vi.fn(),
 }));
 
-vi.mock('$stores/locale', () => ({
-  // Identity translator — assertions key off the i18n key, which also proves the
-  // message is translated rather than a hardcoded English string.
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 vi.mock('$lib/session/clearUserState', () => ({ clearUserState: vi.fn() }));
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));

@@ -17,7 +17,7 @@ vi.mock('$stores/supportSession', async () => {
 vi.mock('$stores/locale', async () =>
   (await import('$testMocks/galleryToolbarMocks')).keyOnlyLocale()
 );
-vi.mock('$stores/toast', () => ({ toastStore: { info: vi.fn(), error: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 vi.mock('$stores/chat', () => ({ chatStore: { setPendingContext: vi.fn() } }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$stores/auth', async () => {

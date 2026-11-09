@@ -35,9 +35,7 @@ const notices = vi.hoisted(() => ({
 vi.mock('$lib/api/admin', () => api);
 vi.mock('$lib/api/takedownNotices', () => notices);
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 import QuarantineModal from './QuarantineModal.svelte';
 import type { MediaFile } from '$lib/types/media';

@@ -10,14 +10,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
  * and degrades explicitly rather than silently pointing at whatever `master` is today.
  */
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 const axiosGet = vi.fn();
 vi.mock('$lib/axios', () => ({ default: { get: (...args: unknown[]) => axiosGet(...args) } }));

@@ -18,20 +18,9 @@ const mockGalleryStore = vi.hoisted(() => ({
 }));
 vi.mock('$stores/gallery', () => ({ galleryStore: mockGalleryStore }));
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, vars?: Record<string, unknown>) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-  locale: {
-    subscribe: (run: (value: string) => void) => {
-      run('de');
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'de' })
+);
 
 const mockPrefetch = vi.hoisted(() => ({
   prefetchFileDetails: vi.fn(),

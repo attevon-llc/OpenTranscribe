@@ -9,20 +9,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
 
-vi.mock('$lib/axios', () => {
-  const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
-  return { default: axiosInstance, isRequestCancelled: () => false };
-});
+vi.mock('$lib/axios', async () => (await import('$testMocks/serviceMocks')).axiosInstanceMock());
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
-vi.mock('$stores/locale', () => ({
-  // Identity translator so assertions can match on the i18n key.
-  t: { subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}) },
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';

@@ -9,15 +9,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { MediaFileDetail } from '$lib/types/media';
 
-vi.mock('$stores/locale', () => ({
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 vi.mock('$stores/auth', () => ({
   authStore: {

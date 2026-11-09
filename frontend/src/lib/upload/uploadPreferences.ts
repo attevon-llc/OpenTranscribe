@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
 import { getAudioExtractionSettings } from '$lib/api/audioExtractionSettings';
 import { ASRSettingsApi } from '$lib/api/asrSettings';
+import { DEFAULT_RECORDING_SETTINGS as API_RECORDING_DEFAULTS } from '$lib/api/userSettings';
 import {
   getTranscriptionSettings,
   getTranscriptionSystemDefaults,
@@ -93,9 +94,9 @@ export interface RecordingSettings {
 }
 
 const DEFAULT_RECORDING_SETTINGS: RecordingSettings = {
-  maxRecordingDuration: 7200,
-  recordingQuality: 'high',
-  autoStopEnabled: true,
+  maxRecordingDuration: API_RECORDING_DEFAULTS.max_recording_duration * 60,
+  recordingQuality: API_RECORDING_DEFAULTS.recording_quality,
+  autoStopEnabled: API_RECORDING_DEFAULTS.auto_stop_enabled,
 };
 
 /** Recording preferences from localStorage (duration is stored in minutes, returned in seconds). */
@@ -105,9 +106,13 @@ export function loadRecordingSettings(): RecordingSettings {
   try {
     const parsed = JSON.parse(settings);
     return {
-      maxRecordingDuration: (parsed.maxRecordingDuration || 120) * 60,
-      recordingQuality: parsed.recordingQuality || 'high',
-      autoStopEnabled: parsed.autoStopEnabled !== undefined ? parsed.autoStopEnabled : true,
+      maxRecordingDuration:
+        (parsed.maxRecordingDuration || API_RECORDING_DEFAULTS.max_recording_duration) * 60,
+      recordingQuality: parsed.recordingQuality || API_RECORDING_DEFAULTS.recording_quality,
+      autoStopEnabled:
+        parsed.autoStopEnabled !== undefined
+          ? parsed.autoStopEnabled
+          : API_RECORDING_DEFAULTS.auto_stop_enabled,
     };
   } catch {
     return { ...DEFAULT_RECORDING_SETTINGS };

@@ -14,7 +14,7 @@ vi.mock('$stores/locale', async () => {
     },
   };
 });
-vi.mock('$stores/toast', () => ({ toastStore: { success: vi.fn() } }));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
 import LanguageSettings from './LanguageSettings.svelte';
 

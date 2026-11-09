@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, waitFor } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => {
-  const t = (key: string) => key;
-  return {
-    t: { subscribe: (run: (v: typeof t) => void) => (run(t), () => {}) },
-    locale: { subscribe: (run: (v: string) => void) => (run('en'), () => {}) },
-  };
-});
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 const getMock = vi.hoisted(() => vi.fn());
 vi.mock('$lib/axios', () => ({ default: { get: getMock } }));
 

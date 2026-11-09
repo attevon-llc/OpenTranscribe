@@ -15,19 +15,11 @@ const mockAxios = vi.hoisted(() => ({
 }));
 vi.mock('$lib/axios', () => ({ default: mockAxios, isRequestCancelled: () => false }));
 
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
 
-vi.mock('$stores/locale', () => ({
-  locale: { subscribe: (run: (value: string) => void) => (run('en'), () => {}) },
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 
 import PasswordResetModal from './PasswordResetModal.svelte';
 import { toastStore } from '$stores/toast';

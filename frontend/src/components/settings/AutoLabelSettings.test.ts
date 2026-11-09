@@ -7,10 +7,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 import type { LLMStatusState } from '$stores/llmStatus';
 
-vi.mock('$lib/axios', () => {
-  const axiosInstance = { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() };
-  return { default: axiosInstance, isRequestCancelled: () => false };
-});
+vi.mock('$lib/axios', async () => (await import('$testMocks/serviceMocks')).axiosInstanceMock());
 
 const llmState = writable<LLMStatusState>({
   status: null,
@@ -27,14 +24,8 @@ vi.mock('$stores/llmStatus', () => ({
 
 const { setDirty } = vi.hoisted(() => ({ setDirty: vi.fn() }));
 vi.mock('$stores/settingsModalStore', () => ({ settingsModalStore: { setDirty } }));
-vi.mock('$stores/toast', () => ({
-  toastStore: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
-}));
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => (run((k) => k), () => {}),
-  },
-}));
+vi.mock('$stores/toast', async () => (await import('$testMocks/serviceMocks')).toastStoreMock());
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 
 import axiosInstance from '$lib/axios';
 import { toastStore } from '$stores/toast';

@@ -7,15 +7,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import type { MediaFileDetail } from '$lib/types/media';
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string, vars?: Record<string, unknown>) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-  locale: { subscribe: (run: (v: string) => void) => (run('en'), () => {}) },
-}));
+vi.mock('$stores/locale', async () =>
+  (await import('$testMocks/localeMocks')).keyLocale({ code: 'en' })
+);
 vi.mock('$stores/supportSession', async () => {
   const { writable } = await import('svelte/store');
   return { supportSessionGate: writable({ active: false, readOnly: false }) };

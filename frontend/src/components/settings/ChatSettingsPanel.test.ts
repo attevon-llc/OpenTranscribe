@@ -6,14 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 
-vi.mock('$stores/locale', () => ({
-  t: {
-    subscribe: (run: (value: (key: string) => string) => void) => {
-      run((key: string) => key);
-      return () => {};
-    },
-  },
-}));
+vi.mock('$stores/locale', async () => (await import('$testMocks/localeMocks')).keyLocale());
 // The two forms have their own suites; this file is about the tab shell around them.
 vi.mock('$components/settings/ChatSettings.svelte', async () => ({
   default: (await import('$testMocks/EmptyComponent.svelte')).default,

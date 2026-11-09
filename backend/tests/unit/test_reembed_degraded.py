@@ -15,6 +15,7 @@ from typing import Any
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from kombu.exceptions import OperationalError as BrokerUnavailableError
 from opensearchpy.exceptions import ConnectionError as OSConnectionError
 
 from app.services.ingest_artifacts.index_mapping import chunk_plane_clause
@@ -377,7 +378,7 @@ def test_task_isolates_a_per_owner_dispatch_failure():
 
         def _apply_async(*, args, priority):
             if args[0] == 1:
-                raise RuntimeError("broker unavailable")
+                raise BrokerUnavailableError("broker unavailable")
 
         mocked_reindex.apply_async.side_effect = _apply_async
 

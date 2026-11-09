@@ -48,6 +48,8 @@ import asyncio
 import uuid
 
 import pytest
+from kombu.exceptions import OperationalError as BrokerUnavailableError
+from sqlalchemy.exc import OperationalError
 
 from app.core.enums import FileStatus
 from app.models.media import MediaFile
@@ -178,7 +180,7 @@ class TestResetSummaryForRetry:
         mf = make_media_file(status=FileStatus.COMPLETED, summary_status="failed")
 
         def _explode():
-            raise RuntimeError("connection reset")
+            raise OperationalError("COMMIT", {}, Exception("connection reset"))
 
         real_commit = db_session.commit
         real_rollback = db_session.rollback
@@ -209,13 +211,14 @@ class TestCheckLlmAvailability:
 
         assert asyncio.run(summary_retry.check_llm_availability()) is True
 
-    def test_false_when_the_service_raises(self, monkeypatch):
+    def test_unexpected_error_propagates_instead_of_reading_as_unavailable(self, monkeypatch):
         async def _boom(user_id: int | None = None) -> bool:
-            raise RuntimeError("provider unreachable")
+            raise RuntimeError("programming error")
 
         monkeypatch.setattr(summary_retry, "is_llm_available", _boom, raising=True)
 
-        assert asyncio.run(summary_retry.check_llm_availability()) is False
+        with pytest.raises(RuntimeError, match="programming error"):
+            asyncio.run(summary_retry.check_llm_availability())
 
 
 class TestRetrySummaryIfAvailable:
@@ -378,7 +381,7 @@ class TestRetrySummaryIfAvailable:
         )
 
         def _boom(file_uuid):
-            raise RuntimeError("broker unreachable")
+            raise BrokerUnavailableError("broker unreachable")
 
         monkeypatch.setattr(summarization.summarize_transcript_task, "delay", _boom, raising=True)
 

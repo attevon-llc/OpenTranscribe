@@ -32,8 +32,10 @@ from app.services.download_events import publish_bulk_event
 from app.services.download_events import release_document_export_guard
 from app.services.minio_bucket_admin import MinIOService
 from app.services.video_processing_service import VideoProcessingService
+from app.utils.exception_log_safety import MessageFreeTracebackFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(MessageFreeTracebackFilter())
 
 RESULT_TTL_S = 900
 
@@ -188,8 +190,9 @@ def prepare_transcript_document_task(
         logger.error("Document export: the document fonts are not installed")
         return _fail(job_id, "fonts_unavailable")
     except Exception as e:
-        # Type only: the message of a rendering error can quote transcript text (issue #1022).
-        logger.error("Document export failed (job %s): %s", job_id, type(e).__name__)
+        # The logger's MessageFreeTracebackFilter keeps the frames and drops the message,
+        # which can quote transcript text (issue #1022).
+        logger.error("Document export failed (job %s): %s", job_id, type(e).__name__, exc_info=True)
         return _fail(job_id, "failed")
     finally:
         release_document_export_guard(guard_key)

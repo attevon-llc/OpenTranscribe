@@ -33,6 +33,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.celery import celery_app
 from app.core.enums import PostProcessingTask
+from app.core.exceptions import ResourceNotFoundError
 from app.core.queues import NLPPriority
 from app.db.session_utils import session_scope
 from app.services.llm_budget import notification_extra
@@ -247,7 +248,7 @@ def _handle_task_error(e: Exception, file_uuid: str) -> dict[str, Any]:
             notify = (
                 (int(media_file.user_id), int(media_file.id)) if media_file is not None else None
             )
-    except SQLAlchemyError as notify_err:
+    except (SQLAlchemyError, ResourceNotFoundError) as notify_err:
         # Log but don't raise - notification failures shouldn't mask the original error
         logger.warning(
             f"Failed to resolve file for topic extraction failure notice: {notify_err}",

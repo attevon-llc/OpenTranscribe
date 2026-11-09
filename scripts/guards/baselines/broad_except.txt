@@ -735,7 +735,6 @@ backend/app/tasks/rename_propagation_task.py::_finish#1	1	re-keyed per handler s
 backend/app/tasks/rename_propagation_task.py::dispatch_speaker_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/rename_propagation_task.py::propagate_speaker_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/rename_propagation_task.py::propagate_title_rename#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/transcript_document.py::prepare_transcript_document_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/cloud_asr.py::_run_parallel_cloud_asr_and_diarization#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/cloud_asr.py::_run_parallel_cloud_asr_and_diarization#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/transcription/context.py::_handle_outer_exception#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

@@ -1,74 +1,290 @@
 {
-  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Replace each REPLACE-* item id with the shipped bundle's item ids (the ids of the collection's files); a question is asked in its own conversation, followed by its follow-ups. Cross-file questions list several items.",
+  "_comment": "Questions asked of the real chat pipeline by scripts/demo/generate_demo_conversations.py. Each `items` entry is an item id in the shipped bundle's manifest (bundle-v1). A question is asked in its own conversation, followed by its follow-ups. At least half of the conversations are cross-file. The privacy-redaction item id is reserved for the scripted clip that the owner still has to record (bundle-v1/privacy-demo/SCRIPT.md); until it exists in the manifest, the generator reports it as missing. Questions that name specifics (dates, topics) are drawn from the items' titles and must be rechecked against the transcripts once they exist.",
   "conversations": [
     {
-      "id": "news-compare",
-      "title": "How do the news reports differ across languages?",
+      "id": "news-midterms-three-languages",
+      "title": "How did VOA cover the 2026 US midterms in three languages?",
       "items": [
-        "REPLACE-NEWS-1",
-        "REPLACE-NEWS-2"
+        "voa-en-8219832",
+        "voa-ko-8219646",
+        "voa-uk-8219271"
       ],
       "questions": [
-        "Summarize each news report in two sentences, and say which language it was in.",
-        "Which report gives the most detail about its main event, and what did the reporter say about it?"
+        "Summarize each of these three reports in two sentences and say which language each was in.",
+        "What do the reports say about why the president's party tends to lose midterm elections, and where do they agree or differ?",
+        "Which report gives the most detail about the 2026 result, and what did its speakers say?"
       ]
     },
     {
-      "id": "government-decisions",
-      "title": "What did the commission decide, and what did the chair say about it?",
+      "id": "news-china-reports",
+      "title": "What do the two Chinese-language reports cover?",
       "items": [
-        "REPLACE-GOV-1",
-        "REPLACE-GOV-2"
+        "voa-zh-8219630",
+        "voa-zh-8219613"
       ],
       "questions": [
-        "What decisions or votes were taken in these meetings, and who proposed each?",
-        "What did the chair say about the main item on the agenda?"
+        "What is each report about, and who is quoted in them?",
+        "What does the Taiwan defense minister say about arms sales, and how does that compare with the energy story in the other report?"
       ]
     },
     {
-      "id": "business-rates",
-      "title": "What did the Chair say about inflation and rates?",
+      "id": "news-world-roundup",
+      "title": "Which reports deal with security and conflict?",
       "items": [
-        "REPLACE-FIN-1",
-        "REPLACE-FIN-2"
+        "voa-fr-8008409",
+        "voa-ur-8011556",
+        "voa-my-8006213",
+        "voa-id-8011163",
+        "voa-sw-7846175",
+        "voa-es-8010993"
       ],
       "questions": [
-        "What did the Chair say about inflation, and how did that change between the two recordings?",
-        "Summarize the reasons given for the latest policy decision."
+        "Which of these reports are about security or conflict, and what does each say? Name the language of each.",
+        "Which report is a fact check, and what claim did it examine?",
+        "Compare the report on the Chagos Islands with the report on armed groups in Afghanistan: what concerns do they raise?"
       ]
     },
     {
-      "id": "training-steps",
-      "title": "What are the key safety and preparedness steps?",
+      "id": "news-russian-report",
+      "title": "What did the Russian-language report say?",
       "items": [
-        "REPLACE-TRAIN-1",
-        "REPLACE-TRAIN-2"
+        "voa-ru-8210891"
       ],
       "questions": [
-        "List the main steps each training video tells a viewer to take.",
-        "What did the instructor say about the most common mistake?"
+        "Summarize this report in three bullet points and say who is speaking."
       ]
     },
     {
-      "id": "science-briefing",
-      "title": "What did the scientists say about the mission or the forecast?",
+      "id": "gov-ntsb-bridge-meetings",
+      "title": "How did the NTSB open its bridge investigation meetings?",
       "items": [
-        "REPLACE-SCI-1",
-        "REPLACE-SCI-2"
+        "ntsb-miami-bridge-collapse-head",
+        "ntsb-fern-hollow-bridge-head",
+        "ntsb-dali-key-bridge-head"
       ],
       "questions": [
-        "Summarize the briefing in five bullet points.",
-        "What did the speakers say about risks or uncertainty, and who said it?"
+        "For each meeting, what event was being investigated and what did the Chair say the Board would decide?",
+        "What do the three bridge investigations have in common, according to the staff and Board members who spoke?",
+        "Who presented for the NTSB staff in each meeting?"
+      ]
+    },
+    {
+      "id": "gov-ntsb-votes",
+      "title": "What did the Board conclude and vote on?",
+      "items": [
+        "ntsb-southwest-1380-tail",
+        "ntsb-concan-bus-crash-tail"
+      ],
+      "questions": [
+        "What probable causes, findings or recommendations were discussed or voted on in these two meetings?",
+        "Which Board member raised the strongest concern, and what was it?"
+      ]
+    },
+    {
+      "id": "gov-fda-committees",
+      "title": "What were the FDA advisory committees asked to consider?",
+      "items": [
+        "fda-ctgtac-2026-07-29",
+        "fda-dodac-2026-10-30",
+        "fda-odac-2026-04-30",
+        "fda-vrbpac-2026-10-01",
+        "fda-vrbpac-193rd"
+      ],
+      "questions": [
+        "For each meeting, which committee met and what product or question was it asked to consider?",
+        "Which meetings had the most committee members introduced, and what areas of expertise did they list?",
+        "How do the topics across these five meetings differ?"
+      ]
+    },
+    {
+      "id": "gov-austin-near-collision",
+      "title": "What happened in the Austin near-collision?",
+      "items": [
+        "ntsb-austin-near-collision-head",
+        "ntsb-ford-bluecruise-head"
+      ],
+      "questions": [
+        "Describe the incident and the system under review in each of these two meetings in two sentences each.",
+        "What did the Chair say about why each investigation matters for safety?"
+      ]
+    },
+    {
+      "id": "fin-fomc-inflation-trend",
+      "title": "How did the Chair describe inflation across FOMC statements?",
+      "items": [
+        "fomc-intro-2022-05-04",
+        "fomc-intro-2024-01-31",
+        "fomc-intro-2025-07-30",
+        "fomc-intro-2025-12-10",
+        "fomc-intro-2026-01-28",
+        "fomc-intro-2026-06-17",
+        "fomc-intro-2026-07-29",
+        "fomc-intro-2026-10-28"
+      ],
+      "questions": [
+        "How did the Chair's description of inflation change between 2022 and 2026?",
+        "In which statements did the Chair say the Committee was raising, holding or lowering the policy rate, and what reasons were given?",
+        "What did the Chair say about the labor market in the earliest statement compared with the latest?"
+      ]
+    },
+    {
+      "id": "fin-fomc-2026",
+      "title": "What changed in monetary policy during 2026?",
+      "items": [
+        "fomc-intro-2026-01-28",
+        "fomc-intro-2026-06-17",
+        "fomc-intro-2026-07-29",
+        "fomc-intro-2026-10-28"
+      ],
+      "questions": [
+        "Summarize the policy decision announced in each of the four 2026 statements.",
+        "What risks did the Chair say the Committee was weighing in the October statement?"
+      ]
+    },
+    {
+      "id": "fin-sec-open-meetings",
+      "title": "What did the SEC consider at its open meetings?",
+      "items": [
+        "sec-open-meeting-2024-02-06",
+        "sec-open-meeting-2024-03-06",
+        "sec-open-meeting-2024-08-28",
+        "sec-open-meeting-2025-06-04",
+        "sec-open-meeting-2026-06-11",
+        "sec-open-meeting-2026-09-30"
+      ],
+      "questions": [
+        "What rules or proposals were on the agenda in each of these open meetings?",
+        "Which Commissioners voiced concerns, and what were they?",
+        "What did the staff say a proposed rule would require of companies or investors?"
+      ]
+    },
+    {
+      "id": "fin-fomc-2022",
+      "title": "What did the Chair say in May 2022?",
+      "items": [
+        "fomc-intro-2022-05-04"
+      ],
+      "questions": [
+        "What did the Chair say about the pace of rate increases and why?"
+      ]
+    },
+    {
+      "id": "train-fema-tribal",
+      "title": "What are the steps in the FEMA tribal recovery series?",
+      "items": [
+        "fema-tribal-step1-declaration",
+        "fema-tribal-disaster-overview",
+        "fema-tribal-step5-recovery"
+      ],
+      "questions": [
+        "List the main steps each video tells a tribal leader to take.",
+        "How does the declaration process described in step 1 connect to what comes next in step 5?"
+      ]
+    },
+    {
+      "id": "train-fema-prepare",
+      "title": "How does FEMA tell people to prepare?",
+      "items": [
+        "fema-emergency-kit",
+        "fema-flood-insurance-advocate",
+        "fema-nrcc-response",
+        "fema-registration-intake"
+      ],
+      "questions": [
+        "What are the key preparedness steps across these videos, and what does the flood insurance advocate say about flood risk?",
+        "What does the National Response Coordination Center do during a disaster?",
+        "What information does the registration intake video say an applicant needs?"
+      ]
+    },
+    {
+      "id": "train-nasa-explainers",
+      "title": "What do the NASA explainers teach?",
+      "items": [
+        "nasa-edu-spectroscopy",
+        "nasa-edu-ocean-weather-climate",
+        "nasa-edu-water-cycle"
+      ],
+      "questions": [
+        "Explain in plain language what each of these three videos teaches.",
+        "What do the ocean and water cycle videos say about weather and climate, and how are they connected?"
+      ]
+    },
+    {
+      "id": "train-roman-telescope",
+      "title": "What is the Roman Space Telescope for?",
+      "items": [
+        "nasa-edu-roman-telescope",
+        "nasa-edu-black-hole-simulation"
+      ],
+      "questions": [
+        "What is the Roman Space Telescope designed to study, according to the video?",
+        "What does the black hole simulation video show, and who explains it?"
+      ]
+    },
+    {
+      "id": "sci-nasa-briefings",
+      "title": "What did NASA officials say at the briefings?",
+      "items": [
+        "nasa-briefing-moon-base-2026-05-26",
+        "nasa-briefing-roman-postlaunch",
+        "nasa-briefing-nuclear-rocket-2023",
+        "nasa-briefing-grace-twins",
+        "nasa-briefing-artemis-1-pre-test"
+      ],
+      "questions": [
+        "Summarize each briefing in two bullet points and name the speakers.",
+        "What did the speakers say about risks, schedule or uncertainty across these briefings?",
+        "Which briefing focuses on an Earth-observing mission, and what will it measure?"
+      ]
+    },
+    {
+      "id": "sci-nasa-climate",
+      "title": "What did NASA say about record heat and water data?",
+      "items": [
+        "nasa-briefing-earth-day-climate",
+        "nasa-briefing-openet-2021"
+      ],
+      "questions": [
+        "What did the speakers say about NASA's climate research and what is new?",
+        "How does the OpenET water data platform help farmers or water managers?"
+      ]
+    },
+    {
+      "id": "sci-atlanta-winter-storm",
+      "title": "How did the Atlanta winter storm forecast change?",
+      "items": [
+        "nws-atlanta-2026-01-15",
+        "nws-atlanta-2026-01-22",
+        "nws-atlanta-2026-01-23-ice"
+      ],
+      "questions": [
+        "How did the forecast and expected impacts change between the briefings of January 15, 22 and 23?",
+        "What did the forecaster say about ice accumulation and the timing of the worst conditions?",
+        "What did the forecaster tell emergency managers to prepare for?"
+      ]
+    },
+    {
+      "id": "sci-hurricane-briefings",
+      "title": "What did the Hurricane Center say?",
+      "items": [
+        "nws-nhc-2023-06-01",
+        "nws-nhc-2023-08-01",
+        "nws-nhc-erin-2025-08-19"
+      ],
+      "questions": [
+        "What did each briefing say about the current or expected activity in the Atlantic?",
+        "What uncertainty did the forecasters mention, and who said it?"
       ]
     },
     {
       "id": "privacy-redaction",
       "title": "What personal details were in the clip?",
       "items": [
-        "REPLACE-PRIVACY-1"
+        "privacy-redaction-clip"
       ],
       "questions": [
-        "What kinds of personal information appear in this recording, and how are they shown to a viewer?"
+        "What kinds of personal information appear in this recording, and how are they shown to a viewer?",
+        "Which details are masked in the transcript and which categories do they belong to?"
       ]
     }
   ]

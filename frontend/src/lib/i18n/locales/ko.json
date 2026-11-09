@@ -1142,6 +1142,7 @@
   "settings.statistics.queueEmbedding": "임베딩",
   "settings.statistics.queueCpu": "CPU",
   "settings.statistics.queueTotal": "대기 + 실행 중",
+  "settings.statistics.queuesUnavailable": "현재 대기열 길이를 확인할 수 없습니다(작업 브로커에 연결할 수 없음).",
   "settings.statistics.fileTimingAvg": "파일당 평균",
   "settings.statistics.fileTimingMin": "최단",
   "settings.statistics.fileTimingMax": "최장",

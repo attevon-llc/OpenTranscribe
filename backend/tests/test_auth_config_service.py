@@ -33,6 +33,7 @@ from app.models.auth_config import AuthConfig
 from app.models.auth_config import AuthConfigAudit
 from app.services import auth_config_keys
 from app.services.auth_config_service import AuthConfigService
+from app.utils.encryption import SecretDecryptionError
 from tests.helpers import does_not_raise
 
 # Every test here may insert auth_config rows (migrate_from_env seeds every absent key) in an
@@ -126,7 +127,7 @@ class TestAuthConfigServiceGetConfig:
         mock_db.query.return_value.filter.return_value.first.return_value = mock_config
 
         with patch("app.services.auth_config_service.decrypt_api_key") as mock_decrypt:
-            mock_decrypt.side_effect = Exception("Decryption failed")
+            mock_decrypt.side_effect = SecretDecryptionError("Decryption failed")
             result = AuthConfigService.get_config(mock_db, "sensitive_key")
             assert result is None, "must not hand back the ciphertext"
 

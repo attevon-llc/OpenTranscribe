@@ -1144,6 +1144,7 @@
   "settings.statistics.queueEmbedding": "Embedding",
   "settings.statistics.queueCpu": "CPU",
   "settings.statistics.queueTotal": "In coda + in esecuzione",
+  "settings.statistics.queuesUnavailable": "Le dimensioni delle code non sono disponibili al momento (il broker delle attività non è raggiungibile).",
   "settings.statistics.fileTimingAvg": "Media per file",
   "settings.statistics.fileTimingMin": "Più veloce",
   "settings.statistics.fileTimingMax": "Più lento",

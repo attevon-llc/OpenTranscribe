@@ -19,7 +19,7 @@ from redis.exceptions import RedisError
 
 from app.core.constants import TASK_SECRET_HANDOFF_TTL_SECONDS
 from app.core.redis import get_request_redis
-from app.utils.encryption import EncryptionKeyConfigError
+from app.utils.encryption import EncryptionError
 from app.utils.encryption import decrypt_value
 from app.utils.encryption import encrypt_value
 
@@ -56,7 +56,7 @@ def stash_task_secret(
     ref = uuid.uuid4().hex
     try:
         token = encrypt_value(json.dumps({"ref": ref, "values": present}), aad=_aad(context))
-    except EncryptionKeyConfigError as exc:
+    except EncryptionError as exc:
         raise TaskSecretUnavailableError(
             "Could not protect the credentials for this request"
         ) from exc
@@ -89,7 +89,7 @@ def fetch_task_secret(ref: str, *, context: str) -> dict[str, str]:
         plain = decrypt_value(
             token.decode() if isinstance(token, bytes) else token, aad=_aad(context)
         )
-    except EncryptionKeyConfigError as exc:
+    except EncryptionError as exc:
         raise TaskSecretUnavailableError("The stored credentials could not be read") from exc
     try:
         data = json.loads(plain) if plain else None

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Security: a stored secret that cannot be decrypted (rotated or wrong `ENCRYPTION_KEY`, corrupt or tampered ciphertext) now raises `SecretDecryptionError` instead of returning `None`, which callers could not tell from "no secret stored". Provider and ASR credentials, SMTP/Exchange/M365 and watch-source S3/SMB secrets, scheduled-job S3 secrets and Bedrock credentials now fail visibly rather than connecting without credentials or overwriting the stored value; the API answers `409` with code `stored_value_unreadable` and a fixed message; the media-source resolver skips an undecryptable source; the admin Statistics queue view reports "unavailable" on a broker outage instead of zeros.
+
 ### Changed
 
 - Broad-except lane B8 (`backend/app/services/*.py` after `opensearch_erasure.py`): 110 of 111 handlers now log with a traceback (`logger.exception` or `exc_info=True`) or narrow to the exception they handle. Fixed on the way: deleting a file's cached burned-in videos treated a storage listing outage as "no renders exist" and reported the delete complete; it now raises `StorageDeleteIncompleteError`. OpenSearch snapshot repository lookup now treats only "not found" as "needs creating".

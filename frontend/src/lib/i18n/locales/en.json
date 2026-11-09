@@ -1143,6 +1143,7 @@
   "settings.statistics.queueEmbedding": "Embedding",
   "settings.statistics.queueCpu": "CPU",
   "settings.statistics.queueTotal": "Queued + running",
+  "settings.statistics.queuesUnavailable": "Queue depths are unavailable right now (the task broker cannot be reached).",
   "settings.statistics.fileTimingAvg": "Avg Per File",
   "settings.statistics.fileTimingMin": "Fastest",
   "settings.statistics.fileTimingMax": "Slowest",

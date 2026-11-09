@@ -19,6 +19,7 @@ from app.models.auth_config import AuthConfigAudit
 from app.schemas.auth_config_validation import coded_default
 from app.services.auth_config_service import SENSITIVE_SET_SENTINEL
 from app.services.auth_config_service import AuthConfigService
+from app.utils.encryption import SecretDecryptionError
 
 _DECRYPT = "app.services.auth_config_service.decrypt_api_key"
 
@@ -66,7 +67,7 @@ class TestCategoryReadMasksSecrets:
     # placeholder a caller could use as the secret.
     def test_decrypt_failure_reads_as_unset(self) -> None:
         db = _db_with_rows([_row("ldap_bind_password", "ciphertext", sensitive=True)])
-        with patch(_DECRYPT, side_effect=Exception("bad key")):
+        with patch(_DECRYPT, side_effect=SecretDecryptionError("bad key")):
             result = AuthConfigService.get_config_by_category(db, "ldap", decrypt=True)
         assert result == {"ldap_bind_password": None}
 

@@ -54,6 +54,7 @@ from app.schemas.diarization_settings import PyannoteTestCode
 from app.schemas.diarization_settings import validate_pyannote_key
 from app.services.diarization.factory import PYANNOTE_CREDENTIAL_NAME
 from app.services.diarization.factory import PYANNOTE_PROVIDER
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 
@@ -245,7 +246,10 @@ def test_pyannote_credential(
         row = _own_row(db, current_user.id)
         if row is None or not row.api_key:
             raise HTTPException(status_code=404, detail="No pyannote.ai API key is saved")
-        api_key = decrypt_api_key(str(row.api_key))
+        try:
+            api_key = decrypt_api_key(str(row.api_key))
+        except SecretDecryptionError:
+            api_key = None
         if not api_key:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

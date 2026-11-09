@@ -76,6 +76,8 @@ from app.startup.warmups import _provision_native_diarizer
 from app.startup.warmups import _register_chat_usage_hook
 from app.startup.warmups import _start_pii_warmup
 from app.startup.warmups import _start_reranker_warmup
+from app.utils.encryption import STORED_VALUE_UNREADABLE_CODE
+from app.utils.encryption import SecretDecryptionError
 
 # Set up logging (text or structured JSON per settings.LOG_FORMAT)
 configure_logging()
@@ -426,6 +428,22 @@ async def handle_domain_error(request: Request, exc: DomainError) -> Response:
 for _overload_class in OVERLOAD_EXCEPTION_CLASSES:
     app.add_exception_handler(_overload_class, handle_db_overload)
 app.add_exception_handler(StarletteHTTPException, handle_http_exception)
+
+
+# A stored secret that cannot be decrypted (rotated key, tampered value) is a state the
+# user fixes by re-entering it: a stable code, never the exception text.
+@app.exception_handler(SecretDecryptionError)
+async def handle_secret_decryption_error(
+    request: Request, exc: SecretDecryptionError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "A stored secret cannot be decrypted. Re-enter it.",
+            "code": STORED_VALUE_UNREADABLE_CODE,
+        },
+    )
+
 
 # A HoldRefusedError no route translated (legal-hold freeze backstop): 409 FILE_UNDER_LEGAL_HOLD.
 app.add_exception_handler(HoldRefusedError, hold_refused_handler)

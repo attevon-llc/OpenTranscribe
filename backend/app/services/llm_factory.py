@@ -18,6 +18,7 @@ from app.services.bedrock_settings import connection_from_encrypted
 from app.services.bedrock_settings import resolve_region
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider
+from app.utils.encryption import SecretDecryptionError
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is paid only by type checkers
     from sqlalchemy.orm import Session
@@ -259,7 +260,12 @@ class LLMFactoryMixin:
         """
         stored = user_settings.api_key
         if str(user_settings.provider) == LLMProvider.BEDROCK.value:
-            connection = connection_from_encrypted(str(stored)) if stored else BedrockConnection()
+            try:
+                connection = (
+                    connection_from_encrypted(str(stored)) if stored else BedrockConnection()
+                )
+            except SecretDecryptionError as exc:
+                raise ValueError("stored Bedrock credentials could not be decrypted") from exc
             if stored and not (connection.region or connection.has_credentials):
                 raise ValueError("stored Bedrock credentials could not be decrypted")
             return None, connection
@@ -267,7 +273,10 @@ class LLMFactoryMixin:
             return None, None
         from app.utils.encryption import decrypt_api_key
 
-        api_key = decrypt_api_key(str(stored))
+        try:
+            api_key = decrypt_api_key(str(stored))
+        except SecretDecryptionError as exc:
+            raise ValueError("stored API key could not be decrypted") from exc
         if not api_key:
             raise ValueError("stored API key could not be decrypted")
         return api_key, None

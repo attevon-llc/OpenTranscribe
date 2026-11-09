@@ -260,6 +260,7 @@ def get_system_stats(
             "eta": eta,
             "file_timing": file_timing,
             "queues": queue_depths,
+            "queues_available": queue_depths is not None,
         }
 
         return stats

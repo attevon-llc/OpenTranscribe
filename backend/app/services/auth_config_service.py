@@ -32,6 +32,7 @@ from app.services.auth_config_keys import ENV_TO_CONFIG_MAPPING
 from app.services.auth_config_keys import RESTART_REQUIRED_KEYS
 from app.services.auth_config_keys import RETIRED_KEYS
 from app.services.auth_config_keys import SENSITIVE_KEYS
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 from app.utils.encryption import encrypt_api_key
 
@@ -124,7 +125,7 @@ class AuthConfigService:
             # coded default: a known source instead of garbage.
             try:
                 decrypted = decrypt_api_key(value)
-            except Exception:
+            except SecretDecryptionError:
                 logger.exception(
                     "Failed to decrypt sensitive auth config %s; treating it as unset. "
                     "Check ENCRYPTION_KEY — a rotated or lost key makes stored secrets "
@@ -251,7 +252,7 @@ class AuthConfigService:
                 # failure must still be visible (issue #324).
                 try:
                     decrypted = decrypt_api_key(value)
-                except Exception:
+                except SecretDecryptionError:
                     logger.exception(
                         "Failed to decrypt sensitive auth config %s; treating it as unset. "
                         "Check ENCRYPTION_KEY — a rotated or lost key makes stored "

@@ -35,6 +35,7 @@ from app.services.llm_service import LLMService
 from app.services.llm_types import LLMConfig
 from app.services.llm_types import LLMProvider as ServiceLLMProvider
 from app.services.request_context import RequestContext
+from app.utils.encryption import SecretDecryptionError
 from app.utils.encryption import decrypt_api_key
 
 router = APIRouter()
@@ -124,6 +125,13 @@ def _run_connection_test(
                 if config and config.api_key and str(config.provider) != "bedrock":
                     # Decrypt the stored API key
                     effective_api_key = decrypt_api_key(str(config.api_key))
+            except SecretDecryptionError:
+                return schemas.ConnectionTestResponse(
+                    success=False,
+                    status=schemas.ConnectionStatus.FAILED,
+                    message="The stored API key cannot be decrypted. Re-enter it.",
+                    response_time_ms=int((time.time() - start_time) * 1000),
+                )
             except Exception as e:
                 logger.warning(
                     f"Could not retrieve stored API key for config {test_request.config_id}: {e}"

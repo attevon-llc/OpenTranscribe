@@ -39,6 +39,10 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+# Stable machine-readable code for the 409 an undecryptable stored secret produces.
+STORED_VALUE_UNREADABLE_CODE = "secret_undecryptable"
+
+
 class EncryptionError(RuntimeError):
     """Base for failures of the encryption layer, distinct from an absent secret.
 

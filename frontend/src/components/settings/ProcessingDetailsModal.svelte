@@ -135,6 +135,9 @@
         <!-- Queues Section -->
         {#if section === 'queues'}
           <div class="detail-section">
+            {#if stats.queues_available === false}
+              <div class="empty-notice">{$t('settings.statistics.queuesUnavailable')}</div>
+            {/if}
             <div class="detail-grid">
               {#each ['gpu', 'download', 'nlp', 'embedding', 'cpu'] as queueName (queueName)}
                 <div class="detail-row">
@@ -142,14 +145,14 @@
                     {$t(QUEUE_NAME_KEYS[queueName])}
                     <span class="detail-sublabel">{$t(queueDescriptions[queueName])}</span>
                   </span>
-                  <span class="detail-value" class:highlight={stats.queues?.[queueName] > 0}>
+                  <span class="detail-value" class:highlight={(stats.queues?.[queueName] ?? 0) > 0}>
                     {stats.queues?.[queueName] || 0}
                   </span>
                 </div>
               {/each}
               <div class="detail-row detail-row-total">
                 <span class="detail-label">{$t('settings.statistics.queueTotal')}</span>
-                <span class="detail-value" class:highlight={stats.queues?.total > 0}>{stats.queues?.total || 0}</span>
+                <span class="detail-value" class:highlight={(stats.queues?.total ?? 0) > 0}>{stats.queues?.total || 0}</span>
               </div>
             </div>
           </div>

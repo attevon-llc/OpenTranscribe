@@ -11,7 +11,7 @@ vi.mock('$stores/supportSession', async () => {
   return { supportSessionGate: readable({ active: false, readOnly: false }) };
 });
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).keyOnlyLocale()
+  (await import('$testMocks/galleryToolbarMocks')).keyOnlyLocale()
 );
 
 import GalleryPrimaryActions from './GalleryPrimaryActions.svelte';

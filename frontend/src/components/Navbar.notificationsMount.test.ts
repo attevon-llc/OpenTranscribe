@@ -62,7 +62,7 @@ vi.mock('$lib/prefetch', () => ({
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 vi.mock('$lib/cloud', () => ({ refreshUsage: vi.fn(), refreshBilling: vi.fn() }));
 vi.mock('$components/navbar/UserDropdown.svelte', async () => ({
-  default: (await import('../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 
 import Navbar from './Navbar.svelte';

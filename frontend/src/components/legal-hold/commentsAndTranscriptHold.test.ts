@@ -17,7 +17,7 @@ vi.mock('$stores/auth', async () => {
   return { authStore: readable({ user: { uuid: 'u1', email: 'me@example.com' } }) };
 });
 vi.mock('$stores/locale', async () => {
-  const mocks = await import('../../test-mocks/galleryToolbarMocks');
+  const mocks = await import('$testMocks/galleryToolbarMocks');
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });

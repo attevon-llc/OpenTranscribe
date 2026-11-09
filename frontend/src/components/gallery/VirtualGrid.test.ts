@@ -42,7 +42,7 @@ vi.mock('$lib/prefetch', () => mockPrefetch);
 vi.mock('$lib/thumbnailCache', () => ({ cachedThumbnail: () => ({ destroy() {} }) }));
 
 import VirtualGrid from './VirtualGrid.svelte';
-import { gotoCalls } from '../../test-mocks/app-navigation';
+import { gotoCalls } from '$testMocks/app-navigation';
 
 const ROW_HEIGHT = 195; // desktop (jsdom's window.innerWidth is not < 768)
 const CARD_MIN_WIDTH = 220;

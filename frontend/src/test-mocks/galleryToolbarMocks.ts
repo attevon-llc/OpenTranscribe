@@ -5,7 +5,7 @@
  * through a dynamic import inside the factory:
  *
  *   vi.mock('$stores/locale', async () =>
- *     (await import('../../test-mocks/galleryToolbarMocks')).keyOnlyLocale()
+ *     (await import('$testMocks/galleryToolbarMocks')).keyOnlyLocale()
  *   );
  *
  * The module is evaluated once per test file, so the gallery double below is a

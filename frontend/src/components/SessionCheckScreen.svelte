@@ -16,7 +16,7 @@
 <script lang="ts">
   import { t } from '$stores/locale';
   import { sessionProbe, retrySessionProbeNow } from '$lib/auth/sessionProbe';
-  import logoBanner from '../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   export let shell = false;
 </script>

@@ -11,7 +11,7 @@ const mockToast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }));
 vi.mock('$stores/toast', () => ({ toastStore: mockToast }));
 vi.mock('$stores/transcriptStore', () => ({ transcriptStore: { updateSegmentText: vi.fn() } }));
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 
 import { CLOSED_SEGMENT_EDIT, createSegmentEditor, type SegmentEditState } from './segmentEdit';

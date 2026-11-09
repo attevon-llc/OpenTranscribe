@@ -9,7 +9,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import { writable } from 'svelte/store';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 const state = vi.hoisted(() => ({ store: null as unknown }));
 const setHiddenMode = vi.hoisted(() => vi.fn());

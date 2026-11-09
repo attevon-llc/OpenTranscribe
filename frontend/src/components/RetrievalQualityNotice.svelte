@@ -113,7 +113,7 @@
         class="notice-link"
         href={issueUrl}
         target="_blank"
-        rel="noopener noreferrer"
+        rel="noopener noreferrer external"
         data-testid="retrieval-quality-link"
       >
         {$t('retrievalQuality.learnMore')}

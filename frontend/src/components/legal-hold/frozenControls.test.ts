@@ -9,7 +9,7 @@ import { render, screen } from '@testing-library/svelte';
 import type { MediaFileDetail } from '$lib/types/media';
 
 vi.mock('$stores/locale', async () => {
-  const mocks = await import('../../test-mocks/galleryToolbarMocks');
+  const mocks = await import('$testMocks/galleryToolbarMocks');
   const { readable } = await import('svelte/store');
   return { ...mocks.englishLocale(), locale: readable('en') };
 });

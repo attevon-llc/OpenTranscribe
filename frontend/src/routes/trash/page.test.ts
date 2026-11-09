@@ -10,7 +10,7 @@ import type { TrashedFile, TrashPage } from '$lib/api/trash';
 
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
-  const { englishLocale } = await import('../../test-mocks/galleryToolbarMocks');
+  const { englishLocale } = await import('$testMocks/galleryToolbarMocks');
   return { ...englishLocale(), locale: readable('en') };
 });
 vi.mock('$stores/auth', async () => {

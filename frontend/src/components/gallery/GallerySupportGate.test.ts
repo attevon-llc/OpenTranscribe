@@ -15,7 +15,7 @@ vi.mock('$stores/supportSession', async () => {
   return { supportSessionGate: h.gate };
 });
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).keyOnlyLocale()
+  (await import('$testMocks/galleryToolbarMocks')).keyOnlyLocale()
 );
 vi.mock('$stores/toast', () => ({ toastStore: { info: vi.fn(), error: vi.fn() } }));
 vi.mock('$stores/chat', () => ({ chatStore: { setPendingContext: vi.fn() } }));

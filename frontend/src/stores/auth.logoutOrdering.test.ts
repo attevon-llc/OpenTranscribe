@@ -42,7 +42,7 @@ vi.mock('$stores/locale', () => ({
 
 vi.mock('$lib/edition', () => ({ isCloudEdition: false }));
 
-import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '../test-mocks/fakeWebSocket';
+import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '$testMocks/fakeWebSocket';
 import { websocketStore } from './websocket';
 import { authStore, logout } from './auth';
 

@@ -22,7 +22,8 @@
     title={speakerPreviewData.title}
     subtitle={speakerPreviewData.speaker_name}
     currentTime={previewCurrentTime}
-    jumpToHref={`/files/${speakerPreviewData.file_uuid}?t=${previewCurrentTime || speakerPreviewData.start_time}`}
+    jumpToFileId={speakerPreviewData.file_uuid}
+    jumpToTime={previewCurrentTime || speakerPreviewData.start_time}
     closeTitle={$t('speakers.preview.close')}
     closeAriaLabel={$t('speakers.preview.closeAriaLabel')}
     mediaUrl={speakerPreviewData.media_url || ''}

@@ -4,7 +4,7 @@ import type { HoldAuthority } from '$lib/types/hold';
 import { render, screen } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 
 import HeldFileBanner from './HeldFileBanner.svelte';

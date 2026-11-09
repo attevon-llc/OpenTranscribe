@@ -8,7 +8,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () => {
   const { readable } = await import('svelte/store');
-  const { englishLocale } = await import('../../test-mocks/galleryToolbarMocks');
+  const { englishLocale } = await import('$testMocks/galleryToolbarMocks');
   return { ...englishLocale(), locale: readable('en') };
 });
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));

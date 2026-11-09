@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 vi.mock('$stores/supportSession', async () => {
   const { readable } = await import('svelte/store');

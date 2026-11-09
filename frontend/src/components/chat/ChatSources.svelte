@@ -3,7 +3,7 @@
 
   This is the feature's trust surface: it turns "the AI said so" into "here is
   the moment in the recording where it was said". Every href is built from the
-  STRUCTURED sources payload via citationHref(), never from anything the model
+  STRUCTURED sources payload via citationQuery(), never from anything the model
   wrote — which is why the markdown renderer blocks relative URLs outright.
 -->
 <script context="module" lang="ts">
@@ -15,8 +15,9 @@
 </script>
 
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { t } from '$stores/locale';
-  import { citationHref, formatClock } from '$lib/utils/chatMarkdown';
+  import { citationQuery, formatClock } from '$lib/utils/chatMarkdown';
   import type { ChatSource } from '$lib/types/chat';
 
   export let sources: ChatSource[] = [];
@@ -121,7 +122,7 @@
           <li class="source-item">
             <a
               class="source-card"
-              href={citationHref(source)}
+              href={resolve(`/files/[id]${citationQuery(source)}`, { id: source.file_uuid })}
               data-testid="chat-source-link"
               title={isSummary(source)
                 ? $t('chat.sources.openSummary')

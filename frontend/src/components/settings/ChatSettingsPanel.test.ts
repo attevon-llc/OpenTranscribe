@@ -16,10 +16,10 @@ vi.mock('$stores/locale', () => ({
 }));
 // The two forms have their own suites; this file is about the tab shell around them.
 vi.mock('$components/settings/ChatSettings.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/settings/ChatAdminSettings.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 
 import ChatSettingsPanel from './ChatSettingsPanel.svelte';

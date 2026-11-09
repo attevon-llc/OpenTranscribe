@@ -22,7 +22,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import { onMount } from 'svelte';
 
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   let phase: 'loading' | 'verified' | 'failed' = 'loading';
   /** Server prose for either outcome. Rendered as-is. */

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import { pageStore } from '$stores/pageStore';
   import UserFileStatus from '$components/UserFileStatus.svelte';
   import { settingsReturnFromUrl } from '$lib/settings/returnToSettings';
@@ -12,7 +13,10 @@
   async function backToSettings() {
     if (!backTarget) return;
     const { section, path } = backTarget;
-    await goto(path);
+    // `path` is the pathname+query of the page the modal was over, recorded from window.location
+    // (see stampSettingsReturn): a concrete path with no [params] left for resolve() to fill, whose
+    // route id is not statically known, hence the untyped argument.
+    await goto(resolve(...([path] as Parameters<typeof resolve>)));
     settingsModalStore.open(section);
   }
 </script>

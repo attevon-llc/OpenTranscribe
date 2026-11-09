@@ -37,19 +37,19 @@ vi.mock('$stores/locale', () => ({
 }));
 // Modals and the heavy children are covered elsewhere; the shell is what is under test.
 vi.mock('$components/settings/WatchSourceModal.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/settings/EmailConfigModal.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/settings/watchSources/WatchSourceFilesModal.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/settings/watchSources/WatchSourceEmailLinksModal.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/ConfirmationModal.svelte', async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 
 import WatchSourcesSettings from './WatchSourcesSettings.svelte';

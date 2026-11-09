@@ -9,7 +9,7 @@
   import Spinner from '$components/ui/Spinner.svelte';
 
   // Import logo asset for proper Vite processing
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   // Self-registration is a deployment setting. Probe it before rendering the
   // form: without this the user fills every field and the backend answers 403.

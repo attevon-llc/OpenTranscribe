@@ -234,7 +234,7 @@ export function renderChatMarkdown(markdown: string | null | undefined): string 
   }) as unknown as string;
 }
 
-/** Kinds `citationHref` routes on. */
+/** Kinds `citationQuery` routes on. */
 export type CitationLinkKind = ChatSourceKind;
 
 /** The subset of `ChatSource` a citation link needs to decide its shape. */
@@ -247,7 +247,8 @@ export interface CitationLinkSource {
 }
 
 /**
- * Build a citation deep link from STRUCTURED data only, kind-aware (#464).
+ * Build a citation deep link's query string from STRUCTURED data only, kind-aware (#464).
+ * The caller appends it to `resolve('/files/[id]', ...)` so the path is built by SvelteKit.
  *
  * Never call this with anything parsed out of model prose — that is precisely
  * what the relative-URL block above exists to prevent.
@@ -256,20 +257,17 @@ export interface CitationLinkSource {
  *   recording, not a turn in it — so this deep-links to the file's summary
  *   view (`?view=summary[&section=N]`, amendment c) instead of the player.
  * - everything else (`chunk`, `digest`, and an absent `kind` for messages
- *   persisted before #403 Stage 4): unchanged — `/files/{uuid}?t={seconds}`.
+ *   persisted before #403 Stage 4): unchanged — `?t={seconds}`.
  */
-export function citationHref(source: CitationLinkSource): string {
-  const uuid = encodeURIComponent(source.file_uuid);
+export function citationQuery(source: CitationLinkSource): `?${string}` {
   const kind = source.kind ?? 'chunk';
 
   if (kind === 'summary') {
     const section = source.digest_section;
-    return section != null
-      ? `/files/${uuid}?view=summary&section=${section}`
-      : `/files/${uuid}?view=summary`;
+    return section != null ? `?view=summary&section=${section}` : '?view=summary';
   }
   const seconds = Math.max(0, Math.floor(source.start_time || 0));
-  return `/files/${uuid}?t=${seconds}`;
+  return `?t=${seconds}`;
 }
 
 // Time formatting lives ONLY in formatting.ts (see src/lib/utils/CLAUDE.md) —

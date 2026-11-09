@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * Abuse/DMCA takedown review queue (issue #576).
    *
@@ -203,7 +204,7 @@
           <tr>
             <td class="file-cell">
               <a
-                href={`/files/${file.uuid}`}
+                href={resolve('/files/[id]', { id: file.uuid })}
                 target="_blank"
                 rel="noopener noreferrer"
                 title={file.label}>{file.label}</a

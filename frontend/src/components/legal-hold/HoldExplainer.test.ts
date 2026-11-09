@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 vi.mock('$stores/locale', async () =>
-  (await import('../../test-mocks/galleryToolbarMocks')).englishLocale()
+  (await import('$testMocks/galleryToolbarMocks')).englishLocale()
 );
 
 import HoldExplainer from './HoldExplainer.svelte';

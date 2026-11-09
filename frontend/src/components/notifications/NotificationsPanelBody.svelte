@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
+  import { resolve } from '$app/paths';
   import { buildJobModel, type ProcessingJobModel } from '$lib/notifications/processingJob';
   import { countUnreadItems, groupPanelItems } from '$lib/notifications/jobGrouping';
   import { reconcileJobs } from '$lib/notifications/reconcile';
@@ -67,13 +68,13 @@
     showNotificationsPanel.set(false);
   }
 
-  function openFile(event: CustomEvent<{ ids: string[]; link: string }>) {
-    const { ids, link } = event.detail;
+  function openFile(event: CustomEvent<{ ids: string[]; fileId: string }>) {
+    const { ids, fileId } = event.detail;
     for (const id of ids) {
       if (notifications.find((n) => n.id === id && !n.read)) websocketStore.markAsRead(id);
     }
     showNotificationsPanel.set(false);
-    goto(link);
+    goto(resolve('/files/[id]', { id: fileId }));
   }
 
   function dismiss(event: CustomEvent<{ ids: string[] }>) {

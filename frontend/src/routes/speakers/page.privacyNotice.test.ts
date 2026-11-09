@@ -17,7 +17,7 @@ vi.mock('$stores/locale', async () => {
 });
 
 const stub = vi.hoisted(() => async () => ({
-  default: (await import('../../test-mocks/EmptyComponent.svelte')).default,
+  default: (await import('$testMocks/EmptyComponent.svelte')).default,
 }));
 vi.mock('$components/ConfirmationModal.svelte', stub);
 vi.mock('$components/ui/BaseModal.svelte', stub);
@@ -56,7 +56,7 @@ const privacyApi = vi.hoisted(() => ({ getEffective: vi.fn() }));
 vi.mock('$lib/api/privacy', () => ({ PrivacyApi: privacyApi }));
 
 import Page from './+page.svelte';
-import { setPage } from '../../test-mocks/app-state.svelte';
+import { setPage } from '$testMocks/app-state.svelte';
 import { apiCache } from '$lib/apiCache';
 import { loadEffectivePrivacy, resetEffectivePrivacy } from '$stores/privacyPolicy';
 

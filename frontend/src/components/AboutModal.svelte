@@ -372,7 +372,7 @@
 
               <p class="legal-line">
                 {$t('about.legal.sourceOffer')}
-                <a href={sourceUrl} target="_blank" rel="noopener noreferrer" class="inline-link"
+                <a href={sourceUrl} target="_blank" rel="noopener noreferrer external" class="inline-link"
                   >{sourceIsExact
                     ? $t('about.legal.viewSourceExact')
                     : $t('about.legal.viewSourceRepository')}</a

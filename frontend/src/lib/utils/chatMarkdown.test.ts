@@ -8,7 +8,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
-  citationHref,
+  citationQuery,
   escapeHtml,
   formatClock,
   loadChatMath,
@@ -264,48 +264,42 @@ describe('escapeHtml', () => {
   });
 });
 
-describe('citationHref', () => {
-  it('builds a seekable file link', () => {
-    expect(citationHref({ file_uuid: 'abc-123', start_time: 90.7 })).toBe('/files/abc-123?t=90');
-  });
-
-  it('encodes the uuid', () => {
-    expect(citationHref({ file_uuid: 'a/b?c', start_time: 0 })).toBe('/files/a%2Fb%3Fc?t=0');
+describe('citationQuery', () => {
+  it('builds a seekable query', () => {
+    expect(citationQuery({ file_uuid: 'abc-123', start_time: 90.7 })).toBe('?t=90');
   });
 
   it('never emits a negative timestamp', () => {
-    expect(citationHref({ file_uuid: 'abc', start_time: -5 })).toBe('/files/abc?t=0');
+    expect(citationQuery({ file_uuid: 'abc', start_time: -5 })).toBe('?t=0');
   });
 
   it('treats an absent kind as a chunk, matching pre-#403 messages', () => {
-    expect(citationHref({ file_uuid: 'abc', start_time: 12 })).toBe('/files/abc?t=12');
+    expect(citationQuery({ file_uuid: 'abc', start_time: 12 })).toBe('?t=12');
   });
 
   it('treats a digest kind exactly like a chunk (still time-anchored)', () => {
-    expect(citationHref({ file_uuid: 'abc', kind: 'digest', start_time: 125.5 })).toBe(
-      '/files/abc?t=125'
-    );
+    expect(citationQuery({ file_uuid: 'abc', kind: 'digest', start_time: 125.5 })).toBe('?t=125');
   });
 
   // ------------------------------------------------------------ #464: summary
   it('deep-links a summary citation to the summary view, not the player', () => {
-    expect(citationHref({ file_uuid: 'abc-123', kind: 'summary', start_time: 0 })).toBe(
-      '/files/abc-123?view=summary'
+    expect(citationQuery({ file_uuid: 'abc-123', kind: 'summary', start_time: 0 })).toBe(
+      '?view=summary'
     );
   });
 
   it('carries the section forward when the summary citation has one', () => {
     expect(
-      citationHref({ file_uuid: 'abc-123', kind: 'summary', start_time: 0, digest_section: 3 })
-    ).toBe('/files/abc-123?view=summary&section=3');
+      citationQuery({ file_uuid: 'abc-123', kind: 'summary', start_time: 0, digest_section: 3 })
+    ).toBe('?view=summary&section=3');
   });
 
   it('never puts a timestamp on a summary link, even when start_time is set', () => {
     // A summary hit's `start_time` is a placeholder (0), never a real moment —
     // asserting `t=` is absent catches a regression that read start_time back in.
-    const href = citationHref({ file_uuid: 'abc-123', kind: 'summary', start_time: 999 });
-    expect(href).not.toContain('t=999');
-    expect(href).toBe('/files/abc-123?view=summary');
+    const query = citationQuery({ file_uuid: 'abc-123', kind: 'summary', start_time: 999 });
+    expect(query).not.toContain('t=999');
+    expect(query).toBe('?view=summary');
   });
 });
 

@@ -97,7 +97,7 @@ describe('ChatSources — digest citations (G7)', () => {
       },
     });
 
-    // citationHref emits whole seconds; the point is that it is the SECTION's
+    // citationQuery emits whole seconds; the point is that it is the SECTION's
     // time and not the file's start, so both halves are asserted.
     const link = getByTestId('chat-source-link') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toContain('t=125');

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   /**
    * One transcript hit as a compact search-engine result: title, one muted meta line,
    * 1-2 snippets. Everything else is progressive disclosure: the caret at the top
@@ -94,7 +95,7 @@
 >
   <div class="result-header">
     <a
-      href="/files/{hit.file_uuid}"
+      href={resolve('/files/[id]', { id: hit.file_uuid })}
       class="result-title"
       on:mouseenter={() => prefetchFileDetails(hit.file_uuid)}
       on:mouseleave={cancelPrefetch}

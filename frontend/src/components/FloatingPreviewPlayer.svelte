@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import { formatClock } from '$lib/utils/formatting';
@@ -9,7 +10,8 @@
   export let title: string;
   export let subtitle: string = '';
   export let currentTime: number = 0;
-  export let jumpToHref: string;
+  export let jumpToFileId: string;
+  export let jumpToTime: number;
   export let closeTitle: string;
   export let closeAriaLabel: string;
 
@@ -67,7 +69,7 @@
       </span>
     </div>
     <div class="preview-actions">
-      <a class="preview-detail-link" href={jumpToHref}>
+      <a class="preview-detail-link" href={resolve(`/files/[id]?t=${jumpToTime}`, { id: jumpToFileId })}>
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
           <polyline points="15 3 21 3 21 9"></polyline>

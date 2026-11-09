@@ -50,7 +50,7 @@ vi.mock('$lib/auth/sessionRecheck', async (importOriginal) => ({
   sessionSurvivesRevocation: recheck.survives,
 }));
 
-import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '../test-mocks/fakeWebSocket';
+import { FakeWebSocket, installFakeWebSocket, restoreWebSocket } from '$testMocks/fakeWebSocket';
 import { websocketStore, unreadCount, connectionStatus } from './websocket';
 import { authStore, lifecycleHoldCleared } from './auth';
 import { apiCache, CacheTTL } from '$lib/apiCache';

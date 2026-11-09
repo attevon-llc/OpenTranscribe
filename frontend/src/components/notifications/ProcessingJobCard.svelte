@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { createEventDispatcher } from 'svelte';
   import { t } from '$stores/locale';
   import {
@@ -18,7 +19,7 @@
     JobTier,
     ProcessingJobModel,
   } from '$lib/notifications/processingJob';
-  import { fileLinkFor, type Tone } from '$lib/notifications/display';
+  import type { Tone } from '$lib/notifications/display';
   import { formatRelativeTime } from '$lib/utils/formatting';
   import NotificationShell from './NotificationShell.svelte';
   import NotificationProgress from './NotificationProgress.svelte';
@@ -40,7 +41,7 @@
   let expanded = false;
 
   const dispatch = createEventDispatcher<{
-    open: { ids: string[]; link: string };
+    open: { ids: string[]; fileId: string };
     dismiss: { ids: string[] };
   }>();
 
@@ -52,8 +53,7 @@
     ready: 'success',
   };
 
-  $: link = fileLinkFor(job.fileId) ?? '';
-  // The full name, truncated by CSS: pre-shortening to "name...ext" and then letting the
+    // The full name, truncated by CSS: pre-shortening to "name...ext" and then letting the
   // one-line ellipsis clip that again rendered "fair......" at panel width.
   $: name = job.filename || $t('common.viewFile');
   $: live = job.state === 'processing' || job.state === 'finishing';
@@ -130,11 +130,11 @@
 >
   <h4 class="notification-title">
     <a
-      href={link}
+      href={job.fileId ? resolve('/files/[id]', { id: job.fileId }) : undefined}
       class="job-file"
       dir="auto"
       title={job.filename || undefined}
-      on:click|preventDefault={() => dispatch('open', { ids: job.memberIds, link })}
+      on:click|preventDefault={() => job.fileId && dispatch('open', { ids: job.memberIds, fileId: job.fileId })}
     >{name}</a>
   </h4>
   <p class="job-status">

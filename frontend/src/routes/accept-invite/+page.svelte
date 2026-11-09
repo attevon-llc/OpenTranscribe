@@ -29,7 +29,7 @@
   import { getErrorMessage } from '$lib/utils/apiError';
   import { onMount } from 'svelte';
 
-  import logoBanner from '../../assets/logo-banner.png';
+  import logoBanner from '$assets/logo-banner.png';
 
   let phase: 'loading' | 'form' | 'error' | 'done' = 'loading';
   /** Server-supplied prose, rendered verbatim. Never inspected. */

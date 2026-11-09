@@ -199,8 +199,13 @@ def _claim_ids(conn: Connection, table: Table, rows: int, ledger: ClaimLedger | 
     seq = func.pg_get_serial_sequence(f'"{table.name}"', "id")
     last = func.coalesce(func.pg_sequence_last_value(cast(seq, REGCLASS)), 0)
     top = select(func.coalesce(func.max(table.c.id), 0)).scalar_subquery()
-    claimed = conn.execute(select(func.setval(seq, func.greatest(top, last) + rows))).scalar_one()
-    base = int(claimed) - rows
+    high_water = func.greatest(top, last)
+    if rows <= 0:
+        # setval(seq, 0) is out of range on a sequence nothing has drawn from yet, and there is
+        # nothing to reserve: report the current high-water mark and leave the sequence alone.
+        base = int(conn.execute(select(high_water)).scalar_one())
+    else:
+        base = int(conn.execute(select(func.setval(seq, high_water + rows))).scalar_one()) - rows
     if ledger is not None:
         ledger.record(table.name, base, rows)
     return base

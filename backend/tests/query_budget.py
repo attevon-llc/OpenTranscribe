@@ -50,19 +50,25 @@ class StatementLog:
 
 @contextmanager
 def count_statements(
-    *targets: Engine | Connection, include_app_engine: bool = True
+    *targets: Engine | Connection,
+    include_app_engine: bool = True,
+    cold_auth_cache: bool = True,
 ) -> Iterator[StatementLog]:
     """Record every statement executed on ``targets`` (plus the app engine) inside the block.
 
     ``targets`` is normally ``db_session.connection()``. About 20 app paths open their own
     ``SessionLocal()`` during a request, so the app engine is listened to as well; a statement
     seen by both an engine and one of its connections is counted once.
+
+    ``cold_auth_cache=False`` keeps the process auth/banner cache as the previous block left it,
+    for a test whose subject is the warm-cache path itself.
     """
     # The login-banner gate answers from a process-level cache after its first read, so the
     # first block would count one more statement than a later one. Start every block cold.
     from app.core.process_auth_settings import clear_process_auth_settings_cache
 
-    clear_process_auth_settings_cache()
+    if cold_auth_cache:
+        clear_process_auth_settings_cache()
     listen_on: list[Engine | Connection] = list(targets)
     if include_app_engine:
         from app.db.base import engine as app_engine

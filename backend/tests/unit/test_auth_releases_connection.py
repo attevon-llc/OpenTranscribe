@@ -206,7 +206,7 @@ def test_the_banner_gate_reads_auth_config_once_per_cache_generation(db_session,
 
     with count_statements(db_session.connection()) as cold:
         assert _banner_requirement(db_session)[0] is False
-    with count_statements(db_session.connection()) as warm:
+    with count_statements(db_session.connection(), cold_auth_cache=False) as warm:
         assert _banner_requirement(db_session)[0] is False
 
     assert len(_banner_statements(cold)) == 1, cold.describe()
@@ -222,6 +222,6 @@ def test_the_banner_gate_reads_auth_config_once_per_cache_generation(db_session,
         data_type="bool",
     )
 
-    with count_statements(db_session.connection()) as after_edit:
+    with count_statements(db_session.connection(), cold_auth_cache=False) as after_edit:
         assert _banner_requirement(db_session)[0] is True
     assert len(_banner_statements(after_edit)) == 1, after_edit.describe()

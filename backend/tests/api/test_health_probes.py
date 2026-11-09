@@ -60,6 +60,10 @@ async def test_readiness_answers_while_the_request_pool_is_exhausted(monkeypatch
     # 30: under xdist the shared suite Postgres runs out of max_connections otherwise ("too many
     # clients"), which made this test depend on what the other workers were doing.
     pool_size, max_overflow = 2, 1
+    # A probe that queued for the request pool would sit the full wait; the bound below is a
+    # fraction of it, so it separates "waited" from "was slow" however loaded the host is
+    # (a fixed 0.5 s failed at 3.9 s under a 48-worker sweep).
+    pool_wait = 30
     monkeypatch.setattr(settings, "DB_POOL_SIZE", pool_size)
     monkeypatch.setattr(settings, "DB_MAX_OVERFLOW", max_overflow)
     cargs, cparams = engine.dialect.create_connect_args(engine.url)
@@ -67,6 +71,7 @@ async def test_readiness_answers_while_the_request_pool_is_exhausted(monkeypatch
         lambda: engine.dialect.connect(*cargs, **cparams),
         pool_size=pool_size,
         max_overflow=max_overflow,
+        timeout=pool_wait,
     )
     monkeypatch.setattr(engine, "pool", small_pool)
     # OpenSearch and MinIO are not what this test measures; their real probes resolve unreachable
@@ -79,10 +84,10 @@ async def test_readiness_answers_while_the_request_pool_is_exhausted(monkeypatch
             stack.enter_context(engine.connect())
         async with _client() as c:
             started = time.monotonic()
-            r = await asyncio.wait_for(c.get("/health/ready"), timeout=5)
+            r = await asyncio.wait_for(c.get("/health/ready"), timeout=pool_wait)
             elapsed = time.monotonic() - started
     assert r.status_code == 200, r.text
-    assert elapsed < 0.5
+    assert elapsed < pool_wait / 2
     assert r.json()["checks"]["db_pool"] == f"{capacity}/{capacity}"
 
 

@@ -11,7 +11,6 @@ import uuid as uuid_pkg
 import pytest
 from sqlalchemy import text
 
-from app.db.chat_indexes import CITATIONS_GIN
 from app.models.chat import ChatConversation
 from app.models.chat import ChatMessage
 from app.services.file_cleanup_service import scrub_chat_citations
@@ -54,6 +53,8 @@ def test_hit_rewrites_only_the_matching_citation(db_session, normal_user):
 
 
 def test_probe_is_answered_by_the_gin_index(db_session):
+    from app.db.chat_indexes import CITATIONS_GIN
+
     conn = db_session.connection()
     conn.execute(text(CITATIONS_GIN.create_sql().replace(" CONCURRENTLY", "")))
     conn.execute(text("SET LOCAL enable_seqscan = off"))

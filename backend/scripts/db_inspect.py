@@ -7,6 +7,7 @@ import logging
 
 from sqlalchemy import create_engine
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
@@ -57,8 +58,9 @@ def inspect_database():
 
             for ft, tag_name, filename in detailed:
                 logger.info(f"FileTag ID: {ft.id}, File: {filename}, Tag: {tag_name}")
-        except Exception as e:
-            logger.error(f"Error querying detailed file tags: {e}")
+        except SQLAlchemyError:
+            logger.exception("Error querying detailed file tags")
+            raise
 
         # Check for any tags with NULL name
         logger.info("\n=== CHECKING FOR INVALID TAGS ===")
@@ -70,8 +72,6 @@ def inspect_database():
         else:
             logger.info("No invalid tags found with NULL name")
 
-    except Exception as e:
-        logger.error(f"Error inspecting database: {e}")
     finally:
         db.close()
 

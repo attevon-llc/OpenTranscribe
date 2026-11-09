@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import logging
 import time
 
 from app.transcription.boundary_resolver import BoundarySmoothingConfig
@@ -30,6 +31,8 @@ from app.utils.diarization_metrics import map_hyp_to_ref
 from app.utils.diarization_metrics import read_rttm
 from app.utils.diarization_metrics import speaker_count_match
 from app.utils.diarization_metrics import wser
+
+logger = logging.getLogger(__name__)
 
 
 def _transcribe(audio_path: str, min_speakers: int | None, max_speakers: int | None) -> list[dict]:
@@ -65,7 +68,10 @@ def _score(assigned: list[dict], turns: list, max_island: int) -> dict:
     ]
     try:
         der_val: float | None = round(der(turns, hyp_turns, collar=0.25)["der"], 4)
-    except Exception:
+    except (ValueError, ZeroDivisionError):
+        # pyannote.metrics rejects degenerate inputs (e.g. no reference turns); an
+        # ImportError for a missing metrics package must still surface.
+        logger.warning("DER undefined for this file; recording None", exc_info=True)
         der_val = None
     return {
         "wser": round(res["wser"], 4),

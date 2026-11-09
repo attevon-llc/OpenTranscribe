@@ -9,6 +9,7 @@ service; active but unusable -> ``LLMConfigurationError``, never the system prov
 
 from __future__ import annotations
 
+import itertools
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -44,7 +45,10 @@ def _config(**over) -> Mock:
 
 def _db(*rows) -> Mock:
     db = Mock()
-    db.query.return_value.filter.return_value.first.side_effect = list(rows)
+    # A real session answers every later read (the context-window record) with no row.
+    db.query.return_value.filter.return_value.first.side_effect = itertools.chain(
+        rows, itertools.repeat(None)
+    )
     return db
 
 

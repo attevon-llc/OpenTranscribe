@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 from kombu.transport.redis import Channel
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.celery_metrics import _RESERVED_ATTRIBUTION_LIMIT
 from app.core.celery_metrics import queue_snapshot
@@ -109,7 +110,7 @@ class _FakeClient:
 
 class _BrokenClient:
     def pipeline(self, transaction=False):
-        raise RuntimeError("redis unreachable")
+        raise RedisConnectionError("redis unreachable")
 
 
 def test_a_task_at_a_non_default_priority_is_counted():
@@ -147,7 +148,9 @@ def test_a_reserved_task_is_still_counted(monkeypatch):
     from app.utils.stats_helpers import get_queue_depths
 
     monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
-    assert get_queue_depths()["gpu"] == 1
+    depths = get_queue_depths()
+    assert depths is not None
+    assert depths["gpu"] == 1
 
 
 def test_the_snapshot_is_one_round_trip():
@@ -168,6 +171,11 @@ def test_a_corrupt_unacked_entry_does_not_break_the_snapshot():
     snapshot = queue_snapshot(fake)
 
     assert snapshot["cpu"]["reserved"] == 1
+
+
+def test_a_caller_that_acts_on_the_numbers_gets_the_broker_error_not_zeros():
+    with pytest.raises(RedisConnectionError):
+        queue_snapshot(_BrokenClient(), raise_on_error=True)
 
 
 def test_a_broker_error_reports_all_zero():

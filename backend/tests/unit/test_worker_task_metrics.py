@@ -188,7 +188,7 @@ class TestOutcomeCounting:
         def explode(name):
             def _raise(*_a, **_k):
                 calls.append(name)
-                raise RuntimeError("registry is broken")
+                raise ValueError("registry is broken")
 
             return _raise
 

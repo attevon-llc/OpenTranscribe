@@ -58,6 +58,7 @@ from datetime import datetime
 from datetime import timedelta
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 from sqlalchemy import bindparam
 from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
@@ -835,7 +836,7 @@ class _FakeQueueDepthsRedis:
 
     def pipeline(self, transaction=False):
         if self._broken:
-            raise RuntimeError("redis unreachable")
+            raise RedisConnectionError("redis unreachable")
         return _FakeQueueDepthsPipeline(self._llen_map, self._unacked_values)
 
 
@@ -847,6 +848,7 @@ class TestGetQueueDepths:
 
         result = get_queue_depths()
 
+        assert result is not None
         for q, n in llen_map.items():
             assert result[q] == n
         assert result["total"] == sum(llen_map.values())
@@ -861,6 +863,7 @@ class TestGetQueueDepths:
 
         result = get_queue_depths()
 
+        assert result is not None
         assert result[CeleryQueues.GPU] == 4
 
     def test_the_returned_value_is_pending_plus_reserved(self, monkeypatch):
@@ -875,15 +878,14 @@ class TestGetQueueDepths:
 
         result = get_queue_depths()
 
+        assert result is not None
         assert result[CeleryQueues.GPU] == 3  # 2 pending + 1 reserved
 
-    def test_a_broker_error_falls_back_to_all_zero(self, monkeypatch):
+    def test_a_broker_error_reports_the_depths_as_unknown_not_zero(self, monkeypatch):
         fake = _FakeQueueDepthsRedis(broken=True)
         monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake)
 
-        result = get_queue_depths()
-
-        assert result == {q: 0 for q in CeleryQueues.ALL} | {"total": 0}
+        assert get_queue_depths() is None
 
 
 # ---------------------------------------------------------------------------

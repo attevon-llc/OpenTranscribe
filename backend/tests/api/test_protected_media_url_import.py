@@ -337,7 +337,7 @@ def test_per_user_rows_are_mapped_with_the_password_decrypted(plugin_db):
     rows = MediacmsProvider()._get_user_media_sources(owner.id)
 
     by_host = {r["hostname"]: r for r in rows}
-    assert set(by_host) == {full, bare, broken, shared}
+    assert set(by_host) == {full, bare, shared}, "the undecryptable source is skipped"
     assert [r["hostname"] for r in rows][-1] == shared, "own rows come first"
     assert by_host[full] == {
         "hostname": full,
@@ -354,8 +354,9 @@ def test_per_user_rows_are_mapped_with_the_password_decrypted(plugin_db):
         "",
     )
     assert by_host[bare]["verify_ssl"] is True
-    # One undecryptable password blanks only that source (see defect D-12 in the register).
-    assert (by_host[broken]["username"], by_host[broken]["password"]) == ("u3", "")
+    # A source whose password cannot be decrypted is left out rather than offered with an empty
+    # password, and it does not take the other sources down with it.
+    assert broken not in by_host
     assert (by_host[shared]["password"], by_host[shared]["user_id"]) == ("sp", sharer.id)
 
 

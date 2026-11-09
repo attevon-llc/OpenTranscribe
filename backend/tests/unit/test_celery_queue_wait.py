@@ -290,7 +290,7 @@ class TestQueueWaitHistogram:
 
         def explode(task):
             calls.append(task)
-            raise RuntimeError("registry is broken")
+            raise ValueError("registry is broken")
 
         monkeypatch.setattr(recorder, "task_dequeued", explode)
         task = demo_app.tasks["demo.transcribe"]

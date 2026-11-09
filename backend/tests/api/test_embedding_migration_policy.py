@@ -16,6 +16,8 @@ from tests.fixtures.privacy_switches import file_in
 from tests.fixtures.privacy_switches import make_org
 from tests.fixtures.privacy_switches import set_instance_switch
 
+pytestmark = pytest.mark.usefixtures("migration_state_store")
+
 EMBEDDING = "/api/embeddings/migration"
 
 

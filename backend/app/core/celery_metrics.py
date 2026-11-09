@@ -105,7 +105,7 @@ def _empty_counts() -> dict[str, int]:
 
 
 def queue_snapshot(
-    client: Any = None, queues: Iterable[str] | None = None
+    client: Any = None, queues: Iterable[str] | None = None, *, raise_on_error: bool = False
 ) -> dict[str, dict[str, int]]:
     """Per-queue counts for every declared queue, in ONE round trip to the broker.
 
@@ -116,6 +116,10 @@ def queue_snapshot(
             to ``REDIS_URL``; a deployment pointing ``CELERY_RESULT_BACKEND``
             elsewhere would silently report 0 forever).
         queues: Queue names to measure instead of :data:`CeleryQueues.ALL`.
+        raise_on_error: Re-raise a broker failure instead of answering all zeros. The default
+            suits a metrics scrape, which must never fail; a caller that acts on the numbers
+            (an admin view, an autoscaler) passes True, because zeros from an unreachable
+            broker are indistinguishable from an idle fleet.
 
     Returns:
         ``pending`` is the sum of the queue's 10 priority sub-lists.
@@ -201,6 +205,8 @@ def queue_snapshot(
 
         return result
     except _SCRAPE_ERRORS as exc:  # scrape must never fail on broker issues
+        if raise_on_error:
+            raise
         logger.warning("Queue snapshot skipped: %s", exc, exc_info=True)
         return {name: _empty_counts() for name in names}
 

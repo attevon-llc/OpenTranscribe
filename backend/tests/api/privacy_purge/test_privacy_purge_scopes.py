@@ -345,6 +345,7 @@ def test_only_the_initiator_can_read_a_purge_status(
     fake_redis = SimpleNamespace(
         set=lambda key, value, ex=None: store.__setitem__(key, value),
         get=lambda key: store.get(key),
+        zrem=lambda *_args: 0,
     )
     monkeypatch.setattr("app.core.redis.get_request_redis", lambda: fake_redis)
     seed(gov, opensearch, gov.alice, gov.org, "orgA")

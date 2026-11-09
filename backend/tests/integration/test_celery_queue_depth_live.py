@@ -201,6 +201,7 @@ def test_a_real_reservation_with_no_worker_is_counted_as_reserved(
         # THIS test's db 15 client instead of measuring live production traffic.
         monkeypatch.setattr("app.core.redis.get_redis", lambda: raw_client)
         depths = get_queue_depths()
+        assert depths is not None
         assert depths[queue_name] == 1
 
 

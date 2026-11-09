@@ -376,6 +376,9 @@ class _FakeRedis:
         self.keys.add(key)
         return True
 
+    def zrem(self, *_args: object) -> int:
+        return 0
+
 
 @pytest.fixture
 def sweep_env(monkeypatch):

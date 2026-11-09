@@ -23,6 +23,10 @@ def _names(node: ast.expr | None) -> set[str]:
     if isinstance(node, ast.Name):
         return {node.id}
     if isinstance(node, ast.Attribute):
+        # The standard library's own HTTPException (a connection/protocol failure) shares the
+        # name but is not the web framework's response exception this guard is about.
+        if ast.unparse(node) == "http.client.HTTPException":
+            return {"http.client.HTTPException"}
         return {node.attr}
     return set()
 
@@ -58,6 +62,12 @@ def test_scanner_accepts_widened_and_unrelated_clauses() -> None:
         "try:\n    pass\nexcept DomainError:\n    pass\n"
         "try:\n    pass\nexcept:\n    pass\n"
     )
+    assert unwidened_clauses(src) == []
+
+
+@pytest.mark.unit
+def test_scanner_ignores_the_standard_librarys_http_client_exception() -> None:
+    src = "try:\n    pass\nexcept (OSError, http.client.HTTPException):\n    raise\n"
     assert unwidened_clauses(src) == []
 
 

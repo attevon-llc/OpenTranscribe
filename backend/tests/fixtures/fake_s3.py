@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from botocore.exceptions import ClientError
+
 
 class FakeS3Client:
     """Minimal in-memory S3 stand-in for the boto3 client boundary."""
@@ -32,7 +34,9 @@ class FakeS3Client:
 
     def head_bucket(self, Bucket):  # noqa: N803 - boto3 kwarg name
         if not self._bucket_ok:
-            raise RuntimeError("bucket not found")
+            raise ClientError(
+                {"Error": {"Code": "404", "Message": "bucket not found"}}, "HeadBucket"
+            )
         return {}
 
     def upload_file(self, local_path, bucket, key):

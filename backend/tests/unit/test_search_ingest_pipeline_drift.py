@@ -45,9 +45,17 @@ class _FakeIngest:
         self.live = body
 
 
+class _FakeTransport:
+    """The ML Commons model lookup the pipeline writer makes to label the new vectors."""
+
+    def perform_request(self, method: str, url: str) -> dict[str, Any]:
+        return {"name": "fake-embedding-model", "model_state": "DEPLOYED"}
+
+
 class _FakeClient:
     def __init__(self, live: dict[str, Any] | None) -> None:
         self.ingest = _FakeIngest(live)
+        self.transport = _FakeTransport()
 
 
 #: What the pipeline must embed **today** — index v6 repointed it from ``content``

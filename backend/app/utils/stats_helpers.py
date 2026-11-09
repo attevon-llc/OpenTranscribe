@@ -420,7 +420,7 @@ def get_queue_depths() -> dict[str, int] | None:
     from app.core.celery_metrics import queue_snapshot
 
     try:
-        snapshot = queue_snapshot()
+        snapshot = queue_snapshot(raise_on_error=True)
         depths: dict[str, int] = {
             name: counts["pending"] + counts["reserved"] for name, counts in snapshot.items()
         }

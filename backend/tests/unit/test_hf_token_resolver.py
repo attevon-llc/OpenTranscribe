@@ -7,10 +7,12 @@ import os
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.config import settings
 from app.models.system_settings import SystemSettings
 from app.services import huggingface_token as svc
+from app.utils.encryption import SecretDecryptionError
 
 # Every test here writes the same unique `system_settings` row; split across xdist workers they
 # block each other on its index until the statement times out.
@@ -127,13 +129,25 @@ class TestCache:
         resolver.invalidate_cache()
 
         def boom(_db):
-            raise RuntimeError("db down")
+            raise OperationalError("SELECT", {}, Exception("db down"))
 
         monkeypatch.setattr(svc, "_read_stored", boom)
         assert resolver.get_hf_token() == _ENV
         monkeypatch.undo()  # restore real reader (and settings)
         # not cached: the next call asks the database again
         assert svc._cache is None
+
+    def test_an_undecryptable_saved_token_falls_back_to_env(
+        self, resolver, db_session, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "HUGGINGFACE_TOKEN", _ENV)
+        resolver.invalidate_cache()
+
+        def undecryptable(_db):
+            raise SecretDecryptionError("stored secret cannot be decrypted")
+
+        monkeypatch.setattr(svc, "_read_stored", undecryptable)
+        assert resolver.get_hf_token() == _ENV
 
 
 class TestSessionDiscipline:

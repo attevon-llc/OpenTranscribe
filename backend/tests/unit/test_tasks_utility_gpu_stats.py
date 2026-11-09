@@ -39,6 +39,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app.core.config import settings
 from app.tasks import utility
@@ -471,7 +472,7 @@ def test_a_broadcast_failure_does_not_lose_the_redis_write(monkeypatch, gpu_task
     monkeypatch.setattr(settings, "GPU_DEVICE_ID", 1)
 
     def _broken():
-        raise RuntimeError("redis pubsub down")
+        raise RedisConnectionError("redis pubsub down")
 
     monkeypatch.setattr(utility, "get_redis", _broken)
 

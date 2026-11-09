@@ -12,6 +12,7 @@ from __future__ import annotations
 import inspect
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from app.core.exceptions import InvalidInputError
 from app.services import protected_media_providers
@@ -256,7 +257,7 @@ def test_system_sources_read_failure_is_an_empty_list(monkeypatch):
     session = _FakeSession()
 
     def _broken(db):
-        raise RuntimeError("settings table missing")
+        raise OperationalError("SELECT", {}, Exception("settings table missing"))
 
     monkeypatch.setattr("app.db.base.SessionLocal", lambda: session)
     monkeypatch.setattr("app.services.system_settings_service.get_system_media_sources", _broken)
@@ -266,7 +267,7 @@ def test_system_sources_read_failure_is_an_empty_list(monkeypatch):
 
 def test_per_user_sources_read_failure_is_an_empty_list(monkeypatch):
     def _no_database():
-        raise RuntimeError("database unavailable")
+        raise OperationalError("connect", {}, Exception("database unavailable"))
 
     monkeypatch.setattr("app.db.base.SessionLocal", _no_database)
     assert MediacmsProvider()._get_user_media_sources(3) == []

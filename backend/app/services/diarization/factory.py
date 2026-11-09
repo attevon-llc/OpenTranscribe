@@ -172,10 +172,20 @@ class DiarizationProviderFactory:
             return LocalDiarizationProvider()
 
         if engine == "pyannote_ai":
+            from app.utils.encryption import SecretDecryptionError
             from app.utils.encryption import decrypt_api_key
 
             config = get_pyannote_credential(user_id, db)
-            api_key = decrypt_api_key(str(config.api_key)) if config and config.api_key else None
+            api_key = None
+            if config and config.api_key:
+                try:
+                    api_key = decrypt_api_key(str(config.api_key))
+                except SecretDecryptionError:
+                    logger.warning(
+                        "User %d's stored pyannote.ai key cannot be decrypted "
+                        "(ENCRYPTION_KEY rotated or the value is corrupt)",
+                        user_id,
+                    )
             if not api_key:
                 logger.warning(
                     "User %d is planned for pyannote.ai speaker detection but has no usable key",

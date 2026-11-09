@@ -90,6 +90,32 @@ def test_list_prompts_excludes_other_users_private(
     assert str(private.uuid) not in uuids
 
 
+def test_list_prompts_links_only_the_callers_collections_ordered_by_name(
+    client, user_token_headers, normal_user, other_user, db_session
+):
+    from app.models.collection import Collection
+
+    prompt = _make_prompt(db_session, normal_user, is_shared=True)
+    unlinked = _make_prompt(db_session, normal_user)
+    for name, owner in (("zeta", normal_user), ("alpha", normal_user), ("theirs", other_user)):
+        db_session.add(
+            Collection(
+                uuid=uuid.uuid4(),
+                name=name,
+                user_id=owner.id,
+                default_summary_prompt_id=prompt.id,
+            )
+        )
+    db_session.commit()
+
+    body = client.get("/api/prompts", headers=user_token_headers).json()
+    by_uuid = {p["uuid"]: p for p in body["prompts"]}
+    linked = by_uuid[str(prompt.uuid)]
+    assert [c["name"] for c in linked["linked_collections"]] == ["alpha", "zeta"]
+    assert linked["is_owner"] is True
+    assert by_uuid[str(unlinked.uuid)]["linked_collections"] == []
+
+
 def test_list_prompts_limit_over_max_422(client, user_token_headers):
     response = client.get("/api/prompts", headers=user_token_headers, params={"limit": 5000})
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

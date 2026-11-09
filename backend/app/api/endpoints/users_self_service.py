@@ -123,6 +123,89 @@ def _maybe_issue_reverification(
         issue_verification_token(db, current_user, client_ip)
 
 
+def _require_current_password(current_user: User, current_password: str | None) -> None:
+    """Credential-grade changes need the caller's current password."""
+    if not current_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is required for this change",
+        )
+    if not verify_password(current_password, str(current_user.hashed_password)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+
+def _validate_email_change(
+    db: Session, current_user: User, new_email: str, current_password: str | None
+) -> None:
+    """Refuse a taken address, and require the current password for the change."""
+    existing_user = db.query(User).filter(User.email == new_email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered",
+        )
+    # Changing the address and then requesting a password reset is a complete
+    # account takeover. Proving possession of the current password stops a
+    # hijacked session from doing it silently.
+    assert_password_auth_possible(current_user)
+    _require_current_password(current_user, current_password)
+
+
+def _apply_password_change(
+    db: Session, current_user: User, update_data: dict[str, Any], current_password: str | None
+) -> None:
+    """Validate a self-service password change and stage the new hash in ``update_data``.
+
+    Pops ``password`` from ``update_data`` and records the new hash and timestamps there;
+    the caller applies ``update_data`` to the user and owns the commit.
+    """
+    assert_password_auth_possible(current_user)
+    _require_current_password(current_user, current_password)
+
+    new_password = update_data.pop("password")
+
+    # Policy was previously enforced only by UserCreate's validator, so a
+    # self-service change could set a password the policy forbids.
+    enforce_password_policy(new_password, current_user, db)
+
+    # Minimum password age (FedRAMP IA-5(1)(d)). Without it the bounded history
+    # is self-defeating: nothing rate-limits this endpoint, so a user could run
+    # `password_history_count` throwaway changes back to back, flush the row
+    # holding their original out of the retained window, and set the original
+    # again — the reuse control defeated with no privilege at all.
+    #
+    # Applied here and NOT on the admin paths (`update_user` below,
+    # `admin.reset_user_password`, the emailed reset) on purpose: this is a
+    # restriction on *voluntary* change, and an administrator recovering an
+    # account must never be blocked by the age of a password they are replacing.
+    # `must_change_password` is exempt for the same reason — a user held for a
+    # forced change is being told to change a password that was, by definition,
+    # just set. Refusing them here would be a lockout with no exit.
+    if not current_user.must_change_password:
+        _assert_password_old_enough_to_change(current_user)
+
+    # Check password history (FedRAMP IA-5)
+    if not check_password_against_history(db, current_user.id, new_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Password has been used recently. Please choose a different password. "
+            f"(Cannot reuse last {password_policy.history_count} passwords)",
+        )
+
+    new_hash = get_password_hash(new_password)
+    update_data["hashed_password"] = new_hash
+    update_data["password_changed_at"] = datetime.now(UTC)
+    # The minimum-age clock: only the holder's own change starts it.
+    update_data["password_last_self_changed_at"] = update_data["password_changed_at"]
+
+    # Store password in history after successful change
+    add_password_to_history(db, current_user.id, new_hash)
+    logger.info(f"Password changed for user {current_user.id}")
+
+
 @router.put("/me", response_model=UserSchema)
 def update_current_user(
     request: Request,
@@ -145,18 +228,6 @@ def update_current_user(
     # so each needs the current password. Pull it out once — it is not a model field.
     current_password = update_data.pop("current_password", None)
 
-    def _require_current_password() -> None:
-        if not current_password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is required for this change",
-            )
-        if not verify_password(current_password, str(current_user.hashed_password)):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is incorrect",
-            )
-
     # Check if email is being changed and is already taken
     old_email = str(current_user.email)
     # Byte-exact — deliberately NOT relaxed to `emails_agree`. This flag gates the
@@ -168,17 +239,7 @@ def update_current_user(
     # changed (issue #909).
     mailbox_changed = email_changed and not emails_agree(str(user_update.email), old_email)
     if email_changed:
-        existing_user = db.query(User).filter(User.email == user_update.email).first()
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
-            )
-        # Changing the address and then requesting a password reset is a complete
-        # account takeover. Proving possession of the current password stops a
-        # hijacked session from doing it silently.
-        assert_password_auth_possible(current_user)
-        _require_current_password()
+        _validate_email_change(db, current_user, str(user_update.email), current_password)
 
     # Update fields — strip privileged fields that only admins may change.
     # Without this, any user could promote themselves via PUT /users/me.
@@ -189,48 +250,7 @@ def update_current_user(
     # Hash password if it's provided
     password_changed = "password" in update_data
     if password_changed:
-        assert_password_auth_possible(current_user)
-        _require_current_password()
-
-        new_password = update_data.pop("password")
-
-        # Policy was previously enforced only by UserCreate's validator, so a
-        # self-service change could set a password the policy forbids.
-        enforce_password_policy(new_password, current_user, db)
-
-        # Minimum password age (FedRAMP IA-5(1)(d)). Without it the bounded history
-        # is self-defeating: nothing rate-limits this endpoint, so a user could run
-        # `password_history_count` throwaway changes back to back, flush the row
-        # holding their original out of the retained window, and set the original
-        # again — the reuse control defeated with no privilege at all.
-        #
-        # Applied here and NOT on the admin paths (`update_user` below,
-        # `admin.reset_user_password`, the emailed reset) on purpose: this is a
-        # restriction on *voluntary* change, and an administrator recovering an
-        # account must never be blocked by the age of a password they are replacing.
-        # `must_change_password` is exempt for the same reason — a user held for a
-        # forced change is being told to change a password that was, by definition,
-        # just set. Refusing them here would be a lockout with no exit.
-        if not current_user.must_change_password:
-            _assert_password_old_enough_to_change(current_user)
-
-        # Check password history (FedRAMP IA-5)
-        if not check_password_against_history(db, current_user.id, new_password):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Password has been used recently. Please choose a different password. "
-                f"(Cannot reuse last {password_policy.history_count} passwords)",
-            )
-
-        new_hash = get_password_hash(new_password)
-        update_data["hashed_password"] = new_hash
-        update_data["password_changed_at"] = datetime.now(UTC)
-        # The minimum-age clock: only the holder's own change starts it.
-        update_data["password_last_self_changed_at"] = update_data["password_changed_at"]
-
-        # Store password in history after successful change
-        add_password_to_history(db, current_user.id, new_hash)
-        logger.info(f"Password changed for user {current_user.id}")
+        _apply_password_change(db, current_user, update_data, current_password)
 
     for field, value in update_data.items():
         setattr(current_user, field, value)

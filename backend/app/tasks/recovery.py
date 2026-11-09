@@ -10,6 +10,8 @@ from datetime import UTC
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.celery import celery_app
 from app.core.queues import UtilityPriority
 from app.core.task_config import task_recovery_config
@@ -262,6 +264,207 @@ def _check_opensearch_health(summary: dict) -> None:
         logger.warning(f"OpenSearch health check failed (non-fatal): {os_err}")
 
 
+def _sweep_superseded_rows(db: Session, summary: dict[str, Any]) -> None:
+    """Resolve rows a newer completed run has superseded; its failure must not stop recovery."""
+    # Step 0: Resolve rows a newer completed run of the same step has superseded
+    # (issue #1185). First, so the stuck-task step below never "recovers" a row whose
+    # step already finished. Its failure must not take the rest of recovery with it.
+    try:
+        sweep = resolve_superseded_task_rows(db)
+        summary["superseded_task_rows_found"] = sweep["found"]
+        summary["superseded_task_rows_resolved"] = sweep["resolved"]
+    except Exception as sweep_err:
+        db.rollback()
+        logger.error(f"Superseded task row sweep failed (non-fatal): {sweep_err}")
+
+
+def _recover_stuck_tasks_and_inconsistent_files(db: Session, summary: dict[str, Any]) -> None:
+    """Steps 1-2: stuck task rows, then media files in an inconsistent state."""
+    # Step 1: Identify and recover stuck tasks
+    stuck_tasks = task_detection_service.identify_stuck_tasks(db)
+    summary["stuck_tasks_found"] = len(stuck_tasks)
+
+    recovered_count = 0
+    for task in stuck_tasks:
+        if task_recovery_service.recover_stuck_task(db, task):
+            recovered_count += 1
+
+    summary["stuck_tasks_recovered"] = recovered_count
+
+    # Step 2: Identify and fix inconsistent media files
+    inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
+    summary["inconsistent_files_found"] = len(inconsistent_files)
+
+    fixed_count = 0
+    for media_file in inconsistent_files:
+        if task_recovery_service.fix_inconsistent_media_file(db, media_file):
+            fixed_count += 1
+
+    summary["inconsistent_files_fixed"] = fixed_count
+
+
+def _recover_stuck_files(db: Session, summary: dict[str, Any]) -> None:
+    """Steps 3 and 3.5: files stuck without a live Celery task, and stuck DOWNLOADING files."""
+    # Step 3: Identify and recover files stuck without active Celery tasks
+    stuck_files_without_celery = (
+        task_detection_service.identify_stuck_files_without_active_celery_tasks(db)
+    )
+    summary["stuck_files_without_celery_found"] = len(stuck_files_without_celery)
+
+    if stuck_files_without_celery:
+        recovery_stats = task_recovery_service.recover_stuck_files_without_celery_tasks(
+            db, stuck_files_without_celery
+        )
+        summary["stuck_files_without_celery_recovered"] = recovery_stats["files_recovered"]
+        logger.info(
+            f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks"
+        )
+
+    # Step 3.5: Identify and recover files stuck in DOWNLOADING status
+    stuck_downloading_files = task_detection_service.identify_stuck_downloading_files(db)
+    summary["stuck_downloading_found"] = len(stuck_downloading_files)
+
+    if stuck_downloading_files:
+        download_recovery_stats = task_recovery_service.recover_stuck_downloading_files(
+            db, stuck_downloading_files
+        )
+        summary["stuck_downloading_recovered"] = download_recovery_stats["files_recovered"]
+        logger.info(
+            f"Download Recovery: Found {len(stuck_downloading_files)} stuck files, "
+            f"recovered {download_recovery_stats['files_recovered']}, "
+            f"retried {download_recovery_stats['tasks_retried']}"
+        )
+
+
+def _recover_oom_and_retriable_errors(db: Session, summary: dict[str, Any]) -> None:
+    """Steps 4-5: OOM-failed files, then retriable ERROR files in staggered batches."""
+    # Step 4: Identify and recover files with OOM errors
+    if task_recovery_config.OOM_RETRY_ENABLED:
+        oom_files = task_detection_service.identify_oom_error_files(db)
+        summary["oom_files_found"] = len(oom_files)
+
+        if oom_files:
+            oom_stats = task_recovery_service.recover_oom_error_files(db, oom_files)
+            summary["oom_files_retried"] = oom_stats["files_retried"]
+            summary["oom_files_exhausted"] = oom_stats["files_exhausted"]
+            logger.info(
+                f"OOM Recovery: Found {len(oom_files)} files, "
+                f"retried {oom_stats['files_retried']}, "
+                f"exhausted {oom_stats['files_exhausted']}"
+            )
+
+    # Step 5: Identify and recover retriable ERROR files (staggered batches)
+    # YouTube downloads use a strict per-cycle cap to stay within
+    # rate limits and avoid bans.  Transcription retries are less
+    # sensitive so they get a larger batch.
+    from app.services.youtube_policy import get_youtube_policy
+
+    yt_batch = get_youtube_policy(db).recovery_batch_size  # default 3
+    transcription_batch = 20
+
+    yt_retries, tx_retries = task_detection_service.identify_retriable_error_files_split(
+        db,
+        youtube_batch_size=yt_batch,
+        transcription_batch_size=transcription_batch,
+    )
+    all_retriable = yt_retries + tx_retries
+    summary["retriable_errors_found"] = len(all_retriable)
+    summary["retriable_youtube_found"] = len(yt_retries)
+    summary["retriable_errors_retried"] = 0
+
+    if all_retriable:
+        retry_stats = task_recovery_service.recover_retriable_error_files(db, all_retriable)
+        summary["retriable_errors_retried"] = retry_stats["files_retried"]
+        logger.info(
+            f"Error Retry: Found {len(yt_retries)} YouTube + "
+            f"{len(tx_retries)} transcription retriable files, "
+            f"retried {retry_stats['files_retried']}, "
+            f"failed {retry_stats['files_failed']}"
+        )
+
+
+def _recover_stale_pending_llm_and_false_positive(db: Session, summary: dict[str, Any]) -> None:
+    """Steps 5.5-5.7: unrecoverable PENDING downloads, stuck LLM tasks, false-positive failures."""
+    # Step 5.5: Mark PENDING files with unrecoverable download errors as ERROR
+    stuck_pending_downloads = task_detection_service.identify_stuck_pending_download_files(db)
+    summary["stuck_pending_downloads_found"] = len(stuck_pending_downloads)
+
+    if stuck_pending_downloads:
+        pending_stats = task_recovery_service.recover_stuck_pending_download_files(
+            db, stuck_pending_downloads
+        )
+        summary["stuck_pending_downloads_marked_error"] = pending_stats["files_marked_error"]
+        logger.info(
+            f"Stuck PENDING Recovery: Found {len(stuck_pending_downloads)} files with "
+            f"unrecoverable download errors, marked {pending_stats['files_marked_error']} as ERROR"
+        )
+
+    # Step 5.6: Mark stuck LLM tasks (in_progress > 6 hours) as failed
+    stuck_llm_tasks = task_detection_service.identify_stuck_llm_tasks(db)
+    summary["stuck_llm_tasks_found"] = len(stuck_llm_tasks)
+
+    if stuck_llm_tasks:
+        llm_stats = task_recovery_service.recover_stuck_llm_tasks(db, stuck_llm_tasks)
+        summary["stuck_llm_tasks_marked_failed"] = llm_stats["tasks_marked_failed"]
+        logger.info(
+            f"Stuck LLM Task Recovery: Found {len(stuck_llm_tasks)} tasks stuck > 6 hours, "
+            f"marked {llm_stats['tasks_marked_failed']} as failed"
+        )
+
+    # Step 5.7: Reset false-positive failed tasks for retry
+    false_positive_tasks = task_detection_service.identify_false_positive_failed_tasks(db)
+    summary["false_positive_tasks_found"] = len(false_positive_tasks)
+
+    if false_positive_tasks:
+        fp_stats = task_recovery_service.recover_false_positive_failed_tasks(
+            db, false_positive_tasks
+        )
+        summary["false_positive_tasks_reset"] = fp_stats["tasks_reset"]
+        logger.info(
+            f"False-Positive Task Recovery: Found {len(false_positive_tasks)} tasks "
+            f"falsely marked failed, reset {fp_stats['tasks_reset']} for retry"
+        )
+
+
+def _recover_incomplete_post_transcription(db: Session, summary: dict[str, Any]) -> None:
+    """Step 6: COMPLETED files whose post-transcription processing is incomplete."""
+    # Step 6: Recover COMPLETED files with incomplete post-transcription processing
+    incomplete_files = task_detection_service.identify_incomplete_post_transcription_files(
+        db, batch_size=10
+    )
+    summary["incomplete_post_transcription_found"] = len(incomplete_files)
+
+    if incomplete_files:
+        post_stats = task_recovery_service.recover_incomplete_post_transcription_files(
+            db, incomplete_files
+        )
+        summary["post_transcription_tasks_dispatched"] = post_stats["total_tasks_dispatched"]
+        logger.info(
+            f"Post-transcription recovery: Found {len(incomplete_files)} incomplete files, "
+            f"dispatched {post_stats['total_tasks_dispatched']} tasks"
+        )
+
+
+def _log_health_check_summary(summary: dict[str, Any]) -> None:
+    """Log the one-line summary of what the periodic health check did."""
+    # Log summary
+    logger.info(
+        f"Periodic health check completed: "
+        f"Resolved {summary['superseded_task_rows_resolved']} superseded task rows; "
+        f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
+        f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
+        f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}; "
+        f"Found {summary['stuck_downloading_found']} stuck downloads, recovered {summary['stuck_downloading_recovered']}; "
+        f"Found {summary['oom_files_found']} OOM error files, retried {summary['oom_files_retried']}, exhausted {summary['oom_files_exhausted']}; "
+        f"Found {summary['retriable_errors_found']} retriable errors, retried {summary['retriable_errors_retried']}; "
+        f"Found {summary['stuck_pending_downloads_found']} stuck PENDING downloads, marked {summary['stuck_pending_downloads_marked_error']} as ERROR; "
+        f"Found {summary['stuck_llm_tasks_found']} stuck LLM tasks, marked {summary['stuck_llm_tasks_marked_failed']} as failed; "
+        f"Found {summary['false_positive_tasks_found']} false-positive tasks, reset {summary['false_positive_tasks_reset']}; "
+        f"Found {summary['incomplete_post_transcription_found']} incomplete post-transcription files, dispatched {summary['post_transcription_tasks_dispatched']} tasks"
+        f"; OpenSearch indices repaired: {summary['opensearch_indices_repaired']}"
+    )
+
+
 @celery_app.task(
     name="system.health_check",
     bind=True,
@@ -314,191 +517,13 @@ def periodic_health_check_task(self: Any) -> dict[str, Any]:
 
     try:
         with session_scope() as db:
-            # Step 0: Resolve rows a newer completed run of the same step has superseded
-            # (issue #1185). First, so the stuck-task step below never "recovers" a row whose
-            # step already finished. Its failure must not take the rest of recovery with it.
-            try:
-                sweep = resolve_superseded_task_rows(db)
-                summary["superseded_task_rows_found"] = sweep["found"]
-                summary["superseded_task_rows_resolved"] = sweep["resolved"]
-            except Exception as sweep_err:
-                db.rollback()
-                logger.error(f"Superseded task row sweep failed (non-fatal): {sweep_err}")
-
-            # Step 1: Identify and recover stuck tasks
-            stuck_tasks = task_detection_service.identify_stuck_tasks(db)
-            summary["stuck_tasks_found"] = len(stuck_tasks)
-
-            recovered_count = 0
-            for task in stuck_tasks:
-                if task_recovery_service.recover_stuck_task(db, task):
-                    recovered_count += 1
-
-            summary["stuck_tasks_recovered"] = recovered_count
-
-            # Step 2: Identify and fix inconsistent media files
-            inconsistent_files = task_detection_service.identify_inconsistent_media_files(db)
-            summary["inconsistent_files_found"] = len(inconsistent_files)
-
-            fixed_count = 0
-            for media_file in inconsistent_files:
-                if task_recovery_service.fix_inconsistent_media_file(db, media_file):
-                    fixed_count += 1
-
-            summary["inconsistent_files_fixed"] = fixed_count
-
-            # Step 3: Identify and recover files stuck without active Celery tasks
-            stuck_files_without_celery = (
-                task_detection_service.identify_stuck_files_without_active_celery_tasks(db)
-            )
-            summary["stuck_files_without_celery_found"] = len(stuck_files_without_celery)
-
-            if stuck_files_without_celery:
-                recovery_stats = task_recovery_service.recover_stuck_files_without_celery_tasks(
-                    db, stuck_files_without_celery
-                )
-                summary["stuck_files_without_celery_recovered"] = recovery_stats["files_recovered"]
-                logger.info(
-                    f"Recovered {recovery_stats['files_recovered']} stuck files without active Celery tasks"
-                )
-
-            # Step 3.5: Identify and recover files stuck in DOWNLOADING status
-            stuck_downloading_files = task_detection_service.identify_stuck_downloading_files(db)
-            summary["stuck_downloading_found"] = len(stuck_downloading_files)
-
-            if stuck_downloading_files:
-                download_recovery_stats = task_recovery_service.recover_stuck_downloading_files(
-                    db, stuck_downloading_files
-                )
-                summary["stuck_downloading_recovered"] = download_recovery_stats["files_recovered"]
-                logger.info(
-                    f"Download Recovery: Found {len(stuck_downloading_files)} stuck files, "
-                    f"recovered {download_recovery_stats['files_recovered']}, "
-                    f"retried {download_recovery_stats['tasks_retried']}"
-                )
-
-            # Step 4: Identify and recover files with OOM errors
-            if task_recovery_config.OOM_RETRY_ENABLED:
-                oom_files = task_detection_service.identify_oom_error_files(db)
-                summary["oom_files_found"] = len(oom_files)
-
-                if oom_files:
-                    oom_stats = task_recovery_service.recover_oom_error_files(db, oom_files)
-                    summary["oom_files_retried"] = oom_stats["files_retried"]
-                    summary["oom_files_exhausted"] = oom_stats["files_exhausted"]
-                    logger.info(
-                        f"OOM Recovery: Found {len(oom_files)} files, "
-                        f"retried {oom_stats['files_retried']}, "
-                        f"exhausted {oom_stats['files_exhausted']}"
-                    )
-
-            # Step 5: Identify and recover retriable ERROR files (staggered batches)
-            # YouTube downloads use a strict per-cycle cap to stay within
-            # rate limits and avoid bans.  Transcription retries are less
-            # sensitive so they get a larger batch.
-            from app.services.youtube_policy import get_youtube_policy
-
-            yt_batch = get_youtube_policy(db).recovery_batch_size  # default 3
-            transcription_batch = 20
-
-            yt_retries, tx_retries = task_detection_service.identify_retriable_error_files_split(
-                db,
-                youtube_batch_size=yt_batch,
-                transcription_batch_size=transcription_batch,
-            )
-            all_retriable = yt_retries + tx_retries
-            summary["retriable_errors_found"] = len(all_retriable)
-            summary["retriable_youtube_found"] = len(yt_retries)
-            summary["retriable_errors_retried"] = 0
-
-            if all_retriable:
-                retry_stats = task_recovery_service.recover_retriable_error_files(db, all_retriable)
-                summary["retriable_errors_retried"] = retry_stats["files_retried"]
-                logger.info(
-                    f"Error Retry: Found {len(yt_retries)} YouTube + "
-                    f"{len(tx_retries)} transcription retriable files, "
-                    f"retried {retry_stats['files_retried']}, "
-                    f"failed {retry_stats['files_failed']}"
-                )
-
-            # Step 5.5: Mark PENDING files with unrecoverable download errors as ERROR
-            stuck_pending_downloads = task_detection_service.identify_stuck_pending_download_files(
-                db
-            )
-            summary["stuck_pending_downloads_found"] = len(stuck_pending_downloads)
-
-            if stuck_pending_downloads:
-                pending_stats = task_recovery_service.recover_stuck_pending_download_files(
-                    db, stuck_pending_downloads
-                )
-                summary["stuck_pending_downloads_marked_error"] = pending_stats[
-                    "files_marked_error"
-                ]
-                logger.info(
-                    f"Stuck PENDING Recovery: Found {len(stuck_pending_downloads)} files with "
-                    f"unrecoverable download errors, marked {pending_stats['files_marked_error']} as ERROR"
-                )
-
-            # Step 5.6: Mark stuck LLM tasks (in_progress > 6 hours) as failed
-            stuck_llm_tasks = task_detection_service.identify_stuck_llm_tasks(db)
-            summary["stuck_llm_tasks_found"] = len(stuck_llm_tasks)
-
-            if stuck_llm_tasks:
-                llm_stats = task_recovery_service.recover_stuck_llm_tasks(db, stuck_llm_tasks)
-                summary["stuck_llm_tasks_marked_failed"] = llm_stats["tasks_marked_failed"]
-                logger.info(
-                    f"Stuck LLM Task Recovery: Found {len(stuck_llm_tasks)} tasks stuck > 6 hours, "
-                    f"marked {llm_stats['tasks_marked_failed']} as failed"
-                )
-
-            # Step 5.7: Reset false-positive failed tasks for retry
-            false_positive_tasks = task_detection_service.identify_false_positive_failed_tasks(db)
-            summary["false_positive_tasks_found"] = len(false_positive_tasks)
-
-            if false_positive_tasks:
-                fp_stats = task_recovery_service.recover_false_positive_failed_tasks(
-                    db, false_positive_tasks
-                )
-                summary["false_positive_tasks_reset"] = fp_stats["tasks_reset"]
-                logger.info(
-                    f"False-Positive Task Recovery: Found {len(false_positive_tasks)} tasks "
-                    f"falsely marked failed, reset {fp_stats['tasks_reset']} for retry"
-                )
-
-            # Step 6: Recover COMPLETED files with incomplete post-transcription processing
-            incomplete_files = task_detection_service.identify_incomplete_post_transcription_files(
-                db, batch_size=10
-            )
-            summary["incomplete_post_transcription_found"] = len(incomplete_files)
-
-            if incomplete_files:
-                post_stats = task_recovery_service.recover_incomplete_post_transcription_files(
-                    db, incomplete_files
-                )
-                summary["post_transcription_tasks_dispatched"] = post_stats[
-                    "total_tasks_dispatched"
-                ]
-                logger.info(
-                    f"Post-transcription recovery: Found {len(incomplete_files)} incomplete files, "
-                    f"dispatched {post_stats['total_tasks_dispatched']} tasks"
-                )
-
-            # Log summary
-            logger.info(
-                f"Periodic health check completed: "
-                f"Resolved {summary['superseded_task_rows_resolved']} superseded task rows; "
-                f"Found {summary['stuck_tasks_found']} stuck tasks, recovered {summary['stuck_tasks_recovered']}; "
-                f"Found {summary['inconsistent_files_found']} inconsistent files, fixed {summary['inconsistent_files_fixed']}; "
-                f"Found {summary['stuck_files_without_celery_found']} stuck files without Celery tasks, recovered {summary['stuck_files_without_celery_recovered']}; "
-                f"Found {summary['stuck_downloading_found']} stuck downloads, recovered {summary['stuck_downloading_recovered']}; "
-                f"Found {summary['oom_files_found']} OOM error files, retried {summary['oom_files_retried']}, exhausted {summary['oom_files_exhausted']}; "
-                f"Found {summary['retriable_errors_found']} retriable errors, retried {summary['retriable_errors_retried']}; "
-                f"Found {summary['stuck_pending_downloads_found']} stuck PENDING downloads, marked {summary['stuck_pending_downloads_marked_error']} as ERROR; "
-                f"Found {summary['stuck_llm_tasks_found']} stuck LLM tasks, marked {summary['stuck_llm_tasks_marked_failed']} as failed; "
-                f"Found {summary['false_positive_tasks_found']} false-positive tasks, reset {summary['false_positive_tasks_reset']}; "
-                f"Found {summary['incomplete_post_transcription_found']} incomplete post-transcription files, dispatched {summary['post_transcription_tasks_dispatched']} tasks"
-                f"; OpenSearch indices repaired: {summary['opensearch_indices_repaired']}"
-            )
+            _sweep_superseded_rows(db, summary)
+            _recover_stuck_tasks_and_inconsistent_files(db, summary)
+            _recover_stuck_files(db, summary)
+            _recover_oom_and_retriable_errors(db, summary)
+            _recover_stale_pending_llm_and_false_positive(db, summary)
+            _recover_incomplete_post_transcription(db, summary)
+            _log_health_check_summary(summary)
 
     except Exception as e:
         logger.error(f"Error in periodic health check: {str(e)}")

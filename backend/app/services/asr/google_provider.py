@@ -74,6 +74,71 @@ class GoogleASRProvider(ASRProvider):
             sanitized = self._sanitize_error(str(e), self._api_key)
             return False, sanitized, ms
 
+    def _speaker_run_segment(self, words: list, tag: int | None, confidence: float) -> ASRSegment:
+        """One segment for a contiguous run of words that share a Google speaker tag.
+
+        Google speaker_tag semantics: 0 = unknown / no tag assigned (callers pass
+        None, giving no speaker label); 1+ = 1-indexed speaker ids, mapped here to
+        0-indexed SPEAKER_XX labels.
+        """
+        return ASRSegment(
+            text=" ".join(x.word for x in words),
+            start=words[0].start_time.total_seconds(),
+            end=words[-1].end_time.total_seconds(),
+            speaker=self._normalize_speaker_label(tag - 1) if tag is not None else None,
+            confidence=confidence,
+            words=[
+                ASRWord(x.word, x.start_time.total_seconds(), x.end_time.total_seconds())
+                for x in words
+            ],
+        )
+
+    def _diarized_segments(self, word_list: list, confidence: float) -> list[ASRSegment]:
+        """Group contiguous words by speaker_tag into one segment per speaker run.
+
+        Preserves temporal order rather than grouping all words for the same speaker
+        globally (which would lose conversational turn structure).
+        """
+        segments: list[ASRSegment] = []
+        cur_tag: int | None = None
+        cur_ws: list = []
+        for w in word_list:
+            raw_tag = getattr(w, "speaker_tag", 0)
+            # Normalize tag: 0 -> None (unknown)
+            tag = None if raw_tag == 0 else raw_tag
+            if tag != cur_tag:
+                if cur_ws:
+                    segments.append(self._speaker_run_segment(cur_ws, cur_tag, confidence))
+                cur_tag, cur_ws = tag, []
+            cur_ws.append(w)
+        if cur_ws:
+            segments.append(self._speaker_run_segment(cur_ws, cur_tag, confidence))
+        return segments
+
+    def _segments_from_response(self, response, config: ASRConfig) -> list[ASRSegment]:
+        """Turn a Google recognition response into ASR segments."""
+        segments: list[ASRSegment] = []
+        for res in response.results:
+            alt = res.alternatives[0]
+            word_list = alt.words or []
+            if config.enable_diarization and word_list:
+                segments.extend(self._diarized_segments(word_list, alt.confidence))
+                continue
+            asr_words = [
+                ASRWord(w.word, w.start_time.total_seconds(), w.end_time.total_seconds())
+                for w in word_list
+            ]
+            segments.append(
+                ASRSegment(
+                    text=alt.transcript,
+                    start=asr_words[0].start if asr_words else 0.0,
+                    end=asr_words[-1].end if asr_words else 0.0,
+                    confidence=alt.confidence,
+                    words=asr_words,
+                )
+            )
+        return segments
+
     def transcribe(
         self,
         audio_path: str,
@@ -159,83 +224,7 @@ class GoogleASRProvider(ASRProvider):
         if progress_callback:
             progress_callback(0.85, "Parsing Google response…")
 
-        segments: list[ASRSegment] = []
-        for res in response.results:
-            alt = res.alternatives[0]
-            word_list = alt.words or []
-            if config.enable_diarization and word_list:
-                # Group contiguous words by speaker_tag into one segment per speaker run.
-                # Preserves temporal order rather than grouping all words for the same speaker
-                # globally (which would lose conversational turn structure).
-                #
-                # Google speaker_tag semantics:
-                #   0  = unknown / no tag assigned (treat as no speaker label)
-                #   1+ = 1-indexed speaker IDs  → map to 0-indexed SPEAKER_XX labels
-                cur_tag: int | None = None
-                cur_ws: list = []
-                for w in word_list:
-                    raw_tag = getattr(w, "speaker_tag", 0)
-                    # Normalize tag: 0 → None (unknown), 1-indexed N → 0-indexed (N-1)
-                    tag = None if raw_tag == 0 else raw_tag
-                    if tag != cur_tag:
-                        if cur_ws:
-                            text = " ".join(x.word for x in cur_ws)
-                            asr_words = [
-                                ASRWord(
-                                    x.word, x.start_time.total_seconds(), x.end_time.total_seconds()
-                                )
-                                for x in cur_ws
-                            ]
-                            spk_label = (
-                                self._normalize_speaker_label(cur_tag - 1)
-                                if cur_tag is not None
-                                else None
-                            )
-                            segments.append(
-                                ASRSegment(
-                                    text=text,
-                                    start=cur_ws[0].start_time.total_seconds(),
-                                    end=cur_ws[-1].end_time.total_seconds(),
-                                    speaker=spk_label,
-                                    confidence=alt.confidence,
-                                    words=asr_words,
-                                )
-                            )
-                        cur_tag, cur_ws = tag, []
-                    cur_ws.append(w)
-                if cur_ws:
-                    text = " ".join(x.word for x in cur_ws)
-                    asr_words = [
-                        ASRWord(x.word, x.start_time.total_seconds(), x.end_time.total_seconds())
-                        for x in cur_ws
-                    ]
-                    spk_label = (
-                        self._normalize_speaker_label(cur_tag - 1) if cur_tag is not None else None
-                    )
-                    segments.append(
-                        ASRSegment(
-                            text=text,
-                            start=cur_ws[0].start_time.total_seconds(),
-                            end=cur_ws[-1].end_time.total_seconds(),
-                            speaker=spk_label,
-                            confidence=alt.confidence,
-                            words=asr_words,
-                        )
-                    )
-            else:
-                asr_words = [
-                    ASRWord(w.word, w.start_time.total_seconds(), w.end_time.total_seconds())
-                    for w in word_list
-                ]
-                segments.append(
-                    ASRSegment(
-                        text=alt.transcript,
-                        start=asr_words[0].start if asr_words else 0.0,
-                        end=asr_words[-1].end if asr_words else 0.0,
-                        confidence=alt.confidence,
-                        words=asr_words,
-                    )
-                )
+        segments = self._segments_from_response(response, config)
 
         if progress_callback:
             progress_callback(1.0, "Google Cloud Speech transcription complete")

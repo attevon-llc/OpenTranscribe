@@ -27,7 +27,6 @@ backend/app/api/endpoints/files/crud.py::update_media_file#1	1	re-keyed per hand
 backend/app/api/endpoints/files/crud.py::update_media_file#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/crud.py::update_media_file#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/detail_response.py::set_file_urls#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/api/endpoints/files/media_delivery.py::download_stream.<locals>.event_stream#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/post_processing.py::get_post_processing_status#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/api/endpoints/files/redaction_gate.py::claim_and_dispatch_redaction_scan#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -390,8 +389,8 @@ backend/app/services/opensearch_service/repair.py::_repair_index#4	1	re-keyed pe
 backend/app/services/opensearch_service/repair.py::check_and_repair_indices#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/repair.py::check_and_repair_indices#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/repair.py::rebuild_speaker_index#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_verify_rebuild_index#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/repair.py::_cleanup_after_failed_rebuild#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_collections.py::bulk_update_collection_assignments#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_collections.py::get_speakers_in_collection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_collections.py::move_speaker_to_profile_collection#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -406,8 +405,8 @@ backend/app/services/opensearch_service/speaker_metadata.py::update_speaker_segm
 backend/app/services/opensearch_service/speaker_read.py::get_all_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_read.py::get_speaker_document#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_read.py::get_speaker_embeddings_batch#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/services/opensearch_service/speaker_read.py::iter_speaker_embeddings#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::_iter_embeddings_by_uuid#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/services/opensearch_service/speaker_read.py::_iter_user_embeddings#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/services/opensearch_service/speaker_write.py::add_speaker_embedding#3	1	re-keyed per handler so a fix and a new swallow cannot cancel out
@@ -695,8 +694,8 @@ backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#1	1	re-k
 backend/app/tasks/opensearch_integrity_task.py::_cleanup_index_by_field#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/opensearch_integrity_task.py::get_index_overview#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::_check_opensearch_health#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
+backend/app/tasks/recovery.py::_sweep_superseded_rows#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::periodic_health_check_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
-backend/app/tasks/recovery.py::periodic_health_check_task#2	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::recover_user_files_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery.py::startup_recovery_task#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out
 backend/app/tasks/recovery_tasks.py::_tier_b_probe_duration#1	1	re-keyed per handler so a fix and a new swallow cannot cancel out

@@ -375,6 +375,52 @@ def _finish_failed_or_aborted(
     raise exc
 
 
+def _validate_and_save_stage_result(
+    ctx: TranscriptionContext,
+    result: Any,
+    preprocess_context: dict,
+    diarization_off: bool,
+    shared_wav_path: str = "",
+) -> dict:
+    """Validate a GPU stage result, save it, and close out the stage's timing.
+
+    Returns the error payload when validation fails, else the chain payload for
+    ``finalize_transcription``. ``shared_wav_path`` is the shared-volume WAV of the
+    fast path, dropped as soon as the save has finished; the MinIO fallback has none.
+    """
+    if isinstance(result, dict):
+        result["diarization_disabled"] = diarization_off
+
+    if _validate_transcription_result(result, ctx, ctx.task_id):
+        return {
+            "status": "error",
+            "file_uuid": ctx.file_uuid,
+            "file_id": ctx.file_id,
+            "task_id": ctx.task_id,
+        }
+
+    # Process speakers, save to DB, release GPU
+    gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
+
+    if shared_wav_path:
+        from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
+
+        cleanup_shared_volume_wav(shared_wav_path)
+
+    # GPU end timestamp for inter-stage gap measurement, plus the ASR provider + model
+    # context for the timing table.
+    benchmark_timing.mark(ctx.task_id, "gpu_end")
+    if isinstance(result, dict):
+        benchmark_timing.set_context(
+            ctx.task_id,
+            {
+                "asr_provider": result.get("asr_provider", "local"),
+                "asr_model": result.get("asr_model"),
+            },
+        )
+    return gpu_result
+
+
 @celery_app.task(
     bind=True,
     name="transcription.gpu_transcribe",
@@ -516,38 +562,13 @@ def transcribe_gpu_task(self: Any, preprocess_context: dict) -> dict:
 
                 result = _run_engine_pipeline(ctx, local_wav_path, preprocess_context)
 
-                if isinstance(result, dict):
-                    result["diarization_disabled"] = diarization_off
-
-                # Validate result
-                validation_error = _validate_transcription_result(result, ctx, task_id)
-                if validation_error:
-                    return {
-                        "status": "error",
-                        "file_uuid": file_uuid,
-                        "file_id": file_id,
-                        "task_id": task_id,
-                    }
-
-                # Process speakers, save to DB, release GPU
-                gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
-
-                # Shared-volume WAV is no longer needed after GPU stage finishes
-                from app.transcription.engine.audio_loader import cleanup_shared_volume_wav
-
-                cleanup_shared_volume_wav(local_wav_path)
-
-                benchmark_timing.mark(task_id, "gpu_end")
-                if isinstance(result, dict):
-                    benchmark_timing.set_context(
-                        task_id,
-                        {
-                            "asr_provider": result.get("asr_provider", "local"),
-                            "asr_model": result.get("asr_model"),
-                        },
-                    )
-
-                return gpu_result
+                return _validate_and_save_stage_result(
+                    ctx,
+                    result,
+                    preprocess_context,
+                    diarization_off,
+                    shared_wav_path=local_wav_path,
+                )
 
             # ── Fallback / cloud path: download from MinIO ────────────────────────
             # Reaching here means `has_shared_wav` was False — log WHICH condition failed so a
@@ -606,35 +627,9 @@ def transcribe_gpu_task(self: Any, preprocess_context: dict) -> dict:
                         whisper_model=whisper_model,
                     )
 
-                if isinstance(result, dict):
-                    result["diarization_disabled"] = diarization_off
-
-                # Validate result
-                validation_error = _validate_transcription_result(result, ctx, task_id)
-                if validation_error:
-                    return {
-                        "status": "error",
-                        "file_uuid": file_uuid,
-                        "file_id": file_id,
-                        "task_id": task_id,
-                    }
-
-                # Process speakers, save to DB, release GPU
-                gpu_result = _process_and_save_critical(ctx, result, preprocess_context)
-
-                # Record GPU end timestamp for inter-stage gap measurement.
-                # Persist ASR provider + model context for the timing table.
-                benchmark_timing.mark(task_id, "gpu_end")
-                if isinstance(result, dict):
-                    benchmark_timing.set_context(
-                        task_id,
-                        {
-                            "asr_provider": result.get("asr_provider", "local"),
-                            "asr_model": result.get("asr_model"),
-                        },
-                    )
-
-                return gpu_result
+                return _validate_and_save_stage_result(
+                    ctx, result, preprocess_context, diarization_off
+                )
 
         except TranscriptionCancelledError as cancelled:
             # issue #823: MUST sit before `except Exception` below, and it is deliberately NOT

@@ -46,6 +46,68 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _linked_collections_by_prompt(
+    db: Session, prompt_ids: list[int], user_id: int
+) -> dict[int, list[schemas.LinkedCollection]]:
+    """Collections of the current user that use each prompt as their default."""
+    from app.models.collection import Collection
+
+    collection_map: dict[int, list[schemas.LinkedCollection]] = {}
+    if not prompt_ids:
+        return collection_map
+    collection_rows = (
+        db.query(Collection.default_summary_prompt_id, Collection.uuid, Collection.name)
+        .filter(
+            Collection.default_summary_prompt_id.in_(prompt_ids),
+            Collection.user_id == user_id,
+        )
+        .order_by(Collection.name)
+        .all()
+    )
+    for row in collection_rows:
+        pid = row[0]
+        if pid is None:
+            continue
+        if pid not in collection_map:
+            collection_map[pid] = []
+        collection_map[pid].append(schemas.LinkedCollection(uuid=row[1], name=row[2]))
+    return collection_map
+
+
+def _with_collections_and_authors(
+    db: Session,
+    prompts: list[Any],
+    collection_map: dict[int, list[schemas.LinkedCollection]],
+    user_id: int,
+) -> list[schemas.SummaryPromptWithCollections]:
+    """Attach linked collections, ownership and creator/sharer attribution to each prompt."""
+    # Batch-fetch users referenced for attribution: creators + sharers
+    referenced_ids = {p.user_id for p in prompts if p.user_id and p.user_id != user_id}
+    referenced_ids |= {p.shared_by for p in prompts if p.shared_by}
+    users = (
+        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(referenced_ids)).all()}
+        if referenced_ids
+        else {}
+    )
+
+    prompt_list = []
+    for p in prompts:
+        pwc = schemas.SummaryPromptWithCollections.model_validate(p)
+        pwc.linked_collections = collection_map.get(p.id, [])
+        pwc.is_owner = p.user_id == user_id
+        if p.user_id and p.user_id != user_id:
+            owner = users.get(p.user_id)
+            if owner:
+                pwc.author_name = owner.full_name
+                pwc.author_role = owner.role
+        if p.shared_by:
+            sharer = users.get(p.shared_by)
+            if sharer:
+                pwc.shared_by_name = sharer.full_name
+        prompt_list.append(pwc)
+    return prompt_list
+
+
 @router.get("", response_model=schemas.SummaryPromptList)
 def get_prompts(
     db: Session = Depends(get_db),
@@ -121,58 +183,8 @@ def get_prompts(
         limit,
     )
 
-    # Get collections that use each prompt as default (for current user only)
-    from app.models.collection import Collection
-
-    prompt_ids = [p.id for p in prompts]
-    collection_map: dict[int, list[schemas.LinkedCollection]] = {}
-    if prompt_ids:
-        collection_rows = (
-            db.query(
-                Collection.default_summary_prompt_id,
-                Collection.uuid,
-                Collection.name,
-            )
-            .filter(
-                Collection.default_summary_prompt_id.in_(prompt_ids),
-                Collection.user_id == current_user.id,
-            )
-            .order_by(Collection.name)
-            .all()
-        )
-        for row in collection_rows:
-            pid = row[0]
-            if pid is None:
-                continue
-            if pid not in collection_map:
-                collection_map[pid] = []
-            collection_map[pid].append(schemas.LinkedCollection(uuid=row[1], name=row[2]))
-
-    # Batch-fetch users referenced for attribution: creators + sharers
-    referenced_ids = {p.user_id for p in prompts if p.user_id and p.user_id != current_user.id}
-    referenced_ids |= {p.shared_by for p in prompts if p.shared_by}
-    users = (
-        {u.id: u for u in db.query(models.User).filter(models.User.id.in_(referenced_ids)).all()}
-        if referenced_ids
-        else {}
-    )
-
-    # Build response with linked collections and author info
-    prompt_list = []
-    for p in prompts:
-        pwc = schemas.SummaryPromptWithCollections.model_validate(p)
-        pwc.linked_collections = collection_map.get(p.id, [])
-        pwc.is_owner = p.user_id == current_user.id
-        if p.user_id and p.user_id != current_user.id:
-            owner = users.get(p.user_id)
-            if owner:
-                pwc.author_name = owner.full_name
-                pwc.author_role = owner.role
-        if p.shared_by:
-            sharer = users.get(p.shared_by)
-            if sharer:
-                pwc.shared_by_name = sharer.full_name
-        prompt_list.append(pwc)
+    collection_map = _linked_collections_by_prompt(db, [p.id for p in prompts], current_user.id)
+    prompt_list = _with_collections_and_authors(db, prompts, collection_map, current_user.id)
 
     return schemas.SummaryPromptList(
         prompts=prompt_list,

@@ -336,3 +336,51 @@ def test_permission_denied_stays_a_plain_runtime_error(tmp_path):
         provider.transcribe(audio_path, _config())
 
     assert not isinstance(excinfo.value, ASRRateLimitedError)
+
+
+def _transcribe_words(tmp_path, words, *, diarize):
+    response = speech.LongRunningRecognizeResponse(
+        results=[
+            speech.SpeechRecognitionResult(
+                alternatives=[
+                    speech.SpeechRecognitionAlternative(
+                        transcript=" ".join(w.word for w in words), confidence=0.8, words=words
+                    )
+                ]
+            )
+        ]
+    )
+    with patch.object(speech, "SpeechClient", return_value=_mock_client(response)):
+        return _provider().transcribe(_write_audio(tmp_path), _config(enable_diarization=diarize))
+
+
+def test_speaker_turns_become_one_segment_per_contiguous_run_in_order(tmp_path):
+    """A->B->A is three segments, not two: turn order is preserved, speakers are not merged."""
+    words = [
+        _word("a1", 0.0, 0.5, 1),
+        _word("a2", 0.5, 1.0, 1),
+        _word("b1", 1.0, 1.5, 2),
+        _word("a3", 1.5, 2.0, 1),
+        _word("u1", 2.0, 2.5, 0),
+    ]
+    result = _transcribe_words(tmp_path, words, diarize=True)
+
+    assert [(s.text, s.speaker, s.start, s.end) for s in result.segments] == [
+        ("a1 a2", "SPEAKER_00", 0.0, 1.0),
+        ("b1", "SPEAKER_01", 1.0, 1.5),
+        ("a3", "SPEAKER_00", 1.5, 2.0),
+        ("u1", None, 2.0, 2.5),
+    ]
+    assert [w.word for w in result.segments[0].words] == ["a1", "a2"]
+    assert all(s.confidence == pytest.approx(0.8) for s in result.segments)
+    assert result.has_speakers is True
+
+
+def test_without_diarization_one_segment_per_result_with_transcript_text(tmp_path):
+    words = [_word("x", 0.0, 0.5, 1), _word("y", 0.5, 1.0, 2)]
+    result = _transcribe_words(tmp_path, words, diarize=False)
+
+    assert len(result.segments) == 1
+    seg = result.segments[0]
+    assert (seg.text, seg.speaker, seg.start, seg.end) == ("x y", None, 0.0, 1.0)
+    assert result.has_speakers is False

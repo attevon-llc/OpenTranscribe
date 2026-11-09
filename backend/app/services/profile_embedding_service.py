@@ -335,6 +335,46 @@ def _extract_matches_from_response(response: dict, threshold: float) -> list[dic
     return matches
 
 
+def _not_recomputed(strict: bool, reason: str) -> bool:
+    """The stored embedding was not replaced: raise for a strict caller, else report False."""
+    if strict:
+        raise ProfileEmbeddingRecomputeError(reason)
+    return False
+
+
+def _consenting_member_speakers(
+    db: Session, profile: SpeakerProfile, profile_id: int
+) -> list[Speaker]:
+    """The profile's speakers that may shape its voiceprint.
+
+    Only speakers whose file is of the profile's tenant — a speaker linked across
+    tenants never shapes the voiceprint (NULL-safe: personal profile <-> personal
+    files) — and, per-file consent (#1356), never a voice from an opted-out file.
+    """
+    speakers = (
+        db.query(Speaker)
+        .filter(
+            Speaker.profile_id == profile_id,
+            Speaker.media_file_id.in_(file_ids_in_scope(profile.organization_id)),
+        )
+        .all()
+    )
+    excluded = declined_file_ids(db, (s.media_file_id for s in speakers))
+    return [s for s in speakers if s.media_file_id not in excluded]
+
+
+def _member_embeddings(speakers: list[Speaker], profile_id: int) -> list[list[float]]:
+    """Stored embeddings of the given speakers, skipping (and logging) unreadable ones."""
+    embeddings: list[list[float]] = []
+    for speaker in speakers:
+        embedding = get_speaker_embedding(str(speaker.uuid))
+        if embedding:
+            embeddings.append(embedding)
+        else:
+            logger.warning(f"No embedding found for speaker {speaker.uuid} in profile {profile_id}")
+    return embeddings
+
+
 class ProfileEmbeddingService:
     """Service for managing profile-level speaker embeddings."""
 
@@ -362,24 +402,9 @@ class ProfileEmbeddingService:
             profile = db.query(SpeakerProfile).filter(SpeakerProfile.id == profile_id).first()
             if not profile:
                 logger.error(f"Profile {profile_id} not found")
-                if strict:
-                    raise ProfileEmbeddingRecomputeError(f"profile {profile_id} not found")
-                return False
+                return _not_recomputed(strict, f"profile {profile_id} not found")
 
-            # Get the speakers assigned to this profile whose file is of the
-            # profile's tenant — a speaker linked across tenants never shapes the
-            # voiceprint (NULL-safe: personal profile <-> personal files).
-            speakers = (
-                db.query(Speaker)
-                .filter(
-                    Speaker.profile_id == profile_id,
-                    Speaker.media_file_id.in_(file_ids_in_scope(profile.organization_id)),
-                )
-                .all()
-            )
-            # Per-file consent (#1356): a voice from an opted-out file never enters the average.
-            excluded = declined_file_ids(db, (s.media_file_id for s in speakers))
-            speakers = [s for s in speakers if s.media_file_id not in excluded]
+            speakers = _consenting_member_speakers(db, profile, profile_id)
 
             if not speakers:
                 logger.warning(f"No speakers assigned to profile {profile_id}")
@@ -405,40 +430,22 @@ class ProfileEmbeddingService:
                     profile_id,
                     decision.locked_by,
                 )
-                if strict:
-                    raise ProfileEmbeddingRecomputeError(
-                        f"profile {profile_id} voiceprints disabled by privacy policy"
-                    )
-                return False
+                return _not_recomputed(
+                    strict, f"profile {profile_id} voiceprints disabled by privacy policy"
+                )
 
-            # Collect embeddings from all speakers
-            embeddings: list[list[float]] = []
-            for speaker in speakers:
-                embedding = get_speaker_embedding(str(speaker.uuid))
-                if embedding:
-                    embeddings.append(embedding)
-                else:
-                    logger.warning(
-                        f"No embedding found for speaker {speaker.uuid} in profile {profile_id}"
-                    )
-
+            embeddings = _member_embeddings(speakers, profile_id)
             if not embeddings:
                 logger.warning(f"No valid embeddings found for profile {profile_id}")
-                if strict:
-                    raise ProfileEmbeddingRecomputeError(
-                        f"profile {profile_id} has no member voiceprint"
-                    )
-                return False
+                return _not_recomputed(strict, f"profile {profile_id} has no member voiceprint")
 
             # Delegate averaging + OpenSearch storage to shared helpers
             stored = _process_profile_with_embeddings(profile, profile_id, embeddings)
             db.commit()
             if not stored:
-                if strict:
-                    raise ProfileEmbeddingRecomputeError(
-                        f"OpenSearch refused the embedding write for profile {profile_id}"
-                    )
-                return False
+                return _not_recomputed(
+                    strict, f"OpenSearch refused the embedding write for profile {profile_id}"
+                )
 
             logger.info(
                 f"Updated profile {profile_id} embedding with average of {len(embeddings)} speaker embeddings"

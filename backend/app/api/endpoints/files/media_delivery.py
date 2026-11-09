@@ -292,6 +292,50 @@ def _download_event_frame(data: dict, mode: str, variant: str = "") -> tuple[str
     return f"event: progress\ndata: {json.dumps(payload)}\n\n", False
 
 
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+
+async def _relay_download_events(
+    pubsub: Any, file_uuid: str, mode: str, variant: str
+) -> AsyncIterator[str]:
+    """Relay download pub/sub events for one file as SSE frames until a terminal one.
+
+    Idle reads yield a keepalive comment frame; a Redis failure yields an error
+    frame and ends the stream; malformed payloads are skipped.
+    """
+    from redis.exceptions import RedisError
+    from redis.exceptions import TimeoutError as RedisTimeoutError
+
+    while True:
+        try:
+            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
+        except (TimeoutError, RedisTimeoutError):
+            yield ": keepalive\n\n"  # benign idle read — keep the SSE open
+            continue
+        except RedisError as e:
+            logger.warning(f"Download SSE pubsub error for {file_uuid}: {e}")
+            yield _sse(
+                "error",
+                {"code": "connection_interrupted", "message": "Connection interrupted."},
+            )
+            return
+        if msg is None:
+            yield ": keepalive\n\n"  # comment frame keeps proxies from closing
+            continue
+        try:
+            data = json.loads(msg["data"])
+        except (ValueError, TypeError, KeyError):
+            logger.debug("Skipping malformed download event payload")
+            continue
+        frame, terminal = _download_event_frame(data, mode, variant)
+        if frame is None:
+            continue
+        yield frame
+        if terminal:
+            return
+
+
 @router.get("/{file_uuid}/download-stream", dependencies=[Depends(refuse_under_support_grant)])
 def download_stream(
     file_uuid: str,
@@ -312,7 +356,6 @@ def download_stream(
     """
     import asyncio
     import contextlib
-    import json as _json
 
     from app.core.redis import get_async_redis
     from app.services.download_events import download_events_channel
@@ -345,9 +388,6 @@ def download_stream(
     db.expunge(db_file)
     db.close()
 
-    def sse(event: str, payload: dict) -> str:
-        return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
-
     def _ready_frame() -> str | None:
         """SSE frame if the download is ready or errored, else None to keep waiting.
 
@@ -361,8 +401,8 @@ def download_stream(
             # `_resolve_ready_download`'s only raise site is the 422 below, but the
             # "code" here stays a fixed literal slug — never `e.detail` itself — so
             # the SSE contract guard (test_chat_sse_contract.py) can pin it structurally.
-            return sse("error", {"code": "transcript_not_ready", "message": e.detail})
-        return sse("ready", ready) if ready else None
+            return _sse("error", {"code": "transcript_not_ready", "message": e.detail})
+        return _sse("ready", ready) if ready else None
 
     async def event_stream() -> AsyncIterator[str]:
         # 1. Fast path — already available (covers reconnects after completion). Checked
@@ -371,9 +411,6 @@ def download_stream(
         if frame:
             yield frame
             return
-
-        from redis.exceptions import RedisError
-        from redis.exceptions import TimeoutError as RedisTimeoutError
 
         pubsub = get_async_redis().pubsub()
         await pubsub.subscribe(download_events_channel(file_uuid))
@@ -397,35 +434,10 @@ def download_stream(
             # dispatch (another blocking broker round trip) — running it inline
             # stalled the loop for every other request (issue #320).
             await run_in_threadpool(_ensure_prepare_enqueued, db_file, user_id, mode, variant)
-            yield sse("progress", {"message": "Preparing your download…", "progress": 0})
+            yield _sse("progress", {"message": "Preparing your download…", "progress": 0})
 
-            while True:
-                try:
-                    msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=15.0)
-                except (TimeoutError, RedisTimeoutError):
-                    yield ": keepalive\n\n"  # benign idle read — keep the SSE open
-                    continue
-                except RedisError as e:
-                    logger.warning(f"Download SSE pubsub error for {file_uuid}: {e}")
-                    yield sse(
-                        "error",
-                        {"code": "connection_interrupted", "message": "Connection interrupted."},
-                    )
-                    return
-                if msg is None:
-                    yield ": keepalive\n\n"  # comment frame keeps proxies from closing
-                    continue
-                try:
-                    data = _json.loads(msg["data"])
-                except Exception:
-                    logger.debug("Skipping malformed download event payload")
-                    continue
-                frame, terminal = _download_event_frame(data, mode, variant)
-                if frame is None:
-                    continue
+            async for frame in _relay_download_events(pubsub, file_uuid, mode, variant):
                 yield frame
-                if terminal:
-                    return
         except asyncio.CancelledError:
             raise
         finally:

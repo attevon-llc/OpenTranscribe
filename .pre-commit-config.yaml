@@ -153,7 +153,7 @@ repos:
     hooks:
       - id: frontend-check
         name: Frontend Type Check (eslint + svelte-check)
-        entry: scripts/frontend-check.sh --check-only
+        entry: scripts/frontend-check.sh --no-claude --check-only
         language: system
         files: ^frontend/src/
         types_or: [svelte, ts, javascript, css, html]
@@ -162,7 +162,7 @@ repos:
         verbose: true
       - id: frontend-build
         name: Frontend Build Verification (eslint + svelte-check + vite build)
-        entry: scripts/frontend-check.sh
+        entry: scripts/frontend-check.sh --no-claude
         language: system
         files: ^frontend/src/
         types_or: [svelte, ts, javascript, css, html]

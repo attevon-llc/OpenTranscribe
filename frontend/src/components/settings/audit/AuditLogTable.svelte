@@ -10,7 +10,8 @@
   import BaseModal from '$components/ui/BaseModal.svelte';
   import SettingsSkeleton from '$components/ui/SettingsSkeleton.svelte';
   import type { AuditLogEntry } from '$lib/api/admin';
-  import { ORG_AUDIT_EVENT_KEYS, labelFor } from '$lib/i18n/keyMaps';
+  import { labelFor } from '$lib/i18n/keyMaps';
+  import { ORG_AUDIT_EVENT_KEYS } from '$lib/i18n/auditEventKeys';
   import { t, locale } from '$stores/locale';
   import { formatAuditTimestamp } from '$lib/utils/formatting';
 

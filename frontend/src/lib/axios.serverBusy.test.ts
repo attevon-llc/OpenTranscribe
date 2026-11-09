@@ -16,6 +16,10 @@ vi.mock('$lib/auth/sessionRefresh', () => ({ refreshSession }));
 import axiosInstance from '$lib/axios';
 import { getErrorMessage } from '$lib/utils/apiError';
 
+// The interceptor loads the retry policy on the first 503; load it now so the fake clock below
+// does not have to wait for a module fetch.
+await import('$lib/utils/busyRetry');
+
 let calls: string[] = [];
 let script: Array<{ status: number; headers?: Record<string, string> }> = [];
 

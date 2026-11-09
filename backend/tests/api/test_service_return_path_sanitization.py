@@ -16,6 +16,7 @@ import tempfile
 import uuid as uuid_pkg
 
 from fastapi import status
+from fixtures.auth_read_commit import is_auth_read_commit
 
 from app.models.media import MediaFile
 from app.models.media import Task as TaskModel
@@ -179,7 +180,11 @@ def test_batch_verify_speakers_commit_failure_never_leaks_exception_text(
     db_session.commit()
     db_session.refresh(speaker)
 
+    real_commit = db_session.commit
+
     def _raise_commit(*_args, **_kwargs):
+        if is_auth_read_commit():
+            return real_commit()
         raise RuntimeError(f"commit failed against {PATH_SENTINEL}")
 
     monkeypatch.setattr(db_session, "commit", _raise_commit)

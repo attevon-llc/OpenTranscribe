@@ -360,5 +360,5 @@ hides and omits the VAD/accuracy fields; `transcription.diarization_source` make
   table for a third screen. The org panel is a lazy section (`org-audit-logs`, `orgAuditLog` in
   `sectionLoaders`), shown only on `orgAdminCapOn(capState, 'org.audit_logs')`; its event list
   offers the `content.*` types only while `audit.content_access` is available, and a 404 from the
-  export hides the export buttons. Event labels are `ORG_AUDIT_EVENT_KEYS` in `lib/i18n/keyMaps.ts`
+  export hides the export buttons. Event labels are `ORG_AUDIT_EVENT_KEYS` in `lib/i18n/auditEventKeys.ts`
   (a literal-key map, with the raw identifier as fallback): add a key there, not a template string.

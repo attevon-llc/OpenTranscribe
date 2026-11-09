@@ -42,11 +42,13 @@ def test_only_completed_video_files_without_a_thumbnail_are_dispatched(
     dispatched: list[tuple] = []
     monkeypatch.setattr(thumbnail_migration, "session_scope", scope)
     monkeypatch.setattr(
-        "app.tasks.thumbnail.generate_thumbnail_task.delay",
-        lambda *args: dispatched.append(args),
+        "app.tasks.thumbnail.generate_thumbnail_task.apply_async",
+        lambda args, **kw: dispatched.append(args),
     )
 
-    monkeypatch.setattr(thumbnail_migration.backfill_missing_thumbnails, "delay", lambda **kw: None)
+    monkeypatch.setattr(
+        thumbnail_migration.backfill_missing_thumbnails, "apply_async", lambda **kw: None
+    )
 
     result = thumbnail_migration.backfill_missing_thumbnails.run(
         after_id=int(wanted.id) - 1, batch_size=1

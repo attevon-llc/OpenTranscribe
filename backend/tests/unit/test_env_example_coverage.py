@@ -52,6 +52,10 @@ EXTERNALLY_CONSUMED: set[str] = {
     # Read in production, but through app.core.startup_validation.service_credential_settings
     # (a second BaseSettings object), not the app.core.config singleton this scanner follows.
     "ALLOW_UNENCRYPTED_OBJECT_STORE",
+    # Read in production only inside the Settings class: ``Settings.fips_140_3_active`` compares
+    # ``self.FIPS_VERSION`` and every caller (auth/mfa.py, token_service, security.py) reads that
+    # property, never ``settings.FIPS_VERSION`` itself, which is what this scanner follows.
+    "FIPS_VERSION",
     # ---------------------------------------------------------------------------
     # The next 14 ARE genuinely read in production, but only via
     # auth_config_keys.ENV_TO_CONFIG_MAPPING (app/services/auth_config_keys.py):

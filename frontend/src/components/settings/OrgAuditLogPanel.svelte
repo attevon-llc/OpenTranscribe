@@ -17,7 +17,7 @@
   } from '$components/settings/audit/auditFilters';
   import type { AuditLogEntry } from '$lib/api/admin';
   import { OrgAdminApi, type OrgAuditQuery } from '$lib/api/orgAdmin';
-  import { ORG_AUDIT_EVENT_KEYS } from '$lib/i18n/keyMaps';
+  import { ORG_AUDIT_EVENT_KEYS } from '$lib/i18n/auditEventKeys';
   import { capabilities, isCapabilityEnabled } from '$stores/capabilities';
   import { t } from '$stores/locale';
   import { toastStore } from '$stores/toast';

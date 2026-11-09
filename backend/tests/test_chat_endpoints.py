@@ -20,6 +20,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from fixtures.auth_read_commit import is_auth_read_commit
 
 from app.models.chat import ChatConversation
 from app.services.llm_stream import LLMStreamEvent
@@ -695,8 +696,16 @@ def test_a_conversation_deleted_mid_turn_is_404_not_500(
         # Only the FIRST commit of the turn — the one that writes the user
         # message and touches `last_message_at`. Raising on every commit would
         # also break the rollback path and prove nothing about this branch.
+        if is_auth_read_commit():
+            return real_commit(self, *args, **kwargs)
         if fired["count"] == 0:
             fired["count"] += 1
+            # Production's get_db closes the session, which discards the failed turn's
+            # pending message. The harness shares one session across requests, so the next
+            # request's auth commit would flush it; drop the pending rows the same way
+            # (a rollback here would unwind the harness savepoint and delete the user).
+            for pending in list(self.new):
+                self.expunge(pending)
             raise StaleDataError(
                 "UPDATE statement on table 'chat_conversation' expected to "
                 "update 1 row(s); 0 were matched."

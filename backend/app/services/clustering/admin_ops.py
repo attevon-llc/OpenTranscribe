@@ -134,7 +134,7 @@ def merge_clusters(
         organization_id: Tenant both clusters must belong to.
 
     Returns:
-        The target cluster after merge, or None on error.
+        The target cluster after merge, or None when not found or not permitted.
 
     Raises:
         SpeakerCleanupIncompleteError: The merge committed, but a centroid could be
@@ -189,7 +189,7 @@ def merge_clusters(
         self.db.rollback()
         self._rename_tracker.discard()
         self._assigned = SpeakerImpact()
-        return None
+        raise
 
     # The source is empty now (unless it kept blocked members): the shared cleanup
     # deletes it with its centroid and rebuilds the target's from the merged membership.
@@ -226,7 +226,7 @@ def split_cluster(
         organization_id: Tenant the source cluster must belong to.
 
     Returns:
-        The newly created cluster, or None on error.
+        The newly created cluster, or None when not found or not permitted.
 
     Raises:
         SpeakerCleanupIncompleteError: The split committed, but a centroid could be
@@ -305,7 +305,7 @@ def split_cluster(
         logger.exception("Error splitting cluster")
         self.db.rollback()
         self._rename_tracker.discard()
-        return None
+        raise
 
     # Both centroids change: the source loses the moved voices (and is deleted with
     # its centroid if nobody is left), the new cluster is built from them; a promoted

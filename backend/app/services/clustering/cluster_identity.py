@@ -52,7 +52,7 @@ def promote_cluster_to_profile(
         organization_id: Tenant the cluster must belong to.
 
     Returns:
-        The created SpeakerProfile, or None on error.
+        The created SpeakerProfile, or None when not found or not permitted.
 
     Raises:
         SpeakerCleanupIncompleteError: The promotion committed, but a profile embedding or
@@ -165,7 +165,7 @@ def promote_cluster_to_profile(
         logger.exception("Error promoting cluster to profile")
         self.db.rollback()
         self._rename_tracker.discard()
-        return None
+        raise
 
     # The new profile's embedding, every former profile's, and the cluster centroid
     # (profile-linked members weigh double in it) — one shared cleanup.

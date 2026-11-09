@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from page_state import card_names
+from page_state import held_routes
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import Route
@@ -47,13 +49,13 @@ def tray_page(browser: Any, shared_auth_state: str, base_url: str) -> Any:
         ignore_https_errors=True,
     )
     page = context.new_page()
-    page._held_routes = []
+    held_routes.attach(page, [])
     page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     yield page
     # A parked request must be released before anything tears routes down:
     # `unroute_all` waits on a route handler that never finished, and never returns.
-    for route in page._held_routes:
+    for route in held_routes.of(page):
         with contextlib.suppress(PlaywrightError):
             route.abort()
     page.close()
@@ -84,7 +86,7 @@ class TestUploadTray:
     def test_a_held_upload_shows_preparing_then_completes(
         self, tray_page: Page, sample_audio: Path
     ) -> None:
-        held: list[Route] = tray_page._held_routes  # type: ignore[attr-defined]
+        held: list[Route] = held_routes.of(tray_page)
         tray_page.route("**/api/files/prepare", lambda route: held.append(route))
         _submit_upload(tray_page, sample_audio)
 
@@ -122,7 +124,7 @@ class TestUploadTray:
     def test_cancelling_a_held_upload_ends_in_cancelled(
         self, tray_page: Page, sample_audio: Path
     ) -> None:
-        held: list[Route] = tray_page._held_routes  # type: ignore[attr-defined]
+        held: list[Route] = held_routes.of(tray_page)
         tray_page.route("**/api/files/prepare", lambda route: held.append(route))
         _submit_upload(tray_page, sample_audio)
         expect(_status(tray_page)).to_have_attribute("data-status", "preparing", timeout=15000)
@@ -173,7 +175,7 @@ def card_page(browser: Any, shared_auth_state: str, base_url: str) -> Any:
         f"localStorage.setItem('notifications', {json.dumps(json.dumps(records))});"
     )
     page = context.new_page()
-    page._card_names = names
+    card_names.attach(page, names)
     page.goto(base_url)
     page.wait_for_selector(".gallery-action-buttons", timeout=APP_SHELL_READY_MS)
     yield page
@@ -183,7 +185,7 @@ def card_page(browser: Any, shared_auth_state: str, base_url: str) -> Any:
 
 class TestNotificationCard:
     def test_card_states_follow_the_records(self, card_page: Page) -> None:
-        names = card_page._card_names  # type: ignore[attr-defined]
+        names = card_names.of(card_page)
         card_page.locator(".notifications-btn").click()
         panel = card_page.locator(".notifications-panel")
         expect(panel).to_be_visible(timeout=15000)

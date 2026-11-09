@@ -275,7 +275,8 @@ def _build_sessions(
         else:
             # Mark the head too, so "how many meetings are in a near-duplicate cluster"
             # counts the original rather than only its copies.
-            cluster_head.cluster_id = cluster_id  # type: ignore[union-attr]
+            assert cluster_head is not None  # in_cluster implies a head was chosen above
+            cluster_head.cluster_id = cluster_id
         built.append(session)
         day += cadence + rng.randint(-2, 2)
     _ensure_strict_attendance_max(built, team)

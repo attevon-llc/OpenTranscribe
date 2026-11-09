@@ -26,8 +26,10 @@ from datetime import UTC
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
+from typing import TypedDict
 
 import pytest
+from page_state import PageState
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Page
 from playwright.sync_api import Route
@@ -41,6 +43,19 @@ pytestmark = pytest.mark.upload
 
 def _frame(kind: str, file_id: str, **data: Any) -> str:
     return json.dumps({"type": kind, "data": {"file_id": file_id, **data}})
+
+
+class _LostFramesState(TypedDict):
+    """What the lost-frames fixture hands its test: the page's socket and held routes."""
+
+    file_id: str
+    filename: str
+    filter: FrameFilter
+    ws: WebSocketRoute | None
+    held: list[Route]
+
+
+_LOST_FRAMES: PageState[_LostFramesState] = PageState()
 
 
 @pytest.fixture
@@ -74,14 +89,14 @@ def lost_frames_page(browser: Any, shared_auth_state: str, base_url: str) -> Any
         f"localStorage.setItem('notifications', {json.dumps(json.dumps([record]))});"
     )
     page = context.new_page()
-    state: dict[str, Any] = {
+    state: _LostFramesState = {
         "file_id": file_id,
         "filename": filename,
         "filter": FrameFilter(),
         "ws": None,
         "held": [],
     }
-    page._lost = state
+    _LOST_FRAMES.attach(page, state)
 
     def on_socket(ws: WebSocketRoute) -> None:
         server = ws.connect_to_server()
@@ -118,7 +133,7 @@ class TestLostPostProcessingFrames:
         self, lost_frames_page: Page
     ) -> None:
         page = lost_frames_page
-        state = page._lost  # type: ignore[attr-defined]
+        state = _LOST_FRAMES.of(page)
         file_id, filename = state["file_id"], state["filename"]
         fltr: FrameFilter = state["filter"]
 

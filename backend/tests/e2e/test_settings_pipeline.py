@@ -20,6 +20,7 @@ import re
 
 import pytest
 import requests
+from page_state import console_errors
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
@@ -101,7 +102,7 @@ def page_factory(browser, base_url: str):
         page: Page = context.new_page()
         errors: list[str] = []
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-        page._console_errors = errors  # type: ignore[attr-defined]
+        console_errors.attach(page, errors)
         _login(page, base_url)
         return page
 
@@ -129,7 +130,7 @@ def test_pipeline_view_renders_four_steps(
 
     if locale == "ar":
         assert page.evaluate("document.documentElement.dir") == "rtl"
-    assert not [e for e in page._console_errors if "pipeline" in e.lower()]
+    assert not [e for e in console_errors.of(page) if "pipeline" in e.lower()]
 
 
 def test_change_link_opens_the_tab_that_edits_the_step(

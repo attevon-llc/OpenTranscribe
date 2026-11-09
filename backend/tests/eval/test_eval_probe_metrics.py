@@ -13,6 +13,8 @@ written for this test file.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from tests.eval.harness import probe_metrics
@@ -323,7 +325,8 @@ def test_build_probe_results_raises_on_note_that_smuggles_a_forbidden_field() ->
             run_name="test-run",
             target={"host": "localhost", "port": 5274},
             records=[_record()],
-            notes=[{"reference_answer": "smuggled via notes"}],  # type: ignore[list-item]
+            # Off-contract on purpose: a dict where a note string belongs must be refused.
+            notes=cast(list[str], [{"reference_answer": "smuggled via notes"}]),
         )
 
 

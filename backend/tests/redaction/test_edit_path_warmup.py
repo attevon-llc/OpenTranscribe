@@ -14,9 +14,13 @@ import threading
 import types
 from contextlib import contextmanager
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from sqlalchemy.orm import Session
 
+from app.models.media import MediaFile
+from app.models.media import TranscriptSegment
 from app.services.redaction import warmup
 from app.services.redaction.detectors import pii_presidio
 from app.services.redaction.detectors import toxicity
@@ -67,7 +71,13 @@ def _gate(monkeypatch, in_use: bool) -> None:
 def _edit() -> str:
     media = SimpleNamespace(language="en", user_id=1, id=1)
     segment = SimpleNamespace(text="hello there", words=None, redactions=None, toxicity=None)
-    return RedactionService.redetect_edited_segment(None, media, segment)  # type: ignore[arg-type]
+    # Partial stand-ins: session_scope and redaction_is_in_use are patched above, so only the
+    # attributes the edit path reads exist. cast() names the types the method is declared with.
+    return RedactionService.redetect_edited_segment(
+        cast("Session", None),
+        cast("MediaFile", media),
+        cast("TranscriptSegment", segment),
+    )
 
 
 def test_the_first_segment_edit_after_startup_loads_no_model(monkeypatch, loads):

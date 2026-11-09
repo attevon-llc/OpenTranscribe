@@ -69,16 +69,6 @@ backend/app/utils/task_utils.py::no-any-return	4	reasoned type: ignore comments 
 backend/app/utils/url_validation.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/scripts/benchmark_migration.py::assignment	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/tests/api/test_asr_config_is_active.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/e2e/test_notification_missed_frames.py::attr-defined	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/e2e/test_settings_modal.py::attr-defined	2	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/e2e/test_settings_pipeline.py::attr-defined	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/e2e/test_upload_tray_and_notifications.py::attr-defined	3	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/e2e/test_watch_sources_e2e.py::attr-defined	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/eval/synthetic/org.py::union-attr	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/eval/test_eval_probe_metrics.py::list-item	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/eval/test_eval_traceability.py::list-item	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/redaction/test_edit_path_warmup.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
-backend/tests/test_auth_config_integration.py::misc	2	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/tests/test_chat_retention.py::attr-defined	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/tests/test_cloud_seams.py::arg-type	1	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane
 backend/tests/test_cloud_seams.py::return-value	2	reasoned type: ignore comments existing when the ratchet landed; each hides every error of its code on its line, so they burn to zero lane by lane

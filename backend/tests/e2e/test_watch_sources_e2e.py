@@ -22,6 +22,7 @@ import uuid
 import pytest
 import requests
 from conftest import E2E_STORAGE_STATE_PREFIX
+from page_state import console_errors
 from playwright.sync_api import Page
 from playwright.sync_api import expect
 from timeouts import LOGIN_FORM_READY_MS
@@ -200,7 +201,7 @@ def app_page(browser, auth_storage_state: str, base_url: str):
     page = context.new_page()
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
-    page._console_errors = errors
+    console_errors.attach(page, errors)
     page.goto(base_url)
     page.wait_for_selector(".user-button", timeout=30000)
     yield page
@@ -261,7 +262,7 @@ class TestWatchSourcesPanel:
         expect(app_page.locator("#ws-tags")).to_be_visible(timeout=5000)
         expect(app_page.locator("#ws-cols")).to_be_visible(timeout=5000)
 
-        unexpected = _unexpected_console_errors(app_page._console_errors)  # type: ignore[attr-defined]
+        unexpected = _unexpected_console_errors(console_errors.of(app_page))
         assert not unexpected, f"Unexpected console errors: {unexpected}"
 
     def test_create_and_delete_local_source(
